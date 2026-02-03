@@ -1,0 +1,231 @@
+"""
+Flag generation for bad hole conditions.
+
+This module provides functions to generate individual quality flags
+for various bad hole conditions.
+"""
+
+from typing import Optional, Union
+import numpy as np
+
+from petrophys.core.constants import DefaultParameters
+
+
+def generate_washout_flag(
+    cali: np.ndarray,
+    bit_size: float,
+    drho: Optional[np.ndarray] = None,
+    cali_threshold: float = DefaultParameters.CALI_BS_THRESHOLD,
+    drho_threshold: float = DefaultParameters.DRHO_THRESHOLD
+) -> np.ndarray:
+    """
+    Generate washout flag based on caliper and density correction.
+
+    Washout is detected when:
+    - CALI - BS > threshold (default 1.5 inches), OR
+    - |DRHO| > threshold (default 0.15 g/cm³)
+
+    Parameters
+    ----------
+    cali : np.ndarray
+        Caliper log values (inches)
+    bit_size : float
+        Bit size (inches)
+    drho : np.ndarray, optional
+        Density correction log
+    cali_threshold : float, optional
+        Caliper-BS threshold (default: 1.5 inches)
+    drho_threshold : float, optional
+        DRHO threshold (default: 0.15 g/cm³)
+
+    Returns
+    -------
+    np.ndarray
+        Boolean flag array (True = washout)
+    """
+    # Caliper criterion
+    cali_flag = (cali - bit_size) > cali_threshold
+
+    # DRHO criterion (if available)
+    if drho is not None:
+        drho_flag = np.abs(drho) > drho_threshold
+        return cali_flag | drho_flag
+
+    return cali_flag
+
+
+def generate_large_hole_flag(
+    bit_size: Union[float, np.ndarray],
+    threshold: float = DefaultParameters.LARGE_HOLE_BS
+) -> Union[bool, np.ndarray]:
+    """
+    Generate large hole flag.
+
+    Large hole is detected when bit size > threshold (default 17.5 inches).
+
+    Parameters
+    ----------
+    bit_size : float or np.ndarray
+        Bit size value(s) in inches
+    threshold : float, optional
+        Large hole threshold (default: 17.5 inches)
+
+    Returns
+    -------
+    bool or np.ndarray
+        Flag indicating large hole condition
+    """
+    return bit_size > threshold
+
+
+def generate_low_density_flag(
+    rhob: np.ndarray,
+    threshold: float = DefaultParameters.RHOB_MIN
+) -> np.ndarray:
+    """
+    Generate low density flag.
+
+    Low density is detected when RHOB < threshold (default 2.1 g/cm³).
+
+    Parameters
+    ----------
+    rhob : np.ndarray
+        Bulk density log (g/cm³)
+    threshold : float, optional
+        Low density threshold (default: 2.1 g/cm³)
+
+    Returns
+    -------
+    np.ndarray
+        Boolean flag array (True = low density)
+    """
+    return rhob < threshold
+
+
+def generate_pef_exclusion_flag(
+    pef: np.ndarray,
+    max_threshold: float = DefaultParameters.PEF_MAX,
+    min_threshold: float = DefaultParameters.PEF_MIN
+) -> np.ndarray:
+    """
+    Generate PEF exclusion flag.
+
+    PEF is excluded when:
+    - PEF > max_threshold (default 7), OR
+    - PEF < min_threshold (default 0.5)
+
+    Parameters
+    ----------
+    pef : np.ndarray
+        Photoelectric factor log
+    max_threshold : float, optional
+        Maximum PEF threshold (default: 7)
+    min_threshold : float, optional
+        Minimum PEF threshold (default: 0.5)
+
+    Returns
+    -------
+    np.ndarray
+        Boolean flag array (True = exclude PEF)
+    """
+    return (pef > max_threshold) | (pef < min_threshold)
+
+
+def generate_bad_hole_flags(
+    well: "Well",
+    bit_size: Optional[float] = None,
+    cali_threshold: float = DefaultParameters.CALI_BS_THRESHOLD,
+    drho_threshold: float = DefaultParameters.DRHO_THRESHOLD,
+    rhob_min: float = DefaultParameters.RHOB_MIN,
+    pef_max: float = DefaultParameters.PEF_MAX,
+    pef_min: float = DefaultParameters.PEF_MIN,
+    large_hole_threshold: float = DefaultParameters.LARGE_HOLE_BS
+) -> dict:
+    """
+    Generate all bad hole flags for a well.
+
+    Parameters
+    ----------
+    well : Well
+        Well object with log curves
+    bit_size : float, optional
+        Bit size in inches (uses header value if not provided)
+    cali_threshold : float, optional
+        Caliper-BS washout threshold
+    drho_threshold : float, optional
+        DRHO washout threshold
+    rhob_min : float, optional
+        Low density threshold
+    pef_max : float, optional
+        Maximum valid PEF
+    pef_min : float, optional
+        Minimum valid PEF
+    large_hole_threshold : float, optional
+        Large hole BS threshold
+
+    Returns
+    -------
+    dict
+        Dictionary of flag arrays:
+        - 'washout': Washout flag
+        - 'large_hole': Large hole flag
+        - 'low_density': Low density flag
+        - 'pef_exclusion': PEF exclusion flag
+        - 'bad_hole': Combined bad hole flag
+    """
+    n_samples = well.n_samples
+    flags = {
+        "washout": np.zeros(n_samples, dtype=bool),
+        "large_hole": np.zeros(n_samples, dtype=bool),
+        "low_density": np.zeros(n_samples, dtype=bool),
+        "pef_exclusion": np.zeros(n_samples, dtype=bool),
+    }
+
+    # Get bit size
+    if bit_size is None:
+        bit_size = well.header.bit_size
+    if bit_size is None:
+        # Try to get from BS curve
+        if "BS" in well:
+            bit_size = np.nanmean(well["BS"].data)
+
+    # Generate washout flag
+    cali = well.get("CALI")
+    drho = well.get("DRHO")
+
+    if cali is not None and bit_size is not None:
+        flags["washout"] = generate_washout_flag(
+            cali.data,
+            bit_size,
+            drho.data if drho is not None else None,
+            cali_threshold,
+            drho_threshold
+        )
+
+    # Generate large hole flag
+    if bit_size is not None:
+        flags["large_hole"] = np.full(
+            n_samples,
+            generate_large_hole_flag(bit_size, large_hole_threshold)
+        )
+
+    # Generate low density flag
+    rhob = well.get("RHOB")
+    if rhob is not None:
+        flags["low_density"] = generate_low_density_flag(rhob.data, rhob_min)
+
+    # Generate PEF exclusion flag
+    pef = well.get("PEF")
+    if pef is not None:
+        flags["pef_exclusion"] = generate_pef_exclusion_flag(
+            pef.data, pef_max, pef_min
+        )
+
+    # Combined bad hole flag
+    flags["bad_hole"] = (
+        flags["washout"] |
+        flags["large_hole"] |
+        flags["low_density"]
+    )
+
+    return flags
