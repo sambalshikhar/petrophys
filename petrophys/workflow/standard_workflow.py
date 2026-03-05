@@ -163,7 +163,7 @@ class StandardWorkflow:
 
     def _calculate_vcl(self, well: "Well") -> None:
         """Calculate clay volume."""
-        from petrophys.formation.clay_volume import VclModule
+        from petrophys.clay_volume import VclModule
 
         try:
             vcl_module = VclModule()

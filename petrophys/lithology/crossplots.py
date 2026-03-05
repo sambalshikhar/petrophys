@@ -8,7 +8,7 @@ lithology crossplots (N-D, M-N, PEF).
 from typing import Dict, Tuple, Optional
 import numpy as np
 
-from petrophys.formation.lithology.matrix_properties import (
+from petrophys.lithology.matrix_properties import (
     get_mineral_properties,
     MINERAL_PROPERTIES,
 )

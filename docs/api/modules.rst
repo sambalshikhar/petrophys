@@ -87,18 +87,13 @@ Temperature
    :undoc-members:
    :show-inheritance:
 
-Formation Module
-----------------
-
-Formation characterization tools.
-
-Clay Volume
-~~~~~~~~~~~
+Clay Volume Module
+------------------
 
 Methods: GR (linear, Larionov, Steiber, Clavier), SP, Neutron-Density.
 Final VCL is the minimum of all valid methods at each depth.
 
-.. automodule:: petrophys.formation.clay_volume
+.. automodule:: petrophys.clay_volume
    :members:
    :undoc-members:
    :show-inheritance:
@@ -108,26 +103,28 @@ Clay Resistivity (Rcl)
 
 Calculates clay resistivity by averaging deep resistivity in pure-shale zones (VCL > 0.9).
 
-.. automodule:: petrophys.formation.clay_volume.rcl
+.. automodule:: petrophys.clay_volume.rcl
    :members:
    :undoc-members:
    :show-inheritance:
 
-Lithology
-~~~~~~~~~
+Lithology Module
+----------------
 
-.. automodule:: petrophys.formation.lithology
+Multi-mineral solver and lithology determination from well logs.
+
+.. automodule:: petrophys.lithology
    :members:
    :undoc-members:
    :show-inheritance:
 
 Lithology Log (Per-Interval CSV)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Load per-interval lithology from a CSV file and build a per-depth lithology
 array for use in saturation model routing and net pay cutoffs.
 
-.. automodule:: petrophys.formation.lithology.lithology_log
+.. automodule:: petrophys.lithology.lithology_log
    :members:
    :undoc-members:
    :show-inheritance:

@@ -354,7 +354,7 @@ class DynamicWorkflow:
         well.add_curve("BAD_HOLE", flags["bad_hole"].astype(float), "", "Bad Hole Flag")
 
     def _step_vclay(self, well: "Well") -> None:
-        from petrophys.formation.clay_volume.vcl_module import VclModule
+        from petrophys.clay_volume.vcl_module import VclModule
 
         gr_min = self.config.gr_min
         gr_max = self.config.gr_max
@@ -389,13 +389,13 @@ class DynamicWorkflow:
         vcl_module.add_to_well(well, result)
 
     def _step_rcl(self, well: "Well") -> None:
-        from petrophys.formation.clay_volume.rcl import RclModule
+        from petrophys.clay_volume.rcl import RclModule
 
         rcl_module = RclModule()
         self._result.rcl_computed = rcl_module.calculate(well)
 
     def _step_lithology(self, well: "Well") -> None:
-        from petrophys.formation.lithology.lithology_module import LithologyModule
+        from petrophys.lithology.lithology_module import LithologyModule
 
         litho_module = LithologyModule()
         result = litho_module.calculate(well)
@@ -597,7 +597,7 @@ class DynamicWorkflow:
             return self._lithology_log
 
         if self.config.lithology_csv is not None:
-            from petrophys.formation.lithology.lithology_log import (
+            from petrophys.lithology.lithology_log import (
                 load_lithology_csv, build_lithology_log
             )
             intervals = load_lithology_csv(self.config.lithology_csv)

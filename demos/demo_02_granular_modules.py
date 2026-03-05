@@ -46,7 +46,7 @@ print("\n" + "=" * 60)
 print("1. CLAY VOLUME (VCL)")
 print("=" * 60)
 
-from petrophys.formation.clay_volume import calculate_vcl, vcl_from_gr, calculate_rcl
+from petrophys.clay_volume import calculate_vcl, vcl_from_gr, calculate_rcl
 
 gr_curve = well.get("GR")
 if gr_curve is not None:

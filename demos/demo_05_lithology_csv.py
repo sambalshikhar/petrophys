@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from petrophys.io import read_las
 from petrophys.qaqc.standardization import standardize_curves
-from petrophys.formation.lithology.lithology_log import (
+from petrophys.lithology.lithology_log import (
     load_lithology_csv,
     build_lithology_log,
 )

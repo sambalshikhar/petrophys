@@ -60,7 +60,7 @@ Each calculation module can be used independently for maximum flexibility.
 
 .. code-block:: python
 
-   from petrophys.formation.clay_volume import calculate_vcl, vcl_from_gr, calculate_rcl
+   from petrophys.clay_volume import calculate_vcl, vcl_from_gr, calculate_rcl
 
    # Multi-method VCL (minimum of GR, SP, N-D)
    result = calculate_vcl(well, gr_min=15, gr_max=110)
@@ -159,7 +159,7 @@ per-interval lithology CSV file:
 
 .. code-block:: python
 
-   from petrophys.formation.lithology.lithology_log import (
+   from petrophys.lithology.lithology_log import (
        load_lithology_csv, build_lithology_log
    )
 

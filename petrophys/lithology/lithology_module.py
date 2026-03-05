@@ -9,11 +9,11 @@ from typing import Optional, Dict, List
 from dataclasses import dataclass
 import numpy as np
 
-from petrophys.formation.lithology.multi_mineral_solver import (
+from petrophys.lithology.multi_mineral_solver import (
     MultiMineralSolver,
     solve_three_mineral,
 )
-from petrophys.formation.lithology.crossplots import identify_lithology_zone
+from petrophys.lithology.crossplots import identify_lithology_zone
 
 
 @dataclass
@@ -253,7 +253,7 @@ def calculate_lithology(
 
     Examples
     --------
-    >>> from petrophys.formation.lithology import calculate_lithology
+    >>> from petrophys.lithology import calculate_lithology
     >>> result = calculate_lithology(well)
     """
     module = LithologyModule(**kwargs)
