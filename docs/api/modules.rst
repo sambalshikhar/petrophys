@@ -301,6 +301,49 @@ Plotting and visualization tools.
    :undoc-members:
    :show-inheritance:
 
+Formation Module
+----------------
+
+Interval-based analysis: formation tops, zones, sub-zones, and manual intervals
+with per-interval petrophysical summaries.
+
+Interval Types
+~~~~~~~~~~~~~~
+
+Four interval types sharing a common ``Interval`` base class:
+
+- **Formation** — geological formation (with optional ``age``)
+- **Zone** — petrophysical zone (with optional ``parent_formation``)
+- **SubZone** — sub-zone within a zone (with optional ``parent_zone``)
+- **ManualInterval** — user-defined arbitrary depth interval
+
+.. automodule:: petrophys.formation.intervals
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+FormationTops Manager
+~~~~~~~~~~~~~~~~~~~~~
+
+Load, validate, query, and export collections of formation intervals.
+Supports CSV (simple, NPD, Danish formats), dictionaries, and DataFrames.
+
+.. autoclass:: petrophys.formation.tops.FormationTops
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+IntervalAnalyzer
+~~~~~~~~~~~~~~~~
+
+Per-interval petrophysical analysis: net pay, NTG, curve averages, HCPV,
+dominant lithology, and data coverage.
+
+.. automodule:: petrophys.formation.analysis
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Summation Module
 ----------------
 
@@ -311,10 +354,12 @@ Summary calculations and reporting.
    :undoc-members:
    :show-inheritance:
 
-Formation Analysis
-~~~~~~~~~~~~~~~~~~
+Formation Analysis (Legacy)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Per-formation analysis with CSV loading, zone summaries, and report export.
+For new code, prefer ``petrophys.formation`` which provides a richer interval
+type hierarchy and the ``IntervalAnalyzer`` class.
 
 .. automodule:: petrophys.summation.formation_analysis
    :members:
