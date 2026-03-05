@@ -18,16 +18,7 @@ import numpy as np
 import csv
 
 from petrophys.summation.zone_summary import ZoneSummary, calculate_zone_summary
-
-
-@dataclass
-class Formation:
-    """A geological formation interval."""
-    name: str
-    top_depth: float
-    bottom_depth: float
-    lithology: str = ""
-    age: str = ""
+from petrophys.formation.intervals import Formation
 
 
 @dataclass
