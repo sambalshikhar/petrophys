@@ -2,7 +2,7 @@
 Clay Volume (VCL) Module.
 
 This module provides multiple methods for calculating clay volume
-from well log data.
+from well log data, plus clay resistivity (Rcl) estimation.
 """
 
 from petrophys.formation.clay_volume.vcl_module import (
@@ -20,6 +20,7 @@ from petrophys.formation.clay_volume.gr_method import (
 from petrophys.formation.clay_volume.sp_method import vcl_from_sp
 from petrophys.formation.clay_volume.nd_method import vcl_from_nd
 from petrophys.formation.clay_volume.classification import classify_vcl
+from petrophys.formation.clay_volume.rcl import calculate_rcl, RclModule
 
 __all__ = [
     "VclModule",
@@ -33,4 +34,6 @@ __all__ = [
     "vcl_from_sp",
     "vcl_from_nd",
     "classify_vcl",
+    "calculate_rcl",
+    "RclModule",
 ]

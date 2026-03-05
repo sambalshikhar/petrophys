@@ -24,17 +24,32 @@ class NetPayResult:
 
 
 class NetPayModule:
-    """Net pay calculator."""
+    """
+    Net pay calculator with lithology-aware cutoffs.
+
+    Default cutoffs from design doc:
+        Net Rock:      VCL <= 0.3
+        Net Reservoir: PHIE >= 0.08 (clastics) / >= 0.045 (carbonates)
+        Net Pay:       Sw <= 0.7
+    """
 
     def __init__(
         self,
         vcl_cutoff: float = DefaultParameters.VCL_CUTOFF,
-        phie_cutoff: float = DefaultParameters.PHIE_CUTOFF_CLASTIC,
-        sw_cutoff: float = DefaultParameters.SW_CUTOFF
+        phie_cutoff: Optional[float] = None,
+        sw_cutoff: float = DefaultParameters.SW_CUTOFF,
+        lithology: str = "clastic"
     ):
         self.vcl_cutoff = vcl_cutoff
-        self.phie_cutoff = phie_cutoff
         self.sw_cutoff = sw_cutoff
+        self.lithology = lithology.lower()
+
+        if phie_cutoff is not None:
+            self.phie_cutoff = phie_cutoff
+        elif self.lithology == "carbonate":
+            self.phie_cutoff = DefaultParameters.PHIE_CUTOFF_CARBONATE
+        else:
+            self.phie_cutoff = DefaultParameters.PHIE_CUTOFF_CLASTIC
 
     def calculate(
         self,
@@ -93,10 +108,26 @@ class NetPayModule:
 def calculate_net_pay(
     well: "Well",
     vcl_cutoff: float = 0.3,
-    phie_cutoff: float = 0.08,
+    phie_cutoff: Optional[float] = None,
     sw_cutoff: float = 0.7,
+    lithology: str = "clastic",
     **kwargs
 ) -> NetPayResult:
-    """Calculate net pay for a well."""
-    module = NetPayModule(vcl_cutoff, phie_cutoff, sw_cutoff)
+    """
+    Calculate net pay for a well.
+
+    Parameters
+    ----------
+    well : Well
+        Well object
+    vcl_cutoff : float
+        VCL cutoff (default: 0.3)
+    phie_cutoff : float, optional
+        PHIE cutoff (auto-selects by lithology if not provided)
+    sw_cutoff : float
+        Sw cutoff (default: 0.7)
+    lithology : str
+        'clastic' or 'carbonate' (default: 'clastic')
+    """
+    module = NetPayModule(vcl_cutoff, phie_cutoff, sw_cutoff, lithology)
     return module.calculate(well, **kwargs)

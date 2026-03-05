@@ -95,7 +95,20 @@ Formation characterization tools.
 Clay Volume
 ~~~~~~~~~~~
 
+Methods: GR (linear, Larionov, Steiber, Clavier), SP, Neutron-Density.
+Final VCL is the minimum of all valid methods at each depth.
+
 .. automodule:: petrophys.formation.clay_volume
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Clay Resistivity (Rcl)
+~~~~~~~~~~~~~~~~~~~~~~
+
+Calculates clay resistivity by averaging deep resistivity in pure-shale zones (VCL > 0.9).
+
+.. automodule:: petrophys.formation.clay_volume.rcl
    :members:
    :undoc-members:
    :show-inheritance:
@@ -145,6 +158,9 @@ Core petrophysical calculations.
 Porosity
 ~~~~~~~~
 
+Calculates density, sonic, total (weighted N-D), effective (clay-corrected),
+and secondary porosity (fractures/vugs from sonic comparison).
+
 .. automodule:: petrophys.petrophysics.porosity
    :members:
    :undoc-members:
@@ -153,7 +169,31 @@ Porosity
 Saturation
 ~~~~~~~~~~
 
+Five water saturation models with automatic routing:
+
+- **Archie**: Clean formations (VCL < cutoff)
+- **Simandoux**: Shaly clastics, salinity >= 20 kppm
+- **Indonesia**: Shaly clastics, salinity < 20 kppm
+- **Dual Water**: Shaly carbonates
+- **Waxman-Smits**: Shaly clastics with CEC data
+
 .. automodule:: petrophys.petrophysics.saturation
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Dual Water Model
+^^^^^^^^^^^^^^^^
+
+.. automodule:: petrophys.petrophysics.saturation.dual_water
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Waxman-Smits Model
+^^^^^^^^^^^^^^^^^^
+
+.. automodule:: petrophys.petrophysics.saturation.waxman_smits
    :members:
    :undoc-members:
    :show-inheritance:
@@ -161,13 +201,25 @@ Saturation
 Permeability
 ~~~~~~~~~~~~
 
+Timur, Coates-Denoo, and Wyllie-Rose equations with impermeability detection.
+
 .. automodule:: petrophys.petrophysics.permeability
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Impermeability Detection
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. automodule:: petrophys.petrophysics.permeability.impermeable_flag
    :members:
    :undoc-members:
    :show-inheritance:
 
 HC Correction
 ~~~~~~~~~~~~~
+
+Hydrocarbon corrections using preliminary porosity approach with VCL support.
 
 .. automodule:: petrophys.petrophysics.hc_correction
    :members:
@@ -198,6 +250,8 @@ BVW (Bulk Volume Water)
 MHI (Moveable Hydrocarbon Index)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+MHI = Sxo / Sw
+
 .. automodule:: petrophys.reservoir.mhi
    :members:
    :undoc-members:
@@ -206,7 +260,25 @@ MHI (Moveable Hydrocarbon Index)
 Net Pay
 ~~~~~~~
 
+Three-stage filtering with lithology-aware cutoffs:
+Net Rock (VCL <= 0.3) -> Net Reservoir (PHIE >= cutoff) -> Net Pay (Sw <= 0.7).
+Carbonate PHIE cutoff: 0.045. Clastic PHIE cutoff: 0.08.
+
 .. automodule:: petrophys.reservoir.net_pay
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Rock Quality (RQI, FZI)
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Reservoir Quality Index, Flow Zone Indicator, and normalized porosity:
+
+- RQI = 0.0314 * sqrt(k / phi_e)
+- phi_z = phi_e / (1 - phi_e)
+- FZI = RQI / phi_z
+
+.. automodule:: petrophys.reservoir.rock_quality
    :members:
    :undoc-members:
    :show-inheritance:
@@ -235,6 +307,27 @@ Workflow Module
 ---------------
 
 Workflow orchestration and batch processing.
+
+Standard Workflow
+~~~~~~~~~~~~~~~~~
+
+Fixed-configuration pipeline for straightforward interpretation.
+
+.. automodule:: petrophys.workflow.standard_workflow
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Dynamic Workflow
+~~~~~~~~~~~~~~~~
+
+Input-aware pipeline that auto-detects available curves and runs only
+applicable modules in the correct pipeline order.
+
+.. automodule:: petrophys.workflow.dynamic_workflow
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 .. automodule:: petrophys.workflow
    :members:

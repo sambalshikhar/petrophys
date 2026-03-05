@@ -14,6 +14,7 @@ from petrophys.petrophysics.porosity.density_porosity import density_porosity
 from petrophys.petrophysics.porosity.sonic_porosity import sonic_porosity
 from petrophys.petrophysics.porosity.total_porosity import total_porosity
 from petrophys.petrophysics.porosity.effective_porosity import effective_porosity
+from petrophys.petrophysics.porosity.sonic_porosity import secondary_porosity
 
 
 @dataclass
@@ -31,12 +32,15 @@ class PorosityResult:
         Total porosity
     phie : np.ndarray
         Effective porosity
+    phi_sec : np.ndarray
+        Secondary porosity (if sonic available)
     """
 
     phid: np.ndarray
     phis: Optional[np.ndarray]
     phit: np.ndarray
     phie: np.ndarray
+    phi_sec: Optional[np.ndarray] = None
 
 
 class PorosityModule:
@@ -131,11 +135,17 @@ class PorosityModule:
         # Effective porosity
         phie = effective_porosity(phit, vcl, self.phi_clay)
 
+        # Secondary porosity (fractures, vugs, dissolution)
+        phi_sec = None
+        if phis is not None:
+            phi_sec = secondary_porosity(phis, phie)
+
         return PorosityResult(
             phid=phid,
             phis=phis,
             phit=phit,
-            phie=phie
+            phie=phie,
+            phi_sec=phi_sec
         )
 
     def add_to_well(
@@ -153,6 +163,9 @@ class PorosityModule:
 
         if result.phis is not None:
             well.add_curve("PHIS", result.phis, "v/v", "Sonic Porosity")
+
+        if result.phi_sec is not None:
+            well.add_curve("PHI_SEC", result.phi_sec, "v/v", "Secondary Porosity")
 
         return well
 

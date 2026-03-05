@@ -1,5 +1,8 @@
 """
 Main HC correction module.
+
+Applies hydrocarbon corrections to NPHI and RHOB logs using
+the design doc's preliminary porosity approach when VCL is available.
 """
 
 from typing import Optional
@@ -20,16 +23,42 @@ class HcCorrectionResult:
 class HcCorrectionModule:
     """Hydrocarbon correction for neutron and density."""
 
-    def __init__(self, hc_type: str = "oil"):
+    def __init__(
+        self,
+        hc_type: str = "oil",
+        rho_ma: float = 2.65,
+        rho_fl: float = 1.0,
+        phi_cl: float = 0.15
+    ):
         self.hc_type = hc_type
+        self.rho_ma = rho_ma
+        self.rho_fl = rho_fl
+        self.phi_cl = phi_cl
 
     def calculate(
         self,
         well: "Well",
         sxo: Optional[np.ndarray] = None,
-        phi: Optional[np.ndarray] = None
+        phi: Optional[np.ndarray] = None,
+        vcl: Optional[np.ndarray] = None
     ) -> HcCorrectionResult:
-        """Apply HC corrections to well data."""
+        """
+        Apply HC corrections to well data.
+
+        When VCL is available, uses the design doc's preliminary porosity
+        approach for more accurate corrections.
+
+        Parameters
+        ----------
+        well : Well
+            Well object with NPHI and RHOB curves
+        sxo : np.ndarray, optional
+            Flushed zone water saturation
+        phi : np.ndarray, optional
+            Porosity estimate (fallback if VCL not available)
+        vcl : np.ndarray, optional
+            Volume of clay (enables preliminary porosity approach)
+        """
         nphi = well.get("NPHI")
         rhob = well.get("RHOB")
 
@@ -40,14 +69,39 @@ class HcCorrectionModule:
             sxo_curve = well.get("SXO")
             sxo = sxo_curve.data if sxo_curve is not None else np.ones(well.n_samples)
 
-        if phi is None:
+        if vcl is None:
+            vcl_curve = well.get("VCL")
+            if vcl_curve is not None:
+                vcl = vcl_curve.data
+
+        if phi is None and vcl is None:
             phi_curve = well.get("PHIE") or well.get("PHIT")
             phi = phi_curve.data if phi_curve is not None else 0.15
 
-        nphi_hc = correct_neutron_hc(nphi.data, phi, sxo, self.hc_type)
-        rhob_hc = correct_density_hc(rhob.data, phi, sxo, 1.0, self.hc_type)
+        nphi_hc = correct_neutron_hc(
+            nphi.data, phi, sxo, self.hc_type,
+            vcl=vcl, phi_cl=self.phi_cl
+        )
+        rhob_hc = correct_density_hc(
+            rhob.data, phi, sxo, self.rho_fl, self.hc_type,
+            vcl=vcl, rho_ma=self.rho_ma
+        )
 
         return HcCorrectionResult(nphi_hc=nphi_hc, rhob_hc=rhob_hc)
+
+    def add_to_well(
+        self,
+        well: "Well",
+        result: Optional[HcCorrectionResult] = None
+    ) -> "Well":
+        """Add HC-corrected curves to well."""
+        if result is None:
+            result = self.calculate(well)
+
+        well.add_curve("NPHI_HC", result.nphi_hc, "v/v", "HC-Corrected Neutron Porosity")
+        well.add_curve("RHOB_HC", result.rhob_hc, "g/cc", "HC-Corrected Bulk Density")
+
+        return well
 
 
 def apply_hc_correction(well: "Well", hc_type: str = "oil", **kwargs) -> HcCorrectionResult:
