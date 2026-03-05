@@ -22,6 +22,7 @@ UNIT_CONVERSIONS = {
     ("%", "v/v"): 0.01,
     ("percent", "v/v"): 0.01,
     ("decimal", "v/v"): 1.0,
+    ("m3/m3", "v/v"): 1.0,
     ("v/v", "pu"): 100.0,
     ("v/v", "%"): 100.0,
 
@@ -43,6 +44,9 @@ UNIT_CONVERSIONS = {
     # Depth
     ("m", "ft"): 3.28084,
     ("ft", "m"): 0.3048,
+
+    # Gamma Ray
+    ("gapi", "api"): 1.0,
 
     # Caliper / bit size
     ("mm", "in"): 0.0393701,

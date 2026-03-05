@@ -245,9 +245,9 @@ class DynamicWorkflow:
     def _detect_available_curves(self, well: "Well") -> set:
         """Detect which curves are available in the well."""
         available = set()
-        for name in ["GR", "SP", "NPHI", "RHOB", "DTC", "RDEP", "RT",
-                      "RSHA", "RXO", "PEF", "CALI", "BS", "DRHO", "VCL",
-                      "PHIE", "PHIT", "SW", "SXO", "PERM", "TEMP"]:
+        for name in ["GR", "SP", "NPHI", "RHOB", "DTC", "DTS", "RDEP", "RT",
+                      "RSHA", "RMED", "RXO", "PEF", "CALI", "BS", "DRHO",
+                      "VCL", "PHIE", "PHIT", "SW", "SXO", "PERM", "TEMP"]:
             if well.get(name) is not None:
                 available.add(name)
         return available

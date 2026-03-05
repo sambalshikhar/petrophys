@@ -38,7 +38,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
             "DTLN", "DTL", "SLOWNESS", "BHC"],
 
     # Shear Sonic (DTS)
-    "DTS": ["DTS", "DTSM", "DT4S", "DTRS", "SHEAR"],
+    "DTS": ["DTS", "DTSM", "DT4S", "DTRS", "SHEAR", "DTE"],
 
     # Photoelectric Factor (PEF)
     "PEF": ["PE", "PEF", "PEFZ", "PEFL", "PEF8", "PHOTO"],
