@@ -10,10 +10,10 @@ from dataclasses import dataclass
 import numpy as np
 
 from petrophys.core.constants import DefaultParameters
-from petrophys.formation.clay_volume.gr_method import vcl_from_gr
-from petrophys.formation.clay_volume.sp_method import vcl_from_sp, should_use_sp
-from petrophys.formation.clay_volume.nd_method import vcl_from_nd
-from petrophys.formation.clay_volume.classification import classify_vcl
+from petrophys.clay_volume.gr_method import vcl_from_gr
+from petrophys.clay_volume.sp_method import vcl_from_sp, should_use_sp
+from petrophys.clay_volume.nd_method import vcl_from_nd
+from petrophys.clay_volume.classification import classify_vcl
 
 
 @dataclass
@@ -261,7 +261,7 @@ def calculate_vcl(
 
     Examples
     --------
-    >>> from petrophys.formation.clay_volume import calculate_vcl
+    >>> from petrophys.clay_volume import calculate_vcl
     >>> result = calculate_vcl(well, gr_min=15, gr_max=110)
     >>> well["VCL"] = result.vcl
     """

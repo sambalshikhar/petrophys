@@ -138,7 +138,7 @@ print(f"Warnings: {result.warnings}")
 # Each module can be used independently
 from petrophys.petrophysics.saturation import dual_water, waxman_smits, archie
 from petrophys.reservoir import calculate_rock_quality, calculate_rqi, calculate_fzi
-from petrophys.formation.clay_volume import calculate_rcl, vcl_from_gr
+from petrophys.clay_volume import calculate_rcl, vcl_from_gr
 from petrophys.petrophysics.permeability import flag_impermeable
 
 # Direct function calls for Sw
@@ -207,7 +207,9 @@ Each step runs only if the required input curves are available. Steps can be exp
 | `petrophys.qaqc` | Quality control (bad hole, normalization, standardization) |
 | `petrophys.environmental` | Environmental parameters (temperature profiles) |
 | `petrophys.resistivity` | Resistivity calculations (Rmf, Rw, invasion) |
-| `petrophys.formation` | Formation characterization (clay volume, Rcl, lithology) |
+| `petrophys.clay_volume` | Clay volume (GR, SP, N-D methods) and clay resistivity (Rcl) |
+| `petrophys.lithology` | Lithology determination (multi-mineral solver, crossplots, CSV intervals) |
+| `petrophys.formation` | Interval-based analysis (backward-compatible re-exports) |
 | `petrophys.petrophysics` | Core calculations (porosity, saturation, HC correction, permeability) |
 | `petrophys.reservoir` | Reservoir evaluation (BVW, MHI, net pay, rock quality) |
 | `petrophys.visualization` | Plotting and display |

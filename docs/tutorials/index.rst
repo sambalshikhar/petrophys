@@ -42,7 +42,7 @@ Clay Volume Calculation
 
 .. code-block:: python
 
-   from petrophys.formation.clay_volume import VclModule
+   from petrophys.clay_volume import VclModule
 
    # Initialize VCL calculator
    vcl_module = VclModule(

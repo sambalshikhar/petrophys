@@ -166,7 +166,7 @@ def vcl_from_gr(
 
     Examples
     --------
-    >>> from petrophys.formation.clay_volume import vcl_from_gr
+    >>> from petrophys.clay_volume import vcl_from_gr
     >>> vcl = vcl_from_gr(gr_data, gr_min=20, gr_max=100)
     """
     # Boundary enforcement rules from design doc:

@@ -3,7 +3,8 @@ Petrophys - A comprehensive petrophysics library for well log analysis.
 
 This library provides tools for:
 - Curve standardization and quality control
-- Formation evaluation (clay volume, lithology)
+- Clay volume (GR, SP, N-D methods) and clay resistivity
+- Lithology determination (multi-mineral solver, crossplots, CSV intervals)
 - Porosity calculation (density, neutron, sonic)
 - Water saturation modeling (Archie, Simandoux, Indonesia, etc.)
 - Permeability estimation
