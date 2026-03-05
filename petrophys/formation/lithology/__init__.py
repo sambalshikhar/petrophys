@@ -2,7 +2,8 @@
 Lithology Determination Module.
 
 This module provides tools for multi-mineral analysis and
-lithology determination from well logs.
+lithology determination from well logs, as well as interval-based
+lithology assignment from CSV files.
 """
 
 from petrophys.formation.lithology.lithology_module import (
@@ -23,6 +24,11 @@ from petrophys.formation.lithology.crossplots import (
     mn_crossplot_data,
     pef_crossplot_data,
 )
+from petrophys.formation.lithology.lithology_log import (
+    LithologyInterval,
+    load_lithology_csv,
+    build_lithology_log,
+)
 
 __all__ = [
     "LithologyModule",
@@ -35,4 +41,7 @@ __all__ = [
     "nd_crossplot_data",
     "mn_crossplot_data",
     "pef_crossplot_data",
+    "LithologyInterval",
+    "load_lithology_csv",
+    "build_lithology_log",
 ]

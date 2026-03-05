@@ -121,6 +121,17 @@ Lithology
    :undoc-members:
    :show-inheritance:
 
+Lithology Log (Per-Interval CSV)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Load per-interval lithology from a CSV file and build a per-depth lithology
+array for use in saturation model routing and net pay cutoffs.
+
+.. automodule:: petrophys.formation.lithology.lithology_log
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Resistivity Module
 ------------------
 
