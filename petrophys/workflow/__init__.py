@@ -8,6 +8,13 @@ from petrophys.workflow.standard_workflow import (
     WorkflowResult,
     run_standard_workflow,
 )
+from petrophys.workflow.dynamic_workflow import (
+    DynamicWorkflow,
+    DynamicWorkflowConfig,
+    DynamicWorkflowResult,
+    WorkflowStep,
+    run_dynamic_workflow,
+)
 from petrophys.workflow.quick_look import (
     QuickLook,
     quick_look_analysis,
@@ -24,6 +31,12 @@ __all__ = [
     "WorkflowConfig",
     "WorkflowResult",
     "run_standard_workflow",
+    # Dynamic workflow
+    "DynamicWorkflow",
+    "DynamicWorkflowConfig",
+    "DynamicWorkflowResult",
+    "WorkflowStep",
+    "run_dynamic_workflow",
     # Quick look
     "QuickLook",
     "quick_look_analysis",

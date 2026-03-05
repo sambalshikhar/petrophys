@@ -169,6 +169,12 @@ def vcl_from_gr(
     >>> from petrophys.formation.clay_volume import vcl_from_gr
     >>> vcl = vcl_from_gr(gr_data, gr_min=20, gr_max=100)
     """
+    # Boundary enforcement rules from design doc:
+    # If calculated GR_max < 100 → force GR_max = 100
+    # If calculated GR_min > 20  → force GR_min = 20
+    gr_max = max(gr_max, 100.0)
+    gr_min = min(gr_min, 20.0)
+
     # First calculate linear index
     igr = vcl_linear(gr, gr_min, gr_max)
 

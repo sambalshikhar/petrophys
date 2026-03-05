@@ -5,6 +5,7 @@ This umbrella module contains tools for:
 - Bulk Volume Water (BVW)
 - Moveable Hydrocarbon Index (MHI)
 - Net Pay determination
+- Rock Quality (RQI, FZI, phi_z)
 """
 
 from petrophys.reservoir.bvw import calculate_bvw, BvwModule
@@ -13,6 +14,14 @@ from petrophys.reservoir.net_pay import (
     calculate_net_pay,
     NetPayModule,
     NetPayResult,
+)
+from petrophys.reservoir.rock_quality import (
+    RockQualityModule,
+    RockQualityResult,
+    calculate_rock_quality,
+    calculate_rqi,
+    calculate_phi_z,
+    calculate_fzi,
 )
 
 __all__ = [
@@ -23,4 +32,10 @@ __all__ = [
     "calculate_net_pay",
     "NetPayModule",
     "NetPayResult",
+    "RockQualityModule",
+    "RockQualityResult",
+    "calculate_rock_quality",
+    "calculate_rqi",
+    "calculate_phi_z",
+    "calculate_fzi",
 ]
