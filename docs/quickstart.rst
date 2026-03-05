@@ -315,39 +315,52 @@ Visualization
    plot = create_pickett_plot(well, rw=0.05)
    plot.show()
 
-Zone Summaries
---------------
+Interval-Based Analysis (Formation Module)
+-------------------------------------------
+
+The formation module provides a unified framework for analyzing well data by
+**formations**, **zones**, **sub-zones**, or **manual depth intervals**.
+
+Interval Types
+~~~~~~~~~~~~~~
+
+Four interval types share a common base class with ``name``, ``top_depth``,
+``bottom_depth``, ``lithology``, and computed ``thickness``:
 
 .. code-block:: python
 
-   from petrophys.summation import calculate_zone_summary
+   from petrophys.formation import (
+       Formation, Zone, SubZone, ManualInterval, IntervalKind
+   )
 
-   zones = [
-       {"name": "Zone A", "top": 8000, "bottom": 8100},
-       {"name": "Zone B", "top": 8100, "bottom": 8200},
-   ]
+   # Formation — geological unit (with optional age)
+   fm = Formation("Brent Group", top_depth=2841.0, bottom_depth=2958.0,
+                  lithology="clastic", age="Middle Jurassic")
 
-   for zone in zones:
-       summary = calculate_zone_summary(
-           well,
-           top_depth=zone["top"],
-           bottom_depth=zone["bottom"],
-           zone_name=zone["name"]
-       )
+   # Zone — petrophysical zone within a formation
+   z = Zone("Brent Upper", top_depth=2841.0, bottom_depth=2900.0,
+            parent_formation="Brent Group")
 
-       print(f"\n{summary.zone_name}:")
-       print(f"  Gross: {summary.gross_thickness:.1f} ft")
-       print(f"  Net Pay: {summary.net_pay:.1f} ft")
-       print(f"  NTG: {summary.ntg:.1%}")
-       print(f"  Avg PHIE: {summary.avg_phie:.3f}")
-       print(f"  Avg Sw: {summary.avg_sw:.3f}")
+   # Sub-zone — finer subdivision
+   sz = SubZone("Brent Upper A", top_depth=2841.0, bottom_depth=2870.0,
+                parent_zone="Brent Upper")
 
-Formation-Level Analysis
-------------------------
+   # Manual — arbitrary user-defined interval
+   mi = ManualInterval("Test Interval", top_depth=2500.0, bottom_depth=2600.0)
 
-Analyze per-formation summaries using a LAS file and a formations CSV.
+   # Common interface
+   print(fm.thickness)        # 117.0
+   print(fm.contains(2900))   # True
+   print(fm.overlaps(z))      # True
+   print(fm.kind)             # IntervalKind.FORMATION
 
-**Simple CSV format** (``formations.csv``):
+Loading Formation Tops from CSV
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``FormationTops`` class loads, validates, and manages collections of
+intervals from multiple CSV formats.
+
+**Simple CSV** (``formations.csv``):
 
 .. code-block:: text
 
@@ -356,7 +369,319 @@ Analyze per-formation summaries using a LAS file and a formations CSV.
    Draupne Fm.,2452.0,2593.0,Shale
    Brent Group,2841.0,2958.0,Sandstone
 
-**One-call convenience function:**
+**NPD stratigraphic picks** (``npd_picks.csv``):
+
+.. code-block:: text
+
+   Well identifier,Surface,MD,Geological age
+   30/6-5,BALDER FM Top,1908.0,Eocene
+   30/6-5,DRAUPNE FM Top,2452.0,Late Jurassic
+
+**Danish format** (``danish.csv``):
+
+.. code-block:: text
+
+   wellName,formationName,topDepth,bottomDepth,majorityLithology
+   Well-1,Chalk,1200.0,1800.0,Limestone
+   Well-1,Bunter,1800.0,2400.0,Sandstone
+
+.. code-block:: python
+
+   from petrophys.formation import FormationTops
+
+   # Auto-detect format from column headers
+   tops = FormationTops.from_csv("formations.csv")
+
+   # NPD format — filter by well name
+   tops = FormationTops.from_csv("npd_picks.csv", well_name="30/6-5", format="npd")
+
+   # Danish format — filter by well name
+   tops = FormationTops.from_csv("danish.csv", well_name="Well-1", format="danish")
+
+   # Load as Zone intervals instead of Formation
+   from petrophys.formation import IntervalKind
+   zone_tops = FormationTops.from_csv(
+       "zones.csv", interval_kind=IntervalKind.ZONE
+   )
+
+Loading from Dictionaries and DataFrames
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   # From a list of dicts
+   tops = FormationTops.from_dict([
+       {"name": "Balder", "top_depth": 1908, "bottom_depth": 2023, "lithology": "clastic"},
+       {"name": "Brent",  "top_depth": 2841, "bottom_depth": 2958, "lithology": "clastic"},
+   ])
+
+   # From a pandas DataFrame
+   import pandas as pd
+   df = pd.DataFrame({
+       "name": ["Upper", "Middle", "Lower"],
+       "top_depth": [2000, 2200, 2400],
+       "bottom_depth": [2200, 2400, 2600],
+       "lithology": ["clastic", "carbonate", "clastic"],
+   })
+   tops = FormationTops.from_dataframe(df)
+
+Validation and Querying
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Validate — raises ValueError if overlapping intervals exist
+   tops.validate()
+
+   # Or check without raising
+   if tops.has_overlaps():
+       issues = tops.find_overlaps()
+       for issue in issues:
+           print(issue)
+
+   # Query by name (case-insensitive)
+   fm = tops.get_by_name("Brent Group")
+
+   # Query by depth — returns all intervals containing this depth
+   at_depth = tops.get_at_depth(2900.0)
+
+   # Query by range — returns intervals overlapping [top, bottom]
+   in_range = tops.get_in_range(2800.0, 3000.0)
+
+   # Filter by kind
+   formations_only = tops.filter_by_kind(IntervalKind.FORMATION)
+
+   # Clip to well depth range (removes/trims intervals outside well)
+   clipped = tops.clip_to_well(well)
+
+   # Collection interface
+   print(len(tops))        # number of intervals
+   print(tops.names)       # list of interval names
+   print(tops[0])          # first interval (by index)
+   print(tops["Brent"])    # by name
+
+   # Add / remove
+   tops.add(Formation("New Fm", 3000, 3200))
+   tops.remove("New Fm")
+
+   # Export
+   tops.to_csv("exported_tops.csv")
+   df = tops.to_dataframe()
+
+Per-Interval Analysis
+~~~~~~~~~~~~~~~~~~~~~
+
+The ``IntervalAnalyzer`` computes per-interval summaries including net pay,
+NTG, pay-zone averages, whole-interval curve averages, dominant lithology,
+and data coverage.
+
+**Single interval:**
+
+.. code-block:: python
+
+   from petrophys.formation import IntervalAnalyzer, Formation
+
+   # Analyze a single formation (well must have computed curves)
+   analyzer = IntervalAnalyzer(well)
+   summary = analyzer.analyze(Formation("Brent", 2841, 2958))
+
+   # Access zone summary (net pay, NTG, pay averages)
+   zs = summary.zone_summary
+   print(f"Gross:    {zs.gross_thickness:.1f} ft")
+   print(f"Net Rock: {zs.net_rock:.1f} ft")
+   print(f"Net Res:  {zs.net_reservoir:.1f} ft")
+   print(f"Net Pay:  {zs.net_pay:.1f} ft")
+   print(f"NTG:      {zs.ntg:.1%}")
+   print(f"Avg PHIE: {zs.avg_phie:.3f}")
+   print(f"Avg Sw:   {zs.avg_sw:.3f}")
+   print(f"HCPV:     {zs.hcpv:.2f}")
+
+   # Whole-interval averages
+   print(f"Avg GR:   {summary.avg_gr:.1f}")
+   print(f"Lithology: {summary.dominant_lithology}")
+   print(f"Coverage: {summary.data_coverage_pct:.1f}%")
+
+**Convenience function for one-shot analysis:**
+
+.. code-block:: python
+
+   from petrophys.formation import analyze_interval, ManualInterval
+
+   summary = analyze_interval(
+       well,
+       ManualInterval("Test Zone", 2500, 2700),
+   )
+
+**Analyze all formations from CSV:**
+
+.. code-block:: python
+
+   from petrophys.formation import FormationTops, IntervalAnalyzer
+
+   tops = FormationTops.from_csv("formations.csv")
+   analyzer = IntervalAnalyzer(well)
+
+   # Analyze all (auto-clips to well depth range)
+   summaries = analyzer.analyze_all(tops)
+
+   # Print formatted report
+   IntervalAnalyzer.print_report(summaries)
+
+   # Export to CSV
+   IntervalAnalyzer.to_csv(summaries, "interval_results.csv")
+
+   # As pandas DataFrame
+   df = IntervalAnalyzer.to_dataframe(summaries)
+
+**Mixed interval types (formations + zones + manual):**
+
+.. code-block:: python
+
+   from petrophys.formation import (
+       FormationTops, Formation, Zone, SubZone, ManualInterval,
+       IntervalAnalyzer,
+   )
+
+   tops = FormationTops([
+       Formation("Brent Group", 2841, 2958, lithology="clastic"),
+       Zone("Brent Upper", 2841, 2900, parent_formation="Brent Group"),
+       Zone("Brent Lower", 2900, 2958, parent_formation="Brent Group"),
+       SubZone("Brent Upper A", 2841, 2870, parent_zone="Brent Upper"),
+       ManualInterval("Pay Zone", 2860, 2930),
+   ])
+
+   analyzer = IntervalAnalyzer(well)
+   summaries = analyzer.analyze_all(tops)
+   IntervalAnalyzer.print_report(summaries)
+
+**Custom net-pay curve names:**
+
+.. code-block:: python
+
+   # If your workflow uses different curve names
+   analyzer = IntervalAnalyzer(
+       well,
+       net_pay_curve="MY_NET_PAY",
+       net_reservoir_curve="MY_NET_RES",
+       net_rock_curve="MY_NET_ROCK",
+   )
+
+Full Workflow: LAS + Lithology CSV + Formation Analysis
+-------------------------------------------------------
+
+Complete end-to-end example combining all inputs: LAS file, per-interval
+lithology CSV, and formation/zone/sub-zone hierarchy.
+
+.. code-block:: python
+
+   from petrophys.io import read_las
+   from petrophys.qaqc.standardization import standardize_curves
+   from petrophys.workflow import run_dynamic_workflow, DynamicWorkflowConfig
+   from petrophys.formation import (
+       FormationTops, Formation, Zone, SubZone, ManualInterval,
+       IntervalAnalyzer, IntervalKind,
+   )
+
+   # ── 1. Load and standardize ──
+   well = read_las("30_6-5.las")
+   well = standardize_curves(well, rename_curves=True, convert_units=True)
+
+   # ── 2. Run workflow with per-interval lithology ──
+   #    Lithology CSV drives:
+   #    - Sw model routing (chalk -> Dual Water, sandstone -> Simandoux)
+   #    - Net pay PHIE cutoffs (carbonate: 0.045, clastic: 0.08)
+   config = DynamicWorkflowConfig(
+       bht_f=250.0, td_ft=11667.0, surface_temp_f=40.0,
+       rw=0.03, salinity_ppm=35000,
+       lithology="clastic",
+       lithology_csv="lithology_30_6-5.csv",
+       matrix_type="sandstone",
+       hc_type="oil",
+   )
+   result = run_dynamic_workflow(well, config)
+
+   # ── 3. Build interval hierarchy ──
+   tops = FormationTops([
+       # Formations
+       Formation("ROGALAND GP.", 1908, 2203, lithology="clastic"),
+       Formation("SHETLAND GP.", 2203, 2408, lithology="carbonate"),
+       Formation("VIKING GP.", 2452, 2841, lithology="clastic"),
+       Formation("BAAT GP.", 2841, 2958, lithology="clastic"),
+       Formation("DUNLIN GP.", 2958, 3223, lithology="clastic"),
+
+       # Zones within BAAT GP.
+       Zone("Ness Fm.", 2841, 2865, parent_formation="BAAT GP."),
+       Zone("Etive Fm.", 2865, 2920, parent_formation="BAAT GP."),
+       Zone("Rannoch Fm.", 2920, 2958, parent_formation="BAAT GP."),
+
+       # Sub-zones within Etive Fm.
+       SubZone("Etive Upper", 2865, 2890, parent_zone="Etive Fm."),
+       SubZone("Etive Lower", 2890, 2920, parent_zone="Etive Fm."),
+
+       # Manual: DST test interval spanning zone boundaries
+       ManualInterval("DST #1", 2855, 2930),
+   ])
+
+   # ── 4. Analyze all intervals ──
+   analyzer = IntervalAnalyzer(well)
+   summaries = analyzer.analyze_all(tops)
+
+   # ── 5. Report ──
+   IntervalAnalyzer.print_report(summaries)
+
+   # ── 6. Per-level summaries ──
+   df = IntervalAnalyzer.to_dataframe(summaries)
+
+   for level in ["formation", "zone", "sub_zone", "manual"]:
+       level_df = df[df["Kind"] == level]
+       if not level_df.empty:
+           print(f"\n--- {level.upper()} level ---")
+           print(level_df[["Name", "Gross", "Net Pay", "NTG",
+                           "Avg PHIE", "Avg Sw", "Dominant Lithology"
+                           ]].to_string(index=False))
+
+   # ── 7. Export ──
+   IntervalAnalyzer.to_csv(summaries, "full_analysis_results.csv")
+
+Or load formations from a CSV instead of building manually:
+
+.. code-block:: python
+
+   # Load from CSV + add zones programmatically
+   fm_tops = FormationTops.from_csv("formations_30_6-5.csv")
+
+   zones = FormationTops.from_dict([
+       {"name": "Ness Fm.", "top_depth": 2841, "bottom_depth": 2865},
+       {"name": "Etive Fm.", "top_depth": 2865, "bottom_depth": 2920},
+       {"name": "Rannoch Fm.", "top_depth": 2920, "bottom_depth": 2958},
+   ], interval_kind=IntervalKind.ZONE)
+
+   # Merge
+   all_intervals = FormationTops(fm_tops.intervals + zones.intervals)
+   summaries = IntervalAnalyzer(well).analyze_all(all_intervals)
+
+Zone Summaries (Low-Level)
+--------------------------
+
+For quick zone summaries without the formation module, use the summation module:
+
+.. code-block:: python
+
+   from petrophys.summation import calculate_zone_summary
+
+   summary = calculate_zone_summary(
+       well, top_depth=8000, bottom_depth=8100, zone_name="Zone A"
+   )
+
+   print(f"Net Pay: {summary.net_pay:.1f} ft")
+   print(f"NTG: {summary.ntg:.1%}")
+
+Legacy Formation Analysis
+-------------------------
+
+The ``petrophys.summation`` module still provides the original formation
+analysis functions for backward compatibility. For new code, prefer the
+``petrophys.formation`` module above.
 
 .. code-block:: python
 
@@ -370,38 +695,8 @@ Analyze per-formation summaries using a LAS file and a formations CSV.
        lithology="clastic",
    )
 
-   # Formatted report
    result.print_report()
-
-   # Export to CSV
    result.to_csv("formation_results.csv")
-
-   # As pandas DataFrame
-   df = result.to_dataframe()
-
-**Step-by-step approach:**
-
-.. code-block:: python
-
-   from petrophys.summation import load_formations_csv, analyze_formations
-
-   # Load formations from CSV (auto-detects format)
-   formations = load_formations_csv("formations.csv")
-
-   # Or from NPD stratigraphic picks (filters by well name)
-   formations = load_formations_csv(
-       "npd_picks.csv",
-       well_name="30/6-5",
-       format="npd"
-   )
-
-   # Analyze (well must have computed curves from workflow)
-   result = analyze_formations(well, formations)
-
-   for s in result.summaries:
-       print(f"{s.formation.name}: NTG={s.zone_summary.ntg:.1%}, "
-             f"PHIE={s.zone_summary.avg_phie:.3f}, "
-             f"Sw={s.zone_summary.avg_sw:.3f}")
 
 **Supported CSV formats:**
 

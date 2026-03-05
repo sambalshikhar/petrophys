@@ -22,6 +22,7 @@ Features
 * **Permeability**: Timur, Coates-Denoo, Wyllie-Rose equations with impermeability detection
 * **Rock Quality**: RQI, FZI, and normalized porosity (phi_z)
 * **Net Pay**: Lithology-aware cutoff-based determination (clastic/carbonate)
+* **Formation Analysis**: Interval-based summaries for formations, zones, sub-zones, and manual intervals with CSV loading (simple, NPD, Danish)
 * **Dynamic Workflow**: Auto-detects available curves and runs only applicable modules
 * **Visualization**: Log plots, crossplots, Pickett plots
 
