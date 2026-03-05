@@ -303,6 +303,16 @@ Summary calculations and reporting.
    :undoc-members:
    :show-inheritance:
 
+Formation Analysis
+~~~~~~~~~~~~~~~~~~
+
+Per-formation analysis with CSV loading, zone summaries, and report export.
+
+.. automodule:: petrophys.summation.formation_analysis
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Workflow Module
 ---------------
 

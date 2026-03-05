@@ -20,6 +20,7 @@ A comprehensive petrophysics library for well log analysis and formation evaluat
 - **Rock Quality**: Reservoir Quality Index (RQI), Flow Zone Indicator (FZI), normalized porosity (phi_z)
 - **Reservoir Characterization**: Net pay (lithology-aware cutoffs), BVW, MHI calculations
 - **Dynamic Workflow**: Input-aware pipeline that auto-detects available curves and runs applicable modules
+- **Formation Analysis**: Per-formation summaries from CSV tops (simple, NPD, Danish formats) with report export
 - **Visualization**: Log plots, crossplots, interpretation displays
 
 ## Installation
@@ -208,7 +209,7 @@ Each step runs only if the required input curves are available. Steps can be exp
 | `petrophys.petrophysics` | Core calculations (porosity, saturation, HC correction, permeability) |
 | `petrophys.reservoir` | Reservoir evaluation (BVW, MHI, net pay, rock quality) |
 | `petrophys.visualization` | Plotting and display |
-| `petrophys.summation` | Summary and reporting |
+| `petrophys.summation` | Summary, reporting, and formation-level analysis |
 | `petrophys.workflow` | Workflow orchestration (standard, dynamic, batch) |
 
 ## Documentation
