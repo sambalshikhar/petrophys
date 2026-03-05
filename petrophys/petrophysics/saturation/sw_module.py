@@ -6,12 +6,15 @@ model selection based on formation properties: VCL, lithology,
 CEC availability, and salinity.
 
 Decision flowchart:
-    VCL < cutoff → CLEAN → Archie
-    VCL >= cutoff → SHALY:
-        Carbonate → Dual Water
-        Clastic + CEC available → Waxman-Smits
-        Clastic + salinity >= 20 kppm → Simandoux
-        Clastic + salinity < 20 kppm → Indonesia
+    VCL < cutoff -> CLEAN -> Archie
+    VCL >= cutoff -> SHALY:
+        Carbonate -> Dual Water
+        Clastic + CEC available -> Waxman-Smits
+        Clastic + salinity >= 20 kppm -> Simandoux
+        Clastic + salinity < 20 kppm -> Indonesia
+
+Lithology can be a single string (applied globally) or a per-depth
+numpy array for interval-based lithology control.
 """
 
 from typing import Optional, Union
@@ -49,7 +52,7 @@ class SaturationResult:
     sxo : np.ndarray
         Water saturation (flushed zone)
     model : str
-        Model used for calculation
+        Model used for calculation (or "mixed" if per-depth lithology)
     """
 
     sw: np.ndarray
@@ -62,12 +65,15 @@ class SaturationModule:
     Water saturation calculator with automatic model selection.
 
     Model selection criteria (from design doc flowchart):
-    - VCL < vcl_cutoff → CLEAN → Archie
-    - VCL >= vcl_cutoff → SHALY:
-      - Carbonate → Dual Water
-      - Clastic + CEC available → Waxman-Smits
-      - Clastic + salinity >= 20 kppm → Simandoux
-      - Clastic + salinity < 20 kppm → Indonesia
+    - VCL < vcl_cutoff -> CLEAN -> Archie
+    - VCL >= vcl_cutoff -> SHALY:
+      - Carbonate -> Dual Water
+      - Clastic + CEC available -> Waxman-Smits
+      - Clastic + salinity >= 20 kppm -> Simandoux
+      - Clastic + salinity < 20 kppm -> Indonesia
+
+    Lithology may be a single string or a per-depth numpy array.
+    When per-depth, the routing logic is applied per-interval.
 
     Parameters
     ----------
@@ -112,7 +118,7 @@ class SaturationModule:
         vcl: Optional[np.ndarray] = None,
         phie: Optional[np.ndarray] = None,
         phit: Optional[np.ndarray] = None,
-        lithology: str = "clastic",
+        lithology: Union[str, np.ndarray] = "clastic",
         cec: Optional[float] = None,
         b_coeff: Optional[float] = None,
         rho_ma: float = 2.65,
@@ -141,8 +147,8 @@ class SaturationModule:
             Effective porosity
         phit : np.ndarray, optional
             Total porosity (required for Dual Water / Waxman-Smits)
-        lithology : str, optional
-            'clastic' or 'carbonate' (default: 'clastic')
+        lithology : str or np.ndarray, optional
+            'clastic' or 'carbonate' globally, or per-depth array
         cec : float, optional
             Cation exchange capacity (for Waxman-Smits, meq/100g)
         b_coeff : float, optional
@@ -187,42 +193,95 @@ class SaturationModule:
         if rcl is None:
             rcl = self._estimate_rcl(rt.data, vcl)
 
-        # Select model
-        model = self._select_model(vcl, salinity, lithology, cec)
-
-        # Calculate Sw
-        if model == SwModel.ARCHIE:
-            sw = archie(rt.data, rw, phie, self.a, self.m, self.n)
-
-        elif model == SwModel.SIMANDOUX:
-            sw = simandoux(rt.data, rw, phie, vcl, rcl, self.a, self.m, self.n)
-
-        elif model == SwModel.INDONESIA:
-            sw = indonesia(rt.data, rw, phie, vcl, rcl, self.a, self.m, self.n)
-
-        elif model == SwModel.DUAL_WATER:
-            if rwb is None:
-                rwb = rw * 0.3
-            sw = dual_water(
-                phit, phie, rt.data, rw, rwb, vcl, phi_cl,
-                self.a, self.m, self.n
+        # Check if per-depth lithology routing is needed
+        if isinstance(lithology, np.ndarray) and self.model == "auto":
+            sw, model_name = self._calculate_per_depth(
+                rt.data, rw, rcl, salinity, vcl, phie, phit,
+                lithology, cec, b_coeff, rho_ma, m_star, rwb, phi_cl
             )
-
-        elif model == SwModel.WAXMAN_SMITS:
-            sw = waxman_smits(
-                phit, rt.data, rw, cec, rho_ma, b_coeff,
-                m_star, self.n
-            )
-
         else:
-            sw = archie(rt.data, rw, phie, self.a, self.m, self.n)
+            # Single model for entire well
+            model = self._select_model(vcl, salinity,
+                                       lithology if isinstance(lithology, str) else "clastic",
+                                       cec)
+            sw = self._run_model(model, rt.data, rw, rcl, vcl, phie, phit,
+                                 cec, b_coeff, rho_ma, m_star, rwb, phi_cl)
+            model_name = model.value
 
         # Calculate Sxo if Rmf available
         sxo = None
         if rxo is not None and rmf is not None:
             sxo = calculate_sxo(rxo.data, rmf, phie, self.a, self.m, self.n)
 
-        return SaturationResult(sw=sw, sxo=sxo, model=model.value)
+        return SaturationResult(sw=sw, sxo=sxo, model=model_name)
+
+    def _calculate_per_depth(
+        self,
+        rt: np.ndarray, rw: float, rcl: float,
+        salinity: Optional[float],
+        vcl: np.ndarray, phie: np.ndarray, phit: np.ndarray,
+        lithology: np.ndarray,
+        cec, b_coeff, rho_ma, m_star, rwb, phi_cl
+    ):
+        """Calculate Sw with per-depth lithology routing (vectorized by interval)."""
+        sw = np.full_like(rt, np.nan)
+        models_used = set()
+
+        # Process each unique lithology
+        unique_liths = np.unique(lithology)
+        for lith in unique_liths:
+            lith_str = str(lith).lower()
+            mask = np.array([str(v).lower() == lith_str for v in lithology])
+
+            if not np.any(mask):
+                continue
+
+            model = self._select_model(vcl[mask], salinity, lith_str, cec)
+            models_used.add(model.value)
+
+            sw_segment = self._run_model(
+                model, rt[mask], rw, rcl,
+                vcl[mask], phie[mask], phit[mask],
+                cec, b_coeff, rho_ma, m_star, rwb, phi_cl
+            )
+            sw[mask] = sw_segment
+
+        model_name = "+".join(sorted(models_used)) if len(models_used) > 1 else (
+            models_used.pop() if models_used else "archie"
+        )
+        return sw, model_name
+
+    def _run_model(
+        self, model: SwModel,
+        rt, rw, rcl, vcl, phie, phit,
+        cec, b_coeff, rho_ma, m_star, rwb, phi_cl
+    ) -> np.ndarray:
+        """Run a specific Sw model."""
+        if model == SwModel.ARCHIE:
+            return archie(rt, rw, phie, self.a, self.m, self.n)
+
+        elif model == SwModel.SIMANDOUX:
+            return simandoux(rt, rw, phie, vcl, rcl, self.a, self.m, self.n)
+
+        elif model == SwModel.INDONESIA:
+            return indonesia(rt, rw, phie, vcl, rcl, self.a, self.m, self.n)
+
+        elif model == SwModel.DUAL_WATER:
+            if rwb is None:
+                rwb = rw * 0.3
+            return dual_water(
+                phit, phie, rt, rw, rwb, vcl, phi_cl,
+                self.a, self.m, self.n
+            )
+
+        elif model == SwModel.WAXMAN_SMITS:
+            return waxman_smits(
+                phit, rt, rw, cec, rho_ma, b_coeff,
+                m_star, self.n
+            )
+
+        else:
+            return archie(rt, rw, phie, self.a, self.m, self.n)
 
     def _select_model(
         self,
@@ -235,12 +294,12 @@ class SaturationModule:
         Select saturation model based on formation properties.
 
         Decision logic (from design doc flowchart):
-        - VCL < cutoff → Archie (clean)
-        - VCL >= cutoff → Shaly:
-          - Carbonate → Dual Water
-          - Clastic + CEC → Waxman-Smits
-          - Clastic + salinity >= 20 kppm → Simandoux
-          - Clastic + salinity < 20 kppm → Indonesia
+        - VCL < cutoff -> Archie (clean)
+        - VCL >= cutoff -> Shaly:
+          - Carbonate -> Dual Water
+          - Clastic + CEC -> Waxman-Smits
+          - Clastic + salinity >= 20 kppm -> Simandoux
+          - Clastic + salinity < 20 kppm -> Indonesia
         """
         if self.model != "auto":
             return SwModel(self.model)

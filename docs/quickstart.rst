@@ -142,6 +142,60 @@ Each calculation module can be used independently for maximum flexibility.
    # Carbonates: PHIE cutoff = 0.045
    result = calculate_net_pay(well, lithology="carbonate")
 
+Per-Interval Lithology from CSV
+--------------------------------
+
+Drive lithology-dependent calculations (Sw routing, net pay cutoffs) with a
+per-interval lithology CSV file:
+
+.. code-block:: text
+
+   top,bottom,lithology
+   200.0,1500.0,sandstone
+   1500.0,2200.0,chalk
+   2200.0,3500.0,sandstone
+
+**Standalone usage:**
+
+.. code-block:: python
+
+   from petrophys.formation.lithology.lithology_log import (
+       load_lithology_csv, build_lithology_log
+   )
+
+   # Load intervals (auto-detects columns, normalizes lithology names)
+   intervals = load_lithology_csv("lithology.csv")
+
+   # Build per-depth array
+   litho_log = build_lithology_log(well.depth, intervals)
+
+   # Use with Sw module (per-depth model routing)
+   from petrophys.petrophysics.saturation import calculate_sw
+   sw = calculate_sw(well, rw=0.05, lithology=litho_log, salinity=25000)
+
+   # Use with Net Pay (per-depth PHIE cutoffs)
+   from petrophys.reservoir import calculate_net_pay
+   result = calculate_net_pay(well, lithology=litho_log)
+
+**With dynamic workflow:**
+
+.. code-block:: python
+
+   config = DynamicWorkflowConfig(
+       rw=0.05,
+       salinity_ppm=25000,
+       lithology="clastic",             # default for uncovered depths
+       lithology_csv="lithology.csv",   # per-interval lithology
+   )
+   result = run_dynamic_workflow(well, config)
+
+   # LITHO_CLASS curve is added to well automatically
+
+Lithology names are normalized automatically:
+``sandstone/sand/sst`` → ``clastic``,
+``limestone/chalk/dolomite`` → ``carbonate``,
+``shale/mudstone/marl`` → ``clastic``.
+
 Standard Workflow
 -----------------
 

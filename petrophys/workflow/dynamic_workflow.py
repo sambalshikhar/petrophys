@@ -19,7 +19,7 @@ Pipeline execution order (from design doc):
     Module 10: Net Pay
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass, field
 from enum import Enum
 import numpy as np
@@ -80,6 +80,7 @@ class DynamicWorkflowConfig:
 
     # Lithology
     lithology: str = "clastic"  # clastic or carbonate
+    lithology_csv: Optional[str] = None  # Path to lithology CSV (top, bottom, lithology)
 
     # Archie parameters
     a: float = 1.0
@@ -176,6 +177,7 @@ class DynamicWorkflow:
     def __init__(self, config: Optional[DynamicWorkflowConfig] = None):
         self.config = config or DynamicWorkflowConfig()
         self._result: Optional[DynamicWorkflowResult] = None
+        self._lithology_log: Optional[np.ndarray] = None
 
     def run(self, well: "Well") -> DynamicWorkflowResult:
         """
@@ -501,13 +503,15 @@ class DynamicWorkflow:
             vcl_cutoff=self.config.vcl_cutoff
         )
 
+        lithology = self._build_lithology_log(well)
+
         result = sw_module.calculate(
             well,
             rw=self._result.rw_computed,
             rcl=self._result.rcl_computed,
             salinity=self.config.salinity_ppm,
             rmf=self._result.rmf_computed,
-            lithology=self.config.lithology,
+            lithology=lithology,
             cec=self.config.cec,
             b_coeff=self.config.b_coeff,
             rho_ma=self.config.rho_ma or 2.65,
@@ -574,16 +578,40 @@ class DynamicWorkflow:
     def _step_net_pay(self, well: "Well") -> None:
         from petrophys.reservoir.net_pay.net_pay_module import NetPayModule
 
+        lithology = self._build_lithology_log(well)
+
         np_module = NetPayModule(
             vcl_cutoff=self.config.vcl_cutoff,
             phie_cutoff=self.config.phie_cutoff,
             sw_cutoff=self.config.sw_cutoff,
-            lithology=self.config.lithology
+            lithology=lithology
         )
         result = np_module.calculate(well)
         np_module.add_to_well(well, result)
 
     # ---- Helpers ----
+
+    def _build_lithology_log(self, well: "Well") -> Union[str, np.ndarray]:
+        """Build per-depth lithology from CSV or return global string."""
+        if self._lithology_log is not None:
+            return self._lithology_log
+
+        if self.config.lithology_csv is not None:
+            from petrophys.formation.lithology.lithology_log import (
+                load_lithology_csv, build_lithology_log
+            )
+            intervals = load_lithology_csv(self.config.lithology_csv)
+            depth = well.depth
+            self._lithology_log = build_lithology_log(
+                depth, intervals, default_lithology=self.config.lithology
+            )
+            # Add LITHO_CLASS curve to well
+            well.add_curve(
+                "LITHO_CLASS", self._lithology_log, "", "Lithology Classification"
+            )
+            return self._lithology_log
+
+        return self.config.lithology
 
     def _get_avg_formation_temp(self, well: "Well") -> float:
         """Get average formation temperature."""

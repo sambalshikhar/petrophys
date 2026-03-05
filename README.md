@@ -21,6 +21,7 @@ A comprehensive petrophysics library for well log analysis and formation evaluat
 - **Reservoir Characterization**: Net pay (lithology-aware cutoffs), BVW, MHI calculations
 - **Dynamic Workflow**: Input-aware pipeline that auto-detects available curves and runs applicable modules
 - **Formation Analysis**: Per-formation summaries from CSV tops (simple, NPD, Danish formats) with report export
+- **Per-Interval Lithology**: CSV-driven per-depth lithology for Sw model routing and net pay cutoffs
 - **Visualization**: Log plots, crossplots, interpretation displays
 
 ## Installation
@@ -108,7 +109,8 @@ config = DynamicWorkflowConfig(
     salinity_ppm=25000,
 
     # Lithology controls Sw model routing and net pay cutoffs
-    lithology="clastic",     # or "carbonate"
+    lithology="clastic",              # or "carbonate"
+    lithology_csv="lithology.csv",    # per-interval lithology (optional)
     matrix_type="sandstone",
 
     # HC correction
