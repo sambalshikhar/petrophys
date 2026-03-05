@@ -23,6 +23,14 @@ from petrophys.summation.hydrocarbon_pore_volume import (
     calculate_ooip,
     calculate_ogip,
 )
+from petrophys.summation.formation_analysis import (
+    Formation,
+    FormationSummary,
+    FormationAnalysisResult,
+    load_formations_csv,
+    analyze_formations,
+    run_formation_analysis,
+)
 
 __all__ = [
     # Zone summary
@@ -42,4 +50,11 @@ __all__ = [
     "calculate_hcpv",
     "calculate_ooip",
     "calculate_ogip",
+    # Formation analysis
+    "Formation",
+    "FormationSummary",
+    "FormationAnalysisResult",
+    "load_formations_csv",
+    "analyze_formations",
+    "run_formation_analysis",
 ]

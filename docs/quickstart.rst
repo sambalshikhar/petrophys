@@ -288,6 +288,73 @@ Zone Summaries
        print(f"  Avg PHIE: {summary.avg_phie:.3f}")
        print(f"  Avg Sw: {summary.avg_sw:.3f}")
 
+Formation-Level Analysis
+------------------------
+
+Analyze per-formation summaries using a LAS file and a formations CSV.
+
+**Simple CSV format** (``formations.csv``):
+
+.. code-block:: text
+
+   formation_name,top_depth,bottom_depth,lithology
+   Balder Fm.,1908.0,2023.0,Sandstone
+   Draupne Fm.,2452.0,2593.0,Shale
+   Brent Group,2841.0,2958.0,Sandstone
+
+**One-call convenience function:**
+
+.. code-block:: python
+
+   from petrophys.summation import run_formation_analysis
+
+   result = run_formation_analysis(
+       las_path="well.las",
+       formations_csv_path="formations.csv",
+       rw=0.03,
+       salinity_ppm=35000,
+       lithology="clastic",
+   )
+
+   # Formatted report
+   result.print_report()
+
+   # Export to CSV
+   result.to_csv("formation_results.csv")
+
+   # As pandas DataFrame
+   df = result.to_dataframe()
+
+**Step-by-step approach:**
+
+.. code-block:: python
+
+   from petrophys.summation import load_formations_csv, analyze_formations
+
+   # Load formations from CSV (auto-detects format)
+   formations = load_formations_csv("formations.csv")
+
+   # Or from NPD stratigraphic picks (filters by well name)
+   formations = load_formations_csv(
+       "npd_picks.csv",
+       well_name="30/6-5",
+       format="npd"
+   )
+
+   # Analyze (well must have computed curves from workflow)
+   result = analyze_formations(well, formations)
+
+   for s in result.summaries:
+       print(f"{s.formation.name}: NTG={s.zone_summary.ntg:.1%}, "
+             f"PHIE={s.zone_summary.avg_phie:.3f}, "
+             f"Sw={s.zone_summary.avg_sw:.3f}")
+
+**Supported CSV formats:**
+
+- ``simple``: formation_name, top_depth, bottom_depth [, lithology]
+- ``npd``: NPD stratigraphic picks (auto-converts tops to intervals)
+- ``danish``: wellName, formationName, topDepth, bottomDepth [, majorityLithology]
+
 Exporting Results
 -----------------
 

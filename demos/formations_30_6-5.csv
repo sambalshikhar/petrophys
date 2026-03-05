@@ -1,0 +1,21 @@
+formation_name,top_depth,bottom_depth,lithology
+NORDLAND GP.,181.0,726.0,Shale
+Utsira Fm.,726.0,879.0,Sandstone
+HORDALAND GP.,879.0,1908.0,Shale
+ROGALAND GP.,1908.0,2203.0,Shale
+Balder Fm.,1908.0,2023.0,Sandstone
+Sele Fm.,2023.0,2123.0,Shale
+Lista Fm.,2123.0,2203.0,Shale
+SHETLAND GP.,2203.0,2408.0,Chalk
+CROMER KNOLL GP.,2408.0,2452.0,Marl
+VIKING GP.,2452.0,2841.0,Shale
+Draupne Fm.,2452.0,2593.0,Shale
+Heather Fm.,2593.0,2841.0,Shale
+BAAT GP.,2841.0,2958.0,Sandstone
+Ness Fm.,2841.0,2865.0,Sandstone
+Etive Fm.,2865.0,2958.0,Sandstone
+DUNLIN GP.,2958.0,3223.0,Shale
+Drake Fm.,2958.0,3071.0,Shale
+Cook Fm.,3071.0,3123.0,Sandstone
+Amundsen Fm.,3123.0,3223.0,Shale
+Statfjord Fm.,3223.0,3556.0,Sandstone
