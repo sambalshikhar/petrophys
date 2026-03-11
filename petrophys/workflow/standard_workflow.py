@@ -2,9 +2,14 @@
 Standard petrophysics workflow.
 """
 
-from typing import Optional, List, Dict, Any
+from __future__ import annotations
+
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from dataclasses import dataclass, field
 import numpy as np
+
+if TYPE_CHECKING:
+    from petrophys.well import Well  # adjust path
 
 
 @dataclass
@@ -306,3 +311,4 @@ def run_standard_workflow(
 
     workflow = StandardWorkflow(config)
     return workflow.run(well)
+
