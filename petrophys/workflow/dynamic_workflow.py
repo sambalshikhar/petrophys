@@ -417,7 +417,7 @@ class DynamicWorkflow:
             bht=self.config.bht_f,
             td=self.config.td_ft,
             surface_temp=self.config.surface_temp_f,
-            temp_unit="F"
+            bht_unit="F"
         )
         depth = well.get("DEPT") or well.get("DEPTH")
         if depth is not None:
@@ -451,11 +451,8 @@ class DynamicWorkflow:
         trace.input_curves = inputs
 
         flags = generate_bad_hole_flags(
-            cali=cali.data if cali is not None else None,
-            bs=bs,
-            drho=drho.data if drho is not None else None,
-            rhob=rhob.data if rhob is not None else None,
-            pef=pef.data if pef is not None else None
+            well,
+            bit_size=float(np.nanmean(bs)) if hasattr(bs, '__len__') else bs
         )
         well.add_curve("BAD_HOLE", flags["bad_hole"].astype(float), "", "Bad Hole Flag")
 
@@ -582,7 +579,7 @@ class DynamicWorkflow:
             rmf_module = RmfModule()
             result = rmf_module.calculate(
                 rmf_surface=self.config.rmf_at_meas_temp,
-                temp_surface=self.config.rmf_meas_temp_f,
+                temp_measured=self.config.rmf_meas_temp_f,
                 temp_formation=temp_f
             )
             self._result.rmf_computed = result.rmf

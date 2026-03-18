@@ -1,8 +1,9 @@
 """
-Multi-mineral solver for lithology determination.
+Effective porosity and multi-mineral solver.
 
-This module provides solvers for determining mineral fractions
-from multiple log measurements using simultaneous equations.
+This module provides:
+- effective_porosity / calculate_phie: Clay-corrected effective porosity
+- Multi-mineral solvers for lithology determination
 """
 
 from typing import Optional, Tuple, Dict, Union
@@ -13,6 +14,49 @@ from petrophys.lithology.matrix_properties import (
     get_mineral_properties,
     MINERAL_PROPERTIES,
 )
+
+
+# ---------------------------------------------------------------------------
+# Effective porosity
+# ---------------------------------------------------------------------------
+
+def effective_porosity(
+    phit: np.ndarray,
+    vcl: np.ndarray,
+    phi_clay: float = 0.15,
+) -> np.ndarray:
+    """
+    Calculate effective porosity from total porosity and clay volume.
+
+    PHIE = PHIT - VCL * phi_clay, clipped to [0, 1].
+
+    Parameters
+    ----------
+    phit : np.ndarray
+        Total porosity (v/v)
+    vcl : np.ndarray
+        Clay volume fraction (v/v)
+    phi_clay : float, optional
+        Clay-bound porosity (default 0.15)
+
+    Returns
+    -------
+    np.ndarray
+        Effective porosity (v/v)
+    """
+    phit = np.asarray(phit, dtype=float)
+    vcl = np.asarray(vcl, dtype=float)
+    phie = phit - vcl * phi_clay
+    return np.clip(phie, 0.0, 1.0)
+
+
+def calculate_phie(
+    phit: np.ndarray,
+    vcl: np.ndarray,
+    phi_clay: float = 0.15,
+) -> np.ndarray:
+    """Alias for effective_porosity."""
+    return effective_porosity(phit, vcl, phi_clay)
 
 
 # ---------------------------------------------------------------------------

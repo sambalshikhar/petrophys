@@ -202,11 +202,11 @@ class StandardWorkflow:
             "td_ft": self.config.td_ft,
         }
         try:
-            temp_module = TemperatureProfile(
-                surface_temp=self.config.surface_temp_f,
+            temp_module = TemperatureProfile.from_bht(
                 bht=self.config.bht_f,
                 td=self.config.td_ft,
-                temp_unit="F"
+                surface_temp=self.config.surface_temp_f,
+                bht_unit="F"
             )
             temp_module.add_to_well(well)
             trace.output_curves = ["TEMP"]
