@@ -1,8 +1,33 @@
 Petrophys Documentation
 =======================
 
+.. raw:: html
+
+   <div style="display: flex; align-items: center; gap: 30px; margin-bottom: 20px; flex-wrap: wrap;">
+     <a href="https://mbzuai.ac.ae" target="_blank">
+       <img src="_static/mbzuai-logo.svg" alt="MBZUAI" style="height: 60px;">
+     </a>
+     <a href="https://www.inceptionai.ai" target="_blank">
+       <img src="_static/inception-logo.png" alt="Inception AI" style="height: 50px; background: #222; padding: 8px 12px; border-radius: 6px;">
+     </a>
+   </div>
+
+*Developed by* `Mohamed bin Zayed University of Artificial Intelligence (MBZUAI) <https://mbzuai.ac.ae>`_
+*in collaboration with* `Inception AI <https://www.inceptionai.ai>`_.
+
 **Petrophys** is a comprehensive Python library for petrophysical well log analysis.
 It provides tools for loading, processing, and interpreting wireline and LWD log data.
+
+This library is designed to serve as a **tool-calling environment for Agentic AI workflows**
+and **Agentic Reinforcement Learning (RL)** research. Each module exposes deterministic,
+composable functions that an LLM agent can invoke as tools — enabling autonomous
+petrophysical interpretation pipelines where the agent selects methods, tunes parameters,
+and iterates on results. The modular architecture, full execution traces, and
+structured inputs/outputs make it ideal for:
+
+* **Agentic tool-calling** — LLM agents can call individual modules (VCL, porosity, Sw, net pay, etc.) as discrete tools with typed parameters and structured returns.
+* **Agentic RL environments** — The workflow engine provides a step-by-step MDP-like interface where actions are petrophysical computation steps, observations are well log curves, and rewards can be derived from interpretation quality metrics (NTG, HCPV, calibration error).
+* **Human-in-the-loop and fully autonomous modes** — The standard workflow supports fixed configurations while the dynamic workflow auto-detects inputs and routes models, enabling both supervised and autonomous agent operation.
 
 .. image:: https://img.shields.io/badge/python-3.8+-blue.svg
    :target: https://www.python.org/downloads/
