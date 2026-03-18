@@ -3,7 +3,6 @@ Multi-mineral solver for lithology determination.
 
 This module provides solvers for determining mineral fractions
 from multiple log measurements using simultaneous equations.
-
 """
 
 from typing import Optional, Tuple, Dict, Union
@@ -16,137 +15,21 @@ from petrophys.lithology.matrix_properties import (
 )
 
 
-def solve_two_mineral(
-    log_value: float,
-    mineral1_value: float,
-    mineral2_value: float,
-    fluid_value: float,
-    porosity: float
-) -> Tuple[float, float]:
-    """
-    Solve for two mineral fractions given a log response.
-
-    Uses the equation:
-    Log = φ * Fluid + (1-φ) * (V1 * M1 + V2 * M2)
-    where V1 + V2 = 1
-
-    Parameters
-    ----------
-    log_value : float
-        Measured log value
-    mineral1_value : float
-        Response of mineral 1
-    mineral2_value : float
-        Response of mineral 2
-    fluid_value : float
-        Response of fluid
-    porosity : float
-        Porosity (0-1)
-
-    Returns
-    -------
-    tuple
-        (V1, V2) mineral fractions
-    """
-    # Matrix response
-    matrix_value = (log_value - porosity * fluid_value) / (1 - porosity)
-
-    # Solve for V1
-    if mineral1_value == mineral2_value:
-        v1 = 0.5
-    else:
-        v1 = (matrix_value - mineral2_value) / (mineral1_value - mineral2_value)
-
-    v1 = np.clip(v1, 0, 1)
-    v2 = 1 - v1
-
-    return v1, v2
+def _u(pef: float, density: float) -> float:
+    """Volumetric photoelectric cross-section: U = PEF × ρ [b/cm³]."""
+    return pef * density
 
 
-def solve_three_mineral(
-    rhob: float,
-    nphi: float,
-    pef: float,
-    minerals: Tuple[str, str, str] = ("quartz", "calcite", "dolomite"),
-    fluid: str = "water",
-    porosity: Optional[float] = None
-) -> Tuple[float, float, float, float]:
-    """
-    Solve for three mineral fractions using RHOB, NPHI, and PEF.
-
-    Uses simultaneous equations to solve for:
-    - V1, V2, V3: Mineral volume fractions
-    - φ: Porosity (if not provided)
-
-    Parameters
-    ----------
-    rhob : float
-        Bulk density (g/cm³)
-    nphi : float
-        Neutron porosity (v/v)
-    pef : float
-        Photoelectric factor (b/e)
-    minerals : tuple, optional
-        Three mineral types to solve for
-    fluid : str, optional
-        Fluid type
-    porosity : float, optional
-        Porosity if known
-
-    Returns
-    -------
-    tuple
-        (V1, V2, V3, porosity) mineral fractions and porosity
-    """
-    # Get mineral properties
-    m1 = get_mineral_properties(minerals[0])
-    m2 = get_mineral_properties(minerals[1])
-    m3 = get_mineral_properties(minerals[2])
-    fl = get_mineral_properties(fluid)
-
-    # Build matrix equation: A * x = b
-    # where x = [V1, V2, V3, φ]
-
-    # Using RHOB, NPHI, PEF, and closure (V1 + V2 + V3 + φ = 1)
-    A = np.array([
-        [m1["density"], m2["density"], m3["density"], fl["density"]],
-        [m1["nphi"], m2["nphi"], m3["nphi"], fl["nphi"]],
-        [m1["pef"], m2["pef"], m3["pef"], fl["pef"]],
-        [1, 1, 1, 1]  # Closure
-    ])
-
-    b = np.array([rhob, nphi, pef, 1.0])
-
-    # Add porosity constraint if known
-    if porosity is not None:
-        # Fix porosity, solve for 3 minerals
-        A_reduced = np.array([
-            [m1["density"], m2["density"], m3["density"]],
-            [m1["nphi"], m2["nphi"], m3["nphi"]],
-            [1, 1, 1]
-        ])
-        b_reduced = np.array([
-            rhob - porosity * fl["density"],
-            nphi - porosity * fl["nphi"],
-            1 - porosity
-        ])
-
-        try:
-            x, _ = nnls(A_reduced, b_reduced)
-            return x[0], x[1], x[2], porosity
-        except:
-            return 0.0, 0.0, 0.0, porosity
-
-    # Solve using non-negative least squares
-    try:
-        x, _ = nnls(A, b)
-        # Normalize to ensure closure
-        total = np.sum(x)
-        if total > 0:
-            x = x / total
-        return x[0], x[1], x[2], x[3]
-    except:
-        return 0.0, 0.0, 0.0, 0.0
+def _get_endpoints(name: str) -> Dict[str, float]:
+    """Return endpoint dict with density, nphi, pef, u, dt for a mineral/fluid."""
+    p = get_mineral_properties(name)
+    return {
+        "density": p["density"],
+        "nphi":    p["nphi"],
+        "pef":     p["pef"],
+        "u":       p["u"],
+        "dt":      p["slowness"],
+    }
 
 
 class MultiMineralSolver:
@@ -156,50 +39,176 @@ class MultiMineralSolver:
     This class solves for mineral fractions using multiple
     log measurements simultaneously.
 
+    Vcl (from VclModule) and PHIE (from PorosityModule) must be
+    pre-computed before calling this solver. Both are subtracted
+    from the RHS of every equation before solving.
+
+    The active mineral set and equations are determined per depth
+    based on curve availability:
+
+        PEF available              → 4 minerals (quartz, calcite, dolomite,
+                                     anhydrite) + PEF row (+ DTC if present)
+        PEF absent, DTC available  → 4 minerals (quartz, calcite, dolomite,
+                                     anhydrite) + DTC row
+        Neither available          → 3 minerals, RHOB + NPHI only
+
+    PEF is preferred over DTC for mineral discrimination because U = PEF × ρ
+    has a much wider spread across carbonates (quartz: 4.77, dolomite: 8.90,
+    calcite: 13.82 b/cm³) and is the only tool that reliably separates
+    anhydrite from dolomite.
+
+    Tool Response Equations (linear mixing):
+        Unity:   V1 + V2 + ... + Vn         = 1    - Vcl - φe
+        Density: V1·ρ1 + V2·ρ2 + ... + Vn·ρn = ρlog - Vcl·ρcl - φe·ρfl
+        Neutron: V1·N1 + V2·N2 + ... + Vn·Nn = Nlog - Vcl·Ncl - φe·Nfl
+        U:       V1·U1 + V2·U2 + ... + Vn·Un = Ulog - Vcl·Ucl - φe·Ufl
+        Sonic:   V1·D1 + V2·D2 + ... + Vn·Dn = Dlog - Vcl·Dcl - φe·Dfl
+
+    where U = PEF × ρ (volumetric photoelectric cross-section).
+
     Parameters
     ----------
     minerals : list, optional
-        List of mineral types to solve for
+        List of mineral types to solve for when PEF is available.
+        Default includes anhydrite as the 4th mineral:
+        ["quartz", "calcite", "dolomite", "anhydrite"]
+    minerals_no_pef : list, optional
+        Mineral list used when PEF is absent (default: first three
+        from minerals, i.e. ["quartz", "calcite", "dolomite"])
+    clay_mineral : str, optional
+        Clay mineral name for endpoint lookup (default: "clay")
     fluid : str, optional
-        Fluid type
-    use_pef : bool, optional
-        Include PEF in solution (default: True)
+        Fluid type (default: "water")
 
     Examples
     --------
-    >>> solver = MultiMineralSolver(minerals=["quartz", "calcite", "dolomite"])
-    >>> result = solver.solve(rhob, nphi, pef)
+    >>> solver = MultiMineralSolver()
+    >>> result = solver.solve(rhob, nphi, vcl, phie, pef=pef, dt=dt)
     """
 
     def __init__(
         self,
         minerals: list = None,
+        minerals_no_pef: list = None,
+        clay_mineral: str = "clay",
         fluid: str = "water",
-        use_pef: bool = True
     ):
         if minerals is None:
-            minerals = ["quartz", "calcite", "dolomite"]
+            minerals = ["quartz", "calcite", "dolomite", "anhydrite"]
+        if minerals_no_pef is None:
+            minerals_no_pef = minerals[:3]
 
-        self.minerals = minerals
-        self.fluid = fluid
-        self.use_pef = use_pef
+        self.minerals        = minerals
+        self.minerals_no_pef = minerals_no_pef
+        self.clay_mineral    = clay_mineral
+        self.fluid           = fluid
 
-        # Load properties
         self._load_properties()
 
     def _load_properties(self):
         """Load mineral and fluid properties."""
-        self.mineral_props = {}
-        for mineral in self.minerals:
-            self.mineral_props[mineral] = get_mineral_properties(mineral)
-        self.fluid_props = get_mineral_properties(self.fluid)
+        all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef))
+        self.mineral_props = {m: _get_endpoints(m) for m in all_minerals}
+        self.fluid_props   = _get_endpoints(self.fluid)
+        self.clay_props    = _get_endpoints(self.clay_mineral)
+
+    def _solve_sample(
+        self,
+        rhob: float,
+        nphi: float,
+        vcl: float,
+        phie: float,
+        pef: Optional[float],
+        dt: Optional[float],
+    ) -> Tuple[str, ...]:
+        """
+        Solve for mineral fractions at a single depth sample.
+
+        Active mineral set is chosen based on available curves:
+            PEF present → self.minerals (4 minerals)
+            PEF absent, DTC present → self.minerals (4 minerals) + DTC row
+            Neither → self.minerals_no_pef (3 minerals, RHOB+NPHI only)
+
+        Parameters
+        ----------
+        rhob : float
+            Bulk density (g/cm³)
+        nphi : float
+            Neutron porosity (v/v)
+        vcl : float
+            Clay volume fraction (0-1)
+        phie : float
+            Effective porosity (0-1)
+        pef : float or None
+            Photoelectric factor (b/e)
+        dt : float or None
+            Sonic slowness (μs/ft)
+
+        Returns
+        -------
+        tuple
+            (active_minerals, fractions) where active_minerals is the
+            list of mineral names used and fractions are the solved volumes
+        """
+        vcl  = float(np.clip(vcl,  0.0, 1.0))
+        phie = float(np.clip(phie, 0.0, 1.0))
+
+        # Select active mineral set based on curve availability.
+        # 4 minerals need at least 4 equations: Unity + RHOB + NPHI + (PEF or DTC).
+        # Drop to 3 minerals only when neither is available,
+        # leaving exactly 3 equations for 3 unknowns.
+        has_discriminator = pef is not None or dt is not None
+        active_minerals = self.minerals if has_discriminator else self.minerals_no_pef
+
+        m  = [self.mineral_props[name] for name in active_minerals]
+        fl = self.fluid_props
+        cl = self.clay_props
+
+        A_rows, b_rows = [], []
+
+        def add_row(mineral_vals, cl_val, fl_val, log_val):
+            rhs = log_val - vcl * cl_val - phie * fl_val
+            A_rows.append(mineral_vals)
+            b_rows.append(rhs)
+
+        # Unity  (cl and fl endpoints are both 1)
+        add_row([1.0] * len(active_minerals),
+                cl_val=1.0,           fl_val=1.0,           log_val=1.0)
+
+        # Density
+        add_row([mi["density"] for mi in m],
+                cl_val=cl["density"], fl_val=fl["density"], log_val=rhob)
+
+        # Neutron
+        add_row([mi["nphi"] for mi in m],
+                cl_val=cl["nphi"],    fl_val=fl["nphi"],    log_val=nphi)
+
+        # U = PEF × ρ
+        if pef is not None:
+            add_row([mi["u"] for mi in m],
+                    cl_val=cl["u"],   fl_val=fl["u"],   log_val=_u(pef, rhob))
+
+        # Sonic (DTC) — used when PEF absent, or as extra row when both present
+        if dt is not None:
+            add_row([mi["dt"] for mi in m],
+                    cl_val=cl["dt"],  fl_val=fl["dt"],  log_val=dt)
+
+        x, _ = nnls(np.array(A_rows), np.array(b_rows))
+
+        # Check closure against available mineral space (1 - Vcl - φe)
+        if abs(x.sum() - (1.0 - vcl - phie)) > 0.05:
+            return active_minerals, tuple(np.nan for _ in active_minerals)
+
+        return active_minerals, tuple(float(v) for v in x)
 
     def solve(
         self,
         rhob: Union[float, np.ndarray],
         nphi: Union[float, np.ndarray],
-        pef: Optional[Union[float, np.ndarray]] = None,
-        porosity: Optional[Union[float, np.ndarray]] = None
+        vcl:  Union[float, np.ndarray],
+        phie: Union[float, np.ndarray],
+        pef:  Optional[Union[float, np.ndarray]] = None,
+        dt:   Optional[Union[float, np.ndarray]] = None,
     ) -> Dict[str, np.ndarray]:
         """
         Solve for mineral fractions.
@@ -207,76 +216,78 @@ class MultiMineralSolver:
         Parameters
         ----------
         rhob : float or np.ndarray
-            Bulk density
+            Bulk density (g/cm³)
         nphi : float or np.ndarray
-            Neutron porosity
+            Neutron porosity (v/v)
+        vcl : float or np.ndarray
+            Pre-computed clay volume (0-1)
+        phie : float or np.ndarray
+            Pre-computed effective porosity (0-1)
         pef : float or np.ndarray, optional
-            Photoelectric factor
-        porosity : float or np.ndarray, optional
-            Known porosity
+            Photoelectric factor (b/e) — omit if curve absent
+        dt : float or np.ndarray, optional
+            Sonic slowness (μs/ft) — omit if curve absent
 
         Returns
         -------
         dict
-            Dictionary with mineral fractions and porosity
+            Dictionary with mineral fractions, vcl, phie, and qc_flag.
+            All minerals from both self.minerals and self.minerals_no_pef
+            are present as keys — depths where a mineral was not in the
+            active set are filled with 0.
         """
-        # Convert to arrays
-        rhob = np.atleast_1d(rhob)
-        nphi = np.atleast_1d(nphi)
-        n = len(rhob)
+        rhob = np.atleast_1d(np.asarray(rhob, dtype=float))
+        nphi = np.atleast_1d(np.asarray(nphi, dtype=float))
+        vcl  = np.atleast_1d(np.asarray(vcl,  dtype=float))
+        phie = np.atleast_1d(np.asarray(phie, dtype=float))
+        n    = len(rhob)
 
-        if pef is not None:
-            pef = np.atleast_1d(pef)
-        if porosity is not None:
-            porosity = np.atleast_1d(porosity)
+        pef_arr = np.atleast_1d(np.asarray(pef, dtype=float)) if pef is not None else None
+        dt_arr  = np.atleast_1d(np.asarray(dt,  dtype=float)) if dt  is not None else None
 
-        # Initialize result arrays
-        result = {mineral: np.zeros(n) for mineral in self.minerals}
-        result["porosity"] = np.zeros(n)
+        # All possible minerals across both sets
+        all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef))
 
-        # Solve point by point
+        result = {mineral: np.zeros(n) for mineral in all_minerals}
+        result["vcl"]     = vcl.copy()
+        result["phie"]    = phie.copy()
+        result["qc_flag"] = np.zeros(n, dtype=bool)
+
         for i in range(n):
-            if np.isnan(rhob[i]) or np.isnan(nphi[i]):
-                for mineral in self.minerals:
+            if any(np.isnan([rhob[i], nphi[i], vcl[i], phie[i]])):
+                for mineral in all_minerals:
                     result[mineral][i] = np.nan
-                result["porosity"][i] = np.nan
+                result["qc_flag"][i] = True
                 continue
 
-            pef_i = pef[i] if pef is not None else None
-            por_i = porosity[i] if porosity is not None else None
+            pef_i = float(pef_arr[i]) if pef_arr is not None else None
+            dt_i  = float(dt_arr[i])  if dt_arr  is not None else None
 
-            if len(self.minerals) == 3 and pef_i is not None and self.use_pef:
-                v1, v2, v3, phi = solve_three_mineral(
-                    rhob[i], nphi[i], pef_i,
-                    tuple(self.minerals), self.fluid, por_i
-                )
-                result[self.minerals[0]][i] = v1
-                result[self.minerals[1]][i] = v2
-                result[self.minerals[2]][i] = v3
-                result["porosity"][i] = phi
-            elif len(self.minerals) == 2:
-                # Two mineral solution using density
-                v1, v2 = solve_two_mineral(
-                    rhob[i],
-                    self.mineral_props[self.minerals[0]]["density"],
-                    self.mineral_props[self.minerals[1]]["density"],
-                    self.fluid_props["density"],
-                    por_i if por_i is not None else 0.15
-                )
-                result[self.minerals[0]][i] = v1
-                result[self.minerals[1]][i] = v2
-                result["porosity"][i] = por_i if por_i is not None else 0.15
-            else:
-                # Simplified solution
-                for mineral in self.minerals:
-                    result[mineral][i] = np.nan
-                result["porosity"][i] = np.nan
+            if pef_i is not None and np.isnan(pef_i):
+                pef_i = None
+            if dt_i  is not None and np.isnan(dt_i):
+                dt_i  = None
+
+            active_minerals, fractions = self._solve_sample(
+                rhob[i], nphi[i], vcl[i], phie[i], pef_i, dt_i
+            )
+
+            for mineral, v in zip(active_minerals, fractions):
+                result[mineral][i] = v
+
+            if any(np.isnan(fractions)):
+                result["qc_flag"][i] = True
 
         return result
 
-    def add_to_well(self, well: "Well", **kwargs) -> "Well":
+    def add_to_well(self, well: "Well") -> "Well":
         """
         Add lithology curves to well.
+
+        Requires RHOB, NPHI, VCL, and PHIE on the well object.
+        VCL must have been added by VclModule and PHIE by
+        PorosityModule before calling this. PEF and DTC are
+        read if present and determine the active mineral set.
 
         Parameters
         ----------
@@ -286,28 +297,48 @@ class MultiMineralSolver:
         Returns
         -------
         Well
-            Well with lithology curves
+            Well with lithology curves added
         """
         rhob = well.get("RHOB")
         nphi = well.get("NPHI")
-        pef = well.get("PEF")
+        vcl  = well.get("VCL")
+        phie = well.get("PHIE")
+        pef  = well.get("PEF")
+        dt   = well.get("DTC")
 
-        if rhob is None or nphi is None:
-            raise ValueError("RHOB and NPHI required for lithology")
+        missing = [
+            name for name, c in zip(
+                ["RHOB", "NPHI", "VCL", "PHIE"],
+                [rhob, nphi, vcl, phie]
+            ) if c is None
+        ]
+        if missing:
+            raise ValueError(f"Missing required curves: {missing}")
 
         result = self.solve(
-            rhob.data, nphi.data,
-            pef.data if pef is not None else None,
-            **kwargs
+            rhob.data, nphi.data, vcl.data, phie.data,
+            pef=pef.data if pef is not None else None,
+            dt=dt.data   if dt  is not None else None,
         )
 
+        curve_names = {
+            "quartz":    "VQTZ",
+            "calcite":   "VCAL",
+            "dolomite":  "VDOL",
+            "anhydrite": "VANH",
+        }
         for mineral, values in result.items():
-            if mineral == "porosity":
+            if mineral in ("vcl", "phie", "qc_flag"):
                 continue
-            curve_name = f"V{mineral.upper()[:4]}"
+            curve_name = curve_names.get(mineral, f"V{mineral.upper()[:4]}")
             well.add_curve(
                 curve_name, values, unit="v/v",
-                description=f"Volume {mineral}"
+                description=f"Volume {mineral}",
             )
+
+        well.add_curve(
+            "MMQC", result["qc_flag"].astype(float), unit="",
+            description="Multi-mineral closure QC flag (1 = poor fit)",
+        )
 
         return well
