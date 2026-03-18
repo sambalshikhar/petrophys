@@ -3,6 +3,7 @@ Multi-mineral solver for lithology determination.
 
 This module provides solvers for determining mineral fractions
 from multiple log measurements using simultaneous equations.
+
 """
 
 from typing import Optional, Tuple, Dict, Union
