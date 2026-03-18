@@ -215,9 +215,15 @@ For a complete interpretation with fixed configuration:
 
    result = run_standard_workflow(well, config)
 
-   if result.warnings:
-       for warn in result.warnings:
-           print(f"Warning: {warn}")
+   # Full trace: every step's method, parameters, and decisions
+   result.print_trace()
+
+   # Access individual step traces
+   for step in result.steps:
+       print(f"[{step.step}] method={step.method}, "
+             f"inputs={step.input_curves}, outputs={step.output_curves}")
+       for d in step.decisions:
+           print(f"    -> {d}")
 
 Dynamic Workflow
 ----------------
@@ -253,11 +259,20 @@ modules in the correct pipeline order:
 
    result = run_dynamic_workflow(well, config)
 
-   # Inspect what happened
-   print(f"Steps executed: {[s.step for s in result.steps_executed]}")
-   print(f"Steps skipped:  {result.steps_skipped}")
-   print(f"Rw used: {result.rw_computed}")
-   print(f"Rcl: {result.rcl_computed}")
+   # Full trace: shows method, inputs, outputs, parameters, and decisions for each step
+   result.print_trace()
+
+   # Export trace as a DataFrame (useful for QC reports)
+   trace_df = result.to_dataframe()
+   print(trace_df[["Step", "Method", "Input Curves", "Output Curves"]])
+
+   # Inspect a specific step's trace
+   for step in result.steps_executed:
+       if step.step == "saturation":
+           print(f"Sw method: {step.method}")
+           print(f"Parameters: {step.parameters}")
+           for d in step.decisions:
+               print(f"  -> {d}")
 
    # Skip specific steps
    config.skip_steps = ["bad_hole", "lithology"]
@@ -283,14 +298,55 @@ Override with ``sw_model="archie"`` (or any model name) to force a specific mode
 Visualization
 -------------
 
+**Custom Log Plot (LogPlot)**
+
+.. code-block:: python
+
+   from petrophys.visualization import LogPlot, create_log_plot
+
+   # Step-by-step API
+   log_plot = LogPlot(well, figsize=(16, 12))
+   fig, axes = log_plot.create_figure(n_tracks=4)
+   log_plot.add_curve(0, "GR", color="green", xlim=(0, 150))
+   log_plot.add_curve(1, "RDEP", color="red", log_scale=True, xlim=(0.2, 2000))
+   log_plot.add_curve(2, "PHIE", color="blue", xlim=(0, 0.4))
+   log_plot.add_curve(3, "SW", color="blue", xlim=(0, 1))
+   log_plot.set_depth_range(top=2200, bottom=3000)
+   log_plot.show()
+
+   # Or one-liner with curve specs
+   plot = create_log_plot(well, curves=[
+       {"track": 0, "name": "GR",   "color": "green", "xlim": (0, 150)},
+       {"track": 1, "name": "RDEP", "color": "red",   "log_scale": True},
+       {"track": 2, "name": "PHIE", "color": "blue",  "xlim": (0, 0.4)},
+       {"track": 3, "name": "SW",   "color": "blue",  "xlim": (0, 1)},
+   ], depth_range=(2200, 3000))
+
 **Triple Combo Plot**
 
 .. code-block:: python
 
-   from petrophys.visualization import create_triple_combo
+   from petrophys.visualization import create_triple_combo, TripleComboPlot
 
-   plot = create_triple_combo(well, depth_range=(8000, 8500))
+   plot = create_triple_combo(well, figsize=(14, 14))
    plot.show()
+
+   # Zoomed with custom ranges
+   tc = TripleComboPlot(well, figsize=(14, 10))
+   tc.create(depth_range=(2200, 2850), gr_range=(0, 120),
+             rt_range=(0.5, 500), rhob_range=(2.0, 2.85),
+             nphi_range=(0.40, -0.10))
+   tc.show()
+
+**Interpretation Plot (8 Tracks)**
+
+.. code-block:: python
+
+   from petrophys.visualization import create_interpretation_plot
+
+   # GR | Resistivity | Density-Neutron | VCL | Porosity | Sw | Perm | Net Pay
+   interp = create_interpretation_plot(well, depth_range=(2200, 3200))
+   interp.show()
 
 **Crossplot**
 
@@ -299,11 +355,15 @@ Visualization
    from petrophys.visualization import create_crossplot
 
    plot = create_crossplot(
-       well,
-       x_curve="NPHI",
-       y_curve="RHOB",
-       color_curve="GR"
+       well, x_curve="NPHI", y_curve="RHOB",
+       color_curve="GR", xlim=(-0.05, 0.45), ylim=(2.95, 1.95),
+       cmap="RdYlGn_r", depth_range=(2200, 3200)
    )
+   plot.add_matrix_points({
+       "Sandstone": (-0.02, 2.65),
+       "Limestone": (0.00, 2.71),
+       "Dolomite":  (0.02, 2.87),
+   })
    plot.show()
 
 **Pickett Plot**
@@ -312,8 +372,117 @@ Visualization
 
    from petrophys.visualization import create_pickett_plot
 
-   plot = create_pickett_plot(well, rw=0.05)
+   plot = create_pickett_plot(well, rw=0.05, phie_curve="PHIE",
+                              rt_curve="RDEP", color_curve="VCL",
+                              depth_range=(2200, 3200))
    plot.show()
+
+**Zone Flags & Formation Shading**
+
+.. code-block:: python
+
+   from petrophys.visualization import plot_zone_flags, add_zone_shading
+
+   # Net pay flag display
+   fig, ax = plot_zone_flags(well,
+       flag_curves=["NET_ROCK", "NET_RES", "NET_PAY"],
+       depth_range=(2200, 3200))
+
+   # Add formation shading to any matplotlib axes
+   zones = [
+       {"name": "Balder Fm.", "top": 2208, "bottom": 2243, "color": "lightyellow"},
+       {"name": "Tor Fm.",    "top": 2418, "bottom": 2606, "color": "lightsalmon"},
+   ]
+   add_zone_shading(ax, zones, alpha=0.3)
+
+Core Data Module
+----------------
+
+Load core plug measurements and calibrate log curves against lab data.
+
+**Loading Core Data**
+
+.. code-block:: python
+
+   from petrophys.core import CoreData
+   import pandas as pd
+
+   # From a CSV file
+   core = CoreData.from_csv("core_data.csv")
+
+   # From a DataFrame
+   df = pd.DataFrame({
+       "depth": [2500.0, 2510.0, 2520.0, 2530.0, 2540.0],
+       "porosity": [0.18, 0.22, 0.19, 0.25, 0.21],
+       "permeability": [50.0, 150.0, 75.0, 300.0, 120.0],
+       "grain_density": [2.65, 2.64, 2.66, 2.63, 2.65],
+   })
+   core = CoreData.from_dataframe(df)
+
+   # From a dictionary
+   core = CoreData.from_dict({
+       "depth": [2500.0, 2510.0, 2520.0],
+       "porosity": [0.18, 0.22, 0.19],
+       "permeability": [50.0, 150.0, 75.0],
+   })
+
+**Porosity & Permeability Calibration**
+
+.. code-block:: python
+
+   from petrophys.core import calibrate_porosity, calibrate_permeability
+
+   # Compare core vs log porosity (R², bias, RMSE)
+   cal_phi = calibrate_porosity(well, core, log_curve="PHIE")
+   print(f"R²={cal_phi['r_squared']:.3f}, Bias={cal_phi['bias']:.4f}")
+
+   # Compare core vs log permeability
+   cal_k = calibrate_permeability(well, core, log_curve="PERM")
+
+**Poro-Perm Transform**
+
+.. code-block:: python
+
+   from petrophys.core import fit_poro_perm_transform, apply_poro_perm_transform
+
+   # Fit log(K) = A * PHI + B from core data
+   transform = fit_poro_perm_transform(core)
+   print(f"A={transform['A']:.2f}, B={transform['B']:.2f}, R²={transform['r_squared']:.3f}")
+
+   # Apply to log porosity to get core-calibrated permeability
+   perm_calibrated = apply_poro_perm_transform(well, transform)
+   well.add_curve("PERM_CORE", perm_calibrated, "mD", "Core-Calibrated Perm")
+
+**Grain Density Correction**
+
+.. code-block:: python
+
+   from petrophys.core import correct_porosity_with_grain_density
+
+   # Use core grain density instead of assumed matrix density
+   phie_corrected = correct_porosity_with_grain_density(well, core, rho_fl=1.0)
+   well.add_curve("PHIE_CORE", phie_corrected, "v/v", "Core-Corrected Porosity")
+
+**Archie m Estimation**
+
+.. code-block:: python
+
+   from petrophys.core import estimate_archie_m
+
+   # Estimate cementation exponent from core Sw and Rt
+   m_result = estimate_archie_m(core, rw=0.04)
+   print(f"Estimated m = {m_result['m']:.2f}")
+
+**Visualization**
+
+.. code-block:: python
+
+   from petrophys.core import plot_calibration, plot_poro_perm, plot_core_on_logs
+
+   # Core vs log comparison scatter plots
+   plot_calibration(well, core, curve="porosity")
+   plot_poro_perm(core, transform)
+   plot_core_on_logs(well, core)
 
 Interval-Based Analysis (Formation Module)
 -------------------------------------------

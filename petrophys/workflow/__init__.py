@@ -6,12 +6,14 @@ from petrophys.workflow.standard_workflow import (
     StandardWorkflow,
     WorkflowConfig,
     WorkflowResult,
+    StepTrace,
     run_standard_workflow,
 )
 from petrophys.workflow.dynamic_workflow import (
     DynamicWorkflow,
     DynamicWorkflowConfig,
     DynamicWorkflowResult,
+    StepResult,
     WorkflowStep,
     run_dynamic_workflow,
 )
@@ -30,11 +32,13 @@ __all__ = [
     "StandardWorkflow",
     "WorkflowConfig",
     "WorkflowResult",
+    "StepTrace",
     "run_standard_workflow",
     # Dynamic workflow
     "DynamicWorkflow",
     "DynamicWorkflowConfig",
     "DynamicWorkflowResult",
+    "StepResult",
     "WorkflowStep",
     "run_dynamic_workflow",
     # Quick look
