@@ -88,6 +88,13 @@ MINERAL_PROPERTIES: Dict[str, Dict[str, float]] = {
         "pef": 0.09,
         "u": 0.02,
     },
+    "clay": {
+        "density": 2.65,   # g/cm³  — pure clay mineral (kaolinite-dominated)
+        "slowness": 80.0,  # μs/ft
+        "nphi": 0.35,      # v/v    — high due to clay-bound water
+        "pef": 3.7,        # b/e
+        "u": 9.71,         # b/cm³  (3.7 × 2.65)
+    },
 }
 
 
