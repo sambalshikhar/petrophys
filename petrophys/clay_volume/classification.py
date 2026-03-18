@@ -28,45 +28,45 @@ def classify_vcl(vcl: Union[float, np.ndarray]) -> Union[VclClassification, np.n
     Classification thresholds:
     - CLEAN_FORMATION: Vcl < 0.25
     - MODERATE_CLAY: 0.25 ≤ Vcl ≤ 0.50
-    - SHALY_FORMATION: Vcl > 0.50
+    - ARGILLACEOUS_FORMATION: Vcl > 0.50
     """
     return VclClassification.classify(vcl)
 
 
-def is_clean_sand(vcl: Union[float, np.ndarray], threshold: float = 0.25) -> Union[bool, np.ndarray]:
+def is_clean_sand(vcl: Union[float, np.ndarray], threshold: float = 0.25) -> Union[bool, np.ndarray]: #just CLEAN (not CLEAN_SAND)
     """
-    Check if formation is clean sand.
+    Check if formation is clean.
 
     Parameters
     ----------
     vcl : float or np.ndarray
         Clay volume
     threshold : float, optional
-        Clean sand threshold (default: 0.25)
+        Clean rock threshold (default: 0.25)
 
     Returns
     -------
     bool or np.ndarray
-        True if clean sand
+        True if clean rock
     """
     return vcl < threshold
 
 
 def is_shale(vcl: Union[float, np.ndarray], threshold: float = 0.50) -> Union[bool, np.ndarray]:
     """
-    Check if formation is shale.
+    Check if formation is rich in clay.
 
     Parameters
     ----------
     vcl : float or np.ndarray
         Clay volume
     threshold : float, optional
-        Shale threshold (default: 0.50)
+        Argillaceous threshold (default: 0.50)
 
     Returns
     -------
     bool or np.ndarray
-        True if shale
+        True if clay-rich
     """
     return vcl > threshold
 
@@ -86,7 +86,7 @@ def get_vcl_quality_code(vcl: Union[float, np.ndarray]) -> Union[int, np.ndarray
         Quality code:
         - 1: Clean (< 0.25)
         - 2: Moderate (0.25-0.50)
-        - 3: Shaly (> 0.50)
+        - 3: Clay-rich (> 0.50)
     """
     if isinstance(vcl, np.ndarray):
         code = np.ones_like(vcl, dtype=int)
@@ -100,3 +100,4 @@ def get_vcl_quality_code(vcl: Union[float, np.ndarray]) -> Union[int, np.ndarray
             return 2
         else:
             return 3
+
