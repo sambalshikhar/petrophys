@@ -247,36 +247,206 @@ Complete Workflow Example
    # Run interpretation
    result = run_standard_workflow(well, config)
 
-   # Print warnings
-   for warn in result.warnings:
-       print(f"Warning: {warn}")
+   # Full trace: see exactly what happened at each step
+   result.print_trace()
 
    # Zone summary
    zones = [
        {"name": "Zone A", "top": 8000, "bottom": 8200},
        {"name": "Zone B", "top": 8200, "bottom": 8400},
    ]
-
-   print("\nZone Summaries:")
-   print("=" * 60)
    for zone in zones:
        summary = calculate_zone_summary(
-           result.well,
-           zone["top"],
-           zone["bottom"],
-           zone["name"]
-       )
-       print(f"\n{summary.zone_name}:")
-       print(f"  Net Pay: {summary.net_pay:.1f} ft")
-       print(f"  Avg PHIE: {summary.avg_phie:.3f}")
-       print(f"  Avg Sw: {summary.avg_sw:.3f}")
+           result.well, zone["top"], zone["bottom"], zone["name"])
+       print(f"{summary.zone_name}: Net Pay={summary.net_pay:.1f} ft, "
+             f"PHIE={summary.avg_phie:.3f}, Sw={summary.avg_sw:.3f}")
 
    # Create plot
-   plot = create_interpretation_plot(
-       result.well,
-       depth_range=(8000, 8400)
-   )
+   plot = create_interpretation_plot(result.well, depth_range=(8000, 8400))
    plot.save("interpretation.png")
+
+Workflow Trace & Transparency
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Both the Standard and Dynamic workflows provide full step-by-step trace
+metadata showing exactly what methods, parameters, thresholds, and decisions
+were used at each stage.
+
+**Standard Workflow trace:**
+
+.. code-block:: python
+
+   result = run_standard_workflow(well, config)
+   result.print_trace()
+
+   # Access individual step traces
+   for step in result.steps:
+       print(f"[{step.step}] method={step.method}")
+       print(f"  Inputs: {step.input_curves}")
+       print(f"  Outputs: {step.output_curves}")
+       print(f"  Parameters: {step.parameters}")
+       for d in step.decisions:
+           print(f"  -> {d}")
+
+**Dynamic Workflow trace with DataFrame export:**
+
+.. code-block:: python
+
+   from petrophys.workflow import run_dynamic_workflow, DynamicWorkflowConfig
+
+   config = DynamicWorkflowConfig(
+       bht_f=220, td_ft=10522,
+       rw=0.04, rmf_at_meas_temp=0.5,
+       lithology="clastic",
+       gr_method="larionov_tertiary",
+       perm_method="timur",
+       vcl_cutoff=0.30, phie_cutoff=0.08, sw_cutoff=0.70,
+   )
+
+   result = run_dynamic_workflow(well, config)
+
+   # Print human-readable trace to console
+   result.print_trace()
+
+   # Export as DataFrame for QC reports
+   trace_df = result.to_dataframe()
+   print(trace_df[["Step", "Status", "Method", "Input Curves",
+                    "Output Curves", "Decisions"]])
+
+   # Drill into a specific step
+   for step in result.steps_executed:
+       if step.step == "vclay":
+           print(f"VCL method: {step.method}")
+           print(f"GR min: {step.parameters.get('gr_min')}")
+           print(f"GR max: {step.parameters.get('gr_max')}")
+           print(f"Used SP: {step.parameters.get('use_sp')}")
+           print(f"Used N-D: {step.parameters.get('use_nd')}")
+
+The trace captures:
+
+- **Auto-detection decisions**: GR_min from P5 percentile, SP enabled/disabled and why
+- **Method routing**: which Sw model was selected and why (lithology, VCL, salinity)
+- **Parameter sources**: user-provided vs auto-detected vs default fallback
+- **Output statistics**: VCL range, Sw range, net pay metres
+
+Core Data Module
+~~~~~~~~~~~~~~~~
+
+The ``petrophys.core`` module provides tools for working with core plug
+measurements and calibrating log curves against laboratory data.
+
+.. code-block:: python
+
+   from petrophys.core import (
+       CoreData,
+       calibrate_porosity, calibrate_permeability,
+       fit_poro_perm_transform, apply_poro_perm_transform,
+       correct_porosity_with_grain_density,
+       estimate_archie_m,
+       plot_calibration, plot_poro_perm, plot_core_on_logs,
+   )
+   import pandas as pd
+
+   # Create synthetic core data (in practice, load from CSV/Excel)
+   core = CoreData.from_dataframe(pd.DataFrame({
+       "depth": [2500, 2510, 2520, 2530, 2540, 2550, 2560],
+       "porosity": [0.18, 0.22, 0.19, 0.25, 0.21, 0.17, 0.23],
+       "permeability": [50, 150, 75, 300, 120, 30, 180],
+       "grain_density": [2.65, 2.64, 2.66, 2.63, 2.65, 2.67, 2.64],
+   }))
+
+   # Calibrate log porosity vs core
+   cal = calibrate_porosity(well, core, log_curve="PHIE")
+   print(f"R² = {cal['r_squared']:.3f}, Bias = {cal['bias']:.4f}")
+
+   # Fit poro-perm transform: log(K) = A * PHI + B
+   transform = fit_poro_perm_transform(core)
+   perm_cal = apply_poro_perm_transform(well, transform)
+
+   # Correct porosity using core grain density
+   phie_corr = correct_porosity_with_grain_density(well, core)
+
+   # Estimate cementation exponent m
+   m_est = estimate_archie_m(core, rw=0.04)
+   print(f"Estimated m = {m_est['m']:.2f}")
+
+   # Visualization
+   plot_calibration(well, core, curve="porosity")
+   plot_poro_perm(core, transform)
+   plot_core_on_logs(well, core)
+
+Visualization Module
+~~~~~~~~~~~~~~~~~~~~
+
+The library provides multiple visualization tools for well log analysis.
+
+**Custom multi-track log plot:**
+
+.. code-block:: python
+
+   from petrophys.visualization import LogPlot
+
+   log_plot = LogPlot(well, figsize=(16, 12))
+   fig, axes = log_plot.create_figure(n_tracks=4)
+   log_plot.add_curve(0, "GR", color="green", xlim=(0, 150))
+   log_plot.add_fill(0, "GR", fill_value=0, color="yellow", alpha=0.3)
+   log_plot.add_curve(1, "RDEP", color="red", log_scale=True, xlim=(0.2, 2000))
+   log_plot.add_curve(2, "PHIE", color="blue", xlim=(0, 0.4))
+   log_plot.add_curve(3, "SW", color="blue", xlim=(0, 1))
+   log_plot.set_depth_range(top=2200, bottom=3000)
+   log_plot.show()
+
+**Full interpretation plot (8 tracks):**
+
+.. code-block:: python
+
+   from petrophys.visualization import create_interpretation_plot
+
+   interp = create_interpretation_plot(well, depth_range=(2200, 3200))
+   interp.show()
+
+**Density-Neutron crossplot with mineral endpoints:**
+
+.. code-block:: python
+
+   from petrophys.visualization import create_crossplot
+
+   plot = create_crossplot(well, x_curve="NPHI", y_curve="RHOB",
+                           color_curve="GR", xlim=(-0.05, 0.45),
+                           ylim=(2.95, 1.95), depth_range=(2200, 3200))
+   plot.add_matrix_points({
+       "Sandstone": (-0.02, 2.65), "Limestone": (0.00, 2.71),
+       "Dolomite": (0.02, 2.87),
+   })
+   plot.show()
+
+**Pickett plot for Archie parameter estimation:**
+
+.. code-block:: python
+
+   from petrophys.visualization import create_pickett_plot
+
+   pickett = create_pickett_plot(well, rw=0.05, phie_curve="PHIE",
+                                 rt_curve="RDEP", color_curve="VCL")
+   pickett.show()
+
+**Formation shading on log plots:**
+
+.. code-block:: python
+
+   from petrophys.visualization import add_zone_shading
+   import matplotlib.pyplot as plt
+
+   fig, ax = plt.subplots(figsize=(6, 14))
+   ax.plot(well["GR"].data, well.depth, 'g', linewidth=0.5)
+   ax.set_ylim(3200, 2200)
+
+   zones = [
+       {"name": "Balder Fm.", "top": 2208, "bottom": 2243, "color": "lightyellow"},
+       {"name": "Tor Fm.",    "top": 2418, "bottom": 2606, "color": "lightsalmon"},
+   ]
+   add_zone_shading(ax, zones, alpha=0.3)
+   plt.show()
 
 
 Interval-Based Formation Analysis

@@ -23,8 +23,9 @@ Features
 * **Rock Quality**: RQI, FZI, and normalized porosity (phi_z)
 * **Net Pay**: Lithology-aware cutoff-based determination (clastic/carbonate)
 * **Formation Analysis**: Interval-based summaries for formations, zones, sub-zones, and manual intervals with CSV loading (simple, NPD, Danish)
-* **Dynamic Workflow**: Auto-detects available curves and runs only applicable modules
-* **Visualization**: Log plots, crossplots, Pickett plots
+* **Core Data**: Load core plug measurements, calibrate log porosity/permeability, fit poro-perm transforms, estimate Archie m
+* **Dynamic Workflow**: Auto-detects available curves and runs only applicable modules with full step-by-step trace
+* **Visualization**: Log plots, triple combos, interpretation plots, crossplots, Pickett plots, zone flags, formation shading
 
 Quick Example
 -------------
@@ -46,7 +47,9 @@ Quick Example
    )
 
    result = run_standard_workflow(well, config)
-   print(f"Net pay: {result.well.get('NET_PAY')}")
+
+   # Full transparency: print every step's method, parameters, and decisions
+   result.print_trace()
 
 **Dynamic Workflow (auto-detects inputs):**
 
@@ -64,9 +67,11 @@ Quick Example
 
    result = run_dynamic_workflow(well, config)
 
-   # Only applicable modules run automatically
-   print(f"Steps executed: {[s.step for s in result.steps_executed]}")
-   print(f"Steps skipped: {result.steps_skipped}")
+   # Full trace: every step's method, inputs, outputs, parameters, decisions
+   result.print_trace()
+
+   # Or export the trace as a DataFrame for reporting
+   trace_df = result.to_dataframe()
 
 Contents
 --------

@@ -294,12 +294,134 @@ Reservoir Quality Index, Flow Zone Indicator, and normalized porosity:
 Visualization Module
 --------------------
 
-Plotting and visualization tools.
+Comprehensive plotting and visualization tools for well log analysis.
+
+Log Plot
+~~~~~~~~
+
+Configurable multi-track log display.
+
+.. autoclass:: petrophys.visualization.LogPlot
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autofunction:: petrophys.visualization.create_log_plot
+
+Triple Combo Plot
+~~~~~~~~~~~~~~~~~
+
+Industry-standard 3-track display: GR+Caliper | Resistivity | Density+Neutron.
+
+.. autoclass:: petrophys.visualization.TripleComboPlot
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autofunction:: petrophys.visualization.create_triple_combo
+
+Interpretation Plot
+~~~~~~~~~~~~~~~~~~~
+
+8-track full interpretation display: GR | Resistivity | Density-Neutron |
+VCL | Porosity | Sw | Permeability | Net Pay Flags.
+
+.. autoclass:: petrophys.visualization.InterpretationPlot
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autofunction:: petrophys.visualization.create_interpretation_plot
+
+Crossplot
+~~~~~~~~~
+
+General-purpose crossplot (NPHI vs RHOB, PHIE vs Sw, etc.) with optional
+mineral end-points and trend lines.
+
+.. autoclass:: petrophys.visualization.CrossPlot
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autofunction:: petrophys.visualization.create_crossplot
+
+Pickett Plot
+~~~~~~~~~~~~
+
+Log(Rt) vs Log(PHIE) with Sw iso-saturation lines for Archie parameter
+estimation and verification.
+
+.. autoclass:: petrophys.visualization.PickettPlot
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autofunction:: petrophys.visualization.create_pickett_plot
+
+Zone Flags & Formation Shading
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: petrophys.visualization.plot_zone_flags
+
+.. autofunction:: petrophys.visualization.add_zone_shading
 
 .. automodule:: petrophys.visualization
    :members:
    :undoc-members:
    :show-inheritance:
+
+Core Data Module
+----------------
+
+Load core plug measurements (porosity, permeability, grain density, Sw)
+and calibrate log curves against laboratory data.
+
+.. automodule:: petrophys.core
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+CoreData Container
+~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: petrophys.core.CoreData
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Calibration Functions
+~~~~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: petrophys.core.calibrate_porosity
+
+.. autofunction:: petrophys.core.calibrate_permeability
+
+Poro-Perm Transform
+~~~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: petrophys.core.fit_poro_perm_transform
+
+.. autofunction:: petrophys.core.apply_poro_perm_transform
+
+Grain Density Correction
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: petrophys.core.correct_porosity_with_grain_density
+
+Archie m Estimation
+~~~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: petrophys.core.estimate_archie_m
+
+Core Visualization
+~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: petrophys.core.plot_calibration
+
+.. autofunction:: petrophys.core.plot_poro_perm
+
+.. autofunction:: petrophys.core.plot_core_on_logs
 
 Formation Module
 ----------------
@@ -369,14 +491,33 @@ type hierarchy and the ``IntervalAnalyzer`` class.
 Workflow Module
 ---------------
 
-Workflow orchestration and batch processing.
+Workflow orchestration and batch processing. Both workflows provide full
+step-by-step trace metadata for transparency and auditability.
 
 Standard Workflow
 ~~~~~~~~~~~~~~~~~
 
 Fixed-configuration pipeline for straightforward interpretation.
+Returns ``WorkflowResult`` with ``print_trace()`` for full transparency.
 
 .. automodule:: petrophys.workflow.standard_workflow
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+StepTrace (Standard Workflow)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Each step in the standard workflow returns a ``StepTrace`` with:
+
+- **step**: Step name (temperature, vclay, rw, porosity, saturation, permeability, net_pay)
+- **method**: Algorithm used (e.g., ``linear_gradient_from_BHT``, ``archie``)
+- **parameters**: All numeric parameters (Rw, matrix density, cutoffs, etc.)
+- **input_curves**: Log curves consumed
+- **output_curves**: Curves added to the well
+- **decisions**: Human-readable trace of logic branches and values
+
+.. autoclass:: petrophys.workflow.standard_workflow.StepTrace
    :members:
    :undoc-members:
    :show-inheritance:
@@ -385,12 +526,75 @@ Dynamic Workflow
 ~~~~~~~~~~~~~~~~
 
 Input-aware pipeline that auto-detects available curves and runs only
-applicable modules in the correct pipeline order.
+applicable modules in the correct pipeline order. Returns
+``DynamicWorkflowResult`` with ``print_trace()`` and ``to_dataframe()``
+for comprehensive trace export.
 
 .. automodule:: petrophys.workflow.dynamic_workflow
    :members:
    :undoc-members:
    :show-inheritance:
+
+StepResult (Dynamic Workflow)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Each step returns a ``StepResult`` with comprehensive metadata:
+
+- **step**: Step name (temperature, bad_hole, vclay, rcl, lithology, rmf, rw, invasion, hc_correction, porosity, saturation, permeability, rock_quality, bvw, mhi, net_pay)
+- **method**: Specific algorithm or equation used
+- **parameters**: Every numeric parameter, threshold, and constant with source (user-provided, auto-detected, default)
+- **input_curves**: All input log curves consumed
+- **output_curves**: All curves added/modified on the well
+- **decisions**: Ordered trace of every decision (auto-detection logic, fallback paths, parameter sources, output statistics)
+
+.. autoclass:: petrophys.workflow.dynamic_workflow.StepResult
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Workflow Trace Output
+^^^^^^^^^^^^^^^^^^^^^
+
+Both ``WorkflowResult.print_trace()`` and ``DynamicWorkflowResult.print_trace()``
+produce formatted output like:
+
+.. code-block:: text
+
+   ==========================================================================================
+   WORKFLOW TRACE — 15/9-15
+   ==========================================================================================
+   Overall: SUCCESS | Executed: 12 | Skipped: 2
+
+   [ OK ] temperature
+          Method: linear_gradient_from_BHT
+          Inputs: DEPT
+          Outputs: TEMP
+          surface_temp_f: 68.0
+          bht_f: 220.0
+          -> Gradient = 0.0144 F/ft
+          -> Temp range: 75.0 - 219.5 F
+
+   [ OK ] vclay
+          Method: larionov_tertiary
+          Inputs: GR, SP, NPHI, RHOB
+          Outputs: VCL, VCL_GR, VCL_SP, VCL_ND
+          gr_min: 22.3 (auto, P5 of GR)
+          gr_max: 98.7 (auto, P95 of GR)
+          -> SP available and WBM without clay/KCl -> VCL_SP computed
+          -> NPHI + RHOB available -> VCL_ND computed
+          -> Final VCL = min(available methods)
+
+   [ OK ] saturation
+          Method: simandoux
+          Inputs: RDEP, PHIE, VCL
+          Outputs: SW
+          a: 1.0, m: 2.0, n: 2.0
+          rw: 0.04
+          -> Model selected: simandoux (auto-routed: clastic + salinity >= 20k)
+          -> Sw range: 0.051 - 1.000
+
+``DynamicWorkflowResult.to_dataframe()`` exports all trace data as a pandas
+DataFrame for inclusion in QC reports.
 
 .. automodule:: petrophys.workflow
    :members:
