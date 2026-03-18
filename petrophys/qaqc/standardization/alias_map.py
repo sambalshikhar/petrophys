@@ -19,8 +19,10 @@ ALIAS_MAP: Dict[str, List[str]] = {
              "RSFL", "AT20", "AT30", "SFL", "RM", "RMED", "RLA3"],
 
     # Shallow Resistivity (RSHA)
-    "RSHA": ["MSFL", "MCFL", "MLL", "PL", "RXO", "RXOZ", "RSHAL",
-             "RS", "RSHALLOW", "RMLL", "RLLS", "SN", "RLA1"],
+    "RSHA": ["LLS", "RLLS", "AT10", "AT20", "AT30", "SFL", "RSFL", "RLA1", "RS"],
+    
+    # Flushed zone Resistivity (RXO)
+    "RXO":  ["MSFL", "MCFL", "MLL", "RXOZ", "RXO", "RMLL", "PL", "RSHALLOW"],
 
     # Bulk Density (RHOB)
     "RHOB": ["RHOB", "ZDEN", "RHOZ", "DEN", "DENSITY", "DENS",
@@ -140,6 +142,7 @@ def find_curve_type(mnemonic: str) -> Optional[str]:
         "RDEP": "Deep Resistivity",
         "RMED": "Medium Resistivity",
         "RSHA": "Shallow Resistivity",
+        "RXO": "Flushed zone Resistivity", 
         "RHOB": "Bulk Density",
         "DRHO": "Density Correction",
         "NPHI": "Neutron Porosity",
@@ -164,6 +167,7 @@ STANDARD_UNITS: Dict[str, str] = {
     "RDEP": "ohm.m",
     "RMED": "ohm.m",
     "RSHA": "ohm.m",
+    "RXO": "ohm.m", 
     "RHOB": "g/cm3",
     "DRHO": "g/cm3",
     "NPHI": "v/v",
