@@ -3,8 +3,7 @@ SP-based clay volume calculation.
 
 This module provides clay volume calculation from spontaneous potential.
 
-Note: SP should be discarded if the formation contains clay or
-if KCl is used in the drilling mud.
+Note: SP should be discarded if clay or KCl is used in the drilling mud.
 """
 
 from typing import Union
@@ -135,3 +134,4 @@ def calculate_ssp(
 
     ssp = -k * np.log10(rmf / rw)
     return ssp
+
