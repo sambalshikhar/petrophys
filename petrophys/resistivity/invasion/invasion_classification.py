@@ -9,7 +9,7 @@ from typing import Union
 from enum import Enum
 import numpy as np
 
-from petrophys.core.classifications import InvasionClassification
+from petrophys.base.classifications import InvasionClassification
 
 
 class InvasionType(Enum):

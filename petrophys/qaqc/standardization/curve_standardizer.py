@@ -114,8 +114,8 @@ class CurveStandardizer:
         Well
             Well with standardized curves
         """
-        from petrophys.core.curve import Curve, CurveMetadata
-        from petrophys.core.data_types import DataType
+        from petrophys.base.curve import Curve, CurveMetadata
+        from petrophys.base.data_types import DataType
 
         # Track renamed curves to avoid conflicts
         new_curves = {}

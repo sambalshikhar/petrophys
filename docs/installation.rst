@@ -57,7 +57,7 @@ After installation, verify it works correctly:
 
    # Test basic functionality
    from petrophys import Well
-   from petrophys.core import Curve
+   from petrophys.base import Curve
    print("Petrophys installed successfully!")
 
 Optional: DLIS Support

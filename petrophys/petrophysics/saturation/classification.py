@@ -7,7 +7,7 @@ This module provides classification of water saturation values.
 from typing import Union
 import numpy as np
 
-from petrophys.core.classifications import HcSaturationClassification
+from petrophys.base.classifications import HcSaturationClassification
 
 
 def classify_sw(

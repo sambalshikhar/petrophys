@@ -13,10 +13,10 @@ This library provides tools for:
 """
 
 from petrophys.version import __version__
-from petrophys.core.well import Well
-from petrophys.core.curve import Curve
-from petrophys.core.data_types import DataType
-from petrophys.core.classifications import (
+from petrophys.base.well import Well
+from petrophys.base.curve import Curve
+from petrophys.base.data_types import DataType
+from petrophys.base.classifications import (
     VclClassification,
     InvasionClassification,
     PorosityClassification,

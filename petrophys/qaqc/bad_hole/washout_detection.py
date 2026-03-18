@@ -9,7 +9,7 @@ from typing import Optional, Dict, List, Any
 from dataclasses import dataclass
 import numpy as np
 
-from petrophys.core.constants import DefaultParameters
+from petrophys.base.constants import DefaultParameters
 from petrophys.qaqc.bad_hole.flag_generator import generate_bad_hole_flags
 
 

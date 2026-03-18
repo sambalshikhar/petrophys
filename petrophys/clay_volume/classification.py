@@ -8,7 +8,7 @@ into formation quality categories.
 from typing import Union
 import numpy as np
 
-from petrophys.core.classifications import VclClassification
+from petrophys.base.classifications import VclClassification
 
 
 def classify_vcl(vcl: Union[float, np.ndarray]) -> Union[VclClassification, np.ndarray]:

@@ -49,7 +49,7 @@ def mask_bad_hole_curves(
     """
     if not inplace:
         # Create shallow copy of well
-        from petrophys.core.well import Well
+        from petrophys.base.well import Well
         new_well = Well(name=well.name)
         new_well._depth = well._depth.copy() if well._depth is not None else None
         new_well._depth_unit = well._depth_unit
@@ -104,7 +104,7 @@ def apply_quality_flags(
     """
     if not inplace:
         # Create copy
-        from petrophys.core.well import Well
+        from petrophys.base.well import Well
         new_well = Well(name=well.name)
         new_well._depth = well._depth.copy() if well._depth is not None else None
         new_well._depth_unit = well._depth_unit

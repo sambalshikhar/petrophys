@@ -8,7 +8,7 @@ different unit systems and standardize units.
 from typing import Union, Optional, Tuple
 import numpy as np
 
-from petrophys.core.units import UnitConverter
+from petrophys.base.units import UnitConverter
 from petrophys.qaqc.standardization.alias_map import (
     get_standard_mnemonic,
     get_standard_unit,
@@ -146,7 +146,7 @@ def convert_curve_units(
     Curve
         Curve with converted data
     """
-    from petrophys.core.curve import Curve
+    from petrophys.base.curve import Curve
 
     if not inplace:
         curve = curve.copy()

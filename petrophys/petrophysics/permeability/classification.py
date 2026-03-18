@@ -5,7 +5,7 @@ Permeability classification.
 from typing import Union
 import numpy as np
 
-from petrophys.core.classifications import PermeabilityClassification
+from petrophys.base.classifications import PermeabilityClassification
 
 
 def classify_permeability(

@@ -50,7 +50,7 @@ def read_csv(
     >>> from petrophys.io import read_csv
     >>> well = read_csv("well_data.csv", depth_column="MD")
     """
-    from petrophys.core.well import Well
+    from petrophys.base.well import Well
 
     filepath = Path(filepath)
     if not filepath.exists():
@@ -133,9 +133,9 @@ def read_ascii(
     Well
         Well object with loaded data
     """
-    from petrophys.core.well import Well
-    from petrophys.core.curve import Curve, CurveMetadata
-    from petrophys.core.data_types import DataType
+    from petrophys.base.well import Well
+    from petrophys.base.curve import Curve, CurveMetadata
+    from petrophys.base.data_types import DataType
 
     filepath = Path(filepath)
     if not filepath.exists():

@@ -264,7 +264,7 @@ def create_pickett_plot(
         if color_data is not None:
             color_data = color_data[mask]
 
-    well_name = well.header.get("WELL", "Unknown Well")
+    well_name = well.name or "Unknown Well"
     title = f"Pickett Plot - {well_name}"
 
     plot = PickettPlot(figsize=figsize)

@@ -7,7 +7,7 @@ This module provides classification of porosity values.
 from typing import Union
 import numpy as np
 
-from petrophys.core.classifications import PorosityClassification
+from petrophys.base.classifications import PorosityClassification
 
 
 def classify_porosity(

@@ -9,10 +9,10 @@ This module provides:
 - Constants: Matrix and fluid properties tables
 """
 
-from petrophys.core.well import Well
-from petrophys.core.curve import Curve
-from petrophys.core.data_types import DataType
-from petrophys.core.classifications import (
+from petrophys.base.well import Well
+from petrophys.base.curve import Curve
+from petrophys.base.data_types import DataType
+from petrophys.base.classifications import (
     VclClassification,
     InvasionClassification,
     PorosityClassification,
@@ -20,8 +20,8 @@ from petrophys.core.classifications import (
     PermeabilityClassification,
     MhiClassification,
 )
-from petrophys.core.units import UnitConverter, UnitRegistry
-from petrophys.core.constants import MatrixProperties, FluidProperties
+from petrophys.base.units import UnitConverter, UnitRegistry
+from petrophys.base.constants import MatrixProperties, FluidProperties
 
 __all__ = [
     "Well",

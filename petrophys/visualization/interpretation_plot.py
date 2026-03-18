@@ -91,7 +91,7 @@ class InterpretationPlot:
         self.axes[0].set_ylabel("Depth")
 
         # Title
-        well_name = self.well.header.get("WELL", "Unknown Well")
+        well_name = self.well.name or "Unknown Well"
         self.fig.suptitle(f"Interpretation - {well_name}", fontsize=14)
 
         plt.tight_layout()
@@ -115,10 +115,14 @@ class InterpretationPlot:
         """Resistivity track."""
         depth = self.well.depth
 
-        for name, color in [("RT", "red"), ("RMED", "blue"), ("RSHA", "green")]:
-            curve = self.well.get(name)
-            if curve is not None:
-                ax.plot(curve.data, depth, color=color, linewidth=0.5, label=name)
+        for names, color in [(["RT", "RDEP", "LLD", "ILD"], "red"),
+                              (["RMED", "ILM", "LLS"], "blue"),
+                              (["RSHA", "MSFL", "SFL", "RXO"], "green")]:
+            for name in names:
+                curve = self.well.get(name)
+                if curve is not None:
+                    ax.plot(curve.data, depth, color=color, linewidth=0.5, label=name)
+                    break
 
         ax.set_xscale('log')
         ax.set_xlim(0.2, 2000)

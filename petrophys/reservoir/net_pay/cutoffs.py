@@ -4,7 +4,7 @@ Cutoff definitions for net pay determination.
 
 from dataclasses import dataclass
 
-from petrophys.core.constants import DefaultParameters
+from petrophys.base.constants import DefaultParameters
 
 
 @dataclass

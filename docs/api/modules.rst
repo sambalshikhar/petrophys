@@ -12,9 +12,9 @@ The core module contains fundamental data structures and utilities.
    :toctree: _autosummary
    :recursive:
 
-   petrophys.core
+   petrophys.base
 
-.. automodule:: petrophys.core
+.. automodule:: petrophys.base
    :members:
    :undoc-members:
    :show-inheritance:
@@ -22,7 +22,7 @@ The core module contains fundamental data structures and utilities.
 Well Class
 ~~~~~~~~~~
 
-.. autoclass:: petrophys.core.Well
+.. autoclass:: petrophys.base.Well
    :members:
    :undoc-members:
    :show-inheritance:
@@ -30,7 +30,7 @@ Well Class
 Curve Class
 ~~~~~~~~~~~
 
-.. autoclass:: petrophys.core.Curve
+.. autoclass:: petrophys.base.Curve
    :members:
    :undoc-members:
    :show-inheritance:

@@ -463,7 +463,7 @@ class DynamicWorkflow:
 
     def _step_hc_correction(self, well: "Well") -> None:
         from petrophys.petrophysics.hc_correction.hc_correction_module import HcCorrectionModule
-        from petrophys.core.constants import MatrixProperties
+        from petrophys.base.constants import MatrixProperties
 
         rho_ma = self.config.rho_ma
         if rho_ma is None:
