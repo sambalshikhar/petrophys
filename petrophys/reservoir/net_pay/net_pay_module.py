@@ -6,7 +6,7 @@ from typing import Optional, Union
 from dataclasses import dataclass
 import numpy as np
 
-from petrophys.core.constants import DefaultParameters
+from petrophys.base.constants import DefaultParameters
 from petrophys.reservoir.net_pay.flags import generate_net_flags
 from petrophys.reservoir.net_pay.cutoffs import Cutoffs
 

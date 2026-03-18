@@ -93,7 +93,7 @@ class TripleComboPlot:
         self.axes[0].set_ylabel("Depth")
 
         # Title
-        well_name = self.well.header.get("WELL", "Unknown Well")
+        well_name = self.well.name or "Unknown Well"
         self.fig.suptitle(f"Triple Combo - {well_name}", fontsize=14)
 
         plt.tight_layout()

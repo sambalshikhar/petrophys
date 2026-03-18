@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 import numpy as np
 
-from petrophys.core.constants import DefaultParameters
+from petrophys.base.constants import DefaultParameters
 from petrophys.clay_volume.gr_method import vcl_from_gr
 from petrophys.clay_volume.sp_method import vcl_from_sp, should_use_sp
 from petrophys.clay_volume.nd_method import vcl_from_nd

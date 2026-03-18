@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from enum import Enum
 import numpy as np
 
-from petrophys.core.constants import DefaultParameters
+from petrophys.base.constants import DefaultParameters
 from petrophys.petrophysics.saturation.archie import archie
 from petrophys.petrophysics.saturation.simandoux import simandoux
 from petrophys.petrophysics.saturation.indonesia import indonesia

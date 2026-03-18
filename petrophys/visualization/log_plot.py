@@ -200,7 +200,7 @@ class LogPlot:
         if self.fig is None:
             raise RuntimeError("Call create_figure() first")
 
-        well_name = self.well.header.get("WELL", "Unknown Well")
+        well_name = self.well.name or "Unknown Well"
         self.fig.suptitle(f"{title}\n{well_name}", fontsize=12)
 
     def show(self) -> None:

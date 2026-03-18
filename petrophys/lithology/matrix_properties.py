@@ -6,7 +6,7 @@ multi-mineral solver and crossplot analysis.
 """
 
 from typing import Dict, Optional, NamedTuple
-from petrophys.core.constants import MatrixProperties, MineralProperties
+from petrophys.base.constants import MatrixProperties, MineralProperties
 
 
 # Mineral properties for multi-mineral analysis

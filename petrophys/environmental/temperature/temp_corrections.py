@@ -8,7 +8,7 @@ measurements to formation temperature.
 from typing import Union
 import numpy as np
 
-from petrophys.core.units import UnitConverter
+from petrophys.base.units import UnitConverter
 
 
 def arps_equation(

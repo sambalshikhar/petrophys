@@ -78,7 +78,7 @@ def rw_from_sp(
     """
     # Convert temperature to Fahrenheit
     if temp_unit.upper() == "C":
-        from petrophys.core.units import UnitConverter
+        from petrophys.base.units import UnitConverter
         temperature = UnitConverter.celsius_to_fahrenheit(temperature)
 
     # Calculate SSP

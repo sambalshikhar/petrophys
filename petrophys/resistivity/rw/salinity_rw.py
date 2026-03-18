@@ -35,7 +35,7 @@ def rw_from_salinity(
     """
     # Convert to Fahrenheit
     if temp_unit.upper() == "C":
-        from petrophys.core.units import UnitConverter
+        from petrophys.base.units import UnitConverter
         temperature = UnitConverter.celsius_to_fahrenheit(temperature)
 
     # Handle zero or negative salinity
@@ -81,7 +81,7 @@ def salinity_from_rw(
     """
     # Convert to Fahrenheit
     if temp_unit.upper() == "C":
-        from petrophys.core.units import UnitConverter
+        from petrophys.base.units import UnitConverter
         temperature = UnitConverter.celsius_to_fahrenheit(temperature)
 
     # Correct Rw to 75°F

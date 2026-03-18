@@ -10,8 +10,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from petrophys.core.curve import Curve, CurveMetadata
-from petrophys.core.data_types import DataType
+from petrophys.base.curve import Curve, CurveMetadata
+from petrophys.base.data_types import DataType
 
 
 class WellHeader:
@@ -76,6 +76,10 @@ class WellHeader:
         self.bit_size: Optional[float] = None  # Bit size in inches
         self.mud_type: str = ""  # WBM, OBM, etc.
         self.custom: Dict[str, Any] = {}
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get header value by key name (supports dict-style access)."""
+        return self.to_dict().get(key, default)
 
     def __repr__(self) -> str:
         return f"WellHeader(name={self.well_name}, uwi={self.uwi})"
@@ -210,6 +214,16 @@ class Well:
         if self._depth is not None:
             return float(np.nanmax(self._depth))
         return None
+
+    @property
+    def start_depth(self) -> Optional[float]:
+        """Alias for top (for visualization module compatibility)."""
+        return self.top
+
+    @property
+    def stop_depth(self) -> Optional[float]:
+        """Alias for bottom (for visualization module compatibility)."""
+        return self.bottom
 
     @property
     def step(self) -> Optional[float]:

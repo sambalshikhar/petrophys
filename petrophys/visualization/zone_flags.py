@@ -91,7 +91,7 @@ def plot_zone_flags(
     ax.set_ylabel("Depth")
     ax.legend(loc='upper right', fontsize=8)
 
-    well_name = well.header.get("WELL", "Unknown Well")
+    well_name = well.name or "Unknown Well"
     ax.set_title(f"Zone Flags - {well_name}")
 
     plt.tight_layout()
@@ -224,7 +224,7 @@ def create_net_pay_summary_plot(
     for ax in axes:
         ax.set_ylim(bottom, top)
 
-    well_name = well.header.get("WELL", "Unknown Well")
+    well_name = well.name or "Unknown Well"
     fig.suptitle(f"Net Pay Summary - {well_name}", fontsize=12)
 
     plt.tight_layout()

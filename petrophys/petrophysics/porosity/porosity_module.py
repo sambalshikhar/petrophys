@@ -9,7 +9,7 @@ from typing import Optional, Union
 from dataclasses import dataclass
 import numpy as np
 
-from petrophys.core.constants import DefaultParameters, MatrixProperties
+from petrophys.base.constants import DefaultParameters, MatrixProperties
 from petrophys.petrophysics.porosity.density_porosity import density_porosity
 from petrophys.petrophysics.porosity.sonic_porosity import sonic_porosity
 from petrophys.petrophysics.porosity.total_porosity import total_porosity

@@ -5,7 +5,7 @@ MHI classification.
 from typing import Union
 import numpy as np
 
-from petrophys.core.classifications import MhiClassification
+from petrophys.base.classifications import MhiClassification
 
 
 def classify_mhi(mhi: Union[float, np.ndarray]) -> Union[MhiClassification, np.ndarray]:

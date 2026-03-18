@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from petrophys.core.data_types import DataType
+from petrophys.base.data_types import DataType
 
 
 @dataclass

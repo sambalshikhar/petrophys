@@ -8,7 +8,7 @@ for various bad hole conditions.
 from typing import Optional, Union
 import numpy as np
 
-from petrophys.core.constants import DefaultParameters
+from petrophys.base.constants import DefaultParameters
 
 
 def generate_washout_flag(

@@ -95,9 +95,9 @@ class LASReader:
         Well
             Well object with loaded data
         """
-        from petrophys.core.well import Well
-        from petrophys.core.curve import Curve, CurveMetadata
-        from petrophys.core.data_types import DataType
+        from petrophys.base.well import Well
+        from petrophys.base.curve import Curve, CurveMetadata
+        from petrophys.base.data_types import DataType
 
         well = Well(name=self.well_name)
 
