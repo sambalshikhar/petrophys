@@ -292,7 +292,7 @@ class MhiClassification(Enum):
     """
     Moveable Hydrocarbon Index (MHI) classification.
 
-    MHI = (Sxo - Sw) / (1 - Sw) or simplified as Sxo/Sw ratio indicator.
+    MHI = (Sxo - Sw) / (1 - Sw) or simplified as Sx/Sxo ratio indicator.
 
     Attributes
     ----------
