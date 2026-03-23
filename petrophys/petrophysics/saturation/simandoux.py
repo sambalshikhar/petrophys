@@ -2,11 +2,12 @@
 Simandoux equation for water saturation in shaly sands.
 
 This module provides the Simandoux shaly sand model for formations
-with moderate to high clay content and higher salinity.
+with moderate to high clay content and higher salinity (>= 20 kppm).
 """
 
 from typing import Union
 import numpy as np
+from scipy.optimize import brentq
 
 
 def simandoux(
@@ -20,11 +21,12 @@ def simandoux(
     n: float = 2.0
 ) -> Union[float, np.ndarray]:
     """
-    Calculate water saturation using Simandoux equation.
+    Calculate water saturation using the Simandoux equation.
 
-    1/Rt = φ^m × Sw^n / (a × Rw) + Vcl × Sw / Rcl
+    1/Rt = (phi^m / (a * Rw)) * Sw^n  +  (Vcl / Rcl) * Sw
 
-    This is a quadratic equation in Sw.
+    For n=2 an exact quadratic solution is used.
+    For n != 2 the equation is solved numerically via Brent's method.
 
     Parameters
     ----------
@@ -50,30 +52,47 @@ def simandoux(
     float or np.ndarray
         Water saturation (0-1)
     """
-    # Avoid division by zero
-    rt = np.where(rt <= 0, 1e-10, rt) if isinstance(rt, np.ndarray) else max(rt, 1e-10)
-    phi = np.where(phi <= 0, 1e-10, phi) if isinstance(phi, np.ndarray) else max(phi, 1e-10)
+    scalar = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vcl)
+
+    rt  = np.atleast_1d(np.asarray(rt,  dtype=float))
+    phi = np.atleast_1d(np.asarray(phi, dtype=float))
+    vcl = np.atleast_1d(np.asarray(vcl, dtype=float))
+
+    rt  = np.where(rt  <= 0, 1e-10, rt)
+    phi = np.where(phi <= 0, 1e-10, phi)
     rcl = max(rcl, 1e-10)
 
-    # Simandoux coefficients for quadratic: A*Sw^2 + B*Sw + C = 0
-    # Rearranging: (φ^m/(a*Rw)) * Sw^n + (Vcl/Rcl) * Sw - 1/Rt = 0
+    A = np.power(phi, m) / (a * rw)   # coefficient on Sw^n
+    B = vcl / rcl                      # coefficient on Sw
+    C = 1.0 / rt                       # RHS
 
-    # For n=2 (quadratic in Sw):
-    # A = φ^m / (a × Rw)
-    # B = Vcl / Rcl
-    # C = -1/Rt
+    if abs(n - 2.0) < 1e-9:
+        # Exact quadratic solution for n = 2:
+        #   A * Sw^2 + B * Sw - C = 0  =>  Sw = (-B + sqrt(B^2 + 4AC)) / (2A)
+        discriminant = np.maximum(B ** 2 + 4 * A * C, 0.0)
+        sw = (-B + np.sqrt(discriminant)) / (2 * A)
+    else:
+        # General n: solve A*Sw^n + B*Sw - C = 0 numerically per sample
+        sw = np.empty_like(rt)
+        for i in range(len(rt)):
+            a_i, b_i, c_i = float(A[i]), float(B[i]), float(C[i])
 
-    A = np.power(phi, m) / (a * rw)
-    B = vcl / rcl
-    C = -1 / rt
+            def f(s):
+                return a_i * s ** n + b_i * s - c_i
 
-    # Quadratic formula: Sw = (-B + sqrt(B^2 - 4AC)) / (2A)
-    discriminant = B ** 2 - 4 * A * C
-    discriminant = np.maximum(discriminant, 0)  # Ensure non-negative
+            try:
+                # f(0) = -c_i < 0,  f(1) = a_i + b_i - c_i (usually >= 0)
+                if f(1.0) < 0:
+                    sw[i] = 1.0
+                elif f(1e-8) > 0:
+                    sw[i] = 0.0
+                else:
+                    sw[i] = brentq(f, 1e-8, 1.0, xtol=1e-8)
+            except ValueError:
+                sw[i] = 1.0
 
-    sw = (-B + np.sqrt(discriminant)) / (2 * A)
-
-    return np.clip(sw, 0, 1)
+    sw = np.clip(sw, 0, 1)
+    return float(sw[0]) if scalar else sw
 
 
 def simandoux_sw(
@@ -86,5 +105,5 @@ def simandoux_sw(
     m: float = 2.0,
     n: float = 2.0
 ) -> Union[float, np.ndarray]:
-    """Alias for simandoux function."""
+    """Alias for simandoux."""
     return simandoux(rt, rw, phi, vcl, rcl, a, m, n)
