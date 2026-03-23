@@ -9,6 +9,47 @@ from typing import Union
 import numpy as np
 
 
+def _waxman_smits_scalar(
+    phi_t: float,
+    ct: float,
+    cw: float,
+    qv: float,
+    f_star: float,
+    b_coeff: float,
+    n: float,
+    max_iter: int,
+    tol: float
+) -> float:
+    """
+    Iterative Waxman-Smits solver for a single depth sample.
+
+    Full conductivity equation:
+        Ct = (Sw^n / F*) * (Cw + B * Qv / Sw)
+
+    Rearranged for iteration:
+        Sw_{k+1} = [ F* * Ct / (Cw + B * Qv / Sw_k) ]^(1/n)
+
+    Starts from the first-order approximation (Sw_0 = Sw at Sw=1
+    in the clay term), then iterates until convergence.
+    """
+    # First-order seed (Sw = 1 in clay term)
+    denom_0 = cw + b_coeff * qv
+    denom_0 = max(denom_0, 1e-10)
+    sw = (f_star * ct / denom_0) ** (1.0 / n)
+    sw = min(max(sw, 1e-6), 1.0)
+
+    for _ in range(max_iter):
+        denom = cw + b_coeff * qv / sw
+        denom = max(denom, 1e-10)
+        sw_new = (f_star * ct / denom) ** (1.0 / n)
+        sw_new = min(max(sw_new, 1e-6), 1.0)
+        if abs(sw_new - sw) < tol:
+            return sw_new
+        sw = sw_new
+
+    return sw
+
+
 def waxman_smits(
     phi_t: Union[float, np.ndarray],
     rt: Union[float, np.ndarray],
@@ -17,25 +58,32 @@ def waxman_smits(
     rho_ma: float,
     b_coeff: float,
     m_star: float = 2.0,
-    n: float = 2.0
+    n: float = 2.0,
+    max_iter: int = 10,
+    tol: float = 1e-6
 ) -> Union[float, np.ndarray]:
     """
     Waxman-Smits water saturation for shaly sands with CEC data.
 
-    Equations
-    ---------
-    Conductivity form:
-        Ct = (1/F*) * (Cw + B * Qv * Sw) * Sw^n
+    Full conductivity form (iterative solution):
 
-    Where:
-        Ct   = 1/Rt  (formation conductivity)
-        Cw   = 1/Rw  (water conductivity)
-        F*   = phi_t^(-m*)  (intrinsic formation factor)
-        B    = equivalent conductance of clay counter-ions
-        Qv   = CEC * rho_ma * (1 - phi_t) / phi_t
+        Ct = (Sw^n / F*) * (Cw + B * Qv / Sw)
 
-    First-order approximation:
-        Sw = [F* * Ct / (Cw + B * Qv)]^(1/n)
+    where:
+        Ct    = 1/Rt
+        Cw    = 1/Rw
+        F*    = phi_t^(-m*)           (intrinsic formation factor)
+        Qv    = CEC * rho_ma * (1 - phi_t) / phi_t
+
+    Solved iteratively:
+        Sw_{k+1} = [F* * Ct / (Cw + B * Qv / Sw_k)]^(1/n)
+
+    starting from the first-order seed Sw_0 = [F* * Ct / (Cw + B*Qv)]^(1/n).
+    Convergence is typically reached in 3-5 iterations.
+
+    Note: the first-order approximation (setting Sw=1 in the clay term)
+    over-estimates clay conductivity and gives a pessimistically high Sw
+    in hydrocarbon-bearing intervals; the iterative form corrects this.
 
     Parameters
     ----------
@@ -50,41 +98,45 @@ def waxman_smits(
     rho_ma : float
         Matrix density (g/cc)
     b_coeff : float
-        Equivalent conductance of counter-ions
-        (temperature-dependent, from charts)
+        Equivalent conductance of clay counter-ions (temperature-dependent)
     m_star : float
-        Intrinsic cementation exponent (from SCAL, default: 2.0)
+        Intrinsic cementation exponent from SCAL (default: 2.0)
     n : float
         Saturation exponent (default: 2.0)
+    max_iter : int
+        Maximum iterations (default: 10; typically 3-5 suffice)
+    tol : float
+        Convergence tolerance on Sw (default: 1e-6)
 
     Returns
     -------
     float or np.ndarray
         Water saturation Sw (fraction, clipped 0-1)
     """
+    scalar_input = np.isscalar(phi_t) and np.isscalar(rt)
+
+    phi_t = np.atleast_1d(np.asarray(phi_t, dtype=float))
+    rt    = np.atleast_1d(np.asarray(rt,    dtype=float))
+
     cw = 1.0 / rw
-    ct = 1.0 / rt
 
-    # Protect against zero porosity
-    phi_t_safe = np.where(phi_t <= 0, 1e-10, phi_t) if isinstance(phi_t, np.ndarray) else max(phi_t, 1e-10)
+    phi_safe = np.where(phi_t <= 0, 1e-10, phi_t)
+    rt_safe  = np.where(rt    <= 0, 1e-10, rt)
 
-    # Intrinsic formation factor
-    f_star = phi_t_safe ** (-m_star)
+    f_star = phi_safe ** (-m_star)
+    qv     = cec * rho_ma * (1.0 - phi_safe) / phi_safe
+    ct     = 1.0 / rt_safe
 
-    # Qv: CEC per unit pore volume
-    qv = cec * rho_ma * (1.0 - phi_t_safe) / phi_t_safe
+    sw = np.array([
+        _waxman_smits_scalar(
+            phi_safe[i], ct[i], cw, qv[i], f_star[i],
+            b_coeff, n, max_iter, tol
+        )
+        for i in range(len(phi_t))
+    ])
 
-    # First-order solution
-    denominator = cw + b_coeff * qv
-    # Protect against zero denominator
-    if isinstance(denominator, np.ndarray):
-        denominator = np.where(denominator <= 0, 1e-10, denominator)
-    else:
-        denominator = max(denominator, 1e-10)
-
-    sw = (f_star * ct / denominator) ** (1.0 / n)
-
-    return np.clip(sw, 0.0, 1.0)
+    sw = np.clip(sw, 0.0, 1.0)
+    return float(sw[0]) if scalar_input else sw
 
 
 def waxman_smits_sw(
@@ -95,7 +147,9 @@ def waxman_smits_sw(
     rho_ma: float,
     b_coeff: float,
     m_star: float = 2.0,
-    n: float = 2.0
+    n: float = 2.0,
+    max_iter: int = 10,
+    tol: float = 1e-6
 ) -> Union[float, np.ndarray]:
-    """Alias for waxman_smits function."""
-    return waxman_smits(phi_t, rt, rw, cec, rho_ma, b_coeff, m_star, n)
+    """Alias for waxman_smits."""
+    return waxman_smits(phi_t, rt, rw, cec, rho_ma, b_coeff, m_star, n, max_iter, tol)
