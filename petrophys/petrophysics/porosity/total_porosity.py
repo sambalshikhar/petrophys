@@ -48,7 +48,7 @@ def total_porosity(
 
     The adaptive method uses different weightings based on
     neutron-density separation:
-    - If φN > φD + 0.05: wD = 1, wN = 0 (gas effect)
+    - If φN < φD + 0.05: wD = 1, wN = 0 (gas effect)
     - Else: wD = 0.6, wN = 0.4
 
     Parameters
@@ -79,7 +79,7 @@ def total_porosity(
     else:  # adaptive
         # Check for gas effect
         if isinstance(nphi, np.ndarray):
-            gas_effect = nphi > phi_d + 0.05
+            gas_effect = nphi < phi_d + 0.05
 
             phit = np.where(
                 gas_effect,
@@ -87,7 +87,7 @@ def total_porosity(
                 0.6 * phi_d + 0.4 * nphi  # Standard weighting
             )
         else:
-            if nphi > phi_d + 0.05:
+            if nphi < phi_d + 0.05:
                 phit = phi_d
             else:
                 phit = 0.6 * phi_d + 0.4 * nphi
