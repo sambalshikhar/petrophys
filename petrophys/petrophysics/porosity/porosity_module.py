@@ -9,12 +9,11 @@ from typing import Optional, Union
 from dataclasses import dataclass
 import numpy as np
 
-from petrophys.base.constants import DefaultParameters, MatrixProperties
+from petrophys.core.constants import DefaultParameters, MatrixProperties
 from petrophys.petrophysics.porosity.density_porosity import density_porosity
-from petrophys.petrophysics.porosity.sonic_porosity import sonic_porosity
+from petrophys.petrophysics.porosity.sonic_porosity import sonic_porosity, secondary_porosity
 from petrophys.petrophysics.porosity.total_porosity import total_porosity
 from petrophys.petrophysics.porosity.effective_porosity import effective_porosity
-from petrophys.petrophysics.porosity.sonic_porosity import secondary_porosity
 
 
 @dataclass
@@ -27,13 +26,14 @@ class PorosityResult:
     phid : np.ndarray
         Density porosity
     phis : np.ndarray
-        Sonic porosity (if available)
+        Sonic porosity (if DTC available, else None)
     phit : np.ndarray
-        Total porosity
+        Total porosity (N-D combination)
     phie : np.ndarray
-        Effective porosity
+        Effective porosity (phit - VCL * phi_clay)
     phi_sec : np.ndarray
-        Secondary porosity (if sonic available)
+        Secondary porosity index = phit - phis (if DTC available, else None).
+        Highlights fracture / vug porosity not seen by the sonic.
     """
 
     phid: np.ndarray
@@ -52,9 +52,9 @@ class PorosityModule:
     matrix : str, optional
         Matrix type (default: "sandstone")
     rhob_fluid : float, optional
-        Fluid density (default: 1.0)
+        Fluid density (default: 1.0 g/cc)
     phi_clay : float, optional
-        Clay porosity (default: 0.15)
+        Clay-bound porosity used in effective porosity (default: 0.15)
 
     Examples
     --------
@@ -69,18 +69,17 @@ class PorosityModule:
         rhob_fluid: float = DefaultParameters.FLUID_DENSITY,
         phi_clay: float = DefaultParameters.CLAY_POROSITY
     ):
-        self.matrix = matrix
+        self.matrix     = matrix
         self.rhob_fluid = rhob_fluid
-        self.phi_clay = phi_clay
+        self.phi_clay   = phi_clay
 
-        # Get matrix properties
         try:
             props = MatrixProperties.get(matrix)
             self.rhob_matrix = props.density
-            self.dtc_matrix = props.slowness
+            self.dtc_matrix  = props.slowness
         except KeyError:
             self.rhob_matrix = 2.65
-            self.dtc_matrix = 55.5
+            self.dtc_matrix  = 55.5
 
     def calculate(
         self,
@@ -93,32 +92,29 @@ class PorosityModule:
         Parameters
         ----------
         well : Well
-            Well with required curves
+            Well with RHOB required; NPHI and DTC optional but recommended
         vcl : np.ndarray, optional
-            Clay volume (uses VCL curve if not provided)
+            Clay volume array (uses VCL curve from well if not provided)
 
         Returns
         -------
         PorosityResult
-            Porosity calculation results
         """
-        # Get required curves
         rhob = well.get("RHOB")
         nphi = well.get("NPHI")
-        dtc = well.get("DTC")
+        dtc  = well.get("DTC")
 
         if rhob is None:
             raise ValueError("RHOB required for porosity calculation")
 
-        # Get VCL
         if vcl is None:
             vcl_curve = well.get("VCL")
             vcl = vcl_curve.data if vcl_curve is not None else np.zeros(well.n_samples)
 
-        # Density porosity
+        # --- Density porosity ---
         phid = density_porosity(rhob.data, self.rhob_matrix, self.rhob_fluid)
 
-        # Sonic porosity
+        # --- Sonic porosity ---
         phis = None
         if dtc is not None:
             phis = sonic_porosity(
@@ -126,19 +122,19 @@ class PorosityModule:
                 dtc_fluid=DefaultParameters.FLUID_SLOWNESS
             )
 
-        # Total porosity (N-D)
-        if nphi is not None:
-            phit = total_porosity(nphi.data, phid)
-        else:
-            phit = phid
+        # --- Total porosity (N-D) ---
+        phit = total_porosity(nphi.data, phid) if nphi is not None else phid
 
-        # Effective porosity
+        # --- Effective porosity ---
         phie = effective_porosity(phit, vcl, self.phi_clay)
 
-        # Secondary porosity (fractures, vugs, dissolution)
+        # --- Secondary porosity index = phit - phis (NOT phie - phis) ---
+        # Using phit correctly captures all secondary porosity (fractures,
+        # vugs) that the sonic misses.  Using phie would over-subtract
+        # the clay correction.
         phi_sec = None
         if phis is not None:
-            phi_sec = secondary_porosity(phis, phie)
+            phi_sec = secondary_porosity(phis, phit)
 
         return PorosityResult(
             phid=phid,
@@ -165,7 +161,7 @@ class PorosityModule:
             well.add_curve("PHIS", result.phis, "v/v", "Sonic Porosity")
 
         if result.phi_sec is not None:
-            well.add_curve("PHI_SEC", result.phi_sec, "v/v", "Secondary Porosity")
+            well.add_curve("PHI_SEC", result.phi_sec, "v/v", "Secondary Porosity Index")
 
         return well
 
@@ -181,31 +177,19 @@ def calculate_porosity(
     """
     Calculate porosity for a well.
 
-    Convenience function for PorosityModule.
+    Convenience wrapper for PorosityModule.
 
     Parameters
     ----------
     well : Well
-        Well object
     matrix : str, optional
-        Matrix type
     rhob_fluid : float, optional
-        Fluid density
     phi_clay : float, optional
-        Clay porosity
     vcl : np.ndarray, optional
-        Clay volume
-    **kwargs
-        Additional arguments
 
     Returns
     -------
     PorosityResult
-        Porosity results
     """
-    module = PorosityModule(
-        matrix=matrix,
-        rhob_fluid=rhob_fluid,
-        phi_clay=phi_clay
-    )
+    module = PorosityModule(matrix=matrix, rhob_fluid=rhob_fluid, phi_clay=phi_clay)
     return module.calculate(well, vcl)
