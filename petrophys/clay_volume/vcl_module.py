@@ -87,6 +87,38 @@ class VclModule:
         self.sp_max = sp_max
         self.sp_min = sp_min
 
+    def _resolve_gr_baselines(self, gr_data: np.ndarray) -> tuple[float, float]:
+        """
+        Resolve GR baselines from the well when the module is using defaults.
+
+        Default behavior:
+        - use the log minimum/maximum when they extend beyond 20/100
+        - force GRmin = 20 if the log minimum is higher than 20
+        - force GRmax = 100 if the log maximum is lower than 100
+
+        If the caller supplied non-default GR baselines, respect them.
+        """
+        valid_gr = np.asarray(gr_data, dtype=float)
+        valid_gr = valid_gr[np.isfinite(valid_gr)]
+
+        if len(valid_gr) == 0:
+            return self.gr_min, self.gr_max
+
+        actual_min = float(np.nanmin(valid_gr))
+        actual_max = float(np.nanmax(valid_gr))
+
+        if self.gr_min == DefaultParameters.GR_MIN:
+            gr_min = min(actual_min, DefaultParameters.GR_MIN)
+        else:
+            gr_min = self.gr_min
+
+        if self.gr_max == DefaultParameters.GR_MAX:
+            gr_max = max(actual_max, DefaultParameters.GR_MAX)
+        else:
+            gr_max = self.gr_max
+
+        return gr_min, gr_max
+
     def calculate(
         self,
         well: "Well",
@@ -129,8 +161,9 @@ class VclModule:
         # GR method (primary)
         if gr_name in well:
             gr_data = well[gr_name].data
+            gr_min, gr_max = self._resolve_gr_baselines(gr_data)
             vcl_gr = vcl_from_gr(
-                gr_data, self.gr_min, self.gr_max, self.gr_method
+                gr_data, gr_min, gr_max, self.gr_method
             )
             vcl_methods.append(vcl_gr)
             method_names.append("GR")

@@ -79,7 +79,7 @@ def total_porosity(
     else:  # adaptive
         # Check for gas effect
         if isinstance(nphi, np.ndarray):
-            gas_effect = nphi < phi_d + 0.05
+            gas_effect = phi_d > nphi + 0.05
 
             phit = np.where(
                 gas_effect,
@@ -87,7 +87,7 @@ def total_porosity(
                 0.6 * phi_d + 0.4 * nphi  # Standard weighting
             )
         else:
-            if nphi < phi_d + 0.05:
+            if phi_d > nphi + 0.05:
                 phit = phi_d
             else:
                 phit = 0.6 * phi_d + 0.4 * nphi
