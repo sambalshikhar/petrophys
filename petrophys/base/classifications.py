@@ -292,18 +292,18 @@ class MhiClassification(Enum):
     """
     Moveable Hydrocarbon Index (MHI) classification.
 
-    MHI = (Sxo - Sw) / (1 - Sw) or simplified as Sw/Sxo ratio indicator.
+    MHI = Sw / Sxo.
 
     Attributes
     ----------
     HIGH_MOVEABLE_HC : str
-        MHI > 0.5 - High moveable hydrocarbon
+        MHI < 0.5 - High moveable hydrocarbon
     MODERATE_MOVEABLE_HC : str
-        0.3 < MHI <= 0.5 - Moderate moveable hydrocarbon
+        0.5 <= MHI < 0.7 - Moderate moveable hydrocarbon
     LOW_MOVEABLE_HC : str
-        0.1 < MHI <= 0.3 - Low moveable hydrocarbon
+        0.7 <= MHI < 0.9 - Low moveable hydrocarbon
     MINIMAL_MOVEABLE_HC : str
-        MHI <= 0.1 - Minimal moveable hydrocarbon
+        MHI >= 0.9 - Minimal moveable hydrocarbon
     """
 
     HIGH_MOVEABLE_HC = "high"
@@ -328,17 +328,17 @@ class MhiClassification(Enum):
         """
         if isinstance(mhi, np.ndarray):
             result = np.empty(mhi.shape, dtype=object)
-            result[mhi > 0.5] = cls.HIGH_MOVEABLE_HC
-            result[(mhi > 0.3) & (mhi <= 0.5)] = cls.MODERATE_MOVEABLE_HC
-            result[(mhi > 0.1) & (mhi <= 0.3)] = cls.LOW_MOVEABLE_HC
-            result[mhi <= 0.1] = cls.MINIMAL_MOVEABLE_HC
+            result[mhi < 0.5] = cls.HIGH_MOVEABLE_HC
+            result[(mhi >= 0.5) & (mhi < 0.7)] = cls.MODERATE_MOVEABLE_HC
+            result[(mhi >= 0.7) & (mhi < 0.9)] = cls.LOW_MOVEABLE_HC
+            result[mhi >= 0.9] = cls.MINIMAL_MOVEABLE_HC
             return result
 
-        if mhi > 0.5:
+        if mhi < 0.5:
             return cls.HIGH_MOVEABLE_HC
-        elif mhi > 0.3:
+        elif mhi < 0.7:
             return cls.MODERATE_MOVEABLE_HC
-        elif mhi > 0.1:
+        elif mhi < 0.9:
             return cls.LOW_MOVEABLE_HC
         else:
             return cls.MINIMAL_MOVEABLE_HC

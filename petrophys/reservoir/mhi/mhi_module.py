@@ -44,7 +44,7 @@ def calculate_mhi(
     """
     Calculate Moveable Hydrocarbon Index.
 
-    MHI = Sxo / Sw
+    MHI = Sw / Sxo
 
     Parameters
     ----------
@@ -59,10 +59,10 @@ def calculate_mhi(
         Moveable hydrocarbon index
     """
     # Avoid division by zero
-    if isinstance(sw, np.ndarray):
-        sw_safe = np.where(sw <= 0, 0.01, sw)
+    if isinstance(sxo, np.ndarray):
+        sxo_safe = np.where(sxo <= 0, 0.01, sxo)
     else:
-        sw_safe = max(sw, 0.01)
+        sxo_safe = max(sxo, 0.01)
 
-    mhi = sxo / sw_safe
-    return mhi
+    mhi = sw / sxo_safe
+    return np.clip(mhi, 0, 1)

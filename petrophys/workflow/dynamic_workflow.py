@@ -865,7 +865,7 @@ class DynamicWorkflow:
         trace = StepResult(step="mhi", success=True, method="moveable_HC_index")
         trace.input_curves = ["SW", "SXO"]
         trace.output_curves = ["MHI"]
-        trace.decisions.append("MHI = (Sxo - Sw) / Sxo — moveable hydrocarbon fraction")
+        trace.decisions.append("MHI = Sw / Sxo")
         return trace
 
     def _step_net_pay(self, well: "Well") -> StepResult:

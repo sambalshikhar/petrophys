@@ -258,7 +258,7 @@ BVW (Bulk Volume Water)
 MHI (Moveable Hydrocarbon Index)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-MHI = Sxo / Sw
+MHI = Sw / Sxo
 
 .. automodule:: petrophys.reservoir.mhi
    :members:
