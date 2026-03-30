@@ -6,14 +6,16 @@ water resistivity at formation temperature.
 """
 
 from petrophys.resistivity.rw.rw_module import RwModule, calculate_rw
-from petrophys.resistivity.rw.sp_rw import rw_from_sp, calculate_ssp
+from petrophys.resistivity.rw.sp_rw import calculate_ssp, estimate_sp_lines, rw_from_sp, rw_from_ssp
 from petrophys.resistivity.rw.salinity_rw import rw_from_salinity, salinity_from_rw
 from petrophys.resistivity.rw.temp_correction import correct_rw_temperature
 
 __all__ = [
     "RwModule",
     "calculate_rw",
+    "estimate_sp_lines",
     "rw_from_sp",
+    "rw_from_ssp",
     "calculate_ssp",
     "rw_from_salinity",
     "salinity_from_rw",

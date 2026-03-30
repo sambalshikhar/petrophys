@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 import numpy as np
 
-from petrophys.resistivity.rw.sp_rw import rw_from_sp, rw_from_rxo_rt
+from petrophys.resistivity.rw.sp_rw import estimate_sp_lines, rw_from_sp, rw_from_rxo_rt
 from petrophys.resistivity.rw.salinity_rw import rw_from_salinity
 from petrophys.resistivity.rw.temp_correction import correct_rw_temperature
 
@@ -123,7 +123,9 @@ class RwModule:
 
         if method == "sp" or (method == "auto" and "SP" in well and rmf is not None):
             sp_curve = well.get("SP")
-            if sp_curve is not None and sp_shale is not None:
+            if sp_curve is not None:
+                if sp_shale is None:
+                    _, sp_shale = estimate_sp_lines(sp_curve.data)
                 rw = rw_from_sp(
                     sp_curve.data,
                     sp_shale,

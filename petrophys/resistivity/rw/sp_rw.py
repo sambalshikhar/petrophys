@@ -5,10 +5,9 @@ This module provides formation water resistivity calculation
 from spontaneous potential (SP) log.
 """
 
-from typing import Union
-import numpy as np
+from typing import Tuple, Union
 
-from petrophys.environmental.temperature.temp_corrections import arps_equation
+import numpy as np
 
 
 def calculate_ssp(
@@ -35,6 +34,54 @@ def calculate_ssp(
     return sp - sp_shale
 
 
+def estimate_sp_lines(sp: Union[float, np.ndarray]) -> Tuple[float, float]:
+    """
+    Estimate clean-sand and shale SP lines from the SP log itself.
+
+    Parameters
+    ----------
+    sp : float or np.ndarray
+        SP log values (mV)
+
+    Returns
+    -------
+    tuple[float, float]
+        Clean-line SP and shale-line SP in mV
+    """
+    sp_array = np.asarray(sp, dtype=float)
+    valid_sp = sp_array[~np.isnan(sp_array)]
+    if valid_sp.size == 0:
+        raise ValueError("SP log contains no valid values")
+
+    sp_clean = float(np.percentile(valid_sp, 5))
+    sp_shale = float(np.percentile(valid_sp, 95))
+    return sp_clean, sp_shale
+
+
+def rw_from_ssp(
+    ssp: Union[float, np.ndarray],
+    rmf: float,
+    temperature: Union[float, np.ndarray],
+    temp_unit: str = "F"
+) -> Union[float, np.ndarray]:
+    """
+    Calculate Rw from static spontaneous potential (SSP).
+    """
+    if temp_unit.upper() == "C":
+        from petrophys.base.units import UnitConverter
+        temperature = UnitConverter.celsius_to_fahrenheit(temperature)
+
+    k = 61 + 0.133 * temperature
+    rw = rmf / np.power(10, -ssp / k)
+
+    if isinstance(rw, np.ndarray):
+        rw = np.clip(rw, 0.01, 10.0)
+    else:
+        rw = max(0.01, min(rw, 10.0))
+
+    return rw
+
+
 def rw_from_sp(
     sp: Union[float, np.ndarray],
     sp_shale: float,
@@ -45,8 +92,8 @@ def rw_from_sp(
     """
     Calculate Rw from SP using the SSP equation.
 
-    SSP = -K × log10(Rmf/Rw)
-    where K = 61 + 0.133×T (T in °F)
+    SSP = -K * log10(Rmf/Rw)
+    where K = 61 + 0.133*T (T in degF)
 
     Solving for Rw:
     Rw = Rmf / 10^(-SSP/K)
@@ -76,32 +123,8 @@ def rw_from_sp(
     - KCl is in the drilling mud
     - Formation water salinity is very low
     """
-    # Convert temperature to Fahrenheit
-    if temp_unit.upper() == "C":
-        from petrophys.base.units import UnitConverter
-        temperature = UnitConverter.celsius_to_fahrenheit(temperature)
-
-    # Calculate SSP
     ssp = calculate_ssp(sp, sp_shale)
-
-    # Temperature coefficient
-    k = 61 + 0.133 * temperature
-
-    # Solve for Rw
-    # SSP = -K × log10(Rmf/Rw)
-    # -SSP/K = log10(Rmf/Rw)
-    # 10^(-SSP/K) = Rmf/Rw
-    # Rw = Rmf / 10^(-SSP/K)
-
-    rw = rmf / np.power(10, -ssp / k)
-
-    # Clip to reasonable range
-    if isinstance(rw, np.ndarray):
-        rw = np.clip(rw, 0.01, 10.0)
-    else:
-        rw = max(0.01, min(rw, 10.0))
-
-    return rw
+    return rw_from_ssp(ssp, rmf, temperature, temp_unit=temp_unit)
 
 
 def rw_from_rxo_rt(
@@ -113,7 +136,7 @@ def rw_from_rxo_rt(
     Calculate Rw from Rxo/Rt ratio.
 
     In a clean water zone: Rxo/Rt = Rmf/Rw
-    Therefore: Rw = Rmf × Rt / Rxo
+    Therefore: Rw = Rmf * Rt / Rxo
 
     Parameters
     ----------
@@ -134,8 +157,5 @@ def rw_from_rxo_rt(
     This method is most accurate in clean water zones
     where Sw = Sxo = 1.0
     """
-    # Avoid division by zero
     rxo = np.where(rxo == 0, 1e-10, rxo) if isinstance(rxo, np.ndarray) else max(rxo, 1e-10)
-
-    rw = rmf * rt / rxo
-    return rw
+    return rmf * rt / rxo

@@ -5,7 +5,7 @@ This module provides solvers for determining mineral fractions
 from multiple log measurements using simultaneous equations.
 """
 
-from typing import Optional, Tuple, Dict, Union
+from typing import Optional, Tuple, Dict, Union, Sequence
 import numpy as np
 from scipy.optimize import nnls
 
@@ -342,3 +342,62 @@ class MultiMineralSolver:
         )
 
         return well
+
+
+def solve_two_mineral(
+    rhob: Union[float, np.ndarray],
+    nphi: Union[float, np.ndarray],
+    vcl: Optional[Union[float, np.ndarray]] = None,
+    phie: Optional[Union[float, np.ndarray]] = None,
+    minerals: Sequence[str] = ("quartz", "calcite"),
+    pef: Optional[Union[float, np.ndarray]] = None,
+    dt: Optional[Union[float, np.ndarray]] = None,
+    **kwargs,
+) -> Dict[str, np.ndarray]:
+    """
+    Backward-compatible convenience wrapper for a 2-mineral solve.
+
+    Older public imports exposed ``solve_two_mineral`` directly. The current
+    implementation routes through ``MultiMineralSolver`` and defaults VCL/PHIE
+    to zero when they are not provided.
+    """
+    rhob_arr = np.atleast_1d(np.asarray(rhob, dtype=float))
+    nphi_arr = np.atleast_1d(np.asarray(nphi, dtype=float))
+    vcl_arr = np.zeros_like(rhob_arr) if vcl is None else np.atleast_1d(np.asarray(vcl, dtype=float))
+    phie_arr = np.zeros_like(rhob_arr) if phie is None else np.atleast_1d(np.asarray(phie, dtype=float))
+
+    solver = MultiMineralSolver(
+        minerals=list(minerals),
+        minerals_no_pef=list(minerals),
+        **kwargs,
+    )
+    return solver.solve(rhob_arr, nphi_arr, vcl_arr, phie_arr, pef=pef, dt=dt)
+
+
+def solve_three_mineral(
+    rhob: Union[float, np.ndarray],
+    nphi: Union[float, np.ndarray],
+    vcl: Optional[Union[float, np.ndarray]] = None,
+    phie: Optional[Union[float, np.ndarray]] = None,
+    minerals: Sequence[str] = ("quartz", "calcite", "dolomite"),
+    pef: Optional[Union[float, np.ndarray]] = None,
+    dt: Optional[Union[float, np.ndarray]] = None,
+    **kwargs,
+) -> Dict[str, np.ndarray]:
+    """
+    Backward-compatible convenience wrapper for a 3-mineral solve.
+
+    Older modules import this symbol directly; keeping it here avoids import
+    failures while using the newer ``MultiMineralSolver`` implementation.
+    """
+    rhob_arr = np.atleast_1d(np.asarray(rhob, dtype=float))
+    nphi_arr = np.atleast_1d(np.asarray(nphi, dtype=float))
+    vcl_arr = np.zeros_like(rhob_arr) if vcl is None else np.atleast_1d(np.asarray(vcl, dtype=float))
+    phie_arr = np.zeros_like(rhob_arr) if phie is None else np.atleast_1d(np.asarray(phie, dtype=float))
+
+    solver = MultiMineralSolver(
+        minerals=list(minerals),
+        minerals_no_pef=list(minerals),
+        **kwargs,
+    )
+    return solver.solve(rhob_arr, nphi_arr, vcl_arr, phie_arr, pef=pef, dt=dt)
