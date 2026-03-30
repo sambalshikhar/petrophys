@@ -634,19 +634,29 @@ class DynamicWorkflow:
         if (self._has_curve(well, "SP") and
                 not self.config.mud_has_clay_or_kcl and
                 self._result.rmf_computed is not None):
-            from petrophys.resistivity.rw.sp_rw import rw_from_sp
+            from petrophys.resistivity.rw.sp_rw import estimate_sp_lines, rw_from_ssp
             sp = well.get("SP")
             valid_sp = sp.data[~np.isnan(sp.data)]
             if len(valid_sp) > 0:
-                ssp = float(np.min(valid_sp))
-                rw = rw_from_sp(ssp, self._result.rmf_computed, temp_f)
+                sp_clean, sp_shale = estimate_sp_lines(sp.data)
+                ssp = sp_clean - sp_shale
+                rw = rw_from_ssp(ssp, self._result.rmf_computed, temp_f)
                 self._result.rw_computed = rw
                 trace.method = "SP_method"
                 trace.input_curves = ["SP"]
-                trace.parameters = {"ssp_mv": ssp, "rmf": self._result.rmf_computed,
-                                   "temperature_f": temp_f, "rw_computed": rw}
-                decisions.append(f"Rw from SP: SSP = {ssp:.1f} mV, Rmf = {self._result.rmf_computed:.4f}, "
-                               f"T = {temp_f:.0f}F -> Rw = {rw:.4f} ohm.m")
+                trace.parameters = {
+                    "sp_clean_mv": sp_clean,
+                    "sp_shale_mv": sp_shale,
+                    "ssp_mv": ssp,
+                    "rmf": self._result.rmf_computed,
+                    "temperature_f": temp_f,
+                    "rw_computed": rw
+                }
+                decisions.append(
+                    f"Rw from SP: clean line = {sp_clean:.1f} mV, shale line = {sp_shale:.1f} mV, "
+                    f"SSP = {ssp:.1f} mV, Rmf = {self._result.rmf_computed:.4f}, "
+                    f"T = {temp_f:.0f}F -> Rw = {rw:.4f} ohm.m"
+                )
                 trace.decisions = decisions
                 return trace
 
