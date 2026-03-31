@@ -119,6 +119,8 @@ class DynamicWorkflowConfig:
 
     # Saturation model (auto = use routing logic)
     sw_model: str = "auto"
+    rtsh: Optional[float] = None
+    vsh_exp: float = 1.6
 
     # Control which steps to skip
     skip_steps: List[str] = field(default_factory=list)
@@ -763,7 +765,8 @@ class DynamicWorkflow:
             salinity=self.config.salinity_ppm, rmf=self._result.rmf_computed,
             lithology=lithology, cec=self.config.cec, b_coeff=self.config.b_coeff,
             rho_ma=self.config.rho_ma or 2.65, m_star=self.config.m_star,
-            rwb=self.config.rwb, phi_cl=self.config.phi_cl
+            rwb=self.config.rwb, phi_cl=self.config.phi_cl,
+            rtsh=self.config.rtsh, vsh_exp=self.config.vsh_exp,
         )
 
         well.add_curve("SW", result.sw, "v/v", f"Water Saturation ({result.model})")
@@ -781,6 +784,8 @@ class DynamicWorkflow:
             "a": self.config.a, "m": self.config.m, "n": self.config.n,
             "rw": self._result.rw_computed,
             "rcl": self._result.rcl_computed,
+            "rtsh": self.config.rtsh if self.config.rtsh is not None else self._result.rcl_computed,
+            "vsh_exp": self.config.vsh_exp,
             "vcl_cutoff_for_routing": self.config.vcl_cutoff,
             "lithology_type": self.config.lithology if isinstance(lithology, str) else "per-depth array",
         }

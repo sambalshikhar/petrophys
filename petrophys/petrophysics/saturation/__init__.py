@@ -12,6 +12,10 @@ from petrophys.petrophysics.saturation.sw_module import (
     calculate_sw,
 )
 from petrophys.petrophysics.saturation.archie import archie, archie_sw
+from petrophys.petrophysics.saturation.north_sea import (
+    north_sea_shaly_sand,
+    north_sea_shaly_sand_sw,
+)
 from petrophys.petrophysics.saturation.simandoux import simandoux, simandoux_sw
 from petrophys.petrophysics.saturation.indonesia import indonesia, indonesia_sw
 from petrophys.petrophysics.saturation.dual_water import dual_water, dual_water_sw
@@ -26,6 +30,8 @@ __all__ = [
     "calculate_sw",
     "archie",
     "archie_sw",
+    "north_sea_shaly_sand",
+    "north_sea_shaly_sand_sw",
     "simandoux",
     "simandoux_sw",
     "indonesia",
