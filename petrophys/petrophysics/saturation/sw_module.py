@@ -24,6 +24,7 @@ import numpy as np
 
 from petrophys.base.constants import DefaultParameters
 from petrophys.petrophysics.saturation.archie import archie
+from petrophys.petrophysics.saturation.north_sea import north_sea_shaly_sand
 from petrophys.petrophysics.saturation.simandoux import simandoux
 from petrophys.petrophysics.saturation.indonesia import indonesia
 from petrophys.petrophysics.saturation.dual_water import dual_water
@@ -34,6 +35,7 @@ from petrophys.petrophysics.saturation.sxo import calculate_sxo
 class SwModel(Enum):
     """Water saturation model selection."""
     ARCHIE = "archie"
+    NORTH_SEA = "north_sea"
     SIMANDOUX = "simandoux"
     INDONESIA = "indonesia"
     DUAL_WATER = "dual_water"
@@ -124,7 +126,9 @@ class SaturationModule:
         rho_ma: float = 2.65,
         m_star: float = 2.0,
         rwb: Optional[float] = None,
-        phi_cl: float = DefaultParameters.CLAY_POROSITY
+        phi_cl: float = DefaultParameters.CLAY_POROSITY,
+        rtsh: Optional[float] = None,
+        vsh_exp: float = 1.6,
     ) -> SaturationResult:
         """
         Calculate water saturation.
@@ -197,7 +201,7 @@ class SaturationModule:
         if isinstance(lithology, np.ndarray) and self.model == "auto":
             sw, model_name = self._calculate_per_depth(
                 rt.data, rw, rcl, salinity, vcl, phie, phit,
-                lithology, cec, b_coeff, rho_ma, m_star, rwb, phi_cl
+                lithology, cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp
             )
         else:
             # Single model for entire well
@@ -205,7 +209,7 @@ class SaturationModule:
                                        lithology if isinstance(lithology, str) else "clastic",
                                        cec)
             sw = self._run_model(model, rt.data, rw, rcl, vcl, phie, phit,
-                                 cec, b_coeff, rho_ma, m_star, rwb, phi_cl)
+                                 cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp)
             model_name = model.value
 
         # Calculate Sxo if Rmf available
@@ -221,7 +225,7 @@ class SaturationModule:
         salinity: Optional[float],
         vcl: np.ndarray, phie: np.ndarray, phit: np.ndarray,
         lithology: np.ndarray,
-        cec, b_coeff, rho_ma, m_star, rwb, phi_cl
+        cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp
     ):
         """Calculate Sw with per-depth lithology routing (vectorized by interval)."""
         sw = np.full_like(rt, np.nan)
@@ -242,7 +246,7 @@ class SaturationModule:
             sw_segment = self._run_model(
                 model, rt[mask], rw, rcl,
                 vcl[mask], phie[mask], phit[mask],
-                cec, b_coeff, rho_ma, m_star, rwb, phi_cl
+                cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp
             )
             sw[mask] = sw_segment
 
@@ -254,11 +258,17 @@ class SaturationModule:
     def _run_model(
         self, model: SwModel,
         rt, rw, rcl, vcl, phie, phit,
-        cec, b_coeff, rho_ma, m_star, rwb, phi_cl
+        cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp
     ) -> np.ndarray:
         """Run a specific Sw model."""
         if model == SwModel.ARCHIE:
             return archie(rt, rw, phie, self.a, self.m, self.n)
+
+        elif model == SwModel.NORTH_SEA:
+            return north_sea_shaly_sand(
+                rt, rw, phie, vcl, rtsh if rtsh is not None else rcl,
+                self.a, self.m, self.n, vsh_exp
+            )
 
         elif model == SwModel.SIMANDOUX:
             return simandoux(rt, rw, phie, vcl, rcl, self.a, self.m, self.n)
