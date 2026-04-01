@@ -9,6 +9,7 @@ from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 import numpy as np
 
+from petrophys.base.well import Well
 from petrophys.base.constants import DefaultParameters
 from petrophys.clay_volume.gr_method import vcl_from_gr
 from petrophys.clay_volume.sp_method import vcl_from_sp, should_use_sp
@@ -66,7 +67,7 @@ class VclModule:
     --------
     >>> vcl_calc = VclModule(gr_min=15, gr_max=120)
     >>> result = vcl_calc.calculate(well)
-    >>> well["VCL"] = result.vcl
+    >>> well["VCLAY"] = result.vcl
     """
 
     def __init__(
@@ -210,8 +211,16 @@ class VclModule:
             method_used = np.empty(n_samples, dtype=object)
             for i in range(n_samples):
                 values = [m[i] for m in vcl_methods]
-                min_idx = np.nanargmin(values)
-                method_used[i] = method_names[min_idx]
+                valid = [(v, name) for v, name in zip(values, method_names) if not np.isnan(v)]
+                if valid:
+                    min_val, min_name = min(valid, key=lambda x: x[0])
+                    method_used[i] = min_name
+                else:
+                    method_used[i] = "NaN"
+            # for i in range(n_samples):
+            #     values = [m[i] for m in vcl_methods]
+            #     min_idx = np.nanargmin(values)
+            #     method_used[i] = method_names[min_idx]
 
         return VclResult(
             vcl=vcl_final,
@@ -244,7 +253,7 @@ class VclModule:
         if result is None:
             result = self.calculate(well)
 
-        well.add_curve("VCL", result.vcl, unit="v/v", description="Clay Volume")
+        well.add_curve("VCLAY", result.vcl, unit="v/v", description="Clay Volume")
 
         if result.vcl_gr is not None:
             well.add_curve("VCLGR", result.vcl_gr, unit="v/v", description="VCL from GR")
