@@ -5,6 +5,38 @@ Standard petrophysics workflow.
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 import numpy as np
+import re
+
+
+def _parameter_float(well: "Well", name: str) -> Optional[float]:
+    """Fetch a numeric well parameter if present."""
+    value = well.get_parameter(name)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _constant_zoned_parameter(well: "Well", prefix: str) -> Optional[float]:
+    """Return a single unique zoned LAS parameter value if available."""
+    values = set()
+    pattern = re.compile(rf"^{re.escape(prefix.upper())}_Z\d+$")
+
+    for key, value in getattr(well, "_parameters", {}).items():
+        if not isinstance(key, str) or "__" in key:
+            continue
+        if not pattern.match(key.upper()):
+            continue
+        try:
+            values.add(float(value))
+        except (TypeError, ValueError):
+            continue
+
+    if len(values) == 1:
+        return next(iter(values))
+    return None
 
 
 @dataclass
@@ -272,6 +304,15 @@ class StandardWorkflow:
             trace.decisions.append(f"Rw = {self.config.rw} ohm.m (user-provided)")
             return self.config.rw, trace
 
+        las_rw = _parameter_float(well, "RW")
+        if las_rw is None:
+            las_rw = _constant_zoned_parameter(well, "RW")
+        if las_rw is not None:
+            trace.method = "las_metadata"
+            trace.parameters = {"rw": float(las_rw)}
+            trace.decisions.append(f"Rw = {float(las_rw):.4f} ohm.m (LAS metadata)")
+            return float(las_rw), trace
+
         if self.config.salinity_ppm is not None:
             from petrophys.resistivity.rw.salinity_rw import rw_from_salinity
             temp = well.get("TEMP")
@@ -292,15 +333,22 @@ class StandardWorkflow:
         if sp is not None and not self.config.mud_has_clay_or_kcl:
             from petrophys.resistivity.rw import RwModule
             try:
+                rmf_for_sp = self.config.rmf_at_meas_temp
+                las_rmf = _parameter_float(well, "RMF")
+                if las_rmf is None:
+                    las_rmf = _constant_zoned_parameter(well, "RMF")
+                if las_rmf is not None:
+                    rmf_for_sp = float(las_rmf)
+
                 rw_module = RwModule(method="sp")
                 result = rw_module.calculate(
                     well,
-                    rmf=self.config.rmf_at_meas_temp,
+                    rmf=rmf_for_sp,
                 )
                 trace.method = result.method
                 trace.input_curves = ["SP"]
                 trace.parameters = {
-                    "rmf": self.config.rmf_at_meas_temp,
+                    "rmf": rmf_for_sp,
                     "rw": result.rw,
                     **result.metadata,
                 }

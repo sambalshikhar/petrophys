@@ -121,6 +121,10 @@ class LASReader:
         well.header.rmc = self._parse_float(self.get_header_value("RMC"))
         well.header.bit_size = self._parse_float(self.get_header_value("BS"))
 
+        # Persist ~Parameter metadata on the Well so workflows/tutorials can
+        # access zoned petrophysical inputs such as RW_Z1, RMF_Z1, BHT_Z1, etc.
+        self._load_parameters(well)
+
         # Set depth
         depth_curve = None
         for name in ["DEPT", "DEPTH", "MD", "TVD"]:
@@ -159,6 +163,120 @@ class LASReader:
             well._curves[las_curve.mnemonic.upper()] = curve
 
         return well
+
+    def _load_parameters(self, well: "Well") -> None:
+        """Copy LAS ~Parameter entries into ``well`` parameters."""
+        try:
+            params = list(self._las.params)
+        except Exception:
+            params = []
+
+        for item in params:
+            mnemonic = str(getattr(item, "mnemonic", "") or "").strip().upper()
+            if not mnemonic:
+                continue
+
+            raw_value = getattr(item, "value", None)
+            parsed = self._parse_float(raw_value)
+            value = parsed if parsed is not None else raw_value
+            well.set_parameter(mnemonic, value)
+
+            unit = str(getattr(item, "unit", "") or "").strip()
+            descr = str(getattr(item, "descr", "") or "").strip()
+            if unit:
+                well.set_parameter(f"{mnemonic}__UNIT", unit)
+            if descr:
+                well.set_parameter(f"{mnemonic}__DESCR", descr)
+
+        # Promote single-valued zoned metadata into the header when the base
+        # header is blank, so existing code can benefit without knowing about
+        # the zoned LAS convention.
+        if well.header.bht is None:
+            bht = self._get_constant_zoned_float("BHT")
+            bht_unit = self._get_constant_zoned_unit("BHT").lower()
+            if bht is not None and "c" in bht_unit and "f" not in bht_unit:
+                bht = (bht * 9.0 / 5.0) + 32.0
+            if bht is not None:
+                well.header.bht = bht
+
+        if well.header.rmf is None:
+            rmf = self._get_constant_zoned_float("RMF")
+            if rmf is not None:
+                well.header.rmf = rmf
+
+        if not well.header.field:
+            field_name = self._get_constant_zoned_text("FLD")
+            if field_name:
+                well.header.field = field_name
+
+    def _get_constant_zoned_float(self, prefix: str) -> Optional[float]:
+        """Return a single unique float value from PARAM_Zn entries."""
+        values = set()
+        prefix = prefix.upper()
+
+        try:
+            params = list(self._las.params)
+        except Exception:
+            params = []
+
+        for item in params:
+            mnemonic = str(getattr(item, "mnemonic", "") or "").strip().upper()
+            if not mnemonic.startswith(f"{prefix}_Z"):
+                continue
+
+            parsed = self._parse_float(getattr(item, "value", None))
+            if parsed is not None:
+                values.add(float(parsed))
+
+        if len(values) == 1:
+            return next(iter(values))
+        return None
+
+    def _get_constant_zoned_text(self, prefix: str) -> str:
+        """Return a single unique text value from PARAM_Zn entries."""
+        values = set()
+        prefix = prefix.upper()
+
+        try:
+            params = list(self._las.params)
+        except Exception:
+            params = []
+
+        for item in params:
+            mnemonic = str(getattr(item, "mnemonic", "") or "").strip().upper()
+            if not mnemonic.startswith(f"{prefix}_Z"):
+                continue
+
+            value = str(getattr(item, "value", "") or "").strip()
+            if value:
+                values.add(value)
+
+        if len(values) == 1:
+            return next(iter(values))
+        return ""
+
+    def _get_constant_zoned_unit(self, prefix: str) -> str:
+        """Return a single unique unit string from PARAM_Zn entries."""
+        values = set()
+        prefix = prefix.upper()
+
+        try:
+            params = list(self._las.params)
+        except Exception:
+            params = []
+
+        for item in params:
+            mnemonic = str(getattr(item, "mnemonic", "") or "").strip().upper()
+            if not mnemonic.startswith(f"{prefix}_Z"):
+                continue
+
+            value = str(getattr(item, "unit", "") or "").strip()
+            if value:
+                values.add(value)
+
+        if len(values) == 1:
+            return next(iter(values))
+        return ""
 
     @staticmethod
     def _parse_float(value: Any) -> Optional[float]:
