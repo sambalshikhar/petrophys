@@ -4,7 +4,7 @@ Main lithology determination module.
 This module provides the LithologyModule class for comprehensive
 lithology analysis from well logs.
 """
-
+from petrophys.base.well import Well
 from typing import Optional, Dict, List
 from dataclasses import dataclass
 import numpy as np
@@ -117,6 +117,7 @@ class LithologyModule:
         rhob = well.get("RHOB")
         nphi = well.get("NPHI")
         pef = well.get("PEF")
+        phie = well.get("PHIE")
 
         if rhob is None or nphi is None:
             raise ValueError("RHOB and NPHI required for lithology")
@@ -136,6 +137,7 @@ class LithologyModule:
         rhob_clean = rhob.data.copy()
         nphi_clean = nphi.data.copy()
         pef_clean = pef.data.copy() if pef is not None else None
+        phie_clean = phie.data.copy() if phie is not None else None
 
         # Get clay properties
         clay_rhob = 2.45
@@ -153,8 +155,9 @@ class LithologyModule:
 
         # Solve for minerals
         result = self.solver.solve(
-            rhob_clean, nphi_clean,
-            pef_clean
+            vcl=vcl,
+            rhob=rhob_clean, nphi=nphi_clean,
+            pef=pef_clean, phie=phie_clean
         )
 
         # Scale by matrix fraction
