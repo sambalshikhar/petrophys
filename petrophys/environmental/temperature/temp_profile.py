@@ -9,6 +9,7 @@ from typing import Optional, Union
 from dataclasses import dataclass
 import numpy as np
 
+from petrophys.base.well import Well
 from petrophys.base.constants import DefaultParameters
 from petrophys.base.units import UnitConverter
 from petrophys.environmental.temperature.temp_gradient import (
