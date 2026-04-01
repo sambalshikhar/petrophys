@@ -11,14 +11,20 @@ against well log data:
 from petrophys.core.core_data import CoreData
 from petrophys.core.calibration import (
     CalibrationResult,
+    PorosityCorrection,
     PoroPermTransform,
     calibrate_porosity,
     calibrate_permeability,
+    fit_porosity_correction,
+    apply_porosity_correction,
     fit_poro_perm_transform,
+    fit_log_poro_perm_transform,
+    fit_log_poro_perm_transform_from_correction,
     apply_poro_perm_transform,
     correct_porosity_with_grain_density,
     estimate_archie_m,
     interpolate_log_at_core,
+    core_data_from_well,
 )
 from petrophys.core.plots import (
     plot_calibration,
@@ -31,14 +37,20 @@ __all__ = [
     "CoreData",
     # Calibration
     "CalibrationResult",
+    "PorosityCorrection",
     "PoroPermTransform",
     "calibrate_porosity",
     "calibrate_permeability",
+    "fit_porosity_correction",
+    "apply_porosity_correction",
     "fit_poro_perm_transform",
+    "fit_log_poro_perm_transform",
+    "fit_log_poro_perm_transform_from_correction",
     "apply_poro_perm_transform",
     "correct_porosity_with_grain_density",
     "estimate_archie_m",
     "interpolate_log_at_core",
+    "core_data_from_well",
     # Plots
     "plot_calibration",
     "plot_poro_perm",

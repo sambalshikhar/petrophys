@@ -410,7 +410,8 @@ class FormationTops:
 def _detect_csv_format(headers: List[str]) -> str:
     """Auto-detect CSV format from column headers."""
     headers_lower = [h.lower().strip() for h in headers]
-    if "well identifier" in headers_lower or "surface" in headers_lower:
+    if ("well identifier" in headers_lower or "surface" in headers_lower
+            or ("well" in headers_lower and "formation" in headers_lower and "md_top" in headers_lower)):
         return "npd"
     elif "wellname" in headers_lower and "formationname" in headers_lower:
         return "danish"
@@ -462,15 +463,18 @@ def _parse_npd_format(
     klass = _KIND_CLASS.get(interval_kind, Formation)
     filtered = []
 
+    target_well = _normalize_well_identifier(well_name) if well_name else None
+
     for row in rows:
         keys = {k.strip(): v for k, v in row.items()}
-        well_id = keys.get("Well identifier", "").strip()
-        if well_name and well_id != well_name:
+        keys_lower = {k.strip().lower(): v for k, v in row.items()}
+        well_id = str(keys.get("Well identifier", keys_lower.get("well", ""))).strip()
+        if target_well and _normalize_well_identifier(well_id) != target_well:
             continue
 
-        surface = keys.get("Surface", "").strip()
-        md = _safe_float(keys.get("MD"))
-        age = keys.get("Geological age", "")
+        surface = str(keys.get("Surface", keys_lower.get("formation", ""))).strip()
+        md = _safe_float(keys.get("MD", keys_lower.get("md_top")))
+        age = keys.get("Geological age", keys_lower.get("age", ""))
 
         if md is not None and surface:
             filtered.append({
@@ -511,10 +515,12 @@ def _parse_danish_format(
     klass = _KIND_CLASS.get(interval_kind, Formation)
     intervals = []
 
+    target_well = _normalize_well_identifier(well_name) if well_name else None
+
     for row in rows:
         keys = {k.strip().lower(): v for k, v in row.items()}
         wn = keys.get("wellname", "").strip()
-        if well_name and wn != well_name:
+        if target_well and _normalize_well_identifier(wn) != target_well:
             continue
 
         name = keys.get("formationname", "Unknown").strip()
@@ -543,3 +549,11 @@ def _safe_float(value: Any) -> Optional[float]:
         return v if np.isfinite(v) else None
     except (ValueError, TypeError):
         return None
+
+
+def _normalize_well_identifier(value: Any) -> str:
+    """Normalize well identifiers for lightweight cross-file matching."""
+    text = str(value or "").strip().lower().replace("_", "/")
+    if " " in text:
+        text = text.split(" ")[0]
+    return text
