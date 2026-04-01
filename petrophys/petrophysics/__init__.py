@@ -27,6 +27,7 @@ from petrophys.petrophysics.saturation import (
     SaturationModule,
     archie,
     north_sea_shaly_sand,
+    nigeria_schlumberger,
     simandoux,
     indonesia,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "SaturationModule",
     "archie",
     "north_sea_shaly_sand",
+    "nigeria_schlumberger",
     "simandoux",
     "indonesia",
     # Permeability
