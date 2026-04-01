@@ -253,13 +253,18 @@ class VclModule:
         if result is None:
             result = self.calculate(well)
 
+        # Primary standardized mnemonics
+        well.add_curve("VCL", result.vcl, unit="v/v", description="Clay Volume")
         well.add_curve("VCLAY", result.vcl, unit="v/v", description="Clay Volume")
 
         if result.vcl_gr is not None:
+            well.add_curve("VCL_GR", result.vcl_gr, unit="v/v", description="VCL from GR")
             well.add_curve("VCLGR", result.vcl_gr, unit="v/v", description="VCL from GR")
         if result.vcl_sp is not None:
+            well.add_curve("VCL_SP", result.vcl_sp, unit="v/v", description="VCL from SP")
             well.add_curve("VCLSP", result.vcl_sp, unit="v/v", description="VCL from SP")
         if result.vcl_nd is not None:
+            well.add_curve("VCL_ND", result.vcl_nd, unit="v/v", description="VCL from N-D")
             well.add_curve("VCLND", result.vcl_nd, unit="v/v", description="VCL from N-D")
 
         return well
