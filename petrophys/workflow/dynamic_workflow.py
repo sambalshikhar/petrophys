@@ -23,6 +23,7 @@ from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass, field
 from enum import Enum
 import numpy as np
+import re
 
 
 class WorkflowStep(Enum):
@@ -44,6 +45,70 @@ class WorkflowStep(Enum):
     BVW = "bvw"
     MHI = "mhi"
     NET_PAY = "net_pay"
+
+
+def _parameter_float(well: "Well", name: str) -> Optional[float]:
+    """Fetch a numeric well parameter if present."""
+    value = well.get_parameter(name)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parameter_text(well: "Well", name: str) -> str:
+    """Fetch a text well parameter if present."""
+    value = well.get_parameter(name)
+    return str(value or "").strip()
+
+
+def _constant_zoned_parameter(well: "Well", prefix: str) -> Optional[float]:
+    """
+    Return a unique zoned LAS parameter value, e.g. RW_Z1/RW_Z2 -> RW.
+
+    If multiple distinct zoned values exist, return None so callers do not
+    silently choose the wrong interval constant.
+    """
+    values = set()
+    pattern = re.compile(rf"^{re.escape(prefix.upper())}_Z\d+$")
+
+    for key, value in getattr(well, "_parameters", {}).items():
+        if not isinstance(key, str) or "__" in key:
+            continue
+        if not pattern.match(key.upper()):
+            continue
+        try:
+            values.add(float(value))
+        except (TypeError, ValueError):
+            continue
+
+    if len(values) == 1:
+        return next(iter(values))
+    return None
+
+
+def _metadata_bht_f(well: "Well") -> Optional[float]:
+    """Return BHT metadata in Fahrenheit."""
+    if well.header.bht is not None:
+        return float(well.header.bht)
+
+    value = _parameter_float(well, "BHT")
+    unit = _parameter_text(well, "BHT__UNIT").lower()
+    if value is not None:
+        if "c" in unit and "f" not in unit:
+            return (float(value) * 9.0 / 5.0) + 32.0
+        return float(value)
+
+    value = _constant_zoned_parameter(well, "BHT")
+    unit = _parameter_text(well, "BHT_Z1__UNIT").lower()
+    if value is not None:
+        if "c" in unit and "f" not in unit:
+            return (float(value) * 9.0 / 5.0) + 32.0
+        return float(value)
+
+    return None
 
 
 @dataclass
@@ -354,7 +419,10 @@ class DynamicWorkflow:
     # ---- CAN-RUN checks ----
 
     def _can_temperature(self, well: "Well") -> bool:
-        return self.config.bht_f is not None and self.config.td_ft is not None
+        return (
+            (self.config.bht_f is not None and self.config.td_ft is not None)
+            or _metadata_bht_f(well) is not None
+        )
 
     def _can_bad_hole(self, well: "Well") -> bool:
         return self._has_curve(well, "CALI") or self._has_curve(well, "DRHO")
@@ -373,10 +441,18 @@ class DynamicWorkflow:
                 self._has_curve(well, "VCL"))
 
     def _can_rmf(self, well: "Well") -> bool:
-        return self.config.rmf_at_meas_temp is not None or self.config.rm is not None
+        return (
+            self.config.rmf_at_meas_temp is not None
+            or self.config.rm is not None
+            or well.header.rmf is not None
+            or _parameter_float(well, "RMF") is not None
+            or _constant_zoned_parameter(well, "RMF") is not None
+        )
 
     def _can_rw(self, well: "Well") -> bool:
         return (self.config.rw is not None or
+                _parameter_float(well, "RW") is not None or
+                _constant_zoned_parameter(well, "RW") is not None or
                 self.config.salinity_ppm is not None or
                 (self._has_curve(well, "SP") and not self.config.mud_has_clay_or_kcl))
 
@@ -416,15 +492,37 @@ class DynamicWorkflow:
         from petrophys.environmental.temperature.temp_profile import TemperatureProfile
 
         trace = StepResult(step="temperature", success=True, method="linear_gradient_from_BHT")
+        bht_f = self.config.bht_f
+        td_ft = self.config.td_ft
+
+        if bht_f is None:
+            bht_f = _metadata_bht_f(well)
+            if bht_f is not None:
+                trace.method = "constant_BHT_metadata"
+
+        if td_ft is None and well.header.td is not None:
+            td_ft = float(well.header.td)
+
         trace.parameters = {
             "surface_temp_f": self.config.surface_temp_f,
-            "bht_f": self.config.bht_f,
-            "td_ft": self.config.td_ft,
+            "bht_f": bht_f,
+            "td_ft": td_ft,
         }
 
+        if bht_f is None or td_ft is None:
+            temp_f = self._get_avg_formation_temp(well)
+            depth_curve = well.get("DEPT") or well.get("DEPTH")
+            depth_data = depth_curve.data if depth_curve is not None else well.depth
+            if depth_data is not None:
+                temp_array = np.full_like(np.asarray(depth_data, dtype=float), temp_f, dtype=float)
+                well.add_curve("TEMP", temp_array, "degF", "Formation Temperature")
+                trace.output_curves = ["TEMP"]
+                trace.decisions.append(f"Constant temperature from metadata/default = {temp_f:.1f} F")
+            return trace
+
         profile = TemperatureProfile.from_bht(
-            bht=self.config.bht_f,
-            td=self.config.td_ft,
+            bht=bht_f,
+            td=td_ft,
             surface_temp=self.config.surface_temp_f,
             bht_unit="F"
         )
@@ -587,6 +685,19 @@ class DynamicWorkflow:
             trace.decisions = decisions
             return trace
 
+        las_rmf = well.header.rmf
+        if las_rmf is None:
+            las_rmf = _parameter_float(well, "RMF")
+        if las_rmf is None:
+            las_rmf = _constant_zoned_parameter(well, "RMF")
+        if las_rmf is not None:
+            self._result.rmf_computed = float(las_rmf)
+            trace.method = "las_metadata"
+            trace.parameters = {"rmf": float(las_rmf)}
+            decisions.append(f"Rmf = {float(las_rmf):.4f} ohm.m (LAS metadata)")
+            trace.decisions = decisions
+            return trace
+
         temp_f = self._get_avg_formation_temp(well)
 
         if self.config.rmf_at_meas_temp is not None:
@@ -629,6 +740,17 @@ class DynamicWorkflow:
             trace.method = "user_provided"
             trace.parameters = {"rw": self.config.rw}
             decisions.append(f"Rw = {self.config.rw:.4f} ohm.m (user-provided)")
+            trace.decisions = decisions
+            return trace
+
+        las_rw = _parameter_float(well, "RW")
+        if las_rw is None:
+            las_rw = _constant_zoned_parameter(well, "RW")
+        if las_rw is not None:
+            self._result.rw_computed = float(las_rw)
+            trace.method = "las_metadata"
+            trace.parameters = {"rw": float(las_rw)}
+            decisions.append(f"Rw = {float(las_rw):.4f} ohm.m (LAS metadata)")
             trace.decisions = decisions
             return trace
 
@@ -1008,6 +1130,10 @@ class DynamicWorkflow:
         temp = well.get("TEMP")
         if temp is not None:
             return float(np.nanmean(temp.data))
+
+        bht_meta = _metadata_bht_f(well)
+        if bht_meta is not None:
+            return float(bht_meta)
 
         if self.config.bht_f is not None:
             return (self.config.surface_temp_f + self.config.bht_f) / 2.0
