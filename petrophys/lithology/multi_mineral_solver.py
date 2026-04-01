@@ -8,6 +8,7 @@ from multiple log measurements using simultaneous equations.
 from typing import Optional, Tuple, Dict, Union, Sequence
 import numpy as np
 from scipy.optimize import nnls
+from petrophys.base.well import Well
 
 from petrophys.lithology.matrix_properties import (
     get_mineral_properties,
