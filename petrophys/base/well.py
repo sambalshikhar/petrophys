@@ -569,3 +569,58 @@ class Well:
             lines.append(f"  {mnemonic}: {curve.unit}, {curve.valid_count()} valid")
 
         return "\n".join(lines)
+    
+    def _extract_well_df_from_well_obj(self, well_obj: Any) -> pd.DataFrame:
+        """Safely extract tabular curve data from various Well object implementations."""
+        if hasattr(well_obj, "to_df"): return well_obj.to_df()
+        if hasattr(well_obj, "to_dataframe"): return well_obj.to_dataframe()
+        if hasattr(well_obj, "df") and well_obj.df is not None: return well_obj.df.copy()
+        if hasattr(well_obj, "data") and hasattr(well_obj.data, "to_df"): return well_obj.data.to_df()
+        
+        # Fallback for dict-like or attribute-based curve containers
+        try:
+            df = pd.DataFrame({k: v for k, v in well_obj.__dict__.items() if k not in {"name", "metadata", "header"}})
+            if df.empty: df = pd.DataFrame(dict(well_obj))
+            return df
+        except Exception as e:
+            raise ValueError(f"Cannot extract DataFrame from Well object. Implement .to_df() or check structure. Error: {e}")
+
+    def _reconstruct_well_from_slices_well_obj(self, parent_well: Any, slices: List[Any]) -> Any:
+        """Concatenate processed depth slices, sort by DEPTH, and reconstruct a Well object."""
+        if not slices:
+            return parent_well
+
+        dfs = []
+        for s in slices:
+            try:
+                df = self._extract_well_df_from_well_obj(s)
+                if "DEPTH" in df.columns:
+                    dfs.append(df)
+            except Exception as e:
+                print(f"⚠️ Warning: Could not extract data from slice {getattr(s, 'name', 'unknown')}: {e}")
+                continue
+
+        if not dfs:
+            return parent_well
+
+        # 1. Concatenate & sort
+        combined = pd.concat(dfs, axis=0, ignore_index=True)
+        if "DEPTH" in combined.columns:
+            combined = combined.sort_values("DEPTH").reset_index(drop=True)
+            # Keep first occurrence at duplicate depths (adjust keep="last" if later intervals should override)
+            combined = combined.drop_duplicates(subset=["DEPTH"], keep="first")
+        else:
+            raise ValueError("No 'DEPTH' column found in extracted well data.")
+
+        # 2. Reconstruct into original Well class if possible
+        cls = parent_well.__class__
+        well_name = getattr(parent_well, "name", None)
+        
+        try:
+            if hasattr(cls, "from_df"): return cls.from_df(combined, name=well_name)
+            if hasattr(cls, "from_dataframe"): return cls.from_dataframe(combined, name=well_name)
+            if hasattr(cls, "from_las") and hasattr(combined, "to_las"): return cls.from_las(combined.to_las())
+            return cls(data=combined, name=well_name)
+        except Exception as e:
+            print(f"⚠️ Well reconstruction failed ({e}). Returning DataFrame instead.")
+            return combined
