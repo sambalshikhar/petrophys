@@ -170,6 +170,7 @@ class DynamicWorkflowResult:
     config: DynamicWorkflowConfig
     steps_executed: List[StepResult] = field(default_factory=list)
     steps_skipped: List[str] = field(default_factory=list)
+    specific_steps_skipped: dict[str, str] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
@@ -267,6 +268,50 @@ class DynamicWorkflow:
         self._result: Optional[DynamicWorkflowResult] = None
         self._lithology_log: Optional[np.ndarray] = None
 
+    def get_pipeline(self):
+        return [
+            (WorkflowStep.TEMPERATURE, self._step_temperature, self._can_temperature),
+            (WorkflowStep.BAD_HOLE, self._step_bad_hole, self._can_bad_hole),
+            (WorkflowStep.VCLAY, self._step_vclay, self._can_vclay),
+            (WorkflowStep.RCL, self._step_rcl, self._can_rcl),
+            (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
+            (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
+            (WorkflowStep.RW, self._step_rw, self._can_rw),
+            (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
+            (WorkflowStep.HC_CORRECTION, self._step_hc_correction, self._can_hc_correction),
+            (WorkflowStep.POROSITY, self._step_porosity, self._can_porosity),
+            (WorkflowStep.SATURATION, self._step_saturation, self._can_saturation),
+            (WorkflowStep.PERMEABILITY, self._step_permeability, self._can_permeability),
+            (WorkflowStep.ROCK_QUALITY, self._step_rock_quality, self._can_rock_quality),
+            (WorkflowStep.BVW, self._step_bvw, self._can_bvw),
+            (WorkflowStep.MHI, self._step_mhi, self._can_mhi),
+            (WorkflowStep.NET_PAY, self._step_net_pay, self._can_net_pay),
+        ]
+
+    def run_selected_steps(self, well: "Well", steps: list[WorkflowStep]) -> DynamicWorkflowResult:
+        """
+        Execute only the specified workflow steps, in pipeline order.
+        """
+        self._result = DynamicWorkflowResult(well=well, config=self.config)
+        available = self._detect_available_curves(well)
+
+        allowed = set(steps)
+
+        for step_enum, step_fn, can_fn in self.get_pipeline():
+            if step_enum not in allowed:
+                continue
+
+            if can_fn(available):
+                try:
+                    step_fn(well)
+                    self._result.steps_executed.append(step_enum.name)
+                except Exception as e:
+                    self._result.specific_steps_skipped[step_enum.name] = str(e)
+            else:
+                self._result.specific_steps_skipped[step_enum.name] = "Required curves not available"
+
+        return self._result
+
     def run(self, well: "Well") -> DynamicWorkflowResult:
         """
         Run the dynamic workflow on a well.
@@ -289,25 +334,7 @@ class DynamicWorkflow:
         available = self._detect_available_curves(well)
 
         # Execute pipeline in order
-        pipeline = [
-            (WorkflowStep.TEMPERATURE, self._step_temperature, self._can_temperature),
-            (WorkflowStep.BAD_HOLE, self._step_bad_hole, self._can_bad_hole),
-            (WorkflowStep.VCLAY, self._step_vclay, self._can_vclay),
-            (WorkflowStep.RCL, self._step_rcl, self._can_rcl),
-            (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
-            (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
-            (WorkflowStep.RW, self._step_rw, self._can_rw),
-            (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
-            (WorkflowStep.HC_CORRECTION, self._step_hc_correction, self._can_hc_correction),
-            (WorkflowStep.POROSITY, self._step_porosity, self._can_porosity),
-            (WorkflowStep.SATURATION, self._step_saturation, self._can_saturation),
-            (WorkflowStep.PERMEABILITY, self._step_permeability, self._can_permeability),
-            (WorkflowStep.ROCK_QUALITY, self._step_rock_quality, self._can_rock_quality),
-            (WorkflowStep.BVW, self._step_bvw, self._can_bvw),
-            (WorkflowStep.MHI, self._step_mhi, self._can_mhi),
-            (WorkflowStep.NET_PAY, self._step_net_pay, self._can_net_pay),
-        ]
-
+        pipeline = self.get_pipeline()
         for step_enum, step_fn, can_fn in pipeline:
             step_name = step_enum.value
 
@@ -346,7 +373,20 @@ class DynamicWorkflow:
 
     def _has_curve(self, well: "Well", *names: str) -> bool:
         """Check if any of the named curves exist."""
-        return any(well.get(n) is not None for n in names)
+        for n in names:
+            if hasattr(well, "get") and well.get(n) is not None:
+                return True
+            if hasattr(well, "__getitem__"):
+                try:
+                    if well[n] is not None:
+                        return True
+                except (KeyError, IndexError, TypeError):
+                    pass
+            if hasattr(well, "has_curve") and well.has_curve(n):
+                return True
+            if hasattr(well, "curves") and n in well.curves:
+                return True
+        return False
 
     # ---- CAN-RUN checks ----
 
