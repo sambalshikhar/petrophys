@@ -293,22 +293,20 @@ class DynamicWorkflow:
         Execute only the specified workflow steps, in pipeline order.
         """
         self._result = DynamicWorkflowResult(well=well, config=self.config)
-        available = self._detect_available_curves(well)
 
         allowed = set(steps)
 
-        for step_enum, step_fn, can_fn in self.get_pipeline():
+        for step_enum, step_fn, _ in self.get_pipeline():
+            print(f"step_enum: {step_enum}")
             if step_enum not in allowed:
                 continue
 
-            if can_fn(available):
-                try:
-                    step_fn(well)
-                    self._result.steps_executed.append(step_enum.name)
-                except Exception as e:
-                    self._result.specific_steps_skipped[step_enum.name] = str(e)
-            else:
-                self._result.specific_steps_skipped[step_enum.name] = "Required curves not available"
+            try:
+                step_fn(well)
+                self._result.steps_executed.append(step_enum.name)
+            except Exception as e:
+                self._result.specific_steps_skipped[step_enum.name] = str(e)
+
 
         return self._result
 
@@ -1073,29 +1071,28 @@ def build_workflow_config(cfg: Dict[str, Any], td_ft: float) -> DynamicWorkflowC
 
 def run_dynamic_workflow_by_level(
     well_names: Union[str, List[str]],
-    formation_name: Optional[Union[str, List[str]]] = None,
-    well_configs: Optional[Dict[str, Dict[str, Any]]] = None,
-    formation_configs: Optional[Dict[str, Dict[str, Any]]] = None,
+    formation_names: Optional[Union[str, List[str]]] = None,
+    formation_configs: Optional[List[Any]] = None,  # Adjust type to your FormationConfig class
 ) -> Dict[str, Any]:
-
     try:
-        well_names = _coerce_to_list(well_names, "well_names")
-        formation_name = _coerce_to_list(formation_name, "formation_name")
-        formation_configs = formation_configs or {}
-
         all_well_results = []
 
         for well in well_names:
-            well_obj = ascii_reader.read_csv(filepath=f, formation_name=formation_name)
-            df_well = well_obj.to_dataframe()
+            # Load parent well
+            parent_well = (
+                ascii_reader.read_csv(f, well_name=well, formation_name=formation_names)
+                if f.suffix.lower() == ".csv"
+                else las_reader.read_las(f, well_name=well)
+            )
 
-            if "WELLNAME" in df_well.columns:
-                df = df_well[df_well["WELLNAME"].astype(str).str.upper() == well.upper()].copy()
+            df_well = parent_well.to_dataframe()
+            if not df_well.empty and "WELLNAME" in df_well.columns:
+                df = df_well[df_well["WELLNAME"].astype(str).str.upper() == str(well).upper()].copy()
             else:
                 df = df_well.copy()
 
-            if formation_name and "FORMATION" in df.columns:
-                df = df[df["FORMATION"].astype(str).str.upper().isin([x.upper() for x in formation_name])]
+            if formation_names and "FORMATION" in df.columns:
+                df = df[df["FORMATION"].astype(str).str.upper().isin([str(x).upper() for x in formation_names])]
 
             if df.empty:
                 all_well_results.append({"ok": False, "well_name": well, "error": "No data after filtering"})
@@ -1103,49 +1100,49 @@ def run_dynamic_workflow_by_level(
 
             results = []
             has_formation_col = "FORMATION" in df.columns
-            formations = (
-                sorted(df["FORMATION"].dropna().astype(str).unique().tolist())
-                if has_formation_col else [None]
-            )
+            formations = sorted(df["FORMATION"].dropna().astype(str).unique().tolist()) if has_formation_col else []
 
-            # Build the combined well_obj once (full depth range across all formations)
-            all_depths = df["DEPTH"].dropna().astype(float)
-            combined_top = float(all_depths.min())
-            combined_bottom = float(all_depths.max())
-            combined_well_obj = well_obj.depth_slice(top=combined_top, bottom=combined_bottom)
+            processed_slices = []  # Collect workflow-modified slices here
 
             for fm in formations:
-                df_fm = df[df["FORMATION"].astype(str) == fm].copy() if fm else df.copy()
+                if fm not in formation_configs_by_name:
+                    continue
+
+                df_fm = df[df["FORMATION"].astype(str) == fm].copy()
+                if df_fm.empty:
+                    continue
+
                 fm_top_depth = float(df_fm["DEPTH"].min())
                 fm_bottom_depth = float(df_fm["DEPTH"].max())
 
-                if fm and fm in formation_configs:
-                    w = well_obj.depth_slice(top=fm_top_depth, bottom=fm_bottom_depth)
-                    cfg = build_workflow_config(formation_configs[fm], td_ft=w.bottom)
-                    result = DynamicWorkflow(cfg).run(w)
-                    run_level = "formation"
-                else:
-                    w = well_obj  # full well fallback
-                    cfg = build_workflow_config(well_configs[well], td_ft=w.bottom)
-                    result = DynamicWorkflow(cfg).run(w)
-                    run_level = "well"
+                interval_well = parent_well.depth_slice(top=fm_top_depth, bottom=fm_bottom_depth)
+                cfg = build_workflow_config(formation_configs_by_name[fm], td_ft=interval_well.bottom)
+                
+                # Run workflow (modifies interval_well in-place with computed curves)
+                result = DynamicWorkflow(cfg).run(interval_well)
+                processed_slices.append(interval_well)  #  Save modified slice
 
-                # Trace for every formation, every well
-                print(f"\n=== TRACE | well={well} | level={run_level} | formation={fm} | depth=[{w.top}, {w.bottom}] ===")
+                print(
+                    f"\n=== TRACE | well={well} | level=formation | "
+                    f"formation={fm} | depth=[{fm_top_depth}, {fm_bottom_depth}] ==="
+                )
 
                 results.append({
-                    "run_level": run_level,
+                    "run_level": "formation",
                     "formation_name": fm,
-                    "depth_range": [w.top, w.bottom],
+                    "depth_range": [fm_top_depth, fm_bottom_depth],
                     "result": result,
                 })
+
+            # 🔁 Reconstruct single cohesive well object from all processed intervals
+            reconstructed_well = parent_well._reconstruct_well_from_slices_well_obj(processed_slices)
 
             all_well_results.append({
                 "ok": True,
                 "well_name": well,
                 "n_intervals": len(results),
-                "results": results,                    # all formation results
-                "well_obj": combined_well_obj,         # combined across formations
+                "results": results,
+                "well_obj": reconstructed_well,  # Now contains all workflow-computed curves
             })
 
         return {
