@@ -585,10 +585,10 @@ class Well:
         except Exception as e:
             raise ValueError(f"Cannot extract DataFrame from Well object. Implement .to_df() or check structure. Error: {e}")
 
-    def _reconstruct_well_from_slices_well_obj(self, parent_well: Any, slices: List[Any]) -> Any:
+    def _reconstruct_well_from_slices_well_obj(self, slices: List[Any]) -> Any:
         """Concatenate processed depth slices, sort by DEPTH, and reconstruct a Well object."""
         if not slices:
-            return parent_well
+            return self
 
         dfs = []
         for s in slices:
@@ -601,21 +601,18 @@ class Well:
                 continue
 
         if not dfs:
-            return parent_well
+            return self
 
-        # 1. Concatenate & sort
         combined = pd.concat(dfs, axis=0, ignore_index=True)
         if "DEPTH" in combined.columns:
             combined = combined.sort_values("DEPTH").reset_index(drop=True)
-            # Keep first occurrence at duplicate depths (adjust keep="last" if later intervals should override)
             combined = combined.drop_duplicates(subset=["DEPTH"], keep="first")
         else:
             raise ValueError("No 'DEPTH' column found in extracted well data.")
 
-        # 2. Reconstruct into original Well class if possible
-        cls = parent_well.__class__
-        well_name = getattr(parent_well, "name", None)
-        
+        cls = self.__class__
+        well_name = getattr(self, "name", None)
+
         try:
             if hasattr(cls, "from_df"): return cls.from_df(combined, name=well_name)
             if hasattr(cls, "from_dataframe"): return cls.from_dataframe(combined, name=well_name)
