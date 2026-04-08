@@ -77,6 +77,7 @@ class DynamicWorkflowConfig:
     matrix_type: str = "sandstone"
     rho_ma: Optional[float] = None
     rho_fl: float = 1.0
+    rho_cl: float = 2.45
     dt_ma: Optional[float] = None
     dt_fl: float = 189.0
 
@@ -116,13 +117,17 @@ class DynamicWorkflowConfig:
     sp_max: Optional[float] = None
 
     # Permeability
-    perm_method: str = "timur"
+    perm_method: str = "auto"
+    perm_fallback_method: str = "timur"
     swirr: Optional[float] = None
+    peer_wells: Optional[List[Any]] = None
+    formation_tops: Optional[Any] = None
 
     # Saturation model (auto = use routing logic)
     sw_model: str = "auto"
     rtsh: Optional[float] = None
     vsh_exp: float = 1.6
+    shale_exp: float = 1.6
 
     # Control which steps to skip
     skip_steps: List[str] = field(default_factory=list)
@@ -332,7 +337,25 @@ class DynamicWorkflow:
         available = self._detect_available_curves(well)
 
         # Execute pipeline in order
-        pipeline = self.get_pipeline()
+        pipeline = [
+            (WorkflowStep.TEMPERATURE, self._step_temperature, self._can_temperature),
+            (WorkflowStep.BAD_HOLE, self._step_bad_hole, self._can_bad_hole),
+            (WorkflowStep.VCLAY, self._step_vclay, self._can_vclay),
+            (WorkflowStep.RCL, self._step_rcl, self._can_rcl),
+            (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
+            (WorkflowStep.RW, self._step_rw, self._can_rw),
+            (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
+            (WorkflowStep.HC_CORRECTION, self._step_hc_correction, self._can_hc_correction),
+            (WorkflowStep.POROSITY, self._step_porosity, self._can_porosity),
+            (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
+            (WorkflowStep.SATURATION, self._step_saturation, self._can_saturation),
+            (WorkflowStep.PERMEABILITY, self._step_permeability, self._can_permeability),
+            (WorkflowStep.ROCK_QUALITY, self._step_rock_quality, self._can_rock_quality),
+            (WorkflowStep.BVW, self._step_bvw, self._can_bvw),
+            (WorkflowStep.MHI, self._step_mhi, self._can_mhi),
+            (WorkflowStep.NET_PAY, self._step_net_pay, self._can_net_pay),
+        ]
+
         for step_enum, step_fn, can_fn in pipeline:
             step_name = step_enum.value
 
@@ -407,8 +430,9 @@ class DynamicWorkflow:
     def _can_lithology(self, well: "Well") -> bool:
         return (self._has_curve(well, "RHOB") and
                 self._has_curve(well, "NPHI") and
-                self._has_curve(well, "PEF") and
-                self._has_curve(well,"PHIE"))
+                self._has_curve(well, "PEF", "DTC") and
+                self._has_curve(well, "PHIE") and
+                self._has_curve(well, "VCL"))
 
     def _can_rmf(self, well: "Well") -> bool:
         return self.config.rmf_at_meas_temp is not None or self.config.rm is not None
@@ -466,9 +490,9 @@ class DynamicWorkflow:
             surface_temp=self.config.surface_temp_f,
             bht_unit="F"
         )
-        depth = well.depth
-        if depth is not None:
-            depth_data = np.array(depth.data, dtype=np.float64)
+        depth_curve = well.get("DEPT") or well.get("DEPTH")
+        depth_data = depth_curve.data if depth_curve is not None else well.depth
+        if depth_data is not None:
             temp_array = profile.get_temperature(depth_data)
             well.add_curve("TEMP", temp_array, "degF", "Formation Temperature")
             self._result.temperature_gradient = profile.gradient
@@ -596,14 +620,19 @@ class DynamicWorkflow:
         from petrophys.lithology.lithology_module import LithologyModule
 
         trace = StepResult(step="lithology", success=True, method="multi_mineral_solver")
-        trace.input_curves = ["RHOB", "NPHI", "PEF","PHIE"]
+        trace.input_curves = ["RHOB", "NPHI", "VCL", "PHIE"]
+        if well.get("PEF") is not None:
+            trace.input_curves.append("PEF")
+        if well.get("DTC") is not None:
+            trace.input_curves.append("DTC")
 
         litho_module = LithologyModule()
         result = litho_module.calculate(well)
         litho_module.add_to_well(well, result)
 
-        trace.output_curves = ["QUARTZ", "CALCITE", "DOLOMITE", "CLAY_VOL"]
-        trace.decisions.append("3-mineral + fluid solver (RHOB, NPHI, PEF)")
+        trace.output_curves = ["VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"]
+        trace.decisions.append("Raw-log multi-mineral solve with VCL/PHIE clay-porosity terms")
+        trace.decisions.append("PEF screened for plausibility; DTC used when PEF is absent or invalid")
         return trace
 
     def _step_rmf(self, well: "Well") -> StepResult:
@@ -679,34 +708,39 @@ class DynamicWorkflow:
             trace.decisions = decisions
             return trace
 
-        if (self._has_curve(well, "SP") and
-                not self.config.mud_has_clay_or_kcl and
-                self._result.rmf_computed is not None):
-            from petrophys.resistivity.rw.sp_rw import estimate_sp_lines, rw_from_ssp
-            sp = well.get("SP")
-            valid_sp = sp.data[~np.isnan(sp.data)]
-            if len(valid_sp) > 0:
-                sp_clean, sp_shale = estimate_sp_lines(sp.data)
-                ssp = sp_clean - sp_shale
-                rw = rw_from_ssp(ssp, self._result.rmf_computed, temp_f)
-                self._result.rw_computed = rw
-                trace.method = "SP_method"
-                trace.input_curves = ["SP"]
+        if self._result.rmf_computed is not None:
+            from petrophys.resistivity.rw.rw_module import RwModule
+
+            if self.config.mud_has_clay_or_kcl:
+                preferred_method = "rxo_rt"
+            elif self._has_curve(well, "SP"):
+                preferred_method = "sp"
+            else:
+                preferred_method = "rxo_rt"
+
+            try:
+                rw_module = RwModule(method=preferred_method)
+                rw_result = rw_module.calculate(
+                    well,
+                    rmf=self._result.rmf_computed,
+                    temperature=temp_f
+                )
+                self._result.rw_computed = float(np.nanmedian(np.asarray(rw_result.rw, dtype=float)))
+                trace.method = rw_result.method
+                trace.input_curves = ["SP"] if "sp" in rw_result.method else ["RSHA", "RDEP"]
                 trace.parameters = {
-                    "sp_clean_mv": sp_clean,
-                    "sp_shale_mv": sp_shale,
-                    "ssp_mv": ssp,
                     "rmf": self._result.rmf_computed,
                     "temperature_f": temp_f,
-                    "rw_computed": rw
+                    "rw_computed": self._result.rw_computed,
+                    **rw_result.metadata,
                 }
                 decisions.append(
-                    f"Rw from SP: clean line = {sp_clean:.1f} mV, shale line = {sp_shale:.1f} mV, "
-                    f"SSP = {ssp:.1f} mV, Rmf = {self._result.rmf_computed:.4f}, "
-                    f"T = {temp_f:.0f}F -> Rw = {rw:.4f} ohm.m"
+                    f"Rw via {rw_result.method}: {self._result.rw_computed:.4f} ohm.m"
                 )
                 trace.decisions = decisions
                 return trace
+            except Exception as e:
+                self._result.warnings.append(f"Rw heuristic failed: {e}")
 
         self._result.warnings.append("Rw could not be determined. Using default 0.05 ohm.m")
         self._result.rw_computed = 0.05
@@ -747,7 +781,8 @@ class DynamicWorkflow:
 
         hc_module = HcCorrectionModule(
             hc_type=self.config.hc_type, rho_ma=rho_ma,
-            rho_fl=self.config.rho_fl, phi_cl=self.config.phi_cl
+            rho_fl=self.config.rho_fl, phi_cl=self.config.phi_cl,
+            rho_cl=self.config.rho_cl
         )
         result = hc_module.calculate(well)
         hc_module.add_to_well(well, result)
@@ -755,7 +790,8 @@ class DynamicWorkflow:
         trace.input_curves = ["NPHI", "RHOB"]
         trace.output_curves = ["NPHI_HC", "RHOB_HC"]
         trace.parameters = {"hc_type": self.config.hc_type, "rho_ma": rho_ma,
-                           "rho_fl": self.config.rho_fl, "phi_cl": self.config.phi_cl}
+                           "rho_fl": self.config.rho_fl, "phi_cl": self.config.phi_cl,
+                           "rho_cl": self.config.rho_cl}
         trace.decisions = decisions
         return trace
 
@@ -813,10 +849,11 @@ class DynamicWorkflow:
             rho_ma=self.config.rho_ma or 2.65, m_star=self.config.m_star,
             rwb=self.config.rwb, phi_cl=self.config.phi_cl,
             rtsh=self.config.rtsh, vsh_exp=self.config.vsh_exp,
+            shale_exp=self.config.shale_exp,
         )
 
-        well.add_curve(f"SW-{result.model}", result.sw, "v/v", f"Water Saturation ({result.model})")
-        outputs = [f"SW-{result.model}"]
+        well.add_curve("SW", result.sw, "v/v", f"Water Saturation ({result.model})")
+        outputs = ["SW"]
         if result.sxo is not None:
             well.add_curve(f"SXO-{result.model}", result.sxo, "v/v", "Flushed Zone Water Saturation")
             outputs.append(f"SXO-{result.model}")
@@ -832,6 +869,7 @@ class DynamicWorkflow:
             "rcl": self._result.rcl_computed,
             "rtsh": self.config.rtsh if self.config.rtsh is not None else self._result.rcl_computed,
             "vsh_exp": self.config.vsh_exp,
+            "shale_exp": self.config.shale_exp,
             "vcl_cutoff_for_routing": self.config.vcl_cutoff,
             "lithology_type": self.config.lithology if isinstance(lithology, str) else "per-depth array",
         }
@@ -849,29 +887,41 @@ class DynamicWorkflow:
         trace = StepResult(step="permeability", success=True, method=self.config.perm_method)
         decisions = []
 
-        perm_module = PermeabilityModule(method=self.config.perm_method)
+        perm_module = PermeabilityModule(
+            method=self.config.perm_method,
+            fallback_method=self.config.perm_fallback_method,
+        )
 
-        swi = self.config.swirr
-        swi_source = "user"
-        if swi is None:
-            swi_source = "estimated"
-            sw_curve = well.get("SWT-LOG")
-            net_pay = well.get("NET_PAY")
-            if sw_curve is not None and net_pay is not None:
-                pay_mask = net_pay.data > 0.5
-                if np.any(pay_mask):
-                    swi = float(np.nanmean(sw_curve.data[pay_mask]))
-            if swi is None:
-                swi_source = "not_available"
-                decisions.append("Swirr not available (no pay zones yet); using equation defaults")
-
-        if swi is not None:
-            decisions.append(f"Swirr = {swi:.3f} ({swi_source})")
-
-        result = perm_module.calculate(well, swi=swi)
+        result = perm_module.calculate(
+            well,
+            swi=self.config.swirr,
+            peer_wells=self.config.peer_wells,
+            formation_tops=self.config.formation_tops,
+        )
         well.add_curve("PERM", result.perm, "mD", f"Permeability ({result.method})")
 
         outputs = ["PERM"]
+        phi_corecal = result.metadata.get("phi_corecal")
+        perm_core = result.metadata.get("perm_core")
+        if phi_corecal is not None:
+            well.add_curve(
+                "PHIE_CORECAL",
+                phi_corecal,
+                "v/v",
+                "Permeability input porosity from core calibration",
+            )
+            outputs.append("PHIE_CORECAL")
+        if perm_core is not None:
+            well.add_curve(
+                "PERM_CORECAL",
+                perm_core,
+                "mD",
+                "Permeability from core-calibrated poro-perm transform",
+            )
+            outputs.append("PERM_CORECAL")
+        if isinstance(result.swi_used, np.ndarray) and result.swi_source == "apparent_buckles":
+            well.add_curve("SWIRR_APP", result.swi_used, "v/v", "Apparent Irreducible Water Saturation")
+            outputs.append("SWIRR_APP")
         if self._has_curve(well, "PHIS") and self._has_curve(well, "PHID"):
             from petrophys.petrophysics.permeability.impermeable_flag import flag_impermeable
             phis = well.get("PHIS").data
@@ -883,10 +933,40 @@ class DynamicWorkflow:
             outputs.append("IMPERM_FLAG")
             decisions.append(f"Impermeable flag: {int(np.sum(imperm))} samples flagged")
 
-        trace.input_curves = ["PHIE"]
+        trace.input_curves = [result.metadata.get("porosity_curve", "PHIE")]
         trace.output_curves = outputs
-        trace.parameters = {"method": self.config.perm_method, "swirr": swi, "swirr_source": swi_source}
-        decisions.append(f"Equation: {self.config.perm_method}")
+        trace.parameters = {
+            "method": self.config.perm_method,
+            "fallback_method": self.config.perm_fallback_method,
+            "swirr_source": result.swi_source,
+            "bvw_irr": result.bvw_irr,
+            "strategy": result.metadata.get("strategy"),
+            "same_well_core_models": result.metadata.get("same_well_core_models"),
+            "peer_core_models": result.metadata.get("peer_core_models"),
+            "peer_wells_considered": result.metadata.get("peer_wells_considered"),
+        }
+        if result.metadata.get("core_sections_count"):
+            decisions.append(
+                f"Core-calibrated sections: {result.metadata['core_sections_count']} samples"
+            )
+        for model in result.metadata.get("core_models", []):
+            source = model.get("source_well") or "unknown"
+            formation = model.get("source_formation") or "all_depths"
+            source_type = model.get("source_type") or "core"
+            decisions.append(
+                f"{source_type}: {source} / {formation} (n={model.get('n_core_points')}, "
+                f"perm R2={model.get('perm_r2'):.3f})"
+            )
+        if np.isscalar(result.swi_used):
+            trace.parameters["swirr"] = float(result.swi_used)
+            decisions.append(f"Swirr = {float(result.swi_used):.3f} ({result.swi_source})")
+        elif isinstance(result.swi_used, np.ndarray):
+            decisions.append(f"Swirr resolved as curve ({result.swi_source})")
+            if result.bvw_irr is not None:
+                decisions.append(f"Apparent BVWirr = {result.bvw_irr:.4f} v/v")
+        else:
+            decisions.append("Swirr not used because permeability came from core calibration")
+        decisions.append(f"Permeability strategy: {result.method}")
         decisions.append(f"Perm range: {np.nanmin(result.perm):.3f} - {np.nanmax(result.perm):.1f} mD")
         trace.decisions = decisions
         return trace

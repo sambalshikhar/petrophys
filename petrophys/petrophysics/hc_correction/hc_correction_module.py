@@ -28,12 +28,14 @@ class HcCorrectionModule:
         hc_type: str = "oil",
         rho_ma: float = 2.65,
         rho_fl: float = 1.0,
-        phi_cl: float = 0.15
+        phi_cl: float = 0.15,
+        rho_cl: float = 2.45
     ):
         self.hc_type = hc_type
         self.rho_ma = rho_ma
         self.rho_fl = rho_fl
         self.phi_cl = phi_cl
+        self.rho_cl = rho_cl
 
     def calculate(
         self,
@@ -84,7 +86,7 @@ class HcCorrectionModule:
         )
         rhob_hc = correct_density_hc(
             rhob.data, phi, sxo, self.rho_fl, self.hc_type,
-            vcl=vcl, rho_ma=self.rho_ma
+            vcl=vcl, rho_ma=self.rho_ma, rho_cl=self.rho_cl
         )
 
         return HcCorrectionResult(nphi_hc=nphi_hc, rhob_hc=rhob_hc)

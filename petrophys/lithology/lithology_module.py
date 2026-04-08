@@ -4,16 +4,13 @@ Main lithology determination module.
 This module provides the LithologyModule class for comprehensive
 lithology analysis from well logs.
 """
-from petrophys.base.well import Well
-from typing import Optional, Dict, List
+from typing import Optional, List
 from dataclasses import dataclass
 import numpy as np
 
 from petrophys.lithology.multi_mineral_solver import (
     MultiMineralSolver,
-    solve_three_mineral,
 )
-from petrophys.lithology.crossplots import identify_lithology_zone
 
 
 @dataclass
@@ -29,6 +26,8 @@ class LithologyResult:
         Calcite volume fraction
     v_dolomite : np.ndarray
         Dolomite volume fraction
+    v_anhydrite : np.ndarray
+        Anhydrite volume fraction
     v_clay : np.ndarray
         Clay volume fraction (from VCL)
     lithology_code : np.ndarray
@@ -40,6 +39,7 @@ class LithologyResult:
     v_quartz: np.ndarray
     v_calcite: np.ndarray
     v_dolomite: np.ndarray
+    v_anhydrite: np.ndarray
     v_clay: np.ndarray
     lithology_code: np.ndarray
     lithology_name: np.ndarray
@@ -85,11 +85,85 @@ class LithologyModule:
         include_clay: bool = True
     ):
         if minerals is None:
-            minerals = ["quartz", "calcite", "dolomite"]
+            minerals = ["quartz", "calcite", "dolomite", "anhydrite"]
 
         self.minerals = minerals
         self.include_clay = include_clay
         self.solver = MultiMineralSolver(minerals=minerals)
+
+    @staticmethod
+    def _screen_pef(pef: Optional[np.ndarray]) -> Optional[np.ndarray]:
+        """Remove physically implausible PEF values before solving."""
+        if pef is None:
+            return None
+        pef = np.asarray(pef, dtype=float).copy()
+        pef[(pef < 0.0) | (pef > 12.0)] = np.nan
+        return pef
+
+    @staticmethod
+    def _screen_dtc(dtc: Optional[np.ndarray]) -> Optional[np.ndarray]:
+        """Remove implausible sonic values before solving."""
+        if dtc is None:
+            return None
+        dtc = np.asarray(dtc, dtype=float).copy()
+        dtc[(dtc < 35.0) | (dtc > 250.0)] = np.nan
+        return dtc
+
+    def _classify_sample(
+        self,
+        rhob: float,
+        nphi: float,
+        gr: float,
+        dtc: float,
+        vcl: float,
+        v_quartz: float,
+        v_calcite: float,
+        v_dolomite: float,
+        v_anhydrite: float,
+    ) -> str:
+        """
+        Classify broad lithology from logs and solved mineral fractions.
+
+        The solver provides mineral volumes; raw curves are then used to keep
+        petrophysical families aligned with field-observed lithologies.
+        """
+        if not np.isfinite(rhob) or not np.isfinite(nphi):
+            return "unknown"
+
+        carbonate_volume = v_calcite + v_dolomite
+        dtc_valid = np.isfinite(dtc)
+        gr_valid = np.isfinite(gr)
+
+        if rhob < 1.95 and nphi > 0.35:
+            return "coal"
+
+        if (((v_anhydrite > 0.55) and nphi < 0.10 and (not dtc_valid or dtc < 70))
+                or (rhob > 2.90 and nphi < 0.08 and (not gr_valid or gr < 60)
+                    and (not dtc_valid or dtc < 70))
+                or (rhob < 2.25 and nphi < 0.05 and (not gr_valid or gr < 35))):
+            return "anhydrite" if (v_anhydrite > 0.55 or rhob > 2.90) else "salt"
+
+        if vcl > 0.45 or (gr_valid and gr > 150 and nphi > 0.32):
+            return "shale"
+
+        carbonate_signature = (
+            (gr_valid and gr < 45 and rhob > 2.38 and nphi < 0.24 and (not dtc_valid or dtc < 90))
+            or (carbonate_volume >= max(v_quartz, 0.20) and gr_valid and gr < 55 and nphi < 0.28)
+        )
+        if carbonate_signature:
+            return "dolomite" if v_dolomite > v_calcite else "limestone"
+
+        clastic_signature = (
+            v_quartz > 0.25
+            or (gr_valid and gr >= 35)
+            or nphi > 0.20
+            or (dtc_valid and dtc > 80)
+            or rhob < 2.45
+        )
+        if clastic_signature:
+            return "sandstone"
+
+        return "mixed"
 
     def calculate(
         self,
@@ -118,6 +192,8 @@ class LithologyModule:
         nphi = well.get("NPHI")
         pef = well.get("PEF")
         phie = well.get("PHIE")
+        dtc = well.get("DTC")
+        gr = well.get("GR")
 
         if rhob is None or nphi is None:
             raise ValueError("RHOB and NPHI required for lithology")
@@ -132,68 +208,51 @@ class LithologyModule:
         elif vcl is None:
             vcl = np.zeros(n_samples)
 
-        # Solve for mineral fractions (excluding clay)
-        # Adjust inputs for clay content
-        rhob_clean = rhob.data.copy()
-        nphi_clean = nphi.data.copy()
-        pef_clean = pef.data.copy() if pef is not None else None
-        phie_clean = phie.data.copy() if phie is not None else None
+        pef_clean = self._screen_pef(pef.data) if pef is not None else None
+        dtc_clean = self._screen_dtc(dtc.data) if dtc is not None else None
+        phie_data = phie.data.copy() if phie is not None else np.zeros(n_samples)
+        gr_data = gr.data.copy() if gr is not None else np.full(n_samples, np.nan)
 
-        # Get clay properties
-        clay_rhob = 2.45
-        clay_nphi = 0.30
-        clay_pef = 3.5
-
-        # Remove clay effect
-        matrix_fraction = 1 - vcl
-        matrix_fraction = np.where(matrix_fraction < 0.01, 0.01, matrix_fraction)
-
-        rhob_clean = (rhob_clean - vcl * clay_rhob) / matrix_fraction
-        nphi_clean = (nphi_clean - vcl * clay_nphi) / matrix_fraction
-        if pef_clean is not None:
-            pef_clean = (pef_clean - vcl * clay_pef) / matrix_fraction
-
-        # Solve for minerals
+        # Solve for minerals. The solver already removes clay and porosity
+        # internally, so raw curves are passed here.
         result = self.solver.solve(
             vcl=vcl,
-            rhob=rhob_clean, nphi=nphi_clean,
-            pef=pef_clean, phie=phie_clean
+            rhob=rhob.data,
+            nphi=nphi.data,
+            pef=pef_clean,
+            phie=phie_data,
+            dt=dtc_clean,
         )
 
-        # Scale by matrix fraction
-        v_quartz = result.get("quartz", np.zeros(n_samples)) * matrix_fraction
-        v_calcite = result.get("calcite", np.zeros(n_samples)) * matrix_fraction
-        v_dolomite = result.get("dolomite", np.zeros(n_samples)) * matrix_fraction
+        v_quartz = result.get("quartz", np.zeros(n_samples))
+        v_calcite = result.get("calcite", np.zeros(n_samples))
+        v_dolomite = result.get("dolomite", np.zeros(n_samples))
+        v_anhydrite = result.get("anhydrite", np.zeros(n_samples))
 
         # Determine dominant lithology
         lithology_code = np.zeros(n_samples, dtype=int)
         lithology_name = np.empty(n_samples, dtype=object)
 
         for i in range(n_samples):
-            # Find dominant component
-            volumes = {
-                "sandstone": v_quartz[i],
-                "limestone": v_calcite[i],
-                "dolomite": v_dolomite[i],
-                "shale": vcl[i],
-            }
-
-            dominant = max(volumes, key=volumes.get)
-
-            if vcl[i] > 0.5:
-                lithology_name[i] = "shale"
-                lithology_code[i] = self.LITHOLOGY_CODES["shale"]
-            elif volumes[dominant] > 0.5:
-                lithology_name[i] = dominant
-                lithology_code[i] = self.LITHOLOGY_CODES[dominant]
-            else:
-                lithology_name[i] = "mixed"
-                lithology_code[i] = self.LITHOLOGY_CODES["mixed"]
+            lith_name = self._classify_sample(
+                rhob=float(rhob.data[i]),
+                nphi=float(nphi.data[i]),
+                gr=float(gr_data[i]) if np.isfinite(gr_data[i]) else np.nan,
+                dtc=float(dtc_clean[i]) if dtc_clean is not None and np.isfinite(dtc_clean[i]) else np.nan,
+                vcl=float(vcl[i]),
+                v_quartz=float(v_quartz[i]),
+                v_calcite=float(v_calcite[i]),
+                v_dolomite=float(v_dolomite[i]),
+                v_anhydrite=float(v_anhydrite[i]),
+            )
+            lithology_name[i] = lith_name
+            lithology_code[i] = self.LITHOLOGY_CODES.get(lith_name, self.LITHOLOGY_CODES["mixed"])
 
         return LithologyResult(
             v_quartz=v_quartz,
             v_calcite=v_calcite,
             v_dolomite=v_dolomite,
+            v_anhydrite=v_anhydrite,
             v_clay=vcl,
             lithology_code=lithology_code,
             lithology_name=lithology_name
@@ -225,6 +284,7 @@ class LithologyModule:
         well.add_curve("VQUAR", result.v_quartz, "v/v", "Quartz Volume")
         well.add_curve("VCALC", result.v_calcite, "v/v", "Calcite Volume")
         well.add_curve("VDOLO", result.v_dolomite, "v/v", "Dolomite Volume")
+        well.add_curve("VANHY", result.v_anhydrite, "v/v", "Anhydrite Volume")
         well.add_curve("LITHO", result.lithology_code.astype(float), "", "Lithology Code")
 
         return well

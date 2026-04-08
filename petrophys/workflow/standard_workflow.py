@@ -25,10 +25,14 @@ class WorkflowConfig:
     salinity_ppm: Optional[float] = None
 
     # Matrix properties
+    matrix_type: str = "sandstone"
+    lithology: str = "clastic"
     matrix_density: float = 2.65
     fluid_density: float = 1.0
     matrix_dt: float = 55.5
     fluid_dt: float = 189.0
+    phi_cl: float = 0.15
+    rho_cl: float = 2.45
 
     # Archie parameters
     a: float = 1.0
@@ -36,12 +40,26 @@ class WorkflowConfig:
     n: float = 2.0
 
     # Saturation model
-    saturation_model: str = "archie"  # archie, simandoux, indonesia
+    saturation_model: str = "archie"  # archie, simandoux, indonesia, north_sea, nigeria_schlumberger
+    rtsh: Optional[float] = None
+    vsh_exp: float = 1.6
+    shale_exp: float = 1.6
+    swirr: Optional[float] = None
+    perm_method: str = "auto"
+    perm_fallback_method: str = "timur"
+    peer_wells: Optional[List[Any]] = None
+    formation_tops: Optional[Any] = None
+    mud_has_clay_or_kcl: bool = False
 
     # Cutoffs
     vcl_cutoff: float = 0.3
     phie_cutoff: float = 0.08
     sw_cutoff: float = 0.7
+
+    # VCL parameters
+    gr_min: float = 20.0
+    gr_max: float = 100.0
+    gr_method: str = "linear"
 
     # Processing options
     calculate_vcl: bool = True
@@ -82,7 +100,7 @@ class WorkflowResult:
     def print_trace(self) -> None:
         """Print a human-readable trace of all steps."""
         print(f"\n{'=' * 80}")
-        print(f"STANDARD WORKFLOW TRACE — {self.well.name or 'Unknown'}")
+        print(f"STANDARD WORKFLOW TRACE - {self.well.name or 'Unknown'}")
         print(f"{'=' * 80}")
         print(f"Overall: {'SUCCESS' if self.success else 'FAILED'} | "
               f"Steps: {len(self.steps)} | Rw = {self.rw_computed}")
@@ -224,11 +242,20 @@ class StandardWorkflow:
         trace = StepTrace(step="vclay", method="default_VclModule")
         trace.input_curves = ["GR"]
         try:
-            vcl_module = VclModule()
-            vcl_module.calculate(well)
-            vcl_module.add_to_well(well)
+            vcl_module = VclModule(
+                gr_min=self.config.gr_min,
+                gr_max=self.config.gr_max,
+                gr_method=self.config.gr_method,
+            )
+            result = vcl_module.calculate(well)
+            vcl_module.add_to_well(well, result)
             trace.output_curves = ["VCL"]
-            trace.decisions.append("GR method with default GR_min/GR_max auto-detection")
+            trace.parameters = {
+                "gr_min": self.config.gr_min,
+                "gr_max": self.config.gr_max,
+                "gr_method": self.config.gr_method,
+            }
+            trace.decisions.append("GR method with configured GR baselines")
         except Exception as e:
             self.warnings.append(f"VCL calculation warning: {e}")
             trace.success = False
@@ -246,14 +273,14 @@ class StandardWorkflow:
             return self.config.rw, trace
 
         if self.config.salinity_ppm is not None:
-            from petrophys.resistivity.rw import calculate_rw_from_salinity
+            from petrophys.resistivity.rw.salinity_rw import rw_from_salinity
             temp = well.get("TEMP")
             if temp is not None:
                 avg_temp = float(np.nanmean(temp.data))
             else:
                 avg_temp = (self.config.surface_temp_f + self.config.bht_f) / 2
 
-            rw = calculate_rw_from_salinity(self.config.salinity_ppm, avg_temp)
+            rw = rw_from_salinity(self.config.salinity_ppm, avg_temp)
             trace.method = "salinity_conversion"
             trace.parameters = {"salinity_ppm": self.config.salinity_ppm,
                                "temperature_f": avg_temp, "rw": rw}
@@ -262,14 +289,21 @@ class StandardWorkflow:
             return rw, trace
 
         sp = well.get("SP")
-        if sp is not None:
+        if sp is not None and not self.config.mud_has_clay_or_kcl:
             from petrophys.resistivity.rw import RwModule
             try:
-                rw_module = RwModule()
-                result = rw_module.calculate_from_sp(well, rmf=self.config.rmf_at_meas_temp)
-                trace.method = "SP_method"
+                rw_module = RwModule(method="sp")
+                result = rw_module.calculate(
+                    well,
+                    rmf=self.config.rmf_at_meas_temp,
+                )
+                trace.method = result.method
                 trace.input_curves = ["SP"]
-                trace.parameters = {"rmf": self.config.rmf_at_meas_temp, "rw": result.rw}
+                trace.parameters = {
+                    "rmf": self.config.rmf_at_meas_temp,
+                    "rw": result.rw,
+                    **result.metadata,
+                }
                 trace.decisions.append(f"Rw from SP = {result.rw:.4f} ohm.m")
                 return result.rw, trace
             except Exception as e:
@@ -287,18 +321,21 @@ class StandardWorkflow:
 
         trace = StepTrace(step="porosity", method="density_neutron")
         trace.parameters = {
+            "matrix_type": self.config.matrix_type,
             "matrix_density": self.config.matrix_density,
             "fluid_density": self.config.fluid_density,
             "matrix_dt": self.config.matrix_dt,
             "fluid_dt": self.config.fluid_dt,
+            "phi_cl": self.config.phi_cl,
         }
         try:
             por_module = PorosityModule(
-                rho_ma=self.config.matrix_density,
-                rho_fl=self.config.fluid_density,
-                dt_ma=self.config.matrix_dt,
-                dt_fl=self.config.fluid_dt
+                matrix=self.config.matrix_type,
+                rhob_fluid=self.config.fluid_density,
+                phi_clay=self.config.phi_cl
             )
+            por_module.rhob_matrix = self.config.matrix_density
+            por_module.dtc_matrix = self.config.matrix_dt
             result = por_module.calculate(well)
             por_module.add_to_well(well, result)
 
@@ -316,23 +353,37 @@ class StandardWorkflow:
 
     def _calculate_saturation(self, well: "Well", rw: float) -> StepTrace:
         """Calculate water saturation."""
-        from petrophys.petrophysics.saturation import SwModule
+        from petrophys.petrophysics.saturation import SaturationModule
 
         trace = StepTrace(step="saturation", method=self.config.saturation_model)
         trace.parameters = {
             "model": self.config.saturation_model,
             "rw": rw, "a": self.config.a,
             "m": self.config.m, "n": self.config.n,
+            "rtsh": self.config.rtsh,
+            "vsh_exp": self.config.vsh_exp,
+            "shale_exp": self.config.shale_exp,
         }
         try:
-            sw_module = SwModule(
-                rw=rw, a=self.config.a, m=self.config.m,
-                n=self.config.n, model=self.config.saturation_model
+            sw_module = SaturationModule(
+                a=self.config.a, m=self.config.m,
+                n=self.config.n, model=self.config.saturation_model,
+                vcl_cutoff=self.config.vcl_cutoff
             )
-            result = sw_module.calculate(well)
-            sw_module.add_to_well(well, result)
+            result = sw_module.calculate(
+                well,
+                rw=rw,
+                lithology=self.config.lithology,
+                phi_cl=self.config.phi_cl,
+                rtsh=self.config.rtsh,
+                vsh_exp=self.config.vsh_exp,
+                shale_exp=self.config.shale_exp,
+            )
+            well.add_curve("SW", result.sw, "v/v", f"Water Saturation ({result.model})")
+            if result.sxo is not None:
+                well.add_curve("SXO", result.sxo, "v/v", "Flushed Zone Water Saturation")
             trace.input_curves = ["RDEP", "PHIE"]
-            trace.output_curves = ["SW"]
+            trace.output_curves = ["SW"] + (["SXO"] if result.sxo is not None else [])
             trace.decisions.append(f"Sw ({self.config.saturation_model}): "
                                   f"a={self.config.a}, m={self.config.m}, n={self.config.n}, "
                                   f"Rw={rw:.4f}")
@@ -344,16 +395,71 @@ class StandardWorkflow:
 
     def _calculate_permeability(self, well: "Well") -> StepTrace:
         """Calculate permeability."""
-        from petrophys.petrophysics.permeability import PermModule
+        from petrophys.petrophysics.permeability import PermeabilityModule
 
-        trace = StepTrace(step="permeability", method="default")
+        trace = StepTrace(step="permeability", method=self.config.perm_method)
         try:
-            perm_module = PermModule()
-            result = perm_module.calculate(well)
-            perm_module.add_to_well(well, result)
-            trace.input_curves = ["PHIE"]
+            perm_module = PermeabilityModule(
+                method=self.config.perm_method,
+                fallback_method=self.config.perm_fallback_method,
+            )
+            result = perm_module.calculate(
+                well,
+                swi=self.config.swirr,
+                peer_wells=self.config.peer_wells,
+                formation_tops=self.config.formation_tops,
+            )
+            well.add_curve("PERM", result.perm, "mD", f"Permeability ({result.method})")
+            trace.input_curves = [result.metadata.get("porosity_curve", "PHIE")]
             trace.output_curves = ["PERM"]
-            trace.decisions.append("Default permeability equation")
+            phi_corecal = result.metadata.get("phi_corecal")
+            perm_core = result.metadata.get("perm_core")
+            if phi_corecal is not None:
+                well.add_curve(
+                    "PHIE_CORECAL",
+                    phi_corecal,
+                    "v/v",
+                    "Permeability input porosity from core calibration",
+                )
+                trace.output_curves.append("PHIE_CORECAL")
+            if perm_core is not None:
+                well.add_curve(
+                    "PERM_CORECAL",
+                    perm_core,
+                    "mD",
+                    "Permeability from core-calibrated poro-perm transform",
+                )
+                trace.output_curves.append("PERM_CORECAL")
+            if isinstance(result.swi_used, np.ndarray) and result.swi_source == "apparent_buckles":
+                well.add_curve("SWIRR_APP", result.swi_used, "v/v", "Apparent Irreducible Water Saturation")
+                trace.output_curves.append("SWIRR_APP")
+            if np.isscalar(result.swi_used):
+                trace.parameters["swirr"] = float(result.swi_used)
+                trace.decisions.append(f"Swirr = {float(result.swi_used):.3f} ({result.swi_source})")
+            elif isinstance(result.swi_used, np.ndarray):
+                trace.decisions.append(f"Swirr resolved as curve ({result.swi_source})")
+                if result.bvw_irr is not None:
+                    trace.decisions.append(f"Apparent BVWirr = {result.bvw_irr:.4f} v/v")
+            else:
+                trace.decisions.append("Swirr not used because permeability came from core calibration")
+            trace.parameters["swirr_source"] = result.swi_source
+            trace.parameters["fallback_method"] = self.config.perm_fallback_method
+            trace.parameters["strategy"] = result.metadata.get("strategy")
+            trace.parameters["same_well_core_models"] = result.metadata.get("same_well_core_models")
+            trace.parameters["peer_core_models"] = result.metadata.get("peer_core_models")
+            if result.metadata.get("core_sections_count"):
+                trace.decisions.append(
+                    f"Core-calibrated sections: {result.metadata['core_sections_count']} samples"
+                )
+            for model in result.metadata.get("core_models", []):
+                source = model.get("source_well") or "unknown"
+                formation = model.get("source_formation") or "all_depths"
+                source_type = model.get("source_type") or "core"
+                trace.decisions.append(
+                    f"{source_type}: {source} / {formation} (n={model.get('n_core_points')}, "
+                    f"perm R2={model.get('perm_r2'):.3f})"
+                )
+            trace.decisions.append(f"Permeability strategy: {result.method}")
         except Exception as e:
             self.warnings.append(f"Permeability calculation warning: {e}")
             trace.success = False
