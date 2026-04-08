@@ -9,7 +9,7 @@ Provides functions for:
 - Statistical comparison (R², bias, RMSE)
 """
 
-from typing import Optional, Tuple, Dict, Union
+from typing import Optional, Tuple, Dict, Union, Iterable
 from dataclasses import dataclass, field
 import numpy as np
 
@@ -28,6 +28,30 @@ class CalibrationResult:
     intercept: float     # linear fit intercept
     core_values: np.ndarray
     log_values: np.ndarray
+
+
+@dataclass
+class PorosityCorrection:
+    """
+    Linear porosity correction derived from core porosity.
+
+    Model: PHI_core_equivalent = A * PHI_log + B
+    """
+    A: float
+    B: float
+    r_squared: float
+    n_points: int
+    input_curve: str = "PHIE"
+    method: str = "core_linear"
+
+    def predict(self, porosity: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """Predict core-equivalent porosity from a log porosity curve."""
+        corrected = self.A * np.asarray(porosity, dtype=float) + self.B
+        return np.clip(corrected, 0.0, 0.5)
+
+    def __repr__(self) -> str:
+        return (f"PorosityCorrection(PHIcore = {self.A:.3f}*{self.input_curve} + "
+                f"{self.B:.3f}, R^2={self.r_squared:.3f}, n={self.n_points})")
 
 
 @dataclass
@@ -81,6 +105,84 @@ def interpolate_log_at_core(
     return np.interp(core.depth, well.depth, curve.data)
 
 
+def core_data_from_well(
+    well,
+    porosity_curves: Iterable[str] = ("PHIC", "CPOR"),
+    perm_curves: Iterable[str] = ("KH_CORE", "CPERM", "K_CORE", "PERM_CORE"),
+    gd_curves: Iterable[str] = ("GDEN", "CGD"),
+    sw_curves: Iterable[str] = ("SWC", "CSW"),
+    so_curves: Iterable[str] = ("SOC", "CSO"),
+    lithology_curves: Iterable[str] = ("LITHOLOGY_GEOLINK",),
+    top: Optional[float] = None,
+    bottom: Optional[float] = None,
+) -> CoreData:
+    """
+    Build ``CoreData`` directly from well curves.
+
+    This is intended for LAS files that already carry laboratory core
+    measurements such as ``PHIC``, ``KH_CORE``, ``GDEN``, ``SWC``, and ``SOC``.
+    The returned object keeps only depths where at least one requested core
+    property exists.
+    """
+    if well.depth is None:
+        raise ValueError("Well has no depth data")
+
+    def _first_curve(names: Iterable[str]) -> Optional[np.ndarray]:
+        for name in names:
+            curve = well.get(name)
+            if curve is not None:
+                return np.asarray(curve.data, dtype=float)
+        return None
+
+    depth = np.asarray(well.depth, dtype=float)
+    porosity = _first_curve(porosity_curves)
+    permeability = _first_curve(perm_curves)
+    grain_density = _first_curve(gd_curves)
+    sw = _first_curve(sw_curves)
+    so = _first_curve(so_curves)
+
+    lithology = None
+    for name in lithology_curves:
+        curve = well.get(name)
+        if curve is not None:
+            lithology = np.asarray(curve.data)
+            break
+
+    has_property = np.zeros_like(depth, dtype=bool)
+    for array in (porosity, permeability, grain_density, sw, so):
+        if array is not None:
+            has_property |= np.isfinite(array)
+
+    if top is not None:
+        has_property &= depth >= float(top)
+    if bottom is not None:
+        has_property &= depth <= float(bottom)
+
+    if not np.any(has_property):
+        raise ValueError("No core curves found on well for the requested interval")
+
+    def _slice(array: Optional[np.ndarray]) -> Optional[np.ndarray]:
+        if array is None:
+            return None
+        return array[has_property]
+
+    metadata = {
+        "well_name": well.name,
+        "field": well.header.field,
+    }
+
+    return CoreData(
+        depth=depth[has_property],
+        porosity=_slice(porosity),
+        permeability=_slice(permeability),
+        grain_density=_slice(grain_density),
+        sw=_slice(sw),
+        so=_slice(so),
+        lithology=_slice(lithology),
+        metadata=metadata,
+    )
+
+
 def calibrate_porosity(
     well,
     core: CoreData,
@@ -115,6 +217,84 @@ def calibrate_porosity(
     log_v = log_vals[valid]
 
     return _compute_calibration(f"Porosity ({log_curve})", core_v, log_v)
+
+
+def fit_porosity_correction(
+    well,
+    core: CoreData,
+    log_curve: str = "PHIE",
+    min_porosity: float = 0.01,
+) -> PorosityCorrection:
+    """
+    Fit a linear correction from log porosity to core-equivalent porosity.
+
+    Fits ``PHI_core = A * PHI_log + B`` using core porosity as the target.
+    This is the appropriate direction for applying a correction back onto the
+    full log.
+    """
+    if core.porosity is None:
+        raise ValueError("CoreData has no porosity measurements")
+
+    log_vals = interpolate_log_at_core(well, core, log_curve)
+    core_vals = core.porosity
+
+    valid = (~np.isnan(core_vals) & ~np.isnan(log_vals)
+             & (core_vals > min_porosity) & (log_vals > min_porosity))
+    if np.count_nonzero(valid) < 2:
+        raise ValueError("At least two valid core/log porosity pairs are required")
+
+    phi_log = log_vals[valid]
+    phi_core = core_vals[valid]
+    coeffs = np.polyfit(phi_log, phi_core, 1)
+    A, B = float(coeffs[0]), float(coeffs[1])
+
+    predicted = A * phi_log + B
+    ss_res = np.sum((phi_core - predicted) ** 2)
+    ss_tot = np.sum((phi_core - np.mean(phi_core)) ** 2)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    return PorosityCorrection(
+        A=A,
+        B=B,
+        r_squared=float(r2),
+        n_points=int(np.count_nonzero(valid)),
+        input_curve=log_curve,
+    )
+
+
+def apply_porosity_correction(
+    well,
+    correction: PorosityCorrection,
+    input_curve: Optional[str] = None,
+    output_curve: str = "PHIE_CORECAL",
+) -> np.ndarray:
+    """
+    Apply a porosity correction to a full well log.
+
+    Parameters
+    ----------
+    well : Well
+        Well object with a porosity curve.
+    correction : PorosityCorrection
+        Fitted correction from ``fit_porosity_correction``.
+    input_curve : str, optional
+        Input porosity curve. Defaults to the curve used during fitting.
+    output_curve : str
+        Name for the corrected output curve.
+    """
+    curve_name = input_curve or correction.input_curve
+    porosity_curve = well.get(curve_name)
+    if porosity_curve is None:
+        raise ValueError(f"Curve '{curve_name}' not found")
+
+    corrected = correction.predict(porosity_curve.data)
+    well.add_curve(
+        output_curve,
+        corrected,
+        "v/v",
+        f"Porosity corrected to core ({correction.A:.3f}*{curve_name}+{correction.B:.3f})",
+    )
+    return corrected
 
 
 def calibrate_permeability(
@@ -203,6 +383,94 @@ def fit_poro_perm_transform(
 
     return PoroPermTransform(
         A=A, B=B, r_squared=r2, n_points=int(np.sum(valid)),
+    )
+
+
+def fit_log_poro_perm_transform(
+    well,
+    core: CoreData,
+    porosity_curve: str = "PHIE_CORECAL",
+    min_perm: float = 0.001,
+) -> PoroPermTransform:
+    """
+    Fit a poro-perm transform using log porosity corrected to core.
+
+    Fits ``log10(K_core) = A * PHI_log_corrected + B`` at core depths, so the
+    resulting transform can be applied directly to the corrected log porosity.
+    """
+    if core.permeability is None:
+        raise ValueError("CoreData has no permeability measurements")
+
+    phi_log = interpolate_log_at_core(well, core, porosity_curve)
+    perm_core = core.permeability
+
+    valid = (~np.isnan(phi_log) & ~np.isnan(perm_core)
+             & (phi_log > 0) & (perm_core > min_perm))
+    if np.count_nonzero(valid) < 2:
+        raise ValueError("At least two valid porosity/permeability pairs are required")
+
+    phi = phi_log[valid]
+    log_k = np.log10(perm_core[valid])
+
+    coeffs = np.polyfit(phi, log_k, 1)
+    A, B = float(coeffs[0]), float(coeffs[1])
+
+    predicted = A * phi + B
+    ss_res = np.sum((log_k - predicted) ** 2)
+    ss_tot = np.sum((log_k - np.mean(log_k)) ** 2)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    return PoroPermTransform(
+        A=A,
+        B=B,
+        r_squared=float(r2),
+        n_points=int(np.count_nonzero(valid)),
+        method=f"log_fit:{porosity_curve}",
+    )
+
+
+def fit_log_poro_perm_transform_from_correction(
+    well,
+    core: CoreData,
+    correction: PorosityCorrection,
+    porosity_curve: str = "PHIE",
+    min_perm: float = 0.001,
+) -> PoroPermTransform:
+    """
+    Fit a poro-perm transform from a log porosity curve after core correction.
+
+    This avoids having to add an intermediate corrected porosity curve to the
+    source well just to train the transform.
+    """
+    if core.permeability is None:
+        raise ValueError("CoreData has no permeability measurements")
+
+    phi_log = interpolate_log_at_core(well, core, porosity_curve)
+    phi_corrected = correction.predict(phi_log)
+    perm_core = core.permeability
+
+    valid = (~np.isnan(phi_corrected) & ~np.isnan(perm_core)
+             & (phi_corrected > 0) & (perm_core > min_perm))
+    if np.count_nonzero(valid) < 2:
+        raise ValueError("At least two valid corrected-porosity/permeability pairs are required")
+
+    phi = phi_corrected[valid]
+    log_k = np.log10(perm_core[valid])
+
+    coeffs = np.polyfit(phi, log_k, 1)
+    A, B = float(coeffs[0]), float(coeffs[1])
+
+    predicted = A * phi + B
+    ss_res = np.sum((log_k - predicted) ** 2)
+    ss_tot = np.sum((log_k - np.mean(log_k)) ** 2)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    return PoroPermTransform(
+        A=A,
+        B=B,
+        r_squared=float(r2),
+        n_points=int(np.count_nonzero(valid)),
+        method=f"log_fit:{porosity_curve}+{correction.method}",
     )
 
 
