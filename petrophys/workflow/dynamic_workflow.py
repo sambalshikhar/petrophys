@@ -23,7 +23,9 @@ from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass, field
 from enum import Enum
 import numpy as np
-
+from petrophys.base.well import Well
+import pandas as pd
+from petrophys.io import ascii_reader, las_reader
 
 class WorkflowStep(Enum):
     """Individual workflow steps."""
@@ -173,6 +175,7 @@ class DynamicWorkflowResult:
     config: DynamicWorkflowConfig
     steps_executed: List[StepResult] = field(default_factory=list)
     steps_skipped: List[str] = field(default_factory=list)
+    specific_steps_skipped: dict[str, str] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
@@ -270,6 +273,48 @@ class DynamicWorkflow:
         self._result: Optional[DynamicWorkflowResult] = None
         self._lithology_log: Optional[np.ndarray] = None
 
+    def get_pipeline(self):
+        return [
+            (WorkflowStep.TEMPERATURE, self._step_temperature, self._can_temperature),
+            (WorkflowStep.BAD_HOLE, self._step_bad_hole, self._can_bad_hole),
+            (WorkflowStep.VCLAY, self._step_vclay, self._can_vclay),
+            (WorkflowStep.RCL, self._step_rcl, self._can_rcl),
+            (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
+            (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
+            (WorkflowStep.RW, self._step_rw, self._can_rw),
+            (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
+            (WorkflowStep.HC_CORRECTION, self._step_hc_correction, self._can_hc_correction),
+            (WorkflowStep.POROSITY, self._step_porosity, self._can_porosity),
+            (WorkflowStep.SATURATION, self._step_saturation, self._can_saturation),
+            (WorkflowStep.PERMEABILITY, self._step_permeability, self._can_permeability),
+            (WorkflowStep.ROCK_QUALITY, self._step_rock_quality, self._can_rock_quality),
+            (WorkflowStep.BVW, self._step_bvw, self._can_bvw),
+            (WorkflowStep.MHI, self._step_mhi, self._can_mhi),
+            (WorkflowStep.NET_PAY, self._step_net_pay, self._can_net_pay),
+        ]
+
+    def run_selected_steps(self, well: "Well", steps: list[WorkflowStep]) -> DynamicWorkflowResult:
+        """
+        Execute only the specified workflow steps, in pipeline order.
+        """
+        self._result = DynamicWorkflowResult(well=well, config=self.config)
+
+        allowed = set(steps)
+
+        for step_enum, step_fn, _ in self.get_pipeline():
+            print(f"step_enum: {step_enum}")
+            if step_enum not in allowed:
+                continue
+
+            try:
+                step_fn(well)
+                self._result.steps_executed.append(step_enum.name)
+            except Exception as e:
+                self._result.specific_steps_skipped[step_enum.name] = str(e)
+
+
+        return self._result
+
     def run(self, well: "Well") -> DynamicWorkflowResult:
         """
         Run the dynamic workflow on a well.
@@ -341,29 +386,46 @@ class DynamicWorkflow:
         """Detect which curves are available in the well."""
         available = set()
         for name in ["GR", "SP", "NPHI", "RHOB", "DTC", "DTS", "RDEP", "RT",
-                      "RSHA", "RMED", "RXO", "PEF", "CALI", "BS", "DRHO",
-                      "VCL", "PHIE", "PHIT", "SW", "SXO", "PERM", "TEMP"]:
+                      "RESS", "RESM", "RXO", "PEF", "CAL", "BS", "DRHO",
+                      "VCLAY", "PHIE", "PHIT", "SWT-LOG", "SXO-LOG", "PERM", "TEMP"]:
             if well.get(name) is not None:
                 available.add(name)
         return available
 
     def _has_curve(self, well: "Well", *names: str) -> bool:
         """Check if any of the named curves exist."""
-        return any(well.get(n) is not None for n in names)
+        for n in names:
+            if hasattr(well, "get") and well.get(n) is not None:
+                return True
+            if hasattr(well, "__getitem__"):
+                try:
+                    if well[n] is not None:
+                        return True
+                except (KeyError, IndexError, TypeError):
+                    pass
+            if hasattr(well, "has_curve") and well.has_curve(n):
+                return True
+            if hasattr(well, "curves") and n in well.curves:
+                return True
+        return False
 
     # ---- CAN-RUN checks ----
 
     def _can_temperature(self, well: "Well") -> bool:
-        return self.config.bht_f is not None and self.config.td_ft is not None
+        return (
+            self.config.bht_f is not None
+            and self.config.td_ft is not None
+            and self.config.surface_temp_f is not None
+        )
 
     def _can_bad_hole(self, well: "Well") -> bool:
-        return self._has_curve(well, "CALI") or self._has_curve(well, "DRHO")
+        return self._has_curve(well, "CAL") or self._has_curve(well, "DRHO")
 
     def _can_vclay(self, well: "Well") -> bool:
         return self._has_curve(well, "GR")
 
     def _can_rcl(self, well: "Well") -> bool:
-        return self._has_curve(well, "RDEP", "RT") and self._has_curve(well, "VCL")
+        return self._has_curve(well, "RDEP", "RT") and self._has_curve(well, "VCLAY")
 
     def _can_lithology(self, well: "Well") -> bool:
         return (self._has_curve(well, "RHOB") and
@@ -381,7 +443,7 @@ class DynamicWorkflow:
                 (self._has_curve(well, "SP") and not self.config.mud_has_clay_or_kcl))
 
     def _can_invasion(self, well: "Well") -> bool:
-        return (self._has_curve(well, "RSHA", "RXO") and
+        return (self._has_curve(well, "RESS", "RXO") and
                 self._has_curve(well, "RDEP", "RT"))
 
     def _can_hc_correction(self, well: "Well") -> bool:
@@ -402,13 +464,13 @@ class DynamicWorkflow:
         return self._has_curve(well, "PERM") and self._has_curve(well, "PHIE")
 
     def _can_bvw(self, well: "Well") -> bool:
-        return self._has_curve(well, "PHIE") and self._has_curve(well, "SW")
+        return self._has_curve(well, "PHIE") and self._has_curve(well, "SWT-LOG")
 
     def _can_mhi(self, well: "Well") -> bool:
-        return self._has_curve(well, "SXO") and self._has_curve(well, "SW")
+        return self._has_curve(well, "SXO-LOG") and self._has_curve(well, "SWT-LOG")
 
     def _can_net_pay(self, well: "Well") -> bool:
-        return (self._has_curve(well, "PHIE") and self._has_curve(well, "SW"))
+        return (self._has_curve(well, "PHIE") and self._has_curve(well, "SWT-LOG"))
 
     # ---- STEP implementations ----
 
@@ -446,14 +508,14 @@ class DynamicWorkflow:
         trace = StepResult(step="bad_hole", success=True, method="caliper_drho_flags")
         inputs = []
 
-        cali = well.get("CALI")
+        cali = well.get("CAL")
         bs_curve = well.get("BS")
         drho = well.get("DRHO")
         rhob = well.get("RHOB")
         pef = well.get("PEF")
 
         bs = bs_curve.data if bs_curve is not None else 8.5
-        if cali is not None: inputs.append("CALI")
+        if cali is not None: inputs.append("CAL")
         if bs_curve is not None: inputs.append("BS")
         if drho is not None: inputs.append("DRHO")
         if rhob is not None: inputs.append("RHOB")
@@ -520,9 +582,9 @@ class DynamicWorkflow:
         outputs = ["VCL"]
         if use_sp: inputs.append("SP")
         if use_nd: inputs.extend(["NPHI", "RHOB"])
-        if result.vcl_gr is not None: outputs.append("VCL_GR")
-        if result.vcl_sp is not None: outputs.append("VCL_SP")
-        if result.vcl_nd is not None: outputs.append("VCL_ND")
+        if result.vcl_gr is not None: outputs.append("VCLGR")
+        if result.vcl_sp is not None: outputs.append("VCLSP")
+        if result.vcl_nd is not None: outputs.append("VCLND")
 
         decisions.append(f"Final VCL = min(available methods), range: "
                         f"{np.nanmin(result.vcl):.3f} - {np.nanmax(result.vcl):.3f}")
@@ -543,7 +605,7 @@ class DynamicWorkflow:
         from petrophys.clay_volume.rcl import RclModule
 
         trace = StepResult(step="rcl", success=True, method="mean_Rt_in_shale_zones")
-        trace.input_curves = ["RDEP", "VCL"]
+        trace.input_curves = ["RT", "VCLAY"]
         trace.parameters = {"vcl_threshold": 0.9, "default_rcl": 5.0}
 
         rcl_module = RclModule()
@@ -551,7 +613,7 @@ class DynamicWorkflow:
 
         trace.parameters["rcl_computed"] = self._result.rcl_computed
         trace.decisions.append(f"Rcl = {self._result.rcl_computed:.2f} ohm.m "
-                              f"(mean RDEP where VCL > 0.9)")
+                              f"(mean RT where VCLAY > 0.9)")
         return trace
 
     def _step_lithology(self, well: "Well") -> StepResult:
@@ -695,7 +757,7 @@ class DynamicWorkflow:
         invasion_module = InvasionModule()
         result = invasion_module.analyze(well)
         well.add_curve("INVASION_RATIO", result.ratio, "", "Invasion Ratio Rxo/Rt")
-        trace.input_curves = ["RDEP", "RSHA"]
+        trace.input_curves = ["RT", "RESS"]
         trace.output_curves = ["INVASION_RATIO"]
         return trace
 
@@ -750,7 +812,7 @@ class DynamicWorkflow:
         outputs = []
         for c in ["RHOB", "NPHI", "DTC"]:
             if well.get(c) is not None: inputs.append(c)
-        if well.get("VCL") is not None: inputs.append("VCL")
+        if well.get("VCLAY") is not None: inputs.append("VCLAY")
         for c in ["PHID", "PHIT", "PHIE", "PHIS"]:
             if well.get(c) is not None: outputs.append(c)
 
@@ -766,7 +828,7 @@ class DynamicWorkflow:
         trace.decisions.append(f"PHID = (rho_ma - RHOB) / (rho_ma - rho_fl)")
         if "NPHI" in inputs:
             trace.decisions.append("PHIT = adaptive(NPHI, PHID)")
-        trace.decisions.append(f"PHIE = PHIT - VCL * phi_clay ({self.config.phi_cl})")
+        trace.decisions.append(f"PHIE = PHIT - VCLAY * phi_clay ({self.config.phi_cl})")
         return trace
 
     def _step_saturation(self, well: "Well") -> StepResult:
@@ -793,11 +855,11 @@ class DynamicWorkflow:
         well.add_curve("SW", result.sw, "v/v", f"Water Saturation ({result.model})")
         outputs = ["SW"]
         if result.sxo is not None:
-            well.add_curve("SXO", result.sxo, "v/v", "Flushed Zone Water Saturation")
-            outputs.append("SXO")
+            well.add_curve(f"SXO-{result.model}", result.sxo, "v/v", "Flushed Zone Water Saturation")
+            outputs.append(f"SXO-{result.model}")
 
         trace.method = result.model
-        trace.input_curves = ["RDEP", "PHIE", "VCL"]
+        trace.input_curves = ["RT", "PHIE", "VCLAY"]
         trace.output_curves = outputs
         trace.parameters = {
             "sw_model": result.model,
@@ -813,7 +875,7 @@ class DynamicWorkflow:
         }
         trace.decisions.append(f"Model selected: {result.model}")
         if self.config.sw_model == "auto":
-            trace.decisions.append("Auto-routing: model chosen based on lithology and VCL")
+            trace.decisions.append("Auto-routing: model chosen based on lithology and VCLAY")
         trace.decisions.append(f"Archie params: a={self.config.a}, m={self.config.m}, n={self.config.n}")
         trace.decisions.append(f"Rw = {self._result.rw_computed:.4f}, Rcl = {self._result.rcl_computed}")
         trace.decisions.append(f"Sw range: {np.nanmin(result.sw):.3f} - {np.nanmax(result.sw):.3f}")
@@ -925,14 +987,14 @@ class DynamicWorkflow:
         from petrophys.reservoir.bvw.bvw_module import calculate_bvw
 
         phie = well.get("PHIE").data
-        sw = well.get("SW").data
+        sw = well.get("SWT-LOG").data
         bvw = calculate_bvw(phie, sw)
         well.add_curve("BVW", bvw, "v/v", "Bulk Volume Water")
 
         trace = StepResult(step="bvw", success=True, method="PHIE_x_SW")
-        trace.input_curves = ["PHIE", "SW"]
+        trace.input_curves = ["PHIE", "SWT-LOG"]
         trace.output_curves = ["BVW"]
-        trace.decisions.append("BVW = PHIE * Sw")
+        trace.decisions.append("BVW = PHIE * SWT-LOG")
         return trace
 
     def _step_mhi(self, well: "Well") -> StepResult:
@@ -942,9 +1004,9 @@ class DynamicWorkflow:
         mhi_module.add_to_well(well)
 
         trace = StepResult(step="mhi", success=True, method="moveable_HC_index")
-        trace.input_curves = ["SW", "SXO"]
+        trace.input_curves = ["SWT-LOG", "SXO-LOG"]
         trace.output_curves = ["MHI"]
-        trace.decisions.append("MHI = Sw / Sxo")
+        trace.decisions.append("MHI = SWT-LOG / SXO-LOG")
         return trace
 
     def _step_net_pay(self, well: "Well") -> StepResult:
@@ -962,7 +1024,7 @@ class DynamicWorkflow:
         result = np_module.calculate(well)
         np_module.add_to_well(well, result)
 
-        trace.input_curves = ["VCL", "PHIE", "SW"]
+        trace.input_curves = ["VCLAY", "PHIE", "SWT-LOG"]
         trace.output_curves = ["NET_ROCK", "NET_RES", "NET_PAY"]
         trace.parameters = {
             "vcl_cutoff": self.config.vcl_cutoff,
@@ -974,9 +1036,9 @@ class DynamicWorkflow:
         n_res = int(np.nansum(well.get("NET_RES").data > 0.5)) if well.get("NET_RES") else 0
         n_pay = int(np.nansum(well.get("NET_PAY").data > 0.5)) if well.get("NET_PAY") else 0
         step_m = well.step or 0.15
-        trace.decisions.append(f"NET_ROCK: VCL < {self.config.vcl_cutoff} -> {n_rock} samples ({n_rock*step_m:.1f} m)")
+        trace.decisions.append(f"NET_ROCK: VCLAY < {self.config.vcl_cutoff} -> {n_rock} samples ({n_rock*step_m:.1f} m)")
         trace.decisions.append(f"NET_RES:  + PHIE > {self.config.phie_cutoff} -> {n_res} samples ({n_res*step_m:.1f} m)")
-        trace.decisions.append(f"NET_PAY:  + Sw < {self.config.sw_cutoff} -> {n_pay} samples ({n_pay*step_m:.1f} m)")
+        trace.decisions.append(f"NET_PAY:  + SWT-LOG < {self.config.sw_cutoff} -> {n_pay} samples ({n_pay*step_m:.1f} m)")
         return trace
 
     # ---- Helpers ----
@@ -1051,3 +1113,123 @@ def run_dynamic_workflow(
 
     workflow = DynamicWorkflow(config)
     return workflow.run(well)
+
+def _coerce_to_list(value, field_name: str) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return value
+    raise ValueError(f"{field_name} must be a string or list of strings")
+
+def build_workflow_config(cfg: Dict[str, Any], td_ft: float) -> DynamicWorkflowConfig:
+    return DynamicWorkflowConfig(
+        bht_f=cfg["bht_f"],
+        td_ft=td_ft,
+
+        surface_temp_f=cfg.get("surface_temp_f"),
+        mud_type=cfg.get("mud_type"),
+        rmf_at_meas_temp=cfg.get("rmf_at_meas_temp"),
+        rmf_meas_temp_f=cfg.get("rmf_meas_temp_f"),
+
+        rw=cfg["rw"],
+        matrix_type=cfg["matrix_type"],
+        lithology=cfg["lithology"],
+
+        a=cfg.get("a"),
+        m=cfg.get("m"),
+        n=cfg.get("n"),
+
+        vcl_cutoff=cfg.get("vcl_cutoff"),
+        phie_cutoff=cfg.get("phie_cutoff"),
+        sw_cutoff=cfg.get("sw_cutoff"),
+
+        gr_method=cfg.get("gr_method"),
+        perm_method=cfg.get("perm_method"),
+    )
+
+def run_dynamic_workflow_by_level(
+    well_names: Union[str, List[str]],
+    formation_names: Optional[Union[str, List[str]]] = None,
+    formation_configs: Optional[List[Any]] = None,  # Adjust type to your FormationConfig class
+) -> Dict[str, Any]:
+    try:
+        all_well_results = []
+
+        for well in well_names:
+            # Load parent well
+            parent_well = (
+                ascii_reader.read_csv(f, well_name=well, formation_name=formation_names)
+                if f.suffix.lower() == ".csv"
+                else las_reader.read_las(f, well_name=well)
+            )
+
+            df_well = parent_well.to_dataframe()
+            if not df_well.empty and "WELLNAME" in df_well.columns:
+                df = df_well[df_well["WELLNAME"].astype(str).str.upper() == str(well).upper()].copy()
+            else:
+                df = df_well.copy()
+
+            if formation_names and "FORMATION" in df.columns:
+                df = df[df["FORMATION"].astype(str).str.upper().isin([str(x).upper() for x in formation_names])]
+
+            if df.empty:
+                all_well_results.append({"ok": False, "well_name": well, "error": "No data after filtering"})
+                continue
+
+            results = []
+            has_formation_col = "FORMATION" in df.columns
+            formations = sorted(df["FORMATION"].dropna().astype(str).unique().tolist()) if has_formation_col else []
+
+            processed_slices = []  # Collect workflow-modified slices here
+
+            for fm in formations:
+                if fm not in formation_configs_by_name:
+                    continue
+
+                df_fm = df[df["FORMATION"].astype(str) == fm].copy()
+                if df_fm.empty:
+                    continue
+
+                fm_top_depth = float(df_fm["DEPTH"].min())
+                fm_bottom_depth = float(df_fm["DEPTH"].max())
+
+                interval_well = parent_well.depth_slice(top=fm_top_depth, bottom=fm_bottom_depth)
+                cfg = build_workflow_config(formation_configs_by_name[fm], td_ft=interval_well.bottom)
+                
+                # Run workflow (modifies interval_well in-place with computed curves)
+                result = DynamicWorkflow(cfg).run(interval_well)
+                processed_slices.append(interval_well)  #  Save modified slice
+
+                print(
+                    f"\n=== TRACE | well={well} | level=formation | "
+                    f"formation={fm} | depth=[{fm_top_depth}, {fm_bottom_depth}] ==="
+                )
+
+                results.append({
+                    "run_level": "formation",
+                    "formation_name": fm,
+                    "depth_range": [fm_top_depth, fm_bottom_depth],
+                    "result": result,
+                })
+
+            # 🔁 Reconstruct single cohesive well object from all processed intervals
+            reconstructed_well = parent_well._reconstruct_well_from_slices_well_obj(processed_slices)
+
+            all_well_results.append({
+                "ok": True,
+                "well_name": well,
+                "n_intervals": len(results),
+                "results": results,
+                "well_obj": reconstructed_well,  # Now contains all workflow-computed curves
+            })
+
+        return {
+            "ok": True,
+            "n_wells": len(all_well_results),
+            "wells": all_well_results,
+        }
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
