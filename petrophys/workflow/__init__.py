@@ -16,6 +16,8 @@ from petrophys.workflow.dynamic_workflow import (
     StepResult,
     WorkflowStep,
     run_dynamic_workflow,
+    run_dynamic_workflow_by_level,
+    build_workflow_config,
 )
 from petrophys.workflow.quick_look import (
     QuickLook,
@@ -41,6 +43,8 @@ __all__ = [
     "StepResult",
     "WorkflowStep",
     "run_dynamic_workflow",
+    "run_dynamic_workflow_by_level",
+    "build_workflow_config",
     # Quick look
     "QuickLook",
     "quick_look_analysis",
