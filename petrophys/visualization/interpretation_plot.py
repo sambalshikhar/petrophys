@@ -98,6 +98,47 @@ class InterpretationPlot:
 
         return self.fig, self.axes
 
+    def _apply_legend(self, ax: "Axes") -> None:
+        """Only draw a legend when labeled artists exist."""
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(loc='upper right', fontsize=7)
+
+    def _scatter_curve_points(
+        self,
+        ax: "Axes",
+        curve_names: List[str],
+        color: str,
+        label: str,
+        marker: str = "x",
+        positive_only: bool = False,
+    ) -> None:
+        """Overlay sparse curve values as point markers."""
+        depth = self.well.depth
+        for curve_name in curve_names:
+            curve = self.well.get(curve_name)
+            if curve is None:
+                continue
+
+            data = np.asarray(curve.data, dtype=float)
+            valid = np.isfinite(data)
+            if positive_only:
+                valid &= data > 0
+            if not np.any(valid):
+                continue
+
+            ax.scatter(
+                data[valid],
+                depth[valid],
+                color=color,
+                marker=marker,
+                s=16,
+                linewidths=0.7,
+                label=label,
+                zorder=6,
+            )
+            break
+
     def _plot_track1_gr(self, ax: "Axes") -> None:
         """GR track."""
         depth = self.well.depth
@@ -109,7 +150,7 @@ class InterpretationPlot:
             ax.set_xlim(0, 150)
 
         ax.set_xlabel("GR [API]")
-        ax.legend(loc='upper right', fontsize=7)
+        self._apply_legend(ax)
 
     def _plot_track2_resistivity(self, ax: "Axes") -> None:
         """Resistivity track."""
@@ -127,7 +168,7 @@ class InterpretationPlot:
         ax.set_xscale('log')
         ax.set_xlim(0.2, 2000)
         ax.set_xlabel("Resistivity [ohm.m]")
-        ax.legend(loc='upper right', fontsize=7)
+        self._apply_legend(ax)
 
     def _plot_track3_density_neutron(self, ax: "Axes") -> None:
         """Density-Neutron track."""
@@ -146,7 +187,7 @@ class InterpretationPlot:
             ax2.set_xlabel("NPHI [v/v]", fontsize=8)
 
         ax.set_xlabel("RHOB [g/cc]")
-        ax.legend(loc='upper right', fontsize=7)
+        self._apply_legend(ax)
 
     def _plot_track4_vcl(self, ax: "Axes") -> None:
         """VCL track."""
@@ -159,24 +200,74 @@ class InterpretationPlot:
 
         ax.set_xlim(0, 1)
         ax.set_xlabel("VCL [v/v]")
-        ax.legend(loc='upper right', fontsize=7)
+        self._apply_legend(ax)
 
     def _plot_track5_porosity(self, ax: "Axes") -> None:
         """Porosity track."""
         depth = self.well.depth
 
         phit = self.well.get("PHIT")
-        if phit is not None:
-            ax.plot(phit.data, depth, 'b-', linewidth=0.5, label='PHIT')
-
         phie = self.well.get("PHIE")
-        if phie is not None:
-            ax.plot(phie.data, depth, 'r-', linewidth=0.5, label='PHIE')
-            ax.fill_betweenx(depth, 0, phie.data, alpha=0.3, color='yellow')
+        phie_corecal = self.well.get("PHIE_CORECAL")
+        phit_data = np.asarray(phit.data, dtype=float) if phit is not None else None
+        phie_data = np.asarray(phie.data, dtype=float) if phie is not None else None
+        phie_corecal_data = (
+            np.asarray(phie_corecal.data, dtype=float)
+            if phie_corecal is not None
+            else None
+        )
+
+        if phit_data is not None and phie_data is not None:
+            phie_plot = np.minimum(phie_data, phit_data)
+            valid = np.isfinite(phit_data) & np.isfinite(phie_plot)
+
+            ax.fill_betweenx(
+                depth,
+                0,
+                phie_plot,
+                where=valid,
+                alpha=0.30,
+                color='gold',
+                label='PHIE fill',
+            )
+            ax.plot(phie_plot, depth, color='crimson', linewidth=0.7, label='PHIE')
+            ax.plot(phit_data, depth, color='navy', linewidth=0.8, label='PHIT')
+        elif phit_data is not None:
+            ax.plot(phit_data, depth, color='navy', linewidth=0.8, label='PHIT')
+        elif phie_data is not None:
+            valid = np.isfinite(phie_data)
+            ax.fill_betweenx(
+                depth,
+                0,
+                phie_data,
+                where=valid,
+                alpha=0.30,
+                color='gold',
+                label='PHIE fill',
+            )
+            ax.plot(phie_data, depth, color='crimson', linewidth=0.7, label='PHIE')
+
+        if phie_corecal_data is not None:
+            ax.plot(
+                phie_corecal_data,
+                depth,
+                color='darkmagenta',
+                linewidth=0.8,
+                linestyle='--',
+                label='PHIE_CC',
+            )
+
+        self._scatter_curve_points(
+            ax,
+            ["PHIC", "CPOR", "PHI_CORE"],
+            color="black",
+            label="Core PHI",
+            marker="x",
+        )
 
         ax.set_xlim(0, 0.4)
         ax.set_xlabel("Porosity [v/v]")
-        ax.legend(loc='upper right', fontsize=7)
+        self._apply_legend(ax)
 
     def _plot_track6_saturation(self, ax: "Axes") -> None:
         """Saturation track."""
@@ -192,9 +283,17 @@ class InterpretationPlot:
         if sxo is not None:
             ax.plot(sxo.data, depth, 'c--', linewidth=0.5, label='Sxo')
 
+        self._scatter_curve_points(
+            ax,
+            ["SWC", "CSW"],
+            color="black",
+            label="Core Sw",
+            marker="x",
+        )
+
         ax.set_xlim(0, 1)
         ax.set_xlabel("Saturation [v/v]")
-        ax.legend(loc='upper right', fontsize=7)
+        self._apply_legend(ax)
 
     def _plot_track7_permeability(self, ax: "Axes") -> None:
         """Permeability track."""
@@ -204,10 +303,38 @@ class InterpretationPlot:
         if perm is not None:
             ax.plot(perm.data, depth, 'k-', linewidth=0.5, label='Perm')
 
+        perm_cc = self.well.get("PERM_CC")
+        if perm_cc is not None:
+            ax.plot(
+                perm_cc.data,
+                depth,
+                color='darkmagenta',
+                linewidth=0.8,
+                linestyle='--',
+                label='PERM_CC',
+            )
+
+        self._scatter_curve_points(
+            ax,
+            ["KH_CORE", "CPERM", "K_CORE", "PERM_CORE"],
+            color="darkgreen",
+            label="Core K",
+            marker="x",
+            positive_only=True,
+        )
+        self._scatter_curve_points(
+            ax,
+            ["KV_CORE"],
+            color="teal",
+            label="Core Kv",
+            marker="+",
+            positive_only=True,
+        )
+
         ax.set_xscale('log')
         ax.set_xlim(0.01, 10000)
         ax.set_xlabel("Perm [mD]")
-        ax.legend(loc='upper right', fontsize=7)
+        self._apply_legend(ax)
 
     def _plot_track8_flags(self, ax: "Axes") -> None:
         """Net pay flags track."""
@@ -234,7 +361,7 @@ class InterpretationPlot:
         ax.set_xlim(0, 1)
         ax.set_xticks([])
         ax.set_xlabel("Flags")
-        ax.legend(loc='upper right', fontsize=7)
+        self._apply_legend(ax)
 
     def show(self) -> None:
         """Display the plot."""

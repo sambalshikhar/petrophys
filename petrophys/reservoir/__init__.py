@@ -23,6 +23,7 @@ from petrophys.reservoir.rock_quality import (
     calculate_phi_z,
     calculate_fzi,
 )
+from petrophys.reservoir.hydrocarbon_analysis import HydrocarbonAnalysis
 
 __all__ = [
     "calculate_bvw",
@@ -38,4 +39,5 @@ __all__ = [
     "calculate_rqi",
     "calculate_phi_z",
     "calculate_fzi",
+    "HydrocarbonAnalysis",
 ]

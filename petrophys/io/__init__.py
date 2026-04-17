@@ -12,6 +12,13 @@ from petrophys.io.las_reader import read_las, LASReader
 from petrophys.io.dlis_reader import read_dlis, DLISReader
 from petrophys.io.ascii_reader import read_ascii, read_csv
 from petrophys.io.export import export_las, export_csv, export_excel
+from petrophys.io.example_format_export import (
+    export_example_format_las,
+    export_example_format_directory,
+    export_example_work_package_directory,
+    export_reference_json_work_package_directory,
+    write_example_format_report,
+)
 
 __all__ = [
     "read_las",
@@ -23,4 +30,9 @@ __all__ = [
     "export_las",
     "export_csv",
     "export_excel",
+    "export_example_format_las",
+    "export_example_format_directory",
+    "export_example_work_package_directory",
+    "export_reference_json_work_package_directory",
+    "write_example_format_report",
 ]

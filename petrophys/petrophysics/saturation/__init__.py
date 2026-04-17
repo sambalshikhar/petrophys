@@ -26,12 +26,14 @@ from petrophys.petrophysics.saturation.dual_water import dual_water, dual_water_
 from petrophys.petrophysics.saturation.waxman_smits import waxman_smits, waxman_smits_sw
 from petrophys.petrophysics.saturation.sxo import calculate_sxo
 from petrophys.petrophysics.saturation.classification import classify_sw
+from petrophys.petrophysics.saturation.saturation_analysis import SaturationAnalysis
 
 # Backward-compatible alias
 SwModule = SaturationModule
 
 __all__ = [
     "SaturationModule",
+    "SaturationAnalysis",
     "SwModule",
     "SaturationResult",
     "SwModel",

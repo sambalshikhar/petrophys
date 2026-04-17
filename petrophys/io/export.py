@@ -16,6 +16,36 @@ except ImportError:
     HAS_LASIO = False
 
 
+def _export_well_parameters(las, well: "Well") -> None:
+    """Preserve Well parameters in the LAS ~Params section."""
+    parameters = getattr(well, "_parameters", {})
+    if not parameters:
+        return
+
+    for name, value in parameters.items():
+        if not isinstance(name, str):
+            continue
+        if "__" in name or name.startswith("_"):
+            continue
+
+        unit = parameters.get(f"{name}__UNIT", "")
+        descr = parameters.get(f"{name}__DESCR", "")
+
+        if isinstance(value, np.generic):
+            value = value.item()
+        if isinstance(value, float) and not np.isfinite(value):
+            value = ""
+
+        las.params.append(
+            lasio.HeaderItem(
+                mnemonic=name,
+                unit=unit or "",
+                value=value,
+                descr=descr or "",
+            )
+        )
+
+
 def export_las(
     well: "Well",
     filepath: Union[str, Path],
@@ -137,6 +167,8 @@ def export_las(
         value=-999.25,
         descr="NULL VALUE"
     )
+
+    _export_well_parameters(las, well)
 
     # Add depth curve
     if well.depth is not None:

@@ -16,6 +16,8 @@ from petrophys.workflow.dynamic_workflow import (
     StepResult,
     WorkflowStep,
     run_dynamic_workflow,
+    run_dynamic_workflow_by_level,
+    build_workflow_config,
 )
 from petrophys.workflow.quick_look import (
     QuickLook,
@@ -26,6 +28,17 @@ from petrophys.workflow.batch_processing import (
     process_multiple_wells,
     process_las_directory,
 )
+from petrophys.workflow.zoned_batch import (
+    BatchLasResult,
+    ZonedParameterInterval,
+    ZonedWorkflowRunResult,
+    extract_zoned_parameters,
+    process_las_directory_with_workflow,
+    run_dynamic_workflow_with_zones,
+    write_batch_report,
+    write_curve_audit_report,
+)
+from petrophys.workflow.comprehensive_analysis import run_comprehensive_analysis
 
 __all__ = [
     # Standard workflow
@@ -41,6 +54,8 @@ __all__ = [
     "StepResult",
     "WorkflowStep",
     "run_dynamic_workflow",
+    "run_dynamic_workflow_by_level",
+    "build_workflow_config",
     # Quick look
     "QuickLook",
     "quick_look_analysis",
@@ -48,4 +63,13 @@ __all__ = [
     "BatchProcessor",
     "process_multiple_wells",
     "process_las_directory",
+    "BatchLasResult",
+    "ZonedParameterInterval",
+    "ZonedWorkflowRunResult",
+    "extract_zoned_parameters",
+    "process_las_directory_with_workflow",
+    "run_dynamic_workflow_with_zones",
+    "write_batch_report",
+    "write_curve_audit_report",
+    "run_comprehensive_analysis",
 ]
