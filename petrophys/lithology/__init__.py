@@ -29,11 +29,9 @@ from petrophys.lithology.lithology_log import (
     load_lithology_csv,
     build_lithology_log,
 )
-from petrophys.lithology.lithology_analysis import LithologyAnalysis
 
 __all__ = [
     "LithologyModule",
-    "LithologyAnalysis",
     "calculate_lithology",
     "MultiMineralSolver",
     "solve_two_mineral",

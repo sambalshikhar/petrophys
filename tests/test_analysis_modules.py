@@ -1,7 +1,7 @@
 import numpy as np
 
 from petrophys import Well
-from petrophys.reservoir import HydrocarbonAnalysis
+from petrophys.analysis import HydrocarbonAnalysis
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 from petrophys.workflow import run_comprehensive_analysis
 

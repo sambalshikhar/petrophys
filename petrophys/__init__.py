@@ -24,13 +24,15 @@ from petrophys.base.classifications import (
     PermeabilityClassification,
     MhiClassification,
 )
-from petrophys.lithology import LithologyAnalysis
-from petrophys.petrophysics.permeability import PermeabilityAnalysis
-from petrophys.petrophysics.porosity import PorosityAnalysis
-from petrophys.petrophysics.saturation import SaturationAnalysis
-from petrophys.qaqc import WellboreQC
-from petrophys.reservoir import HydrocarbonAnalysis
-from petrophys.utils import NumericalStatisticalAnalysis
+from petrophys.analysis import (
+    HydrocarbonAnalysis,
+    LithologyAnalysis,
+    NumericalStatisticalAnalysis,
+    PermeabilityAnalysis,
+    PorosityAnalysis,
+    SaturationAnalysis,
+    WellboreQC,
+)
 from petrophys.workflow import run_comprehensive_analysis
 
 __all__ = [

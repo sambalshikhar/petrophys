@@ -30,11 +30,9 @@ from petrophys.petrophysics.porosity.effective_porosity import (
     calculate_phie,
 )
 from petrophys.petrophysics.porosity.classification import classify_porosity
-from petrophys.petrophysics.porosity.porosity_analysis import PorosityAnalysis
 
 __all__ = [
     "PorosityModule",
-    "PorosityAnalysis",
     "calculate_porosity",
     "density_porosity",
     "calculate_phid",

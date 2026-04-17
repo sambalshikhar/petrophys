@@ -1497,7 +1497,7 @@ class DynamicWorkflow:
         return trace
 
     def _step_net_pay(self, well: "Well") -> StepResult:
-        from petrophys.reservoir.hydrocarbon_analysis import HydrocarbonAnalysis
+        from petrophys.analysis import HydrocarbonAnalysis
         from petrophys.reservoir.net_pay.net_pay_module import NetPayModule
 
         trace = StepResult(step="net_pay", success=True, method="cutoff_flags")

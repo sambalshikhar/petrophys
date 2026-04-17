@@ -14,10 +14,9 @@ from typing import Any, Iterable, List, Optional, Sequence
 
 import numpy as np
 
+from petrophys.analysis import HydrocarbonAnalysis, WellboreQC
 from petrophys.io.las_reader import read_las
-from petrophys.qaqc.bad_hole.quality_check import WellboreQC
 from petrophys.qaqc.standardization import standardize_curves
-from petrophys.reservoir.hydrocarbon_analysis import HydrocarbonAnalysis
 from petrophys.utils.analysis_helpers import CategoryAnalysisResult, build_section
 
 
