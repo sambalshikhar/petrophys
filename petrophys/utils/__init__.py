@@ -21,7 +21,6 @@ from petrophys.utils.validators import (
     validate_curve,
     validate_well,
 )
-from petrophys.utils.numerical_statistical_analysis import NumericalStatisticalAnalysis
 
 __all__ = [
     # Interpolation
@@ -40,5 +39,4 @@ __all__ = [
     "validate_range",
     "validate_curve",
     "validate_well",
-    "NumericalStatisticalAnalysis",
 ]

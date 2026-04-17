@@ -14,7 +14,6 @@ from petrophys.qaqc.standardization import (
 )
 from petrophys.qaqc.bad_hole import (
     WashoutDetection,
-    WellboreQC,
     detect_washout,
     generate_bad_hole_flags,
 )
@@ -31,7 +30,6 @@ __all__ = [
     "ALIAS_MAP",
     # Bad Hole
     "WashoutDetection",
-    "WellboreQC",
     "detect_washout",
     "generate_bad_hole_flags",
     # Normalization
