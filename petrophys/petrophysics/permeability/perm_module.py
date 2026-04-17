@@ -436,7 +436,11 @@ class PermeabilityModule:
             swi_used=swi,
             swi_source=swi_source,
             bvw_irr=bvw_irr,
-            metadata={"strategy": empirical_method},
+            metadata={
+                "strategy": empirical_method,
+                "empirical_perm": perm,
+                "empirical_method": empirical_method,
+            },
         )
 
     def calculate(
@@ -464,6 +468,18 @@ class PermeabilityModule:
         perm = np.full_like(phi, np.nan, dtype=float)
         phi_corecal = np.full_like(phi, np.nan, dtype=float)
         perm_core = np.full_like(phi, np.nan, dtype=float)
+        empirical_result: Optional[PermeabilityResult] = None
+        empirical_error: Optional[str] = None
+
+        try:
+            empirical_result = self._calculate_empirical(
+                well,
+                phi,
+                swi=swi,
+                method=self.fallback_method,
+            )
+        except ValueError as exc:
+            empirical_error = str(exc)
 
         same_well_phi, same_well_perm, same_well_models = _build_same_well_core_prediction(
             well,
@@ -510,14 +526,9 @@ class PermeabilityModule:
                 same_well_models.append(same_well_global)
                 unresolved = ~np.isfinite(perm)
 
-        empirical_result: Optional[PermeabilityResult] = None
         if np.any(unresolved):
-            empirical_result = self._calculate_empirical(
-                well,
-                phi,
-                swi=swi,
-                method=self.fallback_method,
-            )
+            if empirical_result is None:
+                raise ValueError(empirical_error or "SW or measured Swirr data required for permeability")
             perm[unresolved] = empirical_result.perm[unresolved]
 
         core_models = same_well_models + peer_models
@@ -537,6 +548,9 @@ class PermeabilityModule:
             "same_well_core_models": int(len(same_well_models)),
             "peer_core_models": int(len(peer_models)),
             "empirical_fallback": self.fallback_method if empirical_result is not None else None,
+            "empirical_perm": empirical_result.perm if empirical_result is not None else None,
+            "empirical_method": empirical_result.method if empirical_result is not None else self.fallback_method,
+            "empirical_error": empirical_error,
         }
 
         swi_used = empirical_result.swi_used if empirical_result is not None else None

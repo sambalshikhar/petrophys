@@ -9,6 +9,7 @@ from petrophys.qaqc.bad_hole.washout_detection import (
     WashoutDetection,
     detect_washout,
 )
+from petrophys.qaqc.bad_hole.quality_check import WellboreQC
 from petrophys.qaqc.bad_hole.flag_generator import (
     generate_bad_hole_flags,
     generate_washout_flag,
@@ -23,6 +24,7 @@ from petrophys.qaqc.bad_hole.curve_masking import (
 
 __all__ = [
     "WashoutDetection",
+    "WellboreQC",
     "detect_washout",
     "generate_bad_hole_flags",
     "generate_washout_flag",

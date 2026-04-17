@@ -1,0 +1,1103 @@
+"""
+Zone-aware batch processing helpers for LAS enrichment.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+import json
+from pathlib import Path
+import copy
+import csv
+import re
+from typing import Any, Dict, Iterable, List, Optional
+
+import numpy as np
+
+from petrophys.io import export_las, read_las
+from petrophys.qaqc.standardization import standardize_curves
+from petrophys.workflow.dynamic_workflow import (
+    DynamicWorkflowConfig,
+    DynamicWorkflowResult,
+    run_dynamic_workflow,
+)
+
+
+ZONE_VALUE_RE = re.compile(r"^(?P<base>.+)_Z(?P<index>\d+)$", re.IGNORECASE)
+DEPTH_TOP_KEYS = {"ZTOP", "TOP", "TOP_DEPTH"}
+DEPTH_BOTTOM_KEYS = {"ZBOT", "BOT", "BOTTOM", "BASE", "ZBASE"}
+
+PARAMETER_ALIASES: dict[str, str] = {
+    "A": "a",
+    "M": "m",
+    "N": "n",
+    "RW": "rw",
+    "RWT": "rw_meas_temp_f",
+    "RMF": "rmf_at_meas_temp",
+    "RMFT": "rmf_meas_temp_f",
+    "RM": "rm",
+    "CLFL": "rmf_salinity_ppm",
+    "BHT": "bht_f",
+    "TD": "td_ft",
+    "SAL": "salinity_ppm",
+    "SALINITY": "salinity_ppm",
+    "SALINITY_PPM": "salinity_ppm",
+    "WATSAL": "salinity_ppm",
+    "VSHE": "vsh_exp",
+    "VSH_EXP": "vsh_exp",
+    "SHALE_EXP": "shale_exp",
+    "RTSH": "rtsh",
+    "CEC": "cec",
+    "B_COEFF": "b_coeff",
+    "BCOEFF": "b_coeff",
+    "RWB": "rwb",
+    "PNSH": "phi_cl",
+    "MUDTYPE": "mud_type",
+    "MUD_TYPE": "mud_type",
+    "MUD": "mud_type",
+    "MUDWATER": "mud_water",
+    "LITH": "lithology",
+    "LITHOLOGY": "lithology",
+    "MATRIX": "matrix_type",
+    "MATRIX_TYPE": "matrix_type",
+    "HC_TYPE": "hc_type",
+    "PHI_CL": "phi_cl",
+    "PHICL": "phi_cl",
+    "RHO_FL": "rho_fl",
+    "RHO_MA": "rho_ma",
+    "RHMA": "rho_ma",
+    "PNMA": "nphi_ma",
+    "RBFL": "rho_fl",
+    "RBSH": "rho_cl",
+}
+
+DIRECT_INTERVAL_METADATA: set[str] = set()
+AUDIT_TARGET_CURVES = [
+    "TEMP",
+    "RMF",
+    "RW",
+    "BAD_HOLE",
+    "BADHOLEFLAG",
+    "VCL",
+    "PHIN",
+    "PHID",
+    "PHIS",
+    "PHIT",
+    "PHIE",
+    "PHI_SEC",
+    "SW",
+    "PERM",
+    "PHIE_CORECAL",
+    "PERM_CC",
+    "RQI",
+    "FZI",
+    "PHI_Z",
+    "SWIRR_APP",
+    "INVASION_RATIO",
+    "RESFLAG",
+    "SEALFLAG",
+    "CROSSOVER_FLAG",
+]
+CURVE_TO_STEP = {
+    "TEMP": "temperature",
+    "RMF": "rmf",
+    "RW": "rw",
+    "BAD_HOLE": "bad_hole",
+    "BADHOLEFLAG": "bad_hole",
+    "VCL": "vclay",
+    "PHIN": "porosity",
+    "PHID": "porosity",
+    "PHIS": "porosity",
+    "PHIT": "porosity",
+    "PHIE": "porosity",
+    "PHI_SEC": "porosity",
+    "SW": "saturation",
+    "PERM": "permeability",
+    "PHIE_CORECAL": "permeability",
+    "PERM_CC": "permeability",
+    "RQI": "rock_quality",
+    "FZI": "rock_quality",
+    "PHI_Z": "rock_quality",
+    "SWIRR_APP": "permeability",
+    "INVASION_RATIO": "invasion",
+    "RESFLAG": "net_pay",
+    "SEALFLAG": "net_pay",
+    "CROSSOVER_FLAG": "net_pay",
+}
+
+
+@dataclass
+class ZonedParameterInterval:
+    index: int
+    top: float
+    bottom: float
+    top_unit: str = ""
+    bottom_unit: str = ""
+    raw_parameters: Dict[str, Any] = field(default_factory=dict)
+    config_overrides: Dict[str, Any] = field(default_factory=dict)
+    injected_parameters: Dict[str, Any] = field(default_factory=dict)
+    unmapped_parameters: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ZonedWorkflowRunResult:
+    well: "Well"
+    base_result: DynamicWorkflowResult
+    zone_results: List[DynamicWorkflowResult] = field(default_factory=list)
+    zones: List[ZonedParameterInterval] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    global_overrides: Dict[str, Any] = field(default_factory=dict)
+    global_unmapped: List[str] = field(default_factory=list)
+    zoned_default_overrides: Dict[str, Any] = field(default_factory=dict)
+    zoned_default_injected: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class BatchLasResult:
+    source_file: str
+    output_file: str
+    success: bool
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    input_curves: List[str] = field(default_factory=list)
+    output_curves: List[str] = field(default_factory=list)
+    computed_curves: List[str] = field(default_factory=list)
+    zones_applied: int = 0
+    json_log_file: str = ""
+    result: Optional[ZonedWorkflowRunResult] = None
+
+
+def _parameter_text(well: "Well", name: str) -> str:
+    value = well.get_parameter(name)
+    return str(value or "").strip()
+
+
+def _parameter_float(well: "Well", name: str) -> Optional[float]:
+    value = well.get_parameter(name)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _clone_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowConfig:
+    return copy.deepcopy(config) if config is not None else DynamicWorkflowConfig()
+
+
+def _prepare_batch_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowConfig:
+    prepared = _clone_config(config)
+    skip_steps = list(prepared.skip_steps)
+    if "hc_correction" not in skip_steps:
+        skip_steps.append("hc_correction")
+    prepared.skip_steps = skip_steps
+    return prepared
+
+
+def _depth_unit_is_metric(unit: str) -> bool:
+    text = (unit or "").strip().lower()
+    return text in {"m", "meter", "meters", "metre", "metres"}
+
+
+def _depth_to_ft(value: float, unit: str) -> float:
+    if _depth_unit_is_metric(unit):
+        return float(value) * 3.28084
+    return float(value)
+
+
+def _convert_depth_between_units(value: float, from_unit: str, to_unit: str) -> float:
+    if not from_unit or not to_unit or from_unit.lower() == to_unit.lower():
+        return float(value)
+    from_is_metric = _depth_unit_is_metric(from_unit)
+    to_is_metric = _depth_unit_is_metric(to_unit)
+    if from_is_metric and not to_is_metric:
+        return float(value) * 3.28084
+    if not from_is_metric and to_is_metric:
+        return float(value) / 3.28084
+    return float(value)
+
+
+def _temperature_to_f(value: float, unit: str) -> float:
+    text = (unit or "").strip().lower()
+    if "c" in text and "f" not in text:
+        return (float(value) * 9.0 / 5.0) + 32.0
+    return float(value)
+
+
+def _normalize_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _salinity_to_ppm(value: float, unit: str) -> float:
+    text = (unit or "").strip().lower()
+    if not text:
+        return float(value)
+    if "mg/l" in text or "mg\\l" in text or "ppm" in text:
+        return float(value)
+    if "kppm" in text:
+        return float(value) * 1000.0
+    if "g/l" in text:
+        return float(value) * 1000.0
+    if "%" in text and "/" not in text:
+        return float(value) * 10000.0
+    return float(value)
+
+
+def _set_config_value(config: DynamicWorkflowConfig, field_name: str, value: Any) -> None:
+    if value is None or not hasattr(config, field_name):
+        return
+    setattr(config, field_name, value)
+
+
+def _value_signature(value: Any) -> tuple[str, Any]:
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return ("number", round(float(value), 8))
+    return ("text", str(value).strip().lower())
+
+
+def _select_common_or_z1(values: List[Any], z1_value: Any = None) -> Any:
+    if not values:
+        return z1_value
+
+    counts: Dict[tuple[str, Any], int] = {}
+    originals: Dict[tuple[str, Any], Any] = {}
+    for value in values:
+        key = _value_signature(value)
+        counts[key] = counts.get(key, 0) + 1
+        originals.setdefault(key, value)
+
+    max_count = max(counts.values())
+    winners = [key for key, count in counts.items() if count == max_count]
+
+    if max_count > 1 and len(winners) == 1:
+        return originals[winners[0]]
+    if z1_value is not None:
+        return z1_value
+    return originals[winners[0]]
+
+
+def _derive_default_values_from_zones(
+    zones: List[ZonedParameterInterval],
+) -> tuple[Dict[str, Any], Dict[str, Any], List[str]]:
+    if not zones:
+        return {}, {}, []
+
+    z1 = zones[0]
+    default_overrides: Dict[str, Any] = {}
+    default_injected: Dict[str, Any] = {}
+    notes: List[str] = []
+
+    override_fields = sorted({key for zone in zones for key in zone.config_overrides})
+    injected_fields = sorted({key for zone in zones for key in zone.injected_parameters})
+
+    for field_name in override_fields:
+        values = [zone.config_overrides[field_name] for zone in zones if field_name in zone.config_overrides]
+        z1_value = z1.config_overrides.get(field_name)
+        selected = _select_common_or_z1(values, z1_value)
+        if selected is not None:
+            default_overrides[field_name] = selected
+
+    for field_name in injected_fields:
+        values = [zone.injected_parameters[field_name] for zone in zones if field_name in zone.injected_parameters]
+        z1_value = z1.injected_parameters.get(field_name)
+        selected = _select_common_or_z1(values, z1_value)
+        if selected is not None:
+            default_injected[field_name] = selected
+
+    if default_overrides:
+        notes.append(
+            "Uncovered intervals use zoned fallback config: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(default_overrides.items()))
+        )
+    if default_injected:
+        notes.append(
+            "Uncovered intervals use zoned fallback metadata: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(default_injected.items()))
+        )
+
+    return default_overrides, default_injected, notes
+
+
+def _merge_curve_into_well(parent_well: "Well", interval_well: "Well", top: float, bottom: float) -> None:
+    if parent_well.depth is None or interval_well.depth is None:
+        return
+
+    mask = (parent_well.depth >= top) & (parent_well.depth <= bottom)
+    expected = int(np.count_nonzero(mask))
+    if expected == 0:
+        return
+
+    for mnemonic in interval_well.curves:
+        source_curve = interval_well.get(mnemonic)
+        if source_curve is None:
+            continue
+
+        source_data = np.asarray(source_curve.data)
+        if source_data.shape[0] != expected:
+            continue
+
+        target_curve = parent_well.get(mnemonic)
+        if target_curve is None:
+            if np.issubdtype(source_data.dtype, np.number):
+                full_data = np.full(parent_well.n_samples, np.nan, dtype=float)
+            else:
+                full_data = np.full(parent_well.n_samples, None, dtype=object)
+            parent_well.add_curve(
+                mnemonic,
+                full_data,
+                unit=source_curve.unit,
+                description=source_curve.metadata.description,
+                data_type=source_curve.metadata.data_type,
+            )
+            target_curve = parent_well.get(mnemonic)
+
+        target_curve._data[mask] = source_data
+
+
+def _apply_interval_metadata(interval_well: "Well", zone: ZonedParameterInterval) -> None:
+    for name, value in zone.injected_parameters.items():
+        interval_well.set_parameter(name, value)
+        unit_name = f"{name}__UNIT"
+        original_unit = _parameter_text(interval_well, unit_name)
+        if original_unit:
+            interval_well.set_parameter(unit_name, original_unit)
+
+
+def _derive_sw_model(overrides: Dict[str, Any], config: DynamicWorkflowConfig) -> None:
+    if config.sw_model != "auto":
+        return
+    if overrides.get("vsh_exp") is not None:
+        config.sw_model = "north_sea"
+
+
+def _finalize_export_curves(well: "Well", original_curves: set[str]) -> None:
+    vcl_method_curves = [
+        "VCL_GR",
+        "VCLGR",
+        "VCL_SP",
+        "VCLSP",
+        "VCL_ND",
+        "VCLND",
+    ]
+    available = []
+    for name in ["VCL", "VCLAY", *vcl_method_curves]:
+        curve = well.get(name)
+        if curve is None:
+            continue
+        data = np.asarray(curve.data, dtype=float)
+        if data.shape[0] != well.n_samples:
+            continue
+        available.append(data)
+
+    if available:
+        stack = np.vstack(available)
+        valid_mask = np.isfinite(stack)
+        final_vcl = np.full(well.n_samples, np.nan, dtype=float)
+        any_valid = np.any(valid_mask, axis=0)
+        if np.any(any_valid):
+            with np.errstate(all="ignore"):
+                final_vcl[any_valid] = np.nanmin(stack[:, any_valid], axis=0)
+        if well.get("VCL") is None:
+            well.add_curve("VCL", final_vcl, "v/v", "Clay Volume")
+        else:
+            well.get("VCL")._data = final_vcl
+            well.get("VCL").unit = "v/v"
+
+    well.remove_curve("VCLAY")
+    for name in vcl_method_curves:
+        if name not in original_curves:
+            well.remove_curve(name)
+
+    for name in ("NPHI_HC", "RHOB_HC"):
+        if name not in original_curves:
+            well.remove_curve(name)
+
+    if "LITHO" not in original_curves:
+        well.remove_curve("LITHO")
+
+    for name in ("PAY_FLAG_PETROPHYSICAL", "VP_VS_RATIO", "PRIME_GAS_TARGET", "PRIME_OIL_TARGET"):
+        if name not in original_curves:
+            well.remove_curve(name)
+
+
+def _apply_parameter_alias(
+    base_name: str,
+    value: Any,
+    unit: str,
+    overrides: Dict[str, Any],
+    injected_parameters: Dict[str, Any],
+    unmapped_parameters: List[str],
+) -> None:
+    key = base_name.upper()
+    target = PARAMETER_ALIASES.get(key)
+
+    if key in DIRECT_INTERVAL_METADATA:
+        try:
+            injected_parameters[key] = float(value)
+        except (TypeError, ValueError):
+            unmapped_parameters.append(base_name)
+        return
+
+    if target is None:
+        if key not in DEPTH_TOP_KEYS and key not in DEPTH_BOTTOM_KEYS:
+            unmapped_parameters.append(base_name)
+        return
+
+    if target in {"mud_type", "mud_water", "lithology", "matrix_type", "hc_type"}:
+        overrides[target] = _normalize_text(value)
+        return
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        unmapped_parameters.append(base_name)
+        return
+
+    if target in {"bht_f", "rmf_meas_temp_f", "rw_meas_temp_f"}:
+        overrides[target] = _temperature_to_f(numeric_value, unit)
+    elif target == "td_ft":
+        overrides[target] = _depth_to_ft(numeric_value, unit)
+    elif target in {"salinity_ppm", "rmf_salinity_ppm"}:
+        overrides[target] = _salinity_to_ppm(numeric_value, unit)
+    else:
+        overrides[target] = numeric_value
+
+
+def _extract_global_parameter_overrides(well: "Well") -> tuple[Dict[str, Any], List[str]]:
+    overrides: Dict[str, Any] = {}
+    unmapped: List[str] = []
+
+    for key, value in getattr(well, "_parameters", {}).items():
+        if not isinstance(key, str) or "__" in key:
+            continue
+        if key.startswith("_"):
+            continue
+        if ZONE_VALUE_RE.match(key):
+            continue
+        unit = _parameter_text(well, f"{key}__UNIT")
+        _apply_parameter_alias(key, value, unit, overrides, {}, unmapped)
+
+    return overrides, sorted(set(unmapped))
+
+
+def extract_zoned_parameters(well: "Well") -> List[ZonedParameterInterval]:
+    grouped: Dict[int, Dict[str, Any]] = {}
+
+    for key, value in getattr(well, "_parameters", {}).items():
+        if not isinstance(key, str) or "__" in key:
+            continue
+        if key.startswith("_"):
+            continue
+        match = ZONE_VALUE_RE.match(key)
+        if not match:
+            continue
+
+        zone_index = int(match.group("index"))
+        zone_bucket = grouped.setdefault(zone_index, {})
+        zone_bucket[match.group("base").upper()] = value
+
+    zones: List[ZonedParameterInterval] = []
+    for zone_index in sorted(grouped):
+        params = grouped[zone_index]
+
+        top_key = next((name for name in DEPTH_TOP_KEYS if name in params), None)
+        bottom_key = next((name for name in DEPTH_BOTTOM_KEYS if name in params), None)
+        if top_key is None or bottom_key is None:
+            continue
+
+        top_unit = _parameter_text(well, f"{top_key}_Z{zone_index}__UNIT") or well.depth_unit
+        bottom_unit = _parameter_text(well, f"{bottom_key}_Z{zone_index}__UNIT") or well.depth_unit
+
+        try:
+            top_value = float(params[top_key])
+            bottom_value = float(params[bottom_key])
+        except (TypeError, ValueError):
+            continue
+
+        top = _convert_depth_between_units(top_value, top_unit, well.depth_unit)
+        bottom = _convert_depth_between_units(bottom_value, bottom_unit, well.depth_unit)
+
+        overrides: Dict[str, Any] = {}
+        injected_parameters: Dict[str, Any] = {}
+        unmapped: List[str] = []
+        for base_name, raw_value in params.items():
+            unit = _parameter_text(well, f"{base_name}_Z{zone_index}__UNIT")
+            _apply_parameter_alias(
+                base_name,
+                raw_value,
+                unit,
+                overrides,
+                injected_parameters,
+                unmapped,
+            )
+
+        zones.append(
+            ZonedParameterInterval(
+                index=zone_index,
+                top=top,
+                bottom=bottom,
+                top_unit=top_unit,
+                bottom_unit=bottom_unit,
+                raw_parameters=params,
+                config_overrides=overrides,
+                injected_parameters=injected_parameters,
+                unmapped_parameters=sorted(set(unmapped)),
+            )
+        )
+
+    return zones
+
+
+def run_dynamic_workflow_with_zones(
+    well: "Well",
+    config: Optional[DynamicWorkflowConfig] = None,
+) -> ZonedWorkflowRunResult:
+    zones = extract_zoned_parameters(well)
+    global_overrides, global_unmapped = _extract_global_parameter_overrides(well)
+    zoned_default_overrides, zoned_default_injected, zoned_default_notes = _derive_default_values_from_zones(zones)
+
+    base_config = _prepare_batch_config(config)
+    for field_name, value in global_overrides.items():
+        _set_config_value(base_config, field_name, value)
+    for field_name, value in zoned_default_overrides.items():
+        if field_name not in global_overrides:
+            _set_config_value(base_config, field_name, value)
+    _derive_sw_model(global_overrides, base_config)
+    if "vsh_exp" not in global_overrides:
+        _derive_sw_model(zoned_default_overrides, base_config)
+
+    for name, value in zoned_default_injected.items():
+        if well.get_parameter(name) is None:
+            well.set_parameter(name, value)
+
+    if base_config.td_ft is None and well.bottom is not None:
+        base_config.td_ft = _depth_to_ft(well.bottom, well.depth_unit)
+
+    base_result = run_dynamic_workflow(well, base_config)
+    zone_results: List[DynamicWorkflowResult] = []
+    warnings = list(zoned_default_notes)
+    if global_unmapped:
+        warnings.append(f"Unmapped global LAS parameters: {', '.join(global_unmapped)}")
+
+    for zone in zones:
+        interval_well = well.depth_slice(top=zone.top, bottom=zone.bottom)
+        interval_config = _clone_config(base_config)
+
+        for field_name, value in zone.config_overrides.items():
+            _set_config_value(interval_config, field_name, value)
+        _derive_sw_model(zone.config_overrides, interval_config)
+
+        if interval_config.td_ft is None:
+            interval_config.td_ft = _depth_to_ft(zone.bottom, well.depth_unit)
+
+        _apply_interval_metadata(interval_well, zone)
+        zone_result = run_dynamic_workflow(interval_well, interval_config)
+        _merge_curve_into_well(well, interval_well, zone.top, zone.bottom)
+        zone_results.append(zone_result)
+
+        if zone.unmapped_parameters:
+            warnings.append(
+                f"Zone Z{zone.index} unmapped LAS parameters: {', '.join(zone.unmapped_parameters)}"
+            )
+
+    return ZonedWorkflowRunResult(
+        well=well,
+        base_result=base_result,
+        zone_results=zone_results,
+        zones=zones,
+        warnings=warnings,
+        global_overrides=global_overrides,
+        global_unmapped=global_unmapped,
+        zoned_default_overrides=zoned_default_overrides,
+        zoned_default_injected=zoned_default_injected,
+    )
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating, float)):
+        numeric = float(value)
+        if np.isnan(numeric) or np.isinf(numeric):
+            return None
+        return numeric
+    if isinstance(value, (np.bool_, bool)):
+        return bool(value)
+    return value
+
+
+def _workflow_runs(
+    run_result: Optional[ZonedWorkflowRunResult],
+) -> List[tuple[str, Optional[ZonedParameterInterval], DynamicWorkflowResult]]:
+    if run_result is None:
+        return []
+
+    runs: List[tuple[str, Optional[ZonedParameterInterval], DynamicWorkflowResult]] = [
+        ("base", None, run_result.base_result)
+    ]
+    for zone, zone_result in zip(run_result.zones, run_result.zone_results):
+        runs.append((f"zone_z{zone.index}", zone, zone_result))
+    return runs
+
+
+def _extract_step_value(
+    step_name: str,
+    step,
+    workflow_result: DynamicWorkflowResult,
+    candidate_keys: List[str],
+) -> Optional[float]:
+    if step_name == "rw" and workflow_result.rw_computed is not None:
+        return float(workflow_result.rw_computed)
+    if step_name == "rmf" and workflow_result.rmf_computed is not None:
+        return float(workflow_result.rmf_computed)
+
+    for key in candidate_keys:
+        value = step.parameters.get(key)
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(numeric):
+            return numeric
+    return None
+
+
+def _collect_step_summaries(
+    run_result: Optional[ZonedWorkflowRunResult],
+    step_name: str,
+    value_keys: List[str],
+) -> tuple[List[str], List[str]]:
+    methods: List[str] = []
+    values: List[str] = []
+
+    for scope, zone, workflow_result in _workflow_runs(run_result):
+        prefix = scope if zone is None else f"Z{zone.index}"
+        for step in workflow_result.steps_executed:
+            if step.step != step_name:
+                continue
+            if step.method:
+                methods.append(f"{prefix}:{step.method}")
+            numeric = _extract_step_value(step_name, step, workflow_result, value_keys)
+            if numeric is not None:
+                values.append(f"{prefix}:{numeric:.6g}")
+
+    unique_methods = list(dict.fromkeys(methods))
+    unique_values = list(dict.fromkeys(values))
+    return unique_methods, unique_values
+
+
+def _serialize_step_result(step) -> Dict[str, Any]:
+    return {
+        "step": step.step,
+        "success": step.success,
+        "message": step.message,
+        "method": step.method,
+        "input_curves": _json_safe(step.input_curves),
+        "output_curves": _json_safe(step.output_curves),
+        "parameters": _json_safe(step.parameters),
+        "decisions": _json_safe(step.decisions),
+        "data": _json_safe(step.data),
+    }
+
+
+def _build_derived_log_notes(item: BatchLasResult) -> List[str]:
+    notes: List[str] = [
+        "ANALYSIS STARTED: Zone-aware dynamic workflow executed on standardized LAS data."
+    ]
+
+    run_result = item.result
+    if run_result is not None:
+        if run_result.global_overrides:
+            notes.append(
+                "GLOBAL LAS PARAMETERS USED: "
+                + ", ".join(
+                    f"{key}={value}"
+                    for key, value in sorted(run_result.global_overrides.items())
+                )
+            )
+        if run_result.zoned_default_overrides:
+            notes.append(
+                "UNCOVERED INTERVAL DEFAULTS FROM ZONES: "
+                + ", ".join(
+                    f"{key}={value}"
+                    for key, value in sorted(run_result.zoned_default_overrides.items())
+                )
+            )
+        if run_result.zoned_default_injected:
+            notes.append(
+                "UNCOVERED INTERVAL METADATA FROM ZONES: "
+                + ", ".join(
+                    f"{key}={value}"
+                    for key, value in sorted(run_result.zoned_default_injected.items())
+                )
+            )
+        if run_result.global_unmapped:
+            notes.append(
+                "UNMAPPED GLOBAL LAS PARAMETERS: "
+                + ", ".join(run_result.global_unmapped)
+            )
+
+        for scope, zone, workflow_result in _workflow_runs(run_result):
+            if zone is None:
+                prefix = "BASE"
+            else:
+                prefix = f"ZONE Z{zone.index} {zone.top:.2f}-{zone.bottom:.2f} {run_result.well.depth_unit}"
+                if zone.config_overrides:
+                    notes.append(
+                        f"{prefix}: config overrides "
+                        + ", ".join(
+                            f"{key}={value}" for key, value in sorted(zone.config_overrides.items())
+                        )
+                    )
+                if zone.injected_parameters:
+                    notes.append(
+                        f"{prefix}: injected metadata "
+                        + ", ".join(
+                            f"{key}={value}" for key, value in sorted(zone.injected_parameters.items())
+                        )
+                    )
+                if zone.unmapped_parameters:
+                    notes.append(
+                        f"{prefix}: unmapped LAS parameters "
+                        + ", ".join(zone.unmapped_parameters)
+                    )
+
+            for step in workflow_result.steps_executed:
+                header = f"{prefix} {step.step.upper()}"
+                if step.method:
+                    notes.append(f"{header}: method={step.method}")
+                for decision in step.decisions:
+                    notes.append(f"{header}: {decision}")
+                if step.message and not step.success:
+                    notes.append(f"{header}: error={step.message}")
+
+            if workflow_result.steps_skipped:
+                notes.append(
+                    f"{prefix}: skipped steps = {', '.join(workflow_result.steps_skipped)}"
+                )
+            for warning in workflow_result.warnings:
+                notes.append(f"{prefix} WARNING: {warning}")
+            for error in workflow_result.errors:
+                notes.append(f"{prefix} ERROR: {error}")
+
+    for warning in item.warnings:
+        notes.append(f"BATCH WARNING: {warning}")
+    for error in item.errors:
+        notes.append(f"BATCH ERROR: {error}")
+
+    notes.append(
+        "ANALYSIS COMPLETED: "
+        f"success={item.success}, computed_curves={', '.join(item.computed_curves) or 'none'}."
+    )
+
+    return list(dict.fromkeys(notes))
+
+
+def _write_json_log(
+    item: BatchLasResult,
+    relative_path: Path,
+    output_root: Path,
+) -> str:
+    json_path = output_root / "workflow_json" / relative_path.with_suffix(".json")
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+
+    run_result = item.result
+    payload: Dict[str, Any] = {
+        "source_file": item.source_file,
+        "output_file": item.output_file,
+        "success": item.success,
+        "zones_applied": item.zones_applied,
+        "input_curves": item.input_curves,
+        "output_curves": item.output_curves,
+        "computed_curves": item.computed_curves,
+        "warnings": item.warnings,
+        "errors": item.errors,
+        "derived_log_computation_notes": _build_derived_log_notes(item),
+    }
+
+    if run_result is not None:
+        payload.update(
+            {
+                "well_name": run_result.well.name,
+                "global_parameter_overrides": _json_safe(run_result.global_overrides),
+                "global_unmapped_parameters": _json_safe(run_result.global_unmapped),
+                "uncovered_interval_defaults": _json_safe(run_result.zoned_default_overrides),
+                "uncovered_interval_metadata": _json_safe(run_result.zoned_default_injected),
+                "zones": [
+                    {
+                        "index": zone.index,
+                        "top": zone.top,
+                        "bottom": zone.bottom,
+                        "top_unit": zone.top_unit,
+                        "bottom_unit": zone.bottom_unit,
+                        "raw_parameters": _json_safe(zone.raw_parameters),
+                        "config_overrides": _json_safe(zone.config_overrides),
+                        "injected_parameters": _json_safe(zone.injected_parameters),
+                        "unmapped_parameters": _json_safe(zone.unmapped_parameters),
+                    }
+                    for zone in run_result.zones
+                ],
+                "workflow_runs": [
+                    {
+                        "scope": scope,
+                        "zone_index": zone.index if zone is not None else None,
+                        "zone_top": zone.top if zone is not None else None,
+                        "zone_bottom": zone.bottom if zone is not None else None,
+                        "success": workflow_result.success,
+                        "rw_computed": _json_safe(workflow_result.rw_computed),
+                        "rmf_computed": _json_safe(workflow_result.rmf_computed),
+                        "warnings": _json_safe(workflow_result.warnings),
+                        "errors": _json_safe(workflow_result.errors),
+                        "steps_skipped": _json_safe(workflow_result.steps_skipped),
+                        "step_results": [
+                            _serialize_step_result(step)
+                            for step in workflow_result.steps_executed
+                        ],
+                    }
+                    for scope, zone, workflow_result in _workflow_runs(run_result)
+                ],
+            }
+        )
+
+    with json_path.open("w", encoding="utf-8") as handle:
+        json.dump(_json_safe(payload), handle, indent=2, ensure_ascii=False)
+
+    return str(json_path)
+
+
+def process_las_directory_with_workflow(
+    input_dir: str | Path,
+    output_dir: str | Path,
+    pattern: str = "*.las",
+    recursive: bool = False,
+    config: Optional[DynamicWorkflowConfig] = None,
+) -> List[BatchLasResult]:
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+    files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
+
+    results: List[BatchLasResult] = []
+    for file_path in files:
+        relative_path = file_path.relative_to(input_path)
+        export_path = output_path / relative_path
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            well = read_las(file_path)
+            well = standardize_curves(well, rename_curves=True, convert_units=True)
+            input_curves = set(well.curves)
+            workflow_result = run_dynamic_workflow_with_zones(well, config=config)
+            _finalize_export_curves(workflow_result.well, input_curves)
+            export_las(workflow_result.well, export_path)
+
+            computed_curves = sorted(set(workflow_result.well.curves) - input_curves)
+            warnings = list(workflow_result.warnings)
+            warnings.extend(workflow_result.base_result.warnings)
+            for zone_result in workflow_result.zone_results:
+                warnings.extend(zone_result.warnings)
+
+            overall_success = workflow_result.base_result.success and all(
+                zone_result.success for zone_result in workflow_result.zone_results
+            )
+            json_log_file = _write_json_log(
+                BatchLasResult(
+                    source_file=str(file_path),
+                    output_file=str(export_path),
+                    success=overall_success,
+                    warnings=warnings,
+                    input_curves=sorted(input_curves),
+                    output_curves=sorted(workflow_result.well.curves),
+                    computed_curves=computed_curves,
+                    zones_applied=len(workflow_result.zones),
+                    result=workflow_result,
+                ),
+                relative_path,
+                output_path,
+            )
+
+            results.append(
+                BatchLasResult(
+                    source_file=str(file_path),
+                    output_file=str(export_path),
+                    success=overall_success,
+                    warnings=warnings,
+                    input_curves=sorted(input_curves),
+                    output_curves=sorted(workflow_result.well.curves),
+                    computed_curves=computed_curves,
+                    zones_applied=len(workflow_result.zones),
+                    json_log_file=json_log_file,
+                    result=workflow_result,
+                )
+            )
+        except Exception as exc:
+            failure_item = BatchLasResult(
+                source_file=str(file_path),
+                output_file=str(export_path),
+                success=False,
+                errors=[str(exc)],
+            )
+            failure_item.json_log_file = _write_json_log(failure_item, relative_path, output_path)
+            results.append(
+                failure_item
+            )
+
+    return results
+
+
+def _resolve_report_path(report_path: str | Path) -> Path:
+    report_file = Path(report_path)
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with report_file.open("w", newline="", encoding="utf-8"):
+            pass
+        return report_file
+    except PermissionError:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fallback = report_file.with_name(f"{report_file.stem}_{timestamp}{report_file.suffix}")
+        with fallback.open("w", newline="", encoding="utf-8"):
+            pass
+        return fallback
+
+
+def write_batch_report(results: Iterable[BatchLasResult], report_path: str | Path) -> Path:
+    report_file = _resolve_report_path(report_path)
+
+    with report_file.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "source_file",
+                "output_file",
+                "success",
+                "zones_applied",
+                "rw_methods",
+                "rw_values",
+                "rmf_methods",
+                "rmf_values",
+                "computed_curves",
+                "json_log_file",
+                "warnings",
+                "errors",
+            ]
+        )
+        for item in results:
+            rw_methods, rw_values = _collect_step_summaries(item.result, "rw", ["rw_at_formation", "rw_computed", "rw", "rw_default"])
+            rmf_methods, rmf_values = _collect_step_summaries(
+                item.result,
+                "rmf",
+                ["rmf_at_formation", "rmf", "rmf_at_surface"],
+            )
+            writer.writerow(
+                [
+                    item.source_file,
+                    item.output_file,
+                    item.success,
+                    item.zones_applied,
+                    ";".join(rw_methods),
+                    ";".join(rw_values),
+                    ";".join(rmf_methods),
+                    ";".join(rmf_values),
+                    ";".join(item.computed_curves),
+                    item.json_log_file,
+                    " | ".join(item.warnings),
+                    " | ".join(item.errors),
+                ]
+            )
+
+    return report_file
+
+
+def write_curve_audit_report(
+    results: Iterable[BatchLasResult],
+    report_path: str | Path,
+    target_curves: Optional[List[str]] = None,
+) -> Path:
+    report_file = _resolve_report_path(report_path)
+    curves = target_curves or AUDIT_TARGET_CURVES
+
+    with report_file.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "source_file",
+                "output_file",
+                "curve",
+                "status",
+                "reason",
+            ]
+        )
+
+        for item in results:
+            input_curves = set(item.input_curves)
+            output_curves = set(item.output_curves)
+            computed_curves = set(item.computed_curves)
+            reason = " | ".join(item.warnings + item.errors)
+
+            step_results = {}
+            skipped_steps = set()
+            if item.result is not None:
+                all_results = [item.result.base_result, *item.result.zone_results]
+                for workflow_result in all_results:
+                    skipped_steps.update(workflow_result.steps_skipped)
+                    for step in workflow_result.steps_executed:
+                        if step.step not in step_results or step.success:
+                            step_results[step.step] = step
+
+            def _curve_reason(curve: str) -> str:
+                step_name = CURVE_TO_STEP.get(curve)
+                step = step_results.get(step_name) if step_name else None
+
+                if step_name and step_name in skipped_steps:
+                    return f"{step_name} step skipped"
+                if step is not None and not step.success:
+                    return step.message or f"{step_name} step failed"
+                if curve in {"PHIE_CORECAL", "PERM_CC"} and step is not None:
+                    same_well_models = step.parameters.get("same_well_core_models")
+                    peer_models = step.parameters.get("peer_core_models")
+                    strategy = step.parameters.get("strategy") or step.parameters.get("method")
+                    if (same_well_models or 0) == 0 and (peer_models or 0) == 0:
+                        return f"no usable core permeability model; strategy={strategy}"
+                if curve == "SWIRR_APP" and step is not None:
+                    swirr_source = step.parameters.get("swirr_source")
+                    if swirr_source and swirr_source != "apparent_buckles":
+                        return f"Swirr source was {swirr_source}"
+                if curve == "SW" and step_name == "saturation" and step is None:
+                    return "saturation step did not run"
+                if curve == "PERM" and step_name == "permeability" and step is None:
+                    return "permeability step did not run"
+                return reason
+
+            for curve in curves:
+                if curve in computed_curves:
+                    status = "computed"
+                    curve_reason = ""
+                elif curve in output_curves and curve in input_curves:
+                    status = "already_present"
+                    curve_reason = ""
+                elif curve in output_curves:
+                    status = "present"
+                    curve_reason = ""
+                else:
+                    status = "missing"
+                    curve_reason = _curve_reason(curve)
+
+                writer.writerow(
+                    [
+                        item.source_file,
+                        item.output_file,
+                        curve,
+                        status,
+                        curve_reason,
+                    ]
+                )
+
+    return report_file

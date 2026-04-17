@@ -2,6 +2,11 @@
 Visualization module for petrophysics log plots.
 """
 
+from petrophys.visualization.batch_export import (
+    BatchVisualizationResult,
+    export_interpretation_plots,
+    write_visualization_report,
+)
 from petrophys.visualization.log_plot import LogPlot, create_log_plot
 from petrophys.visualization.triple_combo import TripleComboPlot, create_triple_combo
 from petrophys.visualization.interpretation_plot import (
@@ -13,6 +18,10 @@ from petrophys.visualization.pickett_plot import PickettPlot, create_pickett_plo
 from petrophys.visualization.zone_flags import plot_zone_flags, add_zone_shading
 
 __all__ = [
+    # Batch export
+    "BatchVisualizationResult",
+    "export_interpretation_plots",
+    "write_visualization_report",
     # Log plots
     "LogPlot",
     "create_log_plot",

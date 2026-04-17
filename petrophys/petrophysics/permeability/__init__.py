@@ -17,6 +17,7 @@ from petrophys.petrophysics.permeability.timur import timur, timur_perm
 from petrophys.petrophysics.permeability.coates_denoo import coates_denoo
 from petrophys.petrophysics.permeability.classification import classify_permeability
 from petrophys.petrophysics.permeability.impermeable_flag import flag_impermeable
+from petrophys.petrophysics.permeability.permeability_analysis import PermeabilityAnalysis
 
 # Backward-compatible alias
 PermModule = PermeabilityModule
@@ -24,6 +25,7 @@ PermModule = PermeabilityModule
 __all__ = [
     "CorePermModel",
     "PermeabilityModule",
+    "PermeabilityAnalysis",
     "PermModule",
     "calculate_permeability",
     "estimate_apparent_swirr",

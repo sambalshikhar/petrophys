@@ -77,7 +77,8 @@ class SaturationModule:
       - Clastic + salinity < 20 kppm -> Indonesia
 
     Lithology may be a single string or a per-depth numpy array.
-    When per-depth, the routing logic is applied per-interval.
+    When auto-routing is active, the clean/shaly decision is applied
+    sample-by-sample so a single well can use multiple Sw models across depth.
 
     Parameters
     ----------
@@ -200,11 +201,16 @@ class SaturationModule:
         if rcl is None:
             rcl = self._estimate_rcl(rt.data, vcl)
 
-        # Check if per-depth lithology routing is needed
-        if isinstance(lithology, np.ndarray) and self.model == "auto":
-            sw, model_name = self._calculate_per_depth(
+        # Auto-routing is applied sample-by-sample so clean and shaly
+        # intervals can coexist within the same well/zone.
+        if self.model == "auto":
+            if isinstance(lithology, np.ndarray):
+                lithology_array = np.asarray(lithology, dtype=object)
+            else:
+                lithology_array = np.full(rt.data.shape, lithology, dtype=object)
+            sw, model_name = self._calculate_depth_routed(
                 rt.data, rw, rcl, salinity, vcl, phie, phit,
-                lithology, cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
+                lithology_array, cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
             )
         else:
             # Single model for entire well
@@ -222,7 +228,7 @@ class SaturationModule:
 
         return SaturationResult(sw=sw, sxo=sxo, model=model_name)
 
-    def _calculate_per_depth(
+    def _calculate_depth_routed(
         self,
         rt: np.ndarray, rw: float, rcl: float,
         salinity: Optional[float],
@@ -230,33 +236,69 @@ class SaturationModule:
         lithology: np.ndarray,
         cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
     ):
-        """Calculate Sw with per-depth lithology routing (vectorized by interval)."""
+        """Calculate Sw with sample-by-sample routing across depth."""
         sw = np.full_like(rt, np.nan)
-        models_used = set()
+        model_per_sample = np.empty(rt.shape, dtype=object)
 
-        # Process each unique lithology
-        unique_liths = np.unique(lithology)
-        for lith in unique_liths:
-            lith_str = str(lith).lower()
-            mask = np.array([str(v).lower() == lith_str for v in lithology])
+        for i in range(rt.shape[0]):
+            lith_i = str(lithology[i]).lower() if lithology is not None else "clastic"
+            model_per_sample[i] = self._select_model_scalar(
+                float(vcl[i]) if np.isfinite(vcl[i]) else np.nan,
+                salinity,
+                lith_i,
+                cec,
+            ).value
 
+        ordered_models = []
+        for model_name in model_per_sample:
+            if model_name not in ordered_models:
+                ordered_models.append(model_name)
+
+        for model_name in ordered_models:
+            mask = model_per_sample == model_name
             if not np.any(mask):
                 continue
-
-            model = self._select_model(vcl[mask], salinity, lith_str, cec)
-            models_used.add(model.value)
-
             sw_segment = self._run_model(
-                model, rt[mask], rw, rcl,
+                SwModel(model_name),
+                rt[mask], rw, rcl,
                 vcl[mask], phie[mask], phit[mask],
                 cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
             )
             sw[mask] = sw_segment
 
-        model_name = "+".join(sorted(models_used)) if len(models_used) > 1 else (
-            models_used.pop() if models_used else "archie"
+        model_name = "+".join(ordered_models) if len(ordered_models) > 1 else (
+            ordered_models[0] if ordered_models else "archie"
         )
         return sw, model_name
+
+    def _select_model_scalar(
+        self,
+        vcl_value: float,
+        salinity: Optional[float],
+        lithology: str = "clastic",
+        cec: Optional[float] = None
+    ) -> SwModel:
+        """Select saturation model for a single depth sample."""
+        if self.model != "auto":
+            return SwModel(self.model)
+
+        if not np.isfinite(vcl_value):
+            vcl_value = 0.0
+
+        if vcl_value < self.vcl_cutoff:
+            return SwModel.ARCHIE
+
+        lithology = lithology.lower()
+
+        if lithology == "carbonate":
+            return SwModel.DUAL_WATER
+
+        if cec is not None:
+            return SwModel.WAXMAN_SMITS
+
+        if salinity is not None and salinity >= 20000:
+            return SwModel.SIMANDOUX
+        return SwModel.INDONESIA
 
     def _run_model(
         self, model: SwModel,
@@ -324,25 +366,7 @@ class SaturationModule:
             return SwModel(self.model)
 
         mean_vcl = float(np.nanmean(vcl))
-
-        # Clean formation
-        if mean_vcl < self.vcl_cutoff:
-            return SwModel.ARCHIE
-
-        # Shaly formation
-        lithology = lithology.lower()
-
-        if lithology == "carbonate":
-            return SwModel.DUAL_WATER
-
-        # Clastic
-        if cec is not None:
-            return SwModel.WAXMAN_SMITS
-
-        if salinity is not None and salinity >= 20000:
-            return SwModel.SIMANDOUX
-        else:
-            return SwModel.INDONESIA
+        return self._select_model_scalar(mean_vcl, salinity, lithology, cec)
 
     def _estimate_rcl(self, rt: np.ndarray, vcl: np.ndarray) -> float:
         """Estimate clay resistivity from shale intervals."""
