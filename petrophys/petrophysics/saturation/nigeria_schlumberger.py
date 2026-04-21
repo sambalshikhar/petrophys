@@ -17,7 +17,7 @@ import numpy as np
 
 def nigeria_schlumberger(
     rt: Union[float, np.ndarray],
-    rw: float,
+    rw: Union[float, np.ndarray],
     phi: Union[float, np.ndarray],
     vcl: Union[float, np.ndarray],
     rsh: float,
@@ -64,7 +64,12 @@ def nigeria_schlumberger(
     rt = np.where(rt <= 0, 1e-10, rt)
     phi = np.where(phi <= 0, 1e-10, phi)
     vcl = np.clip(vcl, 0.0, 1.0)
-    rw = max(rw, 1e-10)
+    rw = np.asarray(rw, dtype=float)
+    if rw.ndim == 0:
+        rw = np.full(rt.shape, float(rw), dtype=float)
+    else:
+        rw = np.broadcast_to(rw, rt.shape).astype(float)
+    rw = np.where(rw <= 0, 1e-10, rw)
     rsh = max(rsh, 1e-10)
 
     shale_term = np.power(vcl, shale_exp) / np.sqrt(rsh)

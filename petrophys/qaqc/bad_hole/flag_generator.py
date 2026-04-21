@@ -169,7 +169,7 @@ def generate_bad_hole_flags(
         Dictionary of flag arrays:
         - 'washout': Washout flag
         - 'large_hole': Large hole flag
-        - 'low_density': Low density flag
+        - 'low_density': Low density screening flag
         - 'pef_exclusion': PEF exclusion flag
         - 'bad_hole': Combined bad hole flag
     """
@@ -222,10 +222,14 @@ def generate_bad_hole_flags(
         )
 
     # Combined bad hole flag
+    #
+    # BAD_HOLE intentionally excludes the low-density screen so the
+    # library's bad-hole output is driven only by caliper/DRHO washout
+    # and large-hole geometry criteria. The low-density flag is still
+    # returned separately for QC reference.
     flags["bad_hole"] = (
         flags["washout"] |
-        flags["large_hole"] |
-        flags["low_density"]
+        flags["large_hole"]
     )
 
     return flags

@@ -53,7 +53,7 @@ def _waxman_smits_scalar(
 def waxman_smits(
     phi_t: Union[float, np.ndarray],
     rt: Union[float, np.ndarray],
-    rw: float,
+    rw: Union[float, np.ndarray],
     cec: float,
     rho_ma: float,
     b_coeff: float,
@@ -118,10 +118,15 @@ def waxman_smits(
     phi_t = np.atleast_1d(np.asarray(phi_t, dtype=float))
     rt    = np.atleast_1d(np.asarray(rt,    dtype=float))
 
-    cw = 1.0 / rw
-
     phi_safe = np.where(phi_t <= 0, 1e-10, phi_t)
     rt_safe  = np.where(rt    <= 0, 1e-10, rt)
+    rw_array = np.asarray(rw, dtype=float)
+    if rw_array.ndim == 0:
+        rw_array = np.full(phi_safe.shape, float(rw_array), dtype=float)
+    else:
+        rw_array = np.broadcast_to(rw_array, phi_safe.shape).astype(float)
+    rw_array = np.where(rw_array <= 0, 1e-10, rw_array)
+    cw = 1.0 / rw_array
 
     f_star = phi_safe ** (-m_star)
     qv     = cec * rho_ma * (1.0 - phi_safe) / phi_safe
@@ -129,7 +134,7 @@ def waxman_smits(
 
     sw = np.array([
         _waxman_smits_scalar(
-            phi_safe[i], ct[i], cw, qv[i], f_star[i],
+            phi_safe[i], ct[i], float(cw[i]), qv[i], f_star[i],
             b_coeff, n, max_iter, tol
         )
         for i in range(len(phi_t))

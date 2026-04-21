@@ -26,7 +26,7 @@ import numpy as np
 
 def north_sea_shaly_sand(
     rt: Union[float, np.ndarray],
-    rw: float,
+    rw: Union[float, np.ndarray],
     phi: Union[float, np.ndarray],
     vsh: Union[float, np.ndarray],
     rtsh: float,
@@ -73,7 +73,12 @@ def north_sea_shaly_sand(
     rt = np.where(rt <= 0, 1e-10, rt)
     phi = np.where(phi <= 0, 1e-10, phi)
     vsh = np.clip(vsh, 0.0, 1.0)
-    rw = max(rw, 1e-10)
+    rw = np.asarray(rw, dtype=float)
+    if rw.ndim == 0:
+        rw = np.full(rt.shape, float(rw), dtype=float)
+    else:
+        rw = np.broadcast_to(rw, rt.shape).astype(float)
+    rw = np.where(rw <= 0, 1e-10, rw)
     rtsh = max(rtsh, 1e-10)
 
     shale_term = np.power(vsh, vsh_exp) / rtsh

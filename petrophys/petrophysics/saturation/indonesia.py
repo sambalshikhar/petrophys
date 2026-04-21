@@ -11,7 +11,7 @@ import numpy as np
 
 def indonesia(
     rt: Union[float, np.ndarray],
-    rw: float,
+    rw: Union[float, np.ndarray],
     phi: Union[float, np.ndarray],
     vcl: Union[float, np.ndarray],
     rcl: float,
@@ -52,7 +52,12 @@ def indonesia(
     rt = np.where(rt <= 0, 1e-10, rt) if isinstance(rt, np.ndarray) else max(rt, 1e-10)
     phi = np.where(phi <= 0, 1e-10, phi) if isinstance(phi, np.ndarray) else max(phi, 1e-10)
     rcl = max(rcl, 1e-10)
-    rw = max(rw, 1e-10)
+    rw = np.asarray(rw, dtype=float)
+    if rw.ndim == 0:
+        rw = np.full(rt.shape, float(rw), dtype=float)
+    else:
+        rw = np.broadcast_to(rw, rt.shape).astype(float)
+    rw = np.where(rw <= 0, 1e-10, rw)
 
     # Clip vcl to valid range
     vcl = np.clip(vcl, 0, 0.99)
