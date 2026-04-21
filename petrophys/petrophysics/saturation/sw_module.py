@@ -62,6 +62,8 @@ class SaturationResult:
     sw: np.ndarray
     sxo: Optional[np.ndarray]
     model: str
+    sxo_method: Optional[str] = None
+    sxo_reason: Optional[str] = None
 
 
 class SaturationModule:
@@ -116,10 +118,10 @@ class SaturationModule:
     def calculate(
         self,
         well: "Well",
-        rw: float,
+        rw: Union[float, np.ndarray],
         rcl: Optional[float] = None,
         salinity: Optional[float] = None,
-        rmf: Optional[float] = None,
+        rmf: Optional[Union[float, np.ndarray]] = None,
         vcl: Optional[np.ndarray] = None,
         phie: Optional[np.ndarray] = None,
         phit: Optional[np.ndarray] = None,
@@ -221,16 +223,46 @@ class SaturationModule:
                                  cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp)
             model_name = model.value
 
-        # Calculate Sxo if Rmf available
+        # Calculate Sxo from invaded-zone inputs when available; otherwise
+        # fall back to a quick-look empirical relation requested by the user.
         sxo = None
+        sxo_method = None
+        sxo_reason = None
         if rxo is not None and rmf is not None:
             sxo = calculate_sxo(rxo.data, rmf, phie, self.a, self.m, self.n)
+            sxo_method = "archie_rxo_rmf"
+            sxo_reason = "RSHA/RXO and RMF available"
+        elif sw is not None:
+            sw_clipped = np.clip(np.asarray(sw, dtype=float), 0.0, 1.0)
+            sxo = np.power(sw_clipped, 0.2)
+            sxo_method = "fifth_root_quicklook"
+            if rxo is None and rmf is None:
+                sxo_reason = "RSHA/RXO and RMF unavailable"
+            elif rxo is None:
+                sxo_reason = "RSHA/RXO unavailable"
+            else:
+                sxo_reason = "RMF unavailable"
 
-        return SaturationResult(sw=sw, sxo=sxo, model=model_name)
+        return SaturationResult(
+            sw=sw,
+            sxo=sxo,
+            model=model_name,
+            sxo_method=sxo_method,
+            sxo_reason=sxo_reason,
+        )
+
+    @staticmethod
+    def _segment_value(value, mask: np.ndarray):
+        """Return a masked view for per-depth arrays, else pass scalars through."""
+        if isinstance(value, np.ndarray):
+            if value.shape == mask.shape:
+                return value[mask]
+            return value
+        return value
 
     def _calculate_depth_routed(
         self,
-        rt: np.ndarray, rw: float, rcl: float,
+        rt: np.ndarray, rw: Union[float, np.ndarray], rcl: float,
         salinity: Optional[float],
         vcl: np.ndarray, phie: np.ndarray, phit: np.ndarray,
         lithology: np.ndarray,
@@ -260,9 +292,17 @@ class SaturationModule:
                 continue
             sw_segment = self._run_model(
                 SwModel(model_name),
-                rt[mask], rw, rcl,
+                rt[mask], self._segment_value(rw, mask), rcl,
                 vcl[mask], phie[mask], phit[mask],
-                cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
+                self._segment_value(cec, mask),
+                self._segment_value(b_coeff, mask),
+                self._segment_value(rho_ma, mask),
+                self._segment_value(m_star, mask),
+                self._segment_value(rwb, mask),
+                self._segment_value(phi_cl, mask),
+                self._segment_value(rtsh, mask),
+                self._segment_value(vsh_exp, mask),
+                self._segment_value(shale_exp, mask),
             )
             sw[mask] = sw_segment
 
@@ -290,7 +330,7 @@ class SaturationModule:
 
         lithology = lithology.lower()
 
-        if lithology == "carbonate":
+        if lithology in {"carbonate", "limestone", "dolomite", "calcite"}:
             return SwModel.DUAL_WATER
 
         if cec is not None:

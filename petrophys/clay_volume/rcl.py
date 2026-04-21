@@ -11,38 +11,50 @@ import numpy as np
 
 def calculate_rcl(
     rdep: Union[float, np.ndarray],
-    vcl: Union[float, np.ndarray],
+    vcl: Optional[Union[float, np.ndarray]] = None,
+    shale_mask: Optional[np.ndarray] = None,
     vcl_threshold: float = 0.9,
-    default_rcl: float = 5.0
+    default_rcl: float = 5.0,
+    statistic: str = "median",
 ) -> float:
     """
     Calculate clay resistivity from high-VCL zones.
 
-    Filters for zones where VCL > threshold (nearly pure clay),
-    then averages the deep resistivity readings.
+    Uses shale samples when an explicit shale mask is available. Otherwise it
+    falls back to zones where VCL > threshold (nearly pure clay).
 
     Parameters
     ----------
     rdep : float or np.ndarray
         Deep resistivity log (ohm.m)
-    vcl : float or np.ndarray
+    vcl : float or np.ndarray, optional
         Final VCLAY curve (fraction)
+    shale_mask : np.ndarray, optional
+        Boolean mask identifying shale samples
     vcl_threshold : float
         VCL threshold for pure clay identification (default: 0.9)
     default_rcl : float
         Default Rcl if no pure clay zones found (default: 5.0 ohm.m)
+    statistic : str
+        Reduction statistic to use over shale samples: "median" or "mean"
 
     Returns
     -------
     float
-        Average Rcl (ohm.m)
+        Representative Rcl (ohm.m)
     """
-    if isinstance(vcl, np.ndarray) and isinstance(rdep, np.ndarray):
-        pure_clay_mask = vcl > vcl_threshold
-        valid_mask = pure_clay_mask & ~np.isnan(rdep) & ~np.isnan(vcl)
+    if isinstance(rdep, np.ndarray):
+        valid_mask = np.isfinite(rdep)
+        if isinstance(shale_mask, np.ndarray):
+            valid_mask = valid_mask & shale_mask.astype(bool)
+        elif isinstance(vcl, np.ndarray):
+            valid_mask = valid_mask & np.isfinite(vcl) & (vcl > vcl_threshold)
 
         if np.any(valid_mask):
-            return float(np.nanmean(rdep[valid_mask]))
+            values = rdep[valid_mask]
+            if statistic.lower() == "mean":
+                return float(np.nanmean(values))
+            return float(np.nanmedian(values))
 
     return default_rcl
 
@@ -50,14 +62,21 @@ def calculate_rcl(
 class RclModule:
     """Clay resistivity calculator."""
 
-    def __init__(self, vcl_threshold: float = 0.9, default_rcl: float = 5.0):
+    def __init__(
+        self,
+        vcl_threshold: float = 0.9,
+        default_rcl: float = 5.0,
+        statistic: str = "median",
+    ):
         self.vcl_threshold = vcl_threshold
         self.default_rcl = default_rcl
+        self.statistic = statistic
 
     def calculate(
         self,
         well: "Well",
-        vcl: Optional[np.ndarray] = None
+        vcl: Optional[np.ndarray] = None,
+        shale_mask: Optional[np.ndarray] = None,
     ) -> float:
         """
         Calculate Rcl from well data.
@@ -68,6 +87,8 @@ class RclModule:
             Well object with RDEP and VCL curves
         vcl : np.ndarray, optional
             Clay volume array (uses well VCL if not provided)
+        shale_mask : np.ndarray, optional
+            Boolean shale-sample mask
 
         Returns
         -------
@@ -78,10 +99,24 @@ class RclModule:
         if rdep is None:
             return self.default_rcl
 
-        if vcl is None:
+        if shale_mask is None and vcl is None:
             vcl_curve = well.get("VCL")
             if vcl_curve is None:
-                return self.default_rcl
+                return calculate_rcl(
+                    rdep.data,
+                    None,
+                    shale_mask=None,
+                    vcl_threshold=self.vcl_threshold,
+                    default_rcl=self.default_rcl,
+                    statistic=self.statistic,
+                )
             vcl = vcl_curve.data
 
-        return calculate_rcl(rdep.data, vcl, self.vcl_threshold, self.default_rcl)
+        return calculate_rcl(
+            rdep.data,
+            vcl,
+            shale_mask=shale_mask,
+            vcl_threshold=self.vcl_threshold,
+            default_rcl=self.default_rcl,
+            statistic=self.statistic,
+        )

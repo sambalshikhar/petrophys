@@ -38,11 +38,22 @@ def density_porosity(
     >>> print(f"PHID = {phid:.3f}")
     0.182
     """
-    if rhob_matrix == rhob_fluid:
-        return np.zeros_like(rhob) if isinstance(rhob, np.ndarray) else 0.0
+    rhob_arr = np.asarray(rhob, dtype=float)
+    rhob_matrix_arr = np.asarray(rhob_matrix, dtype=float)
+    rhob_fluid_arr = np.asarray(rhob_fluid, dtype=float)
+    denominator = rhob_matrix_arr - rhob_fluid_arr
 
-    phid = (rhob_matrix - rhob) / (rhob_matrix - rhob_fluid)
-    return np.clip(phid, 0, 0.5)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        phid = np.where(
+            denominator != 0,
+            (rhob_matrix_arr - rhob_arr) / denominator,
+            0.0,
+        )
+
+    phid = np.clip(phid, 0, 0.5)
+    if np.ndim(phid) == 0:
+        return float(phid)
+    return phid
 
 
 def calculate_phid(

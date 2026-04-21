@@ -417,7 +417,7 @@ def _finalize_export_curves(well: "Well", original_curves: set[str]) -> None:
     if "LITHO" not in original_curves:
         well.remove_curve("LITHO")
 
-    for name in ("PAY_FLAG_PETROPHYSICAL", "VP_VS_RATIO", "PRIME_GAS_TARGET", "PRIME_OIL_TARGET"):
+    for name in ("PAY_FLAG_PETROPHYSICAL", "PRIME_GAS_TARGET", "PRIME_OIL_TARGET"):
         if name not in original_curves:
             well.remove_curve(name)
 

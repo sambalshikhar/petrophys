@@ -136,6 +136,124 @@ def _metadata_bht_f(well: "Well") -> Optional[float]:
     return None
 
 
+GROUND_TRUTH_CODE_TO_GROUP = {
+    1: "sandstone",
+    2: "sandstone",
+    3: "sandstone",
+    4: "sandstone",
+    5: "silt",
+    6: "silt",
+    7: "shale",
+    8: "shale",
+    9: "limestone",
+    10: "sandstone",
+    11: "limestone",
+    12: "limestone",
+    13: "limestone",
+    14: "calcareous_shale",
+    15: "dolomite",
+    16: "limestone",
+    17: "clastic_coarse",
+    18: "coal",
+    19: "igneous",
+    20: "igneous",
+    21: "halite",
+    22: "anhydrite",
+    23: "igneous",
+    24: "igneous",
+    25: "shale",
+    26: "evaporite",
+    27: "halite",
+    28: "igneous",
+    29: "chert",
+    30: "sandstone",
+    31: "clastic_coarse",
+    32: "halite",
+    33: "halite",
+    34: "halite",
+    35: "sandstone",
+    36: "clastic_coarse",
+}
+
+COMPUTED_LITHO_CODE_TO_GROUP = {
+    1: "sandstone",
+    2: "limestone",
+    3: "dolomite",
+    4: "shale",
+    5: "anhydrite",
+    6: "halite",
+    7: "coal",
+}
+
+LITHOLOGY_GROUP_TO_MATRIX = {
+    "sandstone": "sandstone",
+    "silt": "sandstone",
+    "clastic_coarse": "sandstone",
+    "igneous": "quartz",
+    "chert": "quartz",
+    "limestone": "limestone",
+    "dolomite": "dolomite",
+    "shale": "shale",
+    "calcareous_shale": "shale",
+    "anhydrite": "anhydrite",
+    "evaporite": "gypsum",
+    "halite": "halite",
+    "coal": "coal",
+}
+
+
+def _coerce_lithology_group(value: Any) -> Optional[str]:
+    """Normalize lithology strings to workflow group names."""
+    text = str(value or "").strip().lower()
+    if not text or text in {"nan", "none", "-999.25"}:
+        return None
+
+    aliases = {
+        "sand": "sandstone",
+        "ss": "sandstone",
+        "lime": "limestone",
+        "ls": "limestone",
+        "dolo": "dolomite",
+        "salt": "halite",
+    }
+    return aliases.get(text, text)
+
+
+def _group_array_from_numeric_codes(data: np.ndarray, mapping: Dict[int, str]) -> np.ndarray:
+    groups = np.full(data.shape, None, dtype=object)
+    finite = np.isfinite(data)
+    if not np.any(finite):
+        return groups
+
+    rounded = np.rint(data[finite]).astype(int)
+    grouped = [mapping.get(code) for code in rounded]
+    groups[finite] = grouped
+    return groups
+
+
+def _is_shale_group(name: Any) -> bool:
+    text = str(name or "").strip().lower()
+    return "shale" in text
+
+
+def _format_group_list(groups: List[str]) -> str:
+    if not groups:
+        return ""
+    return ", ".join(sorted({str(group).upper() for group in groups if group}))
+
+
+def _ordered_unique_values(values: List[Any]) -> List[Any]:
+    seen = set()
+    ordered: List[Any] = []
+    for value in values:
+        key = repr(value)
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(value)
+    return ordered
+
+
 @dataclass
 class DynamicWorkflowConfig:
     """
@@ -271,8 +389,8 @@ class DynamicWorkflowResult:
     warnings: List[str] = field(default_factory=list)
 
     # Computed values
-    rw_computed: Optional[float] = None
-    rmf_computed: Optional[float] = None
+    rw_computed: Optional[Union[float, np.ndarray]] = None
+    rmf_computed: Optional[Union[float, np.ndarray]] = None
     rcl_computed: Optional[float] = None
     temperature_gradient: Optional[float] = None
 
@@ -288,7 +406,15 @@ class DynamicWorkflowResult:
         print(f"Overall: {'SUCCESS' if self.success else 'FAILED'} | "
               f"Executed: {len(self.steps_executed)} | Skipped: {len(self.steps_skipped)}")
         if self.rw_computed is not None:
-            print(f"Rw = {self.rw_computed:.4f} ohm.m | Rmf = {self.rmf_computed} | "
+            def _summary(value):
+                arr = np.asarray(value, dtype=float)
+                finite = arr[np.isfinite(arr)]
+                if finite.size == 0:
+                    return "NaN"
+                if finite.size == 1:
+                    return f"{finite[0]:.4f}"
+                return f"{np.nanmin(finite):.4f}-{np.nanmax(finite):.4f}"
+            print(f"Rw = {_summary(self.rw_computed)} ohm.m | Rmf = {_summary(self.rmf_computed) if self.rmf_computed is not None else 'None'} | "
                   f"Rcl = {self.rcl_computed}")
         print()
 
@@ -363,6 +489,7 @@ class DynamicWorkflow:
         self.config = config or DynamicWorkflowConfig()
         self._result: Optional[DynamicWorkflowResult] = None
         self._lithology_log: Optional[np.ndarray] = None
+        self._lithology_source: str = "config"
 
     def get_pipeline(self):
         return [
@@ -433,12 +560,12 @@ class DynamicWorkflow:
             (WorkflowStep.BAD_HOLE, self._step_bad_hole, self._can_bad_hole),
             (WorkflowStep.VCLAY, self._step_vclay, self._can_vclay),
             (WorkflowStep.RCL, self._step_rcl, self._can_rcl),
+            (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
             (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
             (WorkflowStep.RW, self._step_rw, self._can_rw),
             (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
             (WorkflowStep.HC_CORRECTION, self._step_hc_correction, self._can_hc_correction),
             (WorkflowStep.POROSITY, self._step_porosity, self._can_porosity),
-            (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
             (WorkflowStep.SATURATION, self._step_saturation, self._can_saturation),
             (WorkflowStep.PERMEABILITY, self._step_permeability, self._can_permeability),
             (WorkflowStep.ROCK_QUALITY, self._step_rock_quality, self._can_rock_quality),
@@ -521,7 +648,6 @@ class DynamicWorkflow:
         return (self._has_curve(well, "RHOB") and
                 self._has_curve(well, "NPHI") and
                 self._has_curve(well, "PEF", "DTC") and
-                self._has_curve(well, "PHIE") and
                 self._has_curve(well, "VCL"))
 
     def _can_rmf(self, well: "Well") -> bool:
@@ -656,6 +782,24 @@ class DynamicWorkflow:
         trace.decisions.append(f"{n_bad} bad-hole samples flagged out of {len(flags['bad_hole'])}")
         return trace
 
+    def _get_temperature_profile(self, well: "Well") -> np.ndarray:
+        """Return a formation-temperature array in Fahrenheit."""
+        temp_curve = well.get("TEMP")
+        if temp_curve is not None:
+            temp = np.asarray(temp_curve.data, dtype=float)
+            if temp.size == well.n_samples:
+                return temp
+
+        avg_temp = self._get_avg_formation_temp(well)
+        return np.full(well.n_samples, avg_temp, dtype=float)
+
+    def _reference_temperature(self, temp_profile: np.ndarray) -> float:
+        """Choose a reference temperature for scalar resistivity inputs."""
+        finite = temp_profile[np.isfinite(temp_profile)]
+        if finite.size == 0:
+            return 150.0
+        return float(np.nanmedian(finite))
+
     def _step_vclay(self, well: "Well") -> StepResult:
         from petrophys.clay_volume.vcl_module import VclModule
 
@@ -751,23 +895,66 @@ class DynamicWorkflow:
     def _step_rcl(self, well: "Well") -> StepResult:
         from petrophys.clay_volume.rcl import RclModule
 
-        trace = StepResult(step="rcl", success=True, method="mean_Rt_in_shale_zones")
+        trace = StepResult(step="rcl", success=True, method="median_Rt_in_shale_zones")
         trace.input_curves = ["RT", "VCLAY"]
-        trace.parameters = {"vcl_threshold": 0.9, "default_rcl": 5.0}
+        trace.parameters = {"vcl_threshold": 0.9, "default_rcl": 5.0, "statistic": "median"}
 
-        rcl_module = RclModule()
-        self._result.rcl_computed = rcl_module.calculate(well)
+        lithology = self._build_lithology_log(well)
+        shale_mask = None
+        shale_groups: List[str] = []
+        if isinstance(lithology, np.ndarray):
+            shale_mask = np.asarray([_is_shale_group(item) for item in lithology], dtype=bool)
+            shale_groups = _ordered_unique_values(
+                str(item).upper() for item in lithology.tolist() if _is_shale_group(item)
+            )
 
+        rcl_module = RclModule(statistic="median")
+        self._result.rcl_computed = rcl_module.calculate(well, shale_mask=shale_mask)
+
+        rdep_curve = well.get("RDEP") or well.get("RT")
+        vcl_curve = well.get("VCL") or well.get("VCLAY")
+        shale_sample_count = 0
+        source = "default"
+        if rdep_curve is not None:
+            rdep = np.asarray(rdep_curve.data, dtype=float)
+            if shale_mask is not None:
+                valid = shale_mask & np.isfinite(rdep)
+                if np.any(valid):
+                    shale_sample_count = int(np.count_nonzero(valid))
+                    source = "lithology_shale_median_rt"
+            if source == "default" and vcl_curve is not None:
+                vcl = np.asarray(vcl_curve.data, dtype=float)
+                valid = np.isfinite(rdep) & np.isfinite(vcl) & (vcl > 0.9)
+                if np.any(valid):
+                    shale_sample_count = int(np.count_nonzero(valid))
+                    source = "vcl_gt_0.9_median_rt"
+
+        trace.method = source
         trace.parameters["rcl_computed"] = self._result.rcl_computed
-        trace.decisions.append(f"Rcl = {self._result.rcl_computed:.2f} ohm.m "
-                              f"(mean RT where VCLAY > 0.9)")
+        trace.parameters["source"] = source
+        trace.parameters["shale_sample_count"] = shale_sample_count
+        trace.parameters["shale_lithology_groups"] = shale_groups
+        if source == "lithology_shale_median_rt":
+            trace.decisions.append(
+                f"Rcl = {self._result.rcl_computed:.2f} ohm.m (median RT in shale lithology samples, n={shale_sample_count})"
+            )
+        elif source == "vcl_gt_0.9_median_rt":
+            trace.decisions.append(
+                f"Rcl = {self._result.rcl_computed:.2f} ohm.m (median RT where VCL > 0.9, n={shale_sample_count})"
+            )
+        else:
+            trace.decisions.append(
+                f"Rcl = {self._result.rcl_computed:.2f} ohm.m (default because no shale lithology or VCL > 0.9 samples were available)"
+            )
         return trace
 
     def _step_lithology(self, well: "Well") -> StepResult:
         from petrophys.lithology.lithology_module import LithologyModule
 
         trace = StepResult(step="lithology", success=True, method="multi_mineral_solver")
-        trace.input_curves = ["RHOB", "NPHI", "VCL", "PHIE"]
+        trace.input_curves = ["RHOB", "NPHI", "VCL"]
+        if well.get("PHIE") is not None:
+            trace.input_curves.append("PHIE")
         if well.get("PEF") is not None:
             trace.input_curves.append("PEF")
         if well.get("DTC") is not None:
@@ -789,23 +976,39 @@ class DynamicWorkflow:
         trace = StepResult(step="rmf", success=True)
         decisions = []
 
-        def _add_rmf_curve(value: float) -> None:
-            if well.depth is None:
-                return
-            rmf_data = np.full(well.n_samples, float(value), dtype=float)
-            well.add_curve("RMF", rmf_data, "ohm.m", "Mud Filtrate Resistivity")
-            trace.output_curves = ["RMF"]
+        temp_profile = self._get_temperature_profile(well)
+        reference_temp = self._reference_temperature(temp_profile)
 
-        if self.config.mud_type == "OBM":
-            self._result.rmf_computed = 200.0
-            _add_rmf_curve(self._result.rmf_computed)
-            trace.method = "OBM_default"
-            decisions.append("OBM detected -> Rmf set to 200.0 ohm.m (non-conductive)")
-            trace.parameters = {"rmf": 200.0, "mud_type": "OBM"}
+        def _finalize_rmf(
+            method: str,
+            values: Union[float, np.ndarray],
+            parameters: Dict[str, Any],
+        ) -> StepResult:
+            rmf_curve = np.asarray(values, dtype=float)
+            if rmf_curve.ndim == 0:
+                rmf_curve = np.full(well.n_samples, float(rmf_curve), dtype=float)
+            self._result.rmf_computed = rmf_curve
+            well.add_curve("RMF", rmf_curve, "ohm.m", "Mud Filtrate Resistivity")
+            trace.method = method
+            trace.output_curves = ["RMF"]
+            trace.parameters = {
+                **parameters,
+                "formation_temp_min_f": float(np.nanmin(temp_profile)),
+                "formation_temp_max_f": float(np.nanmax(temp_profile)),
+                "rmf_min": float(np.nanmin(rmf_curve)),
+                "rmf_max": float(np.nanmax(rmf_curve)),
+            }
             trace.decisions = decisions
             return trace
 
-        temp_f = self._get_avg_formation_temp(well)
+        if self.config.mud_type == "OBM":
+            decisions.append("OBM detected -> Rmf set to non-conductive default and written as a constant curve")
+            return _finalize_rmf(
+                "OBM_default",
+                np.full(well.n_samples, 200.0, dtype=float),
+                {"rmf": 200.0, "mud_type": "OBM"},
+            )
+
         rmf_meas_temp_f = self.config.rmf_meas_temp_f
         if rmf_meas_temp_f == 75.0 and well.header.rm_temp is not None:
             rmf_meas_temp_f = float(well.header.rm_temp)
@@ -820,26 +1023,22 @@ class DynamicWorkflow:
             las_rmf = _constant_zoned_parameter(well, "RMF")
 
         if self.config.rmf_at_meas_temp is not None:
-            trace.method = "arps_temperature_correction"
             rmf_module = RmfModule()
             result = rmf_module.calculate(
                 rmf_surface=self.config.rmf_at_meas_temp,
                 temp_measured=self.config.rmf_meas_temp_f,
-                temp_formation=temp_f
+                temp_formation=temp_profile
             )
-            self._result.rmf_computed = result.rmf
-            _add_rmf_curve(self._result.rmf_computed)
-            trace.parameters = {
-                "rmf_at_surface": self.config.rmf_at_meas_temp,
-                "surface_temp_f": self.config.rmf_meas_temp_f,
-                "formation_temp_f": temp_f,
-                "rmf_at_formation": result.rmf,
-            }
             decisions.append(f"Rmf corrected from {self.config.rmf_at_meas_temp:.3f} ohm.m "
-                           f"@ {self.config.rmf_meas_temp_f:.0f}F "
-                           f"-> {result.rmf:.4f} ohm.m @ {temp_f:.0f}F (Arps)")
-            trace.decisions = decisions
-            return trace
+                           f"@ {self.config.rmf_meas_temp_f:.0f}F across the temperature profile")
+            return _finalize_rmf(
+                "arps_temperature_profile_correction",
+                result.rmf,
+                {
+                    "rmf_at_surface": self.config.rmf_at_meas_temp,
+                    "surface_temp_f": self.config.rmf_meas_temp_f,
+                },
+            )
 
         if las_rmf is not None:
             rmf_module = RmfModule()
@@ -847,29 +1046,37 @@ class DynamicWorkflow:
                 result = rmf_module.calculate(
                     rmf_surface=float(las_rmf),
                     temp_measured=rmf_meas_temp_f,
-                    temp_formation=temp_f,
+                    temp_formation=temp_profile,
                 )
-                self._result.rmf_computed = float(result.rmf)
-                _add_rmf_curve(self._result.rmf_computed)
-                trace.method = "las_metadata_arps_temperature_correction"
-                trace.parameters = {
-                    "rmf_at_measured_temp": float(las_rmf),
-                    "measured_temp_f": rmf_meas_temp_f,
-                    "formation_temp_f": temp_f,
-                    "rmf_at_formation": float(result.rmf),
-                }
                 decisions.append(
                     f"Rmf corrected from LAS metadata: {float(las_rmf):.4f} ohm.m "
-                    f"@ {rmf_meas_temp_f:.0f}F -> {float(result.rmf):.4f} ohm.m @ {temp_f:.0f}F"
+                    f"@ {rmf_meas_temp_f:.0f}F across the temperature profile"
+                )
+                return _finalize_rmf(
+                    "las_metadata_profile_temperature_correction",
+                    result.rmf,
+                    {
+                        "rmf_at_measured_temp": float(las_rmf),
+                        "measured_temp_f": rmf_meas_temp_f,
+                    },
                 )
             else:
-                self._result.rmf_computed = float(las_rmf)
-                _add_rmf_curve(self._result.rmf_computed)
-                trace.method = "las_metadata"
-                trace.parameters = {"rmf": float(las_rmf)}
-                decisions.append(f"Rmf = {float(las_rmf):.4f} ohm.m (LAS metadata)")
-            trace.decisions = decisions
-            return trace
+                result = rmf_module.calculate(
+                    rmf_surface=float(las_rmf),
+                    temp_measured=reference_temp,
+                    temp_formation=temp_profile,
+                )
+                decisions.append(
+                    f"Rmf from LAS metadata used assumed reference temperature {reference_temp:.1f}F and was corrected along the temperature profile"
+                )
+                return _finalize_rmf(
+                    "las_metadata_assumed_reference_temperature",
+                    result.rmf,
+                    {
+                        "rmf_at_reference_temp": float(las_rmf),
+                        "reference_temp_f": reference_temp,
+                    },
+                )
 
         if self.config.rmf_salinity_ppm is not None:
             rmf_at_meas_temp = float(rw_from_salinity(self.config.rmf_salinity_ppm, rmf_meas_temp_f))
@@ -877,22 +1084,20 @@ class DynamicWorkflow:
             result = rmf_module.calculate(
                 rmf_surface=rmf_at_meas_temp,
                 temp_measured=rmf_meas_temp_f,
-                temp_formation=temp_f,
+                temp_formation=temp_profile,
             )
-            self._result.rmf_computed = float(result.rmf)
-            _add_rmf_curve(self._result.rmf_computed)
-            trace.method = "mud_filtrate_salinity_conversion"
-            trace.parameters = {
-                "mud_filtrate_salinity_ppm": self.config.rmf_salinity_ppm,
-                "rmf_at_measured_temp": rmf_at_meas_temp,
-                "measured_temp_f": rmf_meas_temp_f,
-                "formation_temp_f": temp_f,
-                "rmf_at_formation": float(result.rmf),
-            }
             decisions.append(
                 f"Rmf from CLFL salinity: {self.config.rmf_salinity_ppm:.0f} ppm -> "
-                f"{rmf_at_meas_temp:.4f} ohm.m @ {rmf_meas_temp_f:.0f}F -> "
-                f"{float(result.rmf):.4f} ohm.m @ {temp_f:.0f}F"
+                f"{rmf_at_meas_temp:.4f} ohm.m @ {rmf_meas_temp_f:.0f}F and then along the temperature profile"
+            )
+            return _finalize_rmf(
+                "mud_filtrate_salinity_conversion",
+                result.rmf,
+                {
+                    "mud_filtrate_salinity_ppm": self.config.rmf_salinity_ppm,
+                    "rmf_at_measured_temp": rmf_at_meas_temp,
+                    "measured_temp_f": rmf_meas_temp_f,
+                },
             )
         elif self.config.rm is not None:
             k = 0.75 if self.config.mud_water == "fresh" else 0.85
@@ -900,22 +1105,21 @@ class DynamicWorkflow:
             result = rmf_module.calculate(
                 rm_surface=self.config.rm,
                 temp_measured=rmf_meas_temp_f,
-                temp_formation=temp_f,
+                temp_formation=temp_profile,
             )
-            self._result.rmf_computed = float(result.rmf)
-            _add_rmf_curve(self._result.rmf_computed)
-            trace.method = f"rm_to_rmf_conversion_factor_{k}"
-            trace.parameters = {
-                "rm": self.config.rm,
-                "conversion_factor": k,
-                "mud_water": self.config.mud_water,
-                "measured_temp_f": rmf_meas_temp_f,
-                "formation_temp_f": temp_f,
-                "rmf_at_formation": float(result.rmf),
-            }
             decisions.append(
                 f"Rmf = Rm * {k} corrected to formation temperature: "
-                f"{self.config.rm:.4f} -> {float(result.rmf):.4f} ohm.m"
+                f"{self.config.rm:.4f} at {rmf_meas_temp_f:.0f}F and then along the temperature profile"
+            )
+            return _finalize_rmf(
+                f"rm_to_rmf_conversion_factor_{k}",
+                result.rmf,
+                {
+                    "rm": self.config.rm,
+                    "conversion_factor": k,
+                    "mud_water": self.config.mud_water,
+                    "measured_temp_f": rmf_meas_temp_f,
+                },
             )
 
         trace.decisions = decisions
@@ -923,25 +1127,34 @@ class DynamicWorkflow:
 
     def _step_rw(self, well: "Well") -> StepResult:
         from petrophys.resistivity.rw.rw_module import RwModule
-        from petrophys.resistivity.rw.salinity_rw import rw_from_salinity
+        from petrophys.resistivity.rw.salinity_rw import rw_from_salinity, salinity_from_rw
+        from petrophys.resistivity.rw.sp_rw import estimate_sp_lines, rw_from_sp, rw_from_rxo_rt
 
         trace = StepResult(step="rw", success=True)
         decisions = []
-        temp_f = self._get_avg_formation_temp(well)
+        temp_profile = self._get_temperature_profile(well)
+        reference_temp = self._reference_temperature(temp_profile)
         las_rw_temp_f = _parameter_temperature_f(well, "RWT")
 
         def _finalize_rw(
             method: str,
-            value: float,
+            value: Union[float, np.ndarray],
             parameters: Dict[str, Any],
             inputs: Optional[List[str]] = None,
         ) -> StepResult:
-            self._result.rw_computed = float(value)
-            if well.depth is not None:
-                rw_data = np.full(well.n_samples, self._result.rw_computed, dtype=float)
-                well.add_curve("RW", rw_data, "ohm.m", "Formation Water Resistivity")
+            rw_curve = np.asarray(value, dtype=float)
+            if rw_curve.ndim == 0:
+                rw_curve = np.full(well.n_samples, float(rw_curve), dtype=float)
+            self._result.rw_computed = rw_curve
+            well.add_curve("RW", rw_curve, "ohm.m", "Formation Water Resistivity")
             trace.method = method
-            trace.parameters = parameters
+            trace.parameters = {
+                **parameters,
+                "rw_min": float(np.nanmin(rw_curve)),
+                "rw_max": float(np.nanmax(rw_curve)),
+                "formation_temp_min_f": float(np.nanmin(temp_profile)),
+                "formation_temp_max_f": float(np.nanmax(temp_profile)),
+            }
             trace.input_curves = inputs or []
             trace.output_curves = ["RW"]
             trace.decisions = decisions
@@ -949,32 +1162,34 @@ class DynamicWorkflow:
 
         if self.config.rw is not None:
             if self.config.rw_meas_temp_f is not None:
-                from petrophys.resistivity.rw.temp_correction import correct_rw_temperature
-
-                rw_value = float(
-                    correct_rw_temperature(self.config.rw, self.config.rw_meas_temp_f, temp_f)
-                )
+                salinity_est = float(salinity_from_rw(self.config.rw, self.config.rw_meas_temp_f))
+                rw_curve = rw_from_salinity(salinity_est, temp_profile)
                 decisions.append(
                     f"Rw corrected from {self.config.rw:.4f} ohm.m @ {self.config.rw_meas_temp_f:.0f}F "
-                    f"-> {rw_value:.4f} ohm.m @ {temp_f:.0f}F"
+                    f"along the temperature profile"
                 )
                 return _finalize_rw(
-                    "user_provided_temperature_corrected",
-                    rw_value,
+                    "user_provided_temperature_profile_corrected",
+                    rw_curve,
                     {
                         "rw_at_measured_temp": self.config.rw,
                         "measured_temp_f": self.config.rw_meas_temp_f,
-                        "formation_temp_f": temp_f,
-                        "rw_at_formation": rw_value,
+                        "salinity_ppm_estimated": salinity_est,
                         "source_priority": "config.rw",
                     },
                 )
-            decisions.append(f"Rw = {self.config.rw:.4f} ohm.m (user-provided)")
+            salinity_est = float(salinity_from_rw(self.config.rw, reference_temp))
+            rw_curve = rw_from_salinity(salinity_est, temp_profile)
+            decisions.append(
+                f"Rw input {self.config.rw:.4f} ohm.m used assumed reference temperature {reference_temp:.1f}F and was corrected along the temperature profile"
+            )
             return _finalize_rw(
-                "user_provided",
-                float(self.config.rw),
+                "user_provided_assumed_reference_temperature",
+                rw_curve,
                 {
                     "rw": float(self.config.rw),
+                    "reference_temp_f": reference_temp,
+                    "salinity_ppm_estimated": salinity_est,
                     "source_priority": "config.rw",
                 },
             )
@@ -984,54 +1199,58 @@ class DynamicWorkflow:
             las_rw = _constant_zoned_parameter(well, "RW")
         if las_rw is not None:
             if las_rw_temp_f is not None:
-                from petrophys.resistivity.rw.temp_correction import correct_rw_temperature
-
-                rw_value = float(
-                    correct_rw_temperature(float(las_rw), las_rw_temp_f, temp_f)
-                )
+                salinity_est = float(salinity_from_rw(float(las_rw), las_rw_temp_f))
+                rw_curve = rw_from_salinity(salinity_est, temp_profile)
                 decisions.append(
                     f"Rw corrected from LAS metadata: {float(las_rw):.4f} ohm.m @ {las_rw_temp_f:.0f}F "
-                    f"-> {rw_value:.4f} ohm.m @ {temp_f:.0f}F"
+                    f"along the temperature profile"
                 )
                 return _finalize_rw(
-                    "las_metadata_temperature_corrected",
-                    rw_value,
+                    "las_metadata_temperature_profile_corrected",
+                    rw_curve,
                     {
                         "rw_at_measured_temp": float(las_rw),
                         "measured_temp_f": las_rw_temp_f,
-                        "formation_temp_f": temp_f,
-                        "rw_at_formation": rw_value,
+                        "salinity_ppm_estimated": salinity_est,
                         "source_priority": "las.RW",
                     },
                 )
-            decisions.append(f"Rw = {float(las_rw):.4f} ohm.m (LAS metadata)")
+            salinity_est = float(salinity_from_rw(float(las_rw), reference_temp))
+            rw_curve = rw_from_salinity(salinity_est, temp_profile)
+            decisions.append(
+                f"Rw from LAS metadata used assumed reference temperature {reference_temp:.1f}F and was corrected along the temperature profile"
+            )
             return _finalize_rw(
-                "las_metadata",
-                float(las_rw),
+                "las_metadata_assumed_reference_temperature",
+                rw_curve,
                 {
                     "rw": float(las_rw),
+                    "reference_temp_f": reference_temp,
+                    "salinity_ppm_estimated": salinity_est,
                     "source_priority": "las.RW",
                 },
             )
 
         if self.config.salinity_ppm is not None:
-            rw_value = float(rw_from_salinity(self.config.salinity_ppm, temp_f))
-            decisions.append(f"Rw from salinity: {self.config.salinity_ppm:.0f} ppm "
-                           f"@ {temp_f:.0f}F -> Rw = {rw_value:.4f} ohm.m")
+            rw_curve = rw_from_salinity(self.config.salinity_ppm, temp_profile)
+            decisions.append(
+                f"Rw from salinity {self.config.salinity_ppm:.0f} ppm across the temperature profile"
+            )
             return _finalize_rw(
                 "salinity_conversion",
-                rw_value,
+                rw_curve,
                 {
                     "salinity_ppm": self.config.salinity_ppm,
-                    "temperature_f": temp_f,
-                    "rw_computed": rw_value,
                     "source_priority": "salinity_ppm",
                 },
             )
 
         if self._result.rmf_computed is not None:
+            rmf_curve = np.asarray(self._result.rmf_computed, dtype=float)
+            if rmf_curve.ndim == 0:
+                rmf_curve = np.full(well.n_samples, float(rmf_curve), dtype=float)
             decisions.append(
-                f"Rw direct source unavailable -> using available Rmf = {self._result.rmf_computed:.4f} ohm.m for heuristic estimation"
+                "Rw direct source unavailable -> using available RMF curve for heuristic estimation"
             )
 
             if self._has_curve(well, "SP"):
@@ -1039,26 +1258,42 @@ class DynamicWorkflow:
                     decisions.append("SP method skipped because mud_has_clay_or_kcl=True")
                 else:
                     try:
-                        rw_result = RwModule(method="sp").calculate(
-                            well,
-                            rmf=self._result.rmf_computed,
-                            temperature=temp_f,
-                        )
-                        rw_value = float(np.nanmedian(np.asarray(rw_result.rw, dtype=float)))
-                        if not np.isfinite(rw_value):
-                            raise ValueError("SP-derived Rw is not finite")
+                        sp_module = RwModule(method="sp")
+                        sp_curve = well.get("SP")
+                        sp_data = np.asarray(sp_curve.data, dtype=float)
+                        clean_mask = sp_module._build_clean_water_mask(well)
+                        shale_mask = sp_module._build_shale_mask(well)
+                        clean_sp = sp_data[clean_mask] if clean_mask is not None else sp_data
+                        clean_sp = clean_sp[np.isfinite(clean_sp)]
+                        if clean_sp.size > 0:
+                            sp_clean, _ = estimate_sp_lines(clean_sp)
+                        else:
+                            sp_clean, _ = estimate_sp_lines(sp_data)
+
+                        if shale_mask is not None:
+                            shale_sp = sp_data[shale_mask]
+                            shale_sp = shale_sp[np.isfinite(shale_sp)]
+                            if shale_sp.size > 0:
+                                sp_shale = float(np.nanmedian(shale_sp))
+                            else:
+                                _, sp_shale = estimate_sp_lines(sp_data)
+                        else:
+                            _, sp_shale = estimate_sp_lines(sp_data)
+
+                        rw_curve = rw_from_sp(sp_clean, sp_shale, rmf_curve, temp_profile)
                         decisions.append(
-                            f"Rw via SP method ({rw_result.method}): {rw_value:.4f} ohm.m"
+                            f"Rw via SP clean-water method with SPclean={sp_clean:.2f} mV and SPshale={sp_shale:.2f} mV across the temperature profile"
                         )
                         return _finalize_rw(
-                            rw_result.method,
-                            rw_value,
+                            "sp_clean_water",
+                            rw_curve,
                             {
-                                "rmf": self._result.rmf_computed,
-                                "temperature_f": temp_f,
-                                "rw_computed": rw_value,
+                                "rmf_min": float(np.nanmin(rmf_curve)),
+                                "rmf_max": float(np.nanmax(rmf_curve)),
+                                "sp_clean_mv": float(sp_clean),
+                                "sp_shale_mv": float(sp_shale),
+                                "ssp_mv": float(sp_clean - sp_shale),
                                 "source_priority": "rmf -> SP",
-                                **rw_result.metadata,
                             },
                             ["SP"],
                         )
@@ -1070,26 +1305,35 @@ class DynamicWorkflow:
                 decisions.append("SP method skipped because SP curve is unavailable")
 
             try:
-                rw_result = RwModule(method="rxo_rt").calculate(
-                    well,
-                    rmf=self._result.rmf_computed,
-                    temperature=temp_f,
-                )
-                rw_value = float(np.nanmedian(np.asarray(rw_result.rw, dtype=float)))
-                if not np.isfinite(rw_value):
-                    raise ValueError("Rxo/Rt-derived Rw is not finite")
+                from petrophys.resistivity.rw.sp_rw import rw_from_rxo_rt
+                rxo = well.get("RSHA") or well.get("RXO")
+                rt = well.get("RDEP") or well.get("RT")
+                if rxo is None or rt is None:
+                    raise ValueError("Rxo/Rt curves unavailable")
+                rxo_data = np.asarray(rxo.data, dtype=float)
+                rt_data = np.asarray(rt.data, dtype=float)
+                clean_mask = RwModule()._build_clean_water_mask(well)
+                if clean_mask is not None:
+                    valid = clean_mask & np.isfinite(rxo_data) & np.isfinite(rt_data) & np.isfinite(rmf_curve)
+                else:
+                    valid = np.isfinite(rxo_data) & np.isfinite(rt_data) & np.isfinite(rmf_curve)
+                if not np.any(valid):
+                    raise ValueError("No valid clean-water Rxo/Rt samples")
+                rw_clean = rw_from_rxo_rt(rxo_data[valid], rt_data[valid], rmf_curve[valid])
+                salinity_est = float(np.nanmedian(salinity_from_rw(rw_clean, temp_profile[valid])))
+                rw_curve = rw_from_salinity(salinity_est, temp_profile)
                 decisions.append(
-                    f"Rw via log method ({rw_result.method}): {rw_value:.4f} ohm.m"
+                    f"Rw via Rxo/Rt clean-water method using {int(np.count_nonzero(valid))} valid samples and depth-wise temperature correction"
                 )
                 return _finalize_rw(
-                    rw_result.method,
-                    rw_value,
+                    "rxo_rt_clean_water",
+                    rw_curve,
                     {
-                        "rmf": self._result.rmf_computed,
-                        "temperature_f": temp_f,
-                        "rw_computed": rw_value,
+                        "rmf_min": float(np.nanmin(rmf_curve)),
+                        "rmf_max": float(np.nanmax(rmf_curve)),
+                        "salinity_ppm_estimated": salinity_est,
+                        "n_points": int(np.count_nonzero(valid)),
                         "source_priority": "rmf -> rxo_rt",
-                        **rw_result.metadata,
                     },
                     ["RSHA", "RDEP"],
                 )
@@ -1104,12 +1348,13 @@ class DynamicWorkflow:
         decisions.append(
             "All Rw priority sources failed (config/LAS RW, salinity, SP, Rxo/Rt) -> default 0.05"
         )
+        rw_curve = rw_from_salinity(float(salinity_from_rw(0.05, reference_temp)), temp_profile)
         return _finalize_rw(
-            "default_fallback",
-            0.05,
+            "default_fallback_profile",
+            rw_curve,
             {
                 "rw_default": 0.05,
-                "formation_temp_f": temp_f,
+                "reference_temp_f": reference_temp,
                 "source_priority": "default",
             },
         )
@@ -1159,28 +1404,133 @@ class DynamicWorkflow:
         trace.decisions = decisions
         return trace
 
-    def _step_porosity(self, well: "Well") -> StepResult:
+    def _resolve_matrix_arrays(self, well: "Well") -> Dict[str, Any]:
         from petrophys.base.constants import MatrixProperties
+
+        try:
+            fallback_props = MatrixProperties.get(self.config.matrix_type)
+        except KeyError:
+            fallback_props = MatrixProperties.get("sandstone")
+
+        fallback_rho_ma = float(self.config.rho_ma if self.config.rho_ma is not None else fallback_props.density)
+        fallback_dt_ma = float(self.config.dt_ma if self.config.dt_ma is not None else fallback_props.slowness)
+        fallback_nphi_ma = float(self.config.nphi_ma if self.config.nphi_ma is not None else fallback_props.nphi)
+
+        rho_ma = np.full(well.n_samples, fallback_rho_ma, dtype=float)
+        dt_ma = np.full(well.n_samples, fallback_dt_ma, dtype=float)
+        nphi_ma = np.full(well.n_samples, fallback_nphi_ma, dtype=float)
+
+        matrix_endpoints: List[Dict[str, Any]] = []
+        matrix_groups_used: List[str] = []
+        matrix_mode = "constant"
+        matrix_source = f"config_or_default[{self.config.matrix_type}]"
+
+        lithology = self._build_lithology_log(well)
+        if isinstance(lithology, np.ndarray):
+            matrix_mode = "lithology_dependent"
+            matrix_source = self._lithology_source
+            valid_groups = _ordered_unique_values(
+                group for group in lithology.tolist()
+                if _coerce_lithology_group(group) is not None
+            )
+            for raw_group in valid_groups:
+                group = _coerce_lithology_group(raw_group)
+                matrix_key = LITHOLOGY_GROUP_TO_MATRIX.get(group or "", self.config.matrix_type)
+                try:
+                    props = MatrixProperties.get(matrix_key)
+                except KeyError:
+                    props = fallback_props
+                    matrix_key = self.config.matrix_type
+
+                mask = np.asarray([item == raw_group for item in lithology], dtype=bool)
+                if not np.any(mask):
+                    continue
+
+                rho_ma[mask] = float(props.density)
+                dt_ma[mask] = float(props.slowness)
+                nphi_ma[mask] = float(props.nphi)
+                matrix_groups_used.append(str(raw_group).upper())
+                matrix_endpoints.append(
+                    {
+                        "lithology_group": str(raw_group).upper(),
+                        "matrix_key": matrix_key,
+                        "rho_ma": float(props.density),
+                        "dt_ma": float(props.slowness),
+                        "nphi_ma": float(props.nphi),
+                    }
+                )
+
+        return {
+            "rho_ma": rho_ma,
+            "dt_ma": dt_ma,
+            "nphi_ma": nphi_ma,
+            "matrix_mode": matrix_mode,
+            "matrix_source": matrix_source,
+            "matrix_groups_used": matrix_groups_used,
+            "matrix_endpoints": matrix_endpoints,
+            "fallback_rho_ma": fallback_rho_ma,
+            "fallback_dt_ma": fallback_dt_ma,
+            "fallback_nphi_ma": fallback_nphi_ma,
+        }
+
+    def _resolve_phi_clay(self, well: "Well", vcl_curve) -> Dict[str, Any]:
+        explicit_phi_cl = _parameter_float(well, "PNSH")
+        explicit_source = "LAS PNSH parameter"
+        if explicit_phi_cl is None:
+            explicit_phi_cl = _constant_zoned_parameter(well, "PNSH")
+            explicit_source = "zoned LAS PNSH fallback"
+
+        if explicit_phi_cl is not None:
+            return {
+                "phi_clay": float(explicit_phi_cl),
+                "phi_clay_source": explicit_source,
+                "phi_clay_basis_count": None,
+                "phi_clay_basis": "explicit_parameter",
+            }
+
+        nphi_curve = well.get("NPHI")
+        if nphi_curve is not None:
+            nphi = np.asarray(nphi_curve.data, dtype=float)
+            shale_mask = np.zeros(well.n_samples, dtype=bool)
+            lithology = self._build_lithology_log(well)
+            if isinstance(lithology, np.ndarray):
+                shale_mask = np.asarray([_is_shale_group(item) for item in lithology], dtype=bool)
+            basis = "lithology_shale_average_nphi"
+
+            valid_mask = shale_mask & np.isfinite(nphi)
+            if not np.any(valid_mask) and vcl_curve is not None:
+                vcl = np.asarray(vcl_curve.data, dtype=float)
+                shale_mask = np.isfinite(vcl) & (vcl > 0.9)
+                valid_mask = shale_mask & np.isfinite(nphi)
+                basis = "vcl_gt_0.9_average_nphi"
+
+            if np.any(valid_mask):
+                phi_clay = float(np.clip(np.nanmean(nphi[valid_mask]), 0.0, 0.6))
+                return {
+                    "phi_clay": phi_clay,
+                    "phi_clay_source": basis,
+                    "phi_clay_basis_count": int(np.count_nonzero(valid_mask)),
+                    "phi_clay_basis": basis,
+                }
+
+        return {
+            "phi_clay": float(self.config.phi_cl),
+            "phi_clay_source": "config_or_default",
+            "phi_clay_basis_count": None,
+            "phi_clay_basis": "config_or_default",
+        }
+
+    def _step_porosity(self, well: "Well") -> StepResult:
         from petrophys.petrophysics.porosity.density_porosity import density_porosity
         from petrophys.petrophysics.porosity.effective_porosity import effective_porosity
         from petrophys.petrophysics.porosity.neutron_porosity import neutron_porosity
-        from petrophys.petrophysics.porosity.sonic_porosity import secondary_porosity, sonic_porosity
+        from petrophys.petrophysics.porosity.sonic_porosity import secondary_porosity, wyllie_time_average
         from petrophys.petrophysics.porosity.total_porosity import total_porosity
 
         trace = StepResult(step="porosity", success=True, method="component_based")
         decisions = []
         inputs = []
         outputs = []
-
-        try:
-            props = MatrixProperties.get(self.config.matrix_type)
-            rho_ma = self.config.rho_ma or props.density
-            dt_ma = self.config.dt_ma or props.slowness
-            nphi_ma = self.config.nphi_ma if self.config.nphi_ma is not None else props.nphi
-        except KeyError:
-            rho_ma = self.config.rho_ma or 2.65
-            dt_ma = self.config.dt_ma or 55.5
-            nphi_ma = self.config.nphi_ma if self.config.nphi_ma is not None else -0.02
 
         nphi_curve = well.get("NPHI")
         rhob_curve = well.get("RHOB")
@@ -1191,12 +1541,20 @@ class DynamicWorkflow:
         existing_phit_curve = well.get("PHIT")
         vcl_curve = well.get("VCL") or well.get("VCLAY")
 
+        matrix_info = self._resolve_matrix_arrays(well)
+        rho_ma = matrix_info["rho_ma"]
+        dt_ma = matrix_info["dt_ma"]
+        nphi_ma = matrix_info["nphi_ma"]
+        phi_clay_info = self._resolve_phi_clay(well, vcl_curve)
+        phi_clay = float(phi_clay_info["phi_clay"])
+
         phin = None
         phid = None
         phis = None
         phit = None
         phie_basis = None
         phie_basis_name = None
+        phit_method = None
         phie = None
 
         if nphi_curve is not None:
@@ -1204,7 +1562,14 @@ class DynamicWorkflow:
             phin = neutron_porosity(nphi_curve.data, nphi_matrix=nphi_ma)
             well.add_curve("PHIN", phin, "v/v", "Neutron Porosity")
             outputs.append("PHIN")
-            decisions.append(f"PHIN from NPHI using matrix neutron response {nphi_ma:.3f}")
+            if matrix_info["matrix_mode"] == "lithology_dependent":
+                decisions.append(
+                    "PHIN from NPHI using lithology-dependent matrix neutron response"
+                )
+            else:
+                decisions.append(
+                    f"PHIN from NPHI using matrix neutron response {matrix_info['fallback_nphi_ma']:.3f}"
+                )
         elif existing_phin_curve is not None:
             phin = existing_phin_curve.data
             inputs.append("PHIN")
@@ -1215,7 +1580,10 @@ class DynamicWorkflow:
             phid = density_porosity(rhob_curve.data, rho_ma, self.config.rho_fl)
             well.add_curve("PHID", phid, "v/v", "Density Porosity")
             outputs.append("PHID")
-            decisions.append("PHID = (rho_ma - RHOB) / (rho_ma - rho_fl)")
+            if matrix_info["matrix_mode"] == "lithology_dependent":
+                decisions.append("PHID = (rho_ma(depth) - RHOB) / (rho_ma(depth) - rho_fl)")
+            else:
+                decisions.append("PHID = (rho_ma - RHOB) / (rho_ma - rho_fl)")
         elif existing_phid_curve is not None:
             phid = existing_phid_curve.data
             inputs.append("PHID")
@@ -1223,10 +1591,13 @@ class DynamicWorkflow:
 
         if dtc_curve is not None:
             inputs.append("DTC")
-            phis = sonic_porosity(dtc_curve.data, matrix=self.config.matrix_type, dtc_fluid=self.config.dt_fl)
+            phis = wyllie_time_average(dtc_curve.data, dt_ma, self.config.dt_fl)
             well.add_curve("PHIS", phis, "v/v", "Sonic Porosity")
             outputs.append("PHIS")
-            decisions.append("PHIS from Wyllie time-average equation")
+            if matrix_info["matrix_mode"] == "lithology_dependent":
+                decisions.append("PHIS from Wyllie time-average equation using dt_ma(depth)")
+            else:
+                decisions.append("PHIS from Wyllie time-average equation")
         elif existing_phis_curve is not None:
             phis = existing_phis_curve.data
             inputs.append("PHIS")
@@ -1236,24 +1607,29 @@ class DynamicWorkflow:
             phit = total_porosity(phin, phid)
             phie_basis = phit
             phie_basis_name = "PHIT"
+            phit_method = "adaptive_nd"
             decisions.append("PHIT = adaptive(PHIN, PHID)")
         elif phid is not None:
             phie_basis = phid
             phie_basis_name = "PHID"
+            phit_method = "density_only"
             decisions.append("Density-only porosity: PHID computed, PHIT not created")
         elif phin is not None:
             phie_basis = phin
             phie_basis_name = "PHIN"
+            phit_method = "neutron_only"
             decisions.append("Neutron-only porosity: PHIN computed, PHIT not created")
         elif phis is not None:
             phie_basis = phis
             phie_basis_name = "PHIS"
+            phit_method = "sonic_only"
             decisions.append("Sonic-only porosity: PHIS computed, PHIT not created")
         else:
             if existing_phit_curve is not None:
                 phit = existing_phit_curve.data
                 phie_basis = phit
                 phie_basis_name = "PHIT"
+                phit_method = "existing_phit"
                 inputs.append("PHIT")
                 decisions.append("PHIT reused from existing well curve")
 
@@ -1269,12 +1645,12 @@ class DynamicWorkflow:
             else:
                 vcl = np.zeros(well.n_samples, dtype=float)
 
-            phie = effective_porosity(phie_basis, vcl, self.config.phi_cl)
+            phie = effective_porosity(phie_basis, vcl, phi_clay)
             well.add_curve("PHIE", phie, "v/v", "Effective Porosity")
             outputs.append("PHIE")
             if vcl_curve is not None:
                 decisions.append(
-                    f"PHIE = {phie_basis_name} - {vcl_curve.mnemonic} * phi_clay ({self.config.phi_cl})"
+                    f"PHIE = {phie_basis_name} - {vcl_curve.mnemonic} * phi_clay ({phi_clay:.3f})"
                 )
             else:
                 decisions.append(f"PHIE = {phie_basis_name} (no clay curve available)")
@@ -1289,12 +1665,27 @@ class DynamicWorkflow:
         trace.output_curves = outputs
         trace.parameters = {
             "matrix_type": self.config.matrix_type,
-            "nphi_ma": nphi_ma,
-            "rho_ma": rho_ma,
+            "matrix_mode": matrix_info["matrix_mode"],
+            "matrix_source": matrix_info["matrix_source"],
+            "matrix_groups_used": matrix_info["matrix_groups_used"],
+            "matrix_endpoints": matrix_info["matrix_endpoints"],
+            "nphi_ma": matrix_info["fallback_nphi_ma"] if matrix_info["matrix_mode"] == "constant" else None,
+            "nphi_ma_min": float(np.nanmin(nphi_ma)),
+            "nphi_ma_max": float(np.nanmax(nphi_ma)),
+            "rho_ma": matrix_info["fallback_rho_ma"] if matrix_info["matrix_mode"] == "constant" else None,
+            "rho_ma_min": float(np.nanmin(rho_ma)),
+            "rho_ma_max": float(np.nanmax(rho_ma)),
             "rho_fl": self.config.rho_fl,
-            "dt_ma": dt_ma,
+            "dt_ma": matrix_info["fallback_dt_ma"] if matrix_info["matrix_mode"] == "constant" else None,
+            "dt_ma_min": float(np.nanmin(dt_ma)),
+            "dt_ma_max": float(np.nanmax(dt_ma)),
             "dt_fl": self.config.dt_fl,
-            "phi_clay": self.config.phi_cl,
+            "phi_clay": phi_clay,
+            "phi_clay_source": phi_clay_info["phi_clay_source"],
+            "phi_clay_basis": phi_clay_info["phi_clay_basis"],
+            "phi_clay_basis_count": phi_clay_info["phi_clay_basis_count"],
+            "phie_basis": phie_basis_name,
+            "phit_method": phit_method,
         }
         trace.decisions = decisions
         return trace
@@ -1336,19 +1727,33 @@ class DynamicWorkflow:
             "sw_model": result.model,
             "sw_model_requested": self.config.sw_model,
             "a": self.config.a, "m": self.config.m, "n": self.config.n,
-            "rw": self._result.rw_computed,
+            "rw_min": float(np.nanmin(np.asarray(self._result.rw_computed, dtype=float))),
+            "rw_max": float(np.nanmax(np.asarray(self._result.rw_computed, dtype=float))),
             "rcl": self._result.rcl_computed,
             "rtsh": self.config.rtsh if self.config.rtsh is not None else self._result.rcl_computed,
             "vsh_exp": self.config.vsh_exp,
             "shale_exp": self.config.shale_exp,
             "vcl_cutoff_for_routing": self.config.vcl_cutoff,
             "lithology_type": self.config.lithology if isinstance(lithology, str) else "per-depth array",
+            "sxo_method": result.sxo_method,
+            "sxo_reason": result.sxo_reason,
         }
+        if self._result.rmf_computed is not None:
+            trace.parameters["rmf_min"] = float(np.nanmin(np.asarray(self._result.rmf_computed, dtype=float)))
+            trace.parameters["rmf_max"] = float(np.nanmax(np.asarray(self._result.rmf_computed, dtype=float)))
         trace.decisions.append(f"Model selected: {result.model}")
         if self.config.sw_model == "auto":
             trace.decisions.append("Auto-routing: depth-by-depth model selection based on VCLAY and lithology")
         trace.decisions.append(f"Archie params: a={self.config.a}, m={self.config.m}, n={self.config.n}")
-        trace.decisions.append(f"Rw = {self._result.rw_computed:.4f}, Rcl = {self._result.rcl_computed}")
+        trace.decisions.append(
+            f"Rw range = {trace.parameters['rw_min']:.4f} to {trace.parameters['rw_max']:.4f}, Rcl = {self._result.rcl_computed}"
+        )
+        if result.sxo_method == "archie_rxo_rmf":
+            trace.decisions.append("SXO from Archie invaded-zone equation using RSHA/RXO and RMF")
+        elif result.sxo_method == "fifth_root_quicklook":
+            trace.decisions.append(
+                f"SXO fallback: SXO = SW^(1/5) because {result.sxo_reason}"
+            )
         if np.any(np.isfinite(result.sw)):
             trace.decisions.append(f"Sw range: {np.nanmin(result.sw):.3f} - {np.nanmax(result.sw):.3f}")
         else:
@@ -1400,17 +1805,6 @@ class DynamicWorkflow:
         if isinstance(result.swi_used, np.ndarray) and result.swi_source == "apparent_buckles":
             well.add_curve("SWIRR_APP", result.swi_used, "v/v", "Apparent Irreducible Water Saturation")
             outputs.append("SWIRR_APP")
-        if self._has_curve(well, "PHIS") and self._has_curve(well, "PHID"):
-            from petrophys.petrophysics.permeability.impermeable_flag import flag_impermeable
-            phis = well.get("PHIS").data
-            phid = well.get("PHID").data
-            nphi = well.get("NPHI")
-            phi_n = nphi.data if nphi is not None else phid
-            imperm = flag_impermeable(phis, phid, phi_n)
-            well.add_curve("IMPERM_FLAG", imperm.astype(float), "", "Impermeable Flag")
-            outputs.append("IMPERM_FLAG")
-            decisions.append(f"Impermeable flag: {int(np.sum(imperm))} samples flagged")
-
         trace.input_curves = [result.metadata.get("porosity_curve", "PHIE")]
         trace.output_curves = outputs
         trace.parameters = {
@@ -1585,9 +1979,19 @@ class DynamicWorkflow:
         raise ValueError("No SXO curve is available")
 
     def _build_lithology_log(self, well: "Well") -> Union[str, np.ndarray]:
-        """Build per-depth lithology from CSV or return global string."""
+        """Build per-depth lithology from well curves, CSV, or global config."""
         if self._lithology_log is not None:
             return self._lithology_log
+
+        gt_curve = well.get("LITHOLOGY_GEOLINK")
+        if gt_curve is not None:
+            try:
+                gt_data = np.asarray(gt_curve.data, dtype=float)
+                self._lithology_log = _group_array_from_numeric_codes(gt_data, GROUND_TRUTH_CODE_TO_GROUP)
+                self._lithology_source = "ground_truth_lithology_geolink"
+                return self._lithology_log
+            except (TypeError, ValueError):
+                pass
 
         if self.config.lithology_csv is not None:
             from petrophys.lithology.lithology_log import (
@@ -1602,8 +2006,20 @@ class DynamicWorkflow:
             well.add_curve(
                 "LITHO_CLASS", self._lithology_log, "", "Lithology Classification"
             )
+            self._lithology_source = "lithology_csv"
             return self._lithology_log
 
+        computed_curve = well.get("LITHO")
+        if computed_curve is not None:
+            try:
+                computed_data = np.asarray(computed_curve.data, dtype=float)
+                self._lithology_log = _group_array_from_numeric_codes(computed_data, COMPUTED_LITHO_CODE_TO_GROUP)
+                self._lithology_source = "computed_lithology_curve"
+                return self._lithology_log
+            except (TypeError, ValueError):
+                pass
+
+        self._lithology_source = "config"
         return self.config.lithology
 
     def _get_avg_formation_temp(self, well: "Well") -> float:

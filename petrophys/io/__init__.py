@@ -17,6 +17,9 @@ from petrophys.io.example_format_export import (
     export_example_format_directory,
     export_example_work_package_directory,
     export_reference_json_work_package_directory,
+    export_reference_json_work_package_by_formation,
+    export_reference_json_work_package_by_formation_lithology,
+    write_reference_curve_name_mapping,
     write_example_format_report,
 )
 
@@ -34,5 +37,8 @@ __all__ = [
     "export_example_format_directory",
     "export_example_work_package_directory",
     "export_reference_json_work_package_directory",
+    "export_reference_json_work_package_by_formation",
+    "export_reference_json_work_package_by_formation_lithology",
+    "write_reference_curve_name_mapping",
     "write_example_format_report",
 ]
