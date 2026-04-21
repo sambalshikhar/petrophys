@@ -15,7 +15,14 @@ from typing import Any, Iterable, List, Optional, Sequence
 
 import numpy as np
 
-from petrophys.analysis import HydrocarbonAnalysis
+from petrophys.analysis import (
+    HydrocarbonAnalysis,
+    LithologyAnalysis,
+    NumericalStatisticalAnalysis,
+    PermeabilityAnalysis,
+    PorosityAnalysis,
+    SaturationAnalysis,
+)
 from petrophys.io.las_reader import read_las
 from petrophys.qaqc.standardization import standardize_curves
 from petrophys.utils.analysis_helpers import CategoryAnalysisResult, build_section
@@ -317,6 +324,142 @@ PRIMARY_LOGS_FOR_COMPLETENESS = [
     "KV_CORE",
     "LITHOLOGY_GEOLINK",
 ]
+
+CATEGORY_CONTEXT_SPECS = {
+    "hydrocarbon": {
+        "analyzer": HydrocarbonAnalysis,
+        "targets": {
+            "TMPC",
+            "RMF",
+            "RW",
+            "RWA",
+            "SAL",
+            "SALAPP",
+            "SALMUDAPP",
+            "PHID",
+            "PHIN",
+            "PHIS",
+            "PHIT",
+            "PHIE",
+            "SW",
+            "SXO",
+            "PERM",
+            "PERM_CC",
+            "VCL",
+            "BVW",
+            "MHI",
+            "PAY_FLAG_PETROPHYSICAL",
+            "CROSSOVER_FLAG",
+            "VP_VS_RATIO",
+            "PRIME_GAS_TARGET",
+            "PRIME_OIL_TARGET",
+            "RESFLAG",
+            "SEALFLAG",
+        },
+    },
+    "saturation": {
+        "analyzer": SaturationAnalysis,
+        "targets": {
+            "TMPC",
+            "RMF",
+            "RW",
+            "RWA",
+            "SAL",
+            "SALAPP",
+            "SALMUDAPP",
+            "PHID",
+            "PHIN",
+            "PHIS",
+            "PHIT",
+            "PHIE",
+            "SW",
+            "SXO",
+            "BVW",
+            "MHI",
+            "ND_SEPARATION",
+            "PHIT_GAS_CORR",
+        },
+    },
+    "permeability": {
+        "analyzer": PermeabilityAnalysis,
+        "targets": {
+            "PERM",
+            "PERM_CC",
+            "RQI",
+            "FZI",
+            "KH",
+            "PERM_QUALITY_INDEX",
+            "RXO_RDEP_RATIO",
+            "PHIE",
+            "PHIT",
+            "VCL",
+            "MHI",
+        },
+    },
+    "porosity": {
+        "analyzer": PorosityAnalysis,
+        "targets": {
+            "PHID",
+            "PHIN",
+            "PHIS",
+            "PHIT",
+            "PHIE",
+            "PHIE_CORECAL",
+            "PHI_SEC",
+            "DS_SEPARATION",
+            "PORO_QUALITY_INDEX",
+            "RQI",
+            "FZI",
+            "VCL",
+        },
+    },
+    "numerical": {
+        "analyzer": NumericalStatisticalAnalysis,
+        "targets": {
+            "TMPC",
+            "RW",
+            "RMF",
+            "BAD_HOLE",
+            "BADHOLEFLAG",
+            "DATA_COMPLETENESS",
+            "GR_GRAD",
+            "RHOB_GRAD",
+            "RDEP_GRAD",
+            "NPHI_GRAD",
+            "DTC_GRAD",
+            "CONSISTENCY_RATIO",
+            "ACOUSTIC_IMPEDANCE",
+            "POISSON_RATIO",
+            "YOUNG_MOD",
+            "BRITTLENESS_INDEX",
+            "ELECTROFACIES",
+            "S_V",
+            "PP_HYDROSTATIC",
+            "SH_MIN",
+            "NET_PAY",
+        },
+    },
+    "lithology": {
+        "analyzer": LithologyAnalysis,
+        "targets": {
+            "LITHO",
+            "VCL",
+            "VQUAR",
+            "VCALC",
+            "VDOLO",
+            "VANHY",
+            "GT_LITHOLOGY_GROUP_CODE",
+            "LIMESTONE_INDICATOR",
+            "DOLOMITE_INDICATOR",
+            "CARBONATE_INDICATOR",
+            "GR_CLAY_INDICATOR",
+            "NPHI_CLAY_INDICATOR",
+            "PEF_CLAY_INDICATOR",
+            "COMPOSITE_CLAY",
+            "CONSISTENCY_SCORE",
+        },
+    },
+}
 
 REFERENCE_CURVE_NAME_MAPPING = {
     "canonical_curve_renames": [
@@ -948,6 +1091,34 @@ def _derived_logs_computed(
     derived.difference_update({"SWA", "SWXOA", "VCLAY", "VSH", "VCLGR", "VCLSP", "VCLND", "VCL_GR", "VCL_SP", "VCL_ND"})
 
     return sorted(derived)
+
+
+def _category_analysis_result(category: str, well: "Well") -> CategoryAnalysisResult:
+    spec = CATEGORY_CONTEXT_SPECS[category]
+    analyzer = spec["analyzer"]()
+    return analyzer.analyze(well, add_curves=False)
+
+
+def _category_derived_logs_computed(
+    category: str,
+    well: "Well",
+    workflow_result,
+    original_curves: set[str],
+    category_result: CategoryAnalysisResult,
+) -> List[str]:
+    base_derived = set(_derived_logs_computed(well, workflow_result, original_curves))
+    category_targets = {
+        _canonical_delivery_curve_name(name)
+        for name in CATEGORY_CONTEXT_SPECS[category]["targets"]
+    }
+
+    derived_curves = {
+        _canonical_delivery_curve_name(name)
+        for name, curve in category_result.derived_curves.items()
+        if curve is not None and np.any(np.isfinite(_normalize_numeric_array(curve.data)))
+    }
+
+    return sorted((base_derived & category_targets) | (derived_curves & category_targets))
 
 
 def _step_lookup(workflow_result) -> tuple[dict[str, Any], set[str]]:
@@ -2706,18 +2877,31 @@ def _build_reference_json_payload(
     lithology_group_name: Optional[str] = None,
     lithology_name: Optional[str] = None,
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
+    analysis_summary_override: Optional[dict[str, Any]] = None,
+    derived_logs_override: Optional[Sequence[str]] = None,
+    include_derived_log_status: bool = True,
 ) -> dict[str, Any]:
     well_name = _reference_well_name(source_file, well)
     depth_info = _depth_summary(well)
     formation_info = formation_depth_info or depth_info
     lithology_info = _build_reference_lithology_info(well, lithology_mapping=lithology_mapping)
     dominant_lithology = _dominant_lithology(well, lithology_mapping=lithology_mapping)
-    derived_logs = _derived_logs_computed(well, workflow_result, original_curves)
-    derived_log_status = _build_reference_derived_log_status(well, workflow_result, original_curves)
+    derived_logs = list(derived_logs_override) if derived_logs_override is not None else _derived_logs_computed(well, workflow_result, original_curves)
     computation_notes = _build_delivery_computation_notes(well, workflow_result)
 
     hydrocarbon_summary = HydrocarbonAnalysis().analyze(well, add_curves=False).to_dict()
     full_analysis_summary = _build_analysis_summary(well, workflow_result)
+    selected_analysis_summary = analysis_summary_override or full_analysis_summary or hydrocarbon_summary
+    data_completeness = {
+        "missing_primary_logs": [name for name in PRIMARY_LOGS_FOR_COMPLETENESS if name not in original_curves],
+        "derived_log_computation_notes": computation_notes,
+    }
+    if include_derived_log_status:
+        data_completeness["derived_log_status"] = _build_reference_derived_log_status(
+            well,
+            workflow_result,
+            original_curves,
+        )
 
     return {
         "formation_info": {
@@ -2744,12 +2928,8 @@ def _build_reference_json_payload(
             "derived_logs_computed": derived_logs,
             "lithology_distribution": _build_lithology_distribution(well, lithology_mapping=lithology_mapping),
             "statistics": _build_reference_statistics(well),
-            "analysis_summary": full_analysis_summary or hydrocarbon_summary,
-            "data_completeness": {
-                "missing_primary_logs": [name for name in PRIMARY_LOGS_FOR_COMPLETENESS if name not in original_curves],
-                "derived_log_computation_notes": computation_notes,
-                "derived_log_status": derived_log_status,
-            },
+            "analysis_summary": selected_analysis_summary,
+            "data_completeness": data_completeness,
             "lithology_info": lithology_info,
             "input_logs_present": sorted(original_curves),
             "BADHOLE_QC_CHECK": _build_reference_bad_hole_qc(well, workflow_result),
@@ -2799,6 +2979,9 @@ def _write_reference_analysis_json_to_path(
     lithology_group_name: Optional[str] = None,
     lithology_name: Optional[str] = None,
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
+    analysis_summary_override: Optional[dict[str, Any]] = None,
+    derived_logs_override: Optional[Sequence[str]] = None,
+    include_derived_log_status: bool = True,
 ) -> Path:
     payload = _build_reference_json_payload(
         well,
@@ -2810,6 +2993,9 @@ def _write_reference_analysis_json_to_path(
         lithology_group_name=lithology_group_name,
         lithology_name=lithology_name,
         lithology_mapping=lithology_mapping,
+        analysis_summary_override=analysis_summary_override,
+        derived_logs_override=derived_logs_override,
+        include_derived_log_status=include_derived_log_status,
     )
     json_path.parent.mkdir(parents=True, exist_ok=True)
     with json_path.open("w", encoding="utf-8") as handle:
@@ -3375,6 +3561,193 @@ def export_reference_json_work_package_by_formation_lithology(
                 )
             )
 
+    return results
+
+
+def export_reference_json_work_package_by_category_formation_lithology(
+    input_dir: str | Path,
+    output_dir: str | Path,
+    tops_file: str | Path,
+    pattern: str = "*.las",
+    recursive: bool = False,
+    minimum_group_thickness: float = 2.0,
+    well_names: Optional[Sequence[str]] = None,
+    lithology_mapping_file: Optional[str | Path] = None,
+) -> List[ExampleFormatExportResult]:
+    from petrophys.workflow.zoned_batch import (
+        _finalize_export_curves,
+        run_dynamic_workflow_with_zones,
+    )
+
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
+    files = _filter_input_files_by_well_names(files, well_names)
+    tops_by_well = _load_excel_formation_segments(tops_file)
+    lithology_mapping = (
+        _load_lithology_mapping_workbook(lithology_mapping_file)
+        if lithology_mapping_file
+        else None
+    )
+
+    results: List[ExampleFormatExportResult] = []
+    for file_path in files:
+        try:
+            full_well = read_las(file_path)
+            full_well = standardize_curves(full_well, rename_curves=True, convert_units=True)
+            formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
+            fallback_warnings: list[str] = []
+
+            well_top = float(full_well.top) if full_well.top is not None else None
+            well_bottom = float(full_well.bottom) if full_well.bottom is not None else None
+            if well_top is None or well_bottom is None:
+                results.append(
+                    ExampleFormatExportResult(
+                        source_file=str(file_path),
+                        output_file="",
+                        success=False,
+                        errors=["Well has no valid depth range for formation slicing."],
+                    )
+                )
+                continue
+
+            if not formation_segments:
+                formation_segments = [
+                    {
+                        "name": "WHOLE_WELL",
+                        "display_name": "WHOLE_WELL",
+                        "top_depth": well_top,
+                        "bottom_depth": None,
+                    }
+                ]
+                fallback_warnings.append(
+                    "No formation tops matched this well in the Excel workbook. Falling back to WHOLE_WELL segmentation."
+                )
+
+            formation_name_counts: dict[str, int] = {}
+            for segment in formation_segments:
+                display_name = str(segment.get("display_name") or segment["name"])
+                formation_name_counts[display_name] = formation_name_counts.get(display_name, 0) + 1
+
+            for segment in formation_segments:
+                raw_top = float(segment["top_depth"])
+                raw_bottom = (
+                    float(segment["bottom_depth"])
+                    if segment["bottom_depth"] is not None
+                    else well_bottom
+                )
+                if raw_bottom <= well_top or raw_top >= well_bottom:
+                    continue
+
+                slice_top = max(raw_top, well_top)
+                slice_bottom = min(raw_bottom, well_bottom)
+                if segment["bottom_depth"] is not None:
+                    slice_bottom = float(np.nextafter(slice_bottom, -np.inf))
+                if slice_bottom <= slice_top:
+                    continue
+
+                formation_input_well = full_well.depth_slice(slice_top, slice_bottom)
+                if formation_input_well.n_samples == 0:
+                    continue
+
+                formation_original_curves = set(formation_input_well.curves)
+                workflow_result = run_dynamic_workflow_with_zones(formation_input_well)
+                warnings = list(fallback_warnings)
+                warnings.extend(workflow_result.warnings)
+                warnings.extend(workflow_result.base_result.warnings)
+                for zone_result in workflow_result.zone_results:
+                    warnings.extend(zone_result.warnings)
+
+                errors = list(workflow_result.base_result.errors)
+                for zone_result in workflow_result.zone_results:
+                    errors.extend(zone_result.errors)
+
+                _finalize_export_curves(workflow_result.well, formation_original_curves)
+                formation_depth_info = _depth_summary(formation_input_well)
+                lithology_segments = _build_lithology_group_segments(
+                    workflow_result.well,
+                    minimum_group_thickness=minimum_group_thickness,
+                    lithology_mapping=lithology_mapping,
+                )
+
+                formation_display_name = str(segment.get("display_name") or segment["name"])
+                for lithology_segment in lithology_segments:
+                    group_well = _well_mask_slice(workflow_result.well, lithology_segment["mask"])
+                    if group_well.n_samples == 0:
+                        continue
+
+                    raw_group_name = str(lithology_segment["group_name"])
+                    raw_lithology_name = str(lithology_segment["lithology"])
+                    json_group_name = raw_group_name
+                    json_lithology_name = raw_lithology_name
+                    file_group_name = raw_group_name
+                    if raw_lithology_name == "NAN":
+                        json_group_name = "No lithology information available"
+                        json_lithology_name = "No lithology information available"
+
+                    file_stem = f"{formation_display_name}_{file_group_name}"
+                    if formation_name_counts.get(formation_display_name, 0) > 1:
+                        file_stem = (
+                            f"{file_stem}"
+                            f"__{formation_depth_info['min_depth']:.1f}_{formation_depth_info['max_depth']:.1f}"
+                        )
+
+                    for category_name in CATEGORY_CONTEXT_SPECS:
+                        category_result = _category_analysis_result(category_name, group_well)
+                        derived_logs = _category_derived_logs_computed(
+                            category_name,
+                            group_well,
+                            workflow_result,
+                            formation_original_curves,
+                            category_result,
+                        )
+                        json_path = (
+                            output_path
+                            / category_name
+                            / _sanitize_path_component(file_path.stem)
+                            / _sanitize_path_component(formation_display_name)
+                            / f"{_sanitize_path_component(file_stem)}_{category_name}.json"
+                        )
+
+                        json_file = _write_reference_analysis_json_to_path(
+                            json_path,
+                            group_well,
+                            workflow_result,
+                            file_path,
+                            formation_original_curves,
+                            formation_name=formation_display_name,
+                            formation_depth_info=formation_depth_info,
+                            lithology_group_name=json_group_name,
+                            lithology_name=json_lithology_name,
+                            lithology_mapping=lithology_mapping,
+                            analysis_summary_override=category_result.to_dict(),
+                            derived_logs_override=derived_logs,
+                            include_derived_log_status=False,
+                        )
+
+                        results.append(
+                            ExampleFormatExportResult(
+                                source_file=str(file_path),
+                                output_file=str(json_file),
+                                success=not errors,
+                                json_file=str(json_file),
+                                curves_exported=0,
+                                warnings=warnings,
+                                errors=errors,
+                            )
+                        )
+        except Exception as exc:
+            results.append(
+                ExampleFormatExportResult(
+                    source_file=str(file_path),
+                    output_file="",
+                    success=False,
+                    errors=[str(exc)],
+                )
+            )
+
+    write_reference_curve_name_mapping(output_path)
     return results
 
 
