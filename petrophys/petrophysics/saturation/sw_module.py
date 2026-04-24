@@ -17,7 +17,7 @@ Lithology can be a single string (applied globally) or a per-depth
 numpy array for interval-based lithology control.
 """
 
-from typing import Optional, Union
+from typing import Dict, Optional, Union
 from dataclasses import dataclass
 from enum import Enum
 import numpy as np
@@ -64,6 +64,7 @@ class SaturationResult:
     model: str
     sxo_method: Optional[str] = None
     sxo_reason: Optional[str] = None
+    model_counts: Optional[Dict[str, int]] = None
 
 
 class SaturationModule:
@@ -210,7 +211,7 @@ class SaturationModule:
                 lithology_array = np.asarray(lithology, dtype=object)
             else:
                 lithology_array = np.full(rt.data.shape, lithology, dtype=object)
-            sw, model_name = self._calculate_depth_routed(
+            sw, model_name, model_counts = self._calculate_depth_routed(
                 rt.data, rw, rcl, salinity, vcl, phie, phit,
                 lithology_array, cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
             )
@@ -222,6 +223,7 @@ class SaturationModule:
             sw = self._run_model(model, rt.data, rw, rcl, vcl, phie, phit,
                                  cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp)
             model_name = model.value
+            model_counts = {model_name: int(rt.data.shape[0])}
 
         # Calculate Sxo from invaded-zone inputs when available; otherwise
         # fall back to a quick-look empirical relation requested by the user.
@@ -249,6 +251,7 @@ class SaturationModule:
             model=model_name,
             sxo_method=sxo_method,
             sxo_reason=sxo_reason,
+            model_counts=model_counts,
         )
 
     @staticmethod
@@ -309,7 +312,11 @@ class SaturationModule:
         model_name = "+".join(ordered_models) if len(ordered_models) > 1 else (
             ordered_models[0] if ordered_models else "archie"
         )
-        return sw, model_name
+        model_counts = {
+            model_name: int(np.count_nonzero(model_per_sample == model_name))
+            for model_name in ordered_models
+        }
+        return sw, model_name, model_counts
 
     def _select_model_scalar(
         self,

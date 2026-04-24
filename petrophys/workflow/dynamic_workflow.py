@@ -117,21 +117,18 @@ def _parameter_temperature_f(well: "Well", name: str) -> Optional[float]:
 def _metadata_bht_f(well: "Well") -> Optional[float]:
     """Return BHT metadata in Fahrenheit."""
     if well.header.bht is not None:
-        return float(well.header.bht)
+        unit = _parameter_text(well, "BHT__UNIT") or getattr(well.header, "bht_unit", "F")
+        return _temperature_to_f(float(well.header.bht), unit)
 
     value = _parameter_float(well, "BHT")
     unit = _parameter_text(well, "BHT__UNIT").lower()
     if value is not None:
-        if "c" in unit and "f" not in unit:
-            return (float(value) * 9.0 / 5.0) + 32.0
-        return float(value)
+        return _temperature_to_f(value, unit)
 
     value = _constant_zoned_parameter(well, "BHT")
     unit = _parameter_text(well, "BHT_Z1__UNIT").lower()
     if value is not None:
-        if "c" in unit and "f" not in unit:
-            return (float(value) * 9.0 / 5.0) + 32.0
-        return float(value)
+        return _temperature_to_f(value, unit)
 
     return None
 
@@ -274,6 +271,7 @@ class DynamicWorkflowConfig:
     rmf_meas_temp_f: float = 75.0
     rmf_salinity_ppm: Optional[float] = None
     rm: Optional[float] = None
+    rm_meas_temp_f: float = 75.0
     mud_water: str = "fresh"  # fresh or salt
 
     # Formation water
@@ -295,9 +293,9 @@ class DynamicWorkflowConfig:
     lithology_csv: Optional[str] = None  # Path to lithology CSV (top, bottom, lithology)
 
     # Archie parameters
-    a: float = 1.0
-    m: float = 2.0
-    n: float = 2.0
+    a: Optional[float] = None
+    m: Optional[float] = None
+    n: Optional[float] = None
 
     # Waxman-Smits parameters
     cec: Optional[float] = None
@@ -631,8 +629,8 @@ class DynamicWorkflow:
 
     def _can_temperature(self, well: "Well") -> bool:
         return (
-            (self.config.bht_f is not None and self.config.td_ft is not None)
-            or _metadata_bht_f(well) is not None
+            well.depth is not None
+            or self._has_curve(well, "DEPT", "DEPTH")
         )
 
     def _can_bad_hole(self, well: "Well") -> bool:
@@ -652,12 +650,16 @@ class DynamicWorkflow:
 
     def _can_rmf(self, well: "Well") -> bool:
         return (
-            self.config.rmf_at_meas_temp is not None
+            str(self.config.mud_type).upper() == "OBM"
+            or self.config.rmf_at_meas_temp is not None
             or self.config.rmf_salinity_ppm is not None
             or self.config.rm is not None
             or well.header.rmf is not None
+            or well.header.rm is not None
             or _parameter_float(well, "RMF") is not None
             or _constant_zoned_parameter(well, "RMF") is not None
+            or _parameter_float(well, "RM") is not None
+            or _constant_zoned_parameter(well, "RM") is not None
         )
 
     def _can_rw(self, well: "Well") -> bool:
@@ -699,53 +701,84 @@ class DynamicWorkflow:
     # ---- STEP implementations ----
 
     def _step_temperature(self, well: "Well") -> StepResult:
-        from petrophys.environmental.temperature.temp_profile import TemperatureProfile
+        from petrophys.environmental.temperature import (
+            calculate_temperature_profile,
+            gradient_to_celsius_per_km,
+        )
 
-        trace = StepResult(step="temperature", success=True, method="linear_gradient_from_BHT")
+        trace = StepResult(step="temperature", success=True, method="temperature_profile")
+        surface_temp_f = (
+            self.config.surface_temp_f
+            if self.config.surface_temp_f is not None
+            else 68.0
+        )
         bht_f = self.config.bht_f
         td_ft = self.config.td_ft
+        td_unit = "ft" if td_ft is not None else None
 
         if bht_f is None:
             bht_f = _metadata_bht_f(well)
-            if bht_f is not None:
-                trace.method = "constant_BHT_metadata"
 
         if td_ft is None and well.header.td is not None:
             td_ft = float(well.header.td)
+            td_unit = well.depth_unit
+        if td_ft is None and well.bottom is not None:
+            td_ft = float(well.bottom)
+            td_unit = well.depth_unit
 
         trace.parameters = {
-            "surface_temp_f": self.config.surface_temp_f,
+            "surface_temp_f": surface_temp_f,
             "bht_f": bht_f,
             "td_ft": td_ft,
+            "td_unit": td_unit,
         }
 
-        if bht_f is None or td_ft is None:
-            temp_f = self._get_avg_formation_temp(well)
-            depth_curve = well.get("DEPT") or well.get("DEPTH")
-            depth_data = depth_curve.data if depth_curve is not None else well.depth
-            if depth_data is not None:
-                temp_array = np.full_like(np.asarray(depth_data, dtype=float), temp_f, dtype=float)
-                well.add_curve("TEMP", temp_array, "degF", "Formation Temperature")
-                trace.output_curves = ["TEMP"]
-                trace.decisions.append(f"Constant temperature from metadata/default = {temp_f:.1f} F")
+        try:
+            result = calculate_temperature_profile(
+                well,
+                bht=bht_f,
+                surface_temp=surface_temp_f,
+                bht_unit="F",
+                surface_temp_unit="F",
+                td=td_ft,
+                td_unit=td_unit,
+                depth_unit=well.depth_unit,
+            )
+        except Exception as exc:
+            trace.success = False
+            trace.message = str(exc)
+            self._result.warnings.append(f"Temperature profile failed: {exc}")
             return trace
 
-        profile = TemperatureProfile.from_bht(
-            bht=bht_f,
-            td=td_ft,
-            surface_temp=self.config.surface_temp_f,
-            bht_unit="F"
+        well.add_curve("TEMP", result.temperature, "degF", "Formation Temperature")
+        well.set_parameter("temperature_gradient", result.gradient)
+        well.set_parameter("surface_temperature", result.surface_temp)
+        well.set_parameter("temperature_profile_source", result.source)
+        if result.reference_temperature is not None:
+            well.set_parameter("temperature_reference_temperature", result.reference_temperature)
+        if result.reference_depth is not None:
+            well.set_parameter("temperature_reference_depth", result.reference_depth)
+
+        self._result.temperature_gradient = result.gradient
+        trace.method = result.source
+        trace.output_curves = ["TEMP"]
+        trace.parameters["gradient_f_per_100ft"] = result.gradient
+        trace.parameters["gradient_c_per_km"] = gradient_to_celsius_per_km(result.gradient)
+        if result.reference_temperature is not None:
+            trace.parameters["reference_temperature_f"] = result.reference_temperature
+        if result.reference_depth is not None:
+            trace.parameters["reference_depth_ft"] = result.reference_depth
+
+        if result.source == "fallback_geothermal_gradient":
+            trace.decisions.append("No BHT temperature anchor found -> using fallback 30 C/km geothermal gradient")
+        else:
+            trace.decisions.append("Temperature profile anchored to BHT metadata/input")
+        trace.decisions.append(
+            f"Gradient = {result.gradient:.4f} F/100ft ({trace.parameters['gradient_c_per_km']:.2f} C/km)"
         )
-        depth_curve = well.get("DEPT") or well.get("DEPTH")
-        depth_data = depth_curve.data if depth_curve is not None else well.depth
-        if depth_data is not None:
-            temp_array = profile.get_temperature(depth_data)
-            well.add_curve("TEMP", temp_array, "degF", "Formation Temperature")
-            self._result.temperature_gradient = profile.gradient
-            trace.output_curves = ["TEMP"]
-            trace.parameters["gradient_f_per_ft"] = profile.gradient
-            trace.decisions.append(f"Gradient = {profile.gradient:.4f} F/ft")
-            trace.decisions.append(f"Temp range: {np.nanmin(temp_array):.1f} - {np.nanmax(temp_array):.1f} F")
+        trace.decisions.append(
+            f"Temp range: {np.nanmin(result.temperature):.1f} - {np.nanmax(result.temperature):.1f} F"
+        )
         return trace
 
     def _step_bad_hole(self, well: "Well") -> StepResult:
@@ -789,6 +822,29 @@ class DynamicWorkflow:
             temp = np.asarray(temp_curve.data, dtype=float)
             if temp.size == well.n_samples:
                 return temp
+
+        if well.depth is not None:
+            from petrophys.environmental.temperature import calculate_temperature_profile
+
+            try:
+                surface_temp_f = (
+                    self.config.surface_temp_f
+                    if self.config.surface_temp_f is not None
+                    else 68.0
+                )
+                result = calculate_temperature_profile(
+                    well,
+                    bht=self.config.bht_f or _metadata_bht_f(well),
+                    surface_temp=surface_temp_f,
+                    bht_unit="F",
+                    surface_temp_unit="F",
+                    td=self.config.td_ft,
+                    td_unit="ft" if self.config.td_ft is not None else None,
+                    depth_unit=well.depth_unit,
+                )
+                return np.asarray(result.temperature, dtype=float)
+            except Exception:
+                pass
 
         avg_temp = self._get_avg_formation_temp(well)
         return np.full(well.n_samples, avg_temp, dtype=float)
@@ -972,6 +1028,7 @@ class DynamicWorkflow:
     def _step_rmf(self, well: "Well") -> StepResult:
         from petrophys.resistivity.rmf.rmf_module import RmfModule
         from petrophys.resistivity.rw.salinity_rw import rw_from_salinity
+        from petrophys.environmental.temperature import correct_resistivity_temperature
 
         trace = StepResult(step="rmf", success=True)
         decisions = []
@@ -983,6 +1040,7 @@ class DynamicWorkflow:
             method: str,
             values: Union[float, np.ndarray],
             parameters: Dict[str, Any],
+            output_curves: Optional[List[str]] = None,
         ) -> StepResult:
             rmf_curve = np.asarray(values, dtype=float)
             if rmf_curve.ndim == 0:
@@ -990,7 +1048,7 @@ class DynamicWorkflow:
             self._result.rmf_computed = rmf_curve
             well.add_curve("RMF", rmf_curve, "ohm.m", "Mud Filtrate Resistivity")
             trace.method = method
-            trace.output_curves = ["RMF"]
+            trace.output_curves = output_curves or ["RMF"]
             trace.parameters = {
                 **parameters,
                 "formation_temp_min_f": float(np.nanmin(temp_profile)),
@@ -1009,11 +1067,15 @@ class DynamicWorkflow:
                 {"rmf": 200.0, "mud_type": "OBM"},
             )
 
-        rmf_meas_temp_f = self.config.rmf_meas_temp_f
+        rmf_meas_temp_f = (
+            self.config.rmf_meas_temp_f
+            if self.config.rmf_meas_temp_f is not None
+            else 75.0
+        )
         if rmf_meas_temp_f == 75.0 and well.header.rm_temp is not None:
             rmf_meas_temp_f = float(well.header.rm_temp)
         metadata_rmf_temp_f = _parameter_temperature_f(well, "RMFT")
-        if metadata_rmf_temp_f is not None and self.config.rmf_meas_temp_f == 75.0:
+        if metadata_rmf_temp_f is not None and rmf_meas_temp_f == 75.0:
             rmf_meas_temp_f = metadata_rmf_temp_f
 
         las_rmf = well.header.rmf
@@ -1022,21 +1084,38 @@ class DynamicWorkflow:
         if las_rmf is None:
             las_rmf = _constant_zoned_parameter(well, "RMF")
 
+        rm_meas_temp_f = (
+            self.config.rm_meas_temp_f
+            if self.config.rm_meas_temp_f is not None
+            else 75.0
+        )
+        if rm_meas_temp_f == 75.0 and well.header.rm_temp is not None:
+            rm_meas_temp_f = float(well.header.rm_temp)
+        metadata_rm_temp_f = _parameter_temperature_f(well, "RMT")
+        if metadata_rm_temp_f is not None and rm_meas_temp_f == 75.0:
+            rm_meas_temp_f = metadata_rm_temp_f
+
+        las_rm = well.header.rm
+        if las_rm is None:
+            las_rm = _parameter_float(well, "RM")
+        if las_rm is None:
+            las_rm = _constant_zoned_parameter(well, "RM")
+
         if self.config.rmf_at_meas_temp is not None:
             rmf_module = RmfModule()
             result = rmf_module.calculate(
                 rmf_surface=self.config.rmf_at_meas_temp,
-                temp_measured=self.config.rmf_meas_temp_f,
+                temp_measured=rmf_meas_temp_f,
                 temp_formation=temp_profile
             )
             decisions.append(f"Rmf corrected from {self.config.rmf_at_meas_temp:.3f} ohm.m "
-                           f"@ {self.config.rmf_meas_temp_f:.0f}F across the temperature profile")
+                           f"@ {rmf_meas_temp_f:.0f}F across the temperature profile")
             return _finalize_rmf(
                 "arps_temperature_profile_correction",
                 result.rmf,
                 {
                     "rmf_at_surface": self.config.rmf_at_meas_temp,
-                    "surface_temp_f": self.config.rmf_meas_temp_f,
+                    "measured_temp_f": rmf_meas_temp_f,
                 },
             )
 
@@ -1099,27 +1178,35 @@ class DynamicWorkflow:
                     "measured_temp_f": rmf_meas_temp_f,
                 },
             )
-        elif self.config.rm is not None:
+        rm_input = self.config.rm if self.config.rm is not None else las_rm
+        if rm_input is not None:
             k = 0.75 if self.config.mud_water == "fresh" else 0.85
-            rmf_module = RmfModule(rmf_conversion_factor=k)
-            result = rmf_module.calculate(
-                rm_surface=self.config.rm,
-                temp_measured=rmf_meas_temp_f,
-                temp_formation=temp_profile,
+            rm_curve = correct_resistivity_temperature(
+                float(rm_input),
+                rm_meas_temp_f,
+                temp_profile,
+                "F",
             )
+            rmf_curve = np.asarray(rm_curve, dtype=float) * k
+            well.add_curve("RM", rm_curve, "ohm.m", "Mud Resistivity")
+            rm_source = "config.rm" if self.config.rm is not None else "LAS metadata"
             decisions.append(
-                f"Rmf = Rm * {k} corrected to formation temperature: "
-                f"{self.config.rm:.4f} at {rmf_meas_temp_f:.0f}F and then along the temperature profile"
+                f"Rm from {rm_source} corrected from {float(rm_input):.4f} ohm.m "
+                f"@ {rm_meas_temp_f:.0f}F across the temperature profile; Rmf = Rm(T) * {k}"
             )
             return _finalize_rmf(
                 f"rm_to_rmf_conversion_factor_{k}",
-                result.rmf,
+                rmf_curve,
                 {
-                    "rm": self.config.rm,
+                    "rm_at_measured_temp": float(rm_input),
+                    "rm_measured_temp_f": rm_meas_temp_f,
+                    "rm_min": float(np.nanmin(rm_curve)),
+                    "rm_max": float(np.nanmax(rm_curve)),
                     "conversion_factor": k,
                     "mud_water": self.config.mud_water,
-                    "measured_temp_f": rmf_meas_temp_f,
+                    "source_priority": rm_source,
                 },
+                ["RM", "RMF"],
             )
 
         trace.decisions = decisions
@@ -1691,15 +1778,20 @@ class DynamicWorkflow:
         return trace
 
     def _step_saturation(self, well: "Well") -> StepResult:
+        from petrophys.base.constants import ArchieParameterDefaults
         from petrophys.petrophysics.saturation.sw_module import SaturationModule
 
         trace = StepResult(step="saturation", success=True)
+        lithology = self._build_lithology_log(well)
+        default_coeffs = ArchieParameterDefaults.get(self.config.lithology)
+        a_value = self.config.a if self.config.a is not None else default_coeffs.a
+        m_value = self.config.m if self.config.m is not None else default_coeffs.m
+        n_value = self.config.n if self.config.n is not None else default_coeffs.n
 
         sw_module = SaturationModule(
-            a=self.config.a, m=self.config.m, n=self.config.n,
+            a=a_value, m=m_value, n=n_value,
             model=self.config.sw_model, vcl_cutoff=self.config.vcl_cutoff
         )
-        lithology = self._build_lithology_log(well)
 
         result = sw_module.calculate(
             well, rw=self._result.rw_computed, rcl=self._result.rcl_computed,
@@ -1712,13 +1804,10 @@ class DynamicWorkflow:
         )
 
         well.add_curve("SW", result.sw, "v/v", f"Water Saturation ({result.model})")
-        well.add_curve("SWA", result.sw, "v/v", f"Water Saturation ({result.model})")
-        outputs = ["SW", "SWA"]
+        outputs = ["SW"]
         if result.sxo is not None:
             well.add_curve("SXO", result.sxo, "v/v", "Flushed Zone Water Saturation")
-            well.add_curve("SWXOA", result.sxo, "v/v", "Flushed Zone Water Saturation")
-            well.add_curve(f"SXO-{result.model}", result.sxo, "v/v", "Flushed Zone Water Saturation")
-            outputs.extend(["SXO", "SWXOA", f"SXO-{result.model}"])
+            outputs.append("SXO")
 
         trace.method = result.model
         trace.input_curves = ["RT", "PHIE", "VCLAY"]
@@ -1726,7 +1815,13 @@ class DynamicWorkflow:
         trace.parameters = {
             "sw_model": result.model,
             "sw_model_requested": self.config.sw_model,
-            "a": self.config.a, "m": self.config.m, "n": self.config.n,
+            "sw_model_sample_counts": result.model_counts or {},
+            "a": a_value, "m": m_value, "n": n_value,
+            "archie_default_lithology": default_coeffs.lithology,
+            "archie_default_note": default_coeffs.note,
+            "archie_a_source": "config_or_las" if self.config.a is not None else "ArchieParameterDefaults",
+            "archie_m_source": "config_or_las" if self.config.m is not None else "ArchieParameterDefaults",
+            "archie_n_source": "config_or_las" if self.config.n is not None else "ArchieParameterDefaults",
             "rw_min": float(np.nanmin(np.asarray(self._result.rw_computed, dtype=float))),
             "rw_max": float(np.nanmax(np.asarray(self._result.rw_computed, dtype=float))),
             "rcl": self._result.rcl_computed,
@@ -1744,7 +1839,15 @@ class DynamicWorkflow:
         trace.decisions.append(f"Model selected: {result.model}")
         if self.config.sw_model == "auto":
             trace.decisions.append("Auto-routing: depth-by-depth model selection based on VCLAY and lithology")
-        trace.decisions.append(f"Archie params: a={self.config.a}, m={self.config.m}, n={self.config.n}")
+            if result.model_counts:
+                trace.decisions.append(
+                    "Depth routing counts: "
+                    + ", ".join(f"{model}={count}" for model, count in result.model_counts.items())
+                )
+        trace.decisions.append(
+            f"Archie params: a={a_value}, m={m_value}, n={n_value} "
+            f"(defaults from {default_coeffs.lithology} where not provided by config/LAS)"
+        )
         trace.decisions.append(
             f"Rw range = {trace.parameters['rw_min']:.4f} to {trace.parameters['rw_max']:.4f}, Rcl = {self._result.rcl_computed}"
         )
@@ -2028,14 +2131,32 @@ class DynamicWorkflow:
         if temp is not None:
             return float(np.nanmean(temp.data))
 
-        bht_meta = _metadata_bht_f(well)
-        if bht_meta is not None:
-            return float(bht_meta)
+        surface_temp_f = (
+            self.config.surface_temp_f
+            if self.config.surface_temp_f is not None
+            else 68.0
+        )
+        bht_f = self.config.bht_f if self.config.bht_f is not None else _metadata_bht_f(well)
+        if bht_f is not None:
+            return (surface_temp_f + float(bht_f)) / 2.0
 
-        if self.config.bht_f is not None:
-            return (self.config.surface_temp_f + self.config.bht_f) / 2.0
+        if well.depth is not None:
+            from petrophys.environmental.temperature import calculate_temperature_profile
 
-        return 150.0  # Default estimate
+            try:
+                result = calculate_temperature_profile(
+                    well,
+                    surface_temp=surface_temp_f,
+                    surface_temp_unit="F",
+                    td=self.config.td_ft,
+                    td_unit="ft" if self.config.td_ft is not None else None,
+                    depth_unit=well.depth_unit,
+                )
+                return float(np.nanmean(result.temperature))
+            except Exception:
+                pass
+
+        return 150.0  # Last-resort estimate when depth is unavailable
 
 
 def run_dynamic_workflow(
@@ -2086,7 +2207,7 @@ def _coerce_to_list(value, field_name: str) -> List[str]:
 
 def build_workflow_config(cfg: Dict[str, Any], td_ft: float) -> DynamicWorkflowConfig:
     return DynamicWorkflowConfig(
-        bht_f=cfg["bht_f"],
+        bht_f=cfg.get("bht_f"),
         td_ft=td_ft,
 
         surface_temp_f=cfg.get("surface_temp_f"),
@@ -2094,6 +2215,8 @@ def build_workflow_config(cfg: Dict[str, Any], td_ft: float) -> DynamicWorkflowC
         rmf_at_meas_temp=cfg.get("rmf_at_meas_temp"),
         rmf_meas_temp_f=cfg.get("rmf_meas_temp_f"),
         rmf_salinity_ppm=cfg.get("rmf_salinity_ppm"),
+        rm=cfg.get("rm"),
+        rm_meas_temp_f=cfg.get("rm_meas_temp_f"),
 
         rw=cfg["rw"],
         rw_meas_temp_f=cfg.get("rw_meas_temp_f"),

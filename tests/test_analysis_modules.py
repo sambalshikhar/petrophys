@@ -93,7 +93,7 @@ def test_run_comprehensive_analysis_returns_all_categories_and_curves():
     assert well.get_result("HYDROCARBON_ANALYSIS") is not None
 
 
-def test_dynamic_workflow_computes_bvw_mhi_and_net_pay_from_sw_aliases():
+def test_dynamic_workflow_computes_bvw_mhi_and_net_pay_from_canonical_saturation_curves():
     well = _build_dynamic_workflow_well()
     config = DynamicWorkflowConfig(
         bht_f=220.0,
@@ -110,8 +110,170 @@ def test_dynamic_workflow_computes_bvw_mhi_and_net_pay_from_sw_aliases():
     executed = {step.step for step in result.steps_executed if getattr(step, "success", False)}
 
     assert {"bvw", "mhi", "net_pay"}.issubset(executed)
-    assert well.get("SWA") is not None
-    assert well.get("SWXOA") is not None
+    assert well.get("SW") is not None
+    assert well.get("SXO") is not None
+    assert well.get("SWA") is None
+    assert well.get("SWXOA") is None
     assert well.get("BVW") is not None
     assert well.get("MHI") is not None
     assert well.get("NET_PAY") is not None
+
+
+def test_saturation_auto_routes_by_vcl_into_one_mixed_sw_curve():
+    from petrophys.petrophysics.saturation.archie import archie
+    from petrophys.petrophysics.saturation.simandoux import simandoux
+    from petrophys.petrophysics.saturation.sw_module import SaturationModule
+
+    depth = np.array([1000.0, 1001.0, 1002.0, 1003.0])
+    rt = np.array([80.0, 60.0, 12.0, 8.0])
+    phie = np.array([0.22, 0.20, 0.18, 0.16])
+    vcl = np.array([0.05, 0.15, 0.45, 0.65])
+
+    well = Well("SAT-MIXED-1")
+    well.depth = depth
+    well.depth_unit = "m"
+    well.add_curve("DEPT", depth, "m", "Depth")
+    well.add_curve("RDEP", rt, "ohm.m", "Deep Resistivity")
+    well.add_curve("PHIE", phie, "v/v", "Effective Porosity")
+    well.add_curve("VCL", vcl, "v/v", "Clay Volume")
+
+    result = SaturationModule(a=1.0, m=2.0, n=2.0, model="auto", vcl_cutoff=0.3).calculate(
+        well,
+        rw=0.05,
+        rcl=5.0,
+        salinity=35000.0,
+        lithology="clastic",
+    )
+
+    expected = np.empty_like(rt)
+    expected[:2] = archie(rt[:2], 0.05, phie[:2], 1.0, 2.0, 2.0)
+    expected[2:] = simandoux(rt[2:], 0.05, phie[2:], vcl[2:], 5.0, 1.0, 2.0, 2.0)
+
+    assert result.sw.shape == depth.shape
+    assert result.model == "archie+simandoux"
+    assert result.model_counts == {"archie": 2, "simandoux": 2}
+    assert np.allclose(result.sw, expected)
+
+
+def test_temperature_profile_uses_bht_or_fallback_gradient():
+    from petrophys.environmental.temperature import calculate_temperature_profile
+
+    well = Well("TEMP-1")
+    depth = np.array([0.0, 500.0, 1000.0])
+    well.depth = depth
+    well.depth_unit = "m"
+    well.set_parameter("FMT", 80.0)
+    well.set_parameter("FMT__UNIT", "C")
+    well.set_parameter("FMTD", 1000.0)
+    well.set_parameter("FMTD__UNIT", "m")
+    well.add_curve("DEPT", depth, "m", "Depth")
+
+    fallback = calculate_temperature_profile(
+        well,
+        surface_temp=20.0,
+        surface_temp_unit="C",
+    )
+    assert fallback.source == "fallback_geothermal_gradient"
+    assert np.allclose(fallback.temperature, np.array([68.0, 95.0, 122.0]))
+
+    bht_c_well = Well("TEMP-BHT-C")
+    bht_c_well.depth = depth
+    bht_c_well.depth_unit = "ft"
+    bht_c_well.header.bht = 100.0
+    bht_c_well.header.td = 1000.0
+    bht_c_well.set_parameter("BHT__UNIT", "C")
+    bht_c_well.add_curve("DEPT", depth, "ft", "Depth")
+
+    bht_c = calculate_temperature_profile(
+        bht_c_well,
+        surface_temp=68.0,
+        surface_temp_unit="F",
+    )
+    assert bht_c.source == "linear_gradient_from_BHT"
+    assert np.allclose(bht_c.temperature, np.array([68.0, 140.0, 212.0]))
+
+
+def test_dynamic_workflow_fallback_temperature_and_corrected_rm_curve():
+    well = _build_dynamic_workflow_well()
+    well.set_parameter("FMT", 80.0)
+    well.set_parameter("FMT__UNIT", "C")
+    well.set_parameter("FMTD", float(well.depth[-1]))
+    well.set_parameter("FMTD__UNIT", "ft")
+    config = DynamicWorkflowConfig(
+        rm=0.6,
+        rm_meas_temp_f=75.0,
+        rw=0.05,
+        matrix_type="sandstone",
+        lithology="clastic",
+    )
+
+    result = DynamicWorkflow(config).run(well)
+    temp_step = next(step for step in result.steps_executed if step.step == "temperature")
+
+    assert temp_step.method == "fallback_geothermal_gradient"
+    assert well.get("TEMP") is not None
+    assert well.get("RM") is not None
+    assert well.get("RMF") is not None
+    assert np.nanmax(well["RM"].data) < 0.6
+    assert np.allclose(well["RMF"].data, well["RM"].data * 0.75)
+
+
+def test_dynamic_workflow_converts_celsius_bht_metadata_for_temperature_profile():
+    well = _build_dynamic_workflow_well()
+    well.header.bht = 100.0
+    well.header.td = float(well.depth[-1])
+    well.set_parameter("BHT__UNIT", "C")
+
+    config = DynamicWorkflowConfig(
+        rm=0.6,
+        rw=0.05,
+        matrix_type="sandstone",
+        lithology="clastic",
+    )
+
+    result = DynamicWorkflow(config).run(well)
+    temp_step = next(step for step in result.steps_executed if step.step == "temperature")
+    rmf_step = next(step for step in result.steps_executed if step.step == "rmf")
+
+    assert temp_step.method == "linear_gradient_from_BHT"
+    assert np.isclose(temp_step.parameters["reference_temperature_f"], 212.0)
+    assert np.isclose(well["TEMP"].data[-1], 212.0)
+    assert np.isclose(rmf_step.parameters["formation_temp_max_f"], 212.0)
+
+
+def test_archie_coefficients_cover_lithology_nomenclature():
+    from petrophys.analysis.lithology_analysis import GROUND_TRUTH_GROUPS, GROUND_TRUTH_NAMES
+    from petrophys.base.constants import ArchieParameterDefaults, DefaultParameters
+    from petrophys.petrophysics.cementation import default_archie_params
+
+    labels = set(GROUND_TRUTH_GROUPS.keys()) | set(GROUND_TRUTH_NAMES.values())
+    labels.update({
+        "SAND",
+        "SHALY_SAND",
+        "CALCAREOUS_SANDSTONE",
+        "SANDY_LIMESTONE",
+        "Cross Bedded Sst",
+        "Dolomite2",
+        "Kaīnite",
+        "Aeolian Sandstone",
+        "Calcareous Debris Flow",
+        "Plutonic Rock",
+        "Volcanic Tuff",
+        "Porous Limestone",
+    })
+
+    for label in labels:
+        coeffs = ArchieParameterDefaults.get(label)
+        assert coeffs.a > 0
+        assert coeffs.m > 0
+        assert coeffs.n > 0
+
+    sand = ArchieParameterDefaults.get("SAND")
+    assert sand.lithology == "sandstone"
+    assert (sand.a, sand.m, sand.n) == (0.81, 2.0, 2.0)
+    assert ArchieParameterDefaults.get("Kaīnite").lithology == "evaporite"
+    assert ArchieParameterDefaults.get("Dolomite2").lithology == "dolomite"
+    assert DefaultParameters.ARCHIE_BY_LITHOLOGY["limestone"] == {"a": 1.0, "m": 2.0, "n": 2.0}
+
+    legacy = default_archie_params("unconsolidated")
+    assert (legacy.a, legacy.m, legacy.n) == (0.62, 2.15, 2.0)

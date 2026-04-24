@@ -37,6 +37,7 @@ PARAMETER_ALIASES: dict[str, str] = {
     "RMF": "rmf_at_meas_temp",
     "RMFT": "rmf_meas_temp_f",
     "RM": "rm",
+    "RMT": "rm_meas_temp_f",
     "CLFL": "rmf_salinity_ppm",
     "BHT": "bht_f",
     "TD": "td_ft",
@@ -44,6 +45,9 @@ PARAMETER_ALIASES: dict[str, str] = {
     "SALINITY": "salinity_ppm",
     "SALINITY_PPM": "salinity_ppm",
     "WATSAL": "salinity_ppm",
+    "WSAL": "salinity_ppm",
+    "WATER_SALINITY": "salinity_ppm",
+    "WATER_SALINITY_PPM": "salinity_ppm",
     "VSHE": "vsh_exp",
     "VSH_EXP": "vsh_exp",
     "SHALE_EXP": "shale_exp",
@@ -236,7 +240,7 @@ def _salinity_to_ppm(value: float, unit: str) -> float:
         return float(value)
     if "mg/l" in text or "mg\\l" in text or "ppm" in text:
         return float(value)
-    if "kppm" in text:
+    if "kppm" in text or "ppk" in text:
         return float(value) * 1000.0
     if "g/l" in text:
         return float(value) * 1000.0
@@ -373,6 +377,33 @@ def _derive_sw_model(overrides: Dict[str, Any], config: DynamicWorkflowConfig) -
 
 
 def _finalize_export_curves(well: "Well", original_curves: set[str]) -> None:
+    if well.get("SW") is None:
+        for alias in ("SWA", "SWT-LOG"):
+            curve = well.get(alias)
+            if curve is not None:
+                well.add_curve("SW", curve.data, "v/v", "Water Saturation")
+                break
+
+    if well.get("SXO") is None:
+        sxo_curve = None
+        for alias in ("SWXOA", "SXO-LOG"):
+            sxo_curve = well.get(alias)
+            if sxo_curve is not None:
+                break
+        if sxo_curve is None:
+            for curve_name in well.curves:
+                if curve_name.upper().startswith("SXO-"):
+                    sxo_curve = well.get(curve_name)
+                    break
+        if sxo_curve is not None:
+            well.add_curve("SXO", sxo_curve.data, "v/v", "Flushed Zone Water Saturation")
+
+    well.remove_curve("SWA")
+    well.remove_curve("SWXOA")
+    for curve_name in list(well.curves):
+        if curve_name.upper().startswith("SXO-"):
+            well.remove_curve(curve_name)
+
     vcl_method_curves = [
         "VCL_GR",
         "VCLGR",
@@ -455,9 +486,9 @@ def _apply_parameter_alias(
         unmapped_parameters.append(base_name)
         return
 
-    if target in {"bht_f", "rmf_meas_temp_f", "rw_meas_temp_f"}:
+    if target in {"bht_f", "rmf_meas_temp_f", "rm_meas_temp_f", "rw_meas_temp_f"}:
         overrides[target] = _temperature_to_f(numeric_value, unit)
-    elif target == "td_ft":
+    elif target in {"td_ft"}:
         overrides[target] = _depth_to_ft(numeric_value, unit)
     elif target in {"salinity_ppm", "rmf_salinity_ppm"}:
         overrides[target] = _salinity_to_ppm(numeric_value, unit)
@@ -616,6 +647,31 @@ def run_dynamic_workflow_with_zones(
 
 
 def _json_safe(value: Any) -> Any:
+    if isinstance(value, np.ndarray):
+        if value.ndim == 0:
+            return _json_safe(value.item())
+        if np.issubdtype(value.dtype, np.number):
+            data = np.asarray(value, dtype=float)
+            finite = data[np.isfinite(data)]
+            summary: Dict[str, Any] = {
+                "type": "ndarray",
+                "shape": list(value.shape),
+                "finite_count": int(finite.size),
+            }
+            if finite.size:
+                summary.update(
+                    {
+                        "min": float(np.nanmin(finite)),
+                        "max": float(np.nanmax(finite)),
+                        "mean": float(np.nanmean(finite)),
+                    }
+                )
+            return summary
+        return {
+            "type": "ndarray",
+            "shape": list(value.shape),
+            "sample": [_json_safe(item) for item in value.flat[:10]],
+        }
     if isinstance(value, dict):
         return {str(key): _json_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
@@ -653,20 +709,35 @@ def _extract_step_value(
     step,
     workflow_result: DynamicWorkflowResult,
     candidate_keys: List[str],
-) -> Optional[float]:
+) -> Optional[str]:
+    def _numeric_summary(value: Any) -> Optional[str]:
+        try:
+            data = np.asarray(value, dtype=float)
+        except (TypeError, ValueError):
+            return None
+
+        if data.ndim == 0:
+            numeric = float(data)
+            return f"{numeric:.6g}" if np.isfinite(numeric) else None
+
+        finite = data[np.isfinite(data)]
+        if finite.size == 0:
+            return None
+        min_value = float(np.nanmin(finite))
+        max_value = float(np.nanmax(finite))
+        if np.isclose(min_value, max_value):
+            return f"{min_value:.6g}"
+        return f"{min_value:.6g}-{max_value:.6g}"
+
     if step_name == "rw" and workflow_result.rw_computed is not None:
-        return float(workflow_result.rw_computed)
+        return _numeric_summary(workflow_result.rw_computed)
     if step_name == "rmf" and workflow_result.rmf_computed is not None:
-        return float(workflow_result.rmf_computed)
+        return _numeric_summary(workflow_result.rmf_computed)
 
     for key in candidate_keys:
-        value = step.parameters.get(key)
-        try:
-            numeric = float(value)
-        except (TypeError, ValueError):
-            continue
-        if np.isfinite(numeric):
-            return numeric
+        summary = _numeric_summary(step.parameters.get(key))
+        if summary is not None:
+            return summary
     return None
 
 
@@ -685,9 +756,9 @@ def _collect_step_summaries(
                 continue
             if step.method:
                 methods.append(f"{prefix}:{step.method}")
-            numeric = _extract_step_value(step_name, step, workflow_result, value_keys)
-            if numeric is not None:
-                values.append(f"{prefix}:{numeric:.6g}")
+            summary = _extract_step_value(step_name, step, workflow_result, value_keys)
+            if summary is not None:
+                values.append(f"{prefix}:{summary}")
 
     unique_methods = list(dict.fromkeys(methods))
     unique_values = list(dict.fromkeys(values))

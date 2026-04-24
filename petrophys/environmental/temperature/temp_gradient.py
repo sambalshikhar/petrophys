@@ -128,6 +128,23 @@ def gradient_to_celsius_per_meter(gradient_f_per_100ft: float) -> float:
     return gradient_f_per_100ft * (5 / 9) / 30.48
 
 
+def gradient_to_celsius_per_km(gradient_f_per_100ft: float) -> float:
+    """
+    Convert gradient from °F/100ft to °C/km.
+
+    Parameters
+    ----------
+    gradient_f_per_100ft : float
+        Gradient in °F per 100 feet
+
+    Returns
+    -------
+    float
+        Gradient in °C per kilometer
+    """
+    return gradient_to_celsius_per_meter(gradient_f_per_100ft) * 1000.0
+
+
 def gradient_to_fahrenheit_per_100ft(gradient_c_per_m: float) -> float:
     """
     Convert gradient from °C/m to °F/100ft.
@@ -143,6 +160,23 @@ def gradient_to_fahrenheit_per_100ft(gradient_c_per_m: float) -> float:
         Gradient in °F per 100 feet
     """
     return gradient_c_per_m * (9 / 5) * 30.48
+
+
+def gradient_c_per_km_to_fahrenheit_per_100ft(gradient_c_per_km: float) -> float:
+    """
+    Convert gradient from °C/km to °F/100ft.
+
+    Parameters
+    ----------
+    gradient_c_per_km : float
+        Gradient in °C per kilometer
+
+    Returns
+    -------
+    float
+        Gradient in °F per 100 feet
+    """
+    return gradient_to_fahrenheit_per_100ft(gradient_c_per_km / 1000.0)
 
 
 def typical_gradient_range() -> Tuple[float, float]:

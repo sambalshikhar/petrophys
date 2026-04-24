@@ -9,6 +9,8 @@ This umbrella module contains tools for:
 from petrophys.environmental.temperature import (
     calculate_temperature_profile,
     calculate_temperature_gradient,
+    gradient_c_per_km_to_fahrenheit_per_100ft,
+    gradient_to_celsius_per_km,
     TemperatureProfile,
     correct_resistivity_temperature,
 )
@@ -16,6 +18,8 @@ from petrophys.environmental.temperature import (
 __all__ = [
     "calculate_temperature_profile",
     "calculate_temperature_gradient",
+    "gradient_c_per_km_to_fahrenheit_per_100ft",
+    "gradient_to_celsius_per_km",
     "TemperatureProfile",
     "correct_resistivity_temperature",
 ]
