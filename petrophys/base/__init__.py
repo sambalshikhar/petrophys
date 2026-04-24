@@ -21,7 +21,12 @@ from petrophys.base.classifications import (
     MhiClassification,
 )
 from petrophys.base.units import UnitConverter, UnitRegistry
-from petrophys.base.constants import MatrixProperties, FluidProperties
+from petrophys.base.constants import (
+    MatrixProperties,
+    FluidProperties,
+    ArchieCoefficients,
+    ArchieParameterDefaults,
+)
 
 __all__ = [
     "Well",
@@ -37,4 +42,6 @@ __all__ = [
     "UnitRegistry",
     "MatrixProperties",
     "FluidProperties",
+    "ArchieCoefficients",
+    "ArchieParameterDefaults",
 ]

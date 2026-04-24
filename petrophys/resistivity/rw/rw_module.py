@@ -165,7 +165,12 @@ class RwModule:
             if temp_curve is not None:
                 temperature = temp_curve.data
             else:
-                temperature = well.header.bht or 150.0
+                try:
+                    from petrophys.environmental.temperature import calculate_temperature_profile
+
+                    temperature = calculate_temperature_profile(well).temperature
+                except Exception:
+                    temperature = well.header.bht or 150.0
 
         # Method selection
         method = self.method

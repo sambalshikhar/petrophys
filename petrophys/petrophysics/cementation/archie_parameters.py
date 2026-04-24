@@ -4,6 +4,8 @@ Archie parameter definitions and defaults.
 
 from dataclasses import dataclass
 
+from petrophys.base.constants import ArchieParameterDefaults
+
 
 @dataclass
 class ArchieParameters:
@@ -18,10 +20,5 @@ class ArchieParameters:
 
 def default_archie_params(formation_type: str = "sandstone") -> ArchieParameters:
     """Get default Archie parameters for formation type."""
-    defaults = {
-        "sandstone": ArchieParameters(a=0.81, m=2.0, n=2.0),  # Humble
-        "limestone": ArchieParameters(a=1.0, m=2.0, n=2.0),
-        "dolomite": ArchieParameters(a=1.0, m=2.0, n=2.0),
-        "unconsolidated": ArchieParameters(a=0.62, m=2.15, n=2.0),  # Humble
-    }
-    return defaults.get(formation_type.lower(), ArchieParameters())
+    coeffs = ArchieParameterDefaults.get(formation_type)
+    return ArchieParameters(a=coeffs.a, m=coeffs.m, n=coeffs.n)

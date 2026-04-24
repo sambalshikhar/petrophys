@@ -31,12 +31,15 @@ class RmfResult:
         Temperature at which Rmf was measured
     temperature_formation : float or np.ndarray
         Formation temperature
+    rm : float or np.ndarray, optional
+        Rm corrected to formation temperature when Rm was the input
     """
 
     rmf: Union[float, np.ndarray]
     rmf_surface: float
     temperature_measured: float
     temperature_formation: Union[float, np.ndarray]
+    rm: Optional[Union[float, np.ndarray]] = None
 
 
 class RmfModule:
@@ -98,11 +101,19 @@ class RmfModule:
         RmfResult
             Rmf calculation results
         """
+        rm_at_formation = None
+
         # Get Rmf at surface
         if rmf_surface is not None:
             rmf_at_surface = rmf_surface
         elif rm_surface is not None:
             rmf_at_surface = rm_surface * self.rmf_conversion_factor
+            rm_at_formation = correct_resistivity_temperature(
+                rm_surface,
+                temp_measured,
+                temp_formation,
+                temp_unit,
+            )
         else:
             raise ValueError("Either rmf_surface or rm_surface must be provided")
 
@@ -118,7 +129,8 @@ class RmfModule:
             rmf=rmf_at_formation,
             rmf_surface=rmf_at_surface,
             temperature_measured=temp_measured,
-            temperature_formation=temp_formation
+            temperature_formation=temp_formation,
+            rm=rm_at_formation,
         )
 
     def calculate_from_well(
@@ -154,8 +166,13 @@ class RmfModule:
         if temp_curve is not None:
             temp_formation = temp_curve.data
         else:
-            # Use BHT as constant
-            temp_formation = well.header.bht or 150.0
+            try:
+                from petrophys.environmental.temperature import calculate_temperature_profile
+
+                temp_formation = calculate_temperature_profile(well).temperature
+            except Exception:
+                # Use BHT as constant when no depth is available for a profile
+                temp_formation = well.header.bht or 150.0
 
         return self.calculate(
             rmf_surface=rmf_surface,

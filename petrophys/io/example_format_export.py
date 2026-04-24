@@ -1175,7 +1175,7 @@ def _missing_curve_reason(
         return "DTC and DTS were present but VP_VS_RATIO was not written"
 
     if curve == "TMPC":
-        return "not calculated because no temperature source (TEMP, BHT, or TD) was available"
+        return "not calculated because TEMP was unavailable and a fallback temperature profile could not be written"
 
     if curve in {"PHIE_CORECAL", "PERM_CC"} and step is not None:
         same_well_models = step.parameters.get("same_well_core_models")
@@ -1370,6 +1370,7 @@ def _method_label(name: str) -> str:
         "default_fallback_profile": "default RW fallback (0.05 ohm.m) with depth-wise temperature correction",
         "component_based": "component-based porosity workflow",
         "linear_gradient_from_BHT": "linear temperature gradient from BHT",
+        "fallback_geothermal_gradient": "fallback 30 C/km geothermal gradient",
         "constant_BHT_metadata": "constant BHT from LAS header",
         "caliper_drho_flags": "caliper roughness with DRHO fallback",
         "linear": "linear VCL method",

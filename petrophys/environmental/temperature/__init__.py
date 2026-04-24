@@ -12,6 +12,8 @@ from petrophys.environmental.temperature.temp_profile import (
 from petrophys.environmental.temperature.temp_gradient import (
     calculate_temperature_gradient,
     estimate_gradient_from_bht,
+    gradient_c_per_km_to_fahrenheit_per_100ft,
+    gradient_to_celsius_per_km,
 )
 from petrophys.environmental.temperature.temp_corrections import (
     correct_resistivity_temperature,
@@ -23,6 +25,8 @@ __all__ = [
     "calculate_temperature_profile",
     "calculate_temperature_gradient",
     "estimate_gradient_from_bht",
+    "gradient_c_per_km_to_fahrenheit_per_100ft",
+    "gradient_to_celsius_per_km",
     "correct_resistivity_temperature",
     "arps_equation",
 ]

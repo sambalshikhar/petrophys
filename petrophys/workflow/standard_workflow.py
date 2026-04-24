@@ -428,12 +428,12 @@ class StandardWorkflow:
                 shale_exp=self.config.shale_exp,
             )
             well.add_curve("SW", result.sw, "v/v", f"Water Saturation ({result.model})")
-            well.add_curve("SWA", result.sw, "v/v", f"Water Saturation ({result.model})")
+            outputs = ["SW"]
             if result.sxo is not None:
                 well.add_curve("SXO", result.sxo, "v/v", "Flushed Zone Water Saturation")
-                well.add_curve("SWXOA", result.sxo, "v/v", "Flushed Zone Water Saturation")
+                outputs.append("SXO")
             trace.input_curves = ["RDEP", "PHIE"]
-            trace.output_curves = ["SW", "SWA"] + (["SXO", "SWXOA"] if result.sxo is not None else [])
+            trace.output_curves = outputs
             trace.decisions.append(f"Sw ({self.config.saturation_model}): "
                                   f"a={self.config.a}, m={self.config.m}, n={self.config.n}, "
                                   f"Rw={rw:.4f}")
