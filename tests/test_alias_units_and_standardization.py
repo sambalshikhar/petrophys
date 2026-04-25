@@ -85,6 +85,7 @@ def test_curve_standardization_renames_aliases_and_corrects_units():
     well.add_curve("ZDEN", np.array([2200.0, 2400.0]), "kg/m3", "Density")
     well.add_curve("TNPH", np.array([20.0, 35.0]), "pu", "Neutron")
     well.add_curve("CAL", np.array([216.0, 254.0]), "mm", "Caliper")
+    well.add_curve("PHIE_CORECAL", np.array([0.12, 0.18]), "v/v", "Legacy core-calibrated porosity")
 
     standardized = standardize_curves(well, rename_curves=True, convert_units=True)
 
@@ -92,7 +93,10 @@ def test_curve_standardization_renames_aliases_and_corrects_units():
     assert standardized.get("RHOB") is not None
     assert standardized.get("NPHI") is not None
     assert standardized.get("CALI") is not None
+    assert standardized.get("PHIE_CC") is not None
+    assert standardized.get("PHIE_CORECAL") is None
     np.testing.assert_allclose(standardized["RDEP"].data, np.array([3.048, 6.096]))
     np.testing.assert_allclose(standardized["RHOB"].data, np.array([2.2, 2.4]))
     np.testing.assert_allclose(standardized["NPHI"].data, np.array([0.20, 0.35]))
     np.testing.assert_allclose(standardized["CALI"].data, np.array([8.5039416, 10.0000054]))
+    np.testing.assert_allclose(standardized["PHIE_CC"].data, np.array([0.12, 0.18]))

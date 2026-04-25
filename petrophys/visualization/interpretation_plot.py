@@ -208,12 +208,12 @@ class InterpretationPlot:
 
         phit = self.well.get("PHIT")
         phie = self.well.get("PHIE")
-        phie_corecal = self.well.get("PHIE_CORECAL")
+        phie_cc = self.well.get("PHIE_CC")
         phit_data = np.asarray(phit.data, dtype=float) if phit is not None else None
         phie_data = np.asarray(phie.data, dtype=float) if phie is not None else None
-        phie_corecal_data = (
-            np.asarray(phie_corecal.data, dtype=float)
-            if phie_corecal is not None
+        phie_cc_data = (
+            np.asarray(phie_cc.data, dtype=float)
+            if phie_cc is not None
             else None
         )
 
@@ -247,9 +247,9 @@ class InterpretationPlot:
             )
             ax.plot(phie_data, depth, color='crimson', linewidth=0.7, label='PHIE')
 
-        if phie_corecal_data is not None:
+        if phie_cc_data is not None:
             ax.plot(
-                phie_corecal_data,
+                phie_cc_data,
                 depth,
                 color='darkmagenta',
                 linewidth=0.8,

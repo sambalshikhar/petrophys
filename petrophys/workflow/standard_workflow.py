@@ -470,12 +470,12 @@ class StandardWorkflow:
             perm_core = result.metadata.get("perm_core")
             if phi_corecal is not None:
                 well.add_curve(
-                    "PHIE_CORECAL",
+                    "PHIE_CC",
                     phi_corecal,
                     "v/v",
                     "Permeability input porosity from core calibration",
                 )
-                trace.output_curves.append("PHIE_CORECAL")
+                trace.output_curves.append("PHIE_CC")
             if perm_core is not None:
                 well.add_curve(
                     "PERM_CC",

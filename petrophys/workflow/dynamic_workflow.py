@@ -2278,12 +2278,12 @@ class DynamicWorkflow:
         perm_core = result.metadata.get("perm_core")
         if phi_corecal is not None:
             well.add_curve(
-                "PHIE_CORECAL",
+                "PHIE_CC",
                 phi_corecal,
                 "v/v",
                 "Permeability input porosity from core calibration",
             )
-            outputs.append("PHIE_CORECAL")
+            outputs.append("PHIE_CC")
         if perm_core is not None:
             well.add_curve(
                 "PERM_CC",

@@ -60,7 +60,7 @@ PREFERRED_CURVE_ORDER = [
     "PHIS",
     "PHIT",
     "PHIE",
-    "PHIE_CORECAL",
+    "PHIE_CC",
     "PHI_SEC",
     "RW",
     "RMF",
@@ -115,7 +115,7 @@ FAMILY_LABELS = {
     "PHIS": "Sonic Porosity",
     "PHIT": "Total Porosity",
     "PHIE": "Effective Porosity",
-    "PHIE_CORECAL": "Core-Calibrated Porosity",
+    "PHIE_CC": "Core-Calibrated Porosity",
     "PHI_SEC": "Secondary Porosity",
     "RW": "Formation Water Resistivity",
     "RMF": "Mud Filtrate Resistivity",
@@ -169,7 +169,6 @@ EXCLUDED_LAS_CURVES = {
     "NET_PAY",
     "NET_RES",
     "NET_ROCK",
-    "PAY_FLAG_PETROPHYSICAL",
     "PRIME_GAS_TARGET",
     "PRIME_OIL_TARGET",
     "RESFLAG",
@@ -230,7 +229,7 @@ REFERENCE_DERIVED_LOG_TARGETS = [
     "PHIT",
     "PHIE",
     "PHI_SEC",
-    "PHIE_CORECAL",
+    "PHIE_CC",
     "SW",
     "SXO",
     "PERM",
@@ -256,16 +255,6 @@ REFERENCE_DERIVED_LOG_TARGETS = [
     "VP_VS_RATIO",
 ]
 
-# These are hydrocarbon-analysis labels derived by HydrocarbonAnalysis, not
-# standalone dynamic-workflow curves. They may appear in hydrocarbon category
-# summaries, but they are intentionally omitted from generic missing-curve
-# routing notes.
-ANALYSIS_ONLY_DERIVED_CURVES = {
-    "PAY_FLAG_PETROPHYSICAL",
-    "PRIME_GAS_TARGET",
-    "PRIME_OIL_TARGET",
-}
-
 REFERENCE_CURVE_TO_STEP = {
     "TMPC": "temperature",
     "BAD_HOLE": "bad_hole",
@@ -283,7 +272,7 @@ REFERENCE_CURVE_TO_STEP = {
     "SXO": "saturation",
     "PERM": "permeability",
     "PERM_CC": "permeability",
-    "PHIE_CORECAL": "permeability",
+    "PHIE_CC": "permeability",
     "SWIRR_APP": "permeability",
     "RQI": "rock_quality",
     "PHI_NORM": "rock_quality",
@@ -303,7 +292,6 @@ REFERENCE_CURVE_TO_STEP = {
     "SEALFLAG": "net_pay",
     "CROSSOVER_FLAG": "net_pay",
     "VP_VS_RATIO": "net_pay",
-    "PAY_FLAG_PETROPHYSICAL": "net_pay",
     "PRIME_GAS_TARGET": "net_pay",
     "PRIME_OIL_TARGET": "net_pay",
 }
@@ -355,7 +343,6 @@ CATEGORY_CONTEXT_SPECS = {
             "VCL",
             "BVW",
             "MHI",
-            "PAY_FLAG_PETROPHYSICAL",
             "CROSSOVER_FLAG",
             "VP_VS_RATIO",
             "PRIME_GAS_TARGET",
@@ -411,7 +398,7 @@ CATEGORY_CONTEXT_SPECS = {
             "PHIS",
             "PHIT",
             "PHIE",
-            "PHIE_CORECAL",
+            "PHIE_CC",
             "PHI_SEC",
             "DS_SEPARATION",
             "PORO_QUALITY_INDEX",
@@ -1292,11 +1279,11 @@ def _missing_curve_reason(
     if curve == "RMF":
         return "no RMF, RM, CLFL salinity, or RMF salinity input was available, and mud type was not OBM"
 
-    if curve in {"PHIE_CORECAL", "PERM_CC"} and step is not None:
+    if curve in {"PHIE_CC", "PERM_CC"} and step is not None:
         same_well_models = step.parameters.get("same_well_core_models")
         peer_models = step.parameters.get("peer_core_models")
         if (same_well_models or 0) == 0 and (peer_models or 0) == 0:
-            if curve == "PHIE_CORECAL":
+            if curve == "PHIE_CC":
                 return "no usable core porosity calibration was available; requires paired log porosity and core porosity"
             return "no usable core permeability calibration was available; requires paired porosity and core permeability"
 
@@ -1315,20 +1302,6 @@ def _missing_curve_reason(
         if not has_deep:
             return "deep resistivity curve was unavailable; requires RDEP or RT"
 
-    if curve == "PAY_FLAG_PETROPHYSICAL":
-        if well.get("NET_PAY") is not None:
-            return "NET_PAY is the exported workflow pay flag; PAY_FLAG_PETROPHYSICAL is an analysis-only alias"
-        missing_inputs = [
-            name
-            for name, present in (
-                ("PHIE", well.get("PHIE") is not None),
-                ("SW", well.get("SW") is not None),
-            )
-            if not present
-        ]
-        if missing_inputs:
-            return "required input curves unavailable: " + ", ".join(missing_inputs)
-
     if curve == "PRIME_GAS_TARGET":
         required = {
             "CROSSOVER_FLAG": well.get("CROSSOVER_FLAG") is not None,
@@ -1343,7 +1316,7 @@ def _missing_curve_reason(
 
     if curve == "PRIME_OIL_TARGET":
         required = {
-            "NET_PAY or PAY_FLAG_PETROPHYSICAL": well.get("NET_PAY") is not None or well.get("PAY_FLAG_PETROPHYSICAL") is not None,
+            "NET_PAY": well.get("NET_PAY") is not None,
             "PHIE": well.get("PHIE") is not None,
             "PERM or PERM_CC": well.get("PERM") is not None or well.get("PERM_CC") is not None,
         }
@@ -2930,12 +2903,12 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         return f"PERM: {equation}{swirr_text}{cap_text}."
     if curve == "PERM_CC":
         if status == "computed" and step is not None:
-            return "PERM_CC: core-calibrated transform; PHIE_CORECAL=A*PHIE+B, PERM_CC=10^(A2*PHIE_CORECAL+B2), clipped 0.001-10000 mD."
+            return "PERM_CC: core-calibrated transform; PHIE_CC=A*PHIE+B, PERM_CC=10^(A2*PHIE_CC+B2), clipped 0.001-10000 mD."
         return f"PERM_CC: skipped because {reason}."
-    if curve == "PHIE_CORECAL":
+    if curve == "PHIE_CC":
         if status == "computed" and step is not None:
-            return "PHIE_CORECAL: core porosity correction; PHIE_CORECAL=A*PHIE+B, clipped 0-0.5."
-        return f"PHIE_CORECAL: skipped because {reason}."
+            return "PHIE_CC: core porosity correction; PHIE_CC=A*PHIE+B, clipped 0-0.5."
+        return f"PHIE_CC: skipped because {reason}."
     if curve == "SWIRR_APP" and step is not None:
         metadata = params.get("swirr_metadata") or {}
         return (
@@ -2977,8 +2950,6 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         return f"NET_PAY: 1 where NET_RES=1 and SW<{params.get('sw_cutoff')}; else 0."
     if curve == "SEALFLAG" and step is not None:
         return f"SEALFLAG: 1 where VCL>={params.get('seal_vcl_cutoff', 0.8)}; else 0."
-    if curve == "PAY_FLAG_PETROPHYSICAL" and status != "missing":
-        return "PAY_FLAG_PETROPHYSICAL: resolved pay flag; 1 where existing PAY_FLAG_PETROPHYSICAL/NET_PAY>0.5."
     if curve == "PRIME_GAS_TARGET" and status != "missing":
         return "PRIME_GAS_TARGET: 1 where CROSSOVER_FLAG=1, VP_VS_RATIO<1.75, and reservoir quality is GOOD/EXCELLENT."
     if curve == "PRIME_OIL_TARGET" and status != "missing":
@@ -3720,8 +3691,8 @@ def _build_delivery_computation_notes(
                 details.append("PHIE was calculated from the selected porosity basis and VCL clay correction.")
         if well.get("PHI_SEC") is not None:
             details.append("PHI_SEC = max(PHIT - PHIS, 0).")
-        if well.get("PHIE_CORECAL") is not None:
-            details.append("PHIE_CORECAL was written separately where a valid core-calibration model existed.")
+        if well.get("PHIE_CC") is not None:
+            details.append("PHIE_CC was written separately where a valid core-calibration model existed.")
         notes.append("POROSITY: " + " ".join(details))
 
     saturation_steps = _all_step_results(workflow_result, "saturation")
@@ -3950,13 +3921,13 @@ def _build_delivery_computation_notes(
         seal_cutoff = _format_numeric_summary(_step_parameter_values(net_pay_steps, "seal_vcl_cutoff"), 2)
         net_rock_count = int(np.nansum(_normalize_numeric_array(well.get("NET_ROCK").data) > 0.5)) if well.get("NET_ROCK") is not None else 0
         resflag_count = int(np.nansum(_normalize_numeric_array(well.get("RESFLAG").data) > 0.5)) if well.get("RESFLAG") is not None else 0
-        payflag_curve = well.get("PAY_FLAG_PETROPHYSICAL") or well.get("NET_PAY")
+        payflag_curve = well.get("NET_PAY")
         payflag_count = int(np.nansum(_normalize_numeric_array(payflag_curve.data) > 0.5)) if payflag_curve is not None else 0
         seal_count = int(np.nansum(_normalize_numeric_array(well.get("SEALFLAG").data) > 0.5)) if well.get("SEALFLAG") is not None else 0
         note = (
             "WORKFLOW FLAGS: NET_ROCK is defined where VCL is below the clean-rock cutoff, "
             "RESFLAG / NET_RES additionally require PHIE above the reservoir cut-off, and "
-            "PAY_FLAG_PETROPHYSICAL / NET_PAY additionally require water saturation below the pay cut-off."
+            "NET_PAY additionally requires water saturation below the pay cut-off."
         )
         if vcl_cutoff and phie_cutoff and sw_cutoff:
             note += f" Cutoffs used in this well: VCL < {vcl_cutoff}, PHIE > {phie_cutoff}, SW < {sw_cutoff}."
@@ -3964,7 +3935,7 @@ def _build_delivery_computation_notes(
             note += f" SEALFLAG = 1 where VCL >= {seal_cutoff}."
         note += (
             f" Positive sample counts in this well: NET_ROCK={net_rock_count}, RESFLAG={resflag_count}, "
-            f"PAY_FLAG_PETROPHYSICAL={payflag_count}, SEALFLAG={seal_count}."
+            f"NET_PAY={payflag_count}, SEALFLAG={seal_count}."
         )
         if well.get("CROSSOVER_FLAG") is not None:
             note += " CROSSOVER_FLAG = 1 where PHID - PHIN > 0.01."
