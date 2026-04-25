@@ -83,6 +83,16 @@ def build_parser() -> argparse.ArgumentParser:
             "the exporter reuses those exact formation/lithology intervals and file stems."
         ),
     )
+    parser.add_argument(
+        "--raw-input-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Optional directory containing the raw LAS files. When supplied, "
+            "input_logs_present and derived/raw classification use these curves. "
+            "If omitted and --input-dir ends with _processed, a sibling raw directory is inferred."
+        ),
+    )
     return parser
 
 
@@ -100,6 +110,7 @@ def main() -> int:
         well_names=args.well_names,
         lithology_mapping_file=args.lithology_mapping_file,
         reference_structure_dir=args.reference_structure_dir,
+        raw_input_dir=args.raw_input_dir,
     )
     mapping_path = write_reference_curve_name_mapping(args.output_dir)
 
@@ -116,6 +127,7 @@ def main() -> int:
     print(f"Min thickness:  {args.min_thickness}")
     print(f"Litho map:      {args.lithology_mapping_file}")
     print(f"Reference dir:  {args.reference_structure_dir}")
+    print(f"Raw input LAS:  {args.raw_input_dir or 'auto'}")
     if args.well_names:
         print(f"Wells filter:   {', '.join(args.well_names)}")
     print(f"Mapping:        {mapping_path}")
