@@ -138,6 +138,43 @@ FAMILY_LABELS = {
     "SWIRR_APP": "Apparent Irreducible Water Saturation",
     "INVASION_RATIO": "Invasion Ratio Rxo/Rt",
     "MHI": "Moveable Hydrocarbon Index",
+    "LITHOLOGY_GROUP": "Lithology Group",
+    "LITHOLOGY_NAME": "Lithology Name",
+    "GT_LITHOLOGY_GROUP_CODE": "Lithology Group Code",
+    "LIMESTONE_INDICATOR": "Limestone Indicator",
+    "DOLOMITE_INDICATOR": "Dolomite Indicator",
+    "CARBONATE_INDICATOR": "Carbonate Indicator",
+    "GR_CLAY_INDICATOR": "GR Clay Indicator",
+    "NPHI_CLAY_INDICATOR": "NPHI Clay Indicator",
+    "PEF_CLAY_INDICATOR": "PEF Clay Indicator",
+    "COMPOSITE_CLAY": "Composite Clay Indicator",
+    "COMPOSITE_CLAY_INDICATOR": "Composite Clay Indicator",
+    "CONSISTENCY_SCORE": "Lithology Consistency Score",
+    "ND_SEPARATION": "Neutron-Density Separation",
+    "PHIT_GAS_CORR": "Gas-Corrected Total Porosity Proxy",
+    "DS_SEPARATION": "Density-Sonic Separation",
+    "PORO_QUALITY_INDEX": "Porosity Quality Index",
+    "RXO_RDEP_RATIO": "Flushed-to-Deep Resistivity Ratio",
+    "SEPARATION_RATIO": "Invasion Separation Ratio",
+    "KH": "Flow Capacity",
+    "PERM_QUALITY_INDEX": "Permeability Quality Index",
+    "DATA_COMPLETENESS": "Data Completeness",
+    "GR_GRAD": "Gamma Ray Gradient",
+    "RHOB_GRAD": "Bulk Density Gradient",
+    "RDEP_GRAD": "Deep Resistivity Gradient",
+    "NPHI_GRAD": "Neutron Porosity Gradient",
+    "DTC_GRAD": "Compressional Slowness Gradient",
+    "CONSISTENCY_RATIO": "Log Consistency Ratio",
+    "ACOUSTIC_IMPEDANCE": "Acoustic Impedance",
+    "POISSON_RATIO": "Poisson Ratio",
+    "YOUNG_MOD": "Young's Modulus",
+    "BRITTLENESS_INDEX": "Brittleness Index",
+    "ELECTROFACIES": "Electrofacies",
+    "S_V": "Overburden Stress",
+    "PP_HYDROSTATIC": "Hydrostatic Pore Pressure",
+    "SH_MIN": "Minimum Horizontal Stress",
+    "PRIME_GAS_TARGET": "Prime Gas Target Flag",
+    "PRIME_OIL_TARGET": "Prime Oil Target Flag",
 }
 
 ALIASED_SOURCE_CURVES = {
@@ -157,15 +194,41 @@ EXCLUDED_LAS_CURVES = {
     "CALI_SMOOTH",
     "CALI_ROUGHNESS",
     "COMPOSITE_CLAY",
+    "COMPOSITE_CLAY_INDICATOR",
     "CONSISTENCY_SCORE",
     "CROSSOVER_FLAG",
     "GT_LITHOLOGY_GROUP_CODE",
+    "LITHOLOGY_GROUP",
+    "LITHOLOGY_NAME",
     "LIMESTONE_INDICATOR",
     "DOLOMITE_INDICATOR",
     "CARBONATE_INDICATOR",
     "GR_CLAY_INDICATOR",
     "NPHI_CLAY_INDICATOR",
     "PEF_CLAY_INDICATOR",
+    "ND_SEPARATION",
+    "PHIT_GAS_CORR",
+    "DS_SEPARATION",
+    "PORO_QUALITY_INDEX",
+    "RXO_RDEP_RATIO",
+    "SEPARATION_RATIO",
+    "KH",
+    "PERM_QUALITY_INDEX",
+    "DATA_COMPLETENESS",
+    "GR_GRAD",
+    "RHOB_GRAD",
+    "RDEP_GRAD",
+    "NPHI_GRAD",
+    "DTC_GRAD",
+    "CONSISTENCY_RATIO",
+    "ACOUSTIC_IMPEDANCE",
+    "POISSON_RATIO",
+    "YOUNG_MOD",
+    "BRITTLENESS_INDEX",
+    "ELECTROFACIES",
+    "S_V",
+    "PP_HYDROSTATIC",
+    "SH_MIN",
     "NET_PAY",
     "NET_RES",
     "NET_ROCK",
@@ -450,7 +513,10 @@ CATEGORY_CONTEXT_SPECS = {
             "NPHI_CLAY_INDICATOR",
             "PEF_CLAY_INDICATOR",
             "COMPOSITE_CLAY",
+            "COMPOSITE_CLAY_INDICATOR",
             "CONSISTENCY_SCORE",
+            "LITHOLOGY_GROUP",
+            "LITHOLOGY_NAME",
         },
     },
 }
@@ -471,6 +537,16 @@ REFERENCE_CURVE_NAME_MAPPING = {
             "current_export_name": "VCL",
             "previous_example_name": "VSH",
             "notes": "The final clay-volume curve is exported as VCL.",
+        },
+        {
+            "current_export_name": "GT_LITHOLOGY_GROUP_CODE",
+            "previous_example_name": "LITHOLOGY_GROUP",
+            "notes": "Lithology group is exported as a numeric grouped-code curve.",
+        },
+        {
+            "current_export_name": "COMPOSITE_CLAY",
+            "previous_example_name": "COMPOSITE_CLAY_INDICATOR",
+            "notes": "Composite clay indicator is exported as COMPOSITE_CLAY.",
         },
     ],
     "method_specific_legacy_names": [
@@ -1217,7 +1293,14 @@ def _category_derived_logs_computed(
         if curve is not None and np.any(np.isfinite(_normalize_numeric_array(curve.data)))
     }
 
-    return sorted((base_derived & category_targets) | (derived_curves & category_targets))
+    computed = (base_derived & category_targets) | (derived_curves & category_targets)
+    if category == "lithology":
+        if "GT_LITHOLOGY_GROUP_CODE" in computed:
+            computed.update({"LITHOLOGY_GROUP", "LITHOLOGY_NAME"})
+        if "COMPOSITE_CLAY" in computed:
+            computed.add("COMPOSITE_CLAY_INDICATOR")
+
+    return sorted(computed)
 
 
 def _step_lookup(workflow_result) -> tuple[dict[str, Any], set[str]]:
@@ -1242,6 +1325,12 @@ def _missing_curve_reason(
 ) -> str:
     step_name = REFERENCE_CURVE_TO_STEP.get(curve)
     step = step_results.get(step_name) if step_name else None
+
+    def missing_required(required: dict[str, bool]) -> str:
+        missing_inputs = [name for name, present in required.items() if not present]
+        if missing_inputs:
+            return "required input curves unavailable: " + ", ".join(missing_inputs)
+        return ""
 
     if curve == "SXO":
         sw_present = "SW" in computed_curves or "SW" in well.curves
@@ -1278,6 +1367,31 @@ def _missing_curve_reason(
 
     if curve == "RMF":
         return "no RMF, RM, CLFL salinity, or RMF salinity input was available, and mud type was not provided or was unknown"
+
+    if curve == "RWA":
+        required = {
+            "RDEP or RT": well.get("RDEP") is not None or well.get("RT") is not None,
+            "PHIE or PHIT": well.get("PHIE") is not None or well.get("PHIT") is not None,
+        }
+        missing_inputs = [name for name, present in required.items() if not present]
+        if missing_inputs:
+            return "required input curves unavailable: " + ", ".join(missing_inputs)
+        return "standalone apparent-Rw curve was not exported; the RW route records the RWA P5 calculation when used"
+
+    if curve == "SAL":
+        if "SAL" in original_curves or well.get("SAL") is not None:
+            return "present in source data"
+        return "standalone salinity curve was not exported; salinity is stored as RW-route metadata when available"
+
+    if curve == "SALAPP":
+        if well.get("RWA") is None:
+            return "RWA unavailable; requires apparent Rw before apparent salinity conversion"
+        return "standalone apparent-salinity curve was not exported"
+
+    if curve == "SALMUDAPP":
+        if well.get("RMFA") is None:
+            return "RMFA unavailable; requires apparent mud-filtrate resistivity before mud-salinity conversion"
+        return "standalone apparent mud-filtrate salinity curve was not exported"
 
     if curve in {"PHIE_CC", "PERM_CC"} and step is not None:
         same_well_models = step.parameters.get("same_well_core_models")
@@ -1325,6 +1439,88 @@ def _missing_curve_reason(
             return "required input curves unavailable: " + ", ".join(missing_inputs)
         return "hydrocarbon-analysis classification only; not a dynamic-workflow curve"
 
+    if curve == "ND_SEPARATION":
+        reason = missing_required({"PHID": well.get("PHID") is not None, "PHIN": well.get("PHIN") is not None})
+        return reason or "saturation analysis did not write ND_SEPARATION"
+
+    if curve == "PHIT_GAS_CORR":
+        reason = missing_required({"PHID": well.get("PHID") is not None, "PHIN": well.get("PHIN") is not None})
+        return reason or "saturation analysis did not write PHIT_GAS_CORR"
+
+    if curve == "DS_SEPARATION":
+        reason = missing_required({"PHID": well.get("PHID") is not None, "PHIS": well.get("PHIS") is not None})
+        return reason or "porosity analysis did not write DS_SEPARATION"
+
+    if curve == "PORO_QUALITY_INDEX":
+        reason = missing_required({
+            "PHIT": well.get("PHIT") is not None,
+            "PERM or PERM_CC": well.get("PERM") is not None or well.get("PERM_CC") is not None,
+        })
+        return reason or "porosity analysis did not write PORO_QUALITY_INDEX"
+
+    if curve in {"RXO_RDEP_RATIO", "SEPARATION_RATIO"}:
+        reason = missing_required({
+            "RXO, RSHA, or RESS": well.get("RXO") is not None or well.get("RSHA") is not None or well.get("RESS") is not None,
+            "RDEP or RT": well.get("RDEP") is not None or well.get("RT") is not None,
+        })
+        return reason or f"{curve} was not written after resistivity-ratio screening"
+
+    if curve == "KH":
+        reason = missing_required({"PERM or PERM_CC": well.get("PERM") is not None or well.get("PERM_CC") is not None})
+        return reason or "permeability analysis did not write KH"
+
+    if curve == "PERM_QUALITY_INDEX":
+        if well.get("PERM") is None and well.get("PERM_CC") is None and well.get("RQI") is None and well.get("FZI") is None:
+            return "required input curves unavailable: PERM/PERM_CC, RQI, or FZI"
+        return "permeability analysis did not write PERM_QUALITY_INDEX"
+
+    if curve.endswith("_GRAD"):
+        base = curve[:-5]
+        aliases = {
+            "RDEP": ("RDEP", "RT"),
+            "DTC": ("DTC", "DT"),
+        }.get(base, (base,))
+        if not any(well.get(name) is not None for name in aliases):
+            return "required input curves unavailable: " + " or ".join(aliases)
+        return f"{base} was available but gradient curve was not written"
+
+    if curve == "DATA_COMPLETENESS":
+        return "no finite numerical logs were available for data-completeness analysis"
+
+    if curve == "CONSISTENCY_RATIO":
+        return "no supported log pairs were available for consistency analysis"
+
+    if curve == "ACOUSTIC_IMPEDANCE":
+        reason = missing_required({"RHOB": well.get("RHOB") is not None, "DTC or DT": well.get("DTC") is not None or well.get("DT") is not None})
+        return reason or "no plausible DTC samples in 20-300 us/ft after screening"
+
+    if curve in {"POISSON_RATIO", "YOUNG_MOD", "BRITTLENESS_INDEX"}:
+        reason = missing_required({"RHOB": well.get("RHOB") is not None, "DTC or DT": well.get("DTC") is not None or well.get("DT") is not None})
+        return reason or "Vp/Vs elastic calculation had no finite plausible samples"
+
+    if curve == "ELECTROFACIES":
+        available = sum(
+            int(any(well.get(name) is not None for name in names))
+            for names in (("RHOB",), ("NPHI", "PHIN"), ("GR",), ("RDEP", "RT"))
+        )
+        if available < 2:
+            return "requires at least two available feature curves from RHOB, NPHI/PHIN, GR, and RDEP/RT"
+        return "fewer than two valid samples remained after electrofacies screening"
+
+    if curve == "S_V":
+        reason = missing_required({"RHOB": well.get("RHOB") is not None})
+        return reason or "overburden stress calculation had no finite RHOB samples"
+
+    if curve == "PP_HYDROSTATIC":
+        return "depth array unavailable for hydrostatic pressure calculation"
+
+    if curve == "SH_MIN":
+        reason = missing_required({
+            "RHOB": well.get("RHOB") is not None,
+            "DTC or DT": well.get("DTC") is not None or well.get("DT") is not None,
+        })
+        return reason or "Poisson ratio, overburden stress, or hydrostatic pressure had no overlapping finite samples"
+
     if step_name and step_name in skipped_steps:
         return f"{step_name} step skipped"
     if step is not None and not step.success:
@@ -1337,6 +1533,45 @@ def _missing_curve_reason(
 
 
 def _computed_curve_detail(curve: str, step_results: dict[str, Any]) -> str:
+    category_reasons = {
+        "LITHOLOGY_GROUP": "computed by lithology category analysis from lithology codes",
+        "LITHOLOGY_NAME": "computed by lithology category analysis from lithology codes",
+        "GT_LITHOLOGY_GROUP_CODE": "computed by lithology category analysis from lithology codes",
+        "LIMESTONE_INDICATOR": "computed by lithology category analysis from PEF and RHOB",
+        "DOLOMITE_INDICATOR": "computed by lithology category analysis from PEF and RHOB",
+        "CARBONATE_INDICATOR": "computed by lithology category analysis from PEF and RHOB",
+        "GR_CLAY_INDICATOR": "computed by lithology category analysis from GR",
+        "NPHI_CLAY_INDICATOR": "computed by lithology category analysis from NPHI",
+        "PEF_CLAY_INDICATOR": "computed by lithology category analysis from PEF",
+        "COMPOSITE_CLAY": "computed by lithology category analysis from available clay indicators",
+        "COMPOSITE_CLAY_INDICATOR": "computed by lithology category analysis from available clay indicators",
+        "CONSISTENCY_SCORE": "computed by lithology category analysis from GR and PEF checks",
+        "ND_SEPARATION": "computed by saturation category analysis from PHID and PHIN",
+        "PHIT_GAS_CORR": "computed by saturation category analysis from PHIN and PHID",
+        "DS_SEPARATION": "computed by porosity category analysis from PHID and PHIS",
+        "PORO_QUALITY_INDEX": "computed by porosity category analysis from PHIT and PERM",
+        "RXO_RDEP_RATIO": "computed by permeability category analysis from RXO and RDEP",
+        "SEPARATION_RATIO": "computed by saturation category analysis from RXO and RDEP",
+        "KH": "computed by permeability category analysis from PERM and depth step",
+        "PERM_QUALITY_INDEX": "computed by permeability category analysis from PERM, RQI, and FZI",
+        "DATA_COMPLETENESS": "computed by numerical category analysis from finite numerical log count",
+        "CONSISTENCY_RATIO": "computed by numerical category analysis from expected log relationships",
+        "ACOUSTIC_IMPEDANCE": "computed by numerical category analysis from RHOB and DTC",
+        "POISSON_RATIO": "computed by numerical category analysis from Vp and Vs",
+        "YOUNG_MOD": "computed by numerical category analysis from RHOB, Vp, and Vs",
+        "BRITTLENESS_INDEX": "computed by numerical category analysis from Young's modulus and Poisson ratio",
+        "ELECTROFACIES": "computed by numerical category analysis from clustered log responses",
+        "S_V": "computed by numerical category analysis from RHOB and depth step",
+        "PP_HYDROSTATIC": "computed by numerical category analysis from depth",
+        "SH_MIN": "computed by numerical category analysis from Poisson ratio, overburden stress, and pore pressure",
+        "PRIME_GAS_TARGET": "computed by hydrocarbon category analysis from gas crossover, Vp/Vs, and reservoir quality",
+        "PRIME_OIL_TARGET": "computed by hydrocarbon category analysis from pay flag and reservoir quality",
+    }
+    if curve in category_reasons:
+        return category_reasons[curve]
+    if curve.endswith("_GRAD"):
+        return "computed by numerical category analysis as a depth gradient"
+
     step_name = REFERENCE_CURVE_TO_STEP.get(curve)
     step = step_results.get(step_name) if step_name else None
     if step is None:
@@ -1355,6 +1590,8 @@ def _computed_curve_detail(curve: str, step_results: dict[str, Any]) -> str:
         return _method_label(step.method) if step.method else "computed"
     if curve == "RW":
         return _method_label(step.method) if step.method else "computed"
+    if curve in {"RWA", "SAL", "SALAPP", "SALMUDAPP"}:
+        return "computed by resistivity/salinity category analysis"
     if curve == "INVASION_RATIO":
         return "computed as shallow/deep resistivity ratio; invalid denominators and extreme ratios are written as NaN"
     if curve in {"PERM", "PERM_CC"}:
@@ -1382,12 +1619,26 @@ def _computed_curve_detail(curve: str, step_results: dict[str, Any]) -> str:
     return "computed"
 
 
+def _derived_status_target_list(extra_targets: Optional[Sequence[str]] = None) -> List[str]:
+    targets = list(REFERENCE_DERIVED_LOG_TARGETS)
+    if extra_targets:
+        targets.extend(_canonical_delivery_curve_name(name) for name in extra_targets)
+    return list(_ordered_unique(targets))
+
+
 def _build_reference_derived_log_status(
     well: "Well",
     workflow_result,
     original_curves: set[str],
+    extra_targets: Optional[Sequence[str]] = None,
+    computed_curve_names: Optional[Sequence[str]] = None,
 ) -> List[dict[str, str]]:
     computed_curves = set(_derived_logs_computed(well, workflow_result, original_curves))
+    if computed_curve_names:
+        computed_curves.update(
+            _canonical_delivery_curve_name(name)
+            for name in computed_curve_names
+        )
     normalized_original_curves = {
         _canonical_delivery_curve_name(curve)
         for curve in original_curves
@@ -1395,14 +1646,15 @@ def _build_reference_derived_log_status(
     step_results, skipped_steps = _step_lookup(workflow_result)
     statuses: List[dict[str, str]] = []
 
-    for curve in REFERENCE_DERIVED_LOG_TARGETS:
+    for curve in _derived_status_target_list(extra_targets):
         if (
             curve == "LITHO"
             and "LITHOLOGY_GEOLINK" in normalized_original_curves
             and not _workflow_output_curve_written(workflow_result, "LITHO")
         ):
-            continue
-        if curve in computed_curves:
+            status = "already_present"
+            reason = "lithology input was present, so LITHO was not inferred from mineral volumes"
+        elif curve in computed_curves:
             status = "computed"
             reason = _computed_curve_detail(curve, step_results)
         elif curve in normalized_original_curves and _first_curve(well, _target_curve_candidates(curve)) is not None:
@@ -2448,10 +2700,18 @@ def _compact_status_lists(
     well: "Well",
     workflow_result,
     original_curves: Optional[set[str]],
+    extra_targets: Optional[Sequence[str]] = None,
+    computed_curve_names: Optional[Sequence[str]] = None,
 ) -> tuple[list[str], list[str]]:
     if original_curves is None:
         return [], []
-    statuses = _build_reference_derived_log_status(well, workflow_result, original_curves)
+    statuses = _build_reference_derived_log_status(
+        well,
+        workflow_result,
+        original_curves,
+        extra_targets=extra_targets,
+        computed_curve_names=computed_curve_names,
+    )
     computed = [item["mnemonic"] for item in statuses if item.get("status") == "computed"]
     missing = [item["mnemonic"] for item in statuses if item.get("status") == "missing"]
     return computed, missing
@@ -2865,6 +3125,30 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         if step is None or status == "missing":
             return f"RW: skipped because {reason}."
         return _rw_curve_note(step, well)
+    if curve == "RWA":
+        return (
+            f"RWA: skipped because {reason}."
+            if status == "missing"
+            else "RWA: RDEP*PHIE^m/a using Archie m and a; finite only where RDEP>0 and PHIE>0."
+        )
+    if curve == "SAL":
+        return (
+            f"SAL: skipped because {reason}."
+            if status == "missing"
+            else "SAL: formation-water salinity in ppm used for RW conversion; Rw75=0.0123+3647.5/SAL^0.955."
+        )
+    if curve == "SALAPP":
+        return (
+            f"SALAPP: skipped because {reason}."
+            if status == "missing"
+            else "SALAPP: apparent salinity from RWA corrected to 75 F; SALAPP=(3647.5/(RWA75-0.0123))^(1/0.955)."
+        )
+    if curve == "SALMUDAPP":
+        return (
+            f"SALMUDAPP: skipped because {reason}."
+            if status == "missing"
+            else "SALMUDAPP: apparent mud-filtrate salinity from RMFA corrected to 75 F; SALMUDAPP=(3647.5/(RMFA75-0.0123))^(1/0.955)."
+        )
 
     if curve == "PHIN" and step is not None:
         endpoint = _porosity_endpoint_text(step, "nphi_ma", 3)
@@ -2966,12 +3250,65 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
     if curve in simple and status != "missing":
         return simple[curve]
 
+    category_simple = {
+        "LITHOLOGY_GROUP": (
+            "LITHOLOGY_GROUP: grouped class mapped from lithology codes; numeric code is GT_LITHOLOGY_GROUP_CODE."
+        ),
+        "LITHOLOGY_NAME": (
+            "LITHOLOGY_NAME: grouped lithology label mapped from lithology codes."
+        ),
+        "GT_LITHOLOGY_GROUP_CODE": (
+            "GT_LITHOLOGY_GROUP_CODE: numeric class from lithology codes; limestone=1, dolomite=2, anhydrite=3, "
+            "coal=4, calcareous_shale=5, halite=6, sandstone=7, shale=8, silt=9, coarse_clastic=10, "
+            "evaporite=11, igneous=12, chert=13."
+        ),
+        "LIMESTONE_INDICATOR": "LIMESTONE_INDICATOR: 1 where PEF>4.5 and RHOB>2.7; else 0.",
+        "DOLOMITE_INDICATOR": "DOLOMITE_INDICATOR: 1 where PEF is 2.8-3.2 and RHOB is 2.8-2.9; else 0.",
+        "CARBONATE_INDICATOR": "CARBONATE_INDICATOR: 1 where PEF>2.8 and RHOB>2.6; else 0.",
+        "GR_CLAY_INDICATOR": "GR_CLAY_INDICATOR: 1 where GR>100 API; else 0.",
+        "NPHI_CLAY_INDICATOR": "NPHI_CLAY_INDICATOR: 1 where NPHI>0.30 v/v; else 0.",
+        "PEF_CLAY_INDICATOR": "PEF_CLAY_INDICATOR: 1 where PEF<2.5; else 0.",
+        "COMPOSITE_CLAY": "COMPOSITE_CLAY: mean of available GR, NPHI, and PEF clay indicators.",
+        "COMPOSITE_CLAY_INDICATOR": "COMPOSITE_CLAY_INDICATOR: alias of COMPOSITE_CLAY; mean of available GR, NPHI, and PEF clay indicators.",
+        "CONSISTENCY_SCORE": (
+            "CONSISTENCY_SCORE: mean of available lithology-log checks; GR and PEF are compared against expected lithology response."
+        ),
+        "ND_SEPARATION": "ND_SEPARATION: PHID-PHIN.",
+        "PHIT_GAS_CORR": "PHIT_GAS_CORR: clip(sqrt((PHIN^2+PHID^2)/2),0,0.45).",
+        "DS_SEPARATION": "DS_SEPARATION: PHID-PHIS.",
+        "PORO_QUALITY_INDEX": "PORO_QUALITY_INDEX: sqrt(max(PHIT*log10(PERM),1e-6)); clipped 0.001-5.",
+        "RXO_RDEP_RATIO": "RXO_RDEP_RATIO: RXO/RDEP where both are finite and RDEP>0.",
+        "SEPARATION_RATIO": "SEPARATION_RATIO: RXO/RDEP where both are finite and RDEP>0.1.",
+        "KH": "KH: PERM*depth_step.",
+        "PERM_QUALITY_INDEX": "PERM_QUALITY_INDEX: weighted mean of PERM(0.5), RQI*10(0.3), and FZI*5(0.2), using available inputs.",
+        "DATA_COMPLETENESS": "DATA_COMPLETENESS: finite numerical logs divided by total numerical logs at each depth.",
+        "CONSISTENCY_RATIO": (
+            "CONSISTENCY_RATIO: fraction of expected log relationships matched: GR-VCL positive, RHOB-porosity negative, "
+            "NPHI/PHIN-porosity positive, RDEP-SW negative, PHIT/PHIE-PERM positive."
+        ),
+        "ACOUSTIC_IMPEDANCE": "ACOUSTIC_IMPEDANCE: Vp*RHOB*1000 with Vp=1e6/(DTC*0.3048); clipped 1e6-30e6.",
+        "POISSON_RATIO": "POISSON_RATIO: (0.5*(Vp/Vs)^2-1)/((Vp/Vs)^2-1), clipped 0-0.49.",
+        "YOUNG_MOD": "YOUNG_MOD: dynamic Young's modulus from RHOB, Vp, and Vs; reported in GPa.",
+        "BRITTLENESS_INDEX": "BRITTLENESS_INDEX: mean of normalized Young's modulus and inverse Poisson-ratio term; clipped 0-1.",
+        "ELECTROFACIES": "ELECTROFACIES: k-means cluster label from available RHOB, NPHI/PHIN, GR, and RDEP/RT features.",
+        "S_V": "S_V: cumulative overburden stress from RHOB*1000*9.81*depth_step.",
+        "PP_HYDROSTATIC": "PP_HYDROSTATIC: hydrostatic pore pressure from water gradient plus seawater head where applicable.",
+        "SH_MIN": "SH_MIN: ((nu/(1-nu))*(S_V-PP_HYDROSTATIC))+PP_HYDROSTATIC.",
+    }
+    if curve in category_simple and status != "missing":
+        return category_simple[curve]
+    if curve.endswith("_GRAD") and status != "missing":
+        base = curve[:-5]
+        return f"{curve}: numerical gradient d{base}/dDEPT."
+
     if curve == "INVASION_RATIO":
         return (
             f"INVASION_RATIO: skipped because {reason}."
             if status == "missing"
             else "INVASION_RATIO: shallow resistivity / deep resistivity; NaN where deep resistivity<0.2 ohm.m or ratio>100."
         )
+    if curve == "LITHO" and status == "already_present":
+        return "LITHO: not inferred because lithology input was present; mineral volumes were still computed."
     if curve in {"VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"}:
         return (
             f"{curve}: multi-mineral output; sum(Vi)=1-VCL-PHIE, "
@@ -3002,15 +3339,23 @@ def _build_compact_curve_routing_notes(
     well: "Well",
     workflow_result,
     original_curves: Optional[set[str]],
+    extra_targets: Optional[Sequence[str]] = None,
+    computed_curve_names: Optional[Sequence[str]] = None,
 ) -> List[str]:
     if original_curves is None:
         return []
-    statuses = _build_reference_derived_log_status(well, workflow_result, original_curves)
+    statuses = _build_reference_derived_log_status(
+        well,
+        workflow_result,
+        original_curves,
+        extra_targets=extra_targets,
+        computed_curve_names=computed_curve_names,
+    )
     step_results, _ = _step_lookup(workflow_result)
     notes: List[str] = []
     for item in statuses:
         curve = item["mnemonic"]
-        if curve in {"VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"}:
+        if curve in {"VQUAR", "VCALC", "VDOLO", "VANHY"}:
             continue
         step_name = REFERENCE_CURVE_TO_STEP.get(curve)
         step = step_results.get(step_name) if step_name else None
@@ -3025,11 +3370,27 @@ def _build_concise_delivery_computation_notes(
     workflow_result,
     original_curves: Optional[set[str]] = None,
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
+    derived_logs_override: Optional[Sequence[str]] = None,
+    status_targets_override: Optional[Sequence[str]] = None,
 ) -> List[str]:
     notes: List[str] = [
         "Analysis started: dynamic petrophysical workflow with per-well routing, temperature correction, and NaN handling."
     ]
-    computed, missing = _compact_status_lists(well, workflow_result, original_curves)
+    status_targets = list(
+        _ordered_unique(
+            [
+                *(status_targets_override or []),
+                *(derived_logs_override or []),
+            ]
+        )
+    )
+    computed, missing = _compact_status_lists(
+        well,
+        workflow_result,
+        original_curves,
+        extra_targets=status_targets,
+        computed_curve_names=derived_logs_override,
+    )
     if computed:
         notes.append(f"Computed {len(computed)} derived logs: {', '.join(computed)}.")
     if missing:
@@ -3122,7 +3483,15 @@ def _build_concise_delivery_computation_notes(
         )
         notes.append("Flags: " + "; ".join(flag_parts) + ".")
 
-    notes.extend(_build_compact_curve_routing_notes(well, workflow_result, original_curves))
+    notes.extend(
+        _build_compact_curve_routing_notes(
+            well,
+            workflow_result,
+            original_curves,
+            extra_targets=status_targets,
+            computed_curve_names=derived_logs_override,
+        )
+    )
     notes.append("Analysis completed: compact routing notes recorded.")
     return list(dict.fromkeys(note for note in notes if note))
 
@@ -3132,12 +3501,16 @@ def _build_delivery_computation_notes(
     workflow_result,
     original_curves: Optional[set[str]] = None,
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
+    derived_logs_override: Optional[Sequence[str]] = None,
+    status_targets_override: Optional[Sequence[str]] = None,
 ) -> List[str]:
     return _build_concise_delivery_computation_notes(
         well,
         workflow_result,
         original_curves=original_curves,
         lithology_mapping=lithology_mapping,
+        derived_logs_override=derived_logs_override,
+        status_targets_override=status_targets_override,
     )
 
     notes: List[str] = [
@@ -4727,6 +5100,7 @@ def _build_reference_json_payload(
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
     analysis_summary_override: Optional[dict[str, Any]] = None,
     derived_logs_override: Optional[Sequence[str]] = None,
+    status_targets_override: Optional[Sequence[str]] = None,
     include_derived_log_status: bool = True,
 ) -> dict[str, Any]:
     well_name = _reference_well_name(source_file, well)
@@ -4735,11 +5109,21 @@ def _build_reference_json_payload(
     lithology_info = _build_reference_lithology_info(well, lithology_mapping=lithology_mapping)
     dominant_lithology = _dominant_lithology(well, lithology_mapping=lithology_mapping)
     derived_logs = list(derived_logs_override) if derived_logs_override is not None else _derived_logs_computed(well, workflow_result, original_curves)
+    status_targets = list(
+        _ordered_unique(
+            [
+                *(status_targets_override or []),
+                *derived_logs,
+            ]
+        )
+    )
     computation_notes = _build_delivery_computation_notes(
         well,
         workflow_result,
         original_curves=original_curves,
         lithology_mapping=lithology_mapping,
+        derived_logs_override=derived_logs,
+        status_targets_override=status_targets,
     )
 
     hydrocarbon_summary = HydrocarbonAnalysis().analyze(well, add_curves=False).to_dict()
@@ -4754,6 +5138,8 @@ def _build_reference_json_payload(
             well,
             workflow_result,
             original_curves,
+            extra_targets=status_targets,
+            computed_curve_names=derived_logs,
         )
 
     return {
@@ -4834,6 +5220,7 @@ def _write_reference_analysis_json_to_path(
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
     analysis_summary_override: Optional[dict[str, Any]] = None,
     derived_logs_override: Optional[Sequence[str]] = None,
+    status_targets_override: Optional[Sequence[str]] = None,
     include_derived_log_status: bool = True,
 ) -> Path:
     payload = _build_reference_json_payload(
@@ -4848,6 +5235,7 @@ def _write_reference_analysis_json_to_path(
         lithology_mapping=lithology_mapping,
         analysis_summary_override=analysis_summary_override,
         derived_logs_override=derived_logs_override,
+        status_targets_override=status_targets_override,
         include_derived_log_status=include_derived_log_status,
     )
     json_path.parent.mkdir(parents=True, exist_ok=True)
@@ -5558,6 +5946,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                             lithology_mapping=lithology_mapping,
                             analysis_summary_override=category_result.to_dict(),
                             derived_logs_override=derived_logs,
+                            status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
                             include_derived_log_status=True,
                         )
 
@@ -5673,6 +6062,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                             lithology_mapping=lithology_mapping,
                             analysis_summary_override=category_result.to_dict(),
                             derived_logs_override=derived_logs,
+                            status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
                             include_derived_log_status=True,
                         )
 
