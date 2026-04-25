@@ -94,12 +94,13 @@ class WellboreQC:
                     labels,
                     description="Bad-hole screening from caliper roughness with DRHO fallback.",
                     methodology=(
-                        "Primary method smooths caliper with a Savitzky-Golay filter, "
-                        "computes gradient roughness, and flags rough intervals."
+                        "Primary method smooths CALI with Savitzky-Golay window=5/polyorder=2, "
+                        "computes rolling standard deviation of dCALI/dDepth over window=5, "
+                        "and uses DRHO only where caliper roughness cannot be evaluated."
                     ),
                     calculation_thresholds=(
                         f"CALI roughness > {self.cali_variation_threshold}; "
-                        f"fallback |DRHO| > {self.drho_threshold}."
+                        f"fallback |DRHO| > {self.drho_threshold}; needs at least 5 finite CALI/BS samples."
                     ),
                 )
             },

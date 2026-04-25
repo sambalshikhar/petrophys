@@ -201,6 +201,19 @@ LITHOLOGY_GROUP_TO_MATRIX = {
 }
 
 
+def _representative_finite_value(values: Any) -> Optional[float]:
+    """Return the modal finite value, falling back to median."""
+    arr = np.asarray(values, dtype=float)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return None
+    rounded = np.round(finite, 4)
+    unique, counts = np.unique(rounded, return_counts=True)
+    if unique.size:
+        return float(unique[np.argmax(counts)])
+    return float(np.nanmedian(finite))
+
+
 def _coerce_lithology_group(value: Any) -> Optional[str]:
     """Normalize lithology strings to workflow group names."""
     text = str(value or "").strip().lower()
@@ -411,7 +424,7 @@ class DynamicWorkflowConfig:
 
     # Permeability
     perm_method: str = "auto"
-    perm_fallback_method: str = "timur"
+    perm_fallback_method: str = "coates"
     swirr: Optional[float] = None
     peer_wells: Optional[List[Any]] = None
     formation_tops: Optional[Any] = None
@@ -1045,14 +1058,25 @@ class DynamicWorkflow:
         rhob = well.get("RHOB")
         pef = well.get("PEF")
 
-        bs = bs_curve.data if bs_curve is not None else 8.5
+        if bs_curve is not None:
+            bs = np.asarray(bs_curve.data, dtype=float)
+            bit_size = bs
+            representative_bit_size = _representative_finite_value(bs)
+            bit_size_source = "BS_curve_depth_by_depth"
+            finite_bs = bs[np.isfinite(bs)]
+            bit_size_unique_values = sorted({float(value) for value in np.round(finite_bs, 4)}) if finite_bs.size else []
+        else:
+            header_bit_size = getattr(well.header, "bit_size", None)
+            representative_bit_size = float(header_bit_size) if header_bit_size is not None else 8.5
+            bit_size = representative_bit_size
+            bit_size_source = "well_header" if header_bit_size is not None else "fallback_8.5"
+            bit_size_unique_values = [float(representative_bit_size)]
         if cali is not None: inputs.append(cali.mnemonic)
         if bs_curve is not None: inputs.append("BS")
         if drho is not None: inputs.append("DRHO")
         if rhob is not None: inputs.append("RHOB")
         if pef is not None: inputs.append("PEF")
         trace.input_curves = inputs
-        bit_size = float(np.nanmean(bs)) if hasattr(bs, "__len__") and np.any(np.isfinite(bs)) else 8.5 if hasattr(bs, "__len__") else bs
 
         flags = generate_bad_hole_flags(
             well,
@@ -1063,7 +1087,10 @@ class DynamicWorkflow:
 
         n_bad = int(np.sum(flags["bad_hole"]))
         trace.output_curves = ["BAD_HOLE", "BADHOLEFLAG"]
-        trace.parameters["bit_size_used"] = bit_size
+        trace.parameters["bit_size_used"] = representative_bit_size
+        trace.parameters["bit_size_source"] = bit_size_source
+        trace.parameters["bit_size_unique_values"] = bit_size_unique_values
+        trace.parameters["bit_size_depth_dependent"] = bs_curve is not None and len(bit_size_unique_values) > 1
         trace.decisions.append(f"{n_bad} bad-hole samples flagged out of {len(flags['bad_hole'])}")
         return trace
 
@@ -2260,10 +2287,14 @@ class DynamicWorkflow:
             method=self.config.perm_method,
             fallback_method=self.config.perm_fallback_method,
         )
+        lithology = None
+        if not self._has_curve(well, "LITHOLOGY_GEOLINK", "LITHO_CLASS", "LITHO"):
+            lithology = self._build_lithology_log(well)
 
         result = perm_module.calculate(
             well,
             swi=self.config.swirr,
+            lithology=lithology,
             peer_wells=self.config.peer_wells,
             formation_tops=self.config.formation_tops,
         )
@@ -2380,6 +2411,16 @@ class DynamicWorkflow:
             groups = method_metadata.get("lithology_parameter_groups") or []
             if groups:
                 decisions.append("lith_vcl parameter groups used: " + ", ".join(groups))
+        elif empirical_method == "coates":
+            decisions.append(
+                "Coates-Denoo empirical permeability: "
+                "k = 10000 * PHIE^4 * ((1 - SWIRR) / SWIRR)^2"
+            )
+        elif empirical_method == "timur":
+            decisions.append(
+                "Timur empirical permeability: "
+                "k = 0.136 * (100 * PHIE)^4.4 / (100 * SWIRR)^2"
+            )
         if result.metadata.get("empirical_error") and empirical_method == "lith_vcl":
             decisions.append(f"Earlier empirical method failed before lith_vcl: {result.metadata['empirical_error']}")
         if result.metadata.get("perm_max_clip_md") is not None:

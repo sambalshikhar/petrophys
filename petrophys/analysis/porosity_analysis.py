@@ -161,7 +161,9 @@ class PorosityAnalysis:
                     calculation_thresholds=(
                         "EXCELLENT_FLOW_UNIT: PHIT > 0.15 and PERM > 10; "
                         "GOOD_FLOW_UNIT: PHIT > 0.10 and PERM > 1; "
-                        "FAIR_FLOW_UNIT: PHIT > 0.06 and PERM > 0.1."
+                        "FAIR_FLOW_UNIT: PHIT > 0.06 and PERM > 0.1. "
+                        "RQI fallback: HIGH_RQI > 1.0, MODERATE_RQI >= 0.5, LOW_RQI < 0.5. "
+                        "FZI fallback: FLOW_UNIT_1 > 2.0, FLOW_UNIT_2 > 1.0, FLOW_UNIT_3 > 0.5, FLOW_UNIT_4 <= 0.5."
                     ),
                 ),
                 "integrated_porosity_reservoir_assessment": build_section(

@@ -970,8 +970,8 @@ def _workflow_flag_analysis(well: "Well") -> Optional[CategoryAnalysisResult]:
         ["CROSSOVER_FLAG"],
         "crossover_flag_screening",
         "Gas crossover screening from neutron-density separation.",
-        "Uses crossover flag where PHID - PHIN > 0.01.",
-        "CROSSOVER_FLAG when PHID - PHIN > 0.01, otherwise NO_CROSSOVER.",
+        "Uses crossover flag where PHID - PHIN > 0.05, VCL < 0.35, PHIE > 0.05, and BAD_HOLE < 0.5.",
+        "CROSSOVER_FLAG when PHID - PHIN > 0.05, VCL < 0.35, PHIE > 0.05, and BAD_HOLE < 0.5; otherwise NO_CROSSOVER.",
         "CROSSOVER_FLAG",
         "NO_CROSSOVER",
     )
@@ -1264,7 +1264,7 @@ def _missing_curve_reason(
 
     if curve == "VP_VS_RATIO":
         has_dtc = well.get("DTC") is not None or well.get("DT") is not None
-        has_dts = well.get("DTS") is not None or well.get("DTE") is not None
+        has_dts = well.get("DTS") is not None
         if not has_dtc and not has_dts:
             return "not calculated because both DTC and DTS were unavailable"
         if not has_dtc:
@@ -1452,16 +1452,16 @@ def _curve_value_summary(well: "Well", curve: str) -> dict[str, Any]:
         "sample_count": sample_count,
         "finite_count": finite_count,
         "nan_count": int(np.count_nonzero(nan_mask)),
-        "finite_percent": float(finite_count / max(sample_count, 1) * 100.0),
+        "finite_percent": _round_stat(finite_count / max(sample_count, 1) * 100.0),
     }
     if finite_count:
         summary.update(
             {
-                "min": float(np.nanmin(finite)),
-                "p05": float(np.nanpercentile(finite, 5)),
-                "p50": float(np.nanpercentile(finite, 50)),
-                "p95": float(np.nanpercentile(finite, 95)),
-                "max": float(np.nanmax(finite)),
+                "min": _round_stat(np.nanmin(finite)),
+                "p05": _round_stat(np.nanpercentile(finite, 5)),
+                "p50": _round_stat(np.nanpercentile(finite, 50)),
+                "p95": _round_stat(np.nanpercentile(finite, 95)),
+                "max": _round_stat(np.nanmax(finite)),
             }
         )
 
@@ -1880,7 +1880,32 @@ def _rw_route_reason_text(rw_steps: Sequence[Any], selected_method: str) -> str:
     return "; ".join(_ordered_unique(reasons))
 
 
+def _representative_bit_size(values: np.ndarray) -> Optional[float]:
+    finite = _normalize_numeric_array(values)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return None
+    rounded = np.round(finite, 4)
+    unique, counts = np.unique(rounded, return_counts=True)
+    if unique.size:
+        return float(unique[np.argmax(counts)])
+    return float(np.nanmedian(finite))
+
+
+def _bit_size_curve_data(well: "Well") -> Optional[np.ndarray]:
+    bs_curve = well.get("BS")
+    if bs_curve is not None:
+        bs_data = _normalize_numeric_array(bs_curve.data)
+        if np.any(np.isfinite(bs_data)):
+            return bs_data
+    return None
+
+
 def _bit_size_used_for_bad_hole(well: "Well", workflow_result) -> Optional[float]:
+    bs_data = _bit_size_curve_data(well)
+    if bs_data is not None:
+        return _representative_bit_size(bs_data)
+
     values = _step_parameter_values(_all_step_results(workflow_result, "bad_hole"), "bit_size_used")
     for value in values:
         try:
@@ -1889,13 +1914,6 @@ def _bit_size_used_for_bad_hole(well: "Well", workflow_result) -> Optional[float
             continue
         if np.isfinite(numeric):
             return numeric
-
-    bs_curve = well.get("BS")
-    if bs_curve is not None:
-        bs_data = _normalize_numeric_array(bs_curve.data)
-        finite = bs_data[np.isfinite(bs_data)]
-        if finite.size:
-            return float(np.nanmedian(finite))
 
     header_value = getattr(well.header, "bit_size", None)
     if header_value is None:
@@ -1926,12 +1944,14 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
     from petrophys.qaqc.bad_hole.flag_generator import generate_bad_hole_flags
 
     bit_size = _bit_size_used_for_bad_hole(well, workflow_result)
+    bs_data = _bit_size_curve_data(well)
+    bit_size_for_flags = bs_data if bs_data is not None else bit_size
     if well.get("CALI") is None and well.get("DRHO") is None:
         return None
 
     flags = generate_bad_hole_flags(
         well,
-        bit_size=bit_size,
+        bit_size=bit_size_for_flags,
         cali_threshold=DefaultParameters.CALI_BS_THRESHOLD,
         drho_threshold=DefaultParameters.DRHO_THRESHOLD,
         pef_max=DefaultParameters.PEF_MAX,
@@ -1951,6 +1971,14 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
 
     return {
         "bit_size_used": bit_size,
+        "bit_size_unique_values": (
+            sorted({float(value) for value in np.round(bs_data[np.isfinite(bs_data)], 4)})
+            if bs_data is not None
+            else ([float(bit_size)] if bit_size is not None else [])
+        ),
+        "bit_size_depth_dependent": bool(
+            bs_data is not None and np.unique(np.round(bs_data[np.isfinite(bs_data)], 4)).size > 1
+        ),
         "thresholds": {
             "cali_minus_bs_washout_threshold_in": float(DefaultParameters.CALI_BS_THRESHOLD),
             "drho_washout_threshold_g_per_cc": float(DefaultParameters.DRHO_THRESHOLD),
@@ -2616,9 +2644,9 @@ def _sw_route_reason_text(model: str, params: dict[str, Any]) -> str:
 def _permeability_equation_text(method: str, params: dict[str, Any]) -> str:
     method_norm = str(method or "").strip().lower()
     if method_norm == "timur":
-        return "Timur k=8581*PHIE^4.4/SWIRR^2"
+        return "Timur k=0.136*(100*PHIE)^4.4/(100*SWIRR)^2"
     if method_norm in {"coates", "coates_denoo"}:
-        return "Coates-Denoo k=100^2*(PHIE*(1-SWIRR)/SWIRR)^2"
+        return "Coates-Denoo k=10000*PHIE^4*((1-SWIRR)/SWIRR)^2"
     if method_norm == "wyllie_rose":
         return "Wyllie-Rose k=250*PHIE^3/SWIRR^2"
     if method_norm == "lith_vcl":
@@ -2789,12 +2817,21 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         bad_curve = well.get("BAD_HOLE") or well.get("BADHOLEFLAG")
         bad_count = int(np.nansum(_normalize_numeric_array(bad_curve.data) > 0.5)) if bad_curve is not None else 0
         bad_pct = bad_count / max(int(well.n_samples), 1) * 100.0
-        bit_size = params.get("bit_size_used")
+        bs_data = _bit_size_curve_data(well)
+        bit_size = _representative_bit_size(bs_data) if bs_data is not None else params.get("bit_size_used")
+        bit_values = (
+            sorted({float(value) for value in np.round(bs_data[np.isfinite(bs_data)], 4)})
+            if bs_data is not None
+            else None
+        )
+        bit_text = f"; BS={_format_numeric(bit_size, 2)} in" if bit_size is not None else ""
+        if bit_values and len(bit_values) > 1:
+            bit_text = "; BS values=" + ", ".join(_format_numeric(value, 2) for value in bit_values) + " in"
         return (
             f"{curve}: washout=(CALI-BS)>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in or "
             f"|DRHO|>{DefaultParameters.DRHO_THRESHOLD:.2f} g/cc; "
             f"large_hole=BS>{DefaultParameters.LARGE_HOLE_BS:.2f} in; rule=washout OR large_hole"
-            + (f"; BS={_format_numeric(bit_size, 2)} in" if bit_size is not None else "")
+            + bit_text
             + f"; flagged={bad_count}/{well.n_samples} ({bad_pct:.0f}%)."
         )
 
@@ -2923,7 +2960,7 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         "FZI": "FZI: RQI/PHI_NORM.",
         "BVW": "BVW: PHIE*SW.",
         "MHI": "MHI: SW/SXO.",
-        "CROSSOVER_FLAG": "CROSSOVER_FLAG: PHID-PHIN>0.01.",
+        "CROSSOVER_FLAG": "CROSSOVER_FLAG: PHID-PHIN>0.05, VCL<0.35, PHIE>0.05, BAD_HOLE<0.5.",
         "VP_VS_RATIO": "VP_VS_RATIO: DTS divided by DTC where DTC=20-300 us/ft, DTS=20-600 us/ft, and ratio=0.5-5.0.",
     }
     if curve in simple and status != "missing":
@@ -3079,7 +3116,7 @@ def _build_concise_delivery_computation_notes(
             [
                 f"NET_PAY adds SW<{net_step.parameters.get('sw_cutoff')}",
                 f"SEALFLAG=VCL>={net_step.parameters.get('seal_vcl_cutoff', 0.8)}",
-                "CROSSOVER_FLAG=PHID-PHIN>0.01",
+                "CROSSOVER_FLAG=PHID-PHIN>0.05 and VCL<0.35 and PHIE>0.05 and BAD_HOLE<0.5",
                 "VP_VS_RATIO=DTS divided by DTC with plausibility screens",
             ]
         )
@@ -3181,7 +3218,12 @@ def _build_delivery_computation_notes(
                 "Final BAD_HOLE is the logical OR of washout and large_hole."
             )
             if details["bit_size_used"] is not None:
-                note += f" Bit size used for this well: {_format_numeric(details['bit_size_used'], 2)} in."
+                bit_values = details.get("bit_size_unique_values") or []
+                if details.get("bit_size_depth_dependent") and len(bit_values) > 1:
+                    values_text = ", ".join(_format_numeric(value, 2) for value in bit_values)
+                    note += f" Bit sizes in this segment: {values_text} in."
+                else:
+                    note += f" Bit size used for this well: {_format_numeric(details['bit_size_used'], 2)} in."
             note += (
                 f" Counts in this well: washout={counts['washout']}, large_hole={counts['large_hole']}, "
                 f"final BAD_HOLE={counts['bad_hole']} of {counts['total_points']} "
@@ -3847,9 +3889,9 @@ def _build_delivery_computation_notes(
             note += f"PERM was calculated with the {method_names} empirical permeability method."
             equations: List[str] = []
             if "timur" in empirical:
-                equations.append("Timur equation: k = 8581 * PHIE^4.4 / Swirr^2")
+                equations.append("Timur equation: k = 0.136 * (100 * PHIE)^4.4 / (100 * Swirr)^2")
             if "coates" in empirical:
-                equations.append("Coates-Denoo equation: k = 100^2 * [PHIE * (1 - Swirr) / Swirr]^2")
+                equations.append("Coates-Denoo equation: k = 10000 * PHIE^4 * ((1 - Swirr) / Swirr)^2")
             if "wyllie_rose" in empirical:
                 equations.append("Wyllie-Rose equation: k = 250 * PHIE^3 / Swirr^2")
             if "lith_vcl" in empirical:
@@ -3938,7 +3980,7 @@ def _build_delivery_computation_notes(
             f"NET_PAY={payflag_count}, SEALFLAG={seal_count}."
         )
         if well.get("CROSSOVER_FLAG") is not None:
-            note += " CROSSOVER_FLAG = 1 where PHID - PHIN > 0.01."
+            note += " CROSSOVER_FLAG = 1 where PHID - PHIN > 0.05, VCL < 0.35, PHIE > 0.05, and BAD_HOLE < 0.5."
         if well.get("VP_VS_RATIO") is not None:
             note += " VP_VS_RATIO = DTS / DTC."
         if well.get("MHI") is not None:
@@ -4563,8 +4605,9 @@ def _has_finite_curve(well: "Well", mnemonic: str) -> bool:
     return bool(np.any(np.isfinite(data)))
 
 
-def _round_stat(value: float, decimals: int = 4) -> float:
-    return round(float(value), decimals)
+def _round_stat(value: float, decimals: int = 4) -> int | float:
+    rounded = round(float(value), decimals)
+    return int(rounded) if float(rounded).is_integer() else rounded
 
 
 def _curve_statistics_payload(data: np.ndarray) -> Optional[dict[str, float]]:

@@ -78,7 +78,7 @@ class WorkflowConfig:
     shale_exp: float = 1.6
     swirr: Optional[float] = None
     perm_method: str = "auto"
-    perm_fallback_method: str = "timur"
+    perm_fallback_method: str = "coates"
     peer_wells: Optional[List[Any]] = None
     formation_tops: Optional[Any] = None
     mud_has_clay_or_kcl: bool = False
@@ -453,9 +453,14 @@ class StandardWorkflow:
                 method=self.config.perm_method,
                 fallback_method=self.config.perm_fallback_method,
             )
+            lithology = None
+            if not (well.get("LITHOLOGY_GEOLINK") or well.get("LITHO_CLASS") or well.get("LITHO")):
+                lithology = self.config.lithology
+
             result = perm_module.calculate(
                 well,
                 swi=self.config.swirr,
+                lithology=lithology,
                 peer_wells=self.config.peer_wells,
                 formation_tops=self.config.formation_tops,
             )
@@ -537,6 +542,16 @@ class StandardWorkflow:
                 groups = result.metadata.get("method_metadata", {}).get("lithology_parameter_groups") or []
                 if groups:
                     trace.decisions.append("lith_vcl parameter groups used: " + ", ".join(groups))
+            elif empirical_method == "coates":
+                trace.decisions.append(
+                    "Coates-Denoo empirical permeability: "
+                    "k = 10000 * PHIE^4 * ((1 - SWIRR) / SWIRR)^2"
+                )
+            elif empirical_method == "timur":
+                trace.decisions.append(
+                    "Timur empirical permeability: "
+                    "k = 0.136 * (100 * PHIE)^4.4 / (100 * SWIRR)^2"
+                )
             if result.metadata.get("core_sections_count"):
                 trace.decisions.append(
                     f"Core-calibrated sections: {result.metadata['core_sections_count']} samples"

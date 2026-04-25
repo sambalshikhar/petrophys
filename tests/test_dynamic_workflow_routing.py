@@ -363,6 +363,41 @@ def test_bad_hole_accepts_cali_and_cal_namings(curve_to_keep, record_route):
     assert np.nansum(well["BAD_HOLE"].data) == 2
 
 
+def test_bad_hole_uses_depth_dependent_bs_curve(record_route):
+    well = _routing_well("BAD-HOLE-DEPTH-BS")
+    well.add_curve(
+        "BS",
+        np.array([8.5, 12.25, 12.25, 12.25, 12.25, 12.25, 12.25, 12.25, 12.25, 12.25, 12.25, 12.25]),
+        "in",
+        "Bit Size",
+    )
+    well.add_curve(
+        "CALI",
+        np.array([10.1, 13.0, 13.2, 13.1, 13.0, 12.8, 12.7, 12.8, 12.6, 12.9, 12.7, 12.8]),
+        "in",
+        "Caliper",
+    )
+    well.add_curve("DRHO", np.zeros(well.n_samples), "g/cc", "Density Correction")
+
+    result = _run(
+        "bad_hole_depth_dependent_bs",
+        well,
+        DynamicWorkflowConfig(skip_steps=["vclay", "lithology", "porosity", "saturation"]),
+        record_route,
+        focus_steps=["bad_hole"],
+        curves=["BAD_HOLE", "BADHOLEFLAG"],
+    )
+    step = _step_by_name(result, "bad_hole")
+
+    assert step.parameters["bit_size_source"] == "BS_curve_depth_by_depth"
+    assert step.parameters["bit_size_depth_dependent"] is True
+    assert step.parameters["bit_size_used"] == 12.25
+    np.testing.assert_array_equal(
+        well["BAD_HOLE"].data.astype(bool),
+        np.array([True, False, False, False, False, False, False, False, False, False, False, False]),
+    )
+
+
 @pytest.mark.parametrize(
     "case_id,mutate,expected_method",
     [

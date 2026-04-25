@@ -6,6 +6,7 @@ from petrophys import Well
 from petrophys.analysis import HydrocarbonAnalysis
 from petrophys.io.example_format_export import (
     _build_reference_derived_log_status,
+    _curve_value_summary,
     _missing_curve_reason,
 )
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
@@ -39,6 +40,7 @@ def _build_analysis_well() -> Well:
     well.add_curve("DRHO", np.array([0.02, 0.03, 0.02, 0.01, 0.00, -0.02, -0.04, -0.06, 0.12, 0.16]), "g/cc", "Density Correction")
     well.add_curve("CALI", np.array([8.5, 8.6, 8.4, 9.4, 7.9, 8.5, 8.4, 9.2, 8.0, 8.6]), "in", "Caliper")
     well.add_curve("BS", np.array([8.5, 8.5, 8.5, 8.5, 8.5, 8.5, 8.5, 8.5, 8.5, 8.5]), "in", "Bit Size")
+    well.add_curve("BAD_HOLE", np.array([0, 0, 0, 0, 1, 0, 0, 0, 0, 0]), "", "Bad Hole Flag")
     well.add_curve("LITHOLOGY_GEOLINK", np.array([1, 1, 1, 1, 10, 9, 9, 15, 7, 21]), "", "Lithology Code")
     return well
 
@@ -61,6 +63,30 @@ def _build_dynamic_workflow_well() -> Well:
     return well
 
 
+def test_curve_value_summary_rounds_statistics_to_four_decimals():
+    well = Well("STAT-ROUNDING")
+    well.depth = np.arange(5.0)
+    well.add_curve(
+        "PERM",
+        np.array([
+            4.440630585851518,
+            25.63451407314591,
+            28.846711749460937,
+            29.674369069951126,
+            1.23456789,
+        ]),
+        "mD",
+        "Permeability",
+    )
+
+    summary = _curve_value_summary(well, "PERM")
+
+    assert summary["min"] == 1.2346
+    assert summary["p50"] == 25.6345
+    assert summary["max"] == 29.6744
+    assert summary["finite_percent"] == 100
+
+
 def test_hydrocarbon_analysis_adds_requested_curves_and_targets():
     well = _build_analysis_well()
 
@@ -74,7 +100,7 @@ def test_hydrocarbon_analysis_adds_requested_curves_and_targets():
     assert well.get("NET_PAY") is not None
     np.testing.assert_array_equal(
         well["CROSSOVER_FLAG"].data,
-        np.array([1, 1, 1, 1, 1, 0, 0, 0, 0, 0], dtype=float),
+        np.array([1, 1, 1, 1, 0, 0, 0, 0, 0, 0], dtype=float),
     )
     assert np.nanmax(well["PRIME_GAS_TARGET"].data) == 1.0
     assert np.nanmax(well["PRIME_OIL_TARGET"].data) == 1.0
@@ -117,6 +143,34 @@ def test_hydrocarbon_analysis_rejects_implausible_shear_slowness_for_vpvs():
     HydrocarbonAnalysis().analyze(well, add_curves=True)
 
     assert np.all(np.isnan(well["VP_VS_RATIO"].data))
+
+
+def test_hydrocarbon_analysis_does_not_use_dte_as_shear_sonic():
+    well = _build_analysis_well()
+    del well._curves["DTS"]
+    well.add_curve("DTE", np.full(well.n_samples, 4.0e7), "us/ft", "Non-shear DTE telemetry")
+
+    HydrocarbonAnalysis().analyze(well, add_curves=True)
+
+    assert np.all(np.isnan(well["VP_VS_RATIO"].data))
+
+
+def test_hydrocarbon_crossover_requires_clean_reservoir_quality_and_good_hole():
+    well = _build_analysis_well()
+
+    HydrocarbonAnalysis().analyze(well, add_curves=True)
+
+    expected = np.array([1, 1, 1, 1, 0, 0, 0, 0, 0, 0], dtype=float)
+    np.testing.assert_array_equal(well["CROSSOVER_FLAG"].data, expected)
+
+
+def test_hydrocarbon_crossover_is_nan_without_bad_hole_curve():
+    well = _build_analysis_well()
+    del well._curves["BAD_HOLE"]
+
+    HydrocarbonAnalysis().analyze(well, add_curves=True)
+
+    assert np.all(np.isnan(well["CROSSOVER_FLAG"].data))
 
 
 def test_rock_quality_leaves_invalid_phi_and_perm_as_nan():

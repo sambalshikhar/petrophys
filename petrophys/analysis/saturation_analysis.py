@@ -191,21 +191,22 @@ class SaturationAnalysis:
                 "hydrocarbon_movability_invasion_characteristics": build_section(
                     well,
                     movability_labels,
-                    description="Movability using current MHI behavior or invasion fallback.",
-                    methodology="Prefers the library's current MHI classes; otherwise uses RXO / RDEP.",
+                    description="Movability from MHI or invasion fallback.",
+                    methodology="Prefers MHI = SW/SXO; otherwise uses invasion ratio RXO/RDEP.",
                     calculation_thresholds=(
-                        "Current MHI classification is preserved. Fallback invasion bands: "
-                        "< 0.7 conductive, 0.7-1.3 minimal, > 1.3 resistive."
+                        "MHI bands: HIGH_MOVEABLE_HC <0.5, MODERATE 0.5-0.7, LOW 0.7-0.9, MINIMAL >=0.9. "
+                        "Fallback invasion bands: conductive <0.7, minimal 0.7-1.3, resistive >1.3."
                     ),
                 ),
                 "fluid_contact_detection_indicators": build_section(
                     well,
                     contact_labels,
                     description="Fluid-contact and transition-zone indicators.",
-                    methodology="Compares per-sample changes in Sw and PHIT relative to the previous depth.",
+                    methodology="Compares per-sample changes in SW and PHIT relative to the previous depth.",
                     calculation_thresholds=(
                         "POTENTIAL_CONTACT_ZONE: dSw > 0.2 and dPHIT < 0.05; "
-                        "TRANSITION_ZONE: dSw > 0.1 and dPHIT < 0.05."
+                        "TRANSITION_ZONE: dSw > 0.1 and dPHIT < 0.05; "
+                        "STABLE_HC_ZONE: SW < 0.4; STABLE_WATER_ZONE: SW > 0.6."
                     ),
                 ),
                 "gas_indicator_analysis_methods": build_section(

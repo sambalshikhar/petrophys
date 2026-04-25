@@ -32,21 +32,22 @@ ALIAS_MAP: Dict[str, List[str]] = {
     "DRHO": ["DRHO", "DCOR", "HDRA", "DENC"],
 
     # Neutron Porosity (NPHI)
-    "NPHI": ["NPHI", "TNPH", "CNL", "NPLS", "NEUT", "NPOR", "PHIN",
+    "NPHI": ["NPHI", "TNPH", "CNL", "NPLS", "NEUT", "NPOR",
              "CNCF", "NPRL", "NEU", "APLC", "PHIS_NEU"],
 
     # Compressional Sonic (DTC)
     "DTC": ["DT", "DTC", "AC", "SONIC", "DTCO", "DT4P", "DT24",
             "DTLN", "DTL", "SLOWNESS", "BHC"],
 
-    # Shear Sonic (DTS)
-    "DTS": ["DTS", "DTSM", "DT4S", "DTRS", "SHEAR", "DTE"],
+    # Shear Sonic (DTS). Do not alias DTE: several LAS exports use DTE for
+    # non-slowness telemetry, and those values can be orders of magnitude too large.
+    "DTS": ["DTS", "DTSM", "DT4S", "DTRS", "SHEAR"],
 
     # Photoelectric Factor (PEF)
     "PEF": ["PE", "PEF", "PEFZ", "PEFL", "PEF8", "PHOTO"],
 
     # Caliper (CALI)
-    "CALI": ["CALI", "HCAL", "CAL", "CALIPER", "DCAL", "C1", "C2"],
+    "CALI": ["CALI", "HCAL", "CAL", "CALIPER", "C1", "C2"],
 
     # Gamma Ray (GR)
     "GR": ["GR", "SGR", "CGR", "GAMMA", "GAPI", "GRN", "GRD",
