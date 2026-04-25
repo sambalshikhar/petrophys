@@ -22,7 +22,9 @@ Pipeline execution order (from design doc):
 from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass, field
 from enum import Enum
+import json
 import numpy as np
+from pathlib import Path
 import re
 from petrophys.base.well import Well
 import pandas as pd
@@ -251,6 +253,89 @@ def _ordered_unique_values(values: List[Any]) -> List[Any]:
     return ordered
 
 
+def _trace_array_summary(value: np.ndarray) -> Dict[str, Any]:
+    """Summarize array values without writing full curve payloads to logs."""
+    data = np.asarray(value)
+    payload: Dict[str, Any] = {
+        "type": "ndarray",
+        "shape": list(data.shape),
+        "size": int(data.size),
+    }
+    if data.ndim == 0:
+        payload["value"] = _json_safe_trace_value(data.item())
+        return payload
+
+    sample_count = min(5, int(data.size))
+    payload["sample"] = [
+        _json_safe_trace_value(item) for item in list(data.flat[:sample_count])
+    ]
+
+    if np.issubdtype(data.dtype, np.number):
+        numeric = data.astype(float, copy=False)
+        finite = numeric[np.isfinite(numeric)]
+        payload.update({
+            "finite_count": int(finite.size),
+            "nan_count": int(np.isnan(numeric).sum()),
+            "inf_count": int(np.isinf(numeric).sum()),
+        })
+        if finite.size:
+            payload.update({
+                "min": float(np.nanmin(finite)),
+                "max": float(np.nanmax(finite)),
+                "mean": float(np.nanmean(finite)),
+                "p05": float(np.nanpercentile(finite, 5)),
+                "p50": float(np.nanpercentile(finite, 50)),
+                "p95": float(np.nanpercentile(finite, 95)),
+            })
+
+    return payload
+
+
+def _json_safe_trace_value(value: Any) -> Any:
+    """Convert trace metadata to JSON-safe, compact values."""
+    if isinstance(value, np.ndarray):
+        return _trace_array_summary(value)
+    if isinstance(value, np.generic):
+        return _json_safe_trace_value(value.item())
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {
+            str(key): _json_safe_trace_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe_trace_value(item) for item in value]
+    if isinstance(value, float):
+        return float(value) if np.isfinite(value) else None
+    if isinstance(value, (int, str, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _curve_summaries_for_trace(
+    well: "Well",
+    curve_names: Optional[List[str]],
+) -> Dict[str, Any]:
+    """Build compact per-curve summaries for workflow trace exports."""
+    if not curve_names:
+        return {}
+
+    summaries: Dict[str, Any] = {}
+    for name in curve_names:
+        curve = well.get(name) if hasattr(well, "get") else None
+        if curve is None:
+            continue
+        summaries[str(name).upper()] = {
+            "unit": getattr(curve, "unit", ""),
+            "description": getattr(getattr(curve, "metadata", None), "description", ""),
+            "data": _trace_array_summary(np.asarray(curve.data)),
+        }
+    return summaries
+
+
 @dataclass
 class DynamicWorkflowConfig:
     """
@@ -307,6 +392,7 @@ class DynamicWorkflowConfig:
     phi_cl: float = 0.15
 
     # HC correction
+    apply_hc_correction: bool = False
     hc_type: str = "oil"  # oil or gas
 
     # Cutoffs
@@ -373,6 +459,20 @@ class StepResult:
     parameters: Dict[str, Any] = field(default_factory=dict)
     decisions: List[str] = field(default_factory=list)
     data: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-safe representation of this workflow step trace."""
+        return {
+            "step": self.step,
+            "success": bool(self.success),
+            "method": self.method,
+            "input_curves": list(self.input_curves),
+            "output_curves": list(self.output_curves),
+            "parameters": _json_safe_trace_value(self.parameters),
+            "decisions": list(self.decisions),
+            "message": self.message,
+            "data": _json_safe_trace_value(self.data or {}),
+        }
 
 
 @dataclass
@@ -462,6 +562,154 @@ class DynamicWorkflowResult:
             })
         return pd.DataFrame(rows)
 
+    def to_trace_dict(
+        self,
+        include_curves: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Export the full workflow route as a JSON-safe dictionary.
+
+        The trace is recorded at the workflow module boundary, so each step
+        shows why that module ran, which method was selected, which curves were
+        consumed, which curves were written, and the parameters used.
+        """
+        try:
+            well_name = self.well.name
+        except Exception:
+            header = getattr(self.well, "header", None)
+            well_name = getattr(header, "well_name", "") if header is not None else ""
+            if not well_name and isinstance(header, dict):
+                well_name = header.get("WELL") or header.get("well_name") or ""
+
+        well_summary = {
+            "name": well_name or "Unknown Well",
+            "depth_unit": getattr(self.well, "depth_unit", ""),
+            "top": _json_safe_trace_value(getattr(self.well, "top", None)),
+            "bottom": _json_safe_trace_value(getattr(self.well, "bottom", None)),
+            "step": _json_safe_trace_value(getattr(self.well, "step", None)),
+            "n_samples": int(getattr(self.well, "n_samples", 0) or 0),
+            "curve_count": int(getattr(self.well, "n_curves", 0) or 0),
+            "available_curves": sorted(str(curve) for curve in getattr(self.well, "curves", [])),
+        }
+
+        return {
+            "schema": "dynamic_workflow_trace",
+            "schema_version": 1,
+            "well": well_summary,
+            "success": bool(self.success),
+            "executed_steps": [step.step for step in self.steps_executed],
+            "skipped_steps": list(self.steps_skipped),
+            "specific_steps_skipped": _json_safe_trace_value(self.specific_steps_skipped),
+            "warnings": list(self.warnings),
+            "errors": list(self.errors),
+            "computed": {
+                "rw": _json_safe_trace_value(self.rw_computed),
+                "rmf": _json_safe_trace_value(self.rmf_computed),
+                "rcl": _json_safe_trace_value(self.rcl_computed),
+                "temperature_gradient": _json_safe_trace_value(self.temperature_gradient),
+            },
+            "config": _json_safe_trace_value(vars(self.config)),
+            "steps": [step.to_dict() for step in self.steps_executed],
+            "curve_summaries": _curve_summaries_for_trace(self.well, include_curves),
+        }
+
+    def to_json(
+        self,
+        path: Optional[Union[str, Path]] = None,
+        include_curves: Optional[List[str]] = None,
+        indent: int = 2,
+    ) -> Union[str, Path]:
+        """
+        Export the workflow route as JSON.
+
+        If ``path`` is provided, the JSON file is written and the output path is
+        returned. Otherwise the JSON string is returned.
+        """
+        text = json.dumps(
+            self.to_trace_dict(include_curves=include_curves),
+            indent=indent,
+            sort_keys=False,
+            allow_nan=False,
+        )
+        if path is None:
+            return text
+
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(text + "\n", encoding="utf-8")
+        return output_path
+
+    def to_markdown(
+        self,
+        path: Optional[Union[str, Path]] = None,
+        include_curves: Optional[List[str]] = None,
+    ) -> Union[str, Path]:
+        """
+        Export the workflow route as a human-readable Markdown report.
+
+        This mirrors ``to_json`` but is easier to scan when checking per-module
+        routing decisions for a single well.
+        """
+        trace = self.to_trace_dict(include_curves=include_curves)
+        well = trace["well"]
+        lines = [
+            "# Dynamic Workflow Trace",
+            "",
+            f"- Well: `{well['name']}`",
+            f"- Depth: `{well['top']} - {well['bottom']} {well['depth_unit']}`",
+            f"- Samples: `{well['n_samples']}`",
+            f"- Overall success: `{trace['success']}`",
+            f"- Executed steps: `{', '.join(trace['executed_steps']) or 'none'}`",
+            f"- Skipped steps: `{', '.join(trace['skipped_steps']) or 'none'}`",
+        ]
+
+        if trace["warnings"]:
+            lines.append(f"- Warnings: `{' ; '.join(trace['warnings'])}`")
+        if trace["errors"]:
+            lines.append(f"- Errors: `{' ; '.join(trace['errors'])}`")
+
+        computed = trace["computed"]
+        lines.extend([
+            "",
+            "## Computed Values",
+            f"- Rw: `{json.dumps(computed['rw'])}`",
+            f"- Rmf: `{json.dumps(computed['rmf'])}`",
+            f"- Rcl: `{json.dumps(computed['rcl'])}`",
+            f"- Temperature gradient: `{json.dumps(computed['temperature_gradient'])}`",
+        ])
+
+        for step in trace["steps"]:
+            lines.extend([
+                "",
+                f"## {step['step']}",
+                f"- Success: `{step['success']}`",
+                f"- Method: `{step['method'] or 'none'}`",
+                f"- Inputs: `{', '.join(step['input_curves']) or 'none'}`",
+                f"- Outputs: `{', '.join(step['output_curves']) or 'none'}`",
+                f"- Parameters: `{json.dumps(step['parameters'], sort_keys=True)}`",
+            ])
+            if step["decisions"]:
+                lines.append("- Decisions:")
+                lines.extend(f"  - {decision}" for decision in step["decisions"])
+            if step["message"]:
+                lines.append(f"- Message: `{step['message']}`")
+            if step["data"]:
+                lines.append(f"- Data: `{json.dumps(step['data'], sort_keys=True)}`")
+
+        if trace["curve_summaries"]:
+            lines.extend(["", "## Curve Summaries"])
+            for name, summary in trace["curve_summaries"].items():
+                lines.append(f"- {name}: `{json.dumps(summary, sort_keys=True)}`")
+
+        text = "\n".join(lines) + "\n"
+        if path is None:
+            return text
+
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(text, encoding="utf-8")
+        return output_path
+
 
 class DynamicWorkflow:
     """
@@ -497,10 +745,10 @@ class DynamicWorkflow:
             (WorkflowStep.RCL, self._step_rcl, self._can_rcl),
             (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
             (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
-            (WorkflowStep.RW, self._step_rw, self._can_rw),
-            (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
             (WorkflowStep.HC_CORRECTION, self._step_hc_correction, self._can_hc_correction),
             (WorkflowStep.POROSITY, self._step_porosity, self._can_porosity),
+            (WorkflowStep.RW, self._step_rw, self._can_rw),
+            (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
             (WorkflowStep.SATURATION, self._step_saturation, self._can_saturation),
             (WorkflowStep.PERMEABILITY, self._step_permeability, self._can_permeability),
             (WorkflowStep.ROCK_QUALITY, self._step_rock_quality, self._can_rock_quality),
@@ -560,10 +808,10 @@ class DynamicWorkflow:
             (WorkflowStep.RCL, self._step_rcl, self._can_rcl),
             (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
             (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
-            (WorkflowStep.RW, self._step_rw, self._can_rw),
-            (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
             (WorkflowStep.HC_CORRECTION, self._step_hc_correction, self._can_hc_correction),
             (WorkflowStep.POROSITY, self._step_porosity, self._can_porosity),
+            (WorkflowStep.RW, self._step_rw, self._can_rw),
+            (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
             (WorkflowStep.SATURATION, self._step_saturation, self._can_saturation),
             (WorkflowStep.PERMEABILITY, self._step_permeability, self._can_permeability),
             (WorkflowStep.ROCK_QUALITY, self._step_rock_quality, self._can_rock_quality),
@@ -602,7 +850,7 @@ class DynamicWorkflow:
         """Detect which curves are available in the well."""
         available = set()
         for name in ["GR", "SP", "NPHI", "RHOB", "DTC", "DTS", "RDEP", "RT",
-                      "RESS", "RESM", "RXO", "PEF", "CAL", "BS", "DRHO",
+                      "RESS", "RESM", "RSHA", "RXO", "PEF", "CALI", "CAL", "BS", "DRHO",
                       "VCLAY", "PHIE", "PHIT", "SWT-LOG", "SXO-LOG", "PERM", "TEMP"]:
             if well.get(name) is not None:
                 available.add(name)
@@ -634,13 +882,13 @@ class DynamicWorkflow:
         )
 
     def _can_bad_hole(self, well: "Well") -> bool:
-        return self._has_curve(well, "CAL") or self._has_curve(well, "DRHO")
+        return self._has_curve(well, "CALI", "CAL") or self._has_curve(well, "DRHO")
 
     def _can_vclay(self, well: "Well") -> bool:
         return self._has_curve(well, "GR")
 
     def _can_rcl(self, well: "Well") -> bool:
-        return self._has_curve(well, "RDEP", "RT") and self._has_curve(well, "VCLAY")
+        return self._has_curve(well, "RDEP", "RT") and self._has_curve(well, "VCL", "VCLAY")
 
     def _can_lithology(self, well: "Well") -> bool:
         return (self._has_curve(well, "RHOB") and
@@ -669,18 +917,22 @@ class DynamicWorkflow:
         return True
 
     def _can_invasion(self, well: "Well") -> bool:
-        return (self._has_curve(well, "RESS", "RXO") and
+        return (self._has_curve(well, "RSHA", "RESS", "RXO") and
                 self._has_curve(well, "RDEP", "RT"))
 
     def _can_hc_correction(self, well: "Well") -> bool:
-        return self._has_curve(well, "NPHI") and self._has_curve(well, "RHOB")
+        return (
+            self.config.apply_hc_correction
+            and self._has_curve(well, "NPHI")
+            and self._has_curve(well, "RHOB")
+        )
 
     def _can_porosity(self, well: "Well") -> bool:
         return self._has_curve(well, "RHOB", "NPHI", "DTC", "PHIN", "PHIT", "PHID", "PHIS")
 
     def _can_saturation(self, well: "Well") -> bool:
         return (self._has_curve(well, "RDEP", "RT") and
-                (self._has_curve(well, "PHIE") or self._has_curve(well, "RHOB")) and
+                self._has_curve(well, "PHIE") and
                 self._result.rw_computed is not None)
 
     def _can_permeability(self, well: "Well") -> bool:
@@ -787,14 +1039,14 @@ class DynamicWorkflow:
         trace = StepResult(step="bad_hole", success=True, method="caliper_drho_flags")
         inputs = []
 
-        cali = well.get("CAL")
+        cali = well.get("CALI") or well.get("CAL")
         bs_curve = well.get("BS")
         drho = well.get("DRHO")
         rhob = well.get("RHOB")
         pef = well.get("PEF")
 
         bs = bs_curve.data if bs_curve is not None else 8.5
-        if cali is not None: inputs.append("CAL")
+        if cali is not None: inputs.append(cali.mnemonic)
         if bs_curve is not None: inputs.append("BS")
         if drho is not None: inputs.append("DRHO")
         if rhob is not None: inputs.append("RHOB")
@@ -918,12 +1170,12 @@ class DynamicWorkflow:
         vcl_module.add_to_well(well, result)
 
         inputs = ["GR"]
-        outputs = ["VCL"]
+        outputs = ["VCL", "VCLAY"]
         if use_sp: inputs.append("SP")
         if use_nd: inputs.extend(["NPHI", "RHOB"])
-        if result.vcl_gr is not None: outputs.append("VCLGR")
-        if result.vcl_sp is not None: outputs.append("VCLSP")
-        if result.vcl_nd is not None: outputs.append("VCLND")
+        if result.vcl_gr is not None: outputs.extend(["VCL_GR", "VCLGR"])
+        if result.vcl_sp is not None: outputs.extend(["VCL_SP", "VCLSP"])
+        if result.vcl_nd is not None: outputs.extend(["VCL_ND", "VCLND"])
 
         decisions.append(f"Final VCL = min(available methods), range: "
                         f"{np.nanmin(result.vcl):.3f} - {np.nanmax(result.vcl):.3f}")
@@ -952,7 +1204,11 @@ class DynamicWorkflow:
         from petrophys.clay_volume.rcl import RclModule
 
         trace = StepResult(step="rcl", success=True, method="median_Rt_in_shale_zones")
-        trace.input_curves = ["RT", "VCLAY"]
+        rdep_curve = well.get("RDEP") or well.get("RT")
+        vcl_curve = well.get("VCL") or well.get("VCLAY")
+        trace.input_curves = [
+            curve.mnemonic for curve in (rdep_curve, vcl_curve) if curve is not None
+        ]
         trace.parameters = {"vcl_threshold": 0.9, "default_rcl": 5.0, "statistic": "median"}
 
         lithology = self._build_lithology_log(well)
@@ -965,10 +1221,11 @@ class DynamicWorkflow:
             )
 
         rcl_module = RclModule(statistic="median")
-        self._result.rcl_computed = rcl_module.calculate(well, shale_mask=shale_mask)
-
-        rdep_curve = well.get("RDEP") or well.get("RT")
-        vcl_curve = well.get("VCL") or well.get("VCLAY")
+        self._result.rcl_computed = rcl_module.calculate(
+            well,
+            vcl=vcl_curve.data if vcl_curve is not None else None,
+            shale_mask=shale_mask,
+        )
         shale_sample_count = 0
         source = "default"
         if rdep_curve is not None:
@@ -1431,9 +1688,50 @@ class DynamicWorkflow:
         else:
             decisions.append("Rw heuristic methods skipped because Rmf is unavailable")
 
+        rt_curve = well.get("RDEP") or well.get("RT")
+        phie_curve = well.get("PHIE")
+        vcl_curve = well.get("VCL") or well.get("VCLAY")
+        if rt_curve is not None and phie_curve is not None and vcl_curve is not None:
+            rdep = np.asarray(rt_curve.data, dtype=float)
+            phie = np.asarray(phie_curve.data, dtype=float)
+            vcl = np.asarray(vcl_curve.data, dtype=float)
+            clean_wet_mask = (
+                np.isfinite(rdep)
+                & np.isfinite(phie)
+                & np.isfinite(vcl)
+                & (vcl < 0.3)
+                & (phie > 0.05)
+            )
+            with np.errstate(divide="ignore", invalid="ignore"):
+                rwa = rdep / np.power(phie, 2.0)
+            valid = clean_wet_mask & np.isfinite(rwa) & (rwa > 0)
+            if np.any(valid):
+                rw_value = float(np.percentile(rwa[valid], 5))
+                decisions.append(
+                    f"Rw from Rwa clean-wet fallback: P5 of RDEP / PHIE^2 where VCL < 0.3 and PHIE > 0.05 (n={int(np.count_nonzero(valid))})"
+                )
+                return _finalize_rw(
+                    "rwa_clean_wet_p5",
+                    rw_value,
+                    {
+                        "rwa_percentile": 5.0,
+                        "rwa_clean_wet_samples": int(np.count_nonzero(valid)),
+                        "rwa_min": float(np.nanmin(rwa[valid])),
+                        "rwa_max": float(np.nanmax(rwa[valid])),
+                        "rw_from_rwa": rw_value,
+                        "vcl_cutoff": 0.3,
+                        "phie_cutoff": 0.05,
+                        "source_priority": "Rwa clean-wet fallback",
+                    },
+                    [rt_curve.mnemonic, phie_curve.mnemonic, vcl_curve.mnemonic],
+                )
+            decisions.append("Rwa clean-wet fallback skipped because no valid VCL < 0.3 and PHIE > 0.05 samples were available")
+        else:
+            decisions.append("Rwa clean-wet fallback skipped because RDEP/RT, PHIE, or VCL is unavailable")
+
         self._result.warnings.append("Rw could not be determined. Using default 0.05 ohm.m")
         decisions.append(
-            "All Rw priority sources failed (config/LAS RW, salinity, SP, Rxo/Rt) -> default 0.05"
+            "All Rw priority sources failed (config/LAS RW, salinity, SP, Rxo/Rt, Rwa clean-wet fallback) -> default 0.05"
         )
         rw_curve = rw_from_salinity(float(salinity_from_rw(0.05, reference_temp)), temp_profile)
         return _finalize_rw(
@@ -1453,7 +1751,11 @@ class DynamicWorkflow:
         invasion_module = InvasionModule()
         result = invasion_module.analyze(well)
         well.add_curve("INVASION_RATIO", result.ratio, "", "Invasion Ratio Rxo/Rt")
-        trace.input_curves = ["RT", "RESS"]
+        rxo_curve = well.get("RSHA") or well.get("RXO") or well.get("RESS")
+        rt_curve = well.get("RDEP") or well.get("RT")
+        trace.input_curves = [
+            curve.mnemonic for curve in (rt_curve, rxo_curve) if curve is not None
+        ]
         trace.output_curves = ["INVASION_RATIO"]
         return trace
 
@@ -1810,7 +2112,12 @@ class DynamicWorkflow:
             outputs.append("SXO")
 
         trace.method = result.model
-        trace.input_curves = ["RT", "PHIE", "VCLAY"]
+        rt_curve = well.get("RDEP") or well.get("RT")
+        phie_curve = well.get("PHIE")
+        vcl_curve = well.get("VCL") or well.get("VCLAY")
+        trace.input_curves = [
+            curve.mnemonic for curve in (rt_curve, phie_curve, vcl_curve) if curve is not None
+        ]
         trace.output_curves = outputs
         trace.parameters = {
             "sw_model": result.model,
@@ -1868,6 +2175,32 @@ class DynamicWorkflow:
 
         trace = StepResult(step="permeability", success=True, method=self.config.perm_method)
         decisions = []
+        resflag_info = None
+        perm_method_norm = str(self.config.perm_method or "").strip().lower().replace("-", "_")
+        perm_method_uses_swirr = perm_method_norm not in {"lith_vcl", "lithology_vcl", "dunite", "dunite_basic"}
+        if perm_method_uses_swirr and self.config.swirr is None and not self._has_curve(well, "SWIRR", "SWI", "SWIR"):
+            resflag_info = self._ensure_resflag_for_swirr(well)
+        outputs = []
+
+        if resflag_info is not None:
+            if resflag_info.get("created"):
+                outputs.append("RESFLAG")
+                if resflag_info.get("source_curve") == "NET_RES":
+                    decisions.append(
+                        "RESFLAG copied from existing NET_RES before permeability "
+                        f"({resflag_info['reservoir_samples']} reservoir samples)"
+                    )
+                else:
+                    decisions.append(
+                        "RESFLAG created before permeability from NetPayModule net_reservoir "
+                        f"using {resflag_info['vcl_curve']}, {resflag_info['phie_curve']}, "
+                        f"and {resflag_info['sw_curve']} ({resflag_info['reservoir_samples']} samples)"
+                    )
+            else:
+                decisions.append(
+                    f"{resflag_info['source_curve']} already present before permeability "
+                    "and available for Swirr routing"
+                )
 
         perm_module = PermeabilityModule(
             method=self.config.perm_method,
@@ -1886,7 +2219,7 @@ class DynamicWorkflow:
         perm_desc = empirical_method if empirical_perm is not None else result.method
         well.add_curve("PERM", perm_output, "mD", f"Permeability ({perm_desc})")
 
-        outputs = ["PERM"]
+        outputs.append("PERM")
         phi_corecal = result.metadata.get("phi_corecal")
         perm_core = result.metadata.get("perm_core")
         if phi_corecal is not None:
@@ -1905,23 +2238,35 @@ class DynamicWorkflow:
                 "Permeability from core-calibrated poro-perm transform",
             )
             outputs.append("PERM_CC")
-        if isinstance(result.swi_used, np.ndarray) and result.swi_source == "apparent_buckles":
-            well.add_curve("SWIRR_APP", result.swi_used, "v/v", "Apparent Irreducible Water Saturation")
-            outputs.append("SWIRR_APP")
-        trace.input_curves = [result.metadata.get("porosity_curve", "PHIE")]
+        method_metadata = result.metadata.get("method_metadata") or {}
+        method_input_curves = result.metadata.get("input_curves") or []
+        input_curves = list(method_input_curves) if empirical_method == "lith_vcl" else [result.metadata.get("porosity_curve", "PHIE")]
+        if empirical_method != "lith_vcl" and result.swi_source in {"hc_mask_p5", "default_0.20"}:
+            input_curves.append("SW")
+            rt_curve = result.swi_metadata.get("rt_curve")
+            if rt_curve:
+                input_curves.append(rt_curve)
+            if result.swi_metadata.get("resflag_source"):
+                input_curves.append(result.swi_metadata["resflag_source"])
+        trace.input_curves = list(dict.fromkeys(input_curves))
         trace.output_curves = outputs
         trace.parameters = {
             "method": self.config.perm_method,
             "fallback_method": self.config.perm_fallback_method,
             "swirr_source": result.swi_source,
             "bvw_irr": result.bvw_irr,
+            "swirr_metadata": result.swi_metadata,
             "strategy": result.metadata.get("strategy"),
             "same_well_core_models": result.metadata.get("same_well_core_models"),
             "peer_core_models": result.metadata.get("peer_core_models"),
             "peer_wells_considered": result.metadata.get("peer_wells_considered"),
             "empirical_method": empirical_method,
             "empirical_error": result.metadata.get("empirical_error"),
+            "empirical_attempted_methods": result.metadata.get("empirical_attempted_methods"),
+            "empirical_method_metadata": method_metadata,
         }
+        if resflag_info is not None:
+            trace.parameters["pre_permeability_resflag"] = resflag_info
         if result.metadata.get("core_sections_count"):
             decisions.append(
                 f"Core-calibrated sections: {result.metadata['core_sections_count']} samples"
@@ -1936,13 +2281,41 @@ class DynamicWorkflow:
             )
         if np.isscalar(result.swi_used):
             trace.parameters["swirr"] = float(result.swi_used)
-            decisions.append(f"Swirr = {float(result.swi_used):.3f} ({result.swi_source})")
+            if result.swi_source == "hc_mask_p5":
+                n_samples = result.swi_metadata.get("hc_mask_samples")
+                rt_curve = result.swi_metadata.get("rt_curve", "RDEP")
+                decisions.append(
+                    f"Swirr = P5(SW where resflag and {rt_curve} > 5) = {float(result.swi_used):.3f} (n={n_samples})"
+                )
+            elif result.swi_source == "default_0.20":
+                n_samples = result.swi_metadata.get("hc_mask_samples")
+                reason = result.swi_metadata.get("reason")
+                if n_samples is not None:
+                    decisions.append(f"Swirr = 0.200 fallback because hydrocarbon mask had {n_samples} samples")
+                elif reason:
+                    decisions.append(f"Swirr = 0.200 fallback because {reason}")
+                else:
+                    decisions.append("Swirr = 0.200 fallback")
+            else:
+                decisions.append(f"Swirr = {float(result.swi_used):.3f} ({result.swi_source})")
         elif isinstance(result.swi_used, np.ndarray):
             decisions.append(f"Swirr resolved as curve ({result.swi_source})")
-            if result.bvw_irr is not None:
-                decisions.append(f"Apparent BVWirr = {result.bvw_irr:.4f} v/v")
+        elif result.swi_source == "not_required" and empirical_method == "lith_vcl":
+            decisions.append(
+                "Swirr not used because lith_vcl permeability uses PHIT, VCL, and lithology"
+            )
         else:
             decisions.append("Swirr not used because permeability came from core calibration")
+        if empirical_method == "lith_vcl":
+            decisions.append(
+                "lith_vcl empirical permeability: "
+                "10 ** min(4.5, slope * PHIT * (1 - VCL * 1.2) + intercept)"
+            )
+            groups = method_metadata.get("lithology_parameter_groups") or []
+            if groups:
+                decisions.append("lith_vcl parameter groups used: " + ", ".join(groups))
+        if result.metadata.get("empirical_error") and empirical_method == "lith_vcl":
+            decisions.append(f"Earlier empirical method failed before lith_vcl: {result.metadata['empirical_error']}")
         decisions.append(f"Empirical permeability curve stored as PERM ({perm_desc})")
         if perm_core is not None:
             decisions.append("Core-corrected permeability stored as PERM_CC")
@@ -1950,6 +2323,68 @@ class DynamicWorkflow:
         decisions.append(f"Perm range: {np.nanmin(perm_output):.3f} - {np.nanmax(perm_output):.1f} mD")
         trace.decisions = decisions
         return trace
+
+    def _ensure_resflag_for_swirr(self, well: "Well") -> Optional[Dict[str, Any]]:
+        """Create RESFLAG before permeability so Swirr uses workflow net-reservoir logic."""
+        resflag_curve = well.get("RESFLAG")
+        if resflag_curve is not None:
+            data = np.asarray(resflag_curve.data, dtype=float)
+            return {
+                "source_curve": "RESFLAG",
+                "created": False,
+                "reservoir_samples": int(np.nansum(data > 0.5)),
+            }
+
+        net_res_curve = well.get("NET_RES")
+        if net_res_curve is not None:
+            data = np.asarray(net_res_curve.data, dtype=float)
+            well.add_curve("RESFLAG", data, "", "Reservoir Flag")
+            return {
+                "source_curve": "NET_RES",
+                "created": True,
+                "vcl_curve": "existing_NET_RES",
+                "phie_curve": "existing_NET_RES",
+                "sw_curve": "existing_NET_RES",
+                "reservoir_samples": int(np.nansum(data > 0.5)),
+            }
+
+        if not self._has_curve(well, "PHIE") or not self._has_curve(well, "SW", "SWA", "SWT-LOG"):
+            return None
+
+        from petrophys.reservoir.net_pay.net_pay_module import NetPayModule
+
+        phie_curve = self._first_curve(well, "PHIE")
+        sw_curve = self._first_curve(well, "SW", "SWA", "SWT-LOG")
+        vcl_curve = well.get("VCL") or well.get("VCLAY")
+        vcl = np.asarray(vcl_curve.data, dtype=float) if vcl_curve is not None else None
+
+        lithology = self._build_lithology_log(well)
+        np_module = NetPayModule(
+            vcl_cutoff=self.config.vcl_cutoff,
+            phie_cutoff=self.config.phie_cutoff,
+            sw_cutoff=self.config.sw_cutoff,
+            lithology=lithology,
+        )
+        result = np_module.calculate(
+            well,
+            vcl=vcl,
+            phie=np.asarray(phie_curve.data, dtype=float),
+            sw=np.asarray(sw_curve.data, dtype=float),
+        )
+        resflag = result.net_reservoir.astype(float)
+        well.add_curve("RESFLAG", resflag, "", "Reservoir Flag")
+
+        return {
+            "source_curve": "NetPayModule.net_reservoir",
+            "created": True,
+            "vcl_curve": vcl_curve.mnemonic if vcl_curve is not None else "implicit_0",
+            "phie_curve": phie_curve.mnemonic,
+            "sw_curve": sw_curve.mnemonic,
+            "vcl_cutoff": self.config.vcl_cutoff,
+            "phie_cutoff": self.config.phie_cutoff,
+            "sw_cutoff": self.config.sw_cutoff,
+            "reservoir_samples": int(np.nansum(resflag > 0.5)),
+        }
 
     def _step_rock_quality(self, well: "Well") -> StepResult:
         from petrophys.reservoir.rock_quality.rock_quality_module import RockQualityModule

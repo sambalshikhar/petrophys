@@ -1186,7 +1186,7 @@ def _missing_curve_reason(
 
     if curve == "SWIRR_APP" and step is not None:
         swirr_source = step.parameters.get("swirr_source")
-        if swirr_source and swirr_source != "apparent_buckles":
+        if swirr_source:
             return f"Swirr source was {swirr_source}"
 
     if step_name and step_name in skipped_steps:
@@ -1366,6 +1366,7 @@ def _method_label(name: str) -> str:
         "salinity_conversion": "salinity-to-RW conversion",
         "sp_clean_water": "SP clean-water method",
         "rxo_rt_clean_water": "Rxo/Rt clean-water method",
+        "rwa_clean_wet_p5": "Rwa clean-wet P5 fallback",
         "default_fallback": "default RW fallback (0.05 ohm.m)",
         "default_fallback_profile": "default RW fallback (0.05 ohm.m) with depth-wise temperature correction",
         "component_based": "component-based porosity workflow",
@@ -1911,10 +1912,19 @@ def _build_delivery_computation_notes(well: "Well", workflow_result) -> List[str
                     note += f" over {temp_profile}"
                 note += "."
             notes.append(note)
+        elif methods == ["rwa_clean_wet_p5"]:
+            n_samples = _format_numeric_summary(_step_parameter_values(rw_steps, "rwa_clean_wet_samples"), 0, "samples")
+            rw_from_rwa = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_from_rwa"), 4, "ohm.m")
+            notes.append(
+                "RW: For this well, direct RW, salinity, RMF+SP, and RMF+Rxo/Rt sources were unavailable or unusable, "
+                "so RW was set from the P5 of RWA = RDEP / PHIE^2 in clean-wet samples where VCL < 0.3 and PHIE > 0.05."
+                + (f" Samples used: {n_samples}." if n_samples else "")
+                + (f" Final RW: {rw_from_rwa}." if rw_from_rwa else "")
+            )
         elif methods == ["default_fallback_profile"]:
             reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "reference_temp_f"), 1, "F")
             notes.append(
-                "RW: For this well, no usable direct RW, salinity, RMF+SP, or RMF+Rxo/Rt source was available, "
+                "RW: For this well, no usable direct RW, salinity, RMF+SP, RMF+Rxo/Rt, or Rwa clean-wet source was available, "
                 "so the default clean-water input RW = 0.05 ohm.m was converted to equivalent salinity and rewritten depth-by-depth."
                 + (f" Assumed reference temperature: {reference_temp}." if reference_temp else "")
                 + (f" Final RW(T) range: {rw_values}." if rw_values else "")
@@ -2164,7 +2174,6 @@ def _build_delivery_computation_notes(well: "Well", workflow_result) -> List[str
             for step in permeability_steps
             if step.parameters.get("swirr_source")
         )
-        bvw_irr = _format_numeric_summary(_step_parameter_values(permeability_steps, "bvw_irr"), 4, "v/v")
         swirr_scalar = _format_numeric_summary(_step_parameter_values(permeability_steps, "swirr"), 4, "v/v")
         perm_present = well.get("PERM") is not None
         perm_cc_present = well.get("PERM_CC") is not None
@@ -2190,6 +2199,8 @@ def _build_delivery_computation_notes(well: "Well", workflow_result) -> List[str
                 equations.append("Coates-Denoo equation: k = 100^2 * [PHIE * (1 - Swirr) / Swirr]^2")
             if "wyllie_rose" in empirical:
                 equations.append("Wyllie-Rose equation: k = 250 * PHIE^3 / Swirr^2")
+            if "lith_vcl" in empirical:
+                equations.append("lith_vcl equation: k = 10 ** min(4.5, slope * PHIT * (1 - VCL * 1.2) + intercept)")
             if equations:
                 note += " " + ". ".join(equations) + "."
         else:
@@ -2200,12 +2211,17 @@ def _build_delivery_computation_notes(well: "Well", workflow_result) -> List[str
             note += " No valid core-calibrated porosity-permeability transform was available for this well, so only empirical PERM is retained."
         if strategies:
             note += f" Permeability strategy used in this well: {_friendly_join(strategies)}."
-        if swirr_sources:
-            note += f" Swirr source used: {_friendly_join(swirr_sources)}."
+        swirr_sources_without_not_required = [source for source in swirr_sources if source != "not_required"]
+        if swirr_sources_without_not_required:
+            note += f" Swirr source used: {_friendly_join(swirr_sources_without_not_required)}."
             if swirr_scalar:
                 note += f" Swirr value used: {swirr_scalar}."
-            if "apparent_buckles" in swirr_sources and bvw_irr:
-                note += f" Apparent Buckles BVWirr used: {bvw_irr}, with SWIRR_APP = BVWirr / PHIE."
+            if "hc_mask_p5" in swirr_sources_without_not_required:
+                note += " Swirr came from P5(SW) where reservoir flag is true and RDEP/RT > 5 ohm.m."
+            if "default_0.20" in swirr_sources_without_not_required:
+                note += " Swirr used the 0.20 fallback because the hydrocarbon mask was unavailable or too small."
+        elif "not_required" in swirr_sources:
+            note += " Swirr was not used by the selected empirical permeability method."
         notes.append(note)
 
     if any(well.get(curve) is not None for curve in ("RQI", "FZI", "PHI_Z", "PHI_NORM")):

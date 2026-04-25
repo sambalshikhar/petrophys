@@ -65,6 +65,9 @@ PARAMETER_ALIASES: dict[str, str] = {
     "LITHOLOGY": "lithology",
     "MATRIX": "matrix_type",
     "MATRIX_TYPE": "matrix_type",
+    "APPLY_HC_CORRECTION": "apply_hc_correction",
+    "HC_CORRECTION": "apply_hc_correction",
+    "HCCORRECTION": "apply_hc_correction",
     "HC_TYPE": "hc_type",
     "PHI_CL": "phi_cl",
     "PHICL": "phi_cl",
@@ -194,7 +197,7 @@ def _clone_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowCon
 def _prepare_batch_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowConfig:
     prepared = _clone_config(config)
     skip_steps = list(prepared.skip_steps)
-    if "hc_correction" not in skip_steps:
+    if not prepared.apply_hc_correction and "hc_correction" not in skip_steps:
         skip_steps.append("hc_correction")
     prepared.skip_steps = skip_steps
     return prepared
@@ -234,14 +237,23 @@ def _normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _parse_bool(value: Any) -> bool:
+    if isinstance(value, (np.bool_, bool)):
+        return bool(value)
+    if isinstance(value, (np.integer, int, np.floating, float)) and not isinstance(value, bool):
+        return bool(float(value))
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "t", "yes", "y", "on"}
+
+
 def _salinity_to_ppm(value: float, unit: str) -> float:
     text = (unit or "").strip().lower()
     if not text:
         return float(value)
-    if "mg/l" in text or "mg\\l" in text or "ppm" in text:
-        return float(value)
     if "kppm" in text or "ppk" in text:
         return float(value) * 1000.0
+    if "mg/l" in text or "mg\\l" in text or "ppm" in text:
+        return float(value)
     if "g/l" in text:
         return float(value) * 1000.0
     if "%" in text and "/" not in text:
@@ -478,6 +490,10 @@ def _apply_parameter_alias(
 
     if target in {"mud_type", "mud_water", "lithology", "matrix_type", "hc_type"}:
         overrides[target] = _normalize_text(value)
+        return
+
+    if target in {"apply_hc_correction"}:
+        overrides[target] = _parse_bool(value)
         return
 
     try:
@@ -1139,7 +1155,7 @@ def write_curve_audit_report(
                         return f"no usable core permeability model; strategy={strategy}"
                 if curve == "SWIRR_APP" and step is not None:
                     swirr_source = step.parameters.get("swirr_source")
-                    if swirr_source and swirr_source != "apparent_buckles":
+                    if swirr_source:
                         return f"Swirr source was {swirr_source}"
                 if curve == "SW" and step_name == "saturation" and step is None:
                     return "saturation step did not run"
