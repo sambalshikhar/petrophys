@@ -1079,6 +1079,59 @@ def _display_trace_value(value: Any) -> Any:
     return value
 
 
+def _raw_input_dir_for_processed(input_path: Path) -> Optional[Path]:
+    """Infer a sibling raw LAS directory for processed inputs when possible."""
+    name = input_path.name
+    candidates: list[Path] = []
+    if name.endswith("_processed"):
+        candidates.append(input_path.with_name(name[: -len("_processed")]))
+    if name.lower() == "eval_processed":
+        candidates.append(input_path.with_name("eval"))
+
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+    return None
+
+
+def _raw_curve_lookup(
+    raw_input_dir: Optional[str | Path],
+    pattern: str,
+    recursive: bool,
+) -> dict[str, set[str]]:
+    """Return standardized raw LAS curve names keyed by LAS stem."""
+    if raw_input_dir is None:
+        return {}
+
+    raw_path = Path(raw_input_dir)
+    if not raw_path.exists() or not raw_path.is_dir():
+        return {}
+
+    files = sorted(raw_path.rglob(pattern) if recursive else raw_path.glob(pattern))
+    lookup: dict[str, set[str]] = {}
+    for file_path in files:
+        try:
+            raw_well = read_las(file_path)
+            raw_well = standardize_curves(raw_well, rename_curves=True, convert_units=True)
+            lookup[file_path.stem.lower()] = set(raw_well.curves)
+        except Exception:
+            continue
+    return lookup
+
+
+def _raw_original_curves_for_file(
+    file_path: Path,
+    processed_original_curves: set[str],
+    raw_curves_by_stem: dict[str, set[str]],
+) -> set[str]:
+    """Use raw LAS curves for context provenance, falling back to processed input."""
+    return set(raw_curves_by_stem.get(file_path.stem.lower()) or processed_original_curves)
+
+
+def _input_log_display_list(curves: set[str]) -> List[str]:
+    return sorted(_display_curve_name(name) for name in curves)
+
+
 def _target_curve_candidates(curve: str) -> List[str]:
     mapping = {
         "TMPC": ["TMPC", "TEMP"],
@@ -2296,12 +2349,345 @@ def _build_lithology_method_notes(
     return notes
 
 
+def _first_step_result(workflow_result, step_name: str):
+    steps = _all_step_results(workflow_result, step_name)
+    return steps[0] if steps else None
+
+
+def _curve_range_text(well: "Well", names: Sequence[str], decimals: int = 4, unit: str = "") -> str:
+    curve = _first_curve(well, names)
+    if curve is None:
+        return ""
+    values = _normalize_numeric_array(curve.data)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return ""
+    text = f"{_format_numeric(float(np.nanmin(finite)), decimals)}-{_format_numeric(float(np.nanmax(finite)), decimals)}"
+    return text + (f" {unit}" if unit else "")
+
+
+def _compact_status_lists(
+    well: "Well",
+    workflow_result,
+    original_curves: Optional[set[str]],
+) -> tuple[list[str], list[str]]:
+    if original_curves is None:
+        return [], []
+    statuses = _build_reference_derived_log_status(well, workflow_result, original_curves)
+    computed = [item["mnemonic"] for item in statuses if item.get("status") == "computed"]
+    missing = [item["mnemonic"] for item in statuses if item.get("status") == "missing"]
+    return computed, missing
+
+
+def _compact_lithology_notes(
+    well: "Well",
+    lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
+) -> list[str]:
+    from petrophys.base.constants import ArchieParameterDefaults
+
+    info = _build_reference_lithology_info(well, lithology_mapping=lithology_mapping)
+    unique = ", ".join(info["unique_lithologies"]) if info["unique_lithologies"] else "none"
+    notes = [
+        (
+            "Lithology: "
+            f"valid={info['valid_lithology_count']}/{info['total_rows']} "
+            f"({info['valid_lithology_percentage']:.0f}%), NaN={info['nan_count']}, "
+            f"sentinel={info['sentinel_count']}, unique={unique}."
+        ),
+        "Lithology fallback: "
+        + (
+            "generic clean-rock defaults used for invalid/missing rows."
+            if info["nan_count"] or info["sentinel_count"] or not info["has_valid_lithology"]
+            else "not used."
+        ),
+    ]
+
+    archie_parts = []
+    for lithology in info["unique_lithologies"][:8]:
+        coeffs = ArchieParameterDefaults.get(lithology)
+        archie_parts.append(f"{lithology}: a={coeffs.a}, m={coeffs.m}, n={coeffs.n} ({coeffs.closest_lithology})")
+    if archie_parts:
+        notes.append("Archie coefficients: " + "; ".join(archie_parts) + ".")
+    return notes
+
+
+def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "Well") -> str:
+    params = getattr(step, "parameters", {}) or {}
+
+    if curve in {"BAD_HOLE", "BADHOLEFLAG"} and step is not None:
+        from petrophys.base.constants import DefaultParameters
+
+        bad_curve = well.get("BAD_HOLE") or well.get("BADHOLEFLAG")
+        bad_count = int(np.nansum(_normalize_numeric_array(bad_curve.data) > 0.5)) if bad_curve is not None else 0
+        bad_pct = bad_count / max(int(well.n_samples), 1) * 100.0
+        bit_size = params.get("bit_size_used")
+        return (
+            f"{curve}: washout=(CALI-BS)>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in or "
+            f"|DRHO|>{DefaultParameters.DRHO_THRESHOLD:.2f} g/cc; "
+            f"large_hole=BS>{DefaultParameters.LARGE_HOLE_BS:.2f} in; rule=washout OR large_hole"
+            + (f"; BS={_format_numeric(bit_size, 2)} in" if bit_size is not None else "")
+            + f"; flagged={bad_count}/{well.n_samples} ({bad_pct:.0f}%)."
+        )
+
+    if curve == "TMPC" and step is not None:
+        method = getattr(step, "method", "")
+        temp_range = _curve_range_text(well, ["TEMP", "TMPC"], 1, "F")
+        if method == "linear_gradient_from_BHT":
+            return (
+                "TMPC: surface-to-BHT profile; "
+                f"surface={_format_numeric(params.get('surface_temp_f'), 1)} F, "
+                f"BHT={_format_numeric(params.get('bht_f'), 1)} F, "
+                f"gradient={_format_numeric(params.get('gradient_f_per_100ft'), 4)} F/100ft"
+                + (f"; TEMP={temp_range}." if temp_range else ".")
+            )
+        return (
+            "TMPC: fallback geothermal profile; "
+            f"surface={_format_numeric(params.get('surface_temp_f'), 1)} F, "
+            f"gradient={_format_numeric(params.get('gradient_f_per_100ft'), 4)} F/100ft"
+            + (f"; TEMP={temp_range}." if temp_range else ".")
+        )
+
+    if curve == "VCL" and step is not None:
+        methods = ["GR"]
+        if params.get("use_sp"):
+            methods.append("SP")
+        if params.get("use_nd"):
+            methods.append("ND")
+        return (
+            f"VCL: min({', '.join(methods)}); "
+            f"GRmin={_format_numeric(params.get('gr_min'), 1)} API, "
+            f"GRmax={_format_numeric(params.get('gr_max'), 1)} API; method={params.get('gr_method', 'linear')}."
+        )
+
+    if curve == "RMF":
+        if step is None or status == "missing":
+            return f"RMF: skipped because {reason}."
+        rmf_range = _depth_profile_range_text([step], "rmf_min", "rmf_max", 4, "ohm.m")
+        return f"RMF: method={step.method}; RMF(T)={rmf_range or 'not recorded'}."
+
+    if curve == "RW":
+        if step is None or status == "missing":
+            return f"RW: skipped because {reason}."
+        rw_range = _depth_profile_range_text([step], "rw_min", "rw_max", 4, "ohm.m")
+        if step.method == "rwa_clean_wet_p5":
+            return (
+                "RW: RWA clean-wet P5; "
+                f"RWA={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m; "
+                f"mask=VCL<{params.get('vcl_cutoff')} and PHIE>{params.get('phie_cutoff')}; "
+                f"samples={params.get('rwa_clean_wet_samples')}; RW(T)={rw_range}."
+            )
+        return f"RW: method={step.method}; RW(T)={rw_range or 'not recorded'}."
+
+    if curve == "PHIN" and step is not None:
+        endpoint = _porosity_endpoint_text(step, "nphi_ma", 3)
+        return "PHIN: clip(NPHI-nphi_ma(depth),0,0.6)" + (f"; {endpoint}." if endpoint else ".")
+    if curve == "PHID" and step is not None:
+        endpoint = _porosity_endpoint_text(step, "rho_ma", 3)
+        rho_fl = params.get("rho_fl")
+        return (
+            "PHID: clip((rho_ma(depth)-RHOB)/(rho_ma(depth)-rho_fl),0,0.5)"
+            + (f"; {endpoint}" if endpoint else "")
+            + (f"; rho_fl={_format_numeric(rho_fl, 3)}." if rho_fl is not None else ".")
+        )
+    if curve == "PHIS" and step is not None:
+        endpoint = _porosity_endpoint_text(step, "dt_ma", 1)
+        return (
+            "PHIS: Wyllie clip((DTC-dt_ma(depth))/(dt_fl-dt_ma(depth)),0,0.5)"
+            + (f"; {endpoint}" if endpoint else "")
+            + f"; dt_fl={_format_numeric(params.get('dt_fl'), 1)} us/ft."
+        )
+    if curve == "PHIT" and step is not None:
+        return "PHIT: PHID where PHID>PHIN+0.05; otherwise 0.6*PHID+0.4*PHIN; clipped 0-0.5."
+    if curve == "PHIE" and step is not None:
+        return "PHIE: clip(PHIT-VCL*phi_clay,0,PHIT); " + _porosity_phi_clay_text(params) + "."
+    if curve == "PHI_SEC":
+        return "PHI_SEC: max(PHIT-PHIS,0)."
+
+    if curve == "SW" and step is not None:
+        counts = params.get("sw_model_sample_counts") or {}
+        counts_text = ", ".join(f"{name}={count}" for name, count in sorted(counts.items())) if counts else "not recorded"
+        rw_range = _depth_profile_range_text([step], "rw_min", "rw_max", 4, "ohm.m")
+        return (
+            f"SW: model={params.get('sw_model') or step.method}; VCL cutoff={params.get('vcl_cutoff_for_routing')}; "
+            f"counts={counts_text}; a={params.get('a')}, m={params.get('m')}, n={params.get('n')}"
+            + (f"; RW(T)={rw_range}." if rw_range else ".")
+        )
+    if curve == "SXO" and step is not None:
+        method = params.get("sxo_method")
+        if method == "archie_rxo_rmf":
+            return "SXO: invaded-zone Archie using RXO/RSHA and RMF."
+        if method == "fifth_root_quicklook":
+            return "SXO: fallback SXO=SW^(1/5)."
+        return f"SXO: method={method or step.method}."
+
+    if curve == "PERM" and step is not None:
+        empirical = params.get("empirical_method") or step.method
+        cap = params.get("perm_max_clip_md")
+        cap_text = f"; clipped <= {cap:g} mD" if isinstance(cap, (int, float)) else ""
+        return f"PERM: empirical method={empirical}{cap_text}."
+    if curve == "PERM_CC":
+        return "PERM_CC: core-calibrated permeability." if status == "computed" else f"PERM_CC: skipped because {reason}."
+    if curve == "SWIRR_APP" and step is not None:
+        metadata = params.get("swirr_metadata") or {}
+        return (
+            "SWIRR_APP: P5(SW) over RESFLAG/NET_RES and RDEP/RT>5 ohm.m; "
+            f"percentile={metadata.get('percentile', 5)}, min_samples={metadata.get('min_samples', 10)}, "
+            f"hc_samples={metadata.get('hc_mask_samples')}."
+        )
+
+    simple = {
+        "RQI": "RQI: 0.0314*sqrt(PERM/PHIE).",
+        "PHI_NORM": "PHI_NORM: PHIE/(1-PHIE).",
+        "FZI": "FZI: RQI/PHI_NORM.",
+        "BVW": "BVW: PHIE*SW.",
+        "MHI": "MHI: SW/SXO.",
+        "CROSSOVER_FLAG": "CROSSOVER_FLAG: PHID-PHIN>0.01.",
+        "VP_VS_RATIO": "VP_VS_RATIO: DTS/DTC.",
+    }
+    if curve in simple and status != "missing":
+        return simple[curve]
+
+    if curve == "INVASION_RATIO":
+        return f"INVASION_RATIO: skipped because {reason}." if status == "missing" else "INVASION_RATIO: RXO/RDEP; NaN where RDEP<0.2 or ratio>100."
+    if curve in {"VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"}:
+        return f"{curve}: multi-mineral solution from RHOB, NPHI, VCL, PHIE, PEF/U, and DTC where available."
+    if curve == "NET_ROCK" and step is not None:
+        return f"NET_ROCK: VCL<{params.get('vcl_cutoff')}."
+    if curve in {"NET_RES", "RESFLAG"} and step is not None:
+        return f"{curve}: reservoir screen after NET_ROCK; PHIE cutoff={params.get('phie_cutoff')}."
+    if curve == "NET_PAY" and step is not None:
+        return f"NET_PAY: reservoir screen plus SW<{params.get('sw_cutoff')}."
+    if curve == "SEALFLAG" and step is not None:
+        return f"SEALFLAG: VCL>={params.get('seal_vcl_cutoff', 0.8)}."
+    if status == "missing":
+        return f"{curve}: skipped because {reason}."
+    if status == "already_present":
+        return f"{curve}: raw input curve; not recalculated."
+    return f"{curve}: computed by {getattr(step, 'step', 'workflow') if step is not None else 'workflow'}."
+
+
+def _build_compact_curve_routing_notes(
+    well: "Well",
+    workflow_result,
+    original_curves: Optional[set[str]],
+) -> List[str]:
+    if original_curves is None:
+        return []
+    statuses = _build_reference_derived_log_status(well, workflow_result, original_curves)
+    step_results, _ = _step_lookup(workflow_result)
+    notes: List[str] = []
+    for item in statuses:
+        curve = item["mnemonic"]
+        step_name = REFERENCE_CURVE_TO_STEP.get(curve)
+        step = step_results.get(step_name) if step_name else None
+        notes.append(_compact_curve_note(curve, item["status"], item.get("reason", ""), step, well))
+    return notes
+
+
+def _build_concise_delivery_computation_notes(
+    well: "Well",
+    workflow_result,
+    original_curves: Optional[set[str]] = None,
+    lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
+) -> List[str]:
+    notes: List[str] = [
+        "Analysis started: dynamic petrophysical workflow with per-well routing, temperature correction, and NaN handling."
+    ]
+    computed, missing = _compact_status_lists(well, workflow_result, original_curves)
+    if computed:
+        notes.append(f"Computed {len(computed)} derived logs: {', '.join(computed)}.")
+    if missing:
+        notes.append(f"Missing derived logs ({len(missing)}): {', '.join(missing)}.")
+
+    notes.extend(_compact_lithology_notes(well, lithology_mapping=lithology_mapping))
+
+    for curve, step_name in (
+        ("TMPC", "temperature"),
+        ("BAD_HOLE", "bad_hole"),
+        ("VCL", "vclay"),
+        ("RW", "rw"),
+    ):
+        step = _first_step_result(workflow_result, step_name)
+        if step is not None:
+            notes.append(_compact_curve_note(curve, "computed", "", step, well))
+
+    rcl_step = _first_step_result(workflow_result, "rcl")
+    if rcl_step is not None:
+        notes.append(
+            f"RCL: method={rcl_step.parameters.get('source') or rcl_step.method}; "
+            f"samples={rcl_step.parameters.get('shale_sample_count')}; "
+            f"RCL={_format_numeric(rcl_step.parameters.get('rcl_computed'), 4)} ohm.m."
+        )
+
+    por_step = _first_step_result(workflow_result, "porosity")
+    if por_step is not None:
+        phi_clay = _porosity_phi_clay_text(por_step.parameters)
+        notes.append(
+            "Porosity: PHIN=clip(NPHI-nphi_ma,0,0.6); PHID=(rho_ma-RHOB)/(rho_ma-rho_fl); "
+            "PHIS=Wyllie; PHIT=PHID where PHID>PHIN+0.05 else 0.6*PHID+0.4*PHIN; "
+            "PHIE=PHIT-VCL*phi_clay; PHI_SEC=max(PHIT-PHIS,0)"
+            + (f"; {phi_clay}." if phi_clay else ".")
+        )
+
+    sat_step = _first_step_result(workflow_result, "saturation")
+    if sat_step is not None:
+        notes.append(_compact_curve_note("SW", "computed", "", sat_step, well))
+        if well.get("SXO") is not None:
+            notes.append(_compact_curve_note("SXO", "computed", "", sat_step, well))
+
+    lith_step = _first_step_result(workflow_result, "lithology")
+    if lith_step is not None and any(well.get(name) is not None for name in ("VQUAR", "VCALC", "VDOLO", "VANHY")):
+        notes.append("Mineral volumes: multi-mineral balance using RHOB, NPHI, VCL, PHIE, PEF/U, and DTC where available.")
+
+    perm_step = _first_step_result(workflow_result, "permeability")
+    if perm_step is not None:
+        notes.append(_compact_curve_note("PERM", "computed", "", perm_step, well))
+        if well.get("SWIRR_APP") is not None:
+            notes.append(_compact_curve_note("SWIRR_APP", "computed", "", perm_step, well))
+
+    if any(well.get(name) is not None for name in ("RQI", "PHI_NORM", "FZI")):
+        notes.append("Rock quality: RQI=0.0314*sqrt(PERM/PHIE); PHI_NORM=PHIE/(1-PHIE); FZI=RQI/PHI_NORM.")
+    if well.get("BVW") is not None:
+        notes.append("BVW: PHIE*SW.")
+    if well.get("MHI") is not None:
+        notes.append("MHI: SW/SXO.")
+
+    net_step = _first_step_result(workflow_result, "net_pay")
+    if net_step is not None:
+        flag_parts = [f"NET_ROCK=VCL<{net_step.parameters.get('vcl_cutoff')}"]
+        phie_cutoff = net_step.parameters.get("phie_cutoff")
+        if phie_cutoff is not None:
+            flag_parts.append(f"NET_RES/RESFLAG add PHIE>{phie_cutoff}")
+        else:
+            flag_parts.append("NET_RES/RESFLAG use reservoir screening after NET_ROCK")
+        flag_parts.extend(
+            [
+                f"NET_PAY adds SW<{net_step.parameters.get('sw_cutoff')}",
+                f"SEALFLAG=VCL>={net_step.parameters.get('seal_vcl_cutoff', 0.8)}",
+                "CROSSOVER_FLAG=PHID-PHIN>0.01",
+                "VP_VS_RATIO=DTS/DTC",
+            ]
+        )
+        notes.append("Flags: " + "; ".join(flag_parts) + ".")
+
+    notes.extend(_build_compact_curve_routing_notes(well, workflow_result, original_curves))
+    notes.append("Analysis completed: compact routing notes recorded.")
+    return list(dict.fromkeys(note for note in notes if note))
+
+
 def _build_delivery_computation_notes(
     well: "Well",
     workflow_result,
     original_curves: Optional[set[str]] = None,
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
 ) -> List[str]:
+    return _build_concise_delivery_computation_notes(
+        well,
+        workflow_result,
+        original_curves=original_curves,
+        lithology_mapping=lithology_mapping,
+    )
+
     notes: List[str] = [
         "ANALYSIS STARTED: Dynamic petrophysical calculations with per-well routing, depth-wise temperature correction, and NaN handling.",
     ]
@@ -3904,11 +4290,6 @@ def _build_reference_json_payload(
     data_completeness = {
         "missing_primary_logs": [_display_curve_name(name) for name in PRIMARY_LOGS_FOR_COMPLETENESS if name not in original_curves],
         "derived_log_computation_notes": computation_notes,
-        "curve_computation_details": _build_reference_curve_computation_details(
-            well,
-            workflow_result,
-            original_curves,
-        ),
     }
     if include_derived_log_status:
         data_completeness["derived_log_status"] = _build_reference_derived_log_status(
@@ -3945,7 +4326,7 @@ def _build_reference_json_payload(
             "analysis_summary": selected_analysis_summary,
             "data_completeness": data_completeness,
             "lithology_info": lithology_info,
-            "input_logs_present": sorted(original_curves),
+            "input_logs_present": _input_log_display_list(original_curves),
             "BADHOLE_QC_CHECK": _build_reference_bad_hole_qc(well, workflow_result),
         },
         "raw_log_traces_in_segment": {},
@@ -4593,6 +4974,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
     well_names: Optional[Sequence[str]] = None,
     lithology_mapping_file: Optional[str | Path] = None,
     reference_structure_dir: Optional[str | Path] = None,
+    raw_input_dir: Optional[str | Path] = None,
 ) -> List[ExampleFormatExportResult]:
     from petrophys.workflow.zoned_batch import (
         _finalize_export_curves,
@@ -4604,6 +4986,8 @@ def export_reference_json_work_package_by_category_formation_lithology(
     output_path.mkdir(parents=True, exist_ok=True)
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
     files = _filter_input_files_by_well_names(files, well_names)
+    raw_context_dir = Path(raw_input_dir) if raw_input_dir is not None else _raw_input_dir_for_processed(input_path)
+    raw_curves_by_stem = _raw_curve_lookup(raw_context_dir, pattern, recursive)
     tops_by_well = _load_excel_formation_segments(tops_file)
     lithology_mapping = (
         _load_lithology_mapping_workbook(lithology_mapping_file)
@@ -4618,7 +5002,12 @@ def export_reference_json_work_package_by_category_formation_lithology(
             full_well = standardize_curves(full_well, rename_curves=True, convert_units=True)
             formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
             fallback_warnings: list[str] = []
-            full_original_curves = set(full_well.curves)
+            processed_original_curves = set(full_well.curves)
+            raw_original_curves = _raw_original_curves_for_file(
+                file_path,
+                processed_original_curves,
+                raw_curves_by_stem,
+            )
             workflow_result = run_dynamic_workflow_with_zones(full_well)
             warnings = list(workflow_result.warnings)
             warnings.extend(workflow_result.base_result.warnings)
@@ -4628,7 +5017,11 @@ def export_reference_json_work_package_by_category_formation_lithology(
             errors = list(workflow_result.base_result.errors)
             for zone_result in workflow_result.zone_results:
                 errors.extend(zone_result.errors)
-            _finalize_export_curves(workflow_result.well, full_original_curves)
+            if raw_context_dir is not None and file_path.stem.lower() not in raw_curves_by_stem:
+                warnings.append(
+                    f"Raw LAS not found in {raw_context_dir}; input_logs_present fell back to processed LAS curves."
+                )
+            _finalize_export_curves(workflow_result.well, processed_original_curves)
 
             well_top = float(full_well.top) if full_well.top is not None else None
             well_bottom = float(full_well.bottom) if full_well.bottom is not None else None
@@ -4654,7 +5047,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     "Using reference formation/lithology group structure from "
                     f"{source_folder}; the tops workbook was not used to rename or split this well."
                 )
-                formation_original_curves = full_original_curves
+                formation_original_curves = raw_original_curves
 
                 for reference_segment in reference_group_segments:
                     group_well = workflow_result.well.depth_slice(
@@ -4762,7 +5155,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 if formation_well.n_samples == 0:
                     continue
 
-                formation_original_curves = full_original_curves
+                formation_original_curves = raw_original_curves
                 formation_depth_info = _depth_summary(formation_well)
                 lithology_segments = _build_lithology_group_segments(
                     formation_well,
