@@ -1275,9 +1275,28 @@ class DynamicWorkflow:
 
         litho_module = LithologyModule()
         result = litho_module.calculate(well)
-        litho_module.add_to_well(well, result)
+        input_lithology_available = (
+            self._has_curve(well, "LITHOLOGY_GEOLINK")
+            or self.config.lithology_csv is not None
+        )
+        write_lithology_code = not input_lithology_available
+        litho_module.add_to_well(well, result, include_lithology_code=write_lithology_code)
 
-        trace.output_curves = ["VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"]
+        trace.output_curves = ["VQUAR", "VCALC", "VDOLO", "VANHY"]
+        if write_lithology_code:
+            trace.output_curves.append("LITHO")
+        trace.parameters["lithology_curve_written"] = write_lithology_code
+        trace.parameters["lithology_source_priority"] = (
+            "multi_mineral_fallback" if write_lithology_code else "input_lithology"
+        )
+        if write_lithology_code:
+            trace.decisions.append(
+                "No input lithology curve was available -> inferred LITHO from mineral volumes"
+            )
+        else:
+            trace.decisions.append(
+                "Input lithology was available -> mineral volumes computed, LITHO not inferred or overwritten"
+            )
         trace.decisions.append("Raw-log multi-mineral solve with VCL/PHIE clay-porosity terms")
         trace.decisions.append("PEF screened for plausibility; DTC used when PEF is absent or invalid")
         return trace

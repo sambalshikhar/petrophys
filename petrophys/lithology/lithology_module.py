@@ -261,7 +261,8 @@ class LithologyModule:
     def add_to_well(
         self,
         well: "Well",
-        result: Optional[LithologyResult] = None
+        result: Optional[LithologyResult] = None,
+        include_lithology_code: bool = True,
     ) -> "Well":
         """
         Add lithology curves to well.
@@ -272,6 +273,10 @@ class LithologyModule:
             Well object
         result : LithologyResult, optional
             Pre-computed result
+        include_lithology_code : bool, optional
+            Write the fallback ``LITHO`` curve derived from mineral volumes.
+            Set False when an interpreted input lithology curve is already
+            present and should remain authoritative.
 
         Returns
         -------
@@ -285,7 +290,8 @@ class LithologyModule:
         well.add_curve("VCALC", result.v_calcite, "v/v", "Calcite Volume")
         well.add_curve("VDOLO", result.v_dolomite, "v/v", "Dolomite Volume")
         well.add_curve("VANHY", result.v_anhydrite, "v/v", "Anhydrite Volume")
-        well.add_curve("LITHO", result.lithology_code.astype(float), "", "Lithology Code")
+        if include_lithology_code:
+            well.add_curve("LITHO", result.lithology_code.astype(float), "", "Lithology Code")
 
         return well
 

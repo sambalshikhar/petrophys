@@ -1161,6 +1161,14 @@ def _workflow_output_curves(workflow_result) -> List[str]:
     return curves
 
 
+def _workflow_output_curve_written(workflow_result, curve_name: str) -> bool:
+    target = curve_name.upper()
+    for curve in _workflow_output_curves(workflow_result):
+        if str(curve).upper() == target:
+            return True
+    return False
+
+
 def _derived_logs_computed(
     well: "Well",
     workflow_result,
@@ -1181,6 +1189,11 @@ def _derived_logs_computed(
     derived.discard("TEMP")
     derived.discard("PHI_Z")
     derived.difference_update({"SWA", "SWXOA", "VCLAY", "VSH", "VCLGR", "VCLSP", "VCLND", "VCL_GR", "VCL_SP", "VCL_ND"})
+    if (
+        "LITHOLOGY_GEOLINK" in {_canonical_delivery_curve_name(curve) for curve in original_curves}
+        and not _workflow_output_curve_written(workflow_result, "LITHO")
+    ):
+        derived.discard("LITHO")
 
     return sorted(derived)
 
@@ -3044,9 +3057,17 @@ def _build_concise_delivery_computation_notes(
         if well.get("SXO") is not None:
             notes.append(_compact_curve_note("SXO", "computed", "", sat_step, well))
 
-    if any(well.get(name) is not None for name in ("VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO")):
+    lith_step = _first_step_result(workflow_result, "lithology")
+    if lith_step is not None and any(well.get(name) is not None for name in ("VQUAR", "VCALC", "VDOLO", "VANHY")):
+        litho_written = bool((getattr(lith_step, "parameters", {}) or {}).get("lithology_curve_written"))
+        suffix = (
+            "no input lithology was available, so LITHO was inferred."
+            if litho_written
+            else "input lithology was available, so LITHO was not inferred or overwritten."
+        )
         notes.append(
-            "Mineral volumes (VQUAR, VCALC, VDOLO, VANHY, LITHO): solve sum(Vi)=1-VCL-PHIE plus RHOB, NPHI, U=PEF*RHOB, and DTC mixing equations. LITHO is the computed mineral-class curve, separate from input lithology labels."
+            "Mineral volumes (VQUAR, VCALC, VDOLO, VANHY): solved with sum(Vi)=1-VCL-PHIE plus RHOB, "
+            f"NPHI, U=PEF*RHOB, and DTC mixing; {suffix}"
         )
 
     perm_step = _first_step_result(workflow_result, "permeability")
