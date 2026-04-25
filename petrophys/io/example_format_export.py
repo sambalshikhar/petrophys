@@ -1245,9 +1245,9 @@ def _missing_curve_reason(
         if not shallow_present and not rmf_present:
             return "SXO fallback should have used SW^(1/5), but saturation output was not written"
         if not shallow_present:
-            return "SXO fallback should have used SW^(1/5) because RSHA/RXO were absent"
+            return "SXO fallback should have used SW^(1/5) because RSHA or RXO was absent"
         if not rmf_present:
-            return "RSHA/RXO available but RMF was unavailable"
+            return "RSHA or RXO was available but RMF was unavailable"
 
     if curve == "MHI":
         if well.get("SW") is None:
@@ -1269,17 +1269,68 @@ def _missing_curve_reason(
     if curve == "TMPC":
         return "not calculated because TEMP was unavailable and a fallback temperature profile could not be written"
 
+    if curve == "RMF":
+        return "no RMF, RM, CLFL salinity, or RMF salinity input was available, and mud type was not OBM"
+
     if curve in {"PHIE_CORECAL", "PERM_CC"} and step is not None:
         same_well_models = step.parameters.get("same_well_core_models")
         peer_models = step.parameters.get("peer_core_models")
-        strategy = step.parameters.get("strategy") or step.parameters.get("method")
         if (same_well_models or 0) == 0 and (peer_models or 0) == 0:
-            return f"no usable core permeability model; strategy={strategy}"
+            if curve == "PHIE_CORECAL":
+                return "no usable core porosity calibration was available; requires paired log porosity and core porosity"
+            return "no usable core permeability calibration was available; requires paired porosity and core permeability"
 
     if curve == "SWIRR_APP" and step is not None:
         swirr_source = step.parameters.get("swirr_source")
         if swirr_source:
             return f"Swirr source was {swirr_source}"
+
+    if curve == "INVASION_RATIO":
+        has_shallow = well.get("RSHA") is not None or well.get("RESS") is not None or well.get("RXO") is not None
+        has_deep = well.get("RDEP") is not None or well.get("RT") is not None
+        if not has_shallow and not has_deep:
+            return "shallow resistivity and deep resistivity curves were unavailable; requires RSHA, RESS, or RXO plus RDEP or RT"
+        if not has_shallow:
+            return "shallow resistivity curve was unavailable; requires RSHA, RESS, or RXO"
+        if not has_deep:
+            return "deep resistivity curve was unavailable; requires RDEP or RT"
+
+    if curve == "PAY_FLAG_PETROPHYSICAL":
+        if well.get("NET_PAY") is not None:
+            return "not exported as a separate curve; required inputs were available and NET_PAY is the pay flag"
+        missing_inputs = [
+            name
+            for name, present in (
+                ("PHIE", well.get("PHIE") is not None),
+                ("SW", well.get("SW") is not None),
+            )
+            if not present
+        ]
+        if missing_inputs:
+            return "required input curves unavailable: " + ", ".join(missing_inputs)
+
+    if curve == "PRIME_GAS_TARGET":
+        required = {
+            "CROSSOVER_FLAG": well.get("CROSSOVER_FLAG") is not None,
+            "VP_VS_RATIO": well.get("VP_VS_RATIO") is not None,
+            "PHIE": well.get("PHIE") is not None,
+            "PERM or PERM_CC": well.get("PERM") is not None or well.get("PERM_CC") is not None,
+        }
+        missing_inputs = [name for name, present in required.items() if not present]
+        if missing_inputs:
+            return "required input curves unavailable: " + ", ".join(missing_inputs)
+        return "not exported as a separate curve in this context; required inputs were available"
+
+    if curve == "PRIME_OIL_TARGET":
+        required = {
+            "NET_PAY or PAY_FLAG_PETROPHYSICAL": well.get("NET_PAY") is not None or well.get("PAY_FLAG_PETROPHYSICAL") is not None,
+            "PHIE": well.get("PHIE") is not None,
+            "PERM or PERM_CC": well.get("PERM") is not None or well.get("PERM_CC") is not None,
+        }
+        missing_inputs = [name for name, present in required.items() if not present]
+        if missing_inputs:
+            return "required input curves unavailable: " + ", ".join(missing_inputs)
+        return "not exported as a separate curve in this context; required inputs were available"
 
     if step_name and step_name in skipped_steps:
         return f"{step_name} step skipped"
@@ -1302,7 +1353,7 @@ def _computed_curve_detail(curve: str, step_results: dict[str, Any]) -> str:
         sxo_method = step.parameters.get("sxo_method")
         sxo_reason = step.parameters.get("sxo_reason")
         if sxo_method == "archie_rxo_rmf":
-            return "computed from Archie invaded-zone equation using RSHA/RXO and RMF"
+            return "computed from Archie invaded-zone equation using RSHA or RXO plus RMF"
         if sxo_method == "fifth_root_quicklook":
             if sxo_reason:
                 return f"computed with fifth-root quick-look fallback because {sxo_reason}"
@@ -2180,7 +2231,7 @@ def _curve_route_reason(curve: str, step: Any, well: "Well") -> str:
         counts = params.get("sw_model_sample_counts") or {}
         counts_text = ", ".join(f"{name}={count}" for name, count in sorted(counts.items())) if isinstance(counts, dict) else ""
         return (
-            f"saturation route selected because RDEP/RT, PHIE, RW, and VCL/lithology inputs were available; "
+            f"saturation route selected because deep resistivity (RDEP or RT), PHIE, RW, and VCL/lithology inputs were available; "
             f"model={params.get('sw_model')}, requested={params.get('sw_model_requested')}, "
             f"VCL_cutoff={params.get('vcl_cutoff_for_routing')}, sample_counts={counts_text}"
         )
@@ -2841,7 +2892,13 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         equation = _permeability_equation_text(empirical, params)
         swirr_text = ""
         if empirical != "lith_vcl" and params.get("swirr") is not None:
-            swirr_text = f"; SWIRR={_format_numeric(params.get('swirr'), 4)}"
+            source = params.get("swirr_source")
+            if source == "hc_mask_p5":
+                swirr_text = f"; SWIRR=SWIRR_APP={_format_numeric(params.get('swirr'), 4)}"
+            elif source == "default_0.20":
+                swirr_text = f"; SWIRR=fallback {_format_numeric(params.get('swirr'), 4)}"
+            else:
+                swirr_text = f"; SWIRR={_format_numeric(params.get('swirr'), 4)}"
         cap = params.get("perm_max_clip_md")
         cap_text = f"; clipped <= {cap:g} mD" if isinstance(cap, (int, float)) else ""
         return f"PERM: {equation}{swirr_text}{cap_text}."
@@ -2856,7 +2913,7 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
     if curve == "SWIRR_APP" and step is not None:
         metadata = params.get("swirr_metadata") or {}
         return (
-            "SWIRR_APP: P5(SW) over RESFLAG/NET_RES and RDEP/RT>5 ohm.m; "
+            "SWIRR_APP: P5(SW) over RESFLAG or NET_RES and deep resistivity (RDEP or RT)>5 ohm.m; "
             f"percentile={metadata.get('percentile', 5)}, min_samples={metadata.get('min_samples', 10)}, "
             f"hc_samples={metadata.get('hc_mask_samples')}."
         )
@@ -2868,16 +2925,20 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         "BVW": "BVW: PHIE*SW.",
         "MHI": "MHI: SW/SXO.",
         "CROSSOVER_FLAG": "CROSSOVER_FLAG: PHID-PHIN>0.01.",
-        "VP_VS_RATIO": "VP_VS_RATIO: DTS/DTC where DTC=20-300 us/ft, DTS=20-600 us/ft, and ratio=0.5-5.0.",
+        "VP_VS_RATIO": "VP_VS_RATIO: DTS divided by DTC where DTC=20-300 us/ft, DTS=20-600 us/ft, and ratio=0.5-5.0.",
     }
     if curve in simple and status != "missing":
         return simple[curve]
 
     if curve == "INVASION_RATIO":
-        return f"INVASION_RATIO: skipped because {reason}." if status == "missing" else "INVASION_RATIO: RXO/RDEP; NaN where RDEP<0.2 or ratio>100."
+        return (
+            f"INVASION_RATIO: skipped because {reason}."
+            if status == "missing"
+            else "INVASION_RATIO: shallow resistivity / deep resistivity; NaN where deep resistivity<0.2 ohm.m or ratio>100."
+        )
     if curve in {"VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"}:
         return (
-            f"{curve}: multi-mineral solve; sum(Vi)=1-VCL-PHIE, "
+            f"{curve}: multi-mineral output; sum(Vi)=1-VCL-PHIE, "
             "RHOB=sum(Vi*rho_i)+fluids, NPHI/U/DTC mixing equations where inputs are available."
         )
     if curve == "NET_ROCK" and step is not None:
@@ -2915,9 +2976,13 @@ def _build_compact_curve_routing_notes(
     notes: List[str] = []
     for item in statuses:
         curve = item["mnemonic"]
+        if curve in {"VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"}:
+            continue
         step_name = REFERENCE_CURVE_TO_STEP.get(curve)
         step = step_results.get(step_name) if step_name else None
-        notes.append(_compact_curve_note(curve, item["status"], item.get("reason", ""), step, well))
+        note = _compact_curve_note(curve, item["status"], item.get("reason", ""), step, well)
+        if note:
+            notes.append(note)
     return notes
 
 
@@ -2952,9 +3017,9 @@ def _build_concise_delivery_computation_notes(
     if rcl_step is not None:
         source = rcl_step.parameters.get("source") or rcl_step.method
         if source == "lithology_shale_median_rt":
-            method_text = "median(RDEP/RT where lithology is shale)"
+            method_text = "median(deep resistivity where lithology is shale)"
         elif source == "vcl_gt_0.9_median_rt":
-            method_text = "median(RDEP/RT where VCL>0.9)"
+            method_text = "median(deep resistivity where VCL>0.9)"
         else:
             method_text = "default RCL=5.0 ohm.m"
         notes.append(
@@ -2979,10 +3044,9 @@ def _build_concise_delivery_computation_notes(
         if well.get("SXO") is not None:
             notes.append(_compact_curve_note("SXO", "computed", "", sat_step, well))
 
-    lith_step = _first_step_result(workflow_result, "lithology")
-    if lith_step is not None and any(well.get(name) is not None for name in ("VQUAR", "VCALC", "VDOLO", "VANHY")):
+    if any(well.get(name) is not None for name in ("VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO")):
         notes.append(
-            "Mineral volumes: solve sum(Vi)=1-VCL-PHIE plus RHOB, NPHI, U=PEF*RHOB, and DTC mixing equations where available."
+            "Mineral volumes (VQUAR, VCALC, VDOLO, VANHY, LITHO): solve sum(Vi)=1-VCL-PHIE plus RHOB, NPHI, U=PEF*RHOB, and DTC mixing equations. LITHO is the computed mineral-class curve, separate from input lithology labels."
         )
 
     perm_step = _first_step_result(workflow_result, "permeability")
@@ -3003,15 +3067,15 @@ def _build_concise_delivery_computation_notes(
         flag_parts = [f"NET_ROCK=VCL<{net_step.parameters.get('vcl_cutoff')}"]
         phie_cutoff = net_step.parameters.get("phie_cutoff")
         if phie_cutoff is not None:
-            flag_parts.append(f"NET_RES/RESFLAG add PHIE>{phie_cutoff}")
+            flag_parts.append(f"NET_RES and RESFLAG add PHIE>{phie_cutoff}")
         else:
-            flag_parts.append("NET_RES/RESFLAG use reservoir screening after NET_ROCK")
+            flag_parts.append("NET_RES and RESFLAG use reservoir screening after NET_ROCK")
         flag_parts.extend(
             [
                 f"NET_PAY adds SW<{net_step.parameters.get('sw_cutoff')}",
                 f"SEALFLAG=VCL>={net_step.parameters.get('seal_vcl_cutoff', 0.8)}",
                 "CROSSOVER_FLAG=PHID-PHIN>0.01",
-                "VP_VS_RATIO=DTS/DTC with plausibility screens",
+                "VP_VS_RATIO=DTS divided by DTC with plausibility screens",
             ]
         )
         notes.append("Flags: " + "; ".join(flag_parts) + ".")
@@ -3812,8 +3876,8 @@ def _build_delivery_computation_notes(
                 hc_mask_samples = swirr_metadata.get("hc_mask_samples")
                 note += (
                     " SWIRR_APP was calculated from log-derived P5(SW) because no explicit SWIRR/SWI/SWIR curve was supplied and the hydrocarbon mask had enough samples."
-                    " Mask used: RESFLAG/NET_RES true and RDEP/RT > 5 ohm.m."
-                    f" Parameters used: percentile={percentile}, RDEP/RT cutoff={rt_cutoff} ohm.m, "
+                    " Mask used: RESFLAG or NET_RES true and deep resistivity (RDEP or RT) > 5 ohm.m."
+                    f" Parameters used: percentile={percentile}, deep-resistivity cutoff={rt_cutoff} ohm.m, "
                     f"minimum samples={min_samples}"
                     + (f", hydrocarbon-mask samples={hc_mask_samples}." if hc_mask_samples is not None else ".")
                 )
