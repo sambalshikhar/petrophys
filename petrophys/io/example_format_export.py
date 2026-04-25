@@ -254,10 +254,17 @@ REFERENCE_DERIVED_LOG_TARGETS = [
     "SEALFLAG",
     "CROSSOVER_FLAG",
     "VP_VS_RATIO",
+]
+
+# These are hydrocarbon-analysis labels derived by HydrocarbonAnalysis, not
+# standalone dynamic-workflow curves. They may appear in hydrocarbon category
+# summaries, but they are intentionally omitted from generic missing-curve
+# routing notes.
+ANALYSIS_ONLY_DERIVED_CURVES = {
     "PAY_FLAG_PETROPHYSICAL",
     "PRIME_GAS_TARGET",
     "PRIME_OIL_TARGET",
-]
+}
 
 REFERENCE_CURVE_TO_STEP = {
     "TMPC": "temperature",
@@ -1310,7 +1317,7 @@ def _missing_curve_reason(
 
     if curve == "PAY_FLAG_PETROPHYSICAL":
         if well.get("NET_PAY") is not None:
-            return "not exported as a separate curve; required inputs were available and NET_PAY is the pay flag"
+            return "NET_PAY is the exported workflow pay flag; PAY_FLAG_PETROPHYSICAL is an analysis-only alias"
         missing_inputs = [
             name
             for name, present in (
@@ -1332,7 +1339,7 @@ def _missing_curve_reason(
         missing_inputs = [name for name, present in required.items() if not present]
         if missing_inputs:
             return "required input curves unavailable: " + ", ".join(missing_inputs)
-        return "not exported as a separate curve in this context; required inputs were available"
+        return "hydrocarbon-analysis classification only; not a dynamic-workflow curve"
 
     if curve == "PRIME_OIL_TARGET":
         required = {
@@ -1343,7 +1350,7 @@ def _missing_curve_reason(
         missing_inputs = [name for name, present in required.items() if not present]
         if missing_inputs:
             return "required input curves unavailable: " + ", ".join(missing_inputs)
-        return "not exported as a separate curve in this context; required inputs were available"
+        return "hydrocarbon-analysis classification only; not a dynamic-workflow curve"
 
     if step_name and step_name in skipped_steps:
         return f"{step_name} step skipped"
@@ -1416,6 +1423,12 @@ def _build_reference_derived_log_status(
     statuses: List[dict[str, str]] = []
 
     for curve in REFERENCE_DERIVED_LOG_TARGETS:
+        if (
+            curve == "LITHO"
+            and "LITHOLOGY_GEOLINK" in normalized_original_curves
+            and not _workflow_output_curve_written(workflow_result, "LITHO")
+        ):
+            continue
         if curve in computed_curves:
             status = "computed"
             reason = _computed_curve_detail(curve, step_results)

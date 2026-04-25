@@ -1,7 +1,14 @@
+from types import SimpleNamespace
+
 import numpy as np
 
 from petrophys import Well
 from petrophys.analysis import HydrocarbonAnalysis
+from petrophys.io.example_format_export import (
+    ANALYSIS_ONLY_DERIVED_CURVES,
+    REFERENCE_DERIVED_LOG_TARGETS,
+    _build_reference_derived_log_status,
+)
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 from petrophys.workflow import run_comprehensive_analysis
 
@@ -73,6 +80,23 @@ def test_hydrocarbon_analysis_adds_requested_curves_and_targets():
     assert np.nanmax(well["PRIME_GAS_TARGET"].data) == 1.0
     assert np.nanmax(well["PRIME_OIL_TARGET"].data) == 1.0
     assert "PRIME_GAS_TARGET" in payload["integrated_hydrocarbon_potential"]
+
+
+def test_analysis_only_hydrocarbon_flags_are_not_generic_missing_curve_targets():
+    assert ANALYSIS_ONLY_DERIVED_CURVES.isdisjoint(REFERENCE_DERIVED_LOG_TARGETS)
+
+
+def test_input_lithology_is_not_reported_as_missing_litho_fallback():
+    well = _build_analysis_well()
+    original_curves = set(well.curves)
+    workflow_result = SimpleNamespace(
+        base_result=SimpleNamespace(steps_executed=[], steps_skipped=[]),
+        zone_results=[],
+    )
+
+    statuses = _build_reference_derived_log_status(well, workflow_result, original_curves)
+
+    assert "LITHO" not in {item["mnemonic"] for item in statuses}
 
 
 def test_hydrocarbon_analysis_rejects_implausible_shear_slowness_for_vpvs():
