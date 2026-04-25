@@ -20,6 +20,10 @@ class HydrocarbonAnalysis:
     """Integrated hydrocarbon classification analysis."""
 
     CATEGORY_KEY = "HYDROCARBON_ANALYSIS"
+    CROSSOVER_ND_SEPARATION = 0.05
+    CROSSOVER_VCL_MAX = 0.35
+    CROSSOVER_PHIE_MIN = 0.05
+    CROSSOVER_BAD_HOLE_MAX = 0.5
 
     def analyze(
         self,
@@ -29,20 +33,34 @@ class HydrocarbonAnalysis:
         n_samples = well.n_samples
         sw, _ = get_curve_data(well, ["SWA", "SW", "SWT-LOG"])
         mhi, _ = get_curve_data(well, ["MHI"])
-        vsh, _ = get_curve_data(well, ["VSH", "VCL", "VCLAY"])
+        vcl, _ = get_curve_data(well, ["VCL", "VCLAY", "VSH"])
         phie, _ = get_curve_data(well, ["PHIE", "PHIT"])
+        phie_effective, _ = get_curve_data(well, ["PHIE"])
         phid, _ = get_curve_data(well, ["PHID"])
         phin, _ = get_curve_data(well, ["PHIN", "NPHIC", "NPHI_HC", "NPHI"])
+        bad_hole, _ = get_curve_data(well, ["BAD_HOLE", "BADHOLEFLAG", "BAD_HOLE_FLAG"])
         dtc, _ = get_curve_data(well, ["DTC", "DT"])
-        dts, _ = get_curve_data(well, ["DTS", "DTE"])
+        dts, _ = get_curve_data(well, ["DTS"])
         perm, _ = get_curve_data(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])
 
         pay_flag = self._resolve_pay_flag(well, n_samples)
 
         crossover_flag = np.full(n_samples, np.nan, dtype=float)
-        if phid is not None and phin is not None:
-            valid = np.isfinite(phid) & np.isfinite(phin)
-            crossover_flag[valid] = (phid[valid] - phin[valid] > 0.01).astype(float)
+        if phid is not None and phin is not None and vcl is not None and phie_effective is not None and bad_hole is not None:
+            valid = (
+                np.isfinite(phid)
+                & np.isfinite(phin)
+                & np.isfinite(vcl)
+                & np.isfinite(phie_effective)
+                & np.isfinite(bad_hole)
+            )
+            gas_crossover = (
+                (phid - phin > self.CROSSOVER_ND_SEPARATION)
+                & (vcl < self.CROSSOVER_VCL_MAX)
+                & (phie_effective > self.CROSSOVER_PHIE_MIN)
+                & (bad_hole < self.CROSSOVER_BAD_HOLE_MAX)
+            )
+            crossover_flag[valid] = gas_crossover[valid].astype(float)
 
         vp_vs_ratio = np.full(n_samples, np.nan, dtype=float)
         if dts is not None and dtc is not None:
@@ -120,14 +138,12 @@ class HydrocarbonAnalysis:
                         "moveable hydrocarbon index, and pay-flag behavior from the current workflow."
                     ),
                     methodology=(
-                        "Uses SW as the primary saturation indicator, MHI only when both SW and SXO "
-                        "are available, and NET_PAY as the workflow pay flag. MHI is not synthesized when no "
-                        "flushed-zone saturation is available, so invasion-based hydrocarbon indication "
-                        "stays conservative."
+                        "Uses SW as the primary saturation indicator, existing MHI when available, "
+                        "and NET_PAY as the workflow pay flag. MHI is not synthesized in this analysis."
                     ),
                     calculation_thresholds=(
                         "POTENTIAL_PAY: existing pay flag > 0.5. "
-                        "MOVABLE_HC: MHI in HIGH/MODERATE movable-hydrocarbon classes and SW < 0.60. "
+                        "MOVABLE_HC: MHI < 0.7 and SW < 0.60. "
                         "LOW_SW: SW < 0.50. NO_INDICATION: no petrophysical hydrocarbon criterion met."
                     ),
                 ),
@@ -139,10 +155,11 @@ class HydrocarbonAnalysis:
                         "and Vp/Vs-style screening from available sonic curves."
                     ),
                     methodology=(
-                        "CROSSOVER_FLAG is calculated from PHID - PHIN > 0.01 using the current "
-                        "density and neutron porosity curves. VP_VS_RATIO is calculated only when both "
-                        "DTS and DTC are present in plausible slowness ranges; no artificial estimate is "
-                        "added when shear sonic is missing or implausible."
+                        "CROSSOVER_FLAG is calculated from PHID - PHIN > 0.05, VCL < 0.35, "
+                        "PHIE > 0.05, and BAD_HOLE < 0.5 using the current porosity, clay, and "
+                        "hole-quality curves. VP_VS_RATIO is calculated only when both DTS and DTC "
+                        "are present in plausible slowness ranges; no artificial estimate is added "
+                        "when shear sonic is missing or implausible."
                     ),
                     calculation_thresholds=(
                         "STRONG_GAS_INDICATION: CROSSOVER_FLAG = 1 and VP_VS_RATIO < 1.75. "
@@ -179,9 +196,8 @@ class HydrocarbonAnalysis:
                         "geophysical signals, and reservoir quality in a simple hierarchy."
                     ),
                     methodology=(
-                        "Prioritizes strong gas indications in good reservoir rock first, then potential "
-                        "pay in excellent reservoir rock, and then the remaining positive petrophysical "
-                        "or geophysical indications in descending order of significance."
+                        "Starts from gas-show, non-reservoir, and pay labels, then promotes prime oil "
+                        "and prime gas target flags where their stricter reservoir criteria are met."
                     ),
                     calculation_thresholds=(
                         "PRIME_GAS_TARGET: STRONG_GAS_INDICATION with GOOD/EXCELLENT_RESERVOIR. "

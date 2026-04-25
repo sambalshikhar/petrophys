@@ -13,7 +13,7 @@ from petrophys.base.constants import DefaultParameters
 
 def generate_washout_flag(
     cali: np.ndarray,
-    bit_size: float,
+    bit_size: Union[float, np.ndarray],
     drho: Optional[np.ndarray] = None,
     cali_threshold: float = DefaultParameters.CALI_BS_THRESHOLD,
     drho_threshold: float = DefaultParameters.DRHO_THRESHOLD
@@ -29,8 +29,8 @@ def generate_washout_flag(
     ----------
     cali : np.ndarray
         Caliper log values (inches)
-    bit_size : float
-        Bit size (inches)
+    bit_size : float or np.ndarray
+        Bit size in inches. A per-depth BS curve may be supplied.
     drho : np.ndarray, optional
         Density correction log
     cali_threshold : float, optional
@@ -133,7 +133,7 @@ def generate_pef_exclusion_flag(
 
 def generate_bad_hole_flags(
     well: "Well",
-    bit_size: Optional[float] = None,
+    bit_size: Optional[Union[float, np.ndarray]] = None,
     cali_threshold: float = DefaultParameters.CALI_BS_THRESHOLD,
     drho_threshold: float = DefaultParameters.DRHO_THRESHOLD,
     rhob_min: float = DefaultParameters.RHOB_MIN,
@@ -148,8 +148,9 @@ def generate_bad_hole_flags(
     ----------
     well : Well
         Well object with log curves
-    bit_size : float, optional
-        Bit size in inches (uses header value if not provided)
+    bit_size : float or np.ndarray, optional
+        Bit size in inches. If not supplied, uses the header value or the
+        depth-by-depth BS curve when available.
     cali_threshold : float, optional
         Caliper-BS washout threshold
     drho_threshold : float, optional
@@ -187,7 +188,13 @@ def generate_bad_hole_flags(
     if bit_size is None:
         # Try to get from BS curve
         if "BS" in well:
-            bit_size = np.nanmean(well["BS"].data)
+            bit_size = well["BS"].data
+
+    if bit_size is not None and not np.isscalar(bit_size):
+        bit_size = np.asarray(bit_size, dtype=float)
+        if bit_size.shape != (n_samples,):
+            finite = bit_size[np.isfinite(bit_size)]
+            bit_size = float(np.nanmedian(finite)) if finite.size else None
 
     # Generate washout flag
     cali = well.get("CALI") or well.get("CAL")
@@ -204,10 +211,11 @@ def generate_bad_hole_flags(
 
     # Generate large hole flag
     if bit_size is not None:
-        flags["large_hole"] = np.full(
-            n_samples,
-            generate_large_hole_flag(bit_size, large_hole_threshold)
-        )
+        large_hole = generate_large_hole_flag(bit_size, large_hole_threshold)
+        if np.isscalar(large_hole):
+            flags["large_hole"] = np.full(n_samples, bool(large_hole))
+        else:
+            flags["large_hole"] = np.asarray(large_hole, dtype=bool)
 
     # Generate low density flag
     rhob = well.get("RHOB")

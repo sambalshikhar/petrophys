@@ -288,9 +288,14 @@ class LithologyAnalysis:
                 "lithology_distribution_classification": build_section(
                     well,
                     gt_distribution,
-                    description="Ground-truth lithology distribution from LITHOLOGY_GEOLINK.",
+                    description="Ground-truth lithology distribution from the lithology curve.",
                     methodology="Maps raw lithology codes to grouped lithology classes.",
-                    calculation_thresholds="GT_{GROUP} for mapped codes, otherwise NO_LITHOLOGY_DATA.",
+                    calculation_thresholds=(
+                        "GT_{GROUP} for mapped codes: limestone 9/11/12/13/16, dolomite 15, "
+                        "anhydrite 22, coal 18, calcareous shale 14, halite 21/27/32/33/34, "
+                        "sandstone 1/2/3/4/10/30/35, shale 7/8/25, silt 5/6, coarse clastic 17/31/36, "
+                        "evaporite 26, igneous 19/20/23/24/28, chert 29; otherwise NO_LITHOLOGY_DATA."
+                    ),
                 ),
                 "carbonate_analysis": build_section(
                     well,
@@ -307,7 +312,7 @@ class LithologyAnalysis:
                     well,
                     clay_labels,
                     description="Composite clay indication from GR, NPHI, and PEF.",
-                    methodology="COMPOSITE_CLAY = mean(available clay indicators).",
+                    methodology="COMPOSITE_CLAY = mean(available indicators: GR>100 API, NPHI>0.30 v/v, PEF<2.5).",
                     calculation_thresholds=(
                         "HIGH_CLAY_INDICATION >= 0.67; MODERATE 0.33-0.67; LOW < 0.33."
                     ),
@@ -318,15 +323,20 @@ class LithologyAnalysis:
                     description="Reservoir quality interpreted within lithology context.",
                     methodology="Combines grouped lithology with PHIT, PERM, and VSH screening.",
                     calculation_thresholds=(
-                        "EXCELLENT: PHIT > 0.15 with strong PERM/VSH support; "
-                        "GOOD: PHIT > 0.10; FAIR: PHIT > 0.05; POOR otherwise."
+                        "Quality base: FAIR when PHIT>0.05, GOOD when PHIT>0.10, EXCELLENT when PHIT>0.15. "
+                        "When PERM is available, GOOD also requires PERM>1 mD and EXCELLENT requires PERM>10 mD. "
+                        "When VSH/VCL is available, GOOD also requires VSH<0.40 and EXCELLENT requires VSH<0.25."
                     ),
                 ),
                 "lithology_log_consistency": build_section(
                     well,
                     consistency_labels,
                     description="Consistency between lithology labels and GR/PEF responses.",
-                    methodology="CONSISTENCY_SCORE is the mean of available GR and PEF consistency checks.",
+                    methodology=(
+                        "CONSISTENCY_SCORE is the mean of available GR and PEF checks: "
+                        "GR consistent when shale has GR>80 API or sandstone/limestone/dolomite has GR<60 API; "
+                        "PEF consistent when carbonate has PEF>3.5, sandstone has PEF 1.8-3.0, or shale has PEF<2.5."
+                    ),
                     calculation_thresholds=(
                         "EXCELLENT >= 0.75; GOOD 0.50-0.75; POOR 0.25-0.50; "
                         "NO_MATCH < 0.25."
@@ -336,10 +346,11 @@ class LithologyAnalysis:
                     well,
                     overall_labels,
                     description="Primary lithology interpretation hierarchy.",
-                    methodology="Promotes reservoir or seal classes, then falls back to GT lithology.",
+                    methodology="Uses petrophysical lithology labels first, then falls back to mapped lithology.",
                     calculation_thresholds=(
-                        "EXCELLENT_RESERVOIR, GOOD_RESERVOIR, TIGHT_FORMATION, SEAL_ROCK, "
-                        "then GT_{GROUP}."
+                        "SEAL_ROCK from EVAPORITE_SEAL; TIGHT_FORMATION from tight sandstone/carbonate; "
+                        "GOOD_RESERVOIR and EXCELLENT_RESERVOIR from good/excellent sandstone or carbonate; "
+                        "otherwise GT_{GROUP}."
                     ),
                 ),
             },

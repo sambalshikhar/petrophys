@@ -20,6 +20,101 @@ from petrophys.qaqc.standardization.unit_converter import (
 )
 
 
+CURVE_PLAUSIBLE_RANGES = {
+    "DTC": (20.0, 300.0),
+    "DTS": (20.0, 600.0),
+    "DTE": (20.0, 600.0),
+    "RHOB": (1.0, 3.5),
+    "DRHO": (-1.0, 1.0),
+    "NPHI": (-0.15, 1.0),
+    "PHIN": (0.0, 0.6),
+    "PHID": (-0.2, 0.8),
+    "PHIS": (0.0, 0.8),
+    "PHIT": (0.0, 0.8),
+    "PHIE": (0.0, 0.8),
+    "PHIE_CC": (0.0, 0.8),
+    "PHI_SEC": (-0.2, 0.8),
+    "VCL": (0.0, 1.0),
+    "VCLAY": (0.0, 1.0),
+    "VSH": (0.0, 1.0),
+    "SW": (0.0, 1.0),
+    "SWA": (0.0, 1.0),
+    "SXO": (0.0, 1.0),
+    "SWXOA": (0.0, 1.0),
+    "SWIRR_APP": (0.0, 1.0),
+    "BVW": (0.0, 1.0),
+    "GR": (0.0, 500.0),
+    "PEF": (0.0, 15.0),
+    "CALI": (4.0, 40.0),
+    "BS": (4.0, 40.0),
+    "RDEP": (0.0, 1.0e5),
+    "RMED": (0.0, 1.0e5),
+    "RSHA": (0.0, 1.0e5),
+    "RXO": (0.0, 1.0e5),
+    "RW": (0.0, 10.0),
+    "RMF": (0.0, 1000.0),
+    "PERM": (0.0, 10000.0),
+    "PERM_CC": (0.0, 10000.0),
+    "TEMP": (32.0, 400.0),
+    "TMPC": (32.0, 400.0),
+    "VP_VS_RATIO": (0.5, 5.0),
+    "VQUAR": (0.0, 1.0),
+    "VCALC": (0.0, 1.0),
+    "VDOLO": (0.0, 1.0),
+    "VANHY": (0.0, 1.0),
+    "NET_ROCK": (0.0, 1.0),
+    "NET_RES": (0.0, 1.0),
+    "NET_PAY": (0.0, 1.0),
+    "RESFLAG": (0.0, 1.0),
+    "SEALFLAG": (0.0, 1.0),
+    "CROSSOVER_FLAG": (0.0, 1.0),
+}
+
+POROSITY_FRACTION_CURVES = {
+    "NPHI",
+    "PHIN",
+    "PHID",
+    "PHIS",
+    "PHIT",
+    "PHIE",
+    "PHIE_CC",
+    "PHI_SEC",
+}
+
+
+def _maybe_convert_percent_porosity(data: np.ndarray, standard_name: str) -> np.ndarray:
+    if standard_name.upper() not in POROSITY_FRACTION_CURVES:
+        return data
+    finite = data[np.isfinite(data)]
+    if finite.size == 0:
+        return data
+    median = float(np.nanmedian(finite))
+    if median > 1.0:
+        return data / 100.0
+    return data
+
+
+def _screen_standard_curve_values(curve: "Curve", standard_name: str) -> "Curve":
+    """Mask physically implausible standardized curve values."""
+    name = standard_name.upper()
+    limits = CURVE_PLAUSIBLE_RANGES.get(name)
+    if limits is None:
+        return curve
+
+    data = np.asarray(curve.data, dtype=float).copy()
+    data[np.isfinite(data) & (data <= -900.0)] = np.nan
+    data = _maybe_convert_percent_porosity(data, name)
+
+    low, high = limits
+    invalid = np.isfinite(data) & ((data < low) | (data > high))
+    if np.any(invalid):
+        data[invalid] = np.nan
+        curve._data = data
+    elif not np.array_equal(curve.data, data):
+        curve._data = data
+    return curve
+
+
 class CurveStandardizer:
     """
     Standardizes curve mnemonics and units.
@@ -146,6 +241,8 @@ class CurveStandardizer:
                         new_curve._data = new_curve._data * factor
                         new_curve.unit = standard_unit
 
+            _screen_standard_curve_values(new_curve, standard_name)
+
             # Handle duplicate standard names (keep first or best quality)
             if standard_name in new_curves and self.rename_curves:
                 # Check which has more valid data
@@ -208,6 +305,8 @@ class CurveStandardizer:
                 if factor is not None:
                     new_curve._data = new_curve._data * factor
                     new_curve.unit = standard_unit
+
+        _screen_standard_curve_values(new_curve, standard_name)
 
         return new_curve
 

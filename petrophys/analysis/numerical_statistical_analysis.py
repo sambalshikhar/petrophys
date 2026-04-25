@@ -150,7 +150,7 @@ class NumericalStatisticalAnalysis:
 
         rhob, _ = get_curve_data(well, ["RHOB"])
         dtc, _ = get_curve_data(well, ["DTC", "DT"])
-        dts, _ = get_curve_data(well, ["DTS", "DTE"])
+        dts, _ = get_curve_data(well, ["DTS"])
         acoustic_impedance = np.full(n_samples, np.nan, dtype=float)
         poisson_ratio = np.full(n_samples, np.nan, dtype=float)
         young_mod = np.full(n_samples, np.nan, dtype=float)
@@ -159,11 +159,11 @@ class NumericalStatisticalAnalysis:
 
         vp = np.full(n_samples, np.nan, dtype=float)
         if dtc is not None:
-            valid = np.isfinite(dtc) & (dtc > 0.0)
+            valid = np.isfinite(dtc) & (dtc >= 20.0) & (dtc <= 300.0)
             vp[valid] = 1e6 / (dtc[valid] * 0.3048)
         vs = np.full(n_samples, np.nan, dtype=float)
         if dts is not None:
-            valid = np.isfinite(dts) & (dts > 0.0)
+            valid = np.isfinite(dts) & (dts >= 20.0) & (dts <= 600.0)
             vs[valid] = 1e6 / (dts[valid] * 0.3048)
         else:
             valid = np.isfinite(vp)
@@ -307,14 +307,17 @@ class NumericalStatisticalAnalysis:
                     well,
                     quality_labels,
                     description="Log quality from BADHOLEFLAG/BAD_HOLE and DRHO.",
-                    methodology="Poor quality is triggered by bad-hole flags or |DRHO| > 0.1.",
-                    calculation_thresholds="POOR_LOG_QUALITY if BADHOLEFLAG = 1 or |DRHO| > 0.1.",
+                    methodology="Poor quality is triggered by bad-hole flags or density-correction magnitude.",
+                    calculation_thresholds="POOR_LOG_QUALITY if BADHOLEFLAG/BAD_HOLE > 0.5 or |DRHO| > 0.1.",
                 ),
                 "advanced_parameter_characterization": build_section(
                     well,
                     advanced_labels,
                     description="Acoustic, elastic, and electrofacies characterization.",
-                    methodology="Computes AI, Young's modulus, brittleness, and electrofacies clustering when possible.",
+                    methodology=(
+                        "Computes Vp from DTC 20-300 us/ft; uses DTS 20-600 us/ft for Vs or Gardner-style "
+                        "Vs fallback from Vp; then computes AI, Young's modulus, brittleness, and electrofacies."
+                    ),
                     calculation_thresholds=(
                         "ADVANCED_DATA_AVAILABLE when brittleness > 0.6, AI > 15e6, "
                         "Young's modulus > 30 GPa, or electrofacies are available."
@@ -324,7 +327,10 @@ class NumericalStatisticalAnalysis:
                     well,
                     geomech_labels,
                     description="Geomechanical stress availability screening.",
-                    methodology="Computes S_V, PP_HYDROSTATIC, and SH_MIN when elastic inputs are available.",
+                    methodology=(
+                        "Computes S_V from cumulative RHOB*9.81*dz, PP_HYDROSTATIC from water gradient, "
+                        "and SH_MIN from Poisson ratio with S_V and PP."
+                    ),
                     calculation_thresholds="GEOMECH_DATA_AVAILABLE when at least two geomechanical parameters are finite.",
                 ),
                 "net_pay_flag_analysis": build_section(

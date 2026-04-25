@@ -82,7 +82,7 @@ STEP_META: dict[str, dict] = {
         "inputs":  ["PHIE", "SW"],
         "outputs": ["PERM"],
         "required": True,
-        "methods": ["timur", "coates", "kozeny"],
+        "methods": ["coates", "timur", "kozeny"],
     },
     WorkflowStep.BVW: {
         "description": "Compute bulk volume water (BVW = PHIE × Sw).",

@@ -281,7 +281,43 @@ def _resolve_porosity_curve_name(well: "Well") -> str:
     raise ValueError("PHIE or PHIT required")
 
 
-def _resolve_lith_vcl_inputs(well: "Well", phi: np.ndarray) -> tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
+def _resolve_lithology_input(
+    well: "Well",
+    lithology: Optional[Union[str, np.ndarray]] = None,
+) -> tuple[Optional[Union[str, np.ndarray]], str]:
+    """Resolve the best available lithology input curve for permeability."""
+    if lithology is not None:
+        return lithology, "provided_lithology"
+
+    lith_curve = well.get("LITHOLOGY_GEOLINK")
+    if lith_curve is not None:
+        try:
+            return np.asarray(lith_curve.data, dtype=float), lith_curve.mnemonic
+        except (TypeError, ValueError):
+            return np.asarray(lith_curve.data, dtype=object), lith_curve.mnemonic
+
+    lith_class_curve = well.get("LITHO_CLASS")
+    if lith_class_curve is not None:
+        return np.asarray(lith_class_curve.data, dtype=object), lith_class_curve.mnemonic
+
+    computed_lith_curve = well.get("LITHO")
+    if computed_lith_curve is not None:
+        lith_codes = np.asarray(computed_lith_curve.data, dtype=float)
+        lith = np.full(lith_codes.shape, "sandstone", dtype=object)
+        lith[np.isclose(lith_codes, 2)] = "limestone"
+        lith[np.isclose(lith_codes, 3)] = "dolomite"
+        lith[np.isclose(lith_codes, 5)] = "anhydrite"
+        lith[np.isclose(lith_codes, 7)] = "coal"
+        return lith, computed_lith_curve.mnemonic
+
+    return None, "not_available"
+
+
+def _resolve_lith_vcl_inputs(
+    well: "Well",
+    phi: np.ndarray,
+    lithology: Optional[Union[str, np.ndarray]] = None,
+) -> tuple[np.ndarray, np.ndarray, Optional[Union[str, np.ndarray]], Dict[str, Any]]:
     """Resolve PHIT, VCL, and lithology inputs for lith_vcl permeability."""
     phit_curve = well.get("PHIT")
     if phit_curve is not None:
@@ -296,30 +332,9 @@ def _resolve_lith_vcl_inputs(well: "Well", phi: np.ndarray) -> tuple[np.ndarray,
         raise ValueError("VCL or VCLAY required for lith_vcl permeability")
     vcl = np.asarray(vcl_curve.data, dtype=float)
 
-    lith = None
-    lith_source = "default_sandstone"
-    lith_curve = well.get("LITHOLOGY_GEOLINK")
-    if lith_curve is not None:
-        try:
-            lith = np.asarray(lith_curve.data, dtype=float)
-        except (TypeError, ValueError):
-            lith = np.asarray(lith_curve.data, dtype=object)
-        lith_source = lith_curve.mnemonic
-    else:
-        lith_class_curve = well.get("LITHO_CLASS")
-        if lith_class_curve is not None:
-            lith = np.asarray(lith_class_curve.data, dtype=object)
-            lith_source = lith_class_curve.mnemonic
-        else:
-            computed_lith_curve = well.get("LITHO")
-            if computed_lith_curve is not None:
-                lith_codes = np.asarray(computed_lith_curve.data, dtype=float)
-                lith = np.full(lith_codes.shape, "sandstone", dtype=object)
-                lith[np.isclose(lith_codes, 2)] = "limestone"
-                lith[np.isclose(lith_codes, 3)] = "dolomite"
-                lith[np.isclose(lith_codes, 5)] = "anhydrite"
-                lith[np.isclose(lith_codes, 7)] = "coal"
-                lith_source = computed_lith_curve.mnemonic
+    lith, lith_source = _resolve_lithology_input(well, lithology=lithology)
+    if lith_source == "not_available":
+        lith_source = "default_sandstone"
 
     labels = lith_vcl_parameter_labels(lith)
     unique_labels = sorted({str(label) for label in np.ravel(labels) if str(label)})
@@ -582,13 +597,24 @@ def _describe_auto_method(
     return "+".join(parts)
 
 
+def _auto_empirical_methods(fallback_method: str) -> List[str]:
+    """Return empirical methods in workflow priority order."""
+    fallback = _normalize_perm_method(fallback_method)
+    methods: List[str] = ["coates"]
+    if fallback not in {"", "coates", "timur", "lith_vcl"}:
+        methods.append(fallback)
+    methods.append("timur")
+    methods.append("lith_vcl")
+    return list(dict.fromkeys(methods))
+
+
 class PermeabilityModule:
     """Permeability estimation module."""
 
     def __init__(
         self,
         method: str = "auto",
-        fallback_method: str = "timur",
+        fallback_method: str = "coates",
         min_core_points: int = 3,
     ):
         self.method = _normalize_perm_method(method)
@@ -601,6 +627,7 @@ class PermeabilityModule:
         phi: np.ndarray,
         swi: Optional[Union[float, np.ndarray]] = None,
         method: Optional[str] = None,
+        lithology: Optional[Union[str, np.ndarray]] = None,
     ) -> PermeabilityResult:
         """Calculate permeability using an empirical equation."""
         empirical_method = _normalize_perm_method(method or self.method)
@@ -622,7 +649,7 @@ class PermeabilityModule:
                 swi, swi_source, bvw_irr, swi_metadata = _resolve_swirr_details(well, phi=phi)
             perm = wyllie_rose(phi, swi)
         elif empirical_method == "lith_vcl":
-            phit, vcl, lith, lith_metadata = _resolve_lith_vcl_inputs(well, phi)
+            phit, vcl, lith, lith_metadata = _resolve_lith_vcl_inputs(well, phi, lithology=lithology)
             perm = lith_vcl_permeability(phit, vcl, lith)
             swi_metadata = {"source": "not_required", "reason": "lith_vcl permeability does not use Swirr"}
         else:
@@ -642,7 +669,16 @@ class PermeabilityModule:
                 lith_metadata["vcl_curve"],
                 lith_metadata["lithology_curve"],
             ]
+        elif empirical_method == "coates":
+            method_metadata = {
+                "equation": "10000 * PHIE^4 * ((1 - SWIRR) / SWIRR)^2",
+                "coefficient": 10000.0,
+                "porosity_exponent": 4.0,
+            }
         elif swi_source != "user":
+            input_curves.append("SWIRR/SW")
+
+        if empirical_method == "coates" and swi_source != "user":
             input_curves.append("SWIRR/SW")
 
         return PermeabilityResult(
@@ -670,6 +706,7 @@ class PermeabilityModule:
         well: "Well",
         swi: Optional[Union[float, np.ndarray]] = None,
         phi: Optional[np.ndarray] = None,
+        lithology: Optional[Union[str, np.ndarray]] = None,
         peer_wells: Optional[List["Well"]] = None,
         formation_tops: Optional[Any] = None,
     ) -> PermeabilityResult:
@@ -682,7 +719,7 @@ class PermeabilityModule:
             phi = np.asarray(phi, dtype=float)
 
         if self.method in {"timur", "coates", "wyllie_rose", "lith_vcl"}:
-            return self._calculate_empirical(well, phi, swi=swi, method=self.method)
+            return self._calculate_empirical(well, phi, swi=swi, method=self.method, lithology=lithology)
 
         if self.method != "auto":
             raise ValueError(f"Unknown permeability method: {self.method}")
@@ -693,9 +730,7 @@ class PermeabilityModule:
         empirical_result: Optional[PermeabilityResult] = None
         empirical_error: Optional[str] = None
 
-        empirical_methods = [self.fallback_method]
-        if self.fallback_method != "lith_vcl":
-            empirical_methods.append("lith_vcl")
+        empirical_methods = _auto_empirical_methods(self.fallback_method)
 
         empirical_errors: List[str] = []
         empirical_attempted_methods: List[str] = []
@@ -707,6 +742,7 @@ class PermeabilityModule:
                     phi,
                     swi=swi,
                     method=empirical_method,
+                    lithology=lithology,
                 )
                 break
             except ValueError as exc:
@@ -815,7 +851,7 @@ def calculate_permeability(
     **kwargs
 ) -> np.ndarray:
     """Calculate permeability."""
-    fallback_method = kwargs.pop("fallback_method", "timur")
+    fallback_method = kwargs.pop("fallback_method", "coates")
     min_core_points = kwargs.pop("min_core_points", 3)
     module = PermeabilityModule(
         method=method,

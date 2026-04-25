@@ -140,8 +140,8 @@ class PermeabilityAnalysis:
                     description="Permeability quality from absolute permeability.",
                     methodology="Uses the first available permeability curve.",
                     calculation_thresholds=(
-                        "EXCELLENT > 1000; VERY_GOOD 100-1000; GOOD 10-100; "
-                        "FAIR 1-10; POOR <= 1."
+                        "EXCELLENT > 1000 mD; VERY_GOOD >100-1000 mD; GOOD >10-100 mD; "
+                        "FAIR >1-10 mD; POOR <=1 mD."
                     ),
                 ),
                 "flow_unit_classification_system": build_section(
@@ -150,7 +150,7 @@ class PermeabilityAnalysis:
                     description="Flow-unit characterization from FZI.",
                     methodology="Uses FZI classes with RQI as supplementary context.",
                     calculation_thresholds=(
-                        "MEGA_PORES >= 5; MACRO_PORES 2-5; MESO_PORES 0.5-2; MICRO_PORES < 0.5."
+                        "MEGA_PORES >=5; MACRO_PORES >=2 to <5; MESO_PORES >=0.5 to <2; MICRO_PORES <0.5."
                     ),
                 ),
                 "permeability_variation_controls": build_section(

@@ -1,7 +1,7 @@
 import numpy as np
 
 from petrophys.base.well import Well
-from petrophys.petrophysics.permeability import lith_vcl_permeability
+from petrophys.petrophysics.permeability import lith_vcl_permeability, timur
 import petrophys.petrophysics.permeability.perm_module as perm_module
 
 
@@ -50,21 +50,72 @@ def test_permeability_module_caps_outputs_at_10000_md():
     assert result.metadata["perm_max_clip_md"] == perm_module.PERMEABILITY_MAX_MD
 
 
-def test_auto_empirical_falls_back_to_lith_vcl_when_timur_fails(monkeypatch):
+def test_auto_empirical_prefers_coates_before_timur():
     well = _perm_well()
+    module = perm_module.PermeabilityModule(method="auto")
+
+    result = module.calculate(well)
+
+    assert result.metadata["empirical_method"] == "coates"
+    assert result.metadata["empirical_attempted_methods"] == ["coates"]
+    assert result.metadata["method_metadata"]["equation"] == "10000 * PHIE^4 * ((1 - SWIRR) / SWIRR)^2"
+
+
+def test_auto_empirical_falls_back_to_lith_vcl_when_coates_and_timur_fail(monkeypatch):
+    well = _perm_well()
+
+    def fail_coates(phi, swi, **kwargs):
+        raise ValueError("coates unavailable")
 
     def fail_timur(phi, swi):
         raise ValueError("timur unavailable")
 
+    monkeypatch.setattr(perm_module, "coates_denoo", fail_coates)
     monkeypatch.setattr(perm_module, "timur", fail_timur)
     module = perm_module.PermeabilityModule(method="auto", fallback_method="timur")
 
     result = module.calculate(well)
 
     assert result.metadata["empirical_method"] == "lith_vcl"
-    assert result.metadata["empirical_attempted_methods"] == ["timur", "lith_vcl"]
+    assert result.metadata["empirical_attempted_methods"] == ["coates", "timur", "lith_vcl"]
+    assert "coates unavailable" in result.metadata["empirical_error"]
     assert "timur unavailable" in result.metadata["empirical_error"]
     assert result.swi_source == "not_required"
+
+
+def test_direct_coates_uses_fixed_formula_without_lithology_specific_values():
+    well = _perm_well()
+    module = perm_module.PermeabilityModule(method="coates")
+
+    result = module.calculate(well, swi=0.25)
+
+    phi = well.get("PHIE").data
+    expected = np.minimum(
+        10000.0 * phi**4.0 * ((1.0 - 0.25) / 0.25) ** 2,
+        perm_module.PERMEABILITY_MAX_MD,
+    )
+    np.testing.assert_allclose(result.perm, expected)
+
+
+def test_coates_ignores_lithology_inputs():
+    well = _perm_well()
+    well.remove_curve("LITHOLOGY_GEOLINK")
+    module = perm_module.PermeabilityModule(method="coates")
+
+    result = module.calculate(well, swi=0.25, lithology="carbonate")
+
+    phi = well.get("PHIE").data
+    expected = np.minimum(
+        10000.0 * phi**4.0 * ((1.0 - 0.25) / 0.25) ** 2,
+        perm_module.PERMEABILITY_MAX_MD,
+    )
+    np.testing.assert_allclose(result.perm, expected)
+    assert "lithology_curve" not in result.metadata["method_metadata"]
+
+
+def test_timur_uses_conventional_0136_coefficient_with_percent_inputs():
+    expected = 0.136 * (20.0**4.4) / (20.0**2.0)
+    assert timur(0.20, 0.20) == expected
 
 
 def test_estimate_swirr_app_builds_constant_curve_from_hc_mask_p5():

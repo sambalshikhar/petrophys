@@ -16,7 +16,7 @@ A comprehensive petrophysics library for well log analysis and formation evaluat
 - **Porosity Calculation**: Density, neutron, sonic, total (weighted N-D), effective (clay-corrected), and secondary porosity
 - **Hydrocarbon Correction**: Preliminary porosity-based NPHI and RHOB corrections for oil/gas zones
 - **Water Saturation**: 5 models with automatic routing — Archie, Simandoux, Indonesia, Waxman-Smits, Dual Water
-- **Permeability Estimation**: Timur, Wyllie-Rose, Coates-Denoo equations with impermeability detection
+- **Permeability Estimation**: Coates-Denoo, Timur, Wyllie-Rose equations with impermeability detection
 - **Rock Quality**: Reservoir Quality Index (RQI), Flow Zone Indicator (FZI), normalized porosity (phi_z)
 - **Reservoir Characterization**: Net pay (lithology-aware cutoffs), BVW, MHI calculations
 - **Dynamic Workflow**: Input-aware pipeline that auto-detects available curves and runs applicable modules
@@ -190,7 +190,7 @@ The dynamic workflow follows this sequence:
 | 9 | HC Correction | NPHI and RHOB hydrocarbon corrections |
 | 10 | Porosity | Total, effective, density, sonic, secondary |
 | 11 | Saturation | Sw via auto-routed model + Sxo |
-| 12 | Permeability | Timur/Coates + impermeability flags |
+| 12 | Permeability | Coates/Timur + impermeability flags |
 | 13 | Rock Quality | RQI, FZI, phi_z |
 | 14 | BVW | Bulk Volume Water |
 | 15 | MHI | Moveable Hydrocarbon Index |

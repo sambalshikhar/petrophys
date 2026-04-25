@@ -100,3 +100,72 @@ def test_curve_standardization_renames_aliases_and_corrects_units():
     np.testing.assert_allclose(standardized["NPHI"].data, np.array([0.20, 0.35]))
     np.testing.assert_allclose(standardized["CALI"].data, np.array([8.5039416, 10.0000054]))
     np.testing.assert_allclose(standardized["PHIE_CC"].data, np.array([0.12, 0.18]))
+
+
+def test_dte_is_not_treated_as_shear_sonic():
+    well = Well("STANDARDIZE-DTE")
+    well.depth = np.array([0.0, 1.0, 2.0])
+    well.add_curve("DTE", np.array([1.5e7, 2.0e7, 4.0e7]), "us/ft", "DTE telemetry")
+
+    standardized = standardize_curves(well, rename_curves=True, convert_units=True)
+
+    assert standardized.get("DTS") is None
+    assert standardized.get("DTE") is not None
+    assert np.all(np.isnan(standardized["DTE"].data))
+
+
+def test_dcal_is_not_treated_as_absolute_caliper():
+    well = Well("STANDARDIZE-DCAL")
+    well.depth = np.array([0.0, 1.0])
+    well.add_curve("DCAL", np.array([-0.5, 0.2]), "in", "Differential caliper")
+
+    standardized = standardize_curves(well, rename_curves=True, convert_units=True)
+
+    assert standardized.get("CALI") is None
+    assert standardized.get("DCAL") is not None
+
+
+def test_phin_is_not_treated_as_raw_nphi_alias():
+    well = Well("STANDARDIZE-PHIN")
+    well.depth = np.array([0.0, 1.0])
+    well.add_curve("PHIN", np.array([0.20, 0.65]), "v/v", "Lithology-corrected neutron porosity")
+
+    standardized = standardize_curves(well, rename_curves=True, convert_units=True)
+
+    assert standardized.get("NPHI") is None
+    assert standardized.get("PHIN") is not None
+    np.testing.assert_allclose(standardized["PHIN"].data, np.array([0.20, np.nan]), equal_nan=True)
+
+
+def test_sonic_standardization_masks_implausible_dtc_and_dts_values():
+    well = Well("STANDARDIZE-SONIC-SCREEN")
+    well.depth = np.array([0.0, 1.0, 2.0, 3.0])
+    well.add_curve("DTC", np.array([80.0, 10.0, 320.0, 120.0]), "us/ft", "Compressional sonic")
+    well.add_curve("DTS", np.array([150.0, 15.0, 4.0e7, 500.0]), "us/ft", "Shear sonic")
+
+    standardized = standardize_curves(well, rename_curves=True, convert_units=True)
+
+    np.testing.assert_allclose(
+        standardized["DTC"].data,
+        np.array([80.0, np.nan, np.nan, 120.0]),
+        equal_nan=True,
+    )
+    np.testing.assert_allclose(
+        standardized["DTS"].data,
+        np.array([150.0, np.nan, np.nan, 500.0]),
+        equal_nan=True,
+    )
+
+
+def test_standardization_converts_percent_like_nphi_and_masks_outliers():
+    well = Well("STANDARDIZE-NPHI-PERCENT")
+    well.depth = np.array([0.0, 1.0, 2.0, 3.0])
+    well.add_curve("NPHI", np.array([20.0, 35.0, 55.0, 153041.0]), "m3/m3", "Neutron")
+
+    standardized = standardize_curves(well, rename_curves=True, convert_units=True)
+
+    np.testing.assert_allclose(
+        standardized["NPHI"].data,
+        np.array([0.20, 0.35, 0.55, np.nan]),
+        equal_nan=True,
+    )
