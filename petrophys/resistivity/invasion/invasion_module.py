@@ -79,7 +79,7 @@ class InvasionModule:
             Invasion analysis results
         """
         # Get resistivity curves
-        rxo = well.get(self.rxo_curve) or well.get("RXO")
+        rxo = well.get(self.rxo_curve) or well.get("RXO") or well.get("RESS")
         rt = well.get(self.rt_curve) or well.get("RT")
 
         if rxo is None:

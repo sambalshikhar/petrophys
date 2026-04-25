@@ -9,7 +9,7 @@ Decision flowchart:
     VCL < cutoff -> CLEAN -> Archie
     VCL >= cutoff -> SHALY:
         Carbonate -> Dual Water
-        Clastic + CEC available -> Waxman-Smits
+        Clastic + CEC and B_COEFF available -> Waxman-Smits
         Clastic + salinity >= 20 kppm -> Simandoux
         Clastic + salinity < 20 kppm -> Indonesia
 
@@ -75,7 +75,7 @@ class SaturationModule:
     - VCL < vcl_cutoff -> CLEAN -> Archie
     - VCL >= vcl_cutoff -> SHALY:
       - Carbonate -> Dual Water
-      - Clastic + CEC available -> Waxman-Smits
+      - Clastic + CEC and B_COEFF available -> Waxman-Smits
       - Clastic + salinity >= 20 kppm -> Simandoux
       - Clastic + salinity < 20 kppm -> Indonesia
 
@@ -187,7 +187,7 @@ class SaturationModule:
 
         # Get VCL and PHIE
         if vcl is None:
-            vcl_curve = well.get("VCL")
+            vcl_curve = well.get("VCL") or well.get("VCLAY")
             vcl = vcl_curve.data if vcl_curve is not None else np.zeros(well.n_samples)
 
         if phie is None:
@@ -219,7 +219,7 @@ class SaturationModule:
             # Single model for entire well
             model = self._select_model(vcl, salinity,
                                        lithology if isinstance(lithology, str) else "clastic",
-                                       cec)
+                                       cec, b_coeff)
             sw = self._run_model(model, rt.data, rw, rcl, vcl, phie, phit,
                                  cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp)
             model_name = model.value
@@ -282,6 +282,7 @@ class SaturationModule:
                 salinity,
                 lith_i,
                 cec,
+                b_coeff,
             ).value
 
         ordered_models = []
@@ -323,7 +324,8 @@ class SaturationModule:
         vcl_value: float,
         salinity: Optional[float],
         lithology: str = "clastic",
-        cec: Optional[float] = None
+        cec: Optional[float] = None,
+        b_coeff: Optional[float] = None,
     ) -> SwModel:
         """Select saturation model for a single depth sample."""
         if self.model != "auto":
@@ -340,7 +342,7 @@ class SaturationModule:
         if lithology in {"carbonate", "limestone", "dolomite", "calcite"}:
             return SwModel.DUAL_WATER
 
-        if cec is not None:
+        if cec is not None and b_coeff is not None:
             return SwModel.WAXMAN_SMITS
 
         if salinity is not None and salinity >= 20000:
@@ -396,7 +398,8 @@ class SaturationModule:
         vcl: np.ndarray,
         salinity: Optional[float],
         lithology: str = "clastic",
-        cec: Optional[float] = None
+        cec: Optional[float] = None,
+        b_coeff: Optional[float] = None,
     ) -> SwModel:
         """
         Select saturation model based on formation properties.
@@ -405,7 +408,7 @@ class SaturationModule:
         - VCL < cutoff -> Archie (clean)
         - VCL >= cutoff -> Shaly:
           - Carbonate -> Dual Water
-          - Clastic + CEC -> Waxman-Smits
+          - Clastic + CEC and B_COEFF -> Waxman-Smits
           - Clastic + salinity >= 20 kppm -> Simandoux
           - Clastic + salinity < 20 kppm -> Indonesia
         """
@@ -413,7 +416,7 @@ class SaturationModule:
             return SwModel(self.model)
 
         mean_vcl = float(np.nanmean(vcl))
-        return self._select_model_scalar(mean_vcl, salinity, lithology, cec)
+        return self._select_model_scalar(mean_vcl, salinity, lithology, cec, b_coeff)
 
     def _estimate_rcl(self, rt: np.ndarray, vcl: np.ndarray) -> float:
         """Estimate clay resistivity from shale intervals."""

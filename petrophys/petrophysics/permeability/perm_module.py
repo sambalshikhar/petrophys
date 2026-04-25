@@ -13,8 +13,13 @@ from petrophys.core.calibration import (
     fit_porosity_correction,
     fit_log_poro_perm_transform_from_correction,
 )
+from petrophys.base.constants import DefaultParameters
 from petrophys.petrophysics.permeability.timur import timur
 from petrophys.petrophysics.permeability.coates_denoo import coates_denoo, wyllie_rose
+from petrophys.petrophysics.permeability.lith_vcl import (
+    lith_vcl_parameter_labels,
+    lith_vcl_permeability,
+)
 
 
 @dataclass
@@ -50,7 +55,34 @@ class PermeabilityResult:
     swi_used: Optional[Union[float, np.ndarray]] = None
     swi_source: str = "not_used"
     bvw_irr: Optional[float] = None
+    swi_metadata: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+def estimate_hc_swirr(
+    sw: np.ndarray,
+    rdep: np.ndarray,
+    resflag: np.ndarray,
+    rt_cutoff: float = 5.0,
+    percentile: float = 5.0,
+    min_samples: int = 10,
+    fallback_swirr: float = 0.20,
+) -> tuple[float, int, str]:
+    """
+    Estimate irreducible water saturation from hydrocarbon-bearing samples.
+
+    The primary estimate is ``percentile(SW[resflag & RDEP > rt_cutoff])``.
+    When the mask has too few samples, a scalar fallback Swirr is returned.
+    """
+    sw = np.asarray(sw, dtype=float)
+    rdep = np.asarray(rdep, dtype=float)
+    resflag = np.asarray(resflag, dtype=bool)
+    hc_mask = resflag & np.isfinite(sw) & np.isfinite(rdep) & (rdep > rt_cutoff)
+    n_samples = int(np.count_nonzero(hc_mask))
+    if n_samples > min_samples:
+        swirr = float(np.percentile(sw[hc_mask], percentile))
+        return float(np.clip(swirr, 0.01, 1.0)), n_samples, "hc_mask_p5"
+    return float(fallback_swirr), n_samples, "default_0.20"
 
 
 def estimate_apparent_swirr(
@@ -61,50 +93,60 @@ def estimate_apparent_swirr(
     phi_cutoff: float = 0.10
 ) -> tuple[np.ndarray, float, int]:
     """
-    Estimate apparent irreducible water saturation from Buckles-style BVW.
+    Legacy Buckles-style Swirr estimate retained for direct callers.
 
-    The apparent irreducible BVW is taken as the median of ``PHIE * SW`` in
-    clean, porous intervals. Apparent ``Swirr`` is then ``BVWirr / PHIE``.
+    The dynamic workflow no longer uses this fallback; it uses
+    ``estimate_hc_swirr`` through ``resolve_swirr``.
     """
     phi = np.asarray(phi, dtype=float)
     sw = np.asarray(sw, dtype=float)
-
     mask = np.isfinite(phi) & np.isfinite(sw) & (phi > phi_cutoff)
     if vcl is not None:
         vcl = np.asarray(vcl, dtype=float)
         mask &= np.isfinite(vcl) & (vcl <= vcl_cutoff)
-
     if np.count_nonzero(mask) < 10:
         mask = np.isfinite(phi) & np.isfinite(sw) & (phi > max(phi_cutoff * 0.7, 0.05))
-
     if np.count_nonzero(mask) == 0:
         raise ValueError("Cannot estimate apparent Swirr without valid PHIE/SW samples")
-
     bvw_irr = float(np.nanmedian(phi[mask] * sw[mask]))
     phi_safe = np.where(phi <= 1e-4, 1e-4, phi)
     swi_app = np.clip(bvw_irr / phi_safe, 0.01, 1.0)
     return swi_app, bvw_irr, int(np.count_nonzero(mask))
 
 
-def resolve_swirr(
-    well: "Well",
-    phi: Optional[np.ndarray] = None
-) -> tuple[Union[float, np.ndarray], str, Optional[float]]:
-    """
-    Resolve irreducible water saturation for permeability equations.
+def _resolve_resflag(well: "Well", phi: np.ndarray) -> tuple[np.ndarray, str]:
+    """Resolve a reservoir flag, deriving a fallback only for direct callers."""
+    for curve_name in ("RESFLAG", "NET_RES"):
+        curve = well.get(curve_name)
+        if curve is not None:
+            return np.asarray(curve.data, dtype=float) > 0.5, curve_name
 
-    Priority:
-    1. Explicit ``SWIRR`` / ``SWI`` curves
-    2. Apparent ``Swirr`` from Buckles-style BVW
-    """
+    vcl_curve = well.get("VCL") or well.get("VCLAY")
+    if vcl_curve is not None:
+        vcl = np.asarray(vcl_curve.data, dtype=float)
+        resflag = (
+            np.isfinite(vcl)
+            & np.isfinite(phi)
+            & (vcl < DefaultParameters.VCL_CUTOFF)
+            & (phi > DefaultParameters.PHIE_CUTOFF_CLASTIC)
+        )
+        return resflag, "derived_vcl_phie"
+
+    resflag = np.isfinite(phi) & (phi > DefaultParameters.PHIE_CUTOFF_CLASTIC)
+    return resflag, "derived_phie"
+
+
+def _resolve_swirr_details(
+    well: "Well",
+    phi: Optional[np.ndarray] = None,
+) -> tuple[Union[float, np.ndarray], str, Optional[float], Dict[str, Any]]:
+    """Resolve Swirr plus trace metadata."""
     if phi is None:
         phi_curve = well.get("PHIE")
         if phi_curve is None:
             raise ValueError("PHIE required to resolve Swirr")
         phi = phi_curve.data
-
-    vcl_curve = well.get("VCL")
-    vcl = vcl_curve.data if vcl_curve is not None else None
+    phi = np.asarray(phi, dtype=float)
 
     for curve_name in ("SWIRR", "SWI", "SWIR"):
         curve = well.get(curve_name)
@@ -117,24 +159,70 @@ def resolve_swirr(
             continue
 
         valid_fraction = np.count_nonzero(valid) / max(len(data), 1)
+        metadata = {"source_curve": curve_name, "valid_fraction": float(valid_fraction)}
         if valid_fraction >= 0.5:
             filled = data.copy()
             filled[~valid] = float(np.nanmedian(data[valid]))
-            return filled, curve_name.lower(), None
+            return filled, curve_name.lower(), None, metadata
 
-        return float(np.nanmedian(data[valid])), f"{curve_name.lower()}_median", None
+        return float(np.nanmedian(data[valid])), f"{curve_name.lower()}_median", None, metadata
 
     sw_curve = well.get("SW")
-    if sw_curve is None:
-        raise ValueError("SW or measured Swirr data required for permeability")
+    rdep_curve = well.get("RDEP") or well.get("RT")
+    if sw_curve is None or rdep_curve is None:
+        return 0.20, "default_0.20", None, {
+            "reason": "SW or RDEP/RT unavailable",
+            "fallback_swirr": 0.20,
+        }
 
-    swi_app, bvw_irr, _ = estimate_apparent_swirr(phi, sw_curve.data, vcl=vcl)
-    return swi_app, "apparent_buckles", bvw_irr
+    resflag, resflag_source = _resolve_resflag(well, phi)
+    swirr, n_samples, source = estimate_hc_swirr(sw_curve.data, rdep_curve.data, resflag)
+    return swirr, source, None, {
+        "resflag_source": resflag_source,
+        "rt_curve": rdep_curve.mnemonic,
+        "rt_cutoff": 5.0,
+        "percentile": 5.0,
+        "min_samples": 10,
+        "hc_mask_samples": n_samples,
+        "fallback_swirr": 0.20,
+    }
+
+
+def resolve_swirr(
+    well: "Well",
+    phi: Optional[np.ndarray] = None
+) -> tuple[Union[float, np.ndarray], str, Optional[float]]:
+    """
+    Resolve irreducible water saturation for permeability equations.
+
+    Priority:
+    1. Explicit ``SWIRR`` / ``SWI`` curves
+    2. ``P5(SW)`` where reservoir flag is true and ``RDEP > 5 ohm.m``
+    3. Scalar fallback ``0.20``
+    """
+    swirr, source, bvw_irr, _ = _resolve_swirr_details(well, phi=phi)
+    return swirr, source, bvw_irr
 
 
 def _normalize_key(value: Any) -> str:
     """Normalize a string key for matching."""
     return str(value or "").strip().lower()
+
+
+def _normalize_perm_method(value: str) -> str:
+    """Normalize permeability method aliases."""
+    method = str(value or "").strip().lower()
+    aliases = {
+        "coates_denoo": "coates",
+        "coates-denoo": "coates",
+        "wyllie-rose": "wyllie_rose",
+        "lithology_vcl": "lith_vcl",
+        "lith-vcl": "lith_vcl",
+        "lith_vcl_perm": "lith_vcl",
+        "dunite": "lith_vcl",
+        "dunite_basic": "lith_vcl",
+    }
+    return aliases.get(method, method)
 
 
 def _resolve_porosity_curve_name(well: "Well") -> str:
@@ -143,6 +231,59 @@ def _resolve_porosity_curve_name(well: "Well") -> str:
         if well.get(curve_name) is not None:
             return curve_name
     raise ValueError("PHIE or PHIT required")
+
+
+def _resolve_lith_vcl_inputs(well: "Well", phi: np.ndarray) -> tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
+    """Resolve PHIT, VCL, and lithology inputs for lith_vcl permeability."""
+    phit_curve = well.get("PHIT")
+    if phit_curve is not None:
+        phit = np.asarray(phit_curve.data, dtype=float)
+        phit_source = phit_curve.mnemonic
+    else:
+        phit = np.asarray(phi, dtype=float)
+        phit_source = "PHIT_missing_using_permeability_porosity"
+
+    vcl_curve = well.get("VCL") or well.get("VCLAY")
+    if vcl_curve is None:
+        raise ValueError("VCL or VCLAY required for lith_vcl permeability")
+    vcl = np.asarray(vcl_curve.data, dtype=float)
+
+    lith = None
+    lith_source = "default_sandstone"
+    lith_curve = well.get("LITHOLOGY_GEOLINK")
+    if lith_curve is not None:
+        try:
+            lith = np.asarray(lith_curve.data, dtype=float)
+        except (TypeError, ValueError):
+            lith = np.asarray(lith_curve.data, dtype=object)
+        lith_source = lith_curve.mnemonic
+    else:
+        lith_class_curve = well.get("LITHO_CLASS")
+        if lith_class_curve is not None:
+            lith = np.asarray(lith_class_curve.data, dtype=object)
+            lith_source = lith_class_curve.mnemonic
+        else:
+            computed_lith_curve = well.get("LITHO")
+            if computed_lith_curve is not None:
+                lith_codes = np.asarray(computed_lith_curve.data, dtype=float)
+                lith = np.full(lith_codes.shape, "sandstone", dtype=object)
+                lith[np.isclose(lith_codes, 2)] = "limestone"
+                lith[np.isclose(lith_codes, 3)] = "dolomite"
+                lith[np.isclose(lith_codes, 5)] = "anhydrite"
+                lith[np.isclose(lith_codes, 7)] = "coal"
+                lith_source = computed_lith_curve.mnemonic
+
+    labels = lith_vcl_parameter_labels(lith)
+    unique_labels = sorted({str(label) for label in np.ravel(labels) if str(label)})
+    metadata = {
+        "phit_curve": phit_source,
+        "vcl_curve": vcl_curve.mnemonic,
+        "lithology_curve": lith_source,
+        "lithology_parameter_groups": unique_labels,
+        "permvclscalar": 1.2,
+        "equation": "10 ** min(4.5, slope * PHIT * (1 - VCL * 1.2) + intercept)",
+    }
+    return phit, vcl, lith, metadata
 
 
 def _get_formation_tops(
@@ -402,8 +543,8 @@ class PermeabilityModule:
         fallback_method: str = "timur",
         min_core_points: int = 3,
     ):
-        self.method = method.lower()
-        self.fallback_method = fallback_method.lower()
+        self.method = _normalize_perm_method(method)
+        self.fallback_method = _normalize_perm_method(fallback_method)
         self.min_core_points = int(min_core_points)
 
     def _calculate_empirical(
@@ -414,21 +555,47 @@ class PermeabilityModule:
         method: Optional[str] = None,
     ) -> PermeabilityResult:
         """Calculate permeability using an empirical equation."""
-        empirical_method = (method or self.method).lower()
+        empirical_method = _normalize_perm_method(method or self.method)
 
-        swi_source = "user"
+        swi_source = "user" if swi is not None else "not_required"
         bvw_irr = None
-        if swi is None:
-            swi, swi_source, bvw_irr = resolve_swirr(well, phi=phi)
+        swi_metadata: Dict[str, Any] = {"source": "user"} if swi is not None else {"source": "not_required"}
 
         if empirical_method == "timur":
+            if swi is None:
+                swi, swi_source, bvw_irr, swi_metadata = _resolve_swirr_details(well, phi=phi)
             perm = timur(phi, swi)
         elif empirical_method == "coates":
+            if swi is None:
+                swi, swi_source, bvw_irr, swi_metadata = _resolve_swirr_details(well, phi=phi)
             perm = coates_denoo(phi, swi)
         elif empirical_method == "wyllie_rose":
+            if swi is None:
+                swi, swi_source, bvw_irr, swi_metadata = _resolve_swirr_details(well, phi=phi)
             perm = wyllie_rose(phi, swi)
+        elif empirical_method == "lith_vcl":
+            phit, vcl, lith, lith_metadata = _resolve_lith_vcl_inputs(well, phi)
+            perm = lith_vcl_permeability(phit, vcl, lith)
+            swi_metadata = {"source": "not_required", "reason": "lith_vcl permeability does not use Swirr"}
         else:
             raise ValueError(f"Unknown permeability method: {empirical_method}")
+
+        perm = np.asarray(perm, dtype=float)
+        finite_count = int(np.count_nonzero(np.isfinite(perm)))
+        if finite_count == 0:
+            raise ValueError(f"{empirical_method} permeability produced no finite samples")
+
+        input_curves = [well.get("PHIE").mnemonic if well.get("PHIE") is not None else "PHIT"]
+        method_metadata: Dict[str, Any] = {}
+        if empirical_method == "lith_vcl":
+            method_metadata = lith_metadata
+            input_curves = [
+                lith_metadata["phit_curve"],
+                lith_metadata["vcl_curve"],
+                lith_metadata["lithology_curve"],
+            ]
+        elif swi_source != "user":
+            input_curves.append("SWIRR/SW")
 
         return PermeabilityResult(
             perm=perm,
@@ -436,10 +603,16 @@ class PermeabilityModule:
             swi_used=swi,
             swi_source=swi_source,
             bvw_irr=bvw_irr,
+            swi_metadata=swi_metadata,
             metadata={
                 "strategy": empirical_method,
                 "empirical_perm": perm,
                 "empirical_method": empirical_method,
+                "empirical_attempted_methods": [empirical_method],
+                "empirical_finite_count": finite_count,
+                "input_curves": input_curves,
+                "method_metadata": method_metadata,
+                "swi_metadata": swi_metadata,
             },
         )
 
@@ -459,7 +632,7 @@ class PermeabilityModule:
             porosity_curve = _resolve_porosity_curve_name(well) if well.get("PHIE") or well.get("PHIT") else "PHIE"
             phi = np.asarray(phi, dtype=float)
 
-        if self.method in {"timur", "coates", "wyllie_rose"}:
+        if self.method in {"timur", "coates", "wyllie_rose", "lith_vcl"}:
             return self._calculate_empirical(well, phi, swi=swi, method=self.method)
 
         if self.method != "auto":
@@ -471,15 +644,26 @@ class PermeabilityModule:
         empirical_result: Optional[PermeabilityResult] = None
         empirical_error: Optional[str] = None
 
-        try:
-            empirical_result = self._calculate_empirical(
-                well,
-                phi,
-                swi=swi,
-                method=self.fallback_method,
-            )
-        except ValueError as exc:
-            empirical_error = str(exc)
+        empirical_methods = [self.fallback_method]
+        if self.fallback_method != "lith_vcl":
+            empirical_methods.append("lith_vcl")
+
+        empirical_errors: List[str] = []
+        empirical_attempted_methods: List[str] = []
+        for empirical_method in empirical_methods:
+            empirical_attempted_methods.append(empirical_method)
+            try:
+                empirical_result = self._calculate_empirical(
+                    well,
+                    phi,
+                    swi=swi,
+                    method=empirical_method,
+                )
+                break
+            except ValueError as exc:
+                empirical_errors.append(f"{empirical_method}: {exc}")
+        if empirical_errors:
+            empirical_error = " | ".join(empirical_errors)
 
         same_well_phi, same_well_perm, same_well_models = _build_same_well_core_prediction(
             well,
@@ -537,7 +721,7 @@ class PermeabilityModule:
                 same_well_models=same_well_models,
                 peer_models=peer_models,
                 used_empirical=empirical_result is not None,
-                fallback_method=self.fallback_method,
+                fallback_method=empirical_result.method if empirical_result is not None else self.fallback_method,
             ),
             "porosity_curve": porosity_curve,
             "core_models": [_serialize_core_model(model) for model in core_models],
@@ -547,15 +731,20 @@ class PermeabilityModule:
             "peer_wells_considered": int(len(peer_wells or [])),
             "same_well_core_models": int(len(same_well_models)),
             "peer_core_models": int(len(peer_models)),
-            "empirical_fallback": self.fallback_method if empirical_result is not None else None,
+            "empirical_fallback": empirical_result.method if empirical_result is not None else None,
             "empirical_perm": empirical_result.perm if empirical_result is not None else None,
             "empirical_method": empirical_result.method if empirical_result is not None else self.fallback_method,
             "empirical_error": empirical_error,
+            "empirical_attempted_methods": empirical_attempted_methods,
+            "swi_metadata": empirical_result.swi_metadata if empirical_result is not None else {},
+            "input_curves": empirical_result.metadata.get("input_curves", []) if empirical_result is not None else [],
+            "method_metadata": empirical_result.metadata.get("method_metadata", {}) if empirical_result is not None else {},
         }
 
         swi_used = empirical_result.swi_used if empirical_result is not None else None
         swi_source = empirical_result.swi_source if empirical_result is not None else "not_used"
         bvw_irr = empirical_result.bvw_irr if empirical_result is not None else None
+        swi_metadata = empirical_result.swi_metadata if empirical_result is not None else {}
 
         return PermeabilityResult(
             perm=perm,
@@ -563,6 +752,7 @@ class PermeabilityModule:
             swi_used=swi_used,
             swi_source=swi_source,
             bvw_irr=bvw_irr,
+            swi_metadata=swi_metadata,
             metadata=metadata,
         )
 

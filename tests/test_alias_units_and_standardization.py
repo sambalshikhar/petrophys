@@ -1,0 +1,98 @@
+import numpy as np
+
+from petrophys import Well
+from petrophys.qaqc.standardization import standardize_curves
+import petrophys.workflow.zoned_batch as zoned_batch
+
+
+def _alias_override(base_name, value, unit=""):
+    overrides = {}
+    injected = {}
+    unmapped = []
+    zoned_batch._apply_parameter_alias(base_name, value, unit, overrides, injected, unmapped)
+    return overrides, injected, unmapped
+
+
+def test_parameter_aliases_convert_temperature_depth_salinity_and_booleans():
+    cases = [
+        ("CLFL", 90.0, "kppm", "rmf_salinity_ppm", 90000.0),
+        ("CLFL", 90.0, "g/L", "rmf_salinity_ppm", 90000.0),
+        ("SAL", 35.0, "g/l", "salinity_ppm", 35000.0),
+        ("WATSAL", 35000.0, "mg/L", "salinity_ppm", 35000.0),
+        ("WSAL", 3.5, "%", "salinity_ppm", 35000.0),
+        ("RWT", 25.0, "C", "rw_meas_temp_f", 77.0),
+        ("RMFT", 25.0, "C", "rmf_meas_temp_f", 77.0),
+        ("BHT", 100.0, "C", "bht_f", 212.0),
+        ("TD", 3000.0, "m", "td_ft", 9842.52),
+    ]
+
+    for base_name, value, unit, expected_key, expected_value in cases:
+        overrides, injected, unmapped = _alias_override(base_name, value, unit)
+        assert injected == {}
+        assert unmapped == []
+        assert expected_key in overrides
+        assert np.isclose(overrides[expected_key], expected_value)
+
+    overrides, _, unmapped = _alias_override("APPLY_HC_CORRECTION", "yes")
+    assert overrides["apply_hc_correction"] is True
+    assert unmapped == []
+
+    overrides, _, unmapped = _alias_override("LITHOLOGY", "carbonate")
+    assert overrides["lithology"] == "carbonate"
+    assert unmapped == []
+
+
+def test_unknown_parameter_aliases_are_reported_as_unmapped():
+    overrides, injected, unmapped = _alias_override("NOT_A_WORKFLOW_PARAMETER", 123.0)
+
+    assert overrides == {}
+    assert injected == {}
+    assert unmapped == ["NOT_A_WORKFLOW_PARAMETER"]
+
+
+def test_zoned_parameter_extraction_converts_depths_and_alias_units():
+    well = Well("ZONED-ALIASES")
+    well.depth = np.array([0.0, 500.0, 1000.0, 1500.0])
+    well.depth_unit = "ft"
+    well.set_parameter("ZTOP_Z1", 100.0)
+    well.set_parameter("ZTOP_Z1__UNIT", "m")
+    well.set_parameter("ZBOT_Z1", 300.0)
+    well.set_parameter("ZBOT_Z1__UNIT", "m")
+    well.set_parameter("CLFL_Z1", 80.0)
+    well.set_parameter("CLFL_Z1__UNIT", "kppm")
+    well.set_parameter("SAL_Z1", 35.0)
+    well.set_parameter("SAL_Z1__UNIT", "g/l")
+    well.set_parameter("BHT_Z1", 100.0)
+    well.set_parameter("BHT_Z1__UNIT", "C")
+    well.set_parameter("APPLY_HC_CORRECTION_Z1", "true")
+
+    zones = zoned_batch.extract_zoned_parameters(well)
+
+    assert len(zones) == 1
+    zone = zones[0]
+    assert np.isclose(zone.top, 328.084)
+    assert np.isclose(zone.bottom, 984.252)
+    assert zone.config_overrides["rmf_salinity_ppm"] == 80000.0
+    assert zone.config_overrides["salinity_ppm"] == 35000.0
+    assert zone.config_overrides["bht_f"] == 212.0
+    assert zone.config_overrides["apply_hc_correction"] is True
+
+
+def test_curve_standardization_renames_aliases_and_corrects_units():
+    well = Well("STANDARDIZE-ALIASES")
+    well.depth = np.array([0.0, 1.0])
+    well.add_curve("ILD", np.array([10.0, 20.0]), "ohm.ft", "Deep resistivity")
+    well.add_curve("ZDEN", np.array([2200.0, 2400.0]), "kg/m3", "Density")
+    well.add_curve("TNPH", np.array([20.0, 35.0]), "pu", "Neutron")
+    well.add_curve("CAL", np.array([216.0, 254.0]), "mm", "Caliper")
+
+    standardized = standardize_curves(well, rename_curves=True, convert_units=True)
+
+    assert standardized.get("RDEP") is not None
+    assert standardized.get("RHOB") is not None
+    assert standardized.get("NPHI") is not None
+    assert standardized.get("CALI") is not None
+    np.testing.assert_allclose(standardized["RDEP"].data, np.array([3.048, 6.096]))
+    np.testing.assert_allclose(standardized["RHOB"].data, np.array([2.2, 2.4]))
+    np.testing.assert_allclose(standardized["NPHI"].data, np.array([0.20, 0.35]))
+    np.testing.assert_allclose(standardized["CALI"].data, np.array([8.5039416, 10.0000054]))

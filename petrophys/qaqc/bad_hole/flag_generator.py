@@ -190,7 +190,7 @@ def generate_bad_hole_flags(
             bit_size = np.nanmean(well["BS"].data)
 
     # Generate washout flag
-    cali = well.get("CALI")
+    cali = well.get("CALI") or well.get("CAL")
     drho = well.get("DRHO")
 
     if cali is not None and bit_size is not None:

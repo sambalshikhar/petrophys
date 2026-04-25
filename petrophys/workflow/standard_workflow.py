@@ -460,7 +460,11 @@ class StandardWorkflow:
                 formation_tops=self.config.formation_tops,
             )
             well.add_curve("PERM", result.perm, "mD", f"Permeability ({result.method})")
-            trace.input_curves = [result.metadata.get("porosity_curve", "PHIE")]
+            empirical_method = result.metadata.get("empirical_method") or self.config.perm_fallback_method
+            if empirical_method == "lith_vcl" and result.metadata.get("input_curves"):
+                trace.input_curves = list(dict.fromkeys(result.metadata["input_curves"]))
+            else:
+                trace.input_curves = [result.metadata.get("porosity_curve", "PHIE")]
             trace.output_curves = ["PERM"]
             phi_corecal = result.metadata.get("phi_corecal")
             perm_core = result.metadata.get("perm_core")
@@ -474,29 +478,53 @@ class StandardWorkflow:
                 trace.output_curves.append("PHIE_CORECAL")
             if perm_core is not None:
                 well.add_curve(
-                    "PERM_CORECAL",
+                    "PERM_CC",
                     perm_core,
                     "mD",
                     "Permeability from core-calibrated poro-perm transform",
                 )
-                trace.output_curves.append("PERM_CORECAL")
-            if isinstance(result.swi_used, np.ndarray) and result.swi_source == "apparent_buckles":
-                well.add_curve("SWIRR_APP", result.swi_used, "v/v", "Apparent Irreducible Water Saturation")
-                trace.output_curves.append("SWIRR_APP")
+                trace.output_curves.append("PERM_CC")
             if np.isscalar(result.swi_used):
                 trace.parameters["swirr"] = float(result.swi_used)
-                trace.decisions.append(f"Swirr = {float(result.swi_used):.3f} ({result.swi_source})")
+                if result.swi_source == "hc_mask_p5":
+                    n_samples = result.swi_metadata.get("hc_mask_samples")
+                    rt_curve = result.swi_metadata.get("rt_curve", "RDEP")
+                    trace.decisions.append(
+                        f"Swirr = P5(SW where resflag and {rt_curve} > 5) = {float(result.swi_used):.3f} (n={n_samples})"
+                    )
+                elif result.swi_source == "default_0.20":
+                    n_samples = result.swi_metadata.get("hc_mask_samples")
+                    if n_samples is not None:
+                        trace.decisions.append(f"Swirr = 0.200 fallback because hydrocarbon mask had {n_samples} samples")
+                    else:
+                        trace.decisions.append("Swirr = 0.200 fallback")
+                else:
+                    trace.decisions.append(f"Swirr = {float(result.swi_used):.3f} ({result.swi_source})")
             elif isinstance(result.swi_used, np.ndarray):
                 trace.decisions.append(f"Swirr resolved as curve ({result.swi_source})")
-                if result.bvw_irr is not None:
-                    trace.decisions.append(f"Apparent BVWirr = {result.bvw_irr:.4f} v/v")
+            elif result.swi_source == "not_required" and empirical_method == "lith_vcl":
+                trace.decisions.append(
+                    "Swirr not used because lith_vcl permeability uses PHIT, VCL, and lithology"
+                )
             else:
                 trace.decisions.append("Swirr not used because permeability came from core calibration")
             trace.parameters["swirr_source"] = result.swi_source
+            trace.parameters["swirr_metadata"] = result.swi_metadata
             trace.parameters["fallback_method"] = self.config.perm_fallback_method
+            trace.parameters["empirical_method"] = empirical_method
+            trace.parameters["empirical_attempted_methods"] = result.metadata.get("empirical_attempted_methods")
+            trace.parameters["empirical_method_metadata"] = result.metadata.get("method_metadata", {})
             trace.parameters["strategy"] = result.metadata.get("strategy")
             trace.parameters["same_well_core_models"] = result.metadata.get("same_well_core_models")
             trace.parameters["peer_core_models"] = result.metadata.get("peer_core_models")
+            if empirical_method == "lith_vcl":
+                trace.decisions.append(
+                    "lith_vcl empirical permeability: "
+                    "10 ** min(4.5, slope * PHIT * (1 - VCL * 1.2) + intercept)"
+                )
+                groups = result.metadata.get("method_metadata", {}).get("lithology_parameter_groups") or []
+                if groups:
+                    trace.decisions.append("lith_vcl parameter groups used: " + ", ".join(groups))
             if result.metadata.get("core_sections_count"):
                 trace.decisions.append(
                     f"Core-calibrated sections: {result.metadata['core_sections_count']} samples"
