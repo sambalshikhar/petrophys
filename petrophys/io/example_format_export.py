@@ -2411,6 +2411,325 @@ def _compact_lithology_notes(
     return notes
 
 
+def _segment_lithology_groups_for_saturation(well: "Well", fallback: Any = "clastic") -> np.ndarray:
+    """Return the same per-depth lithology groups used by saturation routing."""
+    try:
+        from petrophys.workflow.dynamic_workflow import (
+            COMPUTED_LITHO_CODE_TO_GROUP,
+            GROUND_TRUTH_CODE_TO_GROUP,
+        )
+    except Exception:
+        GROUND_TRUTH_CODE_TO_GROUP = {}
+        COMPUTED_LITHO_CODE_TO_GROUP = {}
+
+    fallback_text = str(fallback or "clastic")
+    if fallback_text == "per-depth array":
+        fallback_text = "clastic"
+
+    def _groups_from_curve(curve_name: str, mapping: dict[int, str]) -> Optional[np.ndarray]:
+        curve = well.get(curve_name)
+        if curve is None:
+            return None
+        try:
+            data = np.asarray(curve.data, dtype=float)
+        except (TypeError, ValueError):
+            return None
+        groups = np.full(data.shape, fallback_text, dtype=object)
+        finite = np.isfinite(data)
+        if np.any(finite):
+            for idx, code in zip(np.where(finite)[0], np.rint(data[finite]).astype(int)):
+                groups[idx] = mapping.get(int(code), fallback_text)
+        return groups
+
+    geolink_groups = _groups_from_curve("LITHOLOGY_GEOLINK", GROUND_TRUTH_CODE_TO_GROUP)
+    if geolink_groups is not None:
+        return geolink_groups
+    computed_groups = _groups_from_curve("LITHO", COMPUTED_LITHO_CODE_TO_GROUP)
+    if computed_groups is not None:
+        return computed_groups
+    return np.full(int(well.n_samples), fallback_text, dtype=object)
+
+
+def _segment_saturation_model_counts(well: "Well", params: dict[str, Any]) -> dict[str, int]:
+    """Recreate the saturation model routing for the exported interval only."""
+    n_samples = int(well.n_samples)
+    requested = str(params.get("sw_model_requested") or "auto").strip().lower()
+    sw_curve = well.get("SW")
+    if sw_curve is not None:
+        finite_sw = np.isfinite(_normalize_numeric_array(sw_curve.data))
+        routed_samples = int(np.count_nonzero(finite_sw))
+    else:
+        routed_samples = n_samples
+
+    if requested and requested != "auto":
+        return {requested: routed_samples}
+
+    vcl_curve = well.get("VCL") or well.get("VCLAY") or well.get("VSH")
+    if vcl_curve is not None:
+        vcl = _normalize_numeric_array(vcl_curve.data)
+    else:
+        vcl = np.zeros(n_samples, dtype=float)
+    vcl = np.resize(vcl, n_samples)
+
+    lithology = _segment_lithology_groups_for_saturation(
+        well, params.get("lithology_type") or "clastic"
+    )
+    lithology = np.resize(lithology, n_samples)
+
+    cutoff = float(params.get("vcl_cutoff_for_routing") or 0.3)
+    salinity = params.get("salinity_ppm")
+    cec_present = bool(params.get("cec_present") or params.get("cec") is not None)
+    b_coeff_present = bool(params.get("b_coeff_present") or params.get("b_coeff") is not None)
+    counts: dict[str, int] = {}
+    for idx in range(n_samples):
+        if sw_curve is not None and idx < finite_sw.size and not bool(finite_sw[idx]):
+            continue
+        vcl_value = float(vcl[idx]) if np.isfinite(vcl[idx]) else 0.0
+        if vcl_value < cutoff:
+            model = "archie"
+        else:
+            group = str(lithology[idx] or "").strip().lower()
+            if group in {"carbonate", "limestone", "dolomite", "calcite"}:
+                model = "dual_water"
+            elif cec_present and b_coeff_present:
+                model = "waxman_smits"
+            elif salinity is not None and float(salinity) >= 20000.0:
+                model = "simandoux"
+            else:
+                model = "indonesia"
+        counts[model] = counts.get(model, 0) + 1
+    return counts
+
+
+def _model_display_name(model: str) -> str:
+    return {
+        "archie": "Archie",
+        "indonesia": "Indonesia",
+        "simandoux": "Simandoux",
+        "dual_water": "Dual Water",
+        "waxman_smits": "Waxman-Smits",
+        "north_sea": "North Sea",
+        "nigeria_schlumberger": "Nigeria-Schlumberger",
+    }.get(str(model), str(model).replace("_", " ").title())
+
+
+def _sw_equation_text(models: Iterable[str], params: dict[str, Any]) -> str:
+    parts: list[str] = []
+    model_set = {str(model) for model in models}
+    if "archie" in model_set:
+        parts.append("Archie Sw=(a*RW/(PHIE^m*Rt))^(1/n)")
+    if "indonesia" in model_set:
+        parts.append(
+            "Indonesia 1/sqrt(Rt)=VCL^(1-VCL/2)/sqrt(RCL)+PHIE^(m/2)*Sw^(n/2)/sqrt(a*RW)"
+        )
+    if "simandoux" in model_set:
+        parts.append("Simandoux 1/Rt=(PHIE^m/(a*RW))*Sw^n+(VCL/RCL)*Sw")
+    if "dual_water" in model_set:
+        rwb = params.get("rwb")
+        phi_cl = params.get("phi_cl")
+        rwb_text = f", Rwb={_format_numeric(rwb, 4)} ohm.m" if rwb is not None else ", Rwb=0.3*RW"
+        phi_cl_text = f", phi_cl={_format_numeric(phi_cl, 3)}" if phi_cl is not None else ""
+        parts.append(
+            "Dual Water phi_bw=VCL*phi_cl, Swb=phi_bw/PHIT, "
+            f"1/Rwt=Swb/Rwb+(1-Swb)/RW, Sw=[a*Rwt/(PHIT^m*Rt)]^(1/n){rwb_text}{phi_cl_text}"
+        )
+    if "waxman_smits" in model_set:
+        parts.append("Waxman-Smits Ct=(Sw^n/F*)*(Cw+B*Qv/Sw), solved iteratively")
+    if "north_sea" in model_set:
+        parts.append("North Sea 1/Rt=(PHIE^m/(a*RW))*Sw^n+VCL^vsh_exp/RTSH")
+    if "nigeria_schlumberger" in model_set:
+        parts.append("Nigeria-Schlumberger 1/sqrt(Rt)=VCL^shale_exp/sqrt(RSH)+PHIE^(m/2)*Sw^(n/2)/sqrt(a*RW)")
+    return "; ".join(parts)
+
+
+def _sw_route_reason_text(model: str, params: dict[str, Any]) -> str:
+    cutoff = params.get("vcl_cutoff_for_routing")
+    salinity = params.get("salinity_ppm")
+    cec_present = bool(params.get("cec_present") or params.get("cec") is not None)
+    b_coeff_present = bool(params.get("b_coeff_present") or params.get("b_coeff") is not None)
+    if model == "archie":
+        return f"VCL<{cutoff}"
+    if model == "dual_water":
+        return f"VCL>={cutoff} and carbonate lithology"
+    if model == "waxman_smits":
+        return f"VCL>={cutoff} with CEC and B"
+    if model == "simandoux":
+        return f"VCL>={cutoff} and salinity={_format_numeric(salinity, 0)} ppm"
+    if model == "indonesia":
+        if not cec_present or not b_coeff_present:
+            sal_text = "no salinity>=20000 ppm" if salinity is None or float(salinity) < 20000.0 else f"salinity={_format_numeric(salinity, 0)} ppm"
+            return f"VCL>={cutoff}, non-carbonate, no CEC/B, {sal_text}"
+        return f"VCL>={cutoff}, non-carbonate"
+    return "configured saturation model"
+
+
+def _permeability_equation_text(method: str, params: dict[str, Any]) -> str:
+    method_norm = str(method or "").strip().lower()
+    if method_norm == "timur":
+        return "Timur k=8581*PHIE^4.4/SWIRR^2"
+    if method_norm in {"coates", "coates_denoo"}:
+        return "Coates-Denoo k=100^2*(PHIE*(1-SWIRR)/SWIRR)^2"
+    if method_norm == "wyllie_rose":
+        return "Wyllie-Rose k=250*PHIE^3/SWIRR^2"
+    if method_norm == "lith_vcl":
+        metadata = params.get("empirical_method_metadata") or {}
+        groups = metadata.get("lithology_parameter_groups") or []
+        group_text = f"; parameter groups={', '.join(map(str, groups))}" if groups else ""
+        return "lith_vcl k=10^min(4.5, slope*PHIT*(1-VCL*1.2)+intercept); valid VCL>0 and PHIT>0.001" + group_text
+    return f"{method} empirical equation"
+
+
+def _rw_temperature_formula_text() -> str:
+    return "Rw75=0.0123+3647.5/salinity^0.955; RW(T)=Rw75*(75+6.77)/(TEMP+6.77)"
+
+
+def _vcl_gr_equation(method: str) -> str:
+    method_norm = str(method or "linear").lower()
+    if method_norm == "linear":
+        return "VCL_GR=IGR"
+    if method_norm == "larionov_tertiary":
+        return "VCL_GR=0.083*(2^(3.7*IGR)-1)"
+    if method_norm == "larionov_older":
+        return "VCL_GR=0.33*(2^(2*IGR)-1)"
+    if method_norm == "steiber":
+        return "VCL_GR=IGR/(3-2*IGR)"
+    if method_norm == "clavier":
+        return "VCL_GR=1.7-sqrt(3.38-(IGR+0.7)^2)"
+    return f"VCL_GR={method_norm}(IGR)"
+
+
+def _vcl_curve_note(step: Any) -> str:
+    params = getattr(step, "parameters", {}) or {}
+    gr_min_raw = params.get("gr_min")
+    gr_max_raw = params.get("gr_max")
+    try:
+        gr_clean = min(float(gr_min_raw), 20.0)
+    except (TypeError, ValueError):
+        gr_clean = gr_min_raw
+    try:
+        gr_shale = max(float(gr_max_raw), 100.0)
+    except (TypeError, ValueError):
+        gr_shale = gr_max_raw
+
+    formulas = [
+        f"IGR=clip((GR-{_format_numeric(gr_clean, 1)})/({_format_numeric(gr_shale, 1)}-{_format_numeric(gr_clean, 1)}),0,1)",
+        _vcl_gr_equation(params.get("gr_method")),
+    ]
+    used = ["GR"]
+    if params.get("use_sp"):
+        used.append("SP")
+        formulas.append(
+            "VCL_SP=clip((SPclean-SP)/(SPclean-SPshale),0,1); "
+            f"SPclean={_format_numeric(params.get('sp_max'), 1)} mV, "
+            f"SPshale={_format_numeric(params.get('sp_min'), 1)} mV"
+        )
+    if params.get("use_nd"):
+        used.append("ND")
+        formulas.append(
+            "VCL_ND=clip(((RHOB2-RHOB1)*(NPHI-NPHI1)-(RHOB-RHOB1)*(NPHI2-NPHI1))/"
+            "((RHOB2-RHOB1)*(NPHIclay-NPHI1)-(RHOBclay-RHOB1)*(NPHI2-NPHI1)),0,1); "
+            f"clean1=({_format_numeric(params.get('nd_clean1_density'), 2)},"
+            f"{_format_numeric(params.get('nd_clean1_neutron'), 2)}), "
+            f"clean2=({_format_numeric(params.get('nd_clean2_density'), 2)},"
+            f"{_format_numeric(params.get('nd_clean2_neutron'), 2)}), "
+            f"clay=({_format_numeric(params.get('nd_clay_density'), 2)},"
+            f"{_format_numeric(params.get('nd_clay_neutron'), 2)})"
+        )
+    return f"VCL: final=min({', '.join(used)}); " + "; ".join(formulas) + "."
+
+
+def _rmf_curve_note(step: Any) -> str:
+    params = getattr(step, "parameters", {}) or {}
+    rmf_range = _depth_profile_range_text([step], "rmf_min", "rmf_max", 4, "ohm.m")
+    method = getattr(step, "method", "")
+    arps = "Arps R(T)=Rmeas*(Tmeas+6.77)/(TEMP+6.77)"
+    if method == "OBM_default":
+        return f"RMF: OBM default; RMF=200 ohm.m constant; RMF(T)={rmf_range}."
+    if method in {"arps_temperature_profile_correction", "las_metadata_profile_temperature_correction"}:
+        measured = params.get("rmf_at_surface", params.get("rmf_at_measured_temp"))
+        return (
+            f"RMF: {arps}; Rmeas={_format_numeric(measured, 4)} ohm.m, "
+            f"Tmeas={_format_numeric(params.get('measured_temp_f'), 1)} F; RMF(T)={rmf_range}."
+        )
+    if method == "las_metadata_assumed_reference_temperature":
+        return (
+            f"RMF: {arps}; Rmeas={_format_numeric(params.get('rmf_at_reference_temp'), 4)} ohm.m, "
+            f"Tmeas={_format_numeric(params.get('reference_temp_f'), 1)} F; RMF(T)={rmf_range}."
+        )
+    if method == "mud_filtrate_salinity_conversion":
+        return (
+            f"RMF: CLFL salinity conversion; Rmf75=0.0123+3647.5/CLFL^0.955, then {arps}; "
+            f"CLFL={_format_numeric(params.get('mud_filtrate_salinity_ppm'), 0)} ppm, "
+            f"Rmeas={_format_numeric(params.get('rmf_at_measured_temp'), 4)} ohm.m at "
+            f"{_format_numeric(params.get('measured_temp_f'), 1)} F; RMF(T)={rmf_range}."
+        )
+    if str(method).startswith("rm_to_rmf_conversion_factor"):
+        return (
+            f"RMF: RM first corrected by {arps}, then RMF=RM(T)*{_format_numeric(params.get('conversion_factor'), 2)}; "
+            f"RM={_format_numeric(params.get('rm_at_measured_temp'), 4)} ohm.m at "
+            f"{_format_numeric(params.get('rm_measured_temp_f'), 1)} F; RMF(T)={rmf_range}."
+        )
+    return f"RMF: {method}; {arps}; RMF(T)={rmf_range or 'not recorded'}."
+
+
+def _rw_curve_note(step: Any, well: "Well") -> str:
+    params = getattr(step, "parameters", {}) or {}
+    rw_range = _depth_profile_range_text([step], "rw_min", "rw_max", 4, "ohm.m")
+    method = getattr(step, "method", "")
+    formula = _rw_temperature_formula_text()
+
+    if method == "rwa_clean_wet_p5":
+        return (
+            "RW: RWA clean-wet P5; "
+            f"RWA=RDEP*PHIE^{_format_numeric(params.get('archie_m'), 3)}/a, "
+            f"a={_format_numeric(params.get('archie_a'), 3)}, "
+            f"mask=VCL<{params.get('vcl_cutoff')} and PHIE>{params.get('phie_cutoff')}; "
+            f"P5={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
+            f"samples={params.get('rwa_clean_wet_samples')}, "
+            f"salinity={_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm; {formula}; RW(T)={rw_range}."
+        )
+    if method == "sp_clean_water":
+        rmf_range = _depth_profile_range_text([step], "rmf_min", "rmf_max", 4, "ohm.m")
+        return (
+            "RW: SP clean-water; SSP=SPclean-SPshale, K=61+0.133*TEMP(F), "
+            "RW=RMF(T)/10^(-SSP/K), clipped 0.01-10 ohm.m; "
+            f"SPclean={_format_numeric(params.get('sp_clean_mv'), 2)} mV, "
+            f"SPshale={_format_numeric(params.get('sp_shale_mv'), 2)} mV, "
+            f"SSP={_format_numeric(params.get('ssp_mv'), 2)} mV, RMF(T)={rmf_range}; RW(T)={rw_range}."
+        )
+    if method == "rxo_rt_clean_water":
+        return (
+            "RW: clean-water Rxo/Rt; RW_clean=RMF(T)*RT/RXO, converted to salinity and corrected by temperature; "
+            f"samples={params.get('n_points')}, salinity={_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm, RW(T)={rw_range}."
+        )
+    if method == "salinity_conversion":
+        return (
+            f"RW: salinity conversion; salinity={_format_numeric(params.get('salinity_ppm'), 0)} ppm; "
+            f"{formula}; RW(T)={rw_range}."
+        )
+    if method in {"user_provided_temperature_profile_corrected", "las_metadata_temperature_profile_corrected"}:
+        source = "user input" if method.startswith("user") else "LAS metadata"
+        return (
+            f"RW: {source}; measured RW={_format_numeric(params.get('rw_at_measured_temp'), 4)} ohm.m "
+            f"at { _format_numeric(params.get('measured_temp_f'), 1)} F, converted to salinity "
+            f"{_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm; {formula}; RW(T)={rw_range}."
+        )
+    if method in {"user_provided_assumed_reference_temperature", "las_metadata_assumed_reference_temperature"}:
+        source = "user input" if method.startswith("user") else "LAS metadata"
+        return (
+            f"RW: {source}; RW={_format_numeric(params.get('rw'), 4)} ohm.m at reference "
+            f"{_format_numeric(params.get('reference_temp_f'), 1)} F, converted to salinity "
+            f"{_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm; {formula}; RW(T)={rw_range}."
+        )
+    if method == "default_fallback_profile":
+        return (
+            f"RW: default fallback; RW={_format_numeric(params.get('rw_default'), 4)} ohm.m at "
+            f"{_format_numeric(params.get('reference_temp_f'), 1)} F, converted to salinity and temperature-corrected; "
+            f"{formula}; RW(T)={rw_range}."
+        )
+    return f"RW: {method}; {formula}; RW(T)={rw_range or 'not recorded'}."
+
+
 def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "Well") -> str:
     params = getattr(step, "parameters", {}) or {}
 
@@ -2434,49 +2753,31 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         temp_range = _curve_range_text(well, ["TEMP", "TMPC"], 1, "F")
         if method == "linear_gradient_from_BHT":
             return (
-                "TMPC: surface-to-BHT profile; "
+                "TMPC: TEMP=surface+gradient*(DEPT-minDEPT)/100; BHT-derived gradient; "
                 f"surface={_format_numeric(params.get('surface_temp_f'), 1)} F, "
                 f"BHT={_format_numeric(params.get('bht_f'), 1)} F, "
                 f"gradient={_format_numeric(params.get('gradient_f_per_100ft'), 4)} F/100ft"
                 + (f"; TEMP={temp_range}." if temp_range else ".")
             )
         return (
-            "TMPC: fallback geothermal profile; "
+            "TMPC: TEMP=surface+gradient*(DEPT-minDEPT)/100; fallback geothermal gradient; "
             f"surface={_format_numeric(params.get('surface_temp_f'), 1)} F, "
             f"gradient={_format_numeric(params.get('gradient_f_per_100ft'), 4)} F/100ft"
             + (f"; TEMP={temp_range}." if temp_range else ".")
         )
 
     if curve == "VCL" and step is not None:
-        methods = ["GR"]
-        if params.get("use_sp"):
-            methods.append("SP")
-        if params.get("use_nd"):
-            methods.append("ND")
-        return (
-            f"VCL: min({', '.join(methods)}); "
-            f"GRmin={_format_numeric(params.get('gr_min'), 1)} API, "
-            f"GRmax={_format_numeric(params.get('gr_max'), 1)} API; method={params.get('gr_method', 'linear')}."
-        )
+        return _vcl_curve_note(step)
 
     if curve == "RMF":
         if step is None or status == "missing":
             return f"RMF: skipped because {reason}."
-        rmf_range = _depth_profile_range_text([step], "rmf_min", "rmf_max", 4, "ohm.m")
-        return f"RMF: method={step.method}; RMF(T)={rmf_range or 'not recorded'}."
+        return _rmf_curve_note(step)
 
     if curve == "RW":
         if step is None or status == "missing":
             return f"RW: skipped because {reason}."
-        rw_range = _depth_profile_range_text([step], "rw_min", "rw_max", 4, "ohm.m")
-        if step.method == "rwa_clean_wet_p5":
-            return (
-                "RW: RWA clean-wet P5; "
-                f"RWA={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m; "
-                f"mask=VCL<{params.get('vcl_cutoff')} and PHIE>{params.get('phie_cutoff')}; "
-                f"samples={params.get('rwa_clean_wet_samples')}; RW(T)={rw_range}."
-            )
-        return f"RW: method={step.method}; RW(T)={rw_range or 'not recorded'}."
+        return _rw_curve_note(step, well)
 
     if curve == "PHIN" and step is not None:
         endpoint = _porosity_endpoint_text(step, "nphi_ma", 3)
@@ -2504,29 +2805,54 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         return "PHI_SEC: max(PHIT-PHIS,0)."
 
     if curve == "SW" and step is not None:
-        counts = params.get("sw_model_sample_counts") or {}
-        counts_text = ", ".join(f"{name}={count}" for name, count in sorted(counts.items())) if counts else "not recorded"
+        counts = _segment_saturation_model_counts(well, params)
+        counts_text = ", ".join(
+            f"{_model_display_name(name)}={count}/{well.n_samples} ({_sw_route_reason_text(name, params)})"
+            for name, count in sorted(counts.items())
+        ) if counts else "not recorded"
         rw_range = _depth_profile_range_text([step], "rw_min", "rw_max", 4, "ohm.m")
+        requested = str(params.get("sw_model_requested") or "auto")
+        route_text = "requested model" if requested != "auto" else "depth-by-depth routing"
+        equations = _sw_equation_text(counts.keys(), params)
+        rcl = params.get("rcl")
+        rcl_text = f"; RCL={_format_numeric(rcl, 4)} ohm.m" if rcl is not None and any(name != "archie" for name in counts) else ""
         return (
-            f"SW: model={params.get('sw_model') or step.method}; VCL cutoff={params.get('vcl_cutoff_for_routing')}; "
-            f"counts={counts_text}; a={params.get('a')}, m={params.get('m')}, n={params.get('n')}"
-            + (f"; RW(T)={rw_range}." if rw_range else ".")
+            f"SW: {route_text}; {counts_text}; "
+            f"equation(s): {equations}; a={params.get('a')}, m={params.get('m')}, n={params.get('n')}"
+            + (f"; RW(T)={rw_range}" if rw_range else "")
+            + rcl_text
+            + "."
         )
     if curve == "SXO" and step is not None:
         method = params.get("sxo_method")
         if method == "archie_rxo_rmf":
-            return "SXO: invaded-zone Archie using RXO/RSHA and RMF."
+            rmf_range = _depth_profile_range_text([step], "rmf_min", "rmf_max", 4, "ohm.m")
+            return (
+                "SXO: invaded-zone Archie; SXO=(a*RMF/(PHIE^m*Rxo))^(1/n), clipped 0-1; "
+                f"a={params.get('a')}, m={params.get('m')}, n={params.get('n')}"
+                + (f"; RMF(T)={rmf_range}." if rmf_range else ".")
+            )
         if method == "fifth_root_quicklook":
             return "SXO: fallback SXO=SW^(1/5)."
         return f"SXO: method={method or step.method}."
 
     if curve == "PERM" and step is not None:
         empirical = params.get("empirical_method") or step.method
+        equation = _permeability_equation_text(empirical, params)
+        swirr_text = ""
+        if empirical != "lith_vcl" and params.get("swirr") is not None:
+            swirr_text = f"; SWIRR={_format_numeric(params.get('swirr'), 4)}"
         cap = params.get("perm_max_clip_md")
         cap_text = f"; clipped <= {cap:g} mD" if isinstance(cap, (int, float)) else ""
-        return f"PERM: empirical method={empirical}{cap_text}."
+        return f"PERM: {equation}{swirr_text}{cap_text}."
     if curve == "PERM_CC":
-        return "PERM_CC: core-calibrated permeability." if status == "computed" else f"PERM_CC: skipped because {reason}."
+        if status == "computed" and step is not None:
+            return "PERM_CC: core-calibrated transform; PHIE_CORECAL=A*PHIE+B, PERM_CC=10^(A2*PHIE_CORECAL+B2), clipped 0.001-10000 mD."
+        return f"PERM_CC: skipped because {reason}."
+    if curve == "PHIE_CORECAL":
+        if status == "computed" and step is not None:
+            return "PHIE_CORECAL: core porosity correction; PHIE_CORECAL=A*PHIE+B, clipped 0-0.5."
+        return f"PHIE_CORECAL: skipped because {reason}."
     if curve == "SWIRR_APP" and step is not None:
         metadata = params.get("swirr_metadata") or {}
         return (
@@ -2542,7 +2868,7 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         "BVW": "BVW: PHIE*SW.",
         "MHI": "MHI: SW/SXO.",
         "CROSSOVER_FLAG": "CROSSOVER_FLAG: PHID-PHIN>0.01.",
-        "VP_VS_RATIO": "VP_VS_RATIO: DTS/DTC.",
+        "VP_VS_RATIO": "VP_VS_RATIO: DTS/DTC where DTC=20-300 us/ft, DTS=20-600 us/ft, and ratio=0.5-5.0.",
     }
     if curve in simple and status != "missing":
         return simple[curve]
@@ -2550,15 +2876,26 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
     if curve == "INVASION_RATIO":
         return f"INVASION_RATIO: skipped because {reason}." if status == "missing" else "INVASION_RATIO: RXO/RDEP; NaN where RDEP<0.2 or ratio>100."
     if curve in {"VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"}:
-        return f"{curve}: multi-mineral solution from RHOB, NPHI, VCL, PHIE, PEF/U, and DTC where available."
+        return (
+            f"{curve}: multi-mineral solve; sum(Vi)=1-VCL-PHIE, "
+            "RHOB=sum(Vi*rho_i)+fluids, NPHI/U/DTC mixing equations where inputs are available."
+        )
     if curve == "NET_ROCK" and step is not None:
-        return f"NET_ROCK: VCL<{params.get('vcl_cutoff')}."
+        return f"NET_ROCK: 1 where VCL<{params.get('vcl_cutoff')}; else 0."
     if curve in {"NET_RES", "RESFLAG"} and step is not None:
-        return f"{curve}: reservoir screen after NET_ROCK; PHIE cutoff={params.get('phie_cutoff')}."
+        cutoff = params.get("phie_cutoff")
+        cutoff_text = cutoff if cutoff is not None else "lithology cutoff: 0.08 clastic, 0.045 carbonate"
+        return f"{curve}: 1 where NET_ROCK=1 and PHIE>{cutoff_text}; else 0."
     if curve == "NET_PAY" and step is not None:
-        return f"NET_PAY: reservoir screen plus SW<{params.get('sw_cutoff')}."
+        return f"NET_PAY: 1 where NET_RES=1 and SW<{params.get('sw_cutoff')}; else 0."
     if curve == "SEALFLAG" and step is not None:
-        return f"SEALFLAG: VCL>={params.get('seal_vcl_cutoff', 0.8)}."
+        return f"SEALFLAG: 1 where VCL>={params.get('seal_vcl_cutoff', 0.8)}; else 0."
+    if curve == "PAY_FLAG_PETROPHYSICAL" and status != "missing":
+        return "PAY_FLAG_PETROPHYSICAL: resolved pay flag; 1 where existing PAY_FLAG_PETROPHYSICAL/NET_PAY>0.5."
+    if curve == "PRIME_GAS_TARGET" and status != "missing":
+        return "PRIME_GAS_TARGET: 1 where CROSSOVER_FLAG=1, VP_VS_RATIO<1.75, and reservoir quality is GOOD/EXCELLENT."
+    if curve == "PRIME_OIL_TARGET" and status != "missing":
+        return "PRIME_OIL_TARGET: 1 where pay flag=1 and reservoir quality is EXCELLENT (PERM>10 mD and PHIE>0.15)."
     if status == "missing":
         return f"{curve}: skipped because {reason}."
     if status == "already_present":
@@ -2613,8 +2950,15 @@ def _build_concise_delivery_computation_notes(
 
     rcl_step = _first_step_result(workflow_result, "rcl")
     if rcl_step is not None:
+        source = rcl_step.parameters.get("source") or rcl_step.method
+        if source == "lithology_shale_median_rt":
+            method_text = "median(RDEP/RT where lithology is shale)"
+        elif source == "vcl_gt_0.9_median_rt":
+            method_text = "median(RDEP/RT where VCL>0.9)"
+        else:
+            method_text = "default RCL=5.0 ohm.m"
         notes.append(
-            f"RCL: method={rcl_step.parameters.get('source') or rcl_step.method}; "
+            f"RCL: {method_text}; "
             f"samples={rcl_step.parameters.get('shale_sample_count')}; "
             f"RCL={_format_numeric(rcl_step.parameters.get('rcl_computed'), 4)} ohm.m."
         )
@@ -2623,9 +2967,9 @@ def _build_concise_delivery_computation_notes(
     if por_step is not None:
         phi_clay = _porosity_phi_clay_text(por_step.parameters)
         notes.append(
-            "Porosity: PHIN=clip(NPHI-nphi_ma,0,0.6); PHID=(rho_ma-RHOB)/(rho_ma-rho_fl); "
-            "PHIS=Wyllie; PHIT=PHID where PHID>PHIN+0.05 else 0.6*PHID+0.4*PHIN; "
-            "PHIE=PHIT-VCL*phi_clay; PHI_SEC=max(PHIT-PHIS,0)"
+            "Porosity: PHIN=clip(NPHI-nphi_ma,0,0.6); PHID=clip((rho_ma-RHOB)/(rho_ma-rho_fl),0,0.5); "
+            "PHIS=clip((DTC-dt_ma)/(dt_fl-dt_ma),0,0.5); PHIT=PHID where PHID>PHIN+0.05 else 0.6*PHID+0.4*PHIN; "
+            "PHIE=clip(PHIT-VCL*phi_clay,0,PHIT); PHI_SEC=max(PHIT-PHIS,0)"
             + (f"; {phi_clay}." if phi_clay else ".")
         )
 
@@ -2637,7 +2981,9 @@ def _build_concise_delivery_computation_notes(
 
     lith_step = _first_step_result(workflow_result, "lithology")
     if lith_step is not None and any(well.get(name) is not None for name in ("VQUAR", "VCALC", "VDOLO", "VANHY")):
-        notes.append("Mineral volumes: multi-mineral balance using RHOB, NPHI, VCL, PHIE, PEF/U, and DTC where available.")
+        notes.append(
+            "Mineral volumes: solve sum(Vi)=1-VCL-PHIE plus RHOB, NPHI, U=PEF*RHOB, and DTC mixing equations where available."
+        )
 
     perm_step = _first_step_result(workflow_result, "permeability")
     if perm_step is not None:
@@ -2665,7 +3011,7 @@ def _build_concise_delivery_computation_notes(
                 f"NET_PAY adds SW<{net_step.parameters.get('sw_cutoff')}",
                 f"SEALFLAG=VCL>={net_step.parameters.get('seal_vcl_cutoff', 0.8)}",
                 "CROSSOVER_FLAG=PHID-PHIN>0.01",
-                "VP_VS_RATIO=DTS/DTC",
+                "VP_VS_RATIO=DTS/DTC with plausibility screens",
             ]
         )
         notes.append("Flags: " + "; ".join(flag_parts) + ".")
