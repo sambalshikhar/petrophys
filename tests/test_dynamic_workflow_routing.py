@@ -412,6 +412,58 @@ def test_rcl_uses_vcl_when_vclay_alias_is_missing(record_route):
     assert step.input_curves == ["RDEP", "VCL"]
 
 
+def test_lithology_geolink_keeps_input_lithology_but_solves_volumes(record_route):
+    well = _routing_well("lithology_geolink_authoritative", n=6)
+    well.add_curve("LITHOLOGY_GEOLINK", np.array([1, 1, 9, 15, 7, 5]), "", "Lithology")
+
+    result = _run(
+        "lithology_geolink_authoritative",
+        well,
+        DynamicWorkflowConfig(
+            skip_steps=[
+                "temperature", "bad_hole", "vclay", "rcl", "rmf", "rw", "invasion",
+                "hc_correction", "porosity", "saturation", "permeability",
+                "rock_quality", "bvw", "mhi", "net_pay",
+            ]
+        ),
+        record_route,
+        focus_steps=["lithology"],
+        curves=["LITHOLOGY_GEOLINK", "VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"],
+    )
+    step = _step_by_name(result, "lithology")
+
+    assert step.parameters["lithology_curve_written"] is False
+    assert "LITHO" not in step.output_curves
+    assert well.get("LITHO") is None
+    for curve in ("VQUAR", "VCALC", "VDOLO", "VANHY"):
+        assert well.get(curve) is not None
+
+
+def test_lithology_fallback_writes_litho_when_input_lithology_absent(record_route):
+    well = _routing_well("lithology_fallback", n=6)
+
+    result = _run(
+        "lithology_fallback",
+        well,
+        DynamicWorkflowConfig(
+            skip_steps=[
+                "temperature", "bad_hole", "vclay", "rcl", "rmf", "rw", "invasion",
+                "hc_correction", "porosity", "saturation", "permeability",
+                "rock_quality", "bvw", "mhi", "net_pay",
+            ]
+        ),
+        record_route,
+        focus_steps=["lithology"],
+        curves=["VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"],
+    )
+    step = _step_by_name(result, "lithology")
+
+    assert step.parameters["lithology_curve_written"] is True
+    assert "LITHO" in step.output_curves
+    for curve in ("VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"):
+        assert well.get(curve) is not None
+
+
 @pytest.mark.parametrize(
     "case_id,mutate,config,expected_method,expected_temp_key,expected_temp_value",
     [
