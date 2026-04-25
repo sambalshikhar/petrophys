@@ -66,9 +66,60 @@ def test_hydrocarbon_analysis_adds_requested_curves_and_targets():
     assert well.get("PAY_FLAG_PETROPHYSICAL") is not None
     assert well.get("PRIME_GAS_TARGET") is not None
     assert well.get("PRIME_OIL_TARGET") is not None
+    np.testing.assert_array_equal(
+        well["CROSSOVER_FLAG"].data,
+        np.array([1, 1, 1, 1, 1, 0, 0, 0, 0, 0], dtype=float),
+    )
     assert np.nanmax(well["PRIME_GAS_TARGET"].data) == 1.0
     assert np.nanmax(well["PRIME_OIL_TARGET"].data) == 1.0
     assert "PRIME_GAS_TARGET" in payload["integrated_hydrocarbon_potential"]
+
+
+def test_hydrocarbon_analysis_rejects_implausible_shear_slowness_for_vpvs():
+    well = _build_analysis_well()
+    well.add_curve("DTS", np.full(well.n_samples, 4.0e7), "us/ft", "Bad Shear Sonic")
+
+    HydrocarbonAnalysis().analyze(well, add_curves=True)
+
+    assert np.all(np.isnan(well["VP_VS_RATIO"].data))
+
+
+def test_rock_quality_leaves_invalid_phi_and_perm_as_nan():
+    from petrophys.reservoir.rock_quality import calculate_rock_quality
+
+    result = calculate_rock_quality(
+        perm_k=np.array([100.0, 0.0, 10.0, np.nan]),
+        phi_e=np.array([0.20, 0.20, 0.0, 0.15]),
+    )
+
+    assert np.isfinite(result["FZI"][0])
+    assert np.isnan(result["RQI"][1])
+    assert np.isnan(result["phi_z"][2])
+    assert np.isnan(result["FZI"][2])
+    assert np.isnan(result["FZI"][3])
+
+
+def test_invasion_ratio_rejects_tiny_rt_spikes():
+    from petrophys.resistivity.invasion import calculate_invasion_ratio
+
+    ratio = calculate_invasion_ratio(
+        rxo=np.array([1.0, 50.0, 1.0, 500.0]),
+        rt=np.array([1.0, 0.1, 0.0, 1.0]),
+    )
+
+    assert ratio[0] == 1.0
+    assert np.isnan(ratio[1])
+    assert np.isnan(ratio[2])
+    assert np.isnan(ratio[3])
+
+
+def test_multi_mineral_fraction_constraint_enforces_available_volume():
+    from petrophys.lithology.multi_mineral_solver import _constrain_mineral_fractions
+
+    constrained = _constrain_mineral_fractions(np.array([0.5, 0.4, 0.2]), 0.65)
+
+    assert np.all(constrained >= 0.0)
+    assert np.sum(constrained) <= 0.65 + 1e-12
 
 
 def test_run_comprehensive_analysis_returns_all_categories_and_curves():

@@ -33,6 +33,19 @@ def _get_endpoints(name: str) -> Dict[str, float]:
     }
 
 
+def _constrain_mineral_fractions(
+    fractions: np.ndarray,
+    available_fraction: float,
+) -> np.ndarray:
+    """Clip mineral fractions and enforce closure to the available rock volume."""
+    constrained = np.asarray(fractions, dtype=float).copy()
+    constrained = np.clip(constrained, 0.0, max(float(available_fraction), 0.0))
+    total = float(np.nansum(constrained))
+    if total > available_fraction and total > 0.0:
+        constrained *= float(available_fraction) / total
+    return constrained
+
+
 class MultiMineralSolver:
     """
     Multi-mineral solver for complex lithology.
@@ -197,8 +210,10 @@ class MultiMineralSolver:
         x, _ = nnls(np.array(A_rows), np.array(b_rows))
 
         # Check closure against available mineral space (1 - Vcl - φe)
-        if abs(x.sum() - (1.0 - vcl - phie)) > 0.05:
+        available_fraction = 1.0 - vcl - phie
+        if abs(x.sum() - available_fraction) > 0.05:
             return active_minerals, tuple(np.nan for _ in active_minerals)
+        x = _constrain_mineral_fractions(x, available_fraction)
 
         return active_minerals, tuple(float(v) for v in x)
 

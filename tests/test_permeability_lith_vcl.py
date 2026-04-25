@@ -28,12 +28,26 @@ def test_lith_vcl_permeability_matches_lithology_formula():
         well.get("VCL").data,
         well.get("LITHOLOGY_GEOLINK").data,
     )
+    expected = np.minimum(expected, perm_module.PERMEABILITY_MAX_MD)
     np.testing.assert_allclose(result.perm, expected, equal_nan=True)
     assert result.method == "lith_vcl"
     assert result.swi_source == "not_required"
     assert result.metadata["method_metadata"]["phit_curve"] == "PHIT"
     assert result.metadata["method_metadata"]["vcl_curve"] == "VCL"
     assert result.metadata["method_metadata"]["lithology_curve"] == "LITHOLOGY_GEOLINK"
+    assert result.metadata["perm_max_clip_md"] == 10000.0
+
+
+def test_permeability_module_caps_outputs_at_10000_md():
+    well = _perm_well()
+    well.add_curve("PHIT", np.full(well.n_samples, 0.45), "v/v", "High Total Porosity")
+    well.add_curve("VCL", np.full(well.n_samples, 0.01), "v/v", "Clay Volume")
+    module = perm_module.PermeabilityModule(method="lith_vcl")
+
+    result = module.calculate(well)
+
+    assert np.nanmax(result.perm) == perm_module.PERMEABILITY_MAX_MD
+    assert result.metadata["perm_max_clip_md"] == perm_module.PERMEABILITY_MAX_MD
 
 
 def test_auto_empirical_falls_back_to_lith_vcl_when_timur_fails(monkeypatch):
@@ -51,3 +65,16 @@ def test_auto_empirical_falls_back_to_lith_vcl_when_timur_fails(monkeypatch):
     assert result.metadata["empirical_attempted_methods"] == ["timur", "lith_vcl"]
     assert "timur unavailable" in result.metadata["empirical_error"]
     assert result.swi_source == "not_required"
+
+
+def test_estimate_swirr_app_builds_constant_curve_from_hc_mask_p5():
+    sw = np.array([0.60, 0.42, 0.34, 0.28, 0.25, 0.22, 0.20, 0.19, 0.18, 0.17, 0.16])
+    rdep = np.full(sw.shape, 12.0)
+    resflag = np.ones(sw.shape, dtype=bool)
+
+    swirr_app, swirr, n_samples, source = perm_module.estimate_swirr_app(sw, rdep, resflag)
+
+    assert source == "hc_mask_p5"
+    assert n_samples == sw.size
+    assert swirr == np.percentile(sw, 5)
+    np.testing.assert_allclose(swirr_app, swirr)

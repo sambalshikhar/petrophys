@@ -3,6 +3,8 @@
 from typing import Any, Optional, Union
 import numpy as np
 
+DEFAULT_MAX_PERM_MD = 10000.0
+
 
 def _parameters_for_lithology(lithology: Any) -> tuple[float, float, str]:
     """Return slope/intercept for the Dunite-style lithology code."""
@@ -40,6 +42,7 @@ def lith_vcl_permeability(
     vcl: Union[float, np.ndarray],
     lith: Optional[Union[float, np.ndarray]] = None,
     permvclscalar: float = 1.2,
+    max_perm: Optional[float] = DEFAULT_MAX_PERM_MD,
 ) -> Union[float, np.ndarray]:
     """
     Calculate permeability from total porosity, VCL, and lithology.
@@ -49,6 +52,7 @@ def lith_vcl_permeability(
 
     Values are returned only where ``VCL > 0`` and ``PHIT > 0.001``.
     Unknown lithology falls back to sandstone parameters.
+    Finite permeability values are capped to ``max_perm`` when provided.
     """
     phit_arr = np.asarray(phit, dtype=float)
     vcl_arr = np.asarray(vcl, dtype=float)
@@ -71,6 +75,9 @@ def lith_vcl_permeability(
 
     perm = np.full(phit_b.shape, np.nan, dtype=float)
     perm[valid] = np.power(10.0, np.minimum(4.5, exponent[valid]))
+    if max_perm is not None:
+        finite = np.isfinite(perm)
+        perm[finite] = np.minimum(perm[finite], float(max_perm))
 
     if np.isscalar(phit) and np.isscalar(vcl) and (lith is None or np.isscalar(lith)):
         return float(perm)

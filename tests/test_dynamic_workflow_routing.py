@@ -489,6 +489,16 @@ def test_rw_routing_sources_and_temperature_units(case_id, mutate, config, expec
     assert step.method == expected_method
     if case_id == "rw_las_rw_temp_c_corrected":
         assert np.isclose(step.parameters["measured_temp_f"], 77.0)
+    if case_id == "rw_rwa_clean_wet_fallback":
+        assert "rwa_reference_temp_f" in step.parameters
+        assert "salinity_ppm_estimated" in step.parameters
+        assert step.parameters["rw_min"] < step.parameters["rw_max"]
+        rdep = well.get("RDEP").data
+        phie = well.get("PHIE").data
+        vcl = well.get("VCL").data
+        valid = np.isfinite(rdep) & np.isfinite(phie) & np.isfinite(vcl) & (vcl < 0.3) & (phie > 0.05)
+        expected_rwa = rdep[valid] * np.power(phie[valid], step.parameters["archie_m"]) / step.parameters["archie_a"]
+        assert np.isclose(step.parameters["rw_from_rwa"], np.percentile(expected_rwa, 5))
 
 
 def test_invasion_routes_when_shallow_and_deep_resistivity_exist(record_route):
@@ -576,6 +586,35 @@ def test_porosity_routes_by_available_inputs(case_id, mutate, expected_method, r
     step = _step_by_name(result, "porosity")
     assert step.parameters["phit_method"] == expected_method
     assert "PHIE" in step.output_curves
+
+
+def test_porosity_phin_uses_lithology_specific_nphi_ma(record_route):
+    well = _routing_well("porosity_lithology_specific_phin", n=4)
+    well.add_curve("LITHOLOGY_GEOLINK", np.array([1, 7, 11, 15]), "", "Lithology")
+
+    result = _run(
+        "porosity_lithology_specific_phin",
+        well,
+        DynamicWorkflowConfig(rw=0.05),
+        record_route,
+        focus_steps=["porosity"],
+        curves=["NPHI", "PHIN"],
+    )
+
+    step = _step_by_name(result, "porosity")
+    expected_nphi_ma = np.array([-0.02, 0.30, 0.00, 0.02])
+    expected_phin = np.clip(well.get("NPHI").data - expected_nphi_ma, 0.0, 0.6)
+    np.testing.assert_allclose(well.get("PHIN").data, expected_phin)
+    assert step.parameters["matrix_mode"] == "lithology_dependent"
+    endpoints = {
+        item["lithology_group"]: item["nphi_ma"]
+        for item in step.parameters["matrix_endpoints"]
+    }
+    assert endpoints["SANDSTONE"] == -0.02
+    assert endpoints["SHALE"] == 0.30
+    assert endpoints["LIMESTONE"] == 0.00
+    assert endpoints["DOLOMITE"] == 0.02
+    assert any("lithology-specific matrix neutron endpoints" in item for item in step.decisions)
 
 
 @pytest.mark.parametrize(
@@ -675,13 +714,18 @@ def test_saturation_skips_when_phie_is_unavailable_even_if_rhob_exists(record_ro
 )
 def test_permeability_routes_swirr_sources(case_id, mutate, config, expected_swirr_source, record_route):
     well = mutate(_routing_well(case_id))
-    result = _run(case_id, well, config, record_route, focus_steps=["permeability"], curves=["PERM", "RESFLAG"])
+    result = _run(case_id, well, config, record_route, focus_steps=["permeability"], curves=["PERM", "RESFLAG", "SWIRR_APP"])
     step = _step_by_name(result, "permeability")
     assert step.parameters["swirr_source"] == expected_swirr_source
     if expected_swirr_source in {"hc_mask_p5", "default_0.20"}:
         assert step.parameters["swirr_metadata"]["resflag_source"] == "RESFLAG"
         assert step.parameters["pre_permeability_resflag"]["created"] is True
         assert well.get("RESFLAG") is not None
+        swirr_app = well.get("SWIRR_APP")
+        assert swirr_app is not None
+        assert "SWIRR_APP" in step.output_curves
+        assert step.parameters["swirr_app_method"] == expected_swirr_source
+        np.testing.assert_allclose(swirr_app.data, step.parameters["swirr"])
     if expected_swirr_source == "default_0.20":
         assert step.parameters["swirr"] == 0.20
     assert well.get("PERM") is not None

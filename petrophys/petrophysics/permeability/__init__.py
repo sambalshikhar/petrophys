@@ -12,6 +12,7 @@ from petrophys.petrophysics.permeability.perm_module import (
     calculate_permeability,
     estimate_apparent_swirr,
     estimate_hc_swirr,
+    estimate_swirr_app,
     resolve_swirr,
 )
 from petrophys.petrophysics.permeability.timur import timur, timur_perm
@@ -30,6 +31,7 @@ __all__ = [
     "calculate_permeability",
     "estimate_apparent_swirr",
     "estimate_hc_swirr",
+    "estimate_swirr_app",
     "resolve_swirr",
     "timur",
     "timur_perm",
