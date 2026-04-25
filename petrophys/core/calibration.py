@@ -266,7 +266,7 @@ def apply_porosity_correction(
     well,
     correction: PorosityCorrection,
     input_curve: Optional[str] = None,
-    output_curve: str = "PHIE_CORECAL",
+    output_curve: str = "PHIE_CC",
 ) -> np.ndarray:
     """
     Apply a porosity correction to a full well log.
@@ -389,7 +389,7 @@ def fit_poro_perm_transform(
 def fit_log_poro_perm_transform(
     well,
     core: CoreData,
-    porosity_curve: str = "PHIE_CORECAL",
+    porosity_curve: str = "PHIE_CC",
     min_perm: float = 0.001,
 ) -> PoroPermTransform:
     """

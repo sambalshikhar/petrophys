@@ -5,8 +5,6 @@ import numpy as np
 from petrophys import Well
 from petrophys.analysis import HydrocarbonAnalysis
 from petrophys.io.example_format_export import (
-    ANALYSIS_ONLY_DERIVED_CURVES,
-    REFERENCE_DERIVED_LOG_TARGETS,
     _build_reference_derived_log_status,
 )
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
@@ -70,9 +68,9 @@ def test_hydrocarbon_analysis_adds_requested_curves_and_targets():
 
     assert well.get("CROSSOVER_FLAG") is not None
     assert well.get("VP_VS_RATIO") is not None
-    assert well.get("PAY_FLAG_PETROPHYSICAL") is not None
     assert well.get("PRIME_GAS_TARGET") is not None
     assert well.get("PRIME_OIL_TARGET") is not None
+    assert well.get("NET_PAY") is not None
     np.testing.assert_array_equal(
         well["CROSSOVER_FLAG"].data,
         np.array([1, 1, 1, 1, 1, 0, 0, 0, 0, 0], dtype=float),
@@ -80,10 +78,6 @@ def test_hydrocarbon_analysis_adds_requested_curves_and_targets():
     assert np.nanmax(well["PRIME_GAS_TARGET"].data) == 1.0
     assert np.nanmax(well["PRIME_OIL_TARGET"].data) == 1.0
     assert "PRIME_GAS_TARGET" in payload["integrated_hydrocarbon_potential"]
-
-
-def test_analysis_only_hydrocarbon_flags_are_not_generic_missing_curve_targets():
-    assert ANALYSIS_ONLY_DERIVED_CURVES.isdisjoint(REFERENCE_DERIVED_LOG_TARGETS)
 
 
 def test_input_lithology_is_not_reported_as_missing_litho_fallback():

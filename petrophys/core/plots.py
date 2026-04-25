@@ -220,7 +220,7 @@ def plot_core_on_logs(
 
     core_map = {
         "PHIE": ("porosity", "Core PHI"),
-        "PHIE_CORECAL": ("porosity", "Core PHI"),
+        "PHIE_CC": ("porosity", "Core PHI"),
         "PHIT": ("porosity", "Core PHI"),
         "PHID": ("porosity", "Core PHI"),
         "PHID_CORE": ("porosity", "Core PHI"),

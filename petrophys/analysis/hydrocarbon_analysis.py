@@ -121,8 +121,7 @@ class HydrocarbonAnalysis:
                     ),
                     methodology=(
                         "Uses SW as the primary saturation indicator, MHI only when both SW and SXO "
-                        "are available, and PAY_FLAG_PETROPHYSICAL resolved from existing "
-                        "PAY_FLAG_PETROPHYSICAL or NET_PAY behavior. MHI is not synthesized when no "
+                        "are available, and NET_PAY as the workflow pay flag. MHI is not synthesized when no "
                         "flushed-zone saturation is available, so invasion-based hydrocarbon indication "
                         "stays conservative."
                     ),
@@ -195,11 +194,6 @@ class HydrocarbonAnalysis:
                 ),
             },
             derived_curves={
-                "PAY_FLAG_PETROPHYSICAL": DerivedCurve(
-                    pay_flag,
-                    "",
-                    "Petrophysical pay flag aligned with current net-pay behavior",
-                ),
                 "CROSSOVER_FLAG": DerivedCurve(
                     crossover_flag,
                     "",
@@ -230,7 +224,7 @@ class HydrocarbonAnalysis:
 
     @staticmethod
     def _resolve_pay_flag(well: "Well", n_samples: int) -> np.ndarray:
-        existing, _ = get_curve_data(well, ["PAY_FLAG_PETROPHYSICAL", "NET_PAY"])
+        existing, _ = get_curve_data(well, ["NET_PAY"])
         if existing is not None:
             return np.where(np.isfinite(existing), (existing > 0.5).astype(float), np.nan)
 

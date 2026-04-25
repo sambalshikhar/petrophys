@@ -69,6 +69,9 @@ ALIAS_MAP: Dict[str, List[str]] = {
 
     # Temperature
     "TEMP": ["TEMP", "TEMPERATURE", "BHT", "TLOG", "GTMP"],
+
+    # Core-calibrated porosity
+    "PHIE_CC": ["PHIE_CC", "PHIE_CORECAL"],
 }
 
 # Reverse mapping: alias -> standard mnemonic

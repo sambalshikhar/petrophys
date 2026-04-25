@@ -95,7 +95,7 @@ AUDIT_TARGET_CURVES = [
     "PHI_SEC",
     "SW",
     "PERM",
-    "PHIE_CORECAL",
+    "PHIE_CC",
     "PERM_CC",
     "RQI",
     "FZI",
@@ -121,7 +121,7 @@ CURVE_TO_STEP = {
     "PHI_SEC": "porosity",
     "SW": "saturation",
     "PERM": "permeability",
-    "PHIE_CORECAL": "permeability",
+    "PHIE_CC": "permeability",
     "PERM_CC": "permeability",
     "RQI": "rock_quality",
     "FZI": "rock_quality",
@@ -460,7 +460,7 @@ def _finalize_export_curves(well: "Well", original_curves: set[str]) -> None:
     if "LITHO" not in original_curves:
         well.remove_curve("LITHO")
 
-    for name in ("PAY_FLAG_PETROPHYSICAL", "PRIME_GAS_TARGET", "PRIME_OIL_TARGET"):
+    for name in ("PRIME_GAS_TARGET", "PRIME_OIL_TARGET"):
         if name not in original_curves:
             well.remove_curve(name)
 
@@ -1147,7 +1147,7 @@ def write_curve_audit_report(
                     return f"{step_name} step skipped"
                 if step is not None and not step.success:
                     return step.message or f"{step_name} step failed"
-                if curve in {"PHIE_CORECAL", "PERM_CC"} and step is not None:
+                if curve in {"PHIE_CC", "PERM_CC"} and step is not None:
                     same_well_models = step.parameters.get("same_well_core_models")
                     peer_models = step.parameters.get("peer_core_models")
                     strategy = step.parameters.get("strategy") or step.parameters.get("method")
