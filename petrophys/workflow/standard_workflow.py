@@ -484,20 +484,30 @@ class StandardWorkflow:
                     "Permeability from core-calibrated poro-perm transform",
                 )
                 trace.output_curves.append("PERM_CC")
+            swirr_metadata = dict(result.swi_metadata)
+            swirr_app = swirr_metadata.pop("swirr_app", None)
+            if swirr_app is not None and empirical_method != "lith_vcl":
+                well.add_curve(
+                    "SWIRR_APP",
+                    swirr_app,
+                    "v/v",
+                    "Apparent irreducible water saturation from hydrocarbon-mask P5 method",
+                )
+                trace.output_curves.append("SWIRR_APP")
             if np.isscalar(result.swi_used):
                 trace.parameters["swirr"] = float(result.swi_used)
                 if result.swi_source == "hc_mask_p5":
-                    n_samples = result.swi_metadata.get("hc_mask_samples")
-                    rt_curve = result.swi_metadata.get("rt_curve", "RDEP")
+                    n_samples = swirr_metadata.get("hc_mask_samples")
+                    rt_curve = swirr_metadata.get("rt_curve", "RDEP")
                     trace.decisions.append(
-                        f"Swirr = P5(SW where resflag and {rt_curve} > 5) = {float(result.swi_used):.3f} (n={n_samples})"
+                        f"SWIRR_APP = P5(SW where resflag and {rt_curve} > 5) = {float(result.swi_used):.3f} (n={n_samples})"
                     )
                 elif result.swi_source == "default_0.20":
-                    n_samples = result.swi_metadata.get("hc_mask_samples")
+                    n_samples = swirr_metadata.get("hc_mask_samples")
                     if n_samples is not None:
-                        trace.decisions.append(f"Swirr = 0.200 fallback because hydrocarbon mask had {n_samples} samples")
+                        trace.decisions.append(f"SWIRR_APP = 0.200 fallback because hydrocarbon mask had {n_samples} samples")
                     else:
-                        trace.decisions.append("Swirr = 0.200 fallback")
+                        trace.decisions.append("SWIRR_APP = 0.200 fallback")
                 else:
                     trace.decisions.append(f"Swirr = {float(result.swi_used):.3f} ({result.swi_source})")
             elif isinstance(result.swi_used, np.ndarray):
@@ -509,11 +519,13 @@ class StandardWorkflow:
             else:
                 trace.decisions.append("Swirr not used because permeability came from core calibration")
             trace.parameters["swirr_source"] = result.swi_source
-            trace.parameters["swirr_metadata"] = result.swi_metadata
+            trace.parameters["swirr_app_method"] = swirr_metadata.get("swirr_app_method")
+            trace.parameters["swirr_metadata"] = swirr_metadata
             trace.parameters["fallback_method"] = self.config.perm_fallback_method
             trace.parameters["empirical_method"] = empirical_method
             trace.parameters["empirical_attempted_methods"] = result.metadata.get("empirical_attempted_methods")
             trace.parameters["empirical_method_metadata"] = result.metadata.get("method_metadata", {})
+            trace.parameters["perm_max_clip_md"] = result.metadata.get("perm_max_clip_md")
             trace.parameters["strategy"] = result.metadata.get("strategy")
             trace.parameters["same_well_core_models"] = result.metadata.get("same_well_core_models")
             trace.parameters["peer_core_models"] = result.metadata.get("peer_core_models")
@@ -537,6 +549,8 @@ class StandardWorkflow:
                     f"{source_type}: {source} / {formation} (n={model.get('n_core_points')}, "
                     f"perm R2={model.get('perm_r2'):.3f})"
                 )
+            if result.metadata.get("perm_max_clip_md") is not None:
+                trace.decisions.append(f"Permeability clipped to <= {result.metadata['perm_max_clip_md']:.0f} mD")
             trace.decisions.append(f"Permeability strategy: {result.method}")
         except Exception as e:
             self.warnings.append(f"Permeability calculation warning: {e}")

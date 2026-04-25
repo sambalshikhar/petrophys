@@ -17,9 +17,20 @@ from petrophys.base.constants import DefaultParameters
 from petrophys.petrophysics.permeability.timur import timur
 from petrophys.petrophysics.permeability.coates_denoo import coates_denoo, wyllie_rose
 from petrophys.petrophysics.permeability.lith_vcl import (
+    DEFAULT_MAX_PERM_MD,
     lith_vcl_parameter_labels,
     lith_vcl_permeability,
 )
+
+PERMEABILITY_MAX_MD = DEFAULT_MAX_PERM_MD
+
+
+def _cap_permeability(perm: np.ndarray, max_perm: float = PERMEABILITY_MAX_MD) -> np.ndarray:
+    """Cap finite permeability values while preserving NaNs."""
+    capped = np.asarray(perm, dtype=float).copy()
+    finite = np.isfinite(capped)
+    capped[finite] = np.minimum(capped[finite], max_perm)
+    return capped
 
 
 @dataclass
@@ -42,7 +53,7 @@ class CorePermModel:
     def predict(self, porosity: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Predict corrected porosity and permeability for a log curve."""
         phi_corr = self.porosity_correction.predict(porosity)
-        perm = np.clip(self.perm_transform.predict(phi_corr), 0.001, 100000.0)
+        perm = np.clip(self.perm_transform.predict(phi_corr), 0.001, PERMEABILITY_MAX_MD)
         return phi_corr, perm
 
 
@@ -83,6 +94,35 @@ def estimate_hc_swirr(
         swirr = float(np.percentile(sw[hc_mask], percentile))
         return float(np.clip(swirr, 0.01, 1.0)), n_samples, "hc_mask_p5"
     return float(fallback_swirr), n_samples, "default_0.20"
+
+
+def estimate_swirr_app(
+    sw: np.ndarray,
+    rdep: np.ndarray,
+    resflag: np.ndarray,
+    rt_cutoff: float = 5.0,
+    percentile: float = 5.0,
+    min_samples: int = 10,
+    fallback_swirr: float = 0.20,
+) -> tuple[np.ndarray, float, int, str]:
+    """
+    Build the SWIRR_APP curve from the hydrocarbon-mask Swirr method.
+
+    The selected scalar Swirr is the P5 of ``SW`` where the reservoir flag is
+    true and ``RDEP/RT`` exceeds the cutoff. The returned curve is a constant
+    log so downstream exports can audit which Swirr value permeability used.
+    """
+    sw = np.asarray(sw, dtype=float)
+    swirr, n_samples, source = estimate_hc_swirr(
+        sw,
+        rdep,
+        resflag,
+        rt_cutoff=rt_cutoff,
+        percentile=percentile,
+        min_samples=min_samples,
+        fallback_swirr=fallback_swirr,
+    )
+    return np.full_like(sw, swirr, dtype=float), swirr, n_samples, source
 
 
 def estimate_apparent_swirr(
@@ -173,10 +213,16 @@ def _resolve_swirr_details(
         return 0.20, "default_0.20", None, {
             "reason": "SW or RDEP/RT unavailable",
             "fallback_swirr": 0.20,
+            "swirr_app": np.full_like(phi, 0.20, dtype=float),
+            "swirr_app_method": "default_0.20",
         }
 
     resflag, resflag_source = _resolve_resflag(well, phi)
-    swirr, n_samples, source = estimate_hc_swirr(sw_curve.data, rdep_curve.data, resflag)
+    swirr_app, swirr, n_samples, source = estimate_swirr_app(
+        sw_curve.data,
+        rdep_curve.data,
+        resflag,
+    )
     return swirr, source, None, {
         "resflag_source": resflag_source,
         "rt_curve": rdep_curve.mnemonic,
@@ -185,6 +231,8 @@ def _resolve_swirr_details(
         "min_samples": 10,
         "hc_mask_samples": n_samples,
         "fallback_swirr": 0.20,
+        "swirr_app": swirr_app,
+        "swirr_app_method": source,
     }
 
 
@@ -580,7 +628,7 @@ class PermeabilityModule:
         else:
             raise ValueError(f"Unknown permeability method: {empirical_method}")
 
-        perm = np.asarray(perm, dtype=float)
+        perm = _cap_permeability(perm)
         finite_count = int(np.count_nonzero(np.isfinite(perm)))
         if finite_count == 0:
             raise ValueError(f"{empirical_method} permeability produced no finite samples")
@@ -613,6 +661,7 @@ class PermeabilityModule:
                 "input_curves": input_curves,
                 "method_metadata": method_metadata,
                 "swi_metadata": swi_metadata,
+                "perm_max_clip_md": PERMEABILITY_MAX_MD,
             },
         )
 
@@ -715,6 +764,8 @@ class PermeabilityModule:
                 raise ValueError(empirical_error or "SW or measured Swirr data required for permeability")
             perm[unresolved] = empirical_result.perm[unresolved]
 
+        perm = _cap_permeability(perm)
+        perm_core = _cap_permeability(perm_core)
         core_models = same_well_models + peer_models
         metadata = {
             "strategy": _describe_auto_method(
@@ -739,6 +790,7 @@ class PermeabilityModule:
             "swi_metadata": empirical_result.swi_metadata if empirical_result is not None else {},
             "input_curves": empirical_result.metadata.get("input_curves", []) if empirical_result is not None else [],
             "method_metadata": empirical_result.metadata.get("method_metadata", {}) if empirical_result is not None else {},
+            "perm_max_clip_md": PERMEABILITY_MAX_MD,
         }
 
         swi_used = empirical_result.swi_used if empirical_result is not None else None

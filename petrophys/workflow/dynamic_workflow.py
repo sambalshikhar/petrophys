@@ -1692,9 +1692,14 @@ class DynamicWorkflow:
         phie_curve = well.get("PHIE")
         vcl_curve = well.get("VCL") or well.get("VCLAY")
         if rt_curve is not None and phie_curve is not None and vcl_curve is not None:
+            from petrophys.base.constants import ArchieParameterDefaults
+
             rdep = np.asarray(rt_curve.data, dtype=float)
             phie = np.asarray(phie_curve.data, dtype=float)
             vcl = np.asarray(vcl_curve.data, dtype=float)
+            archie_defaults = ArchieParameterDefaults.get(self.config.lithology)
+            archie_a = float(self.config.a) if self.config.a is not None else float(archie_defaults.a)
+            archie_m = float(self.config.m) if self.config.m is not None else float(archie_defaults.m)
             clean_wet_mask = (
                 np.isfinite(rdep)
                 & np.isfinite(phie)
@@ -1703,22 +1708,32 @@ class DynamicWorkflow:
                 & (phie > 0.05)
             )
             with np.errstate(divide="ignore", invalid="ignore"):
-                rwa = rdep / np.power(phie, 2.0)
+                rwa = rdep * np.power(phie, archie_m) / archie_a
             valid = clean_wet_mask & np.isfinite(rwa) & (rwa > 0)
             if np.any(valid):
                 rw_value = float(np.percentile(rwa[valid], 5))
+                rwa_reference_temp = float(np.nanmedian(temp_profile[valid]))
+                salinity_est = float(salinity_from_rw(rw_value, rwa_reference_temp))
+                rw_curve = rw_from_salinity(salinity_est, temp_profile)
                 decisions.append(
-                    f"Rw from Rwa clean-wet fallback: P5 of RDEP / PHIE^2 where VCL < 0.3 and PHIE > 0.05 (n={int(np.count_nonzero(valid))})"
+                    f"Rw from Rwa clean-wet fallback: P5 of {rt_curve.mnemonic} * PHIE^{archie_m:g} / a "
+                    f"where VCL < 0.3 and PHIE > 0.05 (n={int(np.count_nonzero(valid))}), "
+                    "then depth-wise temperature correction"
                 )
                 return _finalize_rw(
                     "rwa_clean_wet_p5",
-                    rw_value,
+                    rw_curve,
                     {
                         "rwa_percentile": 5.0,
                         "rwa_clean_wet_samples": int(np.count_nonzero(valid)),
                         "rwa_min": float(np.nanmin(rwa[valid])),
                         "rwa_max": float(np.nanmax(rwa[valid])),
                         "rw_from_rwa": rw_value,
+                        "archie_a": archie_a,
+                        "archie_m": archie_m,
+                        "archie_default_lithology": archie_defaults.lithology,
+                        "rwa_reference_temp_f": rwa_reference_temp,
+                        "salinity_ppm_estimated": salinity_est,
                         "vcl_cutoff": 0.3,
                         "phie_cutoff": 0.05,
                         "source_priority": "Rwa clean-wet fallback",
@@ -1757,6 +1772,18 @@ class DynamicWorkflow:
             curve.mnemonic for curve in (rt_curve, rxo_curve) if curve is not None
         ]
         trace.output_curves = ["INVASION_RATIO"]
+        trace.parameters = dict(result.statistics)
+        rejected = int(result.statistics.get("nan_samples") or 0)
+        total = int(result.statistics.get("total_samples") or len(result.ratio))
+        if rejected:
+            trace.decisions.append(
+                "INVASION_RATIO samples written as NaN where shallow/deep resistivity inputs were invalid, "
+                f"RT/RDEP was below {result.statistics.get('rt_min_used', 0.2)}, "
+                f"or RXO/RT exceeded {result.statistics.get('max_ratio_used', 100.0)} "
+                f"({rejected} of {total} samples rejected)"
+            )
+        else:
+            trace.decisions.append(f"INVASION_RATIO valid for all {total} samples")
         return trace
 
     def _step_hc_correction(self, well: "Well") -> StepResult:
@@ -1953,11 +1980,11 @@ class DynamicWorkflow:
             outputs.append("PHIN")
             if matrix_info["matrix_mode"] == "lithology_dependent":
                 decisions.append(
-                    "PHIN from NPHI using lithology-dependent matrix neutron response"
+                    "PHIN = clip(NPHI - nphi_ma(depth), 0, 0.6) using lithology-specific matrix neutron endpoints"
                 )
             else:
                 decisions.append(
-                    f"PHIN from NPHI using matrix neutron response {matrix_info['fallback_nphi_ma']:.3f}"
+                    f"PHIN = clip(NPHI - nphi_ma, 0, 0.6) using nphi_ma={matrix_info['fallback_nphi_ma']:.3f}"
                 )
         elif existing_phin_curve is not None:
             phin = existing_phin_curve.data
@@ -2238,24 +2265,35 @@ class DynamicWorkflow:
                 "Permeability from core-calibrated poro-perm transform",
             )
             outputs.append("PERM_CC")
+        swirr_metadata = dict(result.swi_metadata)
+        swirr_app = swirr_metadata.pop("swirr_app", None)
+        if swirr_app is not None and empirical_method != "lith_vcl":
+            well.add_curve(
+                "SWIRR_APP",
+                swirr_app,
+                "v/v",
+                "Apparent irreducible water saturation from hydrocarbon-mask P5 method",
+            )
+            outputs.append("SWIRR_APP")
         method_metadata = result.metadata.get("method_metadata") or {}
         method_input_curves = result.metadata.get("input_curves") or []
         input_curves = list(method_input_curves) if empirical_method == "lith_vcl" else [result.metadata.get("porosity_curve", "PHIE")]
         if empirical_method != "lith_vcl" and result.swi_source in {"hc_mask_p5", "default_0.20"}:
             input_curves.append("SW")
-            rt_curve = result.swi_metadata.get("rt_curve")
+            rt_curve = swirr_metadata.get("rt_curve")
             if rt_curve:
                 input_curves.append(rt_curve)
-            if result.swi_metadata.get("resflag_source"):
-                input_curves.append(result.swi_metadata["resflag_source"])
+            if swirr_metadata.get("resflag_source"):
+                input_curves.append(swirr_metadata["resflag_source"])
         trace.input_curves = list(dict.fromkeys(input_curves))
         trace.output_curves = outputs
         trace.parameters = {
             "method": self.config.perm_method,
             "fallback_method": self.config.perm_fallback_method,
             "swirr_source": result.swi_source,
+            "swirr_app_method": swirr_metadata.get("swirr_app_method"),
             "bvw_irr": result.bvw_irr,
-            "swirr_metadata": result.swi_metadata,
+            "swirr_metadata": swirr_metadata,
             "strategy": result.metadata.get("strategy"),
             "same_well_core_models": result.metadata.get("same_well_core_models"),
             "peer_core_models": result.metadata.get("peer_core_models"),
@@ -2264,6 +2302,7 @@ class DynamicWorkflow:
             "empirical_error": result.metadata.get("empirical_error"),
             "empirical_attempted_methods": result.metadata.get("empirical_attempted_methods"),
             "empirical_method_metadata": method_metadata,
+            "perm_max_clip_md": result.metadata.get("perm_max_clip_md"),
         }
         if resflag_info is not None:
             trace.parameters["pre_permeability_resflag"] = resflag_info
@@ -2282,20 +2321,20 @@ class DynamicWorkflow:
         if np.isscalar(result.swi_used):
             trace.parameters["swirr"] = float(result.swi_used)
             if result.swi_source == "hc_mask_p5":
-                n_samples = result.swi_metadata.get("hc_mask_samples")
-                rt_curve = result.swi_metadata.get("rt_curve", "RDEP")
+                n_samples = swirr_metadata.get("hc_mask_samples")
+                rt_curve = swirr_metadata.get("rt_curve", "RDEP")
                 decisions.append(
-                    f"Swirr = P5(SW where resflag and {rt_curve} > 5) = {float(result.swi_used):.3f} (n={n_samples})"
+                    f"SWIRR_APP = P5(SW where resflag and {rt_curve} > 5) = {float(result.swi_used):.3f} (n={n_samples})"
                 )
             elif result.swi_source == "default_0.20":
-                n_samples = result.swi_metadata.get("hc_mask_samples")
-                reason = result.swi_metadata.get("reason")
+                n_samples = swirr_metadata.get("hc_mask_samples")
+                reason = swirr_metadata.get("reason")
                 if n_samples is not None:
-                    decisions.append(f"Swirr = 0.200 fallback because hydrocarbon mask had {n_samples} samples")
+                    decisions.append(f"SWIRR_APP = 0.200 fallback because hydrocarbon mask had {n_samples} samples")
                 elif reason:
-                    decisions.append(f"Swirr = 0.200 fallback because {reason}")
+                    decisions.append(f"SWIRR_APP = 0.200 fallback because {reason}")
                 else:
-                    decisions.append("Swirr = 0.200 fallback")
+                    decisions.append("SWIRR_APP = 0.200 fallback")
             else:
                 decisions.append(f"Swirr = {float(result.swi_used):.3f} ({result.swi_source})")
         elif isinstance(result.swi_used, np.ndarray):
@@ -2316,6 +2355,8 @@ class DynamicWorkflow:
                 decisions.append("lith_vcl parameter groups used: " + ", ".join(groups))
         if result.metadata.get("empirical_error") and empirical_method == "lith_vcl":
             decisions.append(f"Earlier empirical method failed before lith_vcl: {result.metadata['empirical_error']}")
+        if result.metadata.get("perm_max_clip_md") is not None:
+            decisions.append(f"Permeability clipped to <= {result.metadata['perm_max_clip_md']:.0f} mD")
         decisions.append(f"Empirical permeability curve stored as PERM ({perm_desc})")
         if perm_core is not None:
             decisions.append("Core-corrected permeability stored as PERM_CC")

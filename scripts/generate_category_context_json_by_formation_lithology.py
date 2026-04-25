@@ -74,6 +74,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path(r"C:\Users\HP\Desktop\Plots\Litho_Nomenclature_Kingdom.xlsx"),
         help="Workbook used to map LITHOLOGY_GEOLINK codes to lithology-group labels.",
     )
+    parser.add_argument(
+        "--reference-structure-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Optional root containing <well>_corrected JSON folders. When present, "
+            "the exporter reuses those exact formation/lithology intervals and file stems."
+        ),
+    )
     return parser
 
 
@@ -90,6 +99,7 @@ def main() -> int:
         minimum_group_thickness=args.min_thickness,
         well_names=args.well_names,
         lithology_mapping_file=args.lithology_mapping_file,
+        reference_structure_dir=args.reference_structure_dir,
     )
     mapping_path = write_reference_curve_name_mapping(args.output_dir)
 
@@ -105,6 +115,7 @@ def main() -> int:
     print(f"Recursive:      {args.recursive}")
     print(f"Min thickness:  {args.min_thickness}")
     print(f"Litho map:      {args.lithology_mapping_file}")
+    print(f"Reference dir:  {args.reference_structure_dir}")
     if args.well_names:
         print(f"Wells filter:   {', '.join(args.well_names)}")
     print(f"Mapping:        {mapping_path}")

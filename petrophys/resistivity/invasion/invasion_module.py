@@ -89,20 +89,49 @@ class InvasionModule:
 
         # Calculate ratio
         ratio = calculate_invasion_ratio(rxo.data, rt.data)
+        rxo_data, rt_data = np.broadcast_arrays(
+            np.asarray(rxo.data, dtype=float),
+            np.asarray(rt.data, dtype=float),
+        )
+        rt_min = 0.2
+        max_ratio = 100.0
+        core_valid = (
+            np.isfinite(rxo_data)
+            & np.isfinite(rt_data)
+            & (rxo_data > 0.0)
+            & (rt_data >= rt_min)
+        )
+        raw_ratio = np.full(rxo_data.shape, np.nan, dtype=float)
+        raw_ratio[core_valid] = rxo_data[core_valid] / rt_data[core_valid]
 
         # Classify
         classification = classify_invasion(ratio)
 
         # Calculate statistics
-        valid_ratio = ratio[~np.isnan(ratio)]
+        finite_ratio = np.isfinite(ratio)
+        valid_ratio = ratio[finite_ratio]
+        valid_count = int(np.count_nonzero(finite_ratio))
+        sample_count = max(len(ratio), 1)
+        percent_count = max(valid_count, 1)
         stats = {
             "mean_ratio": float(np.mean(valid_ratio)) if len(valid_ratio) > 0 else np.nan,
             "median_ratio": float(np.median(valid_ratio)) if len(valid_ratio) > 0 else np.nan,
             "min_ratio": float(np.min(valid_ratio)) if len(valid_ratio) > 0 else np.nan,
             "max_ratio": float(np.max(valid_ratio)) if len(valid_ratio) > 0 else np.nan,
-            "conductive_percent": float(np.sum(ratio < 0.8) / len(ratio) * 100),
-            "minimal_percent": float(np.sum((ratio >= 0.8) & (ratio <= 1.2)) / len(ratio) * 100),
-            "resistive_percent": float(np.sum(ratio > 1.2) / len(ratio) * 100),
+            "valid_percent": float(valid_count / sample_count * 100),
+            "conductive_percent": float(np.sum(finite_ratio & (ratio < 0.8)) / percent_count * 100),
+            "minimal_percent": float(np.sum(finite_ratio & (ratio >= 0.8) & (ratio <= 1.2)) / percent_count * 100),
+            "resistive_percent": float(np.sum(finite_ratio & (ratio > 1.2)) / percent_count * 100),
+            "total_samples": int(ratio.size),
+            "valid_samples": valid_count,
+            "nan_samples": int(ratio.size - valid_count),
+            "rt_min_used": rt_min,
+            "max_ratio_used": max_ratio,
+            "nonfinite_rxo_samples": int(np.count_nonzero(~np.isfinite(rxo_data))),
+            "nonfinite_rt_samples": int(np.count_nonzero(~np.isfinite(rt_data))),
+            "nonpositive_rxo_samples": int(np.count_nonzero(np.isfinite(rxo_data) & (rxo_data <= 0.0))),
+            "rt_below_min_samples": int(np.count_nonzero(np.isfinite(rt_data) & (rt_data < rt_min))),
+            "ratio_above_max_samples": int(np.count_nonzero(core_valid & (raw_ratio > max_ratio))),
         }
 
         return InvasionResult(
@@ -148,7 +177,9 @@ class InvasionModule:
 
 def calculate_invasion_ratio(
     rxo: Union[float, np.ndarray],
-    rt: Union[float, np.ndarray]
+    rt: Union[float, np.ndarray],
+    rt_min: float = 0.2,
+    max_ratio: float = 100.0,
 ) -> Union[float, np.ndarray]:
     """
     Calculate invasion ratio (Rxo/Rt).
@@ -159,6 +190,11 @@ def calculate_invasion_ratio(
         Flushed zone resistivity
     rt : float or np.ndarray
         True formation resistivity
+    rt_min : float, default 0.2
+        Minimum usable true resistivity. Lower or non-positive values are
+        treated as invalid instead of creating artificial ratio spikes.
+    max_ratio : float, default 100.0
+        Maximum plausible ratio retained in the output.
 
     Returns
     -------
@@ -169,10 +205,20 @@ def calculate_invasion_ratio(
     --------
     >>> ratio = calculate_invasion_ratio(rxo_data, rt_data)
     """
-    # Avoid division by zero
-    if isinstance(rt, np.ndarray):
-        rt = np.where(rt == 0, 1e-10, rt)
-    else:
-        rt = max(rt, 1e-10)
+    rxo_arr, rt_arr = np.broadcast_arrays(
+        np.asarray(rxo, dtype=float),
+        np.asarray(rt, dtype=float),
+    )
+    ratio = np.full(rxo_arr.shape, np.nan, dtype=float)
+    valid = (
+        np.isfinite(rxo_arr)
+        & np.isfinite(rt_arr)
+        & (rxo_arr > 0)
+        & (rt_arr >= rt_min)
+    )
+    ratio[valid] = rxo_arr[valid] / rt_arr[valid]
+    ratio[ratio > max_ratio] = np.nan
 
-    return rxo / rt
+    if np.isscalar(rxo) and np.isscalar(rt):
+        return float(ratio.reshape(-1)[0])
+    return ratio

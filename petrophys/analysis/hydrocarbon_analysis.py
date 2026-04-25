@@ -46,8 +46,18 @@ class HydrocarbonAnalysis:
 
         vp_vs_ratio = np.full(n_samples, np.nan, dtype=float)
         if dts is not None and dtc is not None:
-            valid = np.isfinite(dts) & np.isfinite(dtc) & (dtc > 0.0)
-            vp_vs_ratio[valid] = dts[valid] / dtc[valid]
+            valid = (
+                np.isfinite(dts)
+                & np.isfinite(dtc)
+                & (dtc >= 20.0)
+                & (dtc <= 300.0)
+                & (dts >= 20.0)
+                & (dts <= 600.0)
+            )
+            ratio = np.full(n_samples, np.nan, dtype=float)
+            ratio[valid] = dts[valid] / dtc[valid]
+            plausible = valid & (ratio >= 0.5) & (ratio <= 5.0)
+            vp_vs_ratio[plausible] = ratio[plausible]
 
         petro_labels = np.full(n_samples, "NO_INDICATION", dtype=object)
         if sw is not None:
@@ -132,7 +142,8 @@ class HydrocarbonAnalysis:
                     methodology=(
                         "CROSSOVER_FLAG is calculated from PHID - PHIN > 0.01 using the current "
                         "density and neutron porosity curves. VP_VS_RATIO is calculated only when both "
-                        "DTS and DTC are present; no artificial estimate is added when shear sonic is missing."
+                        "DTS and DTC are present in plausible slowness ranges; no artificial estimate is "
+                        "added when shear sonic is missing or implausible."
                     ),
                     calculation_thresholds=(
                         "STRONG_GAS_INDICATION: CROSSOVER_FLAG = 1 and VP_VS_RATIO < 1.75. "
