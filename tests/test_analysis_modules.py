@@ -6,6 +6,7 @@ from petrophys import Well
 from petrophys.analysis import HydrocarbonAnalysis
 from petrophys.io.example_format_export import (
     _build_reference_derived_log_status,
+    _missing_curve_reason,
 )
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 from petrophys.workflow import run_comprehensive_analysis
@@ -91,6 +92,22 @@ def test_input_lithology_is_not_reported_as_missing_litho_fallback():
     statuses = _build_reference_derived_log_status(well, workflow_result, original_curves)
 
     assert "LITHO" not in {item["mnemonic"] for item in statuses}
+
+
+def test_rmf_missing_reason_does_not_assume_non_obm_mud():
+    well = _build_analysis_well()
+    reason = _missing_curve_reason(
+        "RMF",
+        well,
+        SimpleNamespace(),
+        step_results={},
+        skipped_steps=set(),
+        computed_curves=set(),
+        original_curves=set(well.curves),
+    )
+
+    assert "mud type was not OBM" not in reason
+    assert "mud type was not provided or was unknown" in reason
 
 
 def test_hydrocarbon_analysis_rejects_implausible_shear_slowness_for_vpvs():

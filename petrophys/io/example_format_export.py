@@ -1277,7 +1277,7 @@ def _missing_curve_reason(
         return "not calculated because TEMP was unavailable and a fallback temperature profile could not be written"
 
     if curve == "RMF":
-        return "no RMF, RM, CLFL salinity, or RMF salinity input was available, and mud type was not OBM"
+        return "no RMF, RM, CLFL salinity, or RMF salinity input was available, and mud type was not provided or was unknown"
 
     if curve in {"PHIE_CC", "PERM_CC"} and step is not None:
         same_well_models = step.parameters.get("same_well_core_models")
