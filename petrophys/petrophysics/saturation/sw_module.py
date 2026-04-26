@@ -230,12 +230,17 @@ class SaturationModule:
         sxo = None
         sxo_method = None
         sxo_reason = None
+        sw_clipped = np.clip(np.asarray(sw, dtype=float), 0.0, 1.0) if sw is not None else None
         if rxo is not None and rmf is not None:
             sxo = calculate_sxo(rxo.data, rmf, phie, self.a, self.m, self.n)
+            sxo = np.asarray(sxo, dtype=float)
+            sxo = np.clip(sxo, 0.0, 1.0)
+            if sw_clipped is not None:
+                finite_sw = np.isfinite(sw_clipped)
+                sxo = np.where(finite_sw, np.maximum(sxo, sw_clipped), sxo)
             sxo_method = "archie_rxo_rmf"
             sxo_reason = "RSHA/RXO and RMF available"
         elif sw is not None:
-            sw_clipped = np.clip(np.asarray(sw, dtype=float), 0.0, 1.0)
             sxo = np.power(sw_clipped, 0.2)
             sxo_method = "fifth_root_quicklook"
             if rxo is None and rmf is None:

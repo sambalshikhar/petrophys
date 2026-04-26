@@ -126,6 +126,18 @@ class HydrocarbonAnalysis:
             (geophysical_labels == "STRONG_GAS_INDICATION")
             & np.isin(reservoir_labels, ["EXCELLENT_RESERVOIR", "GOOD_RESERVOIR"])
         ] = "PRIME_GAS_TARGET"
+        prime_gas_target = np.full(n_samples, np.nan, dtype=float)
+        if (
+            np.any(np.isfinite(crossover_flag))
+            and np.any(np.isfinite(vp_vs_ratio))
+            and phie is not None
+            and perm is not None
+        ):
+            prime_gas_target = self._indicator_curve(integrated_labels, "PRIME_GAS_TARGET")
+
+        prime_oil_target = np.full(n_samples, np.nan, dtype=float)
+        if np.any(np.isfinite(pay_flag)) and phie is not None and perm is not None:
+            prime_oil_target = self._indicator_curve(integrated_labels, "PRIME_OIL_TARGET")
 
         result = CategoryAnalysisResult(
             category_key=self.CATEGORY_KEY,
@@ -221,12 +233,12 @@ class HydrocarbonAnalysis:
                     "Vp/Vs ratio proxy from DTS / DTC",
                 ),
                 "PRIME_GAS_TARGET": DerivedCurve(
-                    self._indicator_curve(integrated_labels, "PRIME_GAS_TARGET"),
+                    prime_gas_target,
                     "",
                     "Integrated prime gas target flag",
                 ),
                 "PRIME_OIL_TARGET": DerivedCurve(
-                    self._indicator_curve(integrated_labels, "PRIME_OIL_TARGET"),
+                    prime_oil_target,
                     "",
                     "Integrated prime oil target flag",
                 ),

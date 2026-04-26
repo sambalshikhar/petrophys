@@ -263,6 +263,8 @@ DUPLICATE_RAW_CURVES = {
     "DT",
 }
 
+MISSING_LITHOLOGY_LABEL = "NO_LITHOLOGY_DATA"
+
 REFERENCE_DERIVED_LOG_EXCLUDE = {
     "SWA",
     "SWXOA",
@@ -317,6 +319,19 @@ REFERENCE_DERIVED_LOG_TARGETS = [
     "CROSSOVER_FLAG",
     "VP_VS_RATIO",
 ]
+
+CORE_ONLY_CONTEXT_CURVES = {
+    "CPERM",
+    "CPOR",
+    "CSW",
+    "GDEN",
+    "KH_CORE",
+    "KV_CORE",
+    "PERM_CORE",
+    "PHIC",
+    "SOC",
+    "SWC",
+}
 
 REFERENCE_CURVE_TO_STEP = {
     "TMPC": "temperature",
@@ -377,9 +392,6 @@ PRIMARY_LOGS_FOR_COMPLETENESS = [
     "TMPC",
     "RMF",
     "RW",
-    "PHIC",
-    "KH_CORE",
-    "KV_CORE",
     "LITHOLOGY_GEOLINK",
 ]
 
@@ -1199,7 +1211,19 @@ def _raw_original_curves_for_file(
 
 
 def _input_log_display_list(curves: set[str]) -> List[str]:
-    return sorted(_display_curve_name(name) for name in curves)
+    curve_names = {str(name).upper() for name in curves}
+    display_names: list[str] = []
+    for name in curves:
+        upper = str(name).upper()
+        canonical = _canonical_delivery_curve_name(upper)
+        if canonical in CORE_ONLY_CONTEXT_CURVES:
+            continue
+        if upper == "DCAL" and "CALI" in curve_names:
+            continue
+        if upper == "DT" and "DTC" in curve_names:
+            continue
+        display_names.append(_display_curve_name(name))
+    return sorted(_ordered_unique(display_names))
 
 
 def _target_curve_candidates(curve: str) -> List[str]:
@@ -1211,6 +1235,17 @@ def _target_curve_candidates(curve: str) -> List[str]:
         "VCL": ["VCL", "VCLAY", "VSH"],
     }
     return mapping.get(curve, [curve])
+
+
+def _has_finite_any_curve(well: "Well", candidates: Sequence[str]) -> bool:
+    return any(_has_finite_curve(well, name) for name in candidates)
+
+
+def _finite_input_status_text(well: "Well", specs: Sequence[tuple[str, Sequence[str]]]) -> str:
+    parts: list[str] = []
+    for label, candidates in specs:
+        parts.append(f"{label}={'present' if _has_finite_any_curve(well, candidates) else 'missing/no finite samples'}")
+    return ", ".join(parts)
 
 
 def _all_step_results(workflow_result, step_name: Optional[str] = None) -> List[Any]:
@@ -1256,6 +1291,7 @@ def _derived_logs_computed(
     # Keep the reference-style list on canonical mnemonics rather than
     # method-specific aliases that are internal compatibility artifacts.
     derived.difference_update(REFERENCE_DERIVED_LOG_EXCLUDE)
+    derived.difference_update(CORE_ONLY_CONTEXT_CURVES)
     derived.discard("TEMP")
     derived.discard("PHI_Z")
     derived.difference_update({"SWA", "SWXOA", "VCLAY", "VSH", "VCLGR", "VCLSP", "VCLND", "VCL_GR", "VCL_SP", "VCL_ND"})
@@ -1265,7 +1301,13 @@ def _derived_logs_computed(
     ):
         derived.discard("LITHO")
 
-    return sorted(derived)
+    finite_derived = {
+        curve
+        for curve in derived
+        if _has_finite_any_curve(well, _target_curve_candidates(curve))
+    }
+
+    return sorted(finite_derived)
 
 
 def _category_analysis_result(category: str, well: "Well") -> CategoryAnalysisResult:
@@ -1333,11 +1375,11 @@ def _missing_curve_reason(
         return ""
 
     if curve == "SXO":
-        sw_present = "SW" in computed_curves or "SW" in well.curves
-        shallow_present = well.get("RSHA") is not None or well.get("RXO") is not None
-        rmf_present = "RMF" in computed_curves or well.get("RMF") is not None
+        sw_present = _has_finite_curve(well, "SW")
+        shallow_present = _has_finite_any_curve(well, ("RSHA", "RXO"))
+        rmf_present = _has_finite_curve(well, "RMF")
         if not sw_present:
-            return "SW unavailable, so SXO fallback could not be applied"
+            return "SW unavailable or non-finite in this segment, so SXO could not be calculated"
         if not shallow_present and not rmf_present:
             return "SXO fallback should have used SW^(1/5), but saturation output was not written"
         if not shallow_present:
@@ -1346,14 +1388,14 @@ def _missing_curve_reason(
             return "RSHA or RXO was available but RMF was unavailable"
 
     if curve == "MHI":
-        if well.get("SW") is None:
-            return "SW unavailable"
-        if well.get("SXO") is None:
-            return "SXO unavailable"
+        if not _has_finite_curve(well, "SW"):
+            return "SW unavailable or non-finite in this segment"
+        if not _has_finite_curve(well, "SXO"):
+            return "SXO unavailable or non-finite in this segment"
 
     if curve == "VP_VS_RATIO":
-        has_dtc = well.get("DTC") is not None or well.get("DT") is not None
-        has_dts = well.get("DTS") is not None
+        has_dtc = _has_finite_any_curve(well, ("DTC", "DT"))
+        has_dts = _has_finite_curve(well, "DTS")
         if not has_dtc and not has_dts:
             return "not calculated because both DTC and DTS were unavailable"
         if not has_dtc:
@@ -1367,6 +1409,55 @@ def _missing_curve_reason(
 
     if curve == "RMF":
         return "no RMF, RM, CLFL salinity, or RMF salinity input was available, and mud type was not provided or was unknown"
+
+    if curve == "PHIN":
+        reason = missing_required({"NPHI": _has_finite_curve(well, "NPHI")})
+        return reason or "no finite PHIN values were produced in this segment"
+
+    if curve == "PHID":
+        reason = missing_required({"RHOB": _has_finite_curve(well, "RHOB")})
+        return reason or "no finite PHID values were produced in this segment"
+
+    if curve == "PHIS":
+        reason = missing_required({"DTC or DT": _has_finite_any_curve(well, ("DTC", "DT"))})
+        return reason or "no finite PHIS values were produced in this segment"
+
+    if curve == "PHIT":
+        reason = missing_required({
+            "PHIN and PHID overlap, or existing PHIT": (
+                _has_finite_curve(well, "PHIT")
+                or (_has_finite_curve(well, "PHIN") and _has_finite_curve(well, "PHID"))
+            )
+        })
+        return reason or "no finite PHIT values were produced in this segment"
+
+    if curve == "PHIE":
+        reason = missing_required({
+            "porosity basis PHIT/PHID/PHIN/PHIS": _has_finite_any_curve(well, ("PHIT", "PHID", "PHIN", "PHIS")),
+            "VCL or equivalent clay volume": _has_finite_any_curve(well, ("VCL", "VCLAY", "VSH")),
+        })
+        if reason:
+            return reason
+        if not _has_finite_curve(well, "PHIT") and _has_finite_curve(well, "PHID"):
+            return "no finite PHIE values in this segment; PHID exists, but the selected PHIT/PHIE basis has no finite samples"
+        return "no finite PHIE values were produced in this segment"
+
+    if curve == "PHI_SEC":
+        reason = missing_required({
+            "PHIT": _has_finite_curve(well, "PHIT"),
+            "PHIS": _has_finite_curve(well, "PHIS"),
+        })
+        return reason or "no finite PHI_SEC values were produced in this segment"
+
+    if curve == "SW":
+        reason = missing_required({
+            "RDEP or RT": _has_finite_any_curve(well, ("RDEP", "RT")),
+            "PHIE": _has_finite_curve(well, "PHIE"),
+            "RW": _has_finite_curve(well, "RW"),
+        })
+        if reason:
+            return reason
+        return "no finite SW values were produced in this segment after saturation routing"
 
     if curve == "RWA":
         required = {
@@ -1401,27 +1492,51 @@ def _missing_curve_reason(
                 return "no usable core porosity calibration was available; requires paired log porosity and core porosity"
             return "no usable core permeability calibration was available; requires paired porosity and core permeability"
 
+    if curve in {"PHIE_CC", "PERM_CC"}:
+        if curve == "PHIE_CC":
+            return "no usable core porosity calibration was available; requires paired log porosity and core porosity"
+        return "no usable core permeability calibration was available; requires paired porosity and core permeability"
+
     if curve == "SWIRR_APP" and step is not None:
         swirr_source = step.parameters.get("swirr_source")
         if swirr_source:
             return f"Swirr source was {swirr_source}"
 
+    if curve == "PERM":
+        reason = missing_required({
+            "PHIE": _has_finite_curve(well, "PHIE"),
+            "SWIRR_APP or SW": _has_finite_curve(well, "SWIRR_APP") or _has_finite_curve(well, "SW"),
+        })
+        return reason or "no finite PERM values were produced in this segment"
+
+    if curve in {"RQI", "PHI_NORM", "FZI"}:
+        reason = missing_required({
+            "PERM": _has_finite_curve(well, "PERM"),
+            "PHIE": _has_finite_curve(well, "PHIE"),
+        })
+        return reason or f"no finite {curve} values were produced in this segment"
+
+    if curve == "BVW":
+        reason = missing_required({"PHIE": _has_finite_curve(well, "PHIE"), "SW": _has_finite_curve(well, "SW")})
+        return reason or "no finite BVW values were produced in this segment"
+
     if curve == "INVASION_RATIO":
-        has_shallow = well.get("RSHA") is not None or well.get("RESS") is not None or well.get("RXO") is not None
-        has_deep = well.get("RDEP") is not None or well.get("RT") is not None
+        has_shallow = _has_finite_any_curve(well, ("RSHA", "RESS", "RXO"))
+        has_deep = _has_finite_any_curve(well, ("RDEP", "RT"))
         if not has_shallow and not has_deep:
             return "shallow resistivity and deep resistivity curves were unavailable; requires RSHA, RESS, or RXO plus RDEP or RT"
         if not has_shallow:
             return "shallow resistivity curve was unavailable; requires RSHA, RESS, or RXO"
         if not has_deep:
             return "deep resistivity curve was unavailable; requires RDEP or RT"
+        return "no finite INVASION_RATIO values after shallow/deep resistivity ratio screening"
 
     if curve == "PRIME_GAS_TARGET":
         required = {
-            "CROSSOVER_FLAG": well.get("CROSSOVER_FLAG") is not None,
-            "VP_VS_RATIO": well.get("VP_VS_RATIO") is not None,
-            "PHIE": well.get("PHIE") is not None,
-            "PERM or PERM_CC": well.get("PERM") is not None or well.get("PERM_CC") is not None,
+            "CROSSOVER_FLAG": _has_finite_curve(well, "CROSSOVER_FLAG"),
+            "VP_VS_RATIO": _has_finite_curve(well, "VP_VS_RATIO"),
+            "PHIE": _has_finite_curve(well, "PHIE"),
+            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
         }
         missing_inputs = [name for name, present in required.items() if not present]
         if missing_inputs:
@@ -1430,47 +1545,119 @@ def _missing_curve_reason(
 
     if curve == "PRIME_OIL_TARGET":
         required = {
-            "NET_PAY": well.get("NET_PAY") is not None,
-            "PHIE": well.get("PHIE") is not None,
-            "PERM or PERM_CC": well.get("PERM") is not None or well.get("PERM_CC") is not None,
+            "NET_PAY": _has_finite_curve(well, "NET_PAY"),
+            "PHIE": _has_finite_curve(well, "PHIE"),
+            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
         }
         missing_inputs = [name for name, present in required.items() if not present]
         if missing_inputs:
             return "required input curves unavailable: " + ", ".join(missing_inputs)
         return "hydrocarbon-analysis classification only; not a dynamic-workflow curve"
 
+    if curve == "LITHO":
+        if _has_finite_curve(well, "LITHOLOGY_GEOLINK"):
+            return "lithology was supplied by the source lithology curve, so no derived LITHO curve was needed"
+        reason = missing_required({
+            "mineral volume curves VQUAR/VCALC/VDOLO/VANHY": _has_finite_any_curve(well, ("VQUAR", "VCALC", "VDOLO", "VANHY")),
+        })
+        return reason or "derived lithology was not written from the mineral-volume solution"
+
+    if curve in {"VQUAR", "VCALC", "VDOLO", "VANHY"}:
+        reason = missing_required({
+            "VCL": _has_finite_any_curve(well, ("VCL", "VCLAY", "VSH")),
+            "PHIE": _has_finite_curve(well, "PHIE"),
+            "RHOB": _has_finite_curve(well, "RHOB"),
+            "NPHI": _has_finite_curve(well, "NPHI"),
+        })
+        if reason:
+            return reason
+        if not _has_finite_any_curve(well, ("PEF", "DTC", "DT")):
+            return "PEF and DTC/DT were unavailable; mineral solver had no supplemental matrix-response constraint"
+        return f"multi-mineral solver did not produce finite {curve} values in this segment"
+
+    if curve in {"LITHOLOGY_GROUP", "LITHOLOGY_NAME", "GT_LITHOLOGY_GROUP_CODE"}:
+        reason = missing_required({"lithology": _has_finite_curve(well, "LITHOLOGY_GEOLINK")})
+        return reason or "lithology category analysis did not write grouped lithology output"
+
+    if curve in {"LIMESTONE_INDICATOR", "DOLOMITE_INDICATOR", "CARBONATE_INDICATOR"}:
+        reason = missing_required({
+            "PEF": _has_finite_curve(well, "PEF"),
+            "RHOB": _has_finite_curve(well, "RHOB"),
+        })
+        return reason or f"lithology category analysis did not write {curve}"
+
+    if curve == "GR_CLAY_INDICATOR":
+        reason = missing_required({"GR": _has_finite_curve(well, "GR")})
+        return reason or "lithology category analysis did not write GR_CLAY_INDICATOR"
+
+    if curve == "NPHI_CLAY_INDICATOR":
+        reason = missing_required({"NPHI": _has_finite_curve(well, "NPHI")})
+        return reason or "lithology category analysis did not write NPHI_CLAY_INDICATOR"
+
+    if curve == "PEF_CLAY_INDICATOR":
+        reason = missing_required({"PEF": _has_finite_curve(well, "PEF")})
+        return reason or "lithology category analysis did not write PEF_CLAY_INDICATOR"
+
+    if curve in {"COMPOSITE_CLAY", "COMPOSITE_CLAY_INDICATOR"}:
+        reason = missing_required({
+            "GR, NPHI, or PEF": _has_finite_any_curve(well, ("GR", "NPHI", "PEF")),
+        })
+        return reason or "lithology category analysis did not write composite clay indicator"
+
+    if curve == "CONSISTENCY_SCORE":
+        reason = missing_required({
+            "lithology": _has_finite_curve(well, "LITHOLOGY_GEOLINK"),
+            "GR or PEF": _has_finite_any_curve(well, ("GR", "PEF")),
+        })
+        return reason or "lithology category analysis did not write consistency score"
+
+    if curve == "CROSSOVER_FLAG":
+        reason = missing_required({
+            "PHID": _has_finite_curve(well, "PHID"),
+            "PHIN": _has_finite_curve(well, "PHIN"),
+            "VCL": _has_finite_any_curve(well, ("VCL", "VCLAY", "VSH")),
+            "PHIE": _has_finite_curve(well, "PHIE"),
+            "BAD_HOLE": _has_finite_curve(well, "BAD_HOLE"),
+        })
+        return reason or "no samples passed CROSSOVER_FLAG criteria: PHID-PHIN>0.05, VCL<0.35, PHIE>0.05, BAD_HOLE<0.5"
+
     if curve == "ND_SEPARATION":
-        reason = missing_required({"PHID": well.get("PHID") is not None, "PHIN": well.get("PHIN") is not None})
+        reason = missing_required({"PHID": _has_finite_curve(well, "PHID"), "PHIN": _has_finite_curve(well, "PHIN")})
         return reason or "saturation analysis did not write ND_SEPARATION"
 
     if curve == "PHIT_GAS_CORR":
-        reason = missing_required({"PHID": well.get("PHID") is not None, "PHIN": well.get("PHIN") is not None})
+        reason = missing_required({"PHID": _has_finite_curve(well, "PHID"), "PHIN": _has_finite_curve(well, "PHIN")})
         return reason or "saturation analysis did not write PHIT_GAS_CORR"
 
     if curve == "DS_SEPARATION":
-        reason = missing_required({"PHID": well.get("PHID") is not None, "PHIS": well.get("PHIS") is not None})
+        reason = missing_required({"PHID": _has_finite_curve(well, "PHID"), "PHIS": _has_finite_curve(well, "PHIS")})
         return reason or "porosity analysis did not write DS_SEPARATION"
 
     if curve == "PORO_QUALITY_INDEX":
         reason = missing_required({
-            "PHIT": well.get("PHIT") is not None,
-            "PERM or PERM_CC": well.get("PERM") is not None or well.get("PERM_CC") is not None,
+            "PHIT": _has_finite_curve(well, "PHIT"),
+            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
         })
         return reason or "porosity analysis did not write PORO_QUALITY_INDEX"
 
     if curve in {"RXO_RDEP_RATIO", "SEPARATION_RATIO"}:
         reason = missing_required({
-            "RXO, RSHA, or RESS": well.get("RXO") is not None or well.get("RSHA") is not None or well.get("RESS") is not None,
-            "RDEP or RT": well.get("RDEP") is not None or well.get("RT") is not None,
+            "RXO, RSHA, or RESS": _has_finite_any_curve(well, ("RXO", "RSHA", "RESS")),
+            "RDEP or RT": _has_finite_any_curve(well, ("RDEP", "RT")),
         })
         return reason or f"{curve} was not written after resistivity-ratio screening"
 
     if curve == "KH":
-        reason = missing_required({"PERM or PERM_CC": well.get("PERM") is not None or well.get("PERM_CC") is not None})
+        reason = missing_required({"PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC")})
         return reason or "permeability analysis did not write KH"
 
     if curve == "PERM_QUALITY_INDEX":
-        if well.get("PERM") is None and well.get("PERM_CC") is None and well.get("RQI") is None and well.get("FZI") is None:
+        if not (
+            _has_finite_curve(well, "PERM")
+            or _has_finite_curve(well, "PERM_CC")
+            or _has_finite_curve(well, "RQI")
+            or _has_finite_curve(well, "FZI")
+        ):
             return "required input curves unavailable: PERM/PERM_CC, RQI, or FZI"
         return "permeability analysis did not write PERM_QUALITY_INDEX"
 
@@ -1480,7 +1667,7 @@ def _missing_curve_reason(
             "RDEP": ("RDEP", "RT"),
             "DTC": ("DTC", "DT"),
         }.get(base, (base,))
-        if not any(well.get(name) is not None for name in aliases):
+        if not _has_finite_any_curve(well, aliases):
             return "required input curves unavailable: " + " or ".join(aliases)
         return f"{base} was available but gradient curve was not written"
 
@@ -1491,16 +1678,16 @@ def _missing_curve_reason(
         return "no supported log pairs were available for consistency analysis"
 
     if curve == "ACOUSTIC_IMPEDANCE":
-        reason = missing_required({"RHOB": well.get("RHOB") is not None, "DTC or DT": well.get("DTC") is not None or well.get("DT") is not None})
+        reason = missing_required({"RHOB": _has_finite_curve(well, "RHOB"), "DTC or DT": _has_finite_any_curve(well, ("DTC", "DT"))})
         return reason or "no plausible DTC samples in 20-300 us/ft after screening"
 
     if curve in {"POISSON_RATIO", "YOUNG_MOD", "BRITTLENESS_INDEX"}:
-        reason = missing_required({"RHOB": well.get("RHOB") is not None, "DTC or DT": well.get("DTC") is not None or well.get("DT") is not None})
+        reason = missing_required({"RHOB": _has_finite_curve(well, "RHOB"), "DTC or DT": _has_finite_any_curve(well, ("DTC", "DT"))})
         return reason or "Vp/Vs elastic calculation had no finite plausible samples"
 
     if curve == "ELECTROFACIES":
         available = sum(
-            int(any(well.get(name) is not None for name in names))
+            int(_has_finite_any_curve(well, names))
             for names in (("RHOB",), ("NPHI", "PHIN"), ("GR",), ("RDEP", "RT"))
         )
         if available < 2:
@@ -1508,7 +1695,7 @@ def _missing_curve_reason(
         return "fewer than two valid samples remained after electrofacies screening"
 
     if curve == "S_V":
-        reason = missing_required({"RHOB": well.get("RHOB") is not None})
+        reason = missing_required({"RHOB": _has_finite_curve(well, "RHOB")})
         return reason or "overburden stress calculation had no finite RHOB samples"
 
     if curve == "PP_HYDROSTATIC":
@@ -1516,8 +1703,8 @@ def _missing_curve_reason(
 
     if curve == "SH_MIN":
         reason = missing_required({
-            "RHOB": well.get("RHOB") is not None,
-            "DTC or DT": well.get("DTC") is not None or well.get("DT") is not None,
+            "RHOB": _has_finite_curve(well, "RHOB"),
+            "DTC or DT": _has_finite_any_curve(well, ("DTC", "DT")),
         })
         return reason or "Poisson ratio, overburden stress, or hydrostatic pressure had no overlapping finite samples"
 
@@ -1623,7 +1810,11 @@ def _derived_status_target_list(extra_targets: Optional[Sequence[str]] = None) -
     targets = list(REFERENCE_DERIVED_LOG_TARGETS)
     if extra_targets:
         targets.extend(_canonical_delivery_curve_name(name) for name in extra_targets)
-    return list(_ordered_unique(targets))
+    return [
+        target
+        for target in _ordered_unique(targets)
+        if target not in CORE_ONLY_CONTEXT_CURVES
+    ]
 
 
 def _build_reference_derived_log_status(
@@ -1652,15 +1843,25 @@ def _build_reference_derived_log_status(
             and "LITHOLOGY_GEOLINK" in normalized_original_curves
             and not _workflow_output_curve_written(workflow_result, "LITHO")
         ):
-            status = "already_present"
-            reason = "lithology input was present, so LITHO was not inferred from mineral volumes"
+            continue
+        elif curve == "VP_VS_RATIO" and curve not in computed_curves:
+            status = "missing"
+            reason = _missing_curve_reason(
+                curve,
+                well,
+                workflow_result,
+                step_results,
+                skipped_steps,
+                computed_curves,
+                original_curves,
+            )
         elif curve in computed_curves:
             status = "computed"
             reason = _computed_curve_detail(curve, step_results)
-        elif curve in normalized_original_curves and _first_curve(well, _target_curve_candidates(curve)) is not None:
+        elif curve in normalized_original_curves and _has_finite_any_curve(well, _target_curve_candidates(curve)):
             status = "already_present"
             reason = "present in source data"
-        elif _first_curve(well, _target_curve_candidates(curve)) is not None:
+        elif _has_finite_any_curve(well, _target_curve_candidates(curve)):
             status = "present"
             reason = ""
         else:
@@ -2057,10 +2258,18 @@ def _matrix_endpoint_note(step) -> str:
     return "; ".join(parts)
 
 
-def _phi_clay_source_label(source: str) -> str:
+def _phi_cl_source_label(source: str) -> str:
     mapping = {
         "LAS PNSH parameter": "LAS PNSH parameter",
         "zoned LAS PNSH fallback": "zoned LAS PNSH fallback",
+        "lithology_shale_average_phit": "average PHIT in shale lithology samples",
+        "vcl_gt_0.9_average_phit": "average PHIT where VCL > 0.9",
+        "lithology_shale_average_phid": "average PHID in shale lithology samples",
+        "vcl_gt_0.9_average_phid": "average PHID where VCL > 0.9",
+        "lithology_shale_average_phis": "average PHIS in shale lithology samples",
+        "vcl_gt_0.9_average_phis": "average PHIS where VCL > 0.9",
+        "lithology_shale_average_phin": "average PHIN in shale lithology samples",
+        "vcl_gt_0.9_average_phin": "average PHIN where VCL > 0.9",
         "lithology_shale_average_nphi": "average NPHI in shale lithology samples",
         "vcl_gt_0.9_average_nphi": "average NPHI where VCL > 0.9",
         "config_or_default": "configured/default clay-porosity value",
@@ -2304,14 +2513,14 @@ def _porosity_endpoint_text(step: Any, key: str, decimals: int, label: Optional[
     return ""
 
 
-def _porosity_phi_clay_text(params: dict[str, Any]) -> str:
-    phi_clay = params.get("phi_clay")
-    if phi_clay is None:
+def _porosity_phi_cl_text(params: dict[str, Any]) -> str:
+    phi_cl = params.get("phi_cl")
+    if phi_cl is None:
         return ""
-    source = str(params.get("phi_clay_source") or "")
-    source_text = _phi_clay_source_label(source) if source else "configured/default clay-porosity value"
-    text = f"phi_clay={_format_numeric(phi_clay, 3)} v/v from {source_text}"
-    count = params.get("phi_clay_basis_count")
+    source = str(params.get("phi_cl_source") or "")
+    source_text = _phi_cl_source_label(source) if source else "configured/default clay-porosity value"
+    text = f"phi_cl={_format_numeric(phi_cl, 3)} v/v from {source_text}"
+    count = params.get("phi_cl_basis_count")
     if count is not None:
         text += f" using {count} control samples"
     return text
@@ -2376,7 +2585,8 @@ def _porosity_curve_route_reason(curve: str, step: Any) -> str:
         if method == "adaptive_nd":
             return (
                 "PHIT calculated from PHIN and PHID by the adaptive neutron-density rule because both curves were available: "
-                "PHIT = PHID where PHID > PHIN + 0.05; otherwise PHIT = 0.6*PHID + 0.4*PHIN; clipped to 0-0.5"
+                "PHIT = PHID where PHIN is missing or PHID > PHIN + 0.05; PHIT = PHIN where PHID is missing; "
+                "otherwise PHIT = 0.6*PHID + 0.4*PHIN; clipped to 0-0.5"
             )
         if method == "existing_phit":
             return "PHIT reused from the existing PHIT curve because no new PHIN/PHID/PHIS route replaced it"
@@ -2390,11 +2600,11 @@ def _porosity_curve_route_reason(curve: str, step: Any) -> str:
 
     if curve == "PHIE":
         basis = params.get("phie_basis") or "selected porosity"
-        clay_text = _porosity_phi_clay_text(params)
+        clay_text = _porosity_phi_cl_text(params)
         vcl_inputs = [name for name in inputs if name in {"VCL", "VCLAY", "VSH"}]
         if vcl_inputs:
             text = (
-                f"PHIE calculated as clip({basis} - {vcl_inputs[0]} * phi_clay, 0, {basis}) "
+                f"PHIE calculated as clip({basis} - {vcl_inputs[0]} * phi_cl, 0, {basis}) "
                 f"because {basis} and {vcl_inputs[0]} were available"
             )
             if clay_text:
@@ -2865,8 +3075,11 @@ def _sw_equation_text(models: Iterable[str], params: dict[str, Any]) -> str:
     if "dual_water" in model_set:
         rwb = params.get("rwb")
         phi_cl = params.get("phi_cl")
+        phi_cl_source = params.get("phi_cl_source")
         rwb_text = f", Rwb={_format_numeric(rwb, 4)} ohm.m" if rwb is not None else ", Rwb=0.3*RW"
         phi_cl_text = f", phi_cl={_format_numeric(phi_cl, 3)}" if phi_cl is not None else ""
+        if phi_cl_text and phi_cl_source:
+            phi_cl_text += f" from {_phi_cl_source_label(str(phi_cl_source))}"
         parts.append(
             "Dual Water phi_bw=VCL*phi_cl, Swb=phi_bw/PHIT, "
             f"1/Rwt=Swb/Rwb+(1-Swb)/RW, Sw=[a*Rwt/(PHIT^m*Rt)]^(1/n){rwb_text}{phi_cl_text}"
@@ -3071,6 +3284,55 @@ def _rw_curve_note(step: Any, well: "Well") -> str:
 def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "Well") -> str:
     params = getattr(step, "parameters", {}) or {}
 
+    if status == "missing":
+        if curve == "SW":
+            inputs = _finite_input_status_text(
+                well,
+                [
+                    ("RDEP/RT", ("RDEP", "RT")),
+                    ("PHIE", ("PHIE",)),
+                    ("RW", ("RW",)),
+                    ("VCL/VSH", ("VCL", "VCLAY", "VSH")),
+                ],
+            )
+            return (
+                f"SW: skipped because {reason}. Required inputs/status: {inputs}. "
+                "Routing also uses lithology/RCL for shaly-sand models."
+            )
+        if curve == "SXO":
+            inputs = _finite_input_status_text(
+                well,
+                [
+                    ("SW", ("SW",)),
+                    ("RSHA/RXO", ("RSHA", "RXO")),
+                    ("RMF", ("RMF",)),
+                ],
+            )
+            return f"SXO: skipped because {reason}. Required inputs/status: {inputs}; fallback route can use SXO=SW^(1/5)."
+        if curve == "PERM":
+            inputs = _finite_input_status_text(
+                well,
+                [
+                    ("PHIE", ("PHIE",)),
+                    ("SWIRR_APP", ("SWIRR_APP",)),
+                    ("SW", ("SW",)),
+                    ("RDEP/RT", ("RDEP", "RT")),
+                ],
+            )
+            return f"PERM: skipped because {reason}. Required inputs/status: {inputs}."
+        if curve == "PHIE":
+            inputs = _finite_input_status_text(
+                well,
+                [
+                    ("PHIT", ("PHIT",)),
+                    ("PHID", ("PHID",)),
+                    ("PHIN", ("PHIN",)),
+                    ("PHIS", ("PHIS",)),
+                    ("VCL/VSH", ("VCL", "VCLAY", "VSH")),
+                ],
+            )
+            return f"PHIE: skipped because {reason}. Inputs/status: {inputs}."
+
     if curve in {"BAD_HOLE", "BADHOLEFLAG"} and step is not None:
         from petrophys.base.constants import DefaultParameters
 
@@ -3169,9 +3431,9 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
             + f"; dt_fl={_format_numeric(params.get('dt_fl'), 1)} us/ft."
         )
     if curve == "PHIT" and step is not None:
-        return "PHIT: PHID where PHID>PHIN+0.05; otherwise 0.6*PHID+0.4*PHIN; clipped 0-0.5."
+        return "PHIT: PHID where PHIN is missing or PHID>PHIN+0.05; PHIN where PHID is missing; otherwise 0.6*PHID+0.4*PHIN; clipped 0-0.5."
     if curve == "PHIE" and step is not None:
-        return "PHIE: clip(PHIT-VCL*phi_clay,0,PHIT); " + _porosity_phi_clay_text(params) + "."
+        return "PHIE: clip(PHIT-VCL*phi_cl,0,PHIT); " + _porosity_phi_cl_text(params) + "."
     if curve == "PHI_SEC":
         return "PHI_SEC: max(PHIT-PHIS,0)."
 
@@ -3187,8 +3449,17 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         equations = _sw_equation_text(counts.keys(), params)
         rcl = params.get("rcl")
         rcl_text = f"; RCL={_format_numeric(rcl, 4)} ohm.m" if rcl is not None and any(name != "archie" for name in counts) else ""
+        inputs = _finite_input_status_text(
+            well,
+            [
+                ("RDEP/RT", ("RDEP", "RT")),
+                ("PHIE", ("PHIE",)),
+                ("RW", ("RW",)),
+                ("VCL/VSH", ("VCL", "VCLAY", "VSH")),
+            ],
+        )
         return (
-            f"SW: {route_text}; {counts_text}; "
+            f"SW: {route_text}; inputs/status: {inputs}; {counts_text}; "
             f"equation(s): {equations}; a={params.get('a')}, m={params.get('m')}, n={params.get('n')}"
             + (f"; RW(T)={rw_range}" if rw_range else "")
             + rcl_text
@@ -3396,6 +3667,28 @@ def _build_concise_delivery_computation_notes(
     if missing:
         notes.append(f"Missing derived logs ({len(missing)}): {', '.join(missing)}.")
 
+    step_results, skipped_steps = _step_lookup(workflow_result)
+    computed_curves = {
+        _canonical_delivery_curve_name(name)
+        for name in (derived_logs_override or computed)
+    }
+
+    def segment_curve_note(curve: str, step: Any) -> str:
+        canonical = _canonical_delivery_curve_name(curve)
+        status = "computed" if _has_finite_any_curve(well, _target_curve_candidates(canonical)) else "missing"
+        reason = ""
+        if status == "missing":
+            reason = _missing_curve_reason(
+                canonical,
+                well,
+                workflow_result,
+                step_results,
+                skipped_steps,
+                computed_curves,
+                original_curves or set(),
+            )
+        return _compact_curve_note(canonical, status, reason, step, well)
+
     notes.extend(_compact_lithology_notes(well, lithology_mapping=lithology_mapping))
 
     for curve, step_name in (
@@ -3425,19 +3718,32 @@ def _build_concise_delivery_computation_notes(
 
     por_step = _first_step_result(workflow_result, "porosity")
     if por_step is not None:
-        phi_clay = _porosity_phi_clay_text(por_step.parameters)
-        notes.append(
-            "Porosity: PHIN=clip(NPHI-nphi_ma,0,0.6); PHID=clip((rho_ma-RHOB)/(rho_ma-rho_fl),0,0.5); "
-            "PHIS=clip((DTC-dt_ma)/(dt_fl-dt_ma),0,0.5); PHIT=PHID where PHID>PHIN+0.05 else 0.6*PHID+0.4*PHIN; "
-            "PHIE=clip(PHIT-VCL*phi_clay,0,PHIT); PHI_SEC=max(PHIT-PHIS,0)"
-            + (f"; {phi_clay}." if phi_clay else ".")
-        )
+        phi_cl = _porosity_phi_cl_text(por_step.parameters)
+        porosity_parts: list[str] = []
+        if _has_finite_curve(well, "PHIN"):
+            porosity_parts.append("PHIN=clip(NPHI-nphi_ma,0,0.6)")
+        if _has_finite_curve(well, "PHID"):
+            porosity_parts.append("PHID=clip((rho_ma-RHOB)/(rho_ma-rho_fl),0,0.5)")
+        if _has_finite_curve(well, "PHIS"):
+            porosity_parts.append("PHIS=clip((DTC-dt_ma)/(dt_fl-dt_ma),0,0.5)")
+        if _has_finite_curve(well, "PHIT"):
+            porosity_parts.append("PHIT=PHID where PHIN missing or PHID>PHIN+0.05; PHIN where PHID missing; else 0.6*PHID+0.4*PHIN")
+        if _has_finite_curve(well, "PHIE"):
+            porosity_parts.append("PHIE=clip(PHIT-VCL*phi_cl,0,PHIT)")
+        if _has_finite_curve(well, "PHI_SEC"):
+            porosity_parts.append("PHI_SEC=max(PHIT-PHIS,0)")
+        if porosity_parts:
+            notes.append(
+                "Porosity: "
+                + "; ".join(porosity_parts)
+                + (f"; {phi_cl}." if phi_cl and _has_finite_curve(well, "PHIE") else ".")
+            )
 
     sat_step = _first_step_result(workflow_result, "saturation")
     if sat_step is not None:
-        notes.append(_compact_curve_note("SW", "computed", "", sat_step, well))
+        notes.append(segment_curve_note("SW", sat_step))
         if well.get("SXO") is not None:
-            notes.append(_compact_curve_note("SXO", "computed", "", sat_step, well))
+            notes.append(segment_curve_note("SXO", sat_step))
 
     lith_step = _first_step_result(workflow_result, "lithology")
     if lith_step is not None and any(well.get(name) is not None for name in ("VQUAR", "VCALC", "VDOLO", "VANHY")):
@@ -3454,15 +3760,15 @@ def _build_concise_delivery_computation_notes(
 
     perm_step = _first_step_result(workflow_result, "permeability")
     if perm_step is not None:
-        notes.append(_compact_curve_note("PERM", "computed", "", perm_step, well))
-        if well.get("SWIRR_APP") is not None:
-            notes.append(_compact_curve_note("SWIRR_APP", "computed", "", perm_step, well))
+        notes.append(segment_curve_note("PERM", perm_step))
+        if _has_finite_curve(well, "SWIRR_APP"):
+            notes.append(segment_curve_note("SWIRR_APP", perm_step))
 
-    if any(well.get(name) is not None for name in ("RQI", "PHI_NORM", "FZI")):
+    if any(_has_finite_curve(well, name) for name in ("RQI", "PHI_NORM", "FZI")):
         notes.append("Rock quality: RQI=0.0314*sqrt(PERM/PHIE); PHI_NORM=PHIE/(1-PHIE); FZI=RQI/PHI_NORM.")
-    if well.get("BVW") is not None:
+    if _has_finite_curve(well, "BVW"):
         notes.append("BVW: PHIE*SW.")
-    if well.get("MHI") is not None:
+    if _has_finite_curve(well, "MHI"):
         notes.append("MHI: SW/SXO.")
 
     net_step = _first_step_result(workflow_result, "net_pay")
@@ -3478,9 +3784,10 @@ def _build_concise_delivery_computation_notes(
                 f"NET_PAY adds SW<{net_step.parameters.get('sw_cutoff')}",
                 f"SEALFLAG=VCL>={net_step.parameters.get('seal_vcl_cutoff', 0.8)}",
                 "CROSSOVER_FLAG=PHID-PHIN>0.05 and VCL<0.35 and PHIE>0.05 and BAD_HOLE<0.5",
-                "VP_VS_RATIO=DTS divided by DTC with plausibility screens",
             ]
         )
+        if _has_finite_curve(well, "VP_VS_RATIO"):
+            flag_parts.append("VP_VS_RATIO=DTS divided by DTC with plausibility screens")
         notes.append("Flags: " + "; ".join(flag_parts) + ".")
 
     notes.extend(
@@ -3998,7 +4305,7 @@ def _build_delivery_computation_notes(
             for step in porosity_steps
             for decision in step.decisions
         )
-        phi_cl_values = _format_numeric_summary(_step_parameter_values(porosity_steps, "phi_clay"), 3)
+        phi_cl_values = _format_numeric_summary(_step_parameter_values(porosity_steps, "phi_cl"), 3)
         rho_ma = _format_numeric_summary(_step_parameter_values(porosity_steps, "rho_ma"), 3)
         rho_ma_range = _format_overall_range(
             [*_step_parameter_values(porosity_steps, "rho_ma_min"), *_step_parameter_values(porosity_steps, "rho_ma_max")],
@@ -4034,11 +4341,11 @@ def _build_delivery_computation_notes(
             )
         )
         phi_cl_sources = _ordered_unique(
-            str(step.parameters.get("phi_clay_source"))
+            str(step.parameters.get("phi_cl_source"))
             for step in porosity_steps
-            if step.parameters.get("phi_clay_source")
+            if step.parameters.get("phi_cl_source")
         )
-        phi_cl_basis_count = _format_numeric_summary(_step_parameter_values(porosity_steps, "phi_clay_basis_count"), 0)
+        phi_cl_basis_count = _format_numeric_summary(_step_parameter_values(porosity_steps, "phi_cl_basis_count"), 0)
         phit_methods = _ordered_unique(
             str(step.parameters.get("phit_method"))
             for step in porosity_steps
@@ -4083,7 +4390,8 @@ def _build_delivery_computation_notes(
         if phit_methods == ["adaptive_nd"] or any("PHIT = adaptive(PHIN, PHID)" in decision for decision in decisions):
             details.append(
                 "PHIT from the library's adaptive neutron-density combination: "
-                "PHIT = PHID for samples with PHID > PHIN + 0.05; PHIT = 0.6*PHID + 0.4*PHIN for the remaining samples."
+                "PHIT = PHID where PHIN is missing or PHID > PHIN + 0.05; "
+                "PHIT = PHIN where PHID is missing; PHIT = 0.6*PHID + 0.4*PHIN for the remaining samples."
             )
         elif phit_methods == ["density_only"] or any("Density-only porosity" in decision for decision in decisions):
             details.append("PHIT was not written; density-only porosity remained as PHID.")
@@ -4095,9 +4403,9 @@ def _build_delivery_computation_notes(
             details.append("PHIT was taken directly from the existing PHIT curve in the well.")
         if any("PHIE =" in decision for decision in decisions):
             if phi_cl_values:
-                phi_cl_source = _friendly_join([_phi_clay_source_label(source) for source in phi_cl_sources])
+                phi_cl_source = _friendly_join([_phi_cl_source_label(source) for source in phi_cl_sources])
                 details.append(
-                    f"PHIE = selected porosity basis - VCL * phi_clay, with phi_clay={phi_cl_values} v/v "
+                    f"PHIE = selected porosity basis - VCL * phi_cl, with phi_cl={phi_cl_values} v/v "
                     f"from {phi_cl_source if phi_cl_source else 'available shale-porosity input'}"
                     + (f" using {phi_cl_basis_count} shale-control samples." if phi_cl_basis_count else "")
                     + "."
@@ -4354,7 +4662,7 @@ def _build_delivery_computation_notes(
         )
         if well.get("CROSSOVER_FLAG") is not None:
             note += " CROSSOVER_FLAG = 1 where PHID - PHIN > 0.05, VCL < 0.35, PHIE > 0.05, and BAD_HOLE < 0.5."
-        if well.get("VP_VS_RATIO") is not None:
+        if _has_finite_curve(well, "VP_VS_RATIO"):
             note += " VP_VS_RATIO = DTS / DTC."
         if well.get("MHI") is not None:
             note += " MHI = SW / SXO."
@@ -4665,15 +4973,15 @@ def _build_lithology_group_segments(
     depth = np.asarray(well.depth, dtype=float)
     lithology_curve = well.get("LITHOLOGY_GEOLINK")
     if lithology_curve is None:
-        labels = np.asarray(["NAN"] * well.n_samples, dtype=object)
+        labels = np.asarray([MISSING_LITHOLOGY_LABEL] * well.n_samples, dtype=object)
     else:
         labels_list = []
         for value in lithology_curve.data:
             if _is_null_like_lithology(value) or _is_sentinel_lithology(value):
-                labels_list.append("NAN")
+                labels_list.append(MISSING_LITHOLOGY_LABEL)
             else:
                 labels_list.append(
-                    _normalize_lithology_label(value, lithology_mapping=lithology_mapping) or "NAN"
+                    _normalize_lithology_label(value, lithology_mapping=lithology_mapping) or MISSING_LITHOLOGY_LABEL
                 )
         labels = np.asarray(labels_list, dtype=object)
 
@@ -4768,9 +5076,10 @@ def _load_reference_group_segments(
         formation_name = str(formation_info.get("name") or analysis_results.get("formation_name") or "WHOLE_WELL")
         group_name = str(analysis_results.get("lithology group") or json_path.stem)
         lithology_name = str(analysis_results.get("lithology") or group_name)
+        file_stem = json_path.stem.replace("NAN_GROUP", f"{MISSING_LITHOLOGY_LABEL}_GROUP")
         segments.append(
             {
-                "file_stem": json_path.stem,
+                "file_stem": file_stem,
                 "formation_name": formation_name,
                 "formation_depth_info": {
                     "min_depth": formation_info.get("min_depth"),
@@ -5016,21 +5325,74 @@ def _curve_statistics_payload(data: np.ndarray) -> Optional[dict[str, float]]:
     }
 
 
-def _build_reference_statistics(well: "Well") -> dict[str, Any]:
+def _reference_statistics_curve_key(mnemonic: str, well: "Well") -> Optional[str]:
+    upper = str(mnemonic).upper()
+    canonical = _canonical_delivery_curve_name(upper)
+    if upper in {"DEPT", "DEPTH"}:
+        return None
+    if canonical in CORE_ONLY_CONTEXT_CURVES:
+        return None
+    if upper == "LITHOLOGY_GEOLINK":
+        return None
+    if upper == "DCAL" and well.get("CALI") is not None:
+        return None
+    if upper == "DT" and well.get("DTC") is not None:
+        return None
+    return canonical
+
+
+def _add_reference_statistics_payload(
+    stats: dict[str, Any],
+    key: str,
+    data: Any,
+    *,
+    prefer_existing: bool = True,
+) -> None:
+    try:
+        payload = _curve_statistics_payload(data)
+    except Exception:
+        payload = None
+    if payload is None:
+        return
+    stat_key = f"{key}_overall"
+    if prefer_existing and stat_key in stats:
+        return
+    stats[stat_key] = payload
+
+
+def _build_reference_statistics(
+    well: "Well",
+    extra_derived_curves: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
     stats: dict[str, Any] = {}
     for mnemonic in well.curves:
-        if mnemonic == "DEPT":
+        key = _reference_statistics_curve_key(mnemonic, well)
+        if key is None:
             continue
         curve = well.get(mnemonic)
         if curve is None:
             continue
-        try:
-            payload = _curve_statistics_payload(curve.data)
-        except Exception:
-            payload = None
-        if payload is None:
+        prefer_existing = str(mnemonic).upper() != key
+        _add_reference_statistics_payload(
+            stats,
+            key,
+            curve.data,
+            prefer_existing=prefer_existing,
+        )
+
+    for mnemonic, curve in (extra_derived_curves or {}).items():
+        key = _reference_statistics_curve_key(mnemonic, well)
+        if key is None:
             continue
-        stats[f"{mnemonic}_overall"] = payload
+        data = getattr(curve, "data", curve)
+        _add_reference_statistics_payload(stats, key, data, prefer_existing=True)
+        if key == "COMPOSITE_CLAY":
+            _add_reference_statistics_payload(
+                stats,
+                "COMPOSITE_CLAY_INDICATOR",
+                data,
+                prefer_existing=True,
+            )
     return stats
 
 
@@ -5102,6 +5464,7 @@ def _build_reference_json_payload(
     derived_logs_override: Optional[Sequence[str]] = None,
     status_targets_override: Optional[Sequence[str]] = None,
     include_derived_log_status: bool = True,
+    extra_statistics_curves: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     well_name = _reference_well_name(source_file, well)
     depth_info = _depth_summary(well)
@@ -5130,7 +5493,12 @@ def _build_reference_json_payload(
     full_analysis_summary = _build_analysis_summary(well, workflow_result)
     selected_analysis_summary = analysis_summary_override or full_analysis_summary or hydrocarbon_summary
     data_completeness = {
-        "missing_primary_logs": [_display_curve_name(name) for name in PRIMARY_LOGS_FOR_COMPLETENESS if name not in original_curves],
+        "missing_primary_logs": [
+            _display_curve_name(name)
+            for name in PRIMARY_LOGS_FOR_COMPLETENESS
+            if _canonical_delivery_curve_name(name) not in CORE_ONLY_CONTEXT_CURVES
+            and name not in original_curves
+        ],
         "derived_log_computation_notes": computation_notes,
     }
     if include_derived_log_status:
@@ -5162,11 +5530,11 @@ def _build_reference_json_payload(
                 "median_dz": depth_info["median_dz"],
             },
             "ground_truth_lithology_present": lithology_info["has_valid_lithology"],
-            "core_phi_present": _has_finite_curve(well, "PHIC"),
-            "core_k_present": _has_finite_curve(well, "KH_CORE") or _has_finite_curve(well, "KV_CORE"),
+            "core_phi_present": False,
+            "core_k_present": False,
             "derived_logs_computed": derived_logs,
             "lithology_distribution": _build_lithology_distribution(well, lithology_mapping=lithology_mapping),
-            "statistics": _build_reference_statistics(well),
+            "statistics": _build_reference_statistics(well, extra_statistics_curves),
             "analysis_summary": selected_analysis_summary,
             "data_completeness": data_completeness,
             "lithology_info": lithology_info,
@@ -5222,6 +5590,7 @@ def _write_reference_analysis_json_to_path(
     derived_logs_override: Optional[Sequence[str]] = None,
     status_targets_override: Optional[Sequence[str]] = None,
     include_derived_log_status: bool = True,
+    extra_statistics_curves: Optional[dict[str, Any]] = None,
 ) -> Path:
     payload = _build_reference_json_payload(
         well,
@@ -5237,6 +5606,7 @@ def _write_reference_analysis_json_to_path(
         derived_logs_override=derived_logs_override,
         status_targets_override=status_targets_override,
         include_derived_log_status=include_derived_log_status,
+        extra_statistics_curves=extra_statistics_curves,
     )
     json_path.parent.mkdir(parents=True, exist_ok=True)
     with json_path.open("w", encoding="utf-8") as handle:
@@ -5760,7 +6130,7 @@ def export_reference_json_work_package_by_formation_lithology(
                     json_group_name = raw_group_name
                     json_lithology_name = raw_lithology_name
                     file_group_name = raw_group_name
-                    if raw_lithology_name == "NAN":
+                    if raw_lithology_name == MISSING_LITHOLOGY_LABEL:
                         file_group_name = raw_group_name
                         json_group_name = "No lithology information available"
                         json_lithology_name = "No lithology information available"
@@ -5948,6 +6318,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                             derived_logs_override=derived_logs,
                             status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
                             include_derived_log_status=True,
+                            extra_statistics_curves=category_result.derived_curves,
                         )
 
                         results.append(
@@ -6021,7 +6392,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     json_group_name = raw_group_name
                     json_lithology_name = raw_lithology_name
                     file_group_name = raw_group_name
-                    if raw_lithology_name == "NAN":
+                    if raw_lithology_name == MISSING_LITHOLOGY_LABEL:
                         json_group_name = "No lithology information available"
                         json_lithology_name = "No lithology information available"
 
@@ -6064,6 +6435,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                             derived_logs_override=derived_logs,
                             status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
                             include_derived_log_status=True,
+                            extra_statistics_curves=category_result.derived_curves,
                         )
 
                         results.append(

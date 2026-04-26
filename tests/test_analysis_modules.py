@@ -5,10 +5,15 @@ import numpy as np
 from petrophys import Well
 from petrophys.analysis import HydrocarbonAnalysis
 from petrophys.io.example_format_export import (
+    _build_lithology_group_segments,
     _build_reference_derived_log_status,
+    _build_reference_statistics,
+    _compact_curve_note,
     _curve_value_summary,
+    _input_log_display_list,
     _missing_curve_reason,
 )
+from petrophys.utils.analysis_helpers import DerivedCurve
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 from petrophys.workflow import run_comprehensive_analysis
 
@@ -142,7 +147,8 @@ def test_hydrocarbon_analysis_rejects_implausible_shear_slowness_for_vpvs():
 
     HydrocarbonAnalysis().analyze(well, add_curves=True)
 
-    assert np.all(np.isnan(well["VP_VS_RATIO"].data))
+    assert well.get("VP_VS_RATIO") is None
+    assert well.get("PRIME_GAS_TARGET") is None
 
 
 def test_hydrocarbon_analysis_does_not_use_dte_as_shear_sonic():
@@ -152,7 +158,148 @@ def test_hydrocarbon_analysis_does_not_use_dte_as_shear_sonic():
 
     HydrocarbonAnalysis().analyze(well, add_curves=True)
 
-    assert np.all(np.isnan(well["VP_VS_RATIO"].data))
+    assert well.get("VP_VS_RATIO") is None
+    assert well.get("PRIME_GAS_TARGET") is None
+
+
+def test_input_log_display_list_excludes_core_only_curves():
+    curves = {
+        "BS",
+        "DTC",
+        "DT",
+        "DTE",
+        "CALI",
+        "DCAL",
+        "GDEN",
+        "KH_CORE",
+        "KV_CORE",
+        "PHIC",
+        "SWC",
+        "SOC",
+        "LITHOLOGY_GEOLINK",
+    }
+
+    displayed = _input_log_display_list(curves)
+
+    assert displayed == ["BS", "CALI", "DTC", "DTE", "lithology"]
+
+
+def test_reference_statistics_use_canonical_names_and_skip_raw_lithology_aliases():
+    well = Well("STATS-CANONICAL")
+    well.depth = np.arange(3.0)
+    well.add_curve("DEPT", well.depth, "ft", "Depth")
+    well.add_curve("TEMP", np.array([100.123456, 101.0, 102.0]), "degF", "Temperature alias")
+    well.add_curve("TMPC", np.array([37.0, 38.0, 39.0]), "degC", "Temperature")
+    well.add_curve("PHI_Z", np.array([0.1, 0.2, 0.3]), "", "Phi z alias")
+    well.add_curve("LITHOLOGY_GEOLINK", np.array([1.0, 1.0, 2.0]), "", "Lithology")
+    well.add_curve("CALI", np.array([8.5, 8.6, 8.7]), "in", "Caliper")
+    well.add_curve("DCAL", np.array([0.1, 0.2, 0.3]), "in", "Caliper delta")
+    well.add_curve("DT", np.array([80.0, 81.0, 82.0]), "us/ft", "Sonic alias")
+    well.add_curve("DTC", np.array([79.0, 80.0, 81.0]), "us/ft", "Sonic")
+
+    stats = _build_reference_statistics(
+        well,
+        extra_derived_curves={
+            "ND_SEPARATION": DerivedCurve(np.array([0.01, 0.02, 0.03]), "", "ND separation"),
+            "COMPOSITE_CLAY": DerivedCurve(np.array([0.0, 0.5, 1.0]), "", "Composite clay"),
+        },
+    )
+
+    assert "TMPC_overall" in stats
+    assert stats["TMPC_overall"]["minimum"] == 37.0
+    assert "PHI_NORM_overall" in stats
+    assert "ND_SEPARATION_overall" in stats
+    assert "COMPOSITE_CLAY_overall" in stats
+    assert "COMPOSITE_CLAY_INDICATOR_overall" in stats
+    assert "TEMP_overall" not in stats
+    assert "PHI_Z_overall" not in stats
+    assert "LITHOLOGY_GEOLINK_overall" not in stats
+    assert "DCAL_overall" not in stats
+    assert "DT_overall" not in stats
+
+
+def test_missing_curve_reason_names_category_input_requirements():
+    well = _build_analysis_well()
+    del well._curves["PEF"]
+
+    reason = _missing_curve_reason(
+        "PEF_CLAY_INDICATOR",
+        well,
+        SimpleNamespace(),
+        step_results={},
+        skipped_steps=set(),
+        computed_curves=set(),
+        original_curves=set(well.curves),
+    )
+
+    assert reason == "required input curves unavailable: PEF"
+
+
+def test_missing_lithology_group_uses_readable_group_name():
+    well = Well("MISSING-LITHO")
+    well.depth = np.array([1000.0, 1001.0, 1002.0, 1003.0])
+    well.add_curve("DEPT", well.depth, "ft", "Depth")
+    well.add_curve("LITHOLOGY_GEOLINK", np.array([np.nan, np.nan, np.nan, np.nan]), "", "Lithology")
+
+    segments = _build_lithology_group_segments(well, minimum_group_thickness=0.0)
+
+    assert len(segments) == 1
+    assert segments[0]["lithology"] == "NO_LITHOLOGY_DATA"
+    assert segments[0]["group_name"] == "NO_LITHOLOGY_DATA_GROUP_1"
+
+
+def test_vpvs_status_skips_when_dts_is_unavailable():
+    well = _build_analysis_well()
+    del well._curves["DTS"]
+    well.add_curve("DTE", np.full(well.n_samples, 250.0), "us/ft", "Non-shear DTE telemetry")
+    workflow_result = SimpleNamespace(
+        base_result=SimpleNamespace(steps_executed=[], steps_skipped=[]),
+        zone_results=[],
+    )
+
+    statuses = _build_reference_derived_log_status(
+        well,
+        workflow_result,
+        original_curves=set(well.curves),
+        extra_targets=["VP_VS_RATIO"],
+    )
+    vpvs = next(item for item in statuses if item["mnemonic"] == "VP_VS_RATIO")
+
+    assert vpvs["status"] == "missing"
+    assert vpvs["reason"] == "not calculated because DTS was unavailable"
+
+
+def test_sw_missing_note_lists_blocking_inputs():
+    well = _build_analysis_well()
+    for curve in ["PHIE", "SW"]:
+        del well._curves[curve]
+    well.add_curve("RW", np.full(well.n_samples, 0.03), "ohm.m", "Formation water resistivity")
+    step = SimpleNamespace(
+        step="saturation",
+        method="archie",
+        parameters={
+            "sw_model_requested": "auto",
+            "a": 1.0,
+            "m": 2.0,
+            "n": 2.0,
+        },
+    )
+
+    reason = _missing_curve_reason(
+        "SW",
+        well,
+        SimpleNamespace(),
+        step_results={"saturation": step},
+        skipped_steps=set(),
+        computed_curves=set(),
+        original_curves=set(well.curves),
+    )
+    note = _compact_curve_note("SW", "missing", reason, step, well)
+
+    assert "PHIE" in reason
+    assert "RDEP/RT=present" in note
+    assert "PHIE=missing/no finite samples" in note
+    assert "RW=present" in note
 
 
 def test_hydrocarbon_crossover_requires_clean_reservoir_quality_and_good_hole():
@@ -170,7 +317,7 @@ def test_hydrocarbon_crossover_is_nan_without_bad_hole_curve():
 
     HydrocarbonAnalysis().analyze(well, add_curves=True)
 
-    assert np.all(np.isnan(well["CROSSOVER_FLAG"].data))
+    assert well.get("CROSSOVER_FLAG") is None
 
 
 def test_rock_quality_leaves_invalid_phi_and_perm_as_nan():
