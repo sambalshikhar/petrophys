@@ -52,6 +52,12 @@ class CategoryAnalysisResult:
 
     def add_curves_to_well(self, well: "Well") -> "Well":
         for mnemonic, curve in self.derived_curves.items():
+            try:
+                numeric = np.asarray(curve.data, dtype=float)
+            except (TypeError, ValueError):
+                numeric = None
+            if numeric is not None and not np.any(np.isfinite(numeric)):
+                continue
             well.add_curve(
                 mnemonic,
                 curve.data,

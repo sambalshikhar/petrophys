@@ -438,7 +438,6 @@ class DynamicWorkflowConfig:
     # Control which steps to skip
     skip_steps: List[str] = field(default_factory=list)
 
-
 @dataclass
 class StepResult:
     """
@@ -756,10 +755,10 @@ class DynamicWorkflow:
             (WorkflowStep.BAD_HOLE, self._step_bad_hole, self._can_bad_hole),
             (WorkflowStep.VCLAY, self._step_vclay, self._can_vclay),
             (WorkflowStep.RCL, self._step_rcl, self._can_rcl),
-            (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
             (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
             (WorkflowStep.HC_CORRECTION, self._step_hc_correction, self._can_hc_correction),
             (WorkflowStep.POROSITY, self._step_porosity, self._can_porosity),
+            (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
             (WorkflowStep.RW, self._step_rw, self._can_rw),
             (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
             (WorkflowStep.SATURATION, self._step_saturation, self._can_saturation),
@@ -819,10 +818,10 @@ class DynamicWorkflow:
             (WorkflowStep.BAD_HOLE, self._step_bad_hole, self._can_bad_hole),
             (WorkflowStep.VCLAY, self._step_vclay, self._can_vclay),
             (WorkflowStep.RCL, self._step_rcl, self._can_rcl),
-            (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
             (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
             (WorkflowStep.HC_CORRECTION, self._step_hc_correction, self._can_hc_correction),
             (WorkflowStep.POROSITY, self._step_porosity, self._can_porosity),
+            (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
             (WorkflowStep.RW, self._step_rw, self._can_rw),
             (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
             (WorkflowStep.SATURATION, self._step_saturation, self._can_saturation),
@@ -907,7 +906,8 @@ class DynamicWorkflow:
         return (self._has_curve(well, "RHOB") and
                 self._has_curve(well, "NPHI") and
                 self._has_curve(well, "PEF", "DTC") and
-                self._has_curve(well, "VCL"))
+                self._has_curve(well, "VCL") and
+                self._has_curve(well, "PHIE"))
 
     def _can_rmf(self, well: "Well") -> bool:
         return (
@@ -1935,7 +1935,13 @@ class DynamicWorkflow:
             "fallback_nphi_ma": fallback_nphi_ma,
         }
 
-    def _resolve_phi_clay(self, well: "Well", vcl_curve) -> Dict[str, Any]:
+    def _resolve_phi_cl(
+        self,
+        well: "Well",
+        vcl_curve,
+        porosity_basis: Optional[np.ndarray] = None,
+        porosity_basis_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
         explicit_phi_cl = _parameter_float(well, "PNSH")
         explicit_source = "LAS PNSH parameter"
         if explicit_phi_cl is None:
@@ -1944,42 +1950,76 @@ class DynamicWorkflow:
 
         if explicit_phi_cl is not None:
             return {
-                "phi_clay": float(explicit_phi_cl),
-                "phi_clay_source": explicit_source,
-                "phi_clay_basis_count": None,
-                "phi_clay_basis": "explicit_parameter",
+                "phi_cl": float(explicit_phi_cl),
+                "phi_cl_source": explicit_source,
+                "phi_cl_basis_count": None,
+                "phi_cl_basis": "explicit_parameter",
             }
 
-        nphi_curve = well.get("NPHI")
-        if nphi_curve is not None:
-            nphi = np.asarray(nphi_curve.data, dtype=float)
+        def shale_control_mask() -> tuple[np.ndarray, str]:
             shale_mask = np.zeros(well.n_samples, dtype=bool)
             lithology = self._build_lithology_log(well)
             if isinstance(lithology, np.ndarray):
                 shale_mask = np.asarray([_is_shale_group(item) for item in lithology], dtype=bool)
+            basis = "lithology_shale"
+            if not np.any(shale_mask) and vcl_curve is not None:
+                vcl = np.asarray(vcl_curve.data, dtype=float)
+                shale_mask = np.isfinite(vcl) & (vcl > 0.9)
+                basis = "vcl_gt_0.9"
+            return shale_mask, basis
+
+        def from_porosity(values: Any, label: str) -> Optional[Dict[str, Any]]:
+            if values is None:
+                return None
+            porosity = np.asarray(values, dtype=float)
+            shale_mask, basis = shale_control_mask()
+            valid_mask = shale_mask & np.isfinite(porosity)
+            if not np.any(valid_mask):
+                return None
+            phi_cl = float(np.clip(np.nanmean(porosity[valid_mask]), 0.0, 0.6))
+            label_clean = str(label or "porosity").lower()
+            source = f"{basis}_average_{label_clean}"
+            return {
+                "phi_cl": phi_cl,
+                "phi_cl_source": source,
+                "phi_cl_basis_count": int(np.count_nonzero(valid_mask)),
+                "phi_cl_basis": source,
+            }
+
+        preferred = from_porosity(porosity_basis, porosity_basis_name or "porosity")
+        if preferred is not None:
+            return preferred
+
+        for curve_name in ("PHIT", "PHID", "PHIS", "PHIN"):
+            curve = well.get(curve_name)
+            resolved = from_porosity(curve.data if curve is not None else None, curve_name)
+            if resolved is not None:
+                return resolved
+
+        nphi_curve = well.get("NPHI")
+        if nphi_curve is not None:
+            nphi = np.asarray(nphi_curve.data, dtype=float)
+            shale_mask, basis_prefix = shale_control_mask()
             basis = "lithology_shale_average_nphi"
 
             valid_mask = shale_mask & np.isfinite(nphi)
-            if not np.any(valid_mask) and vcl_curve is not None:
-                vcl = np.asarray(vcl_curve.data, dtype=float)
-                shale_mask = np.isfinite(vcl) & (vcl > 0.9)
-                valid_mask = shale_mask & np.isfinite(nphi)
+            if basis_prefix == "vcl_gt_0.9":
                 basis = "vcl_gt_0.9_average_nphi"
 
             if np.any(valid_mask):
-                phi_clay = float(np.clip(np.nanmean(nphi[valid_mask]), 0.0, 0.6))
+                phi_cl = float(np.clip(np.nanmean(nphi[valid_mask]), 0.0, 0.6))
                 return {
-                    "phi_clay": phi_clay,
-                    "phi_clay_source": basis,
-                    "phi_clay_basis_count": int(np.count_nonzero(valid_mask)),
-                    "phi_clay_basis": basis,
+                    "phi_cl": phi_cl,
+                    "phi_cl_source": basis,
+                    "phi_cl_basis_count": int(np.count_nonzero(valid_mask)),
+                    "phi_cl_basis": basis,
                 }
 
         return {
-            "phi_clay": float(self.config.phi_cl),
-            "phi_clay_source": "config_or_default",
-            "phi_clay_basis_count": None,
-            "phi_clay_basis": "config_or_default",
+            "phi_cl": float(self.config.phi_cl),
+            "phi_cl_source": "config_or_default",
+            "phi_cl_basis_count": None,
+            "phi_cl_basis": "config_or_default",
         }
 
     def _step_porosity(self, well: "Well") -> StepResult:
@@ -2007,8 +2047,6 @@ class DynamicWorkflow:
         rho_ma = matrix_info["rho_ma"]
         dt_ma = matrix_info["dt_ma"]
         nphi_ma = matrix_info["nphi_ma"]
-        phi_clay_info = self._resolve_phi_clay(well, vcl_curve)
-        phi_clay = float(phi_clay_info["phi_clay"])
 
         phin = None
         phid = None
@@ -2070,7 +2108,7 @@ class DynamicWorkflow:
             phie_basis = phit
             phie_basis_name = "PHIT"
             phit_method = "adaptive_nd"
-            decisions.append("PHIT = adaptive(PHIN, PHID)")
+            decisions.append("PHIT = adaptive(PHIN, PHID) with per-sample fallback to the finite curve")
         elif phid is not None:
             phie_basis = phid
             phie_basis_name = "PHID"
@@ -2100,6 +2138,14 @@ class DynamicWorkflow:
             if "PHIT" not in outputs:
                 outputs.append("PHIT")
 
+        phi_cl_info = self._resolve_phi_cl(
+            well,
+            vcl_curve,
+            porosity_basis=phie_basis,
+            porosity_basis_name=phie_basis_name,
+        )
+        phi_cl = float(phi_cl_info["phi_cl"])
+
         if phie_basis is not None:
             if vcl_curve is not None:
                 inputs.append(vcl_curve.mnemonic)
@@ -2107,12 +2153,12 @@ class DynamicWorkflow:
             else:
                 vcl = np.zeros(well.n_samples, dtype=float)
 
-            phie = effective_porosity(phie_basis, vcl, phi_clay)
+            phie = effective_porosity(phie_basis, vcl, phi_cl)
             well.add_curve("PHIE", phie, "v/v", "Effective Porosity")
             outputs.append("PHIE")
             if vcl_curve is not None:
                 decisions.append(
-                    f"PHIE = {phie_basis_name} - {vcl_curve.mnemonic} * phi_clay ({phi_clay:.3f})"
+                    f"PHIE = {phie_basis_name} - {vcl_curve.mnemonic} * phi_cl ({phi_cl:.3f})"
                 )
             else:
                 decisions.append(f"PHIE = {phie_basis_name} (no clay curve available)")
@@ -2142,10 +2188,10 @@ class DynamicWorkflow:
             "dt_ma_min": float(np.nanmin(dt_ma)),
             "dt_ma_max": float(np.nanmax(dt_ma)),
             "dt_fl": self.config.dt_fl,
-            "phi_clay": phi_clay,
-            "phi_clay_source": phi_clay_info["phi_clay_source"],
-            "phi_clay_basis": phi_clay_info["phi_clay_basis"],
-            "phi_clay_basis_count": phi_clay_info["phi_clay_basis_count"],
+            "phi_cl": phi_cl,
+            "phi_cl_source": phi_cl_info["phi_cl_source"],
+            "phi_cl_basis": phi_cl_info["phi_cl_basis"],
+            "phi_cl_basis_count": phi_cl_info["phi_cl_basis_count"],
             "phie_basis": phie_basis_name,
             "phit_method": phit_method,
         }
@@ -2163,6 +2209,16 @@ class DynamicWorkflow:
         m_value = self.config.m if self.config.m is not None else default_coeffs.m
         n_value = self.config.n if self.config.n is not None else default_coeffs.n
 
+        vcl_curve = well.get("VCL") or well.get("VCLAY")
+        phit_curve_for_phi_cl = well.get("PHIT")
+        phi_cl_info = self._resolve_phi_cl(
+            well,
+            vcl_curve,
+            porosity_basis=phit_curve_for_phi_cl.data if phit_curve_for_phi_cl is not None else None,
+            porosity_basis_name="PHIT" if phit_curve_for_phi_cl is not None else None,
+        )
+        phi_cl = float(phi_cl_info["phi_cl"])
+
         sw_module = SaturationModule(
             a=a_value, m=m_value, n=n_value,
             model=self.config.sw_model, vcl_cutoff=self.config.vcl_cutoff
@@ -2173,7 +2229,7 @@ class DynamicWorkflow:
             salinity=self.config.salinity_ppm, rmf=self._result.rmf_computed,
             lithology=lithology, cec=self.config.cec, b_coeff=self.config.b_coeff,
             rho_ma=self.config.rho_ma or 2.65, m_star=self.config.m_star,
-            rwb=self.config.rwb, phi_cl=self.config.phi_cl,
+            rwb=self.config.rwb, phi_cl=phi_cl,
             rtsh=self.config.rtsh, vsh_exp=self.config.vsh_exp,
             shale_exp=self.config.shale_exp,
         )
@@ -2187,7 +2243,6 @@ class DynamicWorkflow:
         trace.method = result.model
         rt_curve = well.get("RDEP") or well.get("RT")
         phie_curve = well.get("PHIE")
-        vcl_curve = well.get("VCL") or well.get("VCLAY")
         trace.input_curves = [
             curve.mnemonic for curve in (rt_curve, phie_curve, vcl_curve) if curve is not None
         ]
@@ -2212,7 +2267,10 @@ class DynamicWorkflow:
             "b_coeff_present": self.config.b_coeff is not None,
             "m_star": self.config.m_star,
             "rwb": self.config.rwb,
-            "phi_cl": self.config.phi_cl,
+            "phi_cl": phi_cl,
+            "phi_cl_source": phi_cl_info["phi_cl_source"],
+            "phi_cl_basis": phi_cl_info["phi_cl_basis"],
+            "phi_cl_basis_count": phi_cl_info["phi_cl_basis_count"],
             "rtsh": self.config.rtsh if self.config.rtsh is not None else self._result.rcl_computed,
             "vsh_exp": self.config.vsh_exp,
             "shale_exp": self.config.shale_exp,
@@ -2235,6 +2293,9 @@ class DynamicWorkflow:
         trace.decisions.append(
             f"Archie params: a={a_value}, m={m_value}, n={n_value} "
             f"(defaults from {default_coeffs.lithology} where not provided by config/LAS)"
+        )
+        trace.decisions.append(
+            f"Dual Water phi_cl = {phi_cl:.3f} from {phi_cl_info['phi_cl_source']}"
         )
         trace.decisions.append(
             f"Rw range = {trace.parameters['rw_min']:.4f} to {trace.parameters['rw_max']:.4f}, Rcl = {self._result.rcl_computed}"

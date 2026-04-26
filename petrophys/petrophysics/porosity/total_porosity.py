@@ -77,20 +77,38 @@ def total_porosity(
         return np.sqrt((nphi ** 2 + phi_d ** 2) / 2)
 
     else:  # adaptive
-        # Check for gas effect
-        if isinstance(nphi, np.ndarray):
-            gas_effect = phi_d > nphi + 0.05
-
-            phit = np.where(
-                gas_effect,
-                phi_d,  # Use density only in gas zones
-                0.6 * phi_d + 0.4 * nphi  # Standard weighting
+        if isinstance(nphi, np.ndarray) or isinstance(phi_d, np.ndarray):
+            nphi_arr, phid_arr = np.broadcast_arrays(
+                np.asarray(nphi, dtype=float),
+                np.asarray(phi_d, dtype=float),
             )
+            phit = np.full(nphi_arr.shape, np.nan, dtype=float)
+
+            both = np.isfinite(nphi_arr) & np.isfinite(phid_arr)
+            density_only = ~np.isfinite(nphi_arr) & np.isfinite(phid_arr)
+            neutron_only = np.isfinite(nphi_arr) & ~np.isfinite(phid_arr)
+
+            gas_effect = both & (phid_arr > nphi_arr + 0.05)
+            standard = both & ~gas_effect
+
+            phit[gas_effect] = phid_arr[gas_effect]
+            phit[standard] = 0.6 * phid_arr[standard] + 0.4 * nphi_arr[standard]
+            phit[density_only] = phid_arr[density_only]
+            phit[neutron_only] = nphi_arr[neutron_only]
         else:
-            if phi_d > nphi + 0.05:
+            nphi_finite = np.isfinite(nphi)
+            phid_finite = np.isfinite(phi_d)
+            if nphi_finite and phid_finite:
+                if phi_d > nphi + 0.05:
+                    phit = phi_d
+                else:
+                    phit = 0.6 * phi_d + 0.4 * nphi
+            elif phid_finite:
                 phit = phi_d
+            elif nphi_finite:
+                phit = nphi
             else:
-                phit = 0.6 * phi_d + 0.4 * nphi
+                phit = np.nan
 
         return np.clip(phit, 0, 0.5)
 

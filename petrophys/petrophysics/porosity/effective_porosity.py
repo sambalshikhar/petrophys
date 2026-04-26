@@ -30,12 +30,14 @@ def effective_porosity(
     Returns
     -------
     float or np.ndarray
-        Effective porosity (v/v), clipped to [0, phit]
+        Effective porosity (v/v), clipped to [0, min(phit, 1 - VCL)]
     """
     phit = np.asarray(phit, dtype=float)
     vcl  = np.asarray(vcl,  dtype=float)
-    phie = phit - vcl * phi_clay
-    return np.clip(phie, 0.0, phit)
+    vcl_clipped = np.clip(vcl, 0.0, 1.0)
+    phie = phit - vcl_clipped * phi_clay
+    upper = np.maximum(np.minimum(phit, 1.0 - vcl_clipped), 0.0)
+    return np.minimum(np.maximum(phie, 0.0), upper)
 
 
 def calculate_phie(

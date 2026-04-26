@@ -361,7 +361,18 @@ class NumericalStatisticalAnalysis:
 
     @staticmethod
     def _numeric_curve_names(well: "Well") -> Sequence[str]:
-        excluded = {"DEPT", "DEPTH", "LITHOLOGY_GEOLINK", "FORMATION"}
+        excluded = {
+            "DEPT",
+            "DEPTH",
+            "LITHOLOGY_GEOLINK",
+            "FORMATION",
+            "GDEN",
+            "PHIC",
+            "KH_CORE",
+            "KV_CORE",
+            "SWC",
+            "SOC",
+        }
         return [name for name in well.curves if name.upper() not in excluded]
 
     @staticmethod

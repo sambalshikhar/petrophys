@@ -90,3 +90,18 @@ def test_saturation_raises_when_required_curves_are_missing():
 
     with pytest.raises(ValueError, match="PHIE"):
         SaturationModule(model="auto").calculate(well, rw=0.05)
+
+
+def test_sxo_is_never_below_sw_when_invaded_zone_archie_is_used():
+    well = _saturation_well(vcl=0.1)
+    well.add_curve("RSHA", np.full(4, 2000.0), "ohm.m", "Shallow resistivity")
+
+    result = SaturationModule(model="archie").calculate(
+        well,
+        rw=0.05,
+        rmf=0.02,
+    )
+
+    assert result.sxo_method == "archie_rxo_rmf"
+    assert np.all(result.sxo >= result.sw)
+    assert np.nanmax(result.sxo) <= 1.0

@@ -248,6 +248,12 @@ def test_full_dynamic_workflow_records_trace_for_every_module(record_route):
     assert result.success
 
 
+def test_pipeline_solves_porosity_before_mineral_volumes():
+    pipeline_steps = [step.value for step, _, _ in DynamicWorkflow().get_pipeline()]
+
+    assert pipeline_steps.index("porosity") < pipeline_steps.index("lithology")
+
+
 def test_dynamic_workflow_skips_modules_when_inputs_are_missing(record_route):
     well = Well("DEPTH-ONLY")
     depth = np.arange(1000.0, 1005.0)
@@ -761,6 +767,35 @@ def test_saturation_uses_vclay_when_vcl_alias_is_missing(record_route):
 
     assert step.parameters["sw_model_sample_counts"] == {"archie": 4, "simandoux": 8}
     assert step.input_curves == ["RDEP", "PHIE", "VCLAY"]
+
+
+def test_dual_water_uses_same_phi_cl_as_phie(record_route):
+    well = _routing_well("SAT-PHICL-PHIT")
+    result = _run(
+        "saturation_dual_water_phi_cl_from_phit",
+        well,
+        DynamicWorkflowConfig(
+            rw=0.05,
+            sw_model="auto",
+            lithology="carbonate",
+            skip_steps=["vclay", "lithology"],
+        ),
+        record_route,
+        focus_steps=["porosity", "saturation"],
+        curves=["PHIT", "PHIE", "SW"],
+    )
+
+    por_step = _step_by_name(result, "porosity")
+    sat_step = _step_by_name(result, "saturation")
+    vcl = well.get("VCL").data
+    phit = well.get("PHIT").data
+    expected_phi_cl = float(np.nanmean(phit[np.isfinite(vcl) & (vcl > 0.9)]))
+
+    assert por_step.parameters["phi_cl_source"] == "vcl_gt_0.9_average_phit"
+    assert sat_step.parameters["phi_cl_source"] == "vcl_gt_0.9_average_phit"
+    assert por_step.parameters["phi_cl"] == pytest.approx(expected_phi_cl)
+    assert sat_step.parameters["phi_cl"] == pytest.approx(por_step.parameters["phi_cl"])
+    assert sat_step.parameters["sw_model_sample_counts"] == {"archie": 4, "dual_water": 8}
 
 
 def test_saturation_skips_when_phie_is_unavailable_even_if_rhob_exists(record_route):
