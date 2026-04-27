@@ -38,7 +38,7 @@ class HydrocarbonAnalysis:
         phie_effective, _ = get_curve_data(well, ["PHIE"])
         phid, _ = get_curve_data(well, ["PHID"])
         phin, _ = get_curve_data(well, ["PHIN", "NPHIC", "NPHI_HC", "NPHI"])
-        bad_hole, _ = get_curve_data(well, ["BAD_HOLE", "BADHOLEFLAG", "BAD_HOLE_FLAG"])
+        bad_hole, _ = get_curve_data(well, ["BAD_HOLE", "BAD_HOLE_FLAG"])
         dtc, _ = get_curve_data(well, ["DTC", "DT"])
         dts, _ = get_curve_data(well, ["DTS"])
         perm, _ = get_curve_data(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])

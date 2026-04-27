@@ -12,17 +12,17 @@ from typing import Dict, List, Optional
 ALIAS_MAP: Dict[str, List[str]] = {
     # Deep Resistivity (RDEP)
     "RDEP": ["RT", "ILD", "RILD", "LLD", "AT60", "AT90", "HRLT", "RESD",
-             "RD", "RDEEP", "ILM", "AO60", "AO90", "RLA5", "M2RX"],
+             "RD", "RDEEP", "AO60", "AO90", "RLA5","ILS", "M2RX"],
 
     # Medium Resistivity (RMED)
-    "RMED": ["LLS", "ILS", "AT10", "RLLS", "SFLU", "RESS", "ILM",
-             "RSFL", "AT20", "AT30", "SFL", "RM", "RMED", "RLA3"],
+    "RMED": ["AT10", "RLLS", "SFLU", "RESS", "ILM",
+             "AT30", "RM", "RMED", "RLA3"],
 
     # Shallow Resistivity (RSHA)
-    "RSHA": ["LLS", "RLLS", "AT10", "AT20", "AT30", "SFL", "RSFL", "RLA1", "RS"],
+    "RSHA": ["LLS", "RLLS", "AT10", "AT20", "AT30", "SFL", "RSFL", "RLA1", "RS", "RSHALLOW"],
     
     # Flushed zone Resistivity (RXO)
-    "RXO":  ["MSFL", "MCFL", "MLL", "RXOZ", "RXO", "RMLL", "PL", "RSHALLOW"],
+    "RXO":  ["MSFL", "MCFL", "MLL", "RXOZ", "RXO", "RMLL", "PL"],
 
     # Bulk Density (RHOB)
     "RHOB": ["RHOB", "ZDEN", "RHOZ", "DEN", "DENSITY", "DENS",

@@ -135,7 +135,7 @@ class NumericalStatisticalAnalysis:
         deviation_labels[(deviation_count >= 3) | (extreme_count >= 1)] = "SIGNIFICANT_DEVIATION_ZONE"
         deviation_labels[extreme_count >= 2] = "EXTREME_DEVIATION_ZONE"
 
-        badhole, _ = get_curve_data(well, ["BADHOLEFLAG", "BAD_HOLE", "BAD_HOLE_FLAG"])
+        badhole, _ = get_curve_data(well, ["BAD_HOLE", "BAD_HOLE_FLAG"])
         drho, _ = get_curve_data(well, ["DRHO"])
         quality_labels = np.full(n_samples, "UNKNOWN_LOG_QUALITY", dtype=object)
         if badhole is not None:
@@ -306,9 +306,9 @@ class NumericalStatisticalAnalysis:
                 "log_quality_control_assessment": build_section(
                     well,
                     quality_labels,
-                    description="Log quality from BADHOLEFLAG/BAD_HOLE and DRHO.",
+                    description="Log quality from BAD_HOLE and DRHO.",
                     methodology="Poor quality is triggered by bad-hole flags or density-correction magnitude.",
-                    calculation_thresholds="POOR_LOG_QUALITY if BADHOLEFLAG/BAD_HOLE > 0.5 or |DRHO| > 0.1.",
+                    calculation_thresholds="POOR_LOG_QUALITY if BAD_HOLE > 0.5 or |DRHO| > 0.1.",
                 ),
                 "advanced_parameter_characterization": build_section(
                     well,
