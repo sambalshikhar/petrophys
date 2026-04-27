@@ -360,7 +360,7 @@ def test_bad_hole_accepts_cali_and_cal_namings(curve_to_keep, record_route):
         DynamicWorkflowConfig(skip_steps=["vclay", "lithology", "porosity", "saturation"]),
         record_route,
         focus_steps=["bad_hole"],
-        curves=["BAD_HOLE", "BADHOLEFLAG"],
+        curves=["BAD_HOLE"],
     )
     step = _step_by_name(result, "bad_hole")
 
@@ -391,7 +391,7 @@ def test_bad_hole_uses_depth_dependent_bs_curve(record_route):
         DynamicWorkflowConfig(skip_steps=["vclay", "lithology", "porosity", "saturation"]),
         record_route,
         focus_steps=["bad_hole"],
-        curves=["BAD_HOLE", "BADHOLEFLAG"],
+        curves=["BAD_HOLE"],
     )
     step = _step_by_name(result, "bad_hole")
 

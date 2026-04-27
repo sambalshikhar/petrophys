@@ -107,7 +107,7 @@ class WellboreQC:
             derived_curves={
                 "CALI_SMOOTH": DerivedCurve(cali_smooth, "in", "Smoothed caliper"),
                 "CALI_ROUGHNESS": DerivedCurve(cali_roughness, "", "Caliper roughness"),
-                "BADHOLEFLAG": DerivedCurve(badholeflag, "", "Bad-hole flag"),
+                "BAD_HOLE": DerivedCurve(badholeflag, "", "Bad-hole flag"),
             },
             metadata={
                 "qc_summary": {

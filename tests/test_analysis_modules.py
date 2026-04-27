@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -7,13 +8,15 @@ from petrophys.analysis import HydrocarbonAnalysis
 from petrophys.io.example_format_export import (
     _build_lithology_group_segments,
     _build_reference_derived_log_status,
+    _build_reference_json_payload,
     _build_reference_statistics,
+    _category_derived_logs_computed,
     _compact_curve_note,
     _curve_value_summary,
     _input_log_display_list,
     _missing_curve_reason,
 )
-from petrophys.utils.analysis_helpers import DerivedCurve
+from petrophys.utils.analysis_helpers import CategoryAnalysisResult, DerivedCurve
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 from petrophys.workflow import run_comprehensive_analysis
 
@@ -196,6 +199,7 @@ def test_reference_statistics_use_canonical_names_and_skip_raw_lithology_aliases
     well.add_curve("DCAL", np.array([0.1, 0.2, 0.3]), "in", "Caliper delta")
     well.add_curve("DT", np.array([80.0, 81.0, 82.0]), "us/ft", "Sonic alias")
     well.add_curve("DTC", np.array([79.0, 80.0, 81.0]), "us/ft", "Sonic")
+    well.add_curve("BAD_HOLE", np.array([0.0, 1.0, 0.0]), "", "Internal bad-hole flag")
 
     stats = _build_reference_statistics(
         well,
@@ -216,6 +220,74 @@ def test_reference_statistics_use_canonical_names_and_skip_raw_lithology_aliases
     assert "LITHOLOGY_GEOLINK_overall" not in stats
     assert "DCAL_overall" not in stats
     assert "DT_overall" not in stats
+    assert "BAD_HOLE_overall" in stats
+    assert "BADHOLEFLAG_overall" not in stats
+
+
+def test_category_derived_logs_include_full_workflow_outputs_not_raw_inputs():
+    well = Well("DERIVED-LIST")
+    well.depth = np.arange(3.0)
+    well.add_curve("DEPT", well.depth, "ft", "Depth")
+    well.add_curve("GR", np.array([40.0, 45.0, 50.0]), "API", "Gamma Ray")
+    original_curves = set(well.curves)
+    well.add_curve("PHIE", np.array([0.12, 0.14, 0.16]), "v/v", "Effective Porosity")
+    well.add_curve("PERM", np.array([10.0, 20.0, 30.0]), "mD", "Permeability")
+    well.add_curve("BAD_HOLE", np.array([0.0, 1.0, 0.0]), "", "Internal bad-hole flag")
+
+    workflow_result = SimpleNamespace(
+        base_result=SimpleNamespace(
+            steps_executed=[
+                SimpleNamespace(step="porosity", output_curves=["PHIE"]),
+                SimpleNamespace(step="permeability", output_curves=["PERM"]),
+                SimpleNamespace(step="bad_hole", output_curves=["BAD_HOLE"]),
+            ],
+            steps_skipped=[],
+        ),
+        zone_results=[],
+    )
+    category_result = CategoryAnalysisResult(
+        category_key="SATURATION_ANALYSIS",
+        sections={},
+        derived_curves={
+            "BVW_EFFICIENCY": DerivedCurve(np.array([0.2, 0.3, 0.4]), "", "BVW efficiency"),
+            "GR": DerivedCurve(np.array([1.0, 1.0, 1.0]), "API", "Raw gamma ray duplicate"),
+        },
+    )
+
+    computed = _category_derived_logs_computed(
+        "saturation",
+        well,
+        workflow_result,
+        original_curves,
+        category_result,
+    )
+
+    assert "PHIE" in computed
+    assert "PERM" in computed
+    assert "BVW_EFFICIENCY" in computed
+    assert "BAD_HOLE" in computed
+    assert "BADHOLEFLAG" not in computed
+    assert "GR" not in computed
+
+
+def test_reference_json_omits_derived_log_status_by_default():
+    well = Well("PAYLOAD-STATUS")
+    well.depth = np.arange(3.0)
+    well.add_curve("DEPT", well.depth, "ft", "Depth")
+    well.add_curve("TMPC", np.array([40.0, 41.0, 42.0]), "degC", "Temperature")
+    workflow_result = SimpleNamespace(
+        base_result=SimpleNamespace(steps_executed=[], steps_skipped=[], warnings=[], errors=[]),
+        zone_results=[],
+    )
+
+    payload = _build_reference_json_payload(
+        well,
+        workflow_result,
+        Path("PAYLOAD-STATUS.las"),
+        original_curves={"DEPT"},
+    )
+
+    assert "derived_log_status" not in payload["analysis_results"]["data_completeness"]
 
 
 def test_missing_curve_reason_names_category_input_requirements():
@@ -266,7 +338,7 @@ def test_vpvs_status_skips_when_dts_is_unavailable():
     vpvs = next(item for item in statuses if item["mnemonic"] == "VP_VS_RATIO")
 
     assert vpvs["status"] == "missing"
-    assert vpvs["reason"] == "not calculated because DTS was unavailable"
+    assert vpvs["reason"] == "DTS had no finite samples in this segment"
 
 
 def test_sw_missing_note_lists_blocking_inputs():
@@ -375,7 +447,8 @@ def test_run_comprehensive_analysis_returns_all_categories_and_curves():
     }
     assert expected_keys.issubset(payload.keys())
     assert well.get("PHIT_GAS_CORR") is not None
-    assert well.get("BADHOLEFLAG") is not None
+    assert well.get("BAD_HOLE") is not None
+    assert well.get("BADHOLEFLAG") is None
     assert well.get("ACOUSTIC_IMPEDANCE") is not None
     assert well.get_result("HYDROCARBON_ANALYSIS") is not None
 

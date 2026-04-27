@@ -266,6 +266,7 @@ DUPLICATE_RAW_CURVES = {
 MISSING_LITHOLOGY_LABEL = "NO_LITHOLOGY_DATA"
 
 REFERENCE_DERIVED_LOG_EXCLUDE = {
+    "BADHOLEFLAG",
     "SWA",
     "SWXOA",
     "SXO-ARCHIE",
@@ -284,7 +285,6 @@ REFERENCE_DERIVED_LOG_EXCLUDE = {
 REFERENCE_DERIVED_LOG_TARGETS = [
     "TMPC",
     "BAD_HOLE",
-    "BADHOLEFLAG",
     "VCL",
     "RMF",
     "RW",
@@ -336,7 +336,6 @@ CORE_ONLY_CONTEXT_CURVES = {
 REFERENCE_CURVE_TO_STEP = {
     "TMPC": "temperature",
     "BAD_HOLE": "bad_hole",
-    "BADHOLEFLAG": "bad_hole",
     "VCL": "vclay",
     "RMF": "rmf",
     "RW": "rw",
@@ -489,7 +488,6 @@ CATEGORY_CONTEXT_SPECS = {
             "RW",
             "RMF",
             "BAD_HOLE",
-            "BADHOLEFLAG",
             "DATA_COMPLETENESS",
             "GR_GRAD",
             "RHOB_GRAD",
@@ -970,7 +968,7 @@ def _workflow_bad_hole_analysis(
     if details is None:
         return None
 
-    curve = well.get("BADHOLEFLAG") or well.get("BAD_HOLE")
+    curve = well.get("BAD_HOLE")
     if curve is None:
         return None
 
@@ -1323,19 +1321,23 @@ def _category_derived_logs_computed(
     original_curves: set[str],
     category_result: CategoryAnalysisResult,
 ) -> List[str]:
-    base_derived = set(_derived_logs_computed(well, workflow_result, original_curves))
-    category_targets = {
-        _canonical_delivery_curve_name(name)
-        for name in CATEGORY_CONTEXT_SPECS[category]["targets"]
+    computed = set(_derived_logs_computed(well, workflow_result, original_curves))
+    original_canonical = {
+        _canonical_delivery_curve_name(curve)
+        for curve in original_curves
     }
 
-    derived_curves = {
-        _canonical_delivery_curve_name(name)
-        for name, curve in category_result.derived_curves.items()
-        if curve is not None and np.any(np.isfinite(_normalize_numeric_array(curve.data)))
-    }
+    for name, curve in category_result.derived_curves.items():
+        canonical = _canonical_delivery_curve_name(name)
+        if canonical in original_canonical:
+            continue
+        if canonical in CORE_ONLY_CONTEXT_CURVES or canonical in REFERENCE_DERIVED_LOG_EXCLUDE:
+            continue
+        if canonical in {"TEMP", "PHI_Z", "LITHOLOGY_GEOLINK"}:
+            continue
+        if curve is not None and np.any(np.isfinite(_normalize_numeric_array(curve.data))):
+            computed.add(canonical)
 
-    computed = (base_derived & category_targets) | (derived_curves & category_targets)
     if category == "lithology":
         if "GT_LITHOLOGY_GROUP_CODE" in computed:
             computed.update({"LITHOLOGY_GROUP", "LITHOLOGY_NAME"})
@@ -1397,11 +1399,11 @@ def _missing_curve_reason(
         has_dtc = _has_finite_any_curve(well, ("DTC", "DT"))
         has_dts = _has_finite_curve(well, "DTS")
         if not has_dtc and not has_dts:
-            return "not calculated because both DTC and DTS were unavailable"
+            return "DTC/DT and DTS had no finite samples in this segment"
         if not has_dtc:
-            return "not calculated because DTC was unavailable"
+            return "DTC/DT had no finite samples in this segment"
         if not has_dts:
-            return "not calculated because DTS was unavailable"
+            return "DTS had no finite samples in this segment"
         return "DTC and DTS were present but VP_VS_RATIO was not written"
 
     if curve == "TMPC":
@@ -3333,10 +3335,10 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
             )
             return f"PHIE: skipped because {reason}. Inputs/status: {inputs}."
 
-    if curve in {"BAD_HOLE", "BADHOLEFLAG"} and step is not None:
+    if curve == "BAD_HOLE" and step is not None:
         from petrophys.base.constants import DefaultParameters
 
-        bad_curve = well.get("BAD_HOLE") or well.get("BADHOLEFLAG")
+        bad_curve = well.get("BAD_HOLE")
         bad_count = int(np.nansum(_normalize_numeric_array(bad_curve.data) > 0.5)) if bad_curve is not None else 0
         bad_pct = bad_count / max(int(well.n_samples), 1) * 100.0
         bs_data = _bit_size_curve_data(well)
@@ -3520,6 +3522,15 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
     }
     if curve in simple and status != "missing":
         return simple[curve]
+    if curve == "VP_VS_RATIO" and status == "missing":
+        inputs = _finite_input_status_text(
+            well,
+            [
+                ("DTC/DT", ("DTC", "DT")),
+                ("DTS", ("DTS",)),
+            ],
+        )
+        return f"VP_VS_RATIO: skipped because {reason}. Required inputs/status: {inputs}."
 
     category_simple = {
         "LITHOLOGY_GROUP": (
@@ -5330,6 +5341,8 @@ def _reference_statistics_curve_key(mnemonic: str, well: "Well") -> Optional[str
     canonical = _canonical_delivery_curve_name(upper)
     if upper in {"DEPT", "DEPTH"}:
         return None
+    if canonical == "BADHOLEFLAG":
+        return None
     if canonical in CORE_ONLY_CONTEXT_CURVES:
         return None
     if upper == "LITHOLOGY_GEOLINK":
@@ -5463,7 +5476,7 @@ def _build_reference_json_payload(
     analysis_summary_override: Optional[dict[str, Any]] = None,
     derived_logs_override: Optional[Sequence[str]] = None,
     status_targets_override: Optional[Sequence[str]] = None,
-    include_derived_log_status: bool = True,
+    include_derived_log_status: bool = False,
     extra_statistics_curves: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     well_name = _reference_well_name(source_file, well)
@@ -5589,7 +5602,7 @@ def _write_reference_analysis_json_to_path(
     analysis_summary_override: Optional[dict[str, Any]] = None,
     derived_logs_override: Optional[Sequence[str]] = None,
     status_targets_override: Optional[Sequence[str]] = None,
-    include_derived_log_status: bool = True,
+    include_derived_log_status: bool = False,
     extra_statistics_curves: Optional[dict[str, Any]] = None,
 ) -> Path:
     payload = _build_reference_json_payload(
@@ -6317,7 +6330,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                             analysis_summary_override=category_result.to_dict(),
                             derived_logs_override=derived_logs,
                             status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
-                            include_derived_log_status=True,
+                            include_derived_log_status=False,
                             extra_statistics_curves=category_result.derived_curves,
                         )
 
@@ -6434,7 +6447,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                             analysis_summary_override=category_result.to_dict(),
                             derived_logs_override=derived_logs,
                             status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
-                            include_derived_log_status=True,
+                            include_derived_log_status=False,
                             extra_statistics_curves=category_result.derived_curves,
                         )
 

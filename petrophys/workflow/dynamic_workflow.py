@@ -1083,10 +1083,9 @@ class DynamicWorkflow:
             bit_size=bit_size
         )
         well.add_curve("BAD_HOLE", flags["bad_hole"].astype(float), "", "Bad Hole Flag")
-        well.add_curve("BADHOLEFLAG", flags["bad_hole"].astype(float), "", "Bad Hole Flag")
 
         n_bad = int(np.sum(flags["bad_hole"]))
-        trace.output_curves = ["BAD_HOLE", "BADHOLEFLAG"]
+        trace.output_curves = ["BAD_HOLE"]
         trace.parameters["bit_size_used"] = representative_bit_size
         trace.parameters["bit_size_source"] = bit_size_source
         trace.parameters["bit_size_unique_values"] = bit_size_unique_values
