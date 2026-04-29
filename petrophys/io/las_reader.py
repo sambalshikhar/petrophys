@@ -73,6 +73,17 @@ class LASReader:
             pass
         return default
 
+    def get_header_unit(self, key: str, default: str = "") -> str:
+        """Get unit text from LAS well or parameter header."""
+        try:
+            if hasattr(self._las.well, key):
+                return str(getattr(self._las.well, key).unit or default)
+            if hasattr(self._las.params, key):
+                return str(getattr(self._las.params, key).unit or default)
+        except (AttributeError, KeyError):
+            pass
+        return default
+
     def get_curve_data(self, mnemonic: str) -> Optional[np.ndarray]:
         """Get data for a specific curve."""
         if mnemonic in self.curves:
@@ -116,6 +127,7 @@ class LASReader:
         well.header.kb_elevation = self._parse_float(self.get_header_value("EKBF"))
         well.header.td = self._parse_float(self.get_header_value("TD"))
         well.header.bht = self._parse_float(self.get_header_value("BHT"))
+        well.header.bht_unit = self.get_header_unit("BHT", well.header.bht_unit) or well.header.bht_unit
         well.header.rm = self._parse_float(self.get_header_value("RM"))
         well.header.rmf = self._parse_float(self.get_header_value("RMF"))
         well.header.rmc = self._parse_float(self.get_header_value("RMC"))
@@ -198,6 +210,7 @@ class LASReader:
                 bht = (bht * 9.0 / 5.0) + 32.0
             if bht is not None:
                 well.header.bht = bht
+                well.header.bht_unit = "F"
 
         if well.header.rmf is None:
             rmf = self._get_constant_zoned_float("RMF")

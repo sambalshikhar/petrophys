@@ -9,6 +9,7 @@ from typing import Sequence
 import numpy as np
 from scipy.cluster.vq import kmeans2
 
+from petrophys.petrophysics.elastic import calculate_elastic_properties
 from petrophys.utils.analysis_helpers import (
     CategoryAnalysisResult,
     DerivedCurve,
@@ -157,42 +158,24 @@ class NumericalStatisticalAnalysis:
         brittleness = np.full(n_samples, np.nan, dtype=float)
         electrofacies = np.full(n_samples, np.nan, dtype=float)
 
-        vp = np.full(n_samples, np.nan, dtype=float)
-        if dtc is not None:
-            valid = np.isfinite(dtc) & (dtc >= 20.0) & (dtc <= 300.0)
-            vp[valid] = 1e6 / (dtc[valid] * 0.3048)
-        vs = np.full(n_samples, np.nan, dtype=float)
-        if dts is not None:
-            valid = np.isfinite(dts) & (dts >= 20.0) & (dts <= 600.0)
-            vs[valid] = 1e6 / (dts[valid] * 0.3048)
-        else:
-            valid = np.isfinite(vp)
-            vs[valid] = np.maximum((vp[valid] - 1360.0) / 1.16, 1.0)
+        if rhob is not None and dtc is not None:
+            elastic = calculate_elastic_properties(rhob, dtc, dts)
+            acoustic_impedance = np.clip(elastic.acoustic_impedance, 1e6, 30e6)
+            poisson_ratio = elastic.poisson_ratio
+            young_mod = elastic.young_mod_gpa
 
-        if rhob is not None and np.any(np.isfinite(vp)):
-            valid = np.isfinite(rhob) & np.isfinite(vp)
-            acoustic_impedance[valid] = np.clip(vp[valid] * rhob[valid] * 1000.0, 1e6, 30e6)
+        if np.any(np.isfinite(acoustic_impedance)):
             derived_curves["ACOUSTIC_IMPEDANCE"] = DerivedCurve(
                 acoustic_impedance,
-                "Pa.s/m",
+                "kg/m2/s",
                 "Acoustic impedance",
             )
 
-        if rhob is not None and np.any(np.isfinite(vp)) and np.any(np.isfinite(vs)):
-            valid = np.isfinite(rhob) & np.isfinite(vp) & np.isfinite(vs) & (vp > vs)
-            rho_si = rhob * 1000.0
-            ratio = np.maximum((vp[valid] / vs[valid]) ** 2, 1.0001)
-            poisson_ratio[valid] = np.clip(
-                (0.5 * ratio - 1.0) / (ratio - 1.0),
-                0.0,
-                0.49,
-            )
-            numer = rho_si[valid] * (vs[valid] ** 2) * (3.0 * (vp[valid] ** 2) - 4.0 * (vs[valid] ** 2))
-            denom = np.maximum((vp[valid] ** 2) - (vs[valid] ** 2), 1.0)
-            young_mod[valid] = np.clip(numer / denom / 1e9, 0.0, None)
-            e_norm = np.clip((young_mod[valid] - 5.0) / 80.0, 0.0, 1.0)
-            v_norm = np.clip((0.45 - poisson_ratio[valid]) / 0.35, 0.0, 1.0)
-            brittleness[valid] = np.clip((e_norm + v_norm) / 2.0, 0.0, 1.0)
+        elastic_valid = np.isfinite(poisson_ratio) & np.isfinite(young_mod)
+        if np.any(elastic_valid):
+            e_norm = np.clip((young_mod[elastic_valid] - 5.0) / 80.0, 0.0, 1.0)
+            v_norm = np.clip((0.45 - poisson_ratio[elastic_valid]) / 0.35, 0.0, 1.0)
+            brittleness[elastic_valid] = np.clip((e_norm + v_norm) / 2.0, 0.0, 1.0)
             derived_curves["POISSON_RATIO"] = DerivedCurve(poisson_ratio, "", "Poisson ratio")
             derived_curves["YOUNG_MOD"] = DerivedCurve(young_mod, "GPa", "Young's modulus")
             derived_curves["BRITTLENESS_INDEX"] = DerivedCurve(
@@ -315,8 +298,8 @@ class NumericalStatisticalAnalysis:
                     advanced_labels,
                     description="Acoustic, elastic, and electrofacies characterization.",
                     methodology=(
-                        "Computes Vp from DTC 20-300 us/ft; uses DTS 20-600 us/ft for Vs or Gardner-style "
-                        "Vs fallback from Vp; then computes AI, Young's modulus, brittleness, and electrofacies."
+                        "Computes Vp=304800/DTC from DTC 20-300 us/ft and Vs=304800/DTS from DTS "
+                        "20-600 us/ft; then computes AI, Young's modulus, brittleness, and electrofacies."
                     ),
                     calculation_thresholds=(
                         "ADVANCED_DATA_AVAILABLE when brittleness > 0.6, AI > 15e6, "

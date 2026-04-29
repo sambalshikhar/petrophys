@@ -41,6 +41,11 @@ from petrophys.petrophysics.cementation import (
     ArchieParameters,
     pickett_analysis,
 )
+from petrophys.petrophysics.elastic import (
+    ElasticProperties,
+    calculate_elastic_properties,
+    velocity_from_slowness_us_per_ft,
+)
 
 __all__ = [
     # Porosity
@@ -70,4 +75,8 @@ __all__ = [
     # Cementation
     "ArchieParameters",
     "pickett_analysis",
+    # Elastic properties
+    "ElasticProperties",
+    "calculate_elastic_properties",
+    "velocity_from_slowness_us_per_ft",
 ]
