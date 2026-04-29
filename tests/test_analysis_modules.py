@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from petrophys import Well
-from petrophys.analysis import HydrocarbonAnalysis
+from petrophys.analysis import HydrocarbonAnalysis, NumericalStatisticalAnalysis
 from petrophys.io.example_format_export import (
     _build_lithology_group_segments,
     _build_reference_derived_log_status,
@@ -191,8 +191,8 @@ def test_reference_statistics_use_canonical_names_and_skip_raw_lithology_aliases
     well = Well("STATS-CANONICAL")
     well.depth = np.arange(3.0)
     well.add_curve("DEPT", well.depth, "ft", "Depth")
-    well.add_curve("TEMP", np.array([100.123456, 101.0, 102.0]), "degF", "Temperature alias")
-    well.add_curve("TMPC", np.array([37.0, 38.0, 39.0]), "degC", "Temperature")
+    well.add_curve("TEMP", np.array([100.123456, 101.0, 102.0]), "degF", "Temperature")
+    well.add_curve("TMPC", np.array([37.0, 38.0, 39.0]), "degC", "Legacy Celsius temperature alias")
     well.add_curve("PHI_Z", np.array([0.1, 0.2, 0.3]), "", "Phi z alias")
     well.add_curve("LITHOLOGY_GEOLINK", np.array([1.0, 1.0, 2.0]), "", "Lithology")
     well.add_curve("CALI", np.array([8.5, 8.6, 8.7]), "in", "Caliper")
@@ -209,13 +209,13 @@ def test_reference_statistics_use_canonical_names_and_skip_raw_lithology_aliases
         },
     )
 
-    assert "TMPC_overall" in stats
-    assert stats["TMPC_overall"]["minimum"] == 37.0
+    assert "TEMP_overall" in stats
+    assert stats["TEMP_overall"]["minimum"] == 100.1235
     assert "PHI_NORM_overall" in stats
     assert "ND_SEPARATION_overall" in stats
     assert "COMPOSITE_CLAY_overall" in stats
     assert "COMPOSITE_CLAY_INDICATOR_overall" in stats
-    assert "TEMP_overall" not in stats
+    assert "TMPC_overall" not in stats
     assert "PHI_Z_overall" not in stats
     assert "LITHOLOGY_GEOLINK_overall" not in stats
     assert "DCAL_overall" not in stats
@@ -274,7 +274,7 @@ def test_reference_json_omits_derived_log_status_by_default():
     well = Well("PAYLOAD-STATUS")
     well.depth = np.arange(3.0)
     well.add_curve("DEPT", well.depth, "ft", "Depth")
-    well.add_curve("TMPC", np.array([40.0, 41.0, 42.0]), "degC", "Temperature")
+    well.add_curve("TEMP", np.array([104.0, 105.8, 107.6]), "degF", "Temperature")
     workflow_result = SimpleNamespace(
         base_result=SimpleNamespace(steps_executed=[], steps_skipped=[], warnings=[], errors=[]),
         zone_results=[],
@@ -451,6 +451,35 @@ def test_run_comprehensive_analysis_returns_all_categories_and_curves():
     assert well.get("BADHOLEFLAG") is None
     assert well.get("ACOUSTIC_IMPEDANCE") is not None
     assert well.get_result("HYDROCARBON_ANALYSIS") is not None
+
+
+def test_numerical_elastic_properties_use_us_per_ft_conversion_and_require_dts():
+    depth = np.array([1000.0, 1001.0])
+    well = Well("ELASTIC-1")
+    well.depth = depth
+    well.depth_unit = "ft"
+    well.add_curve("RHOB", np.array([2.30, 2.30]), "g/cc", "Bulk Density")
+    well.add_curve("DTC", np.array([100.0, 100.0]), "us/ft", "Compressional Sonic")
+    well.add_curve("DTS", np.array([200.0, 200.0]), "us/ft", "Shear Sonic")
+
+    NumericalStatisticalAnalysis().analyze(well, add_curves=True)
+
+    assert np.isclose(well.get("ACOUSTIC_IMPEDANCE").data[0], 7010400.0)
+    assert np.isclose(well.get("POISSON_RATIO").data[0], 1.0 / 3.0)
+    assert np.isclose(well.get("YOUNG_MOD").data[0], 14.2451328, rtol=1e-6)
+
+    no_dts = Well("ELASTIC-NO-DTS")
+    no_dts.depth = depth
+    no_dts.depth_unit = "ft"
+    no_dts.add_curve("RHOB", np.array([2.30, 2.30]), "g/cc", "Bulk Density")
+    no_dts.add_curve("DTC", np.array([100.0, 100.0]), "us/ft", "Compressional Sonic")
+
+    NumericalStatisticalAnalysis().analyze(no_dts, add_curves=True)
+
+    assert no_dts.get("ACOUSTIC_IMPEDANCE") is not None
+    assert no_dts.get("POISSON_RATIO") is None
+    assert no_dts.get("YOUNG_MOD") is None
+    assert no_dts.get("BRITTLENESS_INDEX") is None
 
 
 def test_dynamic_workflow_computes_bvw_mhi_and_net_pay_from_canonical_saturation_curves():

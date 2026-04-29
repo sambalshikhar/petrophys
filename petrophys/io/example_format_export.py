@@ -48,7 +48,7 @@ PREFERRED_CURVE_ORDER = [
     "RSHA",
     "RXO",
     "SP",
-    "TMPC",
+    "TEMP",
     "PHIC",
     "GDEN",
     "KH_CORE",
@@ -103,6 +103,7 @@ FAMILY_LABELS = {
     "RSHA": "Resistivity - Shallow",
     "RXO": "Resistivity - Flushed Zone",
     "SP": "Spontaneous Potential",
+    "TEMP": "Temperature",
     "TMPC": "Temperature",
     "PHIC": "Core Porosity",
     "GDEN": "Grain Density",
@@ -242,7 +243,6 @@ EXCLUDED_LAS_CURVES = {
     "SXO-INDONESIA",
     "SXO-NIGERIA_SCHLUMBERGER",
     "SXO-NORTH_SEA",
-    "TEMP",
     "VCLAY",
     "VCLGR",
     "VCLSP",
@@ -283,7 +283,7 @@ REFERENCE_DERIVED_LOG_EXCLUDE = {
 }
 
 REFERENCE_DERIVED_LOG_TARGETS = [
-    "TMPC",
+    "TEMP",
     "BAD_HOLE",
     "VCL",
     "RMF",
@@ -334,7 +334,7 @@ CORE_ONLY_CONTEXT_CURVES = {
 }
 
 REFERENCE_CURVE_TO_STEP = {
-    "TMPC": "temperature",
+    "TEMP": "temperature",
     "BAD_HOLE": "bad_hole",
     "VCL": "vclay",
     "RMF": "rmf",
@@ -388,7 +388,7 @@ PRIMARY_LOGS_FOR_COMPLETENESS = [
     "DTC",
     "DTS",
     "PEF",
-    "TMPC",
+    "TEMP",
     "RMF",
     "RW",
     "LITHOLOGY_GEOLINK",
@@ -398,7 +398,7 @@ CATEGORY_CONTEXT_SPECS = {
     "hydrocarbon": {
         "analyzer": HydrocarbonAnalysis,
         "targets": {
-            "TMPC",
+            "TEMP",
             "RMF",
             "RW",
             "RWA",
@@ -428,7 +428,7 @@ CATEGORY_CONTEXT_SPECS = {
     "saturation": {
         "analyzer": SaturationAnalysis,
         "targets": {
-            "TMPC",
+            "TEMP",
             "RMF",
             "RW",
             "RWA",
@@ -484,7 +484,7 @@ CATEGORY_CONTEXT_SPECS = {
     "numerical": {
         "analyzer": NumericalStatisticalAnalysis,
         "targets": {
-            "TMPC",
+            "TEMP",
             "RW",
             "RMF",
             "BAD_HOLE",
@@ -661,6 +661,14 @@ def _convert_temperature_to_celsius(data: np.ndarray, unit: str) -> np.ndarray:
     return numeric
 
 
+def _convert_temperature_to_fahrenheit(data: np.ndarray, unit: str) -> np.ndarray:
+    text = (unit or "").strip().lower()
+    numeric = _normalize_numeric_array(data)
+    if "c" in text and "f" not in text:
+        return (numeric * 9.0 / 5.0) + 32.0
+    return numeric
+
+
 def _first_curve(well: "Well", candidates: Sequence[str]):
     for mnemonic in candidates:
         curve = well.get(mnemonic)
@@ -723,15 +731,15 @@ def _build_alias_specs(well: "Well") -> List[ExportCurveSpec]:
             )
         )
 
-    temp = _first_curve(well, ["TMPC", "TEMP"])
+    temp = _first_curve(well, ["TEMP", "TMPC"])
     if temp is not None:
         specs.append(
             ExportCurveSpec(
-                mnemonic="TMPC",
-                unit="degC",
+                mnemonic="TEMP",
+                unit="degF",
                 description="Temperature",
-                family=FAMILY_LABELS["TMPC"],
-                data=_convert_temperature_to_celsius(temp.data, temp.unit),
+                family=FAMILY_LABELS["TEMP"],
+                data=_convert_temperature_to_fahrenheit(temp.data, temp.unit),
                 source_curves=[temp.mnemonic],
             )
         )
@@ -1107,8 +1115,8 @@ def _ordered_unique(values: Sequence[Any]) -> List[Any]:
 
 def _canonical_delivery_curve_name(curve: str) -> str:
     upper = curve.upper()
-    if upper == "TEMP":
-        return "TMPC"
+    if upper == "TMPC":
+        return "TEMP"
     if upper == "PHI_Z":
         return "PHI_NORM"
     if upper == "SWA":
@@ -1226,7 +1234,7 @@ def _input_log_display_list(curves: set[str]) -> List[str]:
 
 def _target_curve_candidates(curve: str) -> List[str]:
     mapping = {
-        "TMPC": ["TMPC", "TEMP"],
+        "TEMP": ["TEMP", "TMPC"],
         "PHI_NORM": ["PHI_NORM", "PHI_Z"],
         "SW": ["SW", "SWA"],
         "SXO": ["SXO", "SWXOA"],
@@ -1290,7 +1298,7 @@ def _derived_logs_computed(
     # method-specific aliases that are internal compatibility artifacts.
     derived.difference_update(REFERENCE_DERIVED_LOG_EXCLUDE)
     derived.difference_update(CORE_ONLY_CONTEXT_CURVES)
-    derived.discard("TEMP")
+    derived.discard("TMPC")
     derived.discard("PHI_Z")
     derived.difference_update({"SWA", "SWXOA", "VCLAY", "VSH", "VCLGR", "VCLSP", "VCLND", "VCL_GR", "VCL_SP", "VCL_ND"})
     if (
@@ -1333,7 +1341,7 @@ def _category_derived_logs_computed(
             continue
         if canonical in CORE_ONLY_CONTEXT_CURVES or canonical in REFERENCE_DERIVED_LOG_EXCLUDE:
             continue
-        if canonical in {"TEMP", "PHI_Z", "LITHOLOGY_GEOLINK"}:
+        if canonical in {"PHI_Z", "LITHOLOGY_GEOLINK"}:
             continue
         if curve is not None and np.any(np.isfinite(_normalize_numeric_array(curve.data))):
             computed.add(canonical)
@@ -1406,7 +1414,7 @@ def _missing_curve_reason(
             return "DTS had no finite samples in this segment"
         return "DTC and DTS were present but VP_VS_RATIO was not written"
 
-    if curve == "TMPC":
+    if curve == "TEMP":
         return "not calculated because TEMP was unavailable and a fallback temperature profile could not be written"
 
     if curve == "RMF":
@@ -1684,7 +1692,13 @@ def _missing_curve_reason(
         return reason or "no plausible DTC samples in 20-300 us/ft after screening"
 
     if curve in {"POISSON_RATIO", "YOUNG_MOD", "BRITTLENESS_INDEX"}:
-        reason = missing_required({"RHOB": _has_finite_curve(well, "RHOB"), "DTC or DT": _has_finite_any_curve(well, ("DTC", "DT"))})
+        reason = missing_required(
+            {
+                "RHOB": _has_finite_curve(well, "RHOB"),
+                "DTC or DT": _has_finite_any_curve(well, ("DTC", "DT")),
+                "DTS": _has_finite_curve(well, "DTS"),
+            }
+        )
         return reason or "Vp/Vs elastic calculation had no finite plausible samples"
 
     if curve == "ELECTROFACIES":
@@ -1799,7 +1813,7 @@ def _computed_curve_detail(curve: str, step_results: dict[str, Any]) -> str:
         return "computed from permeability Swirr route"
     if curve == "MHI":
         return "computed as MHI = SW / SXO"
-    if curve == "TMPC":
+    if curve == "TEMP":
         return "computed as depth-wise formation temperature"
     if curve == "VP_VS_RATIO":
         return "computed as VP_VS_RATIO = DTS / DTC"
@@ -3359,19 +3373,19 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
             + f"; flagged={bad_count}/{well.n_samples} ({bad_pct:.0f}%)."
         )
 
-    if curve == "TMPC" and step is not None:
+    if curve == "TEMP" and step is not None:
         method = getattr(step, "method", "")
         temp_range = _curve_range_text(well, ["TEMP", "TMPC"], 1, "F")
         if method == "linear_gradient_from_BHT":
             return (
-                "TMPC: TEMP=surface+gradient*(DEPT-minDEPT)/100; BHT-derived gradient; "
+                "TEMP: TEMP=surface+gradient*(DEPT-minDEPT)/100; BHT-derived gradient; "
                 f"surface={_format_numeric(params.get('surface_temp_f'), 1)} F, "
                 f"BHT={_format_numeric(params.get('bht_f'), 1)} F, "
                 f"gradient={_format_numeric(params.get('gradient_f_per_100ft'), 4)} F/100ft"
                 + (f"; TEMP={temp_range}." if temp_range else ".")
             )
         return (
-            "TMPC: TEMP=surface+gradient*(DEPT-minDEPT)/100; fallback geothermal gradient; "
+            "TEMP: TEMP=surface+gradient*(DEPT-minDEPT)/100; fallback geothermal gradient; "
             f"surface={_format_numeric(params.get('surface_temp_f'), 1)} F, "
             f"gradient={_format_numeric(params.get('gradient_f_per_100ft'), 4)} F/100ft"
             + (f"; TEMP={temp_range}." if temp_range else ".")
@@ -3568,9 +3582,9 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
             "CONSISTENCY_RATIO: fraction of expected log relationships matched: GR-VCL positive, RHOB-porosity negative, "
             "NPHI/PHIN-porosity positive, RDEP-SW negative, PHIT/PHIE-PERM positive."
         ),
-        "ACOUSTIC_IMPEDANCE": "ACOUSTIC_IMPEDANCE: Vp*RHOB*1000 with Vp=1e6/(DTC*0.3048); clipped 1e6-30e6.",
-        "POISSON_RATIO": "POISSON_RATIO: (0.5*(Vp/Vs)^2-1)/((Vp/Vs)^2-1), clipped 0-0.49.",
-        "YOUNG_MOD": "YOUNG_MOD: dynamic Young's modulus from RHOB, Vp, and Vs; reported in GPa.",
+        "ACOUSTIC_IMPEDANCE": "ACOUSTIC_IMPEDANCE: RHOB*1000*Vp, Vp=304800/DTC_us_per_ft; clipped 1e6-30e6 kg/m2/s.",
+        "POISSON_RATIO": "POISSON_RATIO: (Vp^2-2Vs^2)/(2*(Vp^2-Vs^2)), with Vp=304800/DTC and Vs=304800/DTS; clipped 0-0.49.",
+        "YOUNG_MOD": "YOUNG_MOD: RHOB*1000*Vs^2*(3Vp^2-4Vs^2)/(Vp^2-Vs^2)/1e9 GPa.",
         "BRITTLENESS_INDEX": "BRITTLENESS_INDEX: mean of normalized Young's modulus and inverse Poisson-ratio term; clipped 0-1.",
         "ELECTROFACIES": "ELECTROFACIES: k-means cluster label from available RHOB, NPHI/PHIN, GR, and RDEP/RT features.",
         "S_V": "S_V: cumulative overburden stress from RHOB*1000*9.81*depth_step.",
@@ -3703,7 +3717,7 @@ def _build_concise_delivery_computation_notes(
     notes.extend(_compact_lithology_notes(well, lithology_mapping=lithology_mapping))
 
     for curve, step_name in (
-        ("TMPC", "temperature"),
+        ("TEMP", "temperature"),
         ("BAD_HOLE", "bad_hole"),
         ("VCL", "vclay"),
         ("RW", "rw"),
@@ -5386,10 +5400,13 @@ def _build_reference_statistics(
         if curve is None:
             continue
         prefer_existing = str(mnemonic).upper() != key
+        data = curve.data
+        if key == "TEMP":
+            data = _convert_temperature_to_fahrenheit(curve.data, curve.unit)
         _add_reference_statistics_payload(
             stats,
             key,
-            curve.data,
+            data,
             prefer_existing=prefer_existing,
         )
 
