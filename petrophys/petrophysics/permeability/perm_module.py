@@ -21,6 +21,7 @@ from petrophys.petrophysics.permeability.lith_vcl import (
     lith_vcl_parameter_labels,
     lith_vcl_permeability,
 )
+from petrophys.utils.analysis_helpers import get_curve, get_curve_data_depthwise
 
 PERMEABILITY_MAX_MD = DEFAULT_MAX_PERM_MD
 
@@ -44,6 +45,8 @@ class CorePermModel:
     source_formation: Optional[str] = None
     source_type: str = "same_well_core"
     input_curve: str = "PHIE"
+    core_porosity_curve: Optional[str] = None
+    core_permeability_curve: Optional[str] = None
 
     @property
     def n_core_points(self) -> int:
@@ -156,14 +159,12 @@ def estimate_apparent_swirr(
 
 def _resolve_resflag(well: "Well", phi: np.ndarray) -> tuple[np.ndarray, str]:
     """Resolve a reservoir flag, deriving a fallback only for direct callers."""
-    for curve_name in ("RESFLAG", "NET_RES"):
-        curve = well.get(curve_name)
-        if curve is not None:
-            return np.asarray(curve.data, dtype=float) > 0.5, curve_name
+    resflag, resflag_source, _ = get_curve_data_depthwise(well, ["RESFLAG", "NET_RES"])
+    if resflag is not None:
+        return np.asarray(resflag, dtype=float) > 0.5, resflag_source
 
-    vcl_curve = well.get("VCL") or well.get("VCLAY")
-    if vcl_curve is not None:
-        vcl = np.asarray(vcl_curve.data, dtype=float)
+    vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY"])
+    if vcl is not None:
         resflag = (
             np.isfinite(vcl)
             & np.isfinite(phi)
@@ -182,34 +183,31 @@ def _resolve_swirr_details(
 ) -> tuple[Union[float, np.ndarray], str, Optional[float], Dict[str, Any]]:
     """Resolve Swirr plus trace metadata."""
     if phi is None:
-        phi_curve = well.get("PHIE")
-        if phi_curve is None:
-            raise ValueError("PHIE required to resolve Swirr")
-        phi = phi_curve.data
+        phi, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+        if phi is None:
+            raise ValueError("PHIE or PHIT with finite samples required to resolve Swirr")
     phi = np.asarray(phi, dtype=float)
 
-    for curve_name in ("SWIRR", "SWI", "SWIR"):
-        curve = well.get(curve_name)
-        if curve is None:
-            continue
-
-        data = np.asarray(curve.data, dtype=float)
+    data, swirr_source_curve, swirr_meta = get_curve_data_depthwise(well, ["SWIRR", "SWI", "SWIR"])
+    if data is not None:
         valid = np.isfinite(data) & (data > 0) & (data <= 1)
-        if not np.any(valid):
-            continue
+        if np.any(valid):
+            valid_fraction = np.count_nonzero(valid) / max(len(data), 1)
+            metadata = {
+                "source_curve": swirr_source_curve,
+                "source_counts": swirr_meta.get("source_counts", {}),
+                "valid_fraction": float(valid_fraction),
+            }
+            if valid_fraction >= 0.5:
+                filled = data.copy()
+                filled[~valid] = float(np.nanmedian(data[valid]))
+                return filled, "swirr", None, metadata
 
-        valid_fraction = np.count_nonzero(valid) / max(len(data), 1)
-        metadata = {"source_curve": curve_name, "valid_fraction": float(valid_fraction)}
-        if valid_fraction >= 0.5:
-            filled = data.copy()
-            filled[~valid] = float(np.nanmedian(data[valid]))
-            return filled, curve_name.lower(), None, metadata
+            return float(np.nanmedian(data[valid])), "swirr_curve_median", None, metadata
 
-        return float(np.nanmedian(data[valid])), f"{curve_name.lower()}_median", None, metadata
-
-    sw_curve = well.get("SW")
-    rdep_curve = well.get("RDEP") or well.get("RT")
-    if sw_curve is None or rdep_curve is None:
+    sw, sw_source, _ = get_curve_data_depthwise(well, ["SW", "SWA", "SWT-LOG"])
+    rdep, rdep_source, rdep_meta = get_curve_data_depthwise(well, ["RDEP", "RT"])
+    if sw is None or rdep is None:
         return 0.20, "default_0.20", None, {
             "reason": "SW or RDEP/RT unavailable",
             "fallback_swirr": 0.20,
@@ -219,13 +217,15 @@ def _resolve_swirr_details(
 
     resflag, resflag_source = _resolve_resflag(well, phi)
     swirr_app, swirr, n_samples, source = estimate_swirr_app(
-        sw_curve.data,
-        rdep_curve.data,
+        sw,
+        rdep,
         resflag,
     )
     return swirr, source, None, {
         "resflag_source": resflag_source,
-        "rt_curve": rdep_curve.mnemonic,
+        "sw_curve": sw_source,
+        "rt_curve": rdep_source,
+        "rt_source_counts": rdep_meta.get("source_counts", {}),
         "rt_cutoff": 5.0,
         "percentile": 5.0,
         "min_samples": 10,
@@ -276,9 +276,9 @@ def _normalize_perm_method(value: str) -> str:
 def _resolve_porosity_curve_name(well: "Well") -> str:
     """Resolve the porosity curve used for permeability work."""
     for curve_name in ("PHIE", "PHIT"):
-        if well.get(curve_name) is not None:
+        if get_curve(well, [curve_name]) is not None:
             return curve_name
-    raise ValueError("PHIE or PHIT required")
+    raise ValueError("PHIE or PHIT with finite samples required")
 
 
 def _resolve_lithology_input(
@@ -289,7 +289,7 @@ def _resolve_lithology_input(
     if lithology is not None:
         return lithology, "provided_lithology"
 
-    lith_curve = well.get("LITHOLOGY_GEOLINK")
+    lith_curve = get_curve(well, ["LITHOLOGY_GEOLINK"])
     if lith_curve is not None:
         try:
             return np.asarray(lith_curve.data, dtype=float), lith_curve.mnemonic
@@ -298,9 +298,11 @@ def _resolve_lithology_input(
 
     lith_class_curve = well.get("LITHO_CLASS")
     if lith_class_curve is not None:
-        return np.asarray(lith_class_curve.data, dtype=object), lith_class_curve.mnemonic
+        lith_class = np.asarray(lith_class_curve.data, dtype=object)
+        if any(str(item).strip() for item in lith_class):
+            return lith_class, lith_class_curve.mnemonic
 
-    computed_lith_curve = well.get("LITHO")
+    computed_lith_curve = get_curve(well, ["LITHO"])
     if computed_lith_curve is not None:
         lith_codes = np.asarray(computed_lith_curve.data, dtype=float)
         lith = np.full(lith_codes.shape, "sandstone", dtype=object)
@@ -319,18 +321,17 @@ def _resolve_lith_vcl_inputs(
     lithology: Optional[Union[str, np.ndarray]] = None,
 ) -> tuple[np.ndarray, np.ndarray, Optional[Union[str, np.ndarray]], Dict[str, Any]]:
     """Resolve PHIT, VCL, and lithology inputs for lith_vcl permeability."""
-    phit_curve = well.get("PHIT")
-    if phit_curve is not None:
-        phit = np.asarray(phit_curve.data, dtype=float)
-        phit_source = phit_curve.mnemonic
+    phit, phit_source, _ = get_curve_data_depthwise(well, ["PHIT"])
+    if phit is not None:
+        phit = np.asarray(phit, dtype=float)
     else:
         phit = np.asarray(phi, dtype=float)
         phit_source = "PHIT_missing_using_permeability_porosity"
 
-    vcl_curve = well.get("VCL") or well.get("VCLAY")
-    if vcl_curve is None:
-        raise ValueError("VCL or VCLAY required for lith_vcl permeability")
-    vcl = np.asarray(vcl_curve.data, dtype=float)
+    vcl, vcl_source, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY"])
+    if vcl is None:
+        raise ValueError("VCL or VCLAY with finite samples required for lith_vcl permeability")
+    vcl = np.asarray(vcl, dtype=float)
 
     lith, lith_source = _resolve_lithology_input(well, lithology=lithology)
     if lith_source == "not_available":
@@ -340,7 +341,7 @@ def _resolve_lith_vcl_inputs(
     unique_labels = sorted({str(label) for label in np.ravel(labels) if str(label)})
     metadata = {
         "phit_curve": phit_source,
-        "vcl_curve": vcl_curve.mnemonic,
+        "vcl_curve": vcl_source,
         "lithology_curve": lith_source,
         "lithology_parameter_groups": unique_labels,
         "permvclscalar": 1.2,
@@ -367,9 +368,9 @@ def _serialize_core_model(model: CorePermModel) -> Dict[str, Any]:
         "source_formation": model.source_formation,
         "source_type": model.source_type,
         "input_curve": model.input_curve,
+        "core_porosity_curve": model.core_porosity_curve,
+        "core_permeability_curve": model.core_permeability_curve,
         "n_core_points": model.n_core_points,
-        "porosity_r2": model.porosity_correction.r_squared,
-        "perm_r2": model.perm_transform.r_squared,
         "porosity_correction": {
             "A": model.porosity_correction.A,
             "B": model.porosity_correction.B,
@@ -386,6 +387,7 @@ def _fit_core_perm_model(
     formation_tops: Optional[Any] = None,
     formation_name: Optional[str] = None,
     min_core_points: int = 3,
+    rejected_models: Optional[List[Dict[str, Any]]] = None,
 ) -> Optional[CorePermModel]:
     """
     Fit a core-derived porosity correction and poro-perm transform.
@@ -409,12 +411,31 @@ def _fit_core_perm_model(
         top = interval.top_depth
         bottom = interval.bottom_depth
 
+    def _reject(reason: str, **details: Any) -> None:
+        if rejected_models is None:
+            return
+        rejected_models.append(
+            {
+                "source_well": source_well.name,
+                "source_field": source_well.header.field,
+                "source_formation": formation_name,
+                "reason": reason,
+                **details,
+            }
+        )
+
     try:
         core = core_data_from_well(source_well, top=top, bottom=bottom)
     except ValueError:
+        _reject("no_core_curves")
         return None
 
     if core.porosity is None or core.permeability is None:
+        _reject(
+            "missing_core_porosity_or_permeability",
+            core_porosity_curve=core.metadata.get("core_porosity_curve"),
+            core_permeability_curve=core.metadata.get("core_permeability_curve"),
+        )
         return None
 
     try:
@@ -429,10 +450,23 @@ def _fit_core_perm_model(
             correction,
             porosity_curve=porosity_curve,
         )
-    except ValueError:
+    except ValueError as exc:
+        _reject(
+            "fit_failed",
+            error=str(exc),
+            core_porosity_curve=core.metadata.get("core_porosity_curve"),
+            core_permeability_curve=core.metadata.get("core_permeability_curve"),
+        )
         return None
 
     if transform.n_points < min_core_points:
+        _reject(
+            "too_few_core_points",
+            n_core_points=transform.n_points,
+            min_core_points=min_core_points,
+            core_porosity_curve=core.metadata.get("core_porosity_curve"),
+            core_permeability_curve=core.metadata.get("core_permeability_curve"),
+        )
         return None
 
     return CorePermModel(
@@ -443,15 +477,17 @@ def _fit_core_perm_model(
         source_formation=formation_name,
         source_type="same_well_core" if formation_name is None else "same_well_core_formation",
         input_curve=porosity_curve,
+        core_porosity_curve=core.metadata.get("core_porosity_curve"),
+        core_permeability_curve=core.metadata.get("core_permeability_curve"),
     )
 
 
 def _model_rank(model: CorePermModel) -> tuple[float, float, float]:
-    """Rank a core model by coverage first, then fit quality."""
+    """Rank a core model by matched core coverage."""
     return (
         float(model.n_core_points),
-        float(model.perm_transform.r_squared),
-        float(model.porosity_correction.r_squared),
+        0.0,
+        0.0,
     )
 
 
@@ -475,6 +511,7 @@ def _build_same_well_core_prediction(
     formation_tops: Optional[Any] = None,
     min_core_points: int = 3,
     include_global: bool = True,
+    rejected_models: Optional[List[Dict[str, Any]]] = None,
 ) -> tuple[np.ndarray, np.ndarray, List[CorePermModel]]:
     """Build same-well core-calibrated porosity and permeability."""
     porosity_curve = _resolve_porosity_curve_name(well)
@@ -493,6 +530,7 @@ def _build_same_well_core_prediction(
                 formation_tops=tops,
                 formation_name=interval.name,
                 min_core_points=min_core_points,
+                rejected_models=rejected_models,
             )
             if model is None:
                 continue
@@ -508,6 +546,7 @@ def _build_same_well_core_prediction(
             formation_tops=None,
             formation_name=None,
             min_core_points=min_core_points,
+            rejected_models=rejected_models,
         )
         if model is not None:
             _apply_core_model(phi_input, unresolved, model, phi_corecal, perm_core)
@@ -521,6 +560,7 @@ def _build_peer_core_prediction(
     peer_wells: Optional[List["Well"]] = None,
     formation_tops: Optional[Any] = None,
     min_core_points: int = 3,
+    rejected_models: Optional[List[Dict[str, Any]]] = None,
 ) -> tuple[np.ndarray, np.ndarray, List[CorePermModel]]:
     """
     Build permeability from peer wells in the same field and formation.
@@ -562,6 +602,7 @@ def _build_peer_core_prediction(
                 formation_tops=peer_tops,
                 formation_name=interval.name,
                 min_core_points=min_core_points,
+                rejected_models=rejected_models,
             )
             if model is None:
                 continue
@@ -616,10 +657,12 @@ class PermeabilityModule:
         method: str = "auto",
         fallback_method: str = "coates",
         min_core_points: int = 3,
+        use_peer_core: bool = False,
     ):
         self.method = _normalize_perm_method(method)
         self.fallback_method = _normalize_perm_method(fallback_method)
         self.min_core_points = int(min_core_points)
+        self.use_peer_core = bool(use_peer_core)
 
     def _calculate_empirical(
         self,
@@ -660,7 +703,8 @@ class PermeabilityModule:
         if finite_count == 0:
             raise ValueError(f"{empirical_method} permeability produced no finite samples")
 
-        input_curves = [well.get("PHIE").mnemonic if well.get("PHIE") is not None else "PHIT"]
+        _, phi_source, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+        input_curves = [phi_source or "PHIE"]
         method_metadata: Dict[str, Any] = {}
         if empirical_method == "lith_vcl":
             method_metadata = lith_metadata
@@ -701,6 +745,98 @@ class PermeabilityModule:
             },
         )
 
+    def calculate_core_correction(
+        self,
+        well: "Well",
+        phi: Optional[np.ndarray] = None,
+        peer_wells: Optional[List["Well"]] = None,
+        formation_tops: Optional[Any] = None,
+    ) -> PermeabilityResult:
+        """Calculate same-well/peer core-corrected PHIE_CC and PERM_CC only."""
+        if phi is None:
+            phi, porosity_curve, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+            if phi is None:
+                raise ValueError("PHIE or PHIT with finite samples required")
+            phi = np.asarray(phi, dtype=float)
+        else:
+            porosity_curve = _resolve_porosity_curve_name(well) if get_curve(well, ["PHIE", "PHIT"]) is not None else "PHIE"
+            phi = np.asarray(phi, dtype=float)
+
+        phi_corecal = np.full_like(phi, np.nan, dtype=float)
+        perm_core = np.full_like(phi, np.nan, dtype=float)
+        core_rejected_models: List[Dict[str, Any]] = []
+
+        same_well_phi, same_well_perm, same_well_models = _build_same_well_core_prediction(
+            well,
+            formation_tops=formation_tops,
+            min_core_points=self.min_core_points,
+            include_global=False,
+            rejected_models=core_rejected_models,
+        )
+        same_mask = np.isfinite(same_well_perm)
+        if np.any(same_mask):
+            phi_corecal[same_mask] = same_well_phi[same_mask]
+            perm_core[same_mask] = same_well_perm[same_mask]
+
+        unresolved = ~np.isfinite(perm_core)
+        peer_models: List[CorePermModel] = []
+        if np.any(unresolved) and peer_wells and self.use_peer_core:
+            peer_phi, peer_perm, peer_models = _build_peer_core_prediction(
+                well,
+                peer_wells=peer_wells,
+                formation_tops=formation_tops,
+                min_core_points=self.min_core_points,
+                rejected_models=core_rejected_models,
+            )
+            peer_mask = unresolved & np.isfinite(peer_perm)
+            if np.any(peer_mask):
+                phi_corecal[peer_mask] = peer_phi[peer_mask]
+                perm_core[peer_mask] = peer_perm[peer_mask]
+                unresolved = ~np.isfinite(perm_core)
+
+        if np.any(unresolved):
+            same_well_global = _fit_core_perm_model(
+                well,
+                formation_tops=None,
+                formation_name=None,
+                min_core_points=self.min_core_points,
+                rejected_models=core_rejected_models,
+            )
+            if same_well_global is not None:
+                phi_global, perm_global = same_well_global.predict(phi[unresolved])
+                phi_corecal[unresolved] = phi_global
+                perm_core[unresolved] = perm_global
+                same_well_models.append(same_well_global)
+
+        perm_core = _cap_permeability(perm_core)
+        core_models = same_well_models + peer_models
+        metadata = {
+            "strategy": _describe_auto_method(
+                same_well_models=same_well_models,
+                peer_models=peer_models,
+                used_empirical=False,
+                fallback_method=self.fallback_method,
+            ),
+            "porosity_curve": porosity_curve,
+            "core_models": [_serialize_core_model(model) for model in core_models],
+            "core_sections_count": int(np.count_nonzero(np.isfinite(perm_core))),
+            "phi_corecal": phi_corecal if np.any(np.isfinite(phi_corecal)) else None,
+            "perm_core": perm_core if np.any(np.isfinite(perm_core)) else None,
+            "peer_wells_considered": int(len(peer_wells or [])),
+            "peer_core_enabled": bool(self.use_peer_core),
+            "same_well_core_models": int(len(same_well_models)),
+            "peer_core_models": int(len(peer_models)),
+            "core_min_points": int(self.min_core_points),
+            "core_rejected_models": core_rejected_models,
+            "perm_max_clip_md": PERMEABILITY_MAX_MD,
+        }
+        return PermeabilityResult(
+            perm=perm_core,
+            method=metadata["strategy"],
+            swi_source="not_used",
+            metadata=metadata,
+        )
+
     def calculate(
         self,
         well: "Well",
@@ -712,10 +848,12 @@ class PermeabilityModule:
     ) -> PermeabilityResult:
         """Calculate permeability."""
         if phi is None:
-            porosity_curve = _resolve_porosity_curve_name(well)
-            phi = np.asarray(well.get(porosity_curve).data, dtype=float)
+            phi, porosity_curve, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+            if phi is None:
+                raise ValueError("PHIE or PHIT with finite samples required")
+            phi = np.asarray(phi, dtype=float)
         else:
-            porosity_curve = _resolve_porosity_curve_name(well) if well.get("PHIE") or well.get("PHIT") else "PHIE"
+            porosity_curve = _resolve_porosity_curve_name(well) if get_curve(well, ["PHIE", "PHIT"]) is not None else "PHIE"
             phi = np.asarray(phi, dtype=float)
 
         if self.method in {"timur", "coates", "wyllie_rose", "lith_vcl"}:
@@ -729,6 +867,7 @@ class PermeabilityModule:
         perm_core = np.full_like(phi, np.nan, dtype=float)
         empirical_result: Optional[PermeabilityResult] = None
         empirical_error: Optional[str] = None
+        core_rejected_models: List[Dict[str, Any]] = []
 
         empirical_methods = _auto_empirical_methods(self.fallback_method)
 
@@ -755,6 +894,7 @@ class PermeabilityModule:
             formation_tops=formation_tops,
             min_core_points=self.min_core_points,
             include_global=False,
+            rejected_models=core_rejected_models,
         )
         same_mask = np.isfinite(same_well_perm)
         if np.any(same_mask):
@@ -766,12 +906,13 @@ class PermeabilityModule:
         peer_phi = np.full_like(phi, np.nan, dtype=float)
         peer_perm = np.full_like(phi, np.nan, dtype=float)
         peer_models: List[CorePermModel] = []
-        if np.any(unresolved) and peer_wells:
+        if np.any(unresolved) and peer_wells and self.use_peer_core:
             peer_phi, peer_perm, peer_models = _build_peer_core_prediction(
                 well,
                 peer_wells=peer_wells,
                 formation_tops=formation_tops,
                 min_core_points=self.min_core_points,
+                rejected_models=core_rejected_models,
             )
             peer_mask = unresolved & np.isfinite(peer_perm)
             if np.any(peer_mask):
@@ -786,6 +927,7 @@ class PermeabilityModule:
                 formation_tops=None,
                 formation_name=None,
                 min_core_points=self.min_core_points,
+                rejected_models=core_rejected_models,
             )
             if same_well_global is not None:
                 phi_global, perm_global = same_well_global.predict(phi[unresolved])
@@ -816,8 +958,11 @@ class PermeabilityModule:
             "phi_corecal": phi_corecal if np.any(np.isfinite(phi_corecal)) else None,
             "perm_core": perm_core if np.any(np.isfinite(perm_core)) else None,
             "peer_wells_considered": int(len(peer_wells or [])),
+            "peer_core_enabled": bool(self.use_peer_core),
             "same_well_core_models": int(len(same_well_models)),
             "peer_core_models": int(len(peer_models)),
+            "core_min_points": int(self.min_core_points),
+            "core_rejected_models": core_rejected_models,
             "empirical_fallback": empirical_result.method if empirical_result is not None else None,
             "empirical_perm": empirical_result.perm if empirical_result is not None else None,
             "empirical_method": empirical_result.method if empirical_result is not None else self.fallback_method,
@@ -853,10 +998,12 @@ def calculate_permeability(
     """Calculate permeability."""
     fallback_method = kwargs.pop("fallback_method", "coates")
     min_core_points = kwargs.pop("min_core_points", 3)
+    use_peer_core = kwargs.pop("use_peer_core", False)
     module = PermeabilityModule(
         method=method,
         fallback_method=fallback_method,
         min_core_points=min_core_points,
+        use_peer_core=use_peer_core,
     )
     result = module.calculate(well, **kwargs)
     return result.perm

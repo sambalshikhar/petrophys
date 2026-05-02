@@ -590,8 +590,60 @@ def test_rw_routing_sources_and_temperature_units(case_id, mutate, config, expec
         phie = well.get("PHIE").data
         vcl = well.get("VCL").data
         valid = np.isfinite(rdep) & np.isfinite(phie) & np.isfinite(vcl) & (vcl < 0.3) & (phie > 0.05)
-        expected_rwa = rdep[valid] * np.power(phie[valid], step.parameters["archie_m"]) / step.parameters["archie_a"]
-        assert np.isclose(step.parameters["rw_from_rwa"], np.percentile(expected_rwa, 5))
+        if isinstance(step.parameters["archie_a"], (int, float)) and isinstance(step.parameters["archie_m"], (int, float)):
+            expected_rwa = rdep[valid] * np.power(phie[valid], step.parameters["archie_m"]) / step.parameters["archie_a"]
+            assert np.isclose(step.parameters["rw_from_rwa"], np.percentile(expected_rwa, 5))
+        else:
+            assert step.parameters["archie_coefficients"]
+            assert np.isfinite(step.parameters["rw_from_rwa"])
+
+
+def test_rw_rwa_fallback_uses_lithology_specific_archie_coefficients(record_route):
+    well = _remove_curves(_routing_well("rw_rwa_limestone_archie"), "SP", "RXO", "RSHA", "RESS")
+    well.add_curve("LITHOLOGY_GEOLINK", np.full(well.n_samples, 11.0), "", "Lithology")
+
+    result = _run(
+        "rw_rwa_limestone_archie",
+        well,
+        DynamicWorkflowConfig(),
+        record_route,
+        focus_steps=["rw"],
+        curves=["RW"],
+    )
+    step = _step_by_name(result, "rw")
+
+    assert step.method == "rwa_clean_wet_p5"
+    assert step.parameters["archie_coefficients"]["LIMESTONE"]["a"] == 1.0
+    assert step.parameters["archie_a"] == 1.0
+    rdep = well.get("RDEP").data
+    phie = well.get("PHIE").data
+    vcl = well.get("VCL").data
+    valid = np.isfinite(rdep) & np.isfinite(phie) & np.isfinite(vcl) & (vcl < 0.3) & (phie > 0.05)
+    expected_rwa = rdep[valid] * np.power(phie[valid], 2.0) / 1.0
+    assert np.isclose(step.parameters["rw_from_rwa"], np.percentile(expected_rwa, 5))
+
+
+def test_saturation_uses_lithology_specific_archie_coefficients(record_route):
+    well = _routing_well("sw_limestone_archie")
+    well.add_curve("LITHOLOGY_GEOLINK", np.full(well.n_samples, 11.0), "", "Lithology")
+    well.get("VCL").data[:] = 0.05
+    well.get("VCLAY").data[:] = 0.05
+
+    result = _run(
+        "sw_limestone_archie",
+        well,
+        DynamicWorkflowConfig(rw=0.05),
+        record_route,
+        focus_steps=["saturation"],
+        curves=["SW"],
+    )
+    step = _step_by_name(result, "saturation")
+
+    assert step.parameters["archie_coefficients"]["LIMESTONE"]["a"] == 1.0
+    assert step.parameters["a"] == 1.0
+    assert step.parameters["m"] == 2.0
+    assert step.parameters["n"] == 2.0
+    assert set(step.parameters["sw_model_sample_counts"]).issubset({"archie", "dual_water"})
 
 
 def test_invasion_routes_when_shallow_and_deep_resistivity_exist(record_route):
@@ -606,6 +658,26 @@ def test_invasion_skips_without_shallow_resistivity(record_route):
     result = _run("invasion_missing_shallow", well, DynamicWorkflowConfig(rw=0.05), record_route, focus_steps=["invasion"])
     assert _step_or_none(result, "invasion") is None
     assert "invasion" in result.steps_skipped
+
+
+def test_invasion_falls_back_to_medium_deep_proxy(record_route):
+    well = _remove_curves(_routing_well("invasion_rmed_proxy"), "RXO", "RSHA", "RESS")
+    well.add_curve("RMED", np.linspace(30.0, 1.0, well.n_samples), "ohm.m", "Medium Resistivity")
+
+    result = _run(
+        "invasion_rmed_proxy",
+        well,
+        DynamicWorkflowConfig(rw=0.05),
+        record_route,
+        focus_steps=["invasion"],
+        curves=["INVASION_RATIO"],
+    )
+    step = _step_by_name(result, "invasion")
+
+    assert step.parameters["rxo_curve"] == "RMED"
+    assert step.parameters["fallback_proxy_used"] is True
+    assert step.parameters["medium_deep_proxy_samples"] == well.n_samples
+    assert well.get("INVASION_RATIO") is not None
 
 
 @pytest.mark.parametrize(
@@ -632,6 +704,70 @@ def test_invasion_accepts_rsha_ress_or_rxo_shallow_namings(case_id, keep_curve, 
 
     assert step.input_curves == ["RDEP", keep_curve]
     assert well.get("INVASION_RATIO") is not None
+
+
+def test_invasion_uses_finite_fallback_alias_when_primary_shallow_is_nonfinite(record_route):
+    well = _routing_well("invasion_nonfinite_primary")
+    well.get("RSHA").data[:] = np.nan
+    well.remove_curve("RESS")
+
+    result = _run(
+        "invasion_nonfinite_primary",
+        well,
+        DynamicWorkflowConfig(rw=0.05),
+        record_route,
+        focus_steps=["invasion"],
+        curves=["INVASION_RATIO"],
+    )
+    step = _step_by_name(result, "invasion")
+
+    assert step.input_curves == ["RDEP", "RXO"]
+    assert step.parameters["rxo_curve"] == "RXO"
+    assert well.get("INVASION_RATIO") is not None
+
+
+def test_invasion_combines_partial_shallow_aliases_depthwise(record_route):
+    well = _routing_well("invasion_partial_aliases")
+    well.get("RSHA").data[:] = np.nan
+    well.get("RSHA").data[::2] = 8.0
+    well.get("RXO").data[:] = np.nan
+    well.get("RXO").data[1::2] = 9.0
+    well.remove_curve("RESS")
+
+    result = _run(
+        "invasion_partial_aliases",
+        well,
+        DynamicWorkflowConfig(rw=0.05),
+        record_route,
+        focus_steps=["invasion"],
+        curves=["INVASION_RATIO"],
+    )
+    step = _step_by_name(result, "invasion")
+
+    assert step.input_curves == ["RDEP", "RSHA+RXO"]
+    assert step.parameters["rxo_curve"] == "RSHA+RXO"
+    assert step.parameters["rxo_source_counts"] == {"RSHA": 6, "RXO": 6}
+    assert step.parameters["valid_samples"] == well.n_samples
+    assert np.isfinite(well.get("INVASION_RATIO").data).all()
+
+
+def test_mhi_removes_existing_curve_when_sxo_is_only_quicklook_fallback(record_route):
+    well = _remove_curves(_routing_well("mhi_existing_quicklook_only"), "RXO", "RSHA", "RESS")
+    well.add_curve("MHI", np.linspace(0.1, 0.9, well.n_samples), "", "Old MHI")
+
+    result = _run(
+        "mhi_existing_quicklook_only",
+        well,
+        DynamicWorkflowConfig(rw=0.05),
+        record_route,
+        focus_steps=["saturation", "mhi"],
+        curves=["SXO", "MHI"],
+    )
+    step = _step_by_name(result, "mhi")
+
+    assert step.output_curves == []
+    assert step.parameters["diagnostic_sxo_samples"] == 0
+    assert well.get("MHI") is None
 
 
 @pytest.mark.parametrize(
@@ -708,6 +844,33 @@ def test_porosity_phin_uses_lithology_specific_nphi_ma(record_route):
     assert endpoints["LIMESTONE"] == 0.00
     assert endpoints["DOLOMITE"] == 0.02
     assert any("lithology-specific matrix neutron endpoints" in item for item in step.decisions)
+
+
+def test_porosity_phit_falls_back_to_phid_where_nphi_missing(record_route):
+    well = _routing_well("porosity_partial_nphi")
+    nphi = well.get("NPHI").data
+    nphi[::2] = np.nan
+
+    result = _run(
+        "porosity_partial_nphi",
+        well,
+        DynamicWorkflowConfig(rw=0.05),
+        record_route,
+        focus_steps=["porosity"],
+        curves=["NPHI", "PHIN", "PHID", "PHIT", "PHIE"],
+    )
+
+    step = _step_by_name(result, "porosity")
+    counts = step.parameters["phit_source_counts"]
+    missing_phin_mask = ~np.isfinite(well.get("PHIN").data) & np.isfinite(well.get("PHID").data)
+
+    assert step.parameters["phit_method"] == "adaptive_nd"
+    assert counts["density_from_missing_phin"] == int(np.count_nonzero(missing_phin_mask))
+    assert counts["density_from_missing_phin"] > 0
+    np.testing.assert_allclose(
+        well.get("PHIT").data[missing_phin_mask],
+        well.get("PHID").data[missing_phin_mask],
+    )
 
 
 @pytest.mark.parametrize(
@@ -791,11 +954,35 @@ def test_dual_water_uses_same_phi_cl_as_phie(record_route):
     phit = well.get("PHIT").data
     expected_phi_cl = float(np.nanmean(phit[np.isfinite(vcl) & (vcl > 0.9)]))
 
-    assert por_step.parameters["phi_cl_source"] == "vcl_gt_0.9_average_phit"
-    assert sat_step.parameters["phi_cl_source"] == "vcl_gt_0.9_average_phit"
+    assert por_step.parameters["phi_cl_source"] == "vcl_gt_0.9_average_phit_nd"
+    assert sat_step.parameters["phi_cl_source"] == "vcl_gt_0.9_average_phit_nd"
     assert por_step.parameters["phi_cl"] == pytest.approx(expected_phi_cl)
     assert sat_step.parameters["phi_cl"] == pytest.approx(por_step.parameters["phi_cl"])
     assert sat_step.parameters["sw_model_sample_counts"] == {"archie": 4, "dual_water": 8}
+
+
+def test_phi_cl_uses_config_fallback_when_shale_phit_is_not_nd_average(record_route):
+    well = _routing_well("PHICL-FALLBACK-NO-ND-SHALE")
+    well.get("NPHI").data[np.asarray(well.get("VCL").data) > 0.9] = np.nan
+
+    result = _run(
+        "phi_cl_fallback_when_shale_phit_not_nd_average",
+        well,
+        DynamicWorkflowConfig(rw=0.05, phi_cl=0.15, skip_steps=["vclay", "lithology"]),
+        record_route,
+        focus_steps=["porosity", "saturation"],
+        curves=["NPHI", "PHIN", "PHID", "PHIT", "PHIE", "SW"],
+    )
+
+    por_step = _step_by_name(result, "porosity")
+    sat_step = _step_by_name(result, "saturation")
+
+    assert por_step.parameters["phit_source_counts"]["density_from_missing_phin"] > 0
+    assert por_step.parameters["phi_cl_source"] == "config_or_default"
+    assert por_step.parameters["phi_cl"] == pytest.approx(0.15)
+    assert "no shale-control PHIT samples" in por_step.parameters["phi_cl_fallback_reason"]
+    assert sat_step.parameters["phi_cl_source"] == "config_or_default"
+    assert sat_step.parameters["phi_cl"] == pytest.approx(por_step.parameters["phi_cl"])
 
 
 def test_saturation_skips_when_phie_is_unavailable_even_if_rhob_exists(record_route):
@@ -888,7 +1075,7 @@ def test_rock_quality_bvw_mhi_and_net_pay_use_canonical_curves(record_route):
     result = _run(
         "reservoir_index_modules_canonical_curves",
         well,
-        DynamicWorkflowConfig(rw=0.05, perm_method="timur", swirr=0.25),
+        DynamicWorkflowConfig(rw=0.05, rmf_at_meas_temp=0.2, perm_method="timur", swirr=0.25),
         record_route,
         focus_steps=["rock_quality", "bvw", "mhi", "net_pay"],
         curves=["RQI", "FZI", "PHI_Z", "BVW", "MHI", "NET_ROCK", "NET_RES", "NET_PAY", "SEALFLAG"],
@@ -903,6 +1090,33 @@ def test_rock_quality_bvw_mhi_and_net_pay_use_canonical_curves(record_route):
     assert well.get("NET_PAY") is not None
 
 
+def test_mhi_skips_when_sxo_is_only_fifth_root_fallback(record_route):
+    well = _remove_curves(_routing_well("MHI-FALLBACK-SXO"), "RSHA", "RXO", "RESS", "RMF", "SXO")
+
+    result = _run(
+        "mhi_fallback_sxo_skipped",
+        well,
+        DynamicWorkflowConfig(
+            rw=0.05,
+            sw_model="archie",
+            skip_steps=["vclay", "rcl", "lithology", "rmf", "invasion", "hc_correction", "porosity", "permeability", "rock_quality", "bvw", "net_pay"],
+        ),
+        record_route,
+        focus_steps=["saturation", "mhi"],
+        curves=["SW", "SXO", "MHI"],
+    )
+
+    saturation_step = _step_by_name(result, "saturation")
+    mhi_step = _step_by_name(result, "mhi")
+
+    assert saturation_step.parameters["sxo_method"] == "fifth_root_quicklook"
+    assert well.get("SXO") is not None
+    assert well.get("MHI") is None
+    assert mhi_step.output_curves == []
+    assert mhi_step.parameters["diagnostic_sxo_samples"] == 0
+    assert "not computed" in mhi_step.decisions[0]
+
+
 @pytest.mark.parametrize(
     "case_id,path,expected_methods,expected_skips,expected_curves",
     [
@@ -915,7 +1129,7 @@ def test_rock_quality_bvw_mhi_and_net_pay_use_canonical_curves(record_route):
                 "rw": "rwa_clean_wet_p5",
             },
             {"rmf", "hc_correction"},
-            {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "MHI", "NET_PAY"},
+            {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "NET_PAY"},
         ),
         (
             "real_geolink_15_9_23",
@@ -925,8 +1139,8 @@ def test_rock_quality_bvw_mhi_and_net_pay_use_canonical_curves(record_route):
                 "rcl": "lithology_shale_median_rt",
                 "rw": "rwa_clean_wet_p5",
             },
-            {"rmf", "invasion", "hc_correction"},
-            {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "MHI", "NET_PAY"},
+            {"rmf", "hc_correction"},
+            {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "NET_PAY"},
         ),
         (
             "real_eval_35_8_2",
@@ -950,8 +1164,8 @@ def test_rock_quality_bvw_mhi_and_net_pay_use_canonical_curves(record_route):
                 "rcl": "lithology_shale_median_rt",
                 "rw": "rwa_clean_wet_p5",
             },
-            {"rmf", "invasion", "hc_correction"},
-            {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "MHI", "NET_PAY"},
+            {"rmf", "hc_correction"},
+            {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "NET_PAY"},
         ),
     ],
 )

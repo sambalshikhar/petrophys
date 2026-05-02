@@ -11,6 +11,7 @@ import numpy as np
 
 from petrophys.petrophysics.hc_correction.neutron_correction import correct_neutron_hc
 from petrophys.petrophysics.hc_correction.density_correction import correct_density_hc
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
 
 
 @dataclass
@@ -61,31 +62,29 @@ class HcCorrectionModule:
         vcl : np.ndarray, optional
             Volume of clay (enables preliminary porosity approach)
         """
-        nphi = well.get("NPHI")
-        rhob = well.get("RHOB")
+        nphi, _, _ = get_curve_data_depthwise(well, ["NPHI"])
+        rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
 
         if nphi is None or rhob is None:
-            raise ValueError("NPHI and RHOB required")
+            raise ValueError("NPHI and RHOB with finite samples required")
 
         if sxo is None:
-            sxo_curve = well.get("SXO")
-            sxo = sxo_curve.data if sxo_curve is not None else np.ones(well.n_samples)
+            sxo_data, _, _ = get_curve_data_depthwise(well, ["SXO", "SWXOA", "SXO-LOG"])
+            sxo = sxo_data if sxo_data is not None else np.ones(well.n_samples)
 
         if vcl is None:
-            vcl_curve = well.get("VCL")
-            if vcl_curve is not None:
-                vcl = vcl_curve.data
+            vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
 
         if phi is None and vcl is None:
-            phi_curve = well.get("PHIE") or well.get("PHIT")
-            phi = phi_curve.data if phi_curve is not None else 0.15
+            phi_data, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+            phi = phi_data if phi_data is not None else 0.15
 
         nphi_hc = correct_neutron_hc(
-            nphi.data, phi, sxo, self.hc_type,
+            nphi, phi, sxo, self.hc_type,
             vcl=vcl, phi_cl=self.phi_cl
         )
         rhob_hc = correct_density_hc(
-            rhob.data, phi, sxo, self.rho_fl, self.hc_type,
+            rhob, phi, sxo, self.rho_fl, self.hc_type,
             vcl=vcl, rho_ma=self.rho_ma, rho_cl=self.rho_cl
         )
 

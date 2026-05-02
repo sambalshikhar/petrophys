@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from petrophys.core.core_data import CoreData
+from petrophys.utils.analysis_helpers import get_curve
 
 
 @dataclass
@@ -41,6 +42,7 @@ class PorosityCorrection:
     B: float
     r_squared: float
     n_points: int
+    rmse: float = np.nan
     input_curve: str = "PHIE"
     method: str = "core_linear"
 
@@ -51,7 +53,7 @@ class PorosityCorrection:
 
     def __repr__(self) -> str:
         return (f"PorosityCorrection(PHIcore = {self.A:.3f}*{self.input_curve} + "
-                f"{self.B:.3f}, R^2={self.r_squared:.3f}, n={self.n_points})")
+                f"{self.B:.3f}, R^2={self.r_squared:.3f}, RMSE={self.rmse:.4f}, n={self.n_points})")
 
 
 @dataclass
@@ -66,6 +68,7 @@ class PoroPermTransform:
     B: float             # intercept
     r_squared: float
     n_points: int
+    rmse: float = np.nan
     method: str = "core_fit"
 
     def predict(self, porosity: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
@@ -127,19 +130,18 @@ def core_data_from_well(
     if well.depth is None:
         raise ValueError("Well has no depth data")
 
-    def _first_curve(names: Iterable[str]) -> Optional[np.ndarray]:
-        for name in names:
-            curve = well.get(name)
-            if curve is not None:
-                return np.asarray(curve.data, dtype=float)
-        return None
+    def _first_curve(names: Iterable[str]) -> tuple[Optional[np.ndarray], Optional[str]]:
+        curve = get_curve(well, list(names))
+        if curve is not None:
+            return np.asarray(curve.data, dtype=float), curve.mnemonic
+        return None, None
 
     depth = np.asarray(well.depth, dtype=float)
-    porosity = _first_curve(porosity_curves)
-    permeability = _first_curve(perm_curves)
-    grain_density = _first_curve(gd_curves)
-    sw = _first_curve(sw_curves)
-    so = _first_curve(so_curves)
+    porosity, porosity_source = _first_curve(porosity_curves)
+    permeability, permeability_source = _first_curve(perm_curves)
+    grain_density, grain_density_source = _first_curve(gd_curves)
+    sw, sw_source = _first_curve(sw_curves)
+    so, so_source = _first_curve(so_curves)
 
     lithology = None
     for name in lithology_curves:
@@ -169,6 +171,11 @@ def core_data_from_well(
     metadata = {
         "well_name": well.name,
         "field": well.header.field,
+        "core_porosity_curve": porosity_source,
+        "core_permeability_curve": permeability_source,
+        "core_grain_density_curve": grain_density_source,
+        "core_sw_curve": sw_source,
+        "core_so_curve": so_source,
     }
 
     return CoreData(
@@ -252,12 +259,14 @@ def fit_porosity_correction(
     ss_res = np.sum((phi_core - predicted) ** 2)
     ss_tot = np.sum((phi_core - np.mean(phi_core)) ** 2)
     r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    rmse = float(np.sqrt(np.mean((phi_core - predicted) ** 2)))
 
     return PorosityCorrection(
         A=A,
         B=B,
         r_squared=float(r2),
         n_points=int(np.count_nonzero(valid)),
+        rmse=rmse,
         input_curve=log_curve,
     )
 
@@ -380,9 +389,10 @@ def fit_poro_perm_transform(
     ss_res = np.sum((log_k - predicted) ** 2)
     ss_tot = np.sum((log_k - np.mean(log_k)) ** 2)
     r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    rmse = float(np.sqrt(np.mean((log_k - predicted) ** 2)))
 
     return PoroPermTransform(
-        A=A, B=B, r_squared=r2, n_points=int(np.sum(valid)),
+        A=A, B=B, r_squared=r2, n_points=int(np.sum(valid)), rmse=rmse,
     )
 
 
@@ -419,12 +429,14 @@ def fit_log_poro_perm_transform(
     ss_res = np.sum((log_k - predicted) ** 2)
     ss_tot = np.sum((log_k - np.mean(log_k)) ** 2)
     r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    rmse = float(np.sqrt(np.mean((log_k - predicted) ** 2)))
 
     return PoroPermTransform(
         A=A,
         B=B,
         r_squared=float(r2),
         n_points=int(np.count_nonzero(valid)),
+        rmse=rmse,
         method=f"log_fit:{porosity_curve}",
     )
 
@@ -464,12 +476,14 @@ def fit_log_poro_perm_transform_from_correction(
     ss_res = np.sum((log_k - predicted) ** 2)
     ss_tot = np.sum((log_k - np.mean(log_k)) ** 2)
     r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    rmse = float(np.sqrt(np.mean((log_k - predicted) ** 2)))
 
     return PoroPermTransform(
         A=A,
         B=B,
         r_squared=float(r2),
         n_points=int(np.count_nonzero(valid)),
+        rmse=rmse,
         method=f"log_fit:{porosity_curve}+{correction.method}",
     )
 

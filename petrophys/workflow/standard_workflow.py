@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import re
 
+from petrophys.utils.analysis_helpers import get_curve
+
 
 def _parameter_float(well: "Well", name: str) -> Optional[float]:
     """Fetch a numeric well parameter if present."""
@@ -81,6 +83,7 @@ class WorkflowConfig:
     perm_fallback_method: str = "coates"
     peer_wells: Optional[List[Any]] = None
     formation_tops: Optional[Any] = None
+    use_peer_core: bool = False
     mud_has_clay_or_kcl: bool = False
 
     # Cutoffs
@@ -217,6 +220,10 @@ class StandardWorkflow:
             # Step 4: Porosity
             if self.config.calculate_porosity:
                 result.steps.append(self._calculate_porosity(well))
+
+            # Step 4b: Core correction before saturation can use PHIE_CC
+            if self._can_core_correction(well):
+                result.steps.append(self._calculate_core_correction(well))
 
             # Step 5: Water saturation
             if self.config.calculate_sw:
@@ -399,6 +406,61 @@ class StandardWorkflow:
             trace.message = str(e)
         return trace
 
+    def _can_core_correction(self, well: "Well") -> bool:
+        return (
+            get_curve(well, ["PHIE", "PHIT"]) is not None
+            and get_curve(well, ["PHIC", "CPOR"]) is not None
+            and get_curve(well, ["KH_CORE", "CPERM", "K_CORE", "PERM_CORE"]) is not None
+        )
+
+    def _calculate_core_correction(self, well: "Well") -> StepTrace:
+        """Calculate PHIE_CC before saturation when same-well core is available."""
+        from petrophys.petrophysics.permeability import PermeabilityModule
+
+        trace = StepTrace(step="core_correction", method="same_well_core_correction")
+        try:
+            stale_core_curves = [name for name in ("PHIE_CC", "PERM_CC") if well.get(name) is not None]
+            for curve_name in stale_core_curves:
+                well.remove_curve(curve_name)
+            if stale_core_curves:
+                trace.decisions.append("Existing core-corrected curves cleared before pre-saturation core correction")
+
+            perm_module = PermeabilityModule(
+                method=self.config.perm_method,
+                fallback_method=self.config.perm_fallback_method,
+                use_peer_core=self.config.use_peer_core,
+            )
+            result = perm_module.calculate_core_correction(
+                well,
+                peer_wells=self.config.peer_wells,
+                formation_tops=self.config.formation_tops,
+            )
+            trace.input_curves = [result.metadata.get("porosity_curve", "PHIE")]
+            trace.parameters["same_well_core_models"] = result.metadata.get("same_well_core_models")
+            trace.parameters["peer_core_models"] = result.metadata.get("peer_core_models")
+            trace.parameters["core_models"] = result.metadata.get("core_models")
+            trace.parameters["core_rejected_models"] = result.metadata.get("core_rejected_models")
+            trace.parameters["core_min_points"] = result.metadata.get("core_min_points")
+            trace.parameters["core_sections_count"] = result.metadata.get("core_sections_count")
+
+            phi_corecal = result.metadata.get("phi_corecal")
+            perm_core = result.metadata.get("perm_core")
+            if phi_corecal is not None:
+                well.add_curve("PHIE_CC", phi_corecal, "v/v", "Core-corrected effective porosity")
+                trace.output_curves.append("PHIE_CC")
+                trace.decisions.append("Core-corrected porosity stored as PHIE_CC before saturation")
+            if perm_core is not None:
+                well.add_curve("PERM_CC", perm_core, "mD", "Permeability from core-calibrated poro-perm transform")
+                trace.output_curves.append("PERM_CC")
+                trace.decisions.append("Core-corrected permeability stored as PERM_CC")
+            if not trace.output_curves:
+                trace.decisions.append("No PHIE_CC/PERM_CC written because no same-well core model was fitted")
+        except Exception as e:
+            self.warnings.append(f"Core correction warning: {e}")
+            trace.success = False
+            trace.message = str(e)
+        return trace
+
     def _calculate_saturation(self, well: "Well", rw: float) -> StepTrace:
         """Calculate water saturation."""
         from petrophys.petrophysics.saturation import SaturationModule
@@ -432,7 +494,7 @@ class StandardWorkflow:
             if result.sxo is not None:
                 well.add_curve("SXO", result.sxo, "v/v", "Flushed Zone Water Saturation")
                 outputs.append("SXO")
-            trace.input_curves = ["RDEP", "PHIE"]
+            trace.input_curves = ["RDEP", "PHIE_CC" if well.get("PHIE_CC") is not None else "PHIE"]
             trace.output_curves = outputs
             trace.decisions.append(f"Sw ({self.config.saturation_model}): "
                                   f"a={self.config.a}, m={self.config.m}, n={self.config.n}, "
@@ -449,12 +511,22 @@ class StandardWorkflow:
 
         trace = StepTrace(step="permeability", method=self.config.perm_method)
         try:
+            stale_core_curves = [name for name in ("PHIE_CC", "PERM_CC") if well.get(name) is not None]
+            for curve_name in stale_core_curves:
+                well.remove_curve(curve_name)
+            if stale_core_curves:
+                trace.decisions.append(
+                    "Existing core-corrected curves cleared before permeability; "
+                    "PHIE_CC/PERM_CC are rewritten only when the current same-well core model is fitted"
+                )
+
             perm_module = PermeabilityModule(
                 method=self.config.perm_method,
                 fallback_method=self.config.perm_fallback_method,
+                use_peer_core=self.config.use_peer_core,
             )
             lithology = None
-            if not (well.get("LITHOLOGY_GEOLINK") or well.get("LITHO_CLASS") or well.get("LITHO")):
+            if get_curve(well, ["LITHOLOGY_GEOLINK", "LITHO"]) is None and well.get("LITHO_CLASS") is None:
                 lithology = self.config.lithology
 
             result = perm_module.calculate(
@@ -534,6 +606,10 @@ class StandardWorkflow:
             trace.parameters["strategy"] = result.metadata.get("strategy")
             trace.parameters["same_well_core_models"] = result.metadata.get("same_well_core_models")
             trace.parameters["peer_core_models"] = result.metadata.get("peer_core_models")
+            trace.parameters["peer_core_enabled"] = result.metadata.get("peer_core_enabled")
+            trace.parameters["core_min_points"] = result.metadata.get("core_min_points")
+            trace.parameters["core_models"] = result.metadata.get("core_models")
+            trace.parameters["core_rejected_models"] = result.metadata.get("core_rejected_models")
             if empirical_method == "lith_vcl":
                 trace.decisions.append(
                     "lith_vcl empirical permeability: "
@@ -561,8 +637,10 @@ class StandardWorkflow:
                 formation = model.get("source_formation") or "all_depths"
                 source_type = model.get("source_type") or "core"
                 trace.decisions.append(
-                    f"{source_type}: {source} / {formation} (n={model.get('n_core_points')}, "
-                    f"perm R2={model.get('perm_r2'):.3f})"
+                    f"{source_type}: {source} / {formation} "
+                    f"(n={model.get('n_core_points')}, "
+                    f"core_phi={model.get('core_porosity_curve') or 'unknown'}, "
+                    f"core_perm={model.get('core_permeability_curve') or 'unknown'})"
                 )
             if result.metadata.get("perm_max_clip_md") is not None:
                 trace.decisions.append(f"Permeability clipped to <= {result.metadata['perm_max_clip_md']:.0f} mD")

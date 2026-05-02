@@ -15,6 +15,7 @@ from petrophys.clay_volume.gr_method import vcl_from_gr
 from petrophys.clay_volume.sp_method import vcl_from_sp, should_use_sp
 from petrophys.clay_volume.nd_method import vcl_from_nd
 from petrophys.clay_volume.classification import classify_vcl
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
 
 
 @dataclass
@@ -160,8 +161,8 @@ class VclModule:
         vcl_nd = None
 
         # GR method (primary)
-        if gr_name in well:
-            gr_data = well[gr_name].data
+        gr_data, _, _ = get_curve_data_depthwise(well, [gr_name])
+        if gr_data is not None:
             gr_min, gr_max = self._resolve_gr_baselines(gr_data)
             vcl_gr = vcl_from_gr(
                 gr_data, gr_min, gr_max, self.gr_method
@@ -170,8 +171,8 @@ class VclModule:
             method_names.append("GR")
 
         # SP method
-        if self.use_sp and sp_name in well:
-            sp_data = well[sp_name].data
+        sp_data, _, _ = get_curve_data_depthwise(well, [sp_name])
+        if self.use_sp and sp_data is not None:
 
             # Auto-detect SP range if not provided
             sp_max = self.sp_max
@@ -188,9 +189,9 @@ class VclModule:
                 method_names.append("SP")
 
         # N-D method
-        if self.use_nd and nphi_name in well and rhob_name in well:
-            nphi_data = well[nphi_name].data
-            rhob_data = well[rhob_name].data
+        nphi_data, _, _ = get_curve_data_depthwise(well, [nphi_name, "PHIN"])
+        rhob_data, _, _ = get_curve_data_depthwise(well, [rhob_name])
+        if self.use_nd and nphi_data is not None and rhob_data is not None:
             vcl_nd = vcl_from_nd(nphi_data, rhob_data)
             vcl_methods.append(vcl_nd)
             method_names.append("ND")

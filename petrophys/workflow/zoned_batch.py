@@ -11,7 +11,7 @@ from pathlib import Path
 import copy
 import csv
 import re
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 
@@ -780,16 +780,143 @@ def _collect_step_summaries(
 
 
 def _serialize_step_result(step) -> Dict[str, Any]:
+    return _serialize_step_result_with_well(step, None)
+
+
+def _curve_summary_from_array(
+    data: Any,
+    mask: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    try:
+        values = np.asarray(data, dtype=float)
+    except (TypeError, ValueError):
+        return {"present": False, "numeric": False}
+
+    if mask is not None:
+        if values.shape[0] != mask.shape[0]:
+            return {"present": True, "numeric": True, "error": "mask/data length mismatch"}
+        values = values[mask]
+
+    finite = values[np.isfinite(values)]
+    sample_count = int(values.size)
+    summary: Dict[str, Any] = {
+        "present": True,
+        "numeric": True,
+        "sample_count": sample_count,
+        "finite_count": int(finite.size),
+        "nan_count": int(np.count_nonzero(~np.isfinite(values))),
+        "finite_percent": round(float(finite.size) / max(sample_count, 1) * 100.0, 4),
+    }
+    if finite.size:
+        summary.update(
+            {
+                "min": round(float(np.nanmin(finite)), 4),
+                "p05": round(float(np.nanpercentile(finite, 5)), 4),
+                "p50": round(float(np.nanpercentile(finite, 50)), 4),
+                "p95": round(float(np.nanpercentile(finite, 95)), 4),
+                "max": round(float(np.nanmax(finite)), 4),
+            }
+        )
+    return summary
+
+
+def _curve_summary_for_log(
+    well: Optional["Well"],
+    curve_name: str,
+    mask: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    if well is None:
+        return {"present": False}
+    curve = well.get(curve_name)
+    if curve is None:
+        return {"present": False}
+    summary = _curve_summary_from_array(curve.data, mask=mask)
+    summary["curve_name"] = curve.mnemonic
+    summary["unit"] = curve.unit or ""
+    description = getattr(curve.metadata, "description", "") if curve.metadata else ""
+    summary["description"] = description
+    return summary
+
+
+def _curve_summaries_for_log(
+    well: Optional["Well"],
+    curve_names: Iterable[str],
+    mask: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    summaries: Dict[str, Any] = {}
+    for name in dict.fromkeys(str(curve) for curve in curve_names if curve):
+        summaries[name] = _curve_summary_for_log(well, name, mask=mask)
+    return summaries
+
+
+def _mask_depth_intervals(well: "Well", mask: np.ndarray) -> List[str]:
+    if getattr(well, "depth", None) is None or len(well.depth) != len(mask):
+        return []
+    depth_values = np.asarray(well.depth, dtype=float)
+    intervals: List[str] = []
+    start_idx: Optional[int] = None
+    previous_idx: Optional[int] = None
+    for idx, flag in enumerate(mask):
+        if bool(flag) and start_idx is None:
+            start_idx = idx
+        if not bool(flag) and start_idx is not None and previous_idx is not None:
+            intervals.append(
+                f"{depth_values[start_idx]:.1f}-{depth_values[previous_idx]:.1f} {well.depth_unit or ''}".strip()
+            )
+            start_idx = None
+        previous_idx = idx
+    if start_idx is not None and previous_idx is not None:
+        intervals.append(
+            f"{depth_values[start_idx]:.1f}-{depth_values[previous_idx]:.1f} {well.depth_unit or ''}".strip()
+        )
+    return intervals
+
+
+def _lithology_group_summaries_for_log(
+    well: "Well",
+    curve_names: Iterable[str],
+) -> List[Dict[str, Any]]:
+    lith_curve = well.get("LITHOLOGY_GEOLINK") or well.get("LITHO")
+    if lith_curve is None:
+        return []
+
+    values = np.asarray(lith_curve.data, dtype=object)
+    summaries: List[Dict[str, Any]] = []
+    for raw_value in sorted(set(values.tolist()), key=lambda item: str(item)):
+        if raw_value is None:
+            continue
+        text = str(raw_value)
+        if text.lower() in {"nan", "none", ""}:
+            continue
+        mask = values == raw_value
+        if not np.any(mask):
+            continue
+        summaries.append(
+            {
+                "lithology_value": _json_safe(raw_value),
+                "sample_count": int(np.count_nonzero(mask)),
+                "depth_intervals": _mask_depth_intervals(well, mask)[:50],
+                "curve_summaries": _curve_summaries_for_log(well, curve_names, mask=mask),
+            }
+        )
+    return summaries
+
+
+def _serialize_step_result_with_well(step, well: Optional["Well"]) -> Dict[str, Any]:
+    input_curves = list(step.input_curves or [])
+    output_curves = list(step.output_curves or [])
     return {
         "step": step.step,
         "success": step.success,
         "message": step.message,
         "method": step.method,
-        "input_curves": _json_safe(step.input_curves),
-        "output_curves": _json_safe(step.output_curves),
+        "input_curves": _json_safe(input_curves),
+        "output_curves": _json_safe(output_curves),
         "parameters": _json_safe(step.parameters),
         "decisions": _json_safe(step.decisions),
         "data": _json_safe(step.data),
+        "input_curve_summaries": _curve_summaries_for_log(well, input_curves),
+        "output_curve_summaries": _curve_summaries_for_log(well, output_curves),
     }
 
 
@@ -909,6 +1036,11 @@ def _write_json_log(
     }
 
     if run_result is not None:
+        final_summary_curves = sorted(
+            set(AUDIT_TARGET_CURVES)
+            | set(item.computed_curves)
+            | {"SW", "SXO", "PHIE_CC", "PHIE", "PERM_CC", "PERM", "RW", "RMF", "VCL"}
+        )
         payload.update(
             {
                 "well_name": run_result.well.name,
@@ -943,12 +1075,20 @@ def _write_json_log(
                         "errors": _json_safe(workflow_result.errors),
                         "steps_skipped": _json_safe(workflow_result.steps_skipped),
                         "step_results": [
-                            _serialize_step_result(step)
+                            _serialize_step_result_with_well(step, workflow_result.well)
                             for step in workflow_result.steps_executed
                         ],
                     }
                     for scope, zone, workflow_result in _workflow_runs(run_result)
                 ],
+                "final_curve_summaries": _curve_summaries_for_log(
+                    run_result.well,
+                    final_summary_curves,
+                ),
+                "lithology_group_summaries": _lithology_group_summaries_for_log(
+                    run_result.well,
+                    final_summary_curves,
+                ),
             }
         )
 
@@ -1033,6 +1173,80 @@ def process_las_directory_with_workflow(
             results.append(
                 failure_item
             )
+
+    return results
+
+
+def write_workflow_json_traces_directory(
+    input_dir: str | Path,
+    output_dir: str | Path | None = None,
+    pattern: str = "*.las",
+    recursive: bool = False,
+    config: Optional[DynamicWorkflowConfig] = None,
+    well_names: Optional[Sequence[str]] = None,
+) -> List[BatchLasResult]:
+    """Run the workflow and write fresh per-well workflow_json traces only.
+
+    This does not export LAS files or reports. It is intended for audit/training
+    traces after processed LAS/context generation, where the user wants one
+    JSON per well with full step decisions, parameters, inputs, outputs, and
+    lithology-group summaries.
+    """
+    input_path = Path(input_dir)
+    output_path = Path(output_dir) if output_dir is not None else input_path
+    files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
+    if well_names:
+        wanted = {str(name).lower() for name in well_names}
+        files = [
+            path for path in files
+            if path.stem.lower() in wanted or path.name.lower() in wanted
+        ]
+
+    results: List[BatchLasResult] = []
+    for file_path in files:
+        relative_path = file_path.relative_to(input_path)
+        try:
+            well = read_las(file_path)
+            well = standardize_curves(well, rename_curves=True, convert_units=True)
+            input_curves = set(well.curves)
+            workflow_result = run_dynamic_workflow_with_zones(well, config=config)
+            _finalize_export_curves(workflow_result.well, input_curves)
+
+            computed_curves = sorted(set(workflow_result.well.curves) - input_curves)
+            warnings = list(workflow_result.warnings)
+            warnings.extend(workflow_result.base_result.warnings)
+            for zone_result in workflow_result.zone_results:
+                warnings.extend(zone_result.warnings)
+            errors = list(workflow_result.base_result.errors)
+            for zone_result in workflow_result.zone_results:
+                errors.extend(zone_result.errors)
+
+            overall_success = workflow_result.base_result.success and all(
+                zone_result.success for zone_result in workflow_result.zone_results
+            )
+            item = BatchLasResult(
+                source_file=str(file_path),
+                output_file=str(output_path / relative_path),
+                success=overall_success,
+                warnings=warnings,
+                errors=errors,
+                input_curves=sorted(input_curves),
+                output_curves=sorted(workflow_result.well.curves),
+                computed_curves=computed_curves,
+                zones_applied=len(workflow_result.zones),
+                result=workflow_result,
+            )
+            item.json_log_file = _write_json_log(item, relative_path, output_path)
+            results.append(item)
+        except Exception as exc:
+            failure_item = BatchLasResult(
+                source_file=str(file_path),
+                output_file=str(output_path / relative_path),
+                success=False,
+                errors=[str(exc)],
+            )
+            failure_item.json_log_file = _write_json_log(failure_item, relative_path, output_path)
+            results.append(failure_item)
 
     return results
 

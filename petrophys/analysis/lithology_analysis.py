@@ -11,6 +11,7 @@ from petrophys.utils.analysis_helpers import (
     DerivedCurve,
     build_section,
     classification_code,
+    format_curve_source,
     get_curve_data,
 )
 
@@ -116,9 +117,12 @@ class LithologyAnalysis:
         rhob, _ = get_curve_data(well, ["RHOB"])
         nphi, _ = get_curve_data(well, ["NPHI", "PHIN"])
         gr, _ = get_curve_data(well, ["GR"])
-        phit, _ = get_curve_data(well, ["PHIT", "PHIE"])
-        vsh, _ = get_curve_data(well, ["VSH", "VCL", "VCLAY"])
-        perm, _ = get_curve_data(well, ["PERM", "PERM_CC", "PERM_CORE", "PERM_TIMUR"])
+        phit, phit_source = get_curve_data(well, ["PHIE_CC", "PHIE", "PHIT"])
+        vsh, vsh_source = get_curve_data(well, ["VSH", "VCL", "VCLAY"])
+        perm, perm_source = get_curve_data(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])
+        porosity_source_text = format_curve_source(phit_source)
+        perm_source_text = format_curve_source(perm_source)
+        vsh_source_text = format_curve_source(vsh_source)
 
         gt_groups = np.full(n_samples, "NO_LITHOLOGY_DATA", dtype=object)
         if gt_codes is not None:
@@ -321,11 +325,14 @@ class LithologyAnalysis:
                     well,
                     petro_labels,
                     description="Reservoir quality interpreted within lithology context.",
-                    methodology="Combines grouped lithology with PHIT, PERM, and VSH screening.",
+                    methodology=(
+                        f"Combines grouped lithology with selected porosity={porosity_source_text}, "
+                        f"permeability={perm_source_text}, and shale volume={vsh_source_text}."
+                    ),
                     calculation_thresholds=(
-                        "Quality base: FAIR when PHIT>0.05, GOOD when PHIT>0.10, EXCELLENT when PHIT>0.15. "
-                        "When PERM is available, GOOD also requires PERM>1 mD and EXCELLENT requires PERM>10 mD. "
-                        "When VSH/VCL is available, GOOD also requires VSH<0.40 and EXCELLENT requires VSH<0.25."
+                        "Quality base: FAIR when selected porosity >0.05, GOOD when >0.10, EXCELLENT when >0.15. "
+                        "When selected permeability is available, GOOD also requires >1 mD and EXCELLENT requires >10 mD. "
+                        "When shale volume is available, GOOD also requires <0.40 and EXCELLENT requires <0.25."
                     ),
                 ),
                 "lithology_log_consistency": build_section(

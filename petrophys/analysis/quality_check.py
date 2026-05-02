@@ -11,6 +11,7 @@ from petrophys.utils.analysis_helpers import (
     CategoryAnalysisResult,
     DerivedCurve,
     build_section,
+    get_curve_data_depthwise,
     rolling_std,
 )
 
@@ -39,13 +40,9 @@ class WellboreQC:
     ) -> CategoryAnalysisResult:
         n_samples = well.n_samples
         depth = np.asarray(well.depth, dtype=float)
-        cali_curve = well.get("CALI") or well.get("CAL")
-        bs_curve = well.get("BS")
-        drho_curve = well.get("DRHO")
-
-        cali = np.asarray(cali_curve.data, dtype=float) if cali_curve is not None else None
-        bs = np.asarray(bs_curve.data, dtype=float) if bs_curve is not None else None
-        drho = np.asarray(drho_curve.data, dtype=float) if drho_curve is not None else None
+        cali, _, _ = get_curve_data_depthwise(well, ["CALI", "CAL"])
+        bs, _, _ = get_curve_data_depthwise(well, ["BS"])
+        drho, _, _ = get_curve_data_depthwise(well, ["DRHO"])
 
         cali_smooth = np.full(n_samples, np.nan, dtype=float)
         cali_roughness = np.full(n_samples, np.nan, dtype=float)

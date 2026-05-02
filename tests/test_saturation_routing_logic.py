@@ -92,6 +92,16 @@ def test_saturation_raises_when_required_curves_are_missing():
         SaturationModule(model="auto").calculate(well, rw=0.05)
 
 
+def test_saturation_prefers_core_corrected_phie_when_available():
+    well = _saturation_well(vcl=0.1)
+    well.add_curve("PHIE_CC", np.full(4, 0.30), "v/v", "Core-corrected effective porosity")
+
+    result = SaturationModule(model="archie").calculate(well, rw=0.05)
+
+    expected = np.sqrt(0.05 / (np.power(0.30, 2.0) * 20.0))
+    np.testing.assert_allclose(result.sw, np.full(4, expected))
+
+
 def test_sxo_is_never_below_sw_when_invaded_zone_archie_is_used():
     well = _saturation_well(vcl=0.1)
     well.add_curve("RSHA", np.full(4, 2000.0), "ohm.m", "Shallow resistivity")
@@ -105,3 +115,57 @@ def test_sxo_is_never_below_sw_when_invaded_zone_archie_is_used():
     assert result.sxo_method == "archie_rxo_rmf"
     assert np.all(result.sxo >= result.sw)
     assert np.nanmax(result.sxo) <= 1.0
+
+
+def test_sxo_falls_back_when_shallow_resistivity_curve_has_no_finite_samples():
+    well = _saturation_well(vcl=0.6)
+    well.add_curve("RSHA", np.full(4, np.nan), "ohm.m", "Shallow resistivity")
+
+    result = SaturationModule(model="auto").calculate(
+        well,
+        rw=0.05,
+        rcl=5.0,
+        rmf=0.08,
+        lithology="clastic",
+    )
+
+    assert result.sxo_method == "fifth_root_quicklook"
+    assert result.sxo_reason == "RSHA/RXO/RESS present but had no finite usable samples"
+    np.testing.assert_allclose(result.sxo, np.power(np.clip(result.sw, 0.0, 1.0), 0.2))
+
+
+def test_sxo_uses_finite_secondary_shallow_alias_when_primary_is_nonfinite():
+    well = _saturation_well(vcl=0.1)
+    well.add_curve("RSHA", np.full(4, np.nan), "ohm.m", "Empty shallow resistivity")
+    well.add_curve("RXO", np.full(4, 8.0), "ohm.m", "Finite flushed resistivity")
+
+    result = SaturationModule(model="archie").calculate(
+        well,
+        rw=0.05,
+        rmf=0.08,
+    )
+
+    assert result.sxo_method == "archie_rxo_rmf"
+    assert result.sxo_reason == "RSHA/RXO/RESS and RMF available"
+    assert np.isfinite(result.sxo).all()
+
+
+def test_sxo_mixes_invaded_archie_and_fifth_root_depthwise():
+    well = _saturation_well(vcl=0.1)
+    well.add_curve("RSHA", np.array([8.0, np.nan, np.nan, np.nan]), "ohm.m", "Shallow resistivity")
+    well.add_curve("RXO", np.array([np.nan, 8.0, np.nan, np.nan]), "ohm.m", "Flushed resistivity")
+
+    result = SaturationModule(model="archie").calculate(
+        well,
+        rw=0.05,
+        rmf=0.08,
+    )
+
+    assert result.sxo_method == "archie_rxo_rmf+fifth_root_quicklook"
+    assert result.sxo_method_counts == {"archie_rxo_rmf": 2, "fifth_root_quicklook": 2}
+    assert result.sxo_input_sources["rxo"] == {"RSHA": 1, "RXO": 1}
+    np.testing.assert_allclose(
+        result.sxo[2:],
+        np.power(np.clip(result.sw[2:], 0.0, 1.0), 0.2),
+    )
+    assert np.isfinite(result.sxo).all()

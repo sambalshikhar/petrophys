@@ -8,6 +8,8 @@ zones where clay volume exceeds 0.9 (nearly pure clay).
 from typing import Union, Optional
 import numpy as np
 
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
+
 
 def calculate_rcl(
     rdep: Union[float, np.ndarray],
@@ -95,25 +97,24 @@ class RclModule:
         float
             Clay resistivity (ohm.m)
         """
-        rdep = well.get("RDEP") or well.get("RT")
+        rdep, _, _ = get_curve_data_depthwise(well, ["RDEP", "RT"])
         if rdep is None:
             return self.default_rcl
 
         if shale_mask is None and vcl is None:
-            vcl_curve = well.get("VCL")
-            if vcl_curve is None:
+            vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY"])
+            if vcl is None:
                 return calculate_rcl(
-                    rdep.data,
+                    rdep,
                     None,
                     shale_mask=None,
                     vcl_threshold=self.vcl_threshold,
                     default_rcl=self.default_rcl,
                     statistic=self.statistic,
                 )
-            vcl = vcl_curve.data
 
         return calculate_rcl(
-            rdep.data,
+            rdep,
             vcl,
             shale_mask=shale_mask,
             vcl_threshold=self.vcl_threshold,

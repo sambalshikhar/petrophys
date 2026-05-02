@@ -11,6 +11,7 @@ from petrophys.utils.analysis_helpers import (
     DerivedCurve,
     build_section,
     depth_step_array,
+    format_curve_source,
     get_curve_data,
 )
 from petrophys.reservoir.rock_quality.rock_quality_module import RockQualityModule
@@ -27,14 +28,22 @@ class PermeabilityAnalysis:
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
         n_samples = well.n_samples
-        perm, _ = get_curve_data(well, ["PERM", "PERM_CC", "PERM_CORE", "PERM_TIMUR"])
-        fzi, _ = get_curve_data(well, ["FZI"])
-        rqi, _ = get_curve_data(well, ["RQI"])
-        phie, _ = get_curve_data(well, ["PHIE", "PHIT"])
-        vsh, _ = get_curve_data(well, ["VSH", "VCL", "VCLAY"])
-        rxo, _ = get_curve_data(well, ["RXO", "RSHA", "RESS"])
-        rdep, _ = get_curve_data(well, ["RDEP", "RT"])
+        perm, perm_source = get_curve_data(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])
+        fzi, fzi_source = get_curve_data(well, ["FZI"])
+        rqi, rqi_source = get_curve_data(well, ["RQI"])
+        phie, phie_source = get_curve_data(well, ["PHIE_CC", "PHIE", "PHIT"])
+        vsh, vsh_source = get_curve_data(well, ["VSH", "VCL", "VCLAY"])
+        rxo, rxo_source = get_curve_data(well, ["RXO", "RSHA", "RESS"])
+        rdep, rdep_source = get_curve_data(well, ["RDEP", "RT"])
         mhi, _ = get_curve_data(well, ["MHI"])
+        perm_source_text = format_curve_source(perm_source)
+        phie_source_text = format_curve_source(phie_source)
+        vsh_source_text = format_curve_source(vsh_source)
+        invasion_source_text = (
+            f"{format_curve_source(rxo_source)} / {format_curve_source(rdep_source)}"
+            if rxo_source or rdep_source
+            else "unavailable"
+        )
 
         derived_curves: dict[str, DerivedCurve] = {}
         if (fzi is None or rqi is None) and perm is not None and phie is not None:
@@ -42,10 +51,18 @@ class PermeabilityAnalysis:
                 rq_result = RockQualityModule().calculate(well, perm=perm, phi_e=phie)
                 if rqi is None:
                     rqi = rq_result.rqi
-                    derived_curves["RQI"] = DerivedCurve(rqi, "microns", "Reservoir Quality Index")
+                    derived_curves["RQI"] = DerivedCurve(
+                        rqi,
+                        "microns",
+                        f"Reservoir Quality Index from {perm_source_text} and {phie_source_text}",
+                    )
                 if fzi is None:
                     fzi = rq_result.fzi
-                    derived_curves["FZI"] = DerivedCurve(fzi, "microns", "Flow Zone Indicator")
+                    derived_curves["FZI"] = DerivedCurve(
+                        fzi,
+                        "microns",
+                        f"Flow Zone Indicator from {perm_source_text} and {phie_source_text}",
+                    )
             except Exception:
                 pass
 
@@ -95,7 +112,7 @@ class PermeabilityAnalysis:
 
         if perm is not None:
             kh = np.clip(perm * depth_step_array(well.depth), 0.001, None)
-            derived_curves["KH"] = DerivedCurve(kh, "mD*depth", "Flow capacity (PERM * dz)")
+            derived_curves["KH"] = DerivedCurve(kh, "mD*depth", f"Flow capacity ({perm_source_text} * dz)")
 
         if perm is not None or rqi is not None or fzi is not None:
             perm_qi = np.full(n_samples, np.nan, dtype=float)
@@ -138,7 +155,10 @@ class PermeabilityAnalysis:
                     well,
                     distribution_labels,
                     description="Permeability quality from absolute permeability.",
-                    methodology="Uses the first available permeability curve.",
+                    methodology=(
+                        f"Uses {perm_source_text}; priority is PERM_CC, then PERM, PERM_CORE, PERM_TIMUR. "
+                        "Thresholds are applied to the selected depth-wise permeability curve."
+                    ),
                     calculation_thresholds=(
                         "EXCELLENT > 1000 mD; VERY_GOOD >100-1000 mD; GOOD >10-100 mD; "
                         "FAIR >1-10 mD; POOR <=1 mD."
@@ -148,7 +168,10 @@ class PermeabilityAnalysis:
                     well,
                     flow_unit_labels,
                     description="Flow-unit characterization from FZI.",
-                    methodology="Uses FZI classes with RQI as supplementary context.",
+                    methodology=(
+                        f"Uses {format_curve_source(fzi_source, 'FZI derived when possible')} classes "
+                        f"with {format_curve_source(rqi_source, 'RQI derived when possible')} as supplementary context."
+                    ),
                     calculation_thresholds=(
                         "MEGA_PORES >=5; MACRO_PORES >=2 to <5; MESO_PORES >=0.5 to <2; MICRO_PORES <0.5."
                     ),
@@ -157,7 +180,7 @@ class PermeabilityAnalysis:
                     well,
                     variation_labels,
                     description="Geological permeability controls from shale content.",
-                    methodology="Uses the first available VSH/VCL curve.",
+                    methodology=f"Uses {vsh_source_text}; priority is VSH, then VCL, VCLAY.",
                     calculation_thresholds=(
                         "CLEAN_RESERVOIR < 0.20; MIXED_LITHOLOGY 0.20-0.50; SHALE_DOMINATED > 0.50."
                     ),
@@ -166,7 +189,10 @@ class PermeabilityAnalysis:
                     well,
                     invasion_labels,
                     description="Permeability clues from invasion behavior.",
-                    methodology="Uses RXO / RDEP when resistivity data are available.",
+                    methodology=(
+                        f"Uses {invasion_source_text}; flushed/shallow priority is RXO, RSHA, RESS and "
+                        "deep-resistivity priority is RDEP, RT."
+                    ),
                     calculation_thresholds=(
                         "CONDUCTIVE_INVASION < 0.8; MINIMAL_INVASION 0.8-1.2; "
                         "RESISTIVE_INVASION > 1.2."
@@ -176,7 +202,7 @@ class PermeabilityAnalysis:
                     well,
                     overall_labels,
                     description="Reservoir interpretation mapped from permeability class.",
-                    methodology="Direct mapping from permeability distribution classes.",
+                    methodology=f"Direct mapping from permeability classes derived from {perm_source_text}.",
                     calculation_thresholds=(
                         "EXCELLENT_RESERVOIR, VERY_GOOD_RESERVOIR, GOOD_RESERVOIR, "
                         "MARGINAL_RESERVOIR, otherwise TIGHT_FORMATION."

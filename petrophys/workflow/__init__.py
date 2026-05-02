@@ -35,6 +35,7 @@ from petrophys.workflow.zoned_batch import (
     extract_zoned_parameters,
     process_las_directory_with_workflow,
     run_dynamic_workflow_with_zones,
+    write_workflow_json_traces_directory,
     write_batch_report,
     write_curve_audit_report,
 )
@@ -69,6 +70,7 @@ __all__ = [
     "extract_zoned_parameters",
     "process_las_directory_with_workflow",
     "run_dynamic_workflow_with_zones",
+    "write_workflow_json_traces_directory",
     "write_batch_report",
     "write_curve_audit_report",
     "run_comprehensive_analysis",

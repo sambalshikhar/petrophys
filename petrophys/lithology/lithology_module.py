@@ -11,6 +11,7 @@ import numpy as np
 from petrophys.lithology.multi_mineral_solver import (
     MultiMineralSolver,
 )
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
 
 
 @dataclass
@@ -187,38 +188,36 @@ class LithologyModule:
         """
         n_samples = well.n_samples
 
-        # Get required curves
-        rhob = well.get("RHOB")
-        nphi = well.get("NPHI")
-        pef = well.get("PEF")
-        phie = well.get("PHIE")
-        dtc = well.get("DTC")
-        gr = well.get("GR")
+        # Get required curves depth-wise so sparse primary aliases do not
+        # block usable samples from lower-priority aliases.
+        rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
+        nphi, _, _ = get_curve_data_depthwise(well, ["NPHI", "PHIN"])
+        pef, _, _ = get_curve_data_depthwise(well, ["PEF"])
+        phie, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+        dtc, _, _ = get_curve_data_depthwise(well, ["DTC", "DT"])
+        gr, _, _ = get_curve_data_depthwise(well, ["GR"])
 
         if rhob is None or nphi is None:
-            raise ValueError("RHOB and NPHI required for lithology")
+            raise ValueError("RHOB and NPHI/PHIN with finite samples required for lithology")
 
         # Get VCL
         if vcl is None and self.include_clay:
-            vcl_curve = well.get("VCL")
-            if vcl_curve is not None:
-                vcl = vcl_curve.data
-            else:
-                vcl = np.zeros(n_samples)
+            vcl_data, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
+            vcl = vcl_data if vcl_data is not None else np.zeros(n_samples)
         elif vcl is None:
             vcl = np.zeros(n_samples)
 
-        pef_clean = self._screen_pef(pef.data) if pef is not None else None
-        dtc_clean = self._screen_dtc(dtc.data) if dtc is not None else None
-        phie_data = phie.data.copy() if phie is not None else np.zeros(n_samples)
-        gr_data = gr.data.copy() if gr is not None else np.full(n_samples, np.nan)
+        pef_clean = self._screen_pef(pef) if pef is not None else None
+        dtc_clean = self._screen_dtc(dtc) if dtc is not None else None
+        phie_data = np.asarray(phie, dtype=float).copy() if phie is not None else np.zeros(n_samples)
+        gr_data = np.asarray(gr, dtype=float).copy() if gr is not None else np.full(n_samples, np.nan)
 
         # Solve for minerals. The solver already removes clay and porosity
         # internally, so raw curves are passed here.
         result = self.solver.solve(
             vcl=vcl,
-            rhob=rhob.data,
-            nphi=nphi.data,
+            rhob=rhob,
+            nphi=nphi,
             pef=pef_clean,
             phie=phie_data,
             dt=dtc_clean,
@@ -235,8 +234,8 @@ class LithologyModule:
 
         for i in range(n_samples):
             lith_name = self._classify_sample(
-                rhob=float(rhob.data[i]),
-                nphi=float(nphi.data[i]),
+                rhob=float(rhob[i]),
+                nphi=float(nphi[i]),
                 gr=float(gr_data[i]) if np.isfinite(gr_data[i]) else np.nan,
                 dtc=float(dtc_clean[i]) if dtc_clean is not None and np.isfinite(dtc_clean[i]) else np.nan,
                 vcl=float(vcl[i]),
