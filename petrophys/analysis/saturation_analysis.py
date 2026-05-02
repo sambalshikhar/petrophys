@@ -10,6 +10,7 @@ from petrophys.utils.analysis_helpers import (
     CategoryAnalysisResult,
     DerivedCurve,
     build_section,
+    format_curve_source,
     get_curve_data,
 )
 from petrophys.base.classifications import MhiClassification
@@ -27,20 +28,25 @@ class SaturationAnalysis:
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
         n_samples = well.n_samples
-        sw, _ = get_curve_data(well, ["SWA", "SW", "SWT-LOG"])
-        sxo, _ = get_curve_data(well, ["SWXOA", "SXO", "SXO-LOG"])
+        sw, sw_source = get_curve_data(well, ["SWA", "SW", "SWT-LOG"])
+        sxo, sxo_source = get_curve_data(well, ["SWXOA", "SXO", "SXO-LOG"])
         if sxo is None:
             sxo = self._first_sxo_curve(well)
-        phit, _ = get_curve_data(well, ["PHIT"])
-        phie, _ = get_curve_data(well, ["PHIE", "PHIT"])
-        bvw, _ = get_curve_data(well, ["BVW"])
-        mhi, _ = get_curve_data(well, ["MHI"])
-        rxo, _ = get_curve_data(well, ["RXO", "RSHA", "RESS"])
-        rdep, _ = get_curve_data(well, ["RDEP", "RT"])
+            if sxo is not None:
+                sxo_source = "SXO-*"
+        phit, phit_source = get_curve_data(well, ["PHIE_CC", "PHIT"])
+        phie, phie_source = get_curve_data(well, ["PHIE_CC", "PHIE", "PHIT"])
+        bvw, bvw_source = get_curve_data(well, ["BVW"])
+        mhi, mhi_source = get_curve_data(well, ["MHI"])
+        rxo, rxo_source = get_curve_data(well, ["RXO", "RSHA", "RESS"])
+        rdep, rdep_source = get_curve_data(well, ["RDEP", "RT"])
         phid, _ = get_curve_data(well, ["PHID"])
         phin, _ = get_curve_data(well, ["PHIN", "NPHIC", "NPHI_HC", "NPHI"])
         drho, _ = get_curve_data(well, ["DRHO"])
         dtc, _ = get_curve_data(well, ["DTC", "DT"])
+        sw_source_text = format_curve_source(sw_source)
+        phie_source_text = format_curve_source(phie_source)
+        phit_source_text = format_curve_source(phit_source)
 
         derived_curves: dict[str, DerivedCurve] = {}
 
@@ -173,7 +179,7 @@ class SaturationAnalysis:
                     well,
                     water_sat_labels,
                     description="Hydrocarbon saturation classes from water saturation.",
-                    methodology="Uses SWA/SW/available water saturation in priority order.",
+                    methodology=f"Uses {sw_source_text}; priority is SWA, then SW, SWT-LOG.",
                     calculation_thresholds=(
                         "EXCELLENT < 0.20; GOOD 0.20-0.40; FAIR 0.40-0.60; WATER_BEARING >= 0.60."
                     ),
@@ -182,7 +188,10 @@ class SaturationAnalysis:
                     well,
                     bvw_labels,
                     description="Moveable hydrocarbon interpretation from BVW.",
-                    methodology="Uses existing BVW when present or computes BVW = PHIE * SW.",
+                    methodology=(
+                        f"Uses {format_curve_source(bvw_source, 'computed BVW')} when present; otherwise BVW = "
+                        f"selected effective porosity ({phie_source_text}) * water saturation ({sw_source_text})."
+                    ),
                     calculation_thresholds=(
                         "EXCELLENT < 0.03; GOOD 0.03-0.06; FAIR 0.06-0.10; "
                         "UNDETERMINED >= 0.10."
@@ -192,7 +201,10 @@ class SaturationAnalysis:
                     well,
                     movability_labels,
                     description="Movability from MHI or invasion fallback.",
-                    methodology="Prefers MHI = SW/SXO; otherwise uses invasion ratio RXO/RDEP.",
+                    methodology=(
+                        f"Prefers MHI={format_curve_source(mhi_source)}. If MHI is unavailable, uses "
+                        f"invasion ratio {format_curve_source(rxo_source)} / {format_curve_source(rdep_source)}."
+                    ),
                     calculation_thresholds=(
                         "MHI bands: HIGH_MOVEABLE_HC <0.5, MODERATE 0.5-0.7, LOW 0.7-0.9, MINIMAL >=0.9. "
                         "Fallback invasion bands: conductive <0.7, minimal 0.7-1.3, resistive >1.3."
@@ -202,7 +214,10 @@ class SaturationAnalysis:
                     well,
                     contact_labels,
                     description="Fluid-contact and transition-zone indicators.",
-                    methodology="Compares per-sample changes in SW and PHIT relative to the previous depth.",
+                    methodology=(
+                        f"Compares per-sample changes in SW ({sw_source_text}) and selected porosity "
+                        f"({phit_source_text}) relative to the previous depth."
+                    ),
                     calculation_thresholds=(
                         "POTENTIAL_CONTACT_ZONE: dSw > 0.2 and dPHIT < 0.05; "
                         "TRANSITION_ZONE: dSw > 0.1 and dPHIT < 0.05; "

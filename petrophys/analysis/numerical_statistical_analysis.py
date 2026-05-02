@@ -16,6 +16,7 @@ from petrophys.utils.analysis_helpers import (
     build_section,
     depth_step_array,
     depth_to_meters,
+    format_curve_source,
     get_curve_data,
 )
 from petrophys.reservoir.net_pay.net_pay_module import NetPayModule
@@ -77,18 +78,23 @@ class NumericalStatisticalAnalysis:
         correlation_labels = np.full(n_samples, "UNKNOWN_CONSISTENCY", dtype=object)
         relation_specs = [
             (["GR"], ["VSH", "VCL", "VCLAY"], "positive"),
-            (["RHOB"], ["PHIT", "PHIE"], "negative"),
-            (["NPHI", "PHIN"], ["PHIT", "PHIE"], "positive"),
+            (["RHOB"], ["PHIE_CC", "PHIT", "PHIE"], "negative"),
+            (["NPHI", "PHIN"], ["PHIE_CC", "PHIT", "PHIE"], "positive"),
             (["RDEP", "RT"], ["SWA", "SW", "SWT-LOG"], "negative"),
-            (["PHIT", "PHIE"], ["PERM", "PERM_CC", "PERM_CORE"], "positive"),
+            (["PHIE_CC", "PHIT", "PHIE"], ["PERM_CC", "PERM", "PERM_CORE"], "positive"),
         ]
         relation_cache: list[tuple[np.ndarray, np.ndarray, str]] = []
+        relation_sources: list[str] = []
         for left_names, right_names, relation in relation_specs:
-            left, _ = get_curve_data(well, left_names)
-            right, _ = get_curve_data(well, right_names)
+            left, left_source = get_curve_data(well, left_names)
+            right, right_source = get_curve_data(well, right_names)
             if left is None or right is None:
                 continue
             relation_cache.append((left, right, relation))
+            relation_sources.append(
+                f"{format_curve_source(left_source)} vs {format_curve_source(right_source)} ({relation})"
+            )
+        relation_source_text = "; ".join(relation_sources) if relation_sources else "no supported pairs"
 
         for idx in range(n_samples):
             valid_pairs = 0
@@ -271,7 +277,10 @@ class NumericalStatisticalAnalysis:
                     well,
                     correlation_labels,
                     description="Expected petrophysical relationship consistency.",
-                    methodology="Checks each supported log pair against its expected sign relative to the mean.",
+                    methodology=(
+                        "Checks each supported log pair against its expected sign relative to the mean. "
+                        f"Pairs used: {relation_source_text}."
+                    ),
                     calculation_thresholds=(
                         "EXCELLENT >= 0.80; GOOD 0.60-0.80; POOR < 0.60; UNKNOWN when no pairs are available."
                     ),

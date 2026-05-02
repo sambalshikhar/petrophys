@@ -13,6 +13,7 @@ import numpy as np
 from petrophys.resistivity.rw.sp_rw import estimate_sp_lines, rw_from_sp, rw_from_rxo_rt
 from petrophys.resistivity.rw.salinity_rw import rw_from_salinity
 from petrophys.resistivity.rw.temp_correction import correct_rw_temperature
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
 
 
 class RwMethod(Enum):
@@ -75,25 +76,22 @@ class RwModule:
         mask = np.ones(n_samples, dtype=bool)
         used_any = False
 
-        vcl_curve = well.get("VCL")
-        if vcl_curve is not None:
-            vcl = np.asarray(vcl_curve.data, dtype=float)
+        vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY"])
+        if vcl is not None:
             valid = np.isfinite(vcl)
             if np.any(valid):
                 mask &= valid & (vcl <= 0.35)
                 used_any = True
 
-        phie_curve = well.get("PHIE")
-        if phie_curve is not None:
-            phie = np.asarray(phie_curve.data, dtype=float)
+        phie, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+        if phie is not None:
             valid = np.isfinite(phie)
             if np.any(valid):
                 mask &= valid & (phie >= 0.10)
                 used_any = True
 
-        rt_curve = well.get("RDEP") or well.get("RT")
-        if rt_curve is not None:
-            rt = np.asarray(rt_curve.data, dtype=float)
+        rt, _, _ = get_curve_data_depthwise(well, ["RDEP", "RT"])
+        if rt is not None:
             valid = np.isfinite(rt) & (rt > 0)
             candidate = mask & valid if used_any else valid
             if np.any(candidate):
@@ -108,16 +106,15 @@ class RwModule:
 
     def _build_shale_mask(self, well: "Well") -> Optional[np.ndarray]:
         """Build a shale candidate mask for SP shale-line estimation."""
-        vcl_curve = well.get("VCL")
-        if vcl_curve is not None:
-            vcl = np.asarray(vcl_curve.data, dtype=float)
+        vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY"])
+        if vcl is not None:
             mask = np.isfinite(vcl) & (vcl >= 0.7)
             if np.count_nonzero(mask) >= 10:
                 return mask
 
-        gr_curve = well.get("GR")
-        if gr_curve is not None:
-            gr = np.asarray(gr_curve.data, dtype=float)
+        gr, _, _ = get_curve_data_depthwise(well, ["GR"])
+        if gr is not None:
+            gr = np.asarray(gr, dtype=float)
             valid = np.isfinite(gr)
             if np.any(valid):
                 threshold = float(np.nanpercentile(gr[valid], 75))
@@ -161,9 +158,9 @@ class RwModule:
         """
         # Get formation temperature
         if temperature is None:
-            temp_curve = well.get("TEMP")
-            if temp_curve is not None:
-                temperature = temp_curve.data
+            temperature, _, _ = get_curve_data_depthwise(well, ["TEMP", "TMPC"])
+            if temperature is not None:
+                pass
             else:
                 try:
                     from petrophys.environmental.temperature import calculate_temperature_profile
@@ -186,12 +183,13 @@ class RwModule:
             rw = rw_from_salinity(salinity, temperature)
             return RwResult(rw=rw, method="salinity", temperature=temperature)
 
-        if method == "sp" or (method == "auto" and "SP" in well and rmf is not None):
+        sp_data, _, sp_meta = get_curve_data_depthwise(well, ["SP"])
+        sp_present = bool(sp_meta.get("existing_curves"))
+        if method == "sp" or (method == "auto" and sp_present and sp_data is not None and rmf is not None):
             if rmf is None:
                 raise ValueError("Rmf is required for SP-based Rw")
-            sp_curve = well.get("SP")
-            if sp_curve is not None:
-                sp_data = np.asarray(sp_curve.data, dtype=float)
+            if sp_data is not None:
+                sp_data = np.asarray(sp_data, dtype=float)
                 clean_mask = self._build_clean_water_mask(well)
                 shale_mask = self._build_shale_mask(well)
 
@@ -226,13 +224,13 @@ class RwModule:
                 )
 
         if method == "rxo_rt" or method == "auto":
-            rxo = well.get("RSHA") or well.get("RXO")
-            rt = well.get("RDEP") or well.get("RT")
+            rxo_data, _, _ = get_curve_data_depthwise(well, ["RSHA", "RXO", "RESS"])
+            rt_data, _, _ = get_curve_data_depthwise(well, ["RDEP", "RT"])
             if method == "rxo_rt" and rmf is None:
                 raise ValueError("Rmf is required for Rxo/Rt-based Rw")
-            if rxo is not None and rt is not None and rmf is not None:
-                rxo_data = np.asarray(rxo.data, dtype=float)
-                rt_data = np.asarray(rt.data, dtype=float)
+            if rxo_data is not None and rt_data is not None and rmf is not None:
+                rxo_data = np.asarray(rxo_data, dtype=float)
+                rt_data = np.asarray(rt_data, dtype=float)
                 clean_mask = self._build_clean_water_mask(well)
                 if clean_mask is not None:
                     valid = clean_mask & np.isfinite(rxo_data) & np.isfinite(rt_data)

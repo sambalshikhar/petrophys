@@ -9,6 +9,7 @@ from typing import Optional, Union
 import numpy as np
 
 from petrophys.base.constants import DefaultParameters
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
 
 
 def generate_washout_flag(
@@ -187,8 +188,9 @@ def generate_bad_hole_flags(
         bit_size = well.header.bit_size
     if bit_size is None:
         # Try to get from BS curve
-        if "BS" in well:
-            bit_size = well["BS"].data
+        bs_data, _, _ = get_curve_data_depthwise(well, ["BS"])
+        if bs_data is not None:
+            bit_size = bs_data
 
     if bit_size is not None and not np.isscalar(bit_size):
         bit_size = np.asarray(bit_size, dtype=float)
@@ -197,14 +199,14 @@ def generate_bad_hole_flags(
             bit_size = float(np.nanmedian(finite)) if finite.size else None
 
     # Generate washout flag
-    cali = well.get("CALI") or well.get("CAL")
-    drho = well.get("DRHO")
+    cali, _, _ = get_curve_data_depthwise(well, ["CALI", "CAL"])
+    drho, _, _ = get_curve_data_depthwise(well, ["DRHO"])
 
     if cali is not None and bit_size is not None:
         flags["washout"] = generate_washout_flag(
-            cali.data,
+            cali,
             bit_size,
-            drho.data if drho is not None else None,
+            drho,
             cali_threshold,
             drho_threshold
         )
@@ -218,15 +220,15 @@ def generate_bad_hole_flags(
             flags["large_hole"] = np.asarray(large_hole, dtype=bool)
 
     # Generate low density flag
-    rhob = well.get("RHOB")
+    rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
     if rhob is not None:
-        flags["low_density"] = generate_low_density_flag(rhob.data, rhob_min)
+        flags["low_density"] = generate_low_density_flag(rhob, rhob_min)
 
     # Generate PEF exclusion flag
-    pef = well.get("PEF")
+    pef, _, _ = get_curve_data_depthwise(well, ["PEF"])
     if pef is not None:
         flags["pef_exclusion"] = generate_pef_exclusion_flag(
-            pef.data, pef_max, pef_min
+            pef, pef_max, pef_min
         )
 
     # Combined bad hole flag

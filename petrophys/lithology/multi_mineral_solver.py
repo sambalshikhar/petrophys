@@ -14,6 +14,7 @@ from petrophys.lithology.matrix_properties import (
     get_mineral_properties,
     MINERAL_PROPERTIES,
 )
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
 
 
 def _u(pef: float, density: float) -> float:
@@ -315,26 +316,27 @@ class MultiMineralSolver:
         Well
             Well with lithology curves added
         """
-        rhob = well.get("RHOB")
-        nphi = well.get("NPHI")
-        vcl  = well.get("VCL")
-        phie = well.get("PHIE")
-        pef  = well.get("PEF")
-        dt   = well.get("DTC")
+        rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
+        nphi, _, _ = get_curve_data_depthwise(well, ["NPHI", "PHIN"])
+        vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
+        phie, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+        pef, _, _ = get_curve_data_depthwise(well, ["PEF"])
+        dt, _, _ = get_curve_data_depthwise(well, ["DTC", "DT"])
 
         missing = [
-            name for name, c in zip(
-                ["RHOB", "NPHI", "VCL", "PHIE"],
-                [rhob, nphi, vcl, phie]
-            ) if c is None
+            name for name, data in zip(
+                ["RHOB", "NPHI/PHIN", "VCL/VCLAY/VSH", "PHIE/PHIT"],
+                [rhob, nphi, vcl, phie],
+            )
+            if data is None
         ]
         if missing:
             raise ValueError(f"Missing required curves: {missing}")
 
         result = self.solve(
-            rhob.data, nphi.data, vcl.data, phie.data,
-            pef=pef.data if pef is not None else None,
-            dt=dt.data   if dt  is not None else None,
+            rhob, nphi, vcl, phie,
+            pef=pef,
+            dt=dt,
         )
 
         curve_names = {

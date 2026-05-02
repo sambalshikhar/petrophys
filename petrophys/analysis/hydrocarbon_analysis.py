@@ -10,6 +10,7 @@ from petrophys.utils.analysis_helpers import (
     CategoryAnalysisResult,
     DerivedCurve,
     build_section,
+    format_curve_source,
     get_curve_data,
 )
 from petrophys.base.classifications import MhiClassification
@@ -33,15 +34,17 @@ class HydrocarbonAnalysis:
         n_samples = well.n_samples
         sw, _ = get_curve_data(well, ["SWA", "SW", "SWT-LOG"])
         mhi, _ = get_curve_data(well, ["MHI"])
-        vcl, _ = get_curve_data(well, ["VCL", "VCLAY", "VSH"])
-        phie, _ = get_curve_data(well, ["PHIE", "PHIT"])
-        phie_effective, _ = get_curve_data(well, ["PHIE"])
+        vcl, vcl_source = get_curve_data(well, ["VCL", "VCLAY", "VSH"])
+        phie, phie_source = get_curve_data(well, ["PHIE_CC", "PHIE", "PHIT"])
+        phie_effective, phie_effective_source = get_curve_data(well, ["PHIE_CC", "PHIE"])
         phid, _ = get_curve_data(well, ["PHID"])
         phin, _ = get_curve_data(well, ["PHIN", "NPHIC", "NPHI_HC", "NPHI"])
-        bad_hole, _ = get_curve_data(well, ["BAD_HOLE", "BAD_HOLE_FLAG"])
+        bad_hole, bad_hole_source = get_curve_data(well, ["BAD_HOLE", "BAD_HOLE_FLAG"])
         dtc, _ = get_curve_data(well, ["DTC", "DT"])
         dts, _ = get_curve_data(well, ["DTS"])
-        perm, _ = get_curve_data(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])
+        perm, perm_source = get_curve_data(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])
+        phie_source_text = format_curve_source(phie_source)
+        perm_source_text = format_curve_source(perm_source)
 
         pay_flag = self._resolve_pay_flag(well, n_samples)
 
@@ -168,8 +171,9 @@ class HydrocarbonAnalysis:
                     ),
                     methodology=(
                         "CROSSOVER_FLAG is calculated from PHID - PHIN > 0.05, VCL < 0.35, "
-                        "PHIE > 0.05, and BAD_HOLE < 0.5 using the current porosity, clay, and "
-                        "hole-quality curves. VP_VS_RATIO is calculated only when both DTS and DTC "
+                        f"selected effective porosity > 0.05, and BAD_HOLE < 0.5 using VCL={format_curve_source(vcl_source)}, "
+                        f"effective porosity={format_curve_source(phie_effective_source)}, and "
+                        f"bad-hole={format_curve_source(bad_hole_source)}. VP_VS_RATIO is calculated only when both DTS and DTC "
                         "are present in plausible slowness ranges; no artificial estimate is added "
                         "when shear sonic is missing or implausible."
                     ),
@@ -188,15 +192,13 @@ class HydrocarbonAnalysis:
                         "using effective porosity and permeability thresholds."
                     ),
                     methodology=(
-                        "Uses PHIE as the porosity basis and permeability as the flow-capacity basis, "
-                        "preferring PERM_CC when a core-calibrated permeability curve is available and "
-                        "otherwise using PERM. This keeps empirical permeability as the default export "
-                        "while still ranking reservoir quality with the best available permeability input."
+                        f"Uses effective porosity={phie_source_text} and permeability={perm_source_text}. "
+                        "Priorities are PHIE_CC, PHIE, PHIT for porosity and PERM_CC, PERM, PERM_CORE, PERM_TIMUR for permeability."
                     ),
                     calculation_thresholds=(
-                        "EXCELLENT_RESERVOIR: PERM > 10 mD and PHIE > 0.15. "
-                        "GOOD_RESERVOIR: PERM > 1 mD and PHIE > 0.10. "
-                        "FAIR_RESERVOIR: PERM > 0.1 mD and PHIE > 0.08. "
+                        "EXCELLENT_RESERVOIR: selected permeability > 10 mD and selected effective porosity > 0.15. "
+                        "GOOD_RESERVOIR: selected permeability > 1 mD and selected effective porosity > 0.10. "
+                        "FAIR_RESERVOIR: selected permeability > 0.1 mD and selected effective porosity > 0.08. "
                         "NON_RESERVOIR: below fair-reservoir cutoffs."
                     ),
                 ),

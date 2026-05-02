@@ -5,6 +5,8 @@ Bulk Volume Water calculation module.
 from typing import Optional, Union
 import numpy as np
 
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
+
 
 class BvwModule:
     """Bulk Volume Water calculator."""
@@ -17,16 +19,14 @@ class BvwModule:
     ) -> np.ndarray:
         """Calculate BVW."""
         if phie is None:
-            phie_curve = well.get("PHIE")
-            if phie_curve is None:
-                raise ValueError("PHIE required")
-            phie = phie_curve.data
+            phie, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+            if phie is None:
+                raise ValueError("PHIE or PHIT with finite samples required")
 
         if sw is None:
-            sw_curve = well.get("SW")
-            if sw_curve is None:
-                raise ValueError("SW required")
-            sw = sw_curve.data
+            sw, _, _ = get_curve_data_depthwise(well, ["SW", "SWA", "SWT-LOG"])
+            if sw is None:
+                raise ValueError("SW with finite samples required")
 
         return phie * sw
 

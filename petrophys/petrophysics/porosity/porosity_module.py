@@ -14,6 +14,7 @@ from petrophys.petrophysics.porosity.density_porosity import density_porosity
 from petrophys.petrophysics.porosity.sonic_porosity import sonic_porosity, secondary_porosity
 from petrophys.petrophysics.porosity.total_porosity import total_porosity
 from petrophys.petrophysics.porosity.effective_porosity import effective_porosity
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
 
 
 @dataclass
@@ -100,30 +101,31 @@ class PorosityModule:
         -------
         PorosityResult
         """
-        rhob = well.get("RHOB")
-        nphi = well.get("NPHI")
-        dtc  = well.get("DTC")
+        rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
+        nphi, _, _ = get_curve_data_depthwise(well, ["NPHI"])
+        dtc, _, _ = get_curve_data_depthwise(well, ["DTC", "DT"])
 
         if rhob is None:
-            raise ValueError("RHOB required for porosity calculation")
+            raise ValueError("RHOB with finite samples required for porosity calculation")
 
         if vcl is None:
-            vcl_curve = well.get("VCL")
-            vcl = vcl_curve.data if vcl_curve is not None else np.zeros(well.n_samples)
+            vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
+            if vcl is None:
+                vcl = np.zeros(well.n_samples)
 
         # --- Density porosity ---
-        phid = density_porosity(rhob.data, self.rhob_matrix, self.rhob_fluid)
+        phid = density_porosity(rhob, self.rhob_matrix, self.rhob_fluid)
 
         # --- Sonic porosity ---
         phis = None
         if dtc is not None:
             phis = sonic_porosity(
-                dtc.data, self.matrix,
+                dtc, self.matrix,
                 dtc_fluid=DefaultParameters.FLUID_SLOWNESS
             )
 
         # --- Total porosity (N-D) ---
-        phit = total_porosity(nphi.data, phid) if nphi is not None else phid
+        phit = total_porosity(nphi, phid) if nphi is not None else phid
 
         # --- Effective porosity ---
         phie = effective_porosity(phit, vcl, self.phi_clay)

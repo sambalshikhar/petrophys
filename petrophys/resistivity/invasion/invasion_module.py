@@ -13,6 +13,7 @@ from petrophys.resistivity.invasion.invasion_classification import (
     classify_invasion,
     InvasionType,
 )
+from petrophys.utils.analysis_helpers import get_curve, get_curve_data_depthwise
 
 
 @dataclass
@@ -78,28 +79,41 @@ class InvasionModule:
         InvasionResult
             Invasion analysis results
         """
-        # Get resistivity curves
-        rxo = well.get(self.rxo_curve) or well.get("RXO") or well.get("RESS")
-        rt = well.get(self.rt_curve) or well.get("RT")
+        # Get resistivity curves. Prefer true flushed/shallow curves, then use
+        # medium/deep separation as a fallback proxy indicator where
+        # flushed/shallow curves are absent or non-finite at a depth sample.
+        shallow_candidates = list(dict.fromkeys([self.rxo_curve, "RXO", "RESS", "RSHA"]))
+        medium_candidates = ["RMED", "RESM"]
+        ratio_candidates = list(dict.fromkeys([*shallow_candidates, *medium_candidates]))
+        rxo_data, rxo_name, rxo_meta = get_curve_data_depthwise(well, ratio_candidates)
+        shallow_data, _, shallow_meta = get_curve_data_depthwise(well, shallow_candidates)
+        medium_data, _, medium_meta = get_curve_data_depthwise(well, medium_candidates)
+        rt_data, rt_name, rt_meta = get_curve_data_depthwise(well, [self.rt_curve, "RT", "RDEP"])
+        rxo_existing = get_curve(well, ratio_candidates, require_finite=False)
+        rt_existing = get_curve(well, [self.rt_curve, "RT", "RDEP"], require_finite=False)
 
-        if rxo is None:
-            raise ValueError(f"Shallow resistivity curve not found")
-        if rt is None:
-            raise ValueError(f"Deep resistivity curve not found")
+        if rxo_data is None:
+            if rxo_existing is not None:
+                raise ValueError("Flushed/shallow resistivity or medium fallback curve present but has no finite samples")
+            raise ValueError("Flushed/shallow resistivity or medium fallback curve not found")
+        if rt_data is None:
+            if rt_existing is not None:
+                raise ValueError("Deep resistivity curve present but has no finite samples")
+            raise ValueError("Deep resistivity curve not found")
 
         # Calculate ratio
-        ratio = calculate_invasion_ratio(rxo.data, rt.data)
+        ratio = calculate_invasion_ratio(rxo_data, rt_data)
         rxo_data, rt_data = np.broadcast_arrays(
-            np.asarray(rxo.data, dtype=float),
-            np.asarray(rt.data, dtype=float),
+            np.asarray(rxo_data, dtype=float),
+            np.asarray(rt_data, dtype=float),
         )
-        rt_min = 0.2
+        rt_min = 0.0
         max_ratio = 100.0
         core_valid = (
             np.isfinite(rxo_data)
             & np.isfinite(rt_data)
             & (rxo_data > 0.0)
-            & (rt_data >= rt_min)
+            & (rt_data > rt_min)
         )
         raw_ratio = np.full(rxo_data.shape, np.nan, dtype=float)
         raw_ratio[core_valid] = rxo_data[core_valid] / rt_data[core_valid]
@@ -130,8 +144,24 @@ class InvasionModule:
             "nonfinite_rxo_samples": int(np.count_nonzero(~np.isfinite(rxo_data))),
             "nonfinite_rt_samples": int(np.count_nonzero(~np.isfinite(rt_data))),
             "nonpositive_rxo_samples": int(np.count_nonzero(np.isfinite(rxo_data) & (rxo_data <= 0.0))),
-            "rt_below_min_samples": int(np.count_nonzero(np.isfinite(rt_data) & (rt_data < rt_min))),
+            "rt_below_min_samples": int(np.count_nonzero(np.isfinite(rt_data) & (rt_data <= rt_min))),
             "ratio_above_max_samples": int(np.count_nonzero(core_valid & (raw_ratio > max_ratio))),
+            "rxo_curve": rxo_name,
+            "rt_curve": rt_name,
+            "rxo_source_counts": rxo_meta.get("source_counts", {}),
+            "rt_source_counts": rt_meta.get("source_counts", {}),
+            "shallow_source_counts": shallow_meta.get("source_counts", {}) if shallow_meta else {},
+            "medium_proxy_source_counts": medium_meta.get("source_counts", {}) if medium_meta else {},
+            "medium_deep_proxy_samples": int(
+                sum((rxo_meta.get("source_counts", {}) or {}).get(name, 0) for name in medium_candidates)
+            ),
+            "true_shallow_samples": int(
+                sum((rxo_meta.get("source_counts", {}) or {}).get(name, 0) for name in shallow_candidates)
+            ),
+            "fallback_proxy_used": any(
+                ((rxo_meta.get("source_counts", {}) or {}).get(name, 0) > 0)
+                for name in medium_candidates
+            ),
         }
 
         return InvasionResult(
@@ -178,7 +208,7 @@ class InvasionModule:
 def calculate_invasion_ratio(
     rxo: Union[float, np.ndarray],
     rt: Union[float, np.ndarray],
-    rt_min: float = 0.2,
+    rt_min: float = 0.0,
     max_ratio: float = 100.0,
 ) -> Union[float, np.ndarray]:
     """
@@ -190,9 +220,9 @@ def calculate_invasion_ratio(
         Flushed zone resistivity
     rt : float or np.ndarray
         True formation resistivity
-    rt_min : float, default 0.2
-        Minimum usable true resistivity. Lower or non-positive values are
-        treated as invalid instead of creating artificial ratio spikes.
+    rt_min : float, default 0.0
+        Minimum usable true resistivity. Non-positive values are treated as
+        invalid; low positive brine-formation resistivity is retained.
     max_ratio : float, default 100.0
         Maximum plausible ratio retained in the output.
 
@@ -214,7 +244,7 @@ def calculate_invasion_ratio(
         np.isfinite(rxo_arr)
         & np.isfinite(rt_arr)
         & (rxo_arr > 0)
-        & (rt_arr >= rt_min)
+        & (rt_arr > rt_min)
     )
     ratio[valid] = rxo_arr[valid] / rt_arr[valid]
     ratio[ratio > max_ratio] = np.nan

@@ -94,13 +94,124 @@ class ComprehensiveAnalysisResult:
 def get_curve_data(
     well: "Well",
     names: Sequence[str],
+    require_finite: bool = True,
+    combine_aliases: bool = True,
 ) -> tuple[Optional[np.ndarray], Optional[str]]:
-    """Return the first available curve data for a list of aliases."""
+    """Return usable curve data for a list of aliases.
+
+    By default aliases are combined depth-wise: the first alias supplies each
+    sample where finite, and lower-priority aliases fill only missing samples.
+    Use ``combine_aliases=False`` to get the first finite curve as a whole, or
+    ``require_finite=False`` when inspecting raw curve presence.
+    """
+    if require_finite and combine_aliases:
+        data, mnemonic, _ = get_curve_data_depthwise(well, names)
+        return data, mnemonic
+
+    curve = get_curve(well, names, require_finite=require_finite)
+    if curve is None:
+        return None, None
+    return np.asarray(curve.data, dtype=float), curve.mnemonic
+
+
+def curve_has_finite_data(curve: Any) -> bool:
+    """Return True when a curve object has at least one finite numeric sample."""
+    if curve is None:
+        return False
+    try:
+        data = np.asarray(curve.data, dtype=float)
+    except (TypeError, ValueError):
+        return False
+    return bool(np.any(np.isfinite(data)))
+
+
+def get_curve(
+    well: "Well",
+    names: Sequence[str],
+    require_finite: bool = True,
+):
+    """Return the first curve matching aliases, preferring finite data."""
+    first_existing = None
     for name in names:
         curve = well.get(name)
-        if curve is not None:
-            return np.asarray(curve.data, dtype=float), curve.mnemonic
-    return None, None
+        if curve is None:
+            continue
+        if first_existing is None:
+            first_existing = curve
+        if not require_finite or curve_has_finite_data(curve):
+            return curve
+    return None if require_finite else first_existing
+
+
+def get_curve_data_depthwise(
+    well: "Well",
+    names: Sequence[str],
+) -> tuple[Optional[np.ndarray], Optional[str], dict[str, Any]]:
+    """Build a depth-wise composite array from aliased curves.
+
+    For aliases such as ``RDEP/RT`` or ``RSHA/RXO/RESS``, this keeps the
+    priority order per sample instead of letting sparse primary curves block
+    usable fallback aliases at other depths.
+    """
+    n_samples = int(getattr(well, "n_samples", 0) or 0)
+    first_existing = None
+    existing_curves: list[str] = []
+    used_curves: list[str] = []
+    source_per_sample = np.full(n_samples, "", dtype=object)
+    result = np.full(n_samples, np.nan, dtype=float)
+
+    for name in names:
+        curve = well.get(name)
+        if curve is None:
+            continue
+        if first_existing is None:
+            first_existing = curve
+        existing_curves.append(curve.mnemonic)
+        try:
+            data = np.asarray(curve.data, dtype=float)
+        except (TypeError, ValueError):
+            continue
+        if data.ndim == 0:
+            data = np.full(n_samples, float(data), dtype=float)
+        elif data.size != n_samples:
+            if data.size == 1:
+                data = np.full(n_samples, float(data.reshape(-1)[0]), dtype=float)
+            else:
+                continue
+        else:
+            data = data.reshape(n_samples)
+
+        fill = ~np.isfinite(result) & np.isfinite(data)
+        if not np.any(fill):
+            continue
+        result[fill] = data[fill]
+        source_per_sample[fill] = curve.mnemonic
+        used_curves.append(curve.mnemonic)
+
+    source_counts = {
+        name: int(np.count_nonzero(source_per_sample == name))
+        for name in used_curves
+    }
+    metadata: dict[str, Any] = {
+        "existing_curves": existing_curves,
+        "used_curves": used_curves,
+        "source_counts": source_counts,
+        "source_per_sample": source_per_sample,
+    }
+    if not used_curves:
+        metadata["first_existing_curve"] = getattr(first_existing, "mnemonic", None)
+        return None, None, metadata
+    return result, "+".join(used_curves), metadata
+
+
+def format_curve_source(source: Optional[str], missing: str = "unavailable") -> str:
+    """Return a concise human-readable selected-curve/source label."""
+    if not source:
+        return missing
+    parts = [part for part in str(source).split("+") if part]
+    if len(parts) > 1:
+        return "depth-wise " + " -> ".join(parts)
+    return str(source)
 
 
 def safe_divide(

@@ -22,6 +22,13 @@ from petrophys.qaqc.normalization import (
     histogram_matching,
     NormalizationModule,
 )
+from petrophys.qaqc.value_range_qc import (
+    VALUE_RANGE_RULES,
+    VALUE_RANGE_QC_PARAMETER,
+    apply_value_range_qc,
+    clean_curve_values,
+    value_range_qc_note,
+)
 
 __all__ = [
     # Standardization
@@ -36,4 +43,10 @@ __all__ = [
     "normalize_log",
     "histogram_matching",
     "NormalizationModule",
+    # Value Range QC
+    "VALUE_RANGE_RULES",
+    "VALUE_RANGE_QC_PARAMETER",
+    "apply_value_range_qc",
+    "clean_curve_values",
+    "value_range_qc_note",
 ]

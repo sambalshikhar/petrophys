@@ -10,6 +10,7 @@ from petrophys.utils.analysis_helpers import (
     CategoryAnalysisResult,
     DerivedCurve,
     build_section,
+    format_curve_source,
     get_curve_data,
 )
 from petrophys.reservoir.rock_quality.rock_quality_module import RockQualityModule
@@ -26,15 +27,22 @@ class PorosityAnalysis:
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
         n_samples = well.n_samples
-        phit, _ = get_curve_data(well, ["PHIT"])
-        phid, _ = get_curve_data(well, ["PHID"])
-        phis, _ = get_curve_data(well, ["PHIS"])
-        phin, _ = get_curve_data(well, ["PHIN", "NPHI"])
-        perm, _ = get_curve_data(well, ["PERM", "PERM_CC", "PERM_CORE", "PERM_TIMUR"])
-        vsh, _ = get_curve_data(well, ["VSH", "VCL", "VCLAY"])
-        rqi, _ = get_curve_data(well, ["RQI"])
-        fzi, _ = get_curve_data(well, ["FZI"])
-        phie, _ = get_curve_data(well, ["PHIE", "PHIT"])
+        phit, phit_source = get_curve_data(well, ["PHIE_CC", "PHIT"])
+        phid, phid_source = get_curve_data(well, ["PHID"])
+        phis, phis_source = get_curve_data(well, ["PHIS"])
+        phin, phin_source = get_curve_data(well, ["PHIN", "NPHI"])
+        perm, perm_source = get_curve_data(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])
+        vsh, vsh_source = get_curve_data(well, ["VSH", "VCL", "VCLAY"])
+        rqi, rqi_source = get_curve_data(well, ["RQI"])
+        fzi, fzi_source = get_curve_data(well, ["FZI"])
+        phie, phie_source = get_curve_data(well, ["PHIE_CC", "PHIE", "PHIT"])
+        porosity_basis_text = (
+            f"{format_curve_source(phit_source)}; fallback priority PHID={format_curve_source(phid_source)}, "
+            f"PHIS={format_curve_source(phis_source)}, PHIN={format_curve_source(phin_source)}"
+        )
+        phie_source_text = format_curve_source(phie_source)
+        perm_source_text = format_curve_source(perm_source)
+        vsh_source_text = format_curve_source(vsh_source)
 
         derived_curves: dict[str, DerivedCurve] = {}
 
@@ -43,10 +51,18 @@ class PorosityAnalysis:
                 rq_result = RockQualityModule().calculate(well, perm=perm, phi_e=phie)
                 if rqi is None:
                     rqi = rq_result.rqi
-                    derived_curves["RQI"] = DerivedCurve(rqi, "microns", "Reservoir Quality Index")
+                    derived_curves["RQI"] = DerivedCurve(
+                        rqi,
+                        "microns",
+                        f"Reservoir Quality Index from {perm_source_text} and {phie_source_text}",
+                    )
                 if fzi is None:
                     fzi = rq_result.fzi
-                    derived_curves["FZI"] = DerivedCurve(fzi, "microns", "Flow Zone Indicator")
+                    derived_curves["FZI"] = DerivedCurve(
+                        fzi,
+                        "microns",
+                        f"Flow Zone Indicator from {perm_source_text} and {phie_source_text}",
+                    )
             except Exception:
                 pass
 
@@ -127,8 +143,10 @@ class PorosityAnalysis:
                 "total_porosity_quality_distribution": build_section(
                     well,
                     total_labels,
-                    description="Porosity quality from the first available porosity measurement.",
-                    methodology="Priority: PHIT, PHID, PHIS, then PHIN.",
+                    description="Porosity quality from the best available porosity measurement.",
+                    methodology=(
+                        f"Uses {porosity_basis_text}. Priority is PHIE_CC, PHIT, PHID, PHIS, then PHIN/NPHI."
+                    ),
                     calculation_thresholds=(
                         "EXCELLENT > 0.20; GOOD 0.12-0.20; FAIR 0.06-0.12; "
                         "POOR <= 0.06."
@@ -148,7 +166,7 @@ class PorosityAnalysis:
                     well,
                     clay_labels,
                     description="Clay impact on porosity variation from shale volume.",
-                    methodology="Uses the first available VSH/VCL curve.",
+                    methodology=f"Uses {vsh_source_text}; priority is VSH, then VCL, VCLAY.",
                     calculation_thresholds=(
                         "CLEAN < 0.25; MODERATE 0.25-0.50; SHALY > 0.50."
                     ),
@@ -156,12 +174,16 @@ class PorosityAnalysis:
                 "porosity_quality_assessment_characteristics": build_section(
                     well,
                     quality_labels,
-                    description="Flow-unit quality using PHIT/PERM, then RQI, then FZI.",
-                    methodology="Hierarchical fallback from direct porosity-permeability to rock quality indices.",
+                    description="Flow-unit quality using selected porosity/permeability, then RQI, then FZI.",
+                    methodology=(
+                        f"Direct route uses porosity={format_curve_source(phit_source)} and permeability={perm_source_text}; "
+                        f"rock-quality fallback uses {format_curve_source(rqi_source, 'RQI derived when possible')} "
+                        f"then {format_curve_source(fzi_source, 'FZI derived when possible')}."
+                    ),
                     calculation_thresholds=(
-                        "EXCELLENT_FLOW_UNIT: PHIT > 0.15 and PERM > 10; "
-                        "GOOD_FLOW_UNIT: PHIT > 0.10 and PERM > 1; "
-                        "FAIR_FLOW_UNIT: PHIT > 0.06 and PERM > 0.1. "
+                        "EXCELLENT_FLOW_UNIT: selected porosity > 0.15 and selected permeability > 10; "
+                        "GOOD_FLOW_UNIT: selected porosity > 0.10 and selected permeability > 1; "
+                        "FAIR_FLOW_UNIT: selected porosity > 0.06 and selected permeability > 0.1. "
                         "RQI fallback: HIGH_RQI > 1.0, MODERATE_RQI >= 0.5, LOW_RQI < 0.5. "
                         "FZI fallback: FLOW_UNIT_1 > 2.0, FLOW_UNIT_2 > 1.0, FLOW_UNIT_3 > 0.5, FLOW_UNIT_4 <= 0.5."
                     ),

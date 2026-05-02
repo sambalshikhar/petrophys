@@ -12,6 +12,8 @@ from typing import Optional, Union
 from dataclasses import dataclass
 import numpy as np
 
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
+
 
 @dataclass
 class RockQualityResult:
@@ -153,7 +155,7 @@ class RockQualityModule:
         Parameters
         ----------
         well : Well
-            Well object with PERM and PHIE curves
+            Well object with PERM/PERM_CC and PHIE/PHIE_CC curves
         perm : np.ndarray, optional
             Permeability array (uses well PERM if not provided)
         phi_e : np.ndarray, optional
@@ -164,16 +166,14 @@ class RockQualityModule:
         RockQualityResult
         """
         if perm is None:
-            perm_curve = well.get("PERM")
-            if perm_curve is None:
-                raise ValueError("Permeability (PERM) required")
-            perm = perm_curve.data
+            perm, _, _ = get_curve_data_depthwise(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])
+            if perm is None:
+                raise ValueError("Permeability curve with finite samples required")
 
         if phi_e is None:
-            phie_curve = well.get("PHIE")
-            if phie_curve is None:
-                raise ValueError("Effective porosity (PHIE) required")
-            phi_e = phie_curve.data
+            phi_e, _, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE", "PHIT"])
+            if phi_e is None:
+                raise ValueError("PHIE_CC, PHIE, or PHIT with finite samples required")
 
         rqi = calculate_rqi(perm, phi_e)
         phi_z = calculate_phi_z(phi_e)

@@ -9,6 +9,7 @@ import numpy as np
 from petrophys.base.constants import DefaultParameters
 from petrophys.reservoir.net_pay.flags import generate_net_flags
 from petrophys.reservoir.net_pay.cutoffs import Cutoffs
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
 
 
 @dataclass
@@ -84,20 +85,19 @@ class NetPayModule:
     ) -> NetPayResult:
         """Calculate net pay."""
         if vcl is None:
-            vcl_curve = well.get("VCL")
-            vcl = vcl_curve.data if vcl_curve is not None else np.zeros(well.n_samples)
+            vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
+            if vcl is None:
+                vcl = np.zeros(well.n_samples)
 
         if phie is None:
-            phie_curve = well.get("PHIE")
-            if phie_curve is None:
-                raise ValueError("PHIE required")
-            phie = phie_curve.data
+            phie, _, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE", "PHIT"])
+            if phie is None:
+                raise ValueError("PHIE_CC, PHIE, or PHIT with finite samples required")
 
         if sw is None:
-            sw_curve = well.get("SW")
-            if sw_curve is None:
-                raise ValueError("SW required")
-            sw = sw_curve.data
+            sw, _, _ = get_curve_data_depthwise(well, ["SW", "SWA", "SWT-LOG"])
+            if sw is None:
+                raise ValueError("SW with finite samples required")
 
         phie_cutoff = self._build_phie_cutoff(len(phie))
 

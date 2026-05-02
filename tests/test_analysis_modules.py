@@ -2,9 +2,17 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 
 from petrophys import Well
-from petrophys.analysis import HydrocarbonAnalysis, NumericalStatisticalAnalysis
+from petrophys.analysis import (
+    HydrocarbonAnalysis,
+    LithologyAnalysis,
+    NumericalStatisticalAnalysis,
+    PermeabilityAnalysis,
+    PorosityAnalysis,
+    SaturationAnalysis,
+)
 from petrophys.io.example_format_export import (
     _build_lithology_group_segments,
     _build_reference_derived_log_status,
@@ -14,9 +22,10 @@ from petrophys.io.example_format_export import (
     _compact_curve_note,
     _curve_value_summary,
     _input_log_display_list,
+    _load_excel_formation_segments,
     _missing_curve_reason,
 )
-from petrophys.utils.analysis_helpers import CategoryAnalysisResult, DerivedCurve
+from petrophys.utils.analysis_helpers import CategoryAnalysisResult, DerivedCurve, get_curve_data
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 from petrophys.workflow import run_comprehensive_analysis
 
@@ -93,6 +102,137 @@ def test_curve_value_summary_rounds_statistics_to_four_decimals():
     assert summary["p50"] == 25.6345
     assert summary["max"] == 29.6744
     assert summary["finite_percent"] == 100
+
+
+def test_curve_alias_selection_skips_present_but_nonfinite_primary_curve():
+    well = Well("ALIAS-FINITE")
+    well.depth = np.arange(4.0)
+    well.add_curve("RDEP", np.full(4, np.nan), "ohm.m", "Deep Resistivity")
+    well.add_curve("RT", np.array([10.0, 11.0, 12.0, 13.0]), "ohm.m", "True Resistivity")
+
+    data, mnemonic = get_curve_data(well, ["RDEP", "RT"])
+    raw_data, raw_mnemonic = get_curve_data(well, ["RDEP", "RT"], require_finite=False)
+
+    assert mnemonic == "RT"
+    np.testing.assert_allclose(data, [10.0, 11.0, 12.0, 13.0])
+    assert raw_mnemonic == "RDEP"
+    assert np.isnan(raw_data).all()
+
+
+def test_curve_alias_selection_combines_partial_aliases_depthwise():
+    well = Well("ALIAS-PARTIAL")
+    well.depth = np.arange(4.0)
+    well.add_curve("RDEP", np.array([np.nan, 11.0, np.nan, 13.0]), "ohm.m", "Deep Resistivity")
+    well.add_curve("RT", np.array([10.0, 99.0, 12.0, 99.0]), "ohm.m", "True Resistivity")
+
+    data, mnemonic = get_curve_data(well, ["RDEP", "RT"])
+
+    assert mnemonic == "RDEP+RT"
+    np.testing.assert_allclose(data, [10.0, 11.0, 12.0, 13.0])
+
+
+def _build_core_corrected_priority_well() -> Well:
+    well = Well("CORE-PRIORITY")
+    depth = np.arange(4.0)
+    well.depth = depth
+    well.depth_unit = "m"
+    well.add_curve("DEPT", depth, "m", "Depth")
+    well.add_curve("PHIT", np.full(4, 0.04), "v/v", "Low Total Porosity")
+    well.add_curve("PHIE", np.full(4, 0.05), "v/v", "Low Effective Porosity")
+    well.add_curve("PHIE_CC", np.full(4, 0.22), "v/v", "Core-Calibrated Effective Porosity")
+    well.add_curve("PHID", np.full(4, 0.25), "v/v", "Density Porosity")
+    well.add_curve("PHIN", np.full(4, 0.10), "v/v", "Neutron Porosity")
+    well.add_curve("PHIS", np.full(4, 0.08), "v/v", "Sonic Porosity")
+    well.add_curve("PERM", np.full(4, 0.01), "mD", "Low Empirical Permeability")
+    well.add_curve("PERM_CC", np.full(4, 2000.0), "mD", "Core-Calibrated Permeability")
+    well.add_curve("VCL", np.full(4, 0.10), "v/v", "Clay Volume")
+    well.add_curve("SW", np.full(4, 0.50), "v/v", "Water Saturation")
+    well.add_curve("RDEP", np.full(4, 20.0), "ohm.m", "Deep Resistivity")
+    well.add_curve("RXO", np.full(4, 30.0), "ohm.m", "Flushed Resistivity")
+    well.add_curve("LITHOLOGY_GEOLINK", np.full(4, 1.0), "", "Lithology")
+    well.add_curve("GR", np.full(4, 45.0), "API", "Gamma Ray")
+    well.add_curve("PEF", np.full(4, 2.2), "", "PEF")
+    well.add_curve("RHOB", np.full(4, 2.25), "g/cc", "Bulk Density")
+    well.add_curve("NPHI", np.full(4, 0.10), "v/v", "Neutron Porosity")
+    well.add_curve("BAD_HOLE", np.zeros(4), "", "Bad Hole")
+    well.add_curve("NET_PAY", np.ones(4), "", "Net Pay")
+    return well
+
+
+def test_category_analyses_prioritize_core_corrected_porosity_and_perm():
+    well = _build_core_corrected_priority_well()
+
+    perm_result = PermeabilityAnalysis().analyze(well, add_curves=False)
+    assert np.all(
+        perm_result.sections["permeability_distribution_analysis"].raw_labels
+        == "EXCELLENT_PERMEABILITY"
+    )
+    assert "PERM_CC" in perm_result.sections["permeability_distribution_analysis"].methodology
+
+    poro_result = PorosityAnalysis().analyze(well, add_curves=False)
+    assert np.all(
+        poro_result.sections["total_porosity_quality_distribution"].raw_labels
+        == "EXCELLENT_POROSITY"
+    )
+    assert "PHIE_CC" in poro_result.sections["total_porosity_quality_distribution"].methodology
+    assert "PERM_CC" in poro_result.sections["porosity_quality_assessment_characteristics"].methodology
+
+    hydrocarbon_result = HydrocarbonAnalysis().analyze(well, add_curves=False)
+    assert np.all(
+        hydrocarbon_result.sections["reservoir_quality_for_hydrocarbons"].raw_labels
+        == "EXCELLENT_RESERVOIR"
+    )
+    assert "PHIE_CC" in hydrocarbon_result.sections["reservoir_quality_for_hydrocarbons"].methodology
+    assert "PERM_CC" in hydrocarbon_result.sections["reservoir_quality_for_hydrocarbons"].methodology
+
+    lithology_result = LithologyAnalysis().analyze(well, add_curves=False)
+    assert np.all(
+        lithology_result.sections["lithology_petrophysics_relationships"].raw_labels
+        == "EXCELLENT_SANDSTONE_RESERVOIR"
+    )
+    assert "PHIE_CC" in lithology_result.sections["lithology_petrophysics_relationships"].methodology
+    assert "PERM_CC" in lithology_result.sections["lithology_petrophysics_relationships"].methodology
+
+
+def test_saturation_and_numerical_analysis_document_core_corrected_sources():
+    well = _build_core_corrected_priority_well()
+
+    saturation_result = SaturationAnalysis().analyze(well, add_curves=False)
+    bvw = saturation_result.derived_curves["BVW"].data
+    np.testing.assert_allclose(bvw, np.full(4, 0.11))
+    assert "PHIE_CC" in saturation_result.sections["bulk_volume_water_porosity_integration"].methodology
+
+    numerical_result = NumericalStatisticalAnalysis().analyze(well, add_curves=False)
+    methodology = numerical_result.sections["log_correlation_consistency_evaluation"].methodology
+    assert "PHIE_CC" in methodology
+    assert "PERM_CC" in methodology
+
+
+def test_rock_quality_module_prioritizes_core_corrected_inputs():
+    from petrophys.reservoir.rock_quality.rock_quality_module import RockQualityModule
+
+    well = _build_core_corrected_priority_well()
+
+    result = RockQualityModule().calculate(well)
+
+    np.testing.assert_allclose(result.rqi, np.full(4, 0.0314 * np.sqrt(2000.0 / 0.22)))
+    np.testing.assert_allclose(result.phi_z, np.full(4, 0.22 / (1.0 - 0.22)))
+
+
+def test_net_pay_module_prioritizes_core_corrected_porosity():
+    from petrophys.reservoir.net_pay.net_pay_module import NetPayModule
+
+    well = Well("NET-PAY-CORE")
+    well.depth = np.arange(3.0)
+    well.add_curve("PHIE", np.full(3, 0.02), "v/v", "Low Effective Porosity")
+    well.add_curve("PHIE_CC", np.full(3, 0.20), "v/v", "Core-Calibrated Effective Porosity")
+    well.add_curve("VCL", np.full(3, 0.10), "v/v", "Clay Volume")
+    well.add_curve("SW", np.full(3, 0.40), "v/v", "Water Saturation")
+
+    result = NetPayModule(phie_cutoff=0.08).calculate(well)
+
+    assert np.all(result.net_reservoir)
+    assert np.all(result.net_pay)
 
 
 def test_hydrocarbon_analysis_adds_requested_curves_and_targets():
@@ -290,6 +430,56 @@ def test_reference_json_omits_derived_log_status_by_default():
     assert "derived_log_status" not in payload["analysis_results"]["data_completeness"]
 
 
+def test_reference_json_sets_core_flags_when_core_corrected_curves_used():
+    well = Well("PAYLOAD-CORE")
+    well.depth = np.arange(3.0)
+    well.add_curve("DEPT", well.depth, "ft", "Depth")
+    well.add_curve("PHIE", np.array([0.12, 0.14, 0.16]), "v/v", "Effective Porosity")
+    well.add_curve("PERM", np.array([10.0, 20.0, 40.0]), "mD", "Permeability")
+    well.add_curve("PHIE_CC", np.array([0.13, 0.15, 0.17]), "v/v", "Core-Calibrated Porosity")
+    well.add_curve("PERM_CC", np.array([12.0, 24.0, 48.0]), "mD", "Core-Calibrated Permeability")
+    workflow_result = SimpleNamespace(
+        base_result=SimpleNamespace(steps_executed=[], steps_skipped=[], warnings=[], errors=[]),
+        zone_results=[],
+    )
+
+    payload = _build_reference_json_payload(
+        well,
+        workflow_result,
+        Path("PAYLOAD-CORE.las"),
+        original_curves={"DEPT", "PHIE", "PERM"},
+        derived_logs_override=["PHIE_CC", "PERM_CC"],
+    )
+
+    results = payload["analysis_results"]
+    assert results["core_phi_present"] is True
+    assert results["core_k_present"] is True
+
+
+def test_excel_tops_loader_includes_member_tops(tmp_path):
+    tops_file = tmp_path / "tops.xlsx"
+    pd.DataFrame(
+        {
+            "well": ["WELL-1", "WELL-1", "WELL-1", "WELL-1"],
+            "formation": [
+                "ROGALAND GP. TOP",
+                "HERMOD MB. TOP",
+                "BALDER FM. TOP",
+                "IGNORE UNIT TOP",
+            ],
+            "md_top": [1000.0, 1100.0, 1200.0, 1300.0],
+        }
+    ).to_excel(tops_file, index=False)
+
+    tops = _load_excel_formation_segments(tops_file)
+    names = [segment["display_name"] for segment in tops["WELL-1"]]
+
+    assert "ROGALAND GP. TOP" in names
+    assert "HERMOD MB. TOP" in names
+    assert "BALDER FM. TOP" in names
+    assert "IGNORE UNIT TOP" not in names
+
+
 def test_missing_curve_reason_names_category_input_requirements():
     well = _build_analysis_well()
     del well._curves["PEF"]
@@ -368,10 +558,28 @@ def test_sw_missing_note_lists_blocking_inputs():
     )
     note = _compact_curve_note("SW", "missing", reason, step, well)
 
-    assert "PHIE" in reason
+    assert "selected effective porosity" in reason
     assert "RDEP/RT=present" in note
     assert "PHIE=missing/no finite samples" in note
     assert "RW=present" in note
+
+
+def test_missing_invasion_note_distinguishes_present_but_nonfinite_shallow_curve():
+    well = _build_analysis_well()
+    del well._curves["RXO"]
+    well.add_curve("RSHA", np.full(well.n_samples, np.nan), "ohm.m", "Empty shallow resistivity")
+
+    reason = _missing_curve_reason(
+        "INVASION_RATIO",
+        well,
+        SimpleNamespace(),
+        step_results={},
+        skipped_steps=set(),
+        computed_curves=set(),
+        original_curves=set(well.curves),
+    )
+
+    assert reason == "shallow resistivity curve was present but had no finite samples; requires finite RSHA, RESS, or RXO"
 
 
 def test_hydrocarbon_crossover_requires_clean_reservoir_quality_and_good_hole():
@@ -408,17 +616,29 @@ def test_rock_quality_leaves_invalid_phi_and_perm_as_nan():
 
 
 def test_invasion_ratio_rejects_tiny_rt_spikes():
-    from petrophys.resistivity.invasion import calculate_invasion_ratio
+    from petrophys.resistivity.invasion import InvasionModule, calculate_invasion_ratio
 
     ratio = calculate_invasion_ratio(
-        rxo=np.array([1.0, 50.0, 1.0, 500.0]),
-        rt=np.array([1.0, 0.1, 0.0, 1.0]),
+        rxo=np.array([1.0, 1.0, 50.0, 1.0, 500.0]),
+        rt=np.array([1.0, 0.1, 0.1, 0.0, 1.0]),
     )
 
     assert ratio[0] == 1.0
-    assert np.isnan(ratio[1])
+    assert ratio[1] == 10.0
     assert np.isnan(ratio[2])
     assert np.isnan(ratio[3])
+    assert np.isnan(ratio[4])
+
+    well = Well("INVASION-ALIAS-FINITE")
+    well.depth = np.arange(4.0)
+    well.add_curve("RSHA", np.full(4, np.nan), "ohm.m", "Empty shallow resistivity")
+    well.add_curve("RXO", np.array([2.0, 4.0, 6.0, 8.0]), "ohm.m", "Finite flushed resistivity")
+    well.add_curve("RDEP", np.full(4, 2.0), "ohm.m", "Deep resistivity")
+
+    result = InvasionModule().analyze(well)
+
+    assert result.statistics["rxo_curve"] == "RXO"
+    np.testing.assert_allclose(result.ratio, [1.0, 2.0, 3.0, 4.0])
 
 
 def test_multi_mineral_fraction_constraint_enforces_available_volume():

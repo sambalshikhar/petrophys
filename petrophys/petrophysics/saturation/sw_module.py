@@ -31,6 +31,11 @@ from petrophys.petrophysics.saturation.indonesia import indonesia
 from petrophys.petrophysics.saturation.dual_water import dual_water
 from petrophys.petrophysics.saturation.waxman_smits import waxman_smits
 from petrophys.petrophysics.saturation.sxo import calculate_sxo
+from petrophys.utils.analysis_helpers import (
+    curve_has_finite_data,
+    get_curve,
+    get_curve_data_depthwise,
+)
 
 
 class SwModel(Enum):
@@ -65,6 +70,8 @@ class SaturationResult:
     sxo_method: Optional[str] = None
     sxo_reason: Optional[str] = None
     model_counts: Optional[Dict[str, int]] = None
+    sxo_method_counts: Optional[Dict[str, int]] = None
+    sxo_input_sources: Optional[Dict[str, Dict[str, int]]] = None
 
 
 class SaturationModule:
@@ -179,30 +186,32 @@ class SaturationModule:
             Saturation calculation results
         """
         # Get required curves
-        rt = well.get("RDEP") or well.get("RT")
-        rxo = well.get("RSHA") or well.get("RXO")
+        rt_data, rt_mnemonic, rt_meta = get_curve_data_depthwise(well, ["RDEP", "RT"])
+        rxo_existing = get_curve(well, ["RSHA", "RXO", "RESS"], require_finite=False)
+        rxo_data, rxo_mnemonic, rxo_meta = get_curve_data_depthwise(well, ["RSHA", "RXO", "RESS"])
 
-        if rt is None:
-            raise ValueError("Deep resistivity (RDEP) required")
+        if rt_data is None:
+            raise ValueError("Deep resistivity (RDEP/RT) with finite samples required")
 
-        # Get VCL and PHIE
+        # Get VCL and effective porosity. PHIE_CC is preferred when present so
+        # saturation honors same-well core-corrected porosity.
         if vcl is None:
-            vcl_curve = well.get("VCL") or well.get("VCLAY")
-            vcl = vcl_curve.data if vcl_curve is not None else np.zeros(well.n_samples)
+            vcl_data, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY"])
+            vcl = vcl_data if vcl_data is not None else np.zeros(well.n_samples)
 
         if phie is None:
-            phie_curve = well.get("PHIE")
-            if phie_curve is None:
-                raise ValueError("Effective porosity (PHIE) required")
-            phie = phie_curve.data
+            phie_data, _, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE"])
+            if phie_data is None:
+                raise ValueError("Effective porosity (PHIE_CC or PHIE) with finite samples required")
+            phie = phie_data
 
         if phit is None:
-            phit_curve = well.get("PHIT")
-            phit = phit_curve.data if phit_curve is not None else phie
+            phit_data, _, _ = get_curve_data_depthwise(well, ["PHIT"])
+            phit = phit_data if phit_data is not None else phie
 
         # Estimate Rcl if not provided
         if rcl is None:
-            rcl = self._estimate_rcl(rt.data, vcl)
+            rcl = self._estimate_rcl(rt_data, vcl)
 
         # Auto-routing is applied sample-by-sample so clean and shaly
         # intervals can coexist within the same well/zone.
@@ -210,9 +219,9 @@ class SaturationModule:
             if isinstance(lithology, np.ndarray):
                 lithology_array = np.asarray(lithology, dtype=object)
             else:
-                lithology_array = np.full(rt.data.shape, lithology, dtype=object)
+                lithology_array = np.full(rt_data.shape, lithology, dtype=object)
             sw, model_name, model_counts = self._calculate_depth_routed(
-                rt.data, rw, rcl, salinity, vcl, phie, phit,
+                rt_data, rw, rcl, salinity, vcl, phie, phit,
                 lithology_array, cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
             )
         else:
@@ -220,35 +229,59 @@ class SaturationModule:
             model = self._select_model(vcl, salinity,
                                        lithology if isinstance(lithology, str) else "clastic",
                                        cec, b_coeff)
-            sw = self._run_model(model, rt.data, rw, rcl, vcl, phie, phit,
-                                 cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp)
+            sw = self._run_model(model, rt_data, rw, rcl, vcl, phie, phit,
+                                 cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp,
+                                 self.a, self.m, self.n)
             model_name = model.value
-            model_counts = {model_name: int(rt.data.shape[0])}
+            model_counts = {model_name: int(rt_data.shape[0])}
 
-        # Calculate Sxo from invaded-zone inputs when available; otherwise
-        # fall back to a quick-look empirical relation requested by the user.
+        # Calculate Sxo from invaded-zone inputs where they are finite;
+        # otherwise fall back to the quick-look empirical relation requested
+        # by the user.
         sxo = None
         sxo_method = None
         sxo_reason = None
+        sxo_method_counts: Dict[str, int] = {}
         sw_clipped = np.clip(np.asarray(sw, dtype=float), 0.0, 1.0) if sw is not None else None
-        if rxo is not None and rmf is not None:
-            sxo = calculate_sxo(rxo.data, rmf, phie, self.a, self.m, self.n)
-            sxo = np.asarray(sxo, dtype=float)
-            sxo = np.clip(sxo, 0.0, 1.0)
-            if sw_clipped is not None:
+        if sw_clipped is not None:
+            fallback_sxo = np.power(sw_clipped, 0.2)
+            if rxo_data is not None and rmf is not None:
+                archie_sxo = calculate_sxo(rxo_data, rmf, phie, self.a, self.m, self.n)
+                archie_sxo = np.clip(np.asarray(archie_sxo, dtype=float), 0.0, 1.0)
+                finite_archie = np.isfinite(archie_sxo)
+                finite_fallback = np.isfinite(fallback_sxo)
+                use_fallback = ~finite_archie & finite_fallback
+                sxo = np.where(finite_archie, archie_sxo, fallback_sxo)
                 finite_sw = np.isfinite(sw_clipped)
-                sxo = np.where(finite_sw, np.maximum(sxo, sw_clipped), sxo)
-            sxo_method = "archie_rxo_rmf"
-            sxo_reason = "RSHA/RXO and RMF available"
-        elif sw is not None:
-            sxo = np.power(sw_clipped, 0.2)
-            sxo_method = "fifth_root_quicklook"
-            if rxo is None and rmf is None:
-                sxo_reason = "RSHA/RXO and RMF unavailable"
-            elif rxo is None:
-                sxo_reason = "RSHA/RXO unavailable"
+                sxo = np.where(finite_sw & np.isfinite(sxo), np.maximum(sxo, sw_clipped), sxo)
+                if np.any(finite_archie):
+                    sxo_method_counts["archie_rxo_rmf"] = int(np.count_nonzero(finite_archie))
+                if np.any(use_fallback):
+                    sxo_method_counts["fifth_root_quicklook"] = int(np.count_nonzero(use_fallback))
+                if np.any(finite_archie) and np.any(use_fallback):
+                    sxo_method = "archie_rxo_rmf+fifth_root_quicklook"
+                    sxo_reason = "invaded-zone Archie used where finite; fifth-root fallback used where RSHA/RXO/RESS/RMF were non-finite"
+                elif np.any(finite_archie):
+                    sxo_method = "archie_rxo_rmf"
+                    sxo_reason = "RSHA/RXO/RESS and RMF available"
+                else:
+                    sxo_method = "fifth_root_quicklook"
+                    if rxo_data is None or not np.any(np.isfinite(np.asarray(rxo_data, dtype=float))):
+                        sxo_reason = "RSHA/RXO/RESS present but had no finite usable samples"
+                    else:
+                        sxo_reason = "invaded-zone Archie produced no finite samples"
             else:
-                sxo_reason = "RMF unavailable"
+                sxo = fallback_sxo
+                sxo_method = "fifth_root_quicklook"
+                sxo_method_counts["fifth_root_quicklook"] = int(np.count_nonzero(np.isfinite(fallback_sxo)))
+                if rxo_existing is None and rmf is None:
+                    sxo_reason = "RSHA/RXO/RESS and RMF unavailable"
+                elif rxo_existing is None:
+                    sxo_reason = "RSHA/RXO/RESS unavailable"
+                elif not curve_has_finite_data(rxo_existing):
+                    sxo_reason = "RSHA/RXO/RESS present but had no finite usable samples"
+                else:
+                    sxo_reason = "RMF unavailable"
 
         return SaturationResult(
             sw=sw,
@@ -257,6 +290,11 @@ class SaturationModule:
             sxo_method=sxo_method,
             sxo_reason=sxo_reason,
             model_counts=model_counts,
+            sxo_method_counts=sxo_method_counts,
+            sxo_input_sources={
+                "rt": rt_meta.get("source_counts", {}),
+                "rxo": rxo_meta.get("source_counts", {}),
+            },
         )
 
     @staticmethod
@@ -312,6 +350,9 @@ class SaturationModule:
                 self._segment_value(rtsh, mask),
                 self._segment_value(vsh_exp, mask),
                 self._segment_value(shale_exp, mask),
+                self._segment_value(self.a, mask),
+                self._segment_value(self.m, mask),
+                self._segment_value(self.n, mask),
             )
             sw[mask] = sw_segment
 
@@ -357,46 +398,50 @@ class SaturationModule:
     def _run_model(
         self, model: SwModel,
         rt, rw, rcl, vcl, phie, phit,
-        cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
+        cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp,
+        a_value=None, m_value=None, n_value=None,
     ) -> np.ndarray:
         """Run a specific Sw model."""
+        a_value = self.a if a_value is None else a_value
+        m_value = self.m if m_value is None else m_value
+        n_value = self.n if n_value is None else n_value
         if model == SwModel.ARCHIE:
-            return archie(rt, rw, phie, self.a, self.m, self.n)
+            return archie(rt, rw, phie, a_value, m_value, n_value)
 
         elif model == SwModel.NORTH_SEA:
             return north_sea_shaly_sand(
                 rt, rw, phie, vcl, rtsh if rtsh is not None else rcl,
-                self.a, self.m, self.n, vsh_exp
+                a_value, m_value, n_value, vsh_exp
             )
 
         elif model == SwModel.NIGERIA_SCHLUMBERGER:
             return nigeria_schlumberger(
                 rt, rw, phie, vcl, rtsh if rtsh is not None else rcl,
-                self.a, self.m, self.n, shale_exp
+                a_value, m_value, n_value, shale_exp
             )
 
         elif model == SwModel.SIMANDOUX:
-            return simandoux(rt, rw, phie, vcl, rcl, self.a, self.m, self.n)
+            return simandoux(rt, rw, phie, vcl, rcl, a_value, m_value, n_value)
 
         elif model == SwModel.INDONESIA:
-            return indonesia(rt, rw, phie, vcl, rcl, self.a, self.m, self.n)
+            return indonesia(rt, rw, phie, vcl, rcl, a_value, m_value, n_value)
 
         elif model == SwModel.DUAL_WATER:
             if rwb is None:
                 rwb = rw * 0.3
             return dual_water(
                 phit, rt, rw, rwb, vcl, phi_cl,
-                self.a, self.m, self.n
+                a_value, m_value, n_value
             )
 
         elif model == SwModel.WAXMAN_SMITS:
             return waxman_smits(
                 phit, rt, rw, cec, rho_ma, b_coeff,
-                m_star, self.n
+                m_star, n_value
             )
 
         else:
-            return archie(rt, rw, phie, self.a, self.m, self.n)
+            return archie(rt, rw, phie, a_value, m_value, n_value)
 
     def _select_model(
         self,

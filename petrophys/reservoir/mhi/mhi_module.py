@@ -5,9 +5,52 @@ Moveable Hydrocarbon Index calculation module.
 from typing import Optional, Union
 import numpy as np
 
+from petrophys.utils.analysis_helpers import get_curve_data_depthwise
+
 
 class MhiModule:
     """Moveable Hydrocarbon Index calculator."""
+
+    @staticmethod
+    def diagnostic_sxo_mask(
+        well: "Well",
+        sxo: Optional[np.ndarray] = None,
+        sw: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """
+        Return rows where SXO has diagnostic invaded-zone support.
+
+        SXO computed only from the quick-look fallback ``SW^(1/5)`` is not
+        suitable for MHI, so MHI is only kept where shallow resistivity, RMF,
+        PHIE/PHIT, SW, and SXO are all finite.
+        """
+        n_samples = well.n_samples
+        if sxo is None:
+            sxo, _, _ = get_curve_data_depthwise(well, ["SXO", "SWXOA", "SXO-LOG"])
+        if sw is None:
+            sw, _, _ = get_curve_data_depthwise(well, ["SW", "SWA", "SWT-LOG"])
+        rxo, _, _ = get_curve_data_depthwise(well, ["RSHA", "RXO", "RESS"])
+        rmf, _, _ = get_curve_data_depthwise(well, ["RMF"])
+        phie, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+
+        if any(value is None for value in (sxo, sw, rxo, rmf, phie)):
+            return np.zeros(n_samples, dtype=bool)
+
+        sxo = np.asarray(sxo, dtype=float)
+        sw = np.asarray(sw, dtype=float)
+        rxo = np.asarray(rxo, dtype=float)
+        rmf = np.asarray(rmf, dtype=float)
+        phie = np.asarray(phie, dtype=float)
+        return (
+            np.isfinite(sxo)
+            & np.isfinite(sw)
+            & np.isfinite(rxo)
+            & np.isfinite(rmf)
+            & np.isfinite(phie)
+            & (rxo > 0.01)
+            & (rmf > 0.0001)
+            & (phie > 0.001)
+        )
 
     def calculate(
         self,
@@ -17,22 +60,27 @@ class MhiModule:
     ) -> np.ndarray:
         """Calculate MHI."""
         if sxo is None:
-            sxo_curve = well.get("SXO")
-            if sxo_curve is None:
-                raise ValueError("SXO required")
-            sxo = sxo_curve.data
+            sxo, _, _ = get_curve_data_depthwise(well, ["SXO", "SWXOA", "SXO-LOG"])
+            if sxo is None:
+                raise ValueError("SXO with finite samples required")
 
         if sw is None:
-            sw_curve = well.get("SW")
-            if sw_curve is None:
-                raise ValueError("SW required")
-            sw = sw_curve.data
+            sw, _, _ = get_curve_data_depthwise(well, ["SW", "SWA", "SWT-LOG"])
+            if sw is None:
+                raise ValueError("SW with finite samples required")
 
-        return calculate_mhi(sxo, sw)
+        mhi = np.asarray(calculate_mhi(sxo, sw), dtype=float)
+        diagnostic = self.diagnostic_sxo_mask(well, sxo=sxo, sw=sw)
+        mhi[~diagnostic] = np.nan
+        if not np.any(np.isfinite(mhi)):
+            raise ValueError("MHI skipped because SXO was only fifth-root fallback or lacked invaded-zone support")
+        return mhi
 
     def add_to_well(self, well: "Well") -> "Well":
         """Add MHI curve to well."""
         mhi = self.calculate(well)
+        if not np.any(np.isfinite(mhi)):
+            return well
         well.add_curve("MHI", mhi, "", "Moveable Hydrocarbon Index")
         return well
 
