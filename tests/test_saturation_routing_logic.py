@@ -150,6 +150,24 @@ def test_sxo_uses_finite_secondary_shallow_alias_when_primary_is_nonfinite():
     assert np.isfinite(result.sxo).all()
 
 
+def test_sxo_archie_does_not_require_sw_or_deep_resistivity():
+    well = _saturation_well(vcl=0.1)
+    well.remove_curve("RDEP")
+    well.add_curve("RSHA", np.full(4, 8.0), "ohm.m", "Shallow resistivity")
+
+    result = SaturationModule(model="archie").calculate(
+        well,
+        rw=None,
+        rmf=0.08,
+    )
+
+    assert result.model == "not_computed_missing_rt"
+    assert np.isnan(result.sw).all()
+    assert result.sxo_method == "archie_rxo_rmf"
+    assert result.sxo_method_counts == {"archie_rxo_rmf": 4}
+    np.testing.assert_allclose(result.sxo, np.full(4, 0.5))
+
+
 def test_sxo_mixes_invaded_archie_and_fifth_root_depthwise():
     well = _saturation_well(vcl=0.1)
     well.add_curve("RSHA", np.array([8.0, np.nan, np.nan, np.nan]), "ohm.m", "Shallow resistivity")

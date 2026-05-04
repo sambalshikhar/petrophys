@@ -24,7 +24,7 @@ class ValueRangeRule:
 
 
 VALUE_RANGE_RULES: dict[str, ValueRangeRule] = {
-    "RMF": ValueRangeRule(0.01, 10.0, "nan", ("RMF",)),
+    "RMF": ValueRangeRule(0.001, 10.0, "nan", ("RMF",)),
     "TEMP": ValueRangeRule(-5.0, 400.0, "nan", ("TEMP", "TMPC")),
     "RXO": ValueRangeRule(0.01, 2000.0, "nan", ("RXO", "RSHA", "RESS", "MSFL", "SFL")),
     "RDEP": ValueRangeRule(0.01, 2000.0, "nan", ("RDEP", "RT", "RMED", "RESM", "ILD")),

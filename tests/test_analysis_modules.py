@@ -430,6 +430,35 @@ def test_reference_json_omits_derived_log_status_by_default():
     assert "derived_log_status" not in payload["analysis_results"]["data_completeness"]
 
 
+def test_reference_json_primary_completeness_counts_alias_metadata_and_processed_curves():
+    well = Well("PAYLOAD-COMPLETENESS")
+    well.depth = np.arange(3.0)
+    well.header.bit_size = 17.5
+    well.add_curve("DEPT", well.depth, "ft", "Depth")
+    well.add_curve("TEMP", np.array([150.0, 151.0, 152.0]), "degF", "Temperature")
+    well.add_curve("RMF", np.array([0.005, 0.006, 0.007]), "ohm.m", "Mud filtrate")
+    well.add_curve("RW", np.array([0.08, 0.09, 0.10]), "ohm.m", "Formation water")
+    workflow_result = SimpleNamespace(
+        base_result=SimpleNamespace(steps_executed=[], steps_skipped=[], warnings=[], errors=[]),
+        zone_results=[],
+    )
+
+    payload = _build_reference_json_payload(
+        well,
+        workflow_result,
+        Path("PAYLOAD-COMPLETENESS.las"),
+        original_curves={"DEPT", "RSHAL"},
+    )
+
+    missing = set(payload["analysis_results"]["data_completeness"]["missing_primary_logs"])
+    assert "BS" not in missing
+    assert "RSHA" not in missing
+    assert "TEMP" not in missing
+    assert "RMF" not in missing
+    assert "RW" not in missing
+    assert "RXO" in missing
+
+
 def test_reference_json_sets_core_flags_when_core_corrected_curves_used():
     well = Well("PAYLOAD-CORE")
     well.depth = np.arange(3.0)
@@ -560,7 +589,7 @@ def test_sw_missing_note_lists_blocking_inputs():
 
     assert "selected effective porosity" in reason
     assert "RDEP/RT=present" in note
-    assert "PHIE=missing/no finite samples" in note
+    assert "PHIE=missing in this segment" in note
     assert "RW=present" in note
 
 
