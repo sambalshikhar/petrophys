@@ -19,7 +19,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
              "AT30", "RM", "RMED", "RLA3"],
 
     # Shallow Resistivity (RSHA)
-    "RSHA": ["LLS", "RLLS", "AT10", "AT20", "AT30", "SFL", "RSFL", "RLA1", "RS", "RSHALLOW"],
+    "RSHA": ["LLS", "RLLS", "AT10", "AT20", "AT30", "SFL", "RSFL", "RLA1", "RS", "RSHAL", "RSHALLOW"],
     
     # Flushed zone Resistivity (RXO)
     "RXO":  ["MSFL", "MCFL", "MLL", "RXOZ", "RXO", "RMLL", "PL"],

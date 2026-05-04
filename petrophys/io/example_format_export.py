@@ -1115,6 +1115,8 @@ def _canonical_delivery_curve_name(curve: str) -> str:
     upper = curve.upper()
     if upper == "TMPC":
         return "TEMP"
+    if upper == "RSHAL":
+        return "RSHA"
     if upper == "PHI_Z":
         return "PHI_NORM"
     if upper == "SWA":
@@ -1230,6 +1232,24 @@ def _input_log_display_list(curves: set[str]) -> List[str]:
     return sorted(_ordered_unique(display_names))
 
 
+def _primary_log_available_for_context(
+    well: "Well",
+    workflow_result,
+    name: str,
+    original_curves: set[str],
+) -> bool:
+    canonical = _canonical_delivery_curve_name(name)
+    original_canonical = {
+        _canonical_delivery_curve_name(str(curve))
+        for curve in original_curves
+    }
+    if canonical in original_canonical:
+        return True
+    if canonical == "BS" and _bit_size_used_for_bad_hole(well, workflow_result) is not None:
+        return True
+    return _has_finite_any_curve(well, _target_curve_candidates(canonical))
+
+
 def _target_curve_candidates(curve: str) -> List[str]:
     mapping = {
         "TEMP": ["TEMP", "TMPC"],
@@ -1255,9 +1275,9 @@ def _finite_input_status_text(well: "Well", specs: Sequence[tuple[str, Sequence[
         if _has_finite_any_curve(well, candidates):
             status = "present"
         elif _has_any_curve(well, candidates):
-            status = "present/no finite samples"
+            status = "curve present but no finite samples in this segment"
         else:
-            status = "missing/no finite samples"
+            status = "missing in this segment"
         parts.append(f"{label}={status}")
     return ", ".join(parts)
 
@@ -1475,19 +1495,38 @@ def _missing_curve_reason(
         return ""
 
     if curve == "SXO":
-        sw_present = _has_finite_curve(well, "SW")
         shallow_present = _has_finite_any_curve(well, ("RSHA", "RXO", "RESS"))
         rmf_present = _has_finite_curve(well, "RMF")
-        if not sw_present:
-            return "SW unavailable or non-finite in this segment, so SXO could not be calculated"
-        if not shallow_present and not rmf_present:
-            return "SXO was not written; only the fifth-root fallback inputs were available"
+        phie_present = _has_finite_any_curve(well, ("PHIE_CC", "PHIE"))
+        sw_present = _has_finite_any_curve(well, ("SW", "SWA", "SWT-LOG"))
+
+        direct_missing: list[str] = []
         if not shallow_present:
             if _has_any_curve(well, ("RSHA", "RXO", "RESS")):
-                return "shallow resistivity curve was present but had no finite samples"
-            return "shallow resistivity curve was absent"
+                direct_missing.append("RSHA/RXO/RESS curve present but no finite samples in this segment")
+            else:
+                direct_missing.append("RSHA/RXO/RESS missing in this segment")
         if not rmf_present:
-            return "shallow resistivity was available but RMF was unavailable"
+            if _has_any_curve(well, ("RMF",)):
+                direct_missing.append("RMF curve present but no finite samples in this segment")
+            else:
+                direct_missing.append("RMF missing in this segment")
+        if not phie_present:
+            if _has_any_curve(well, ("PHIE_CC", "PHIE")):
+                direct_missing.append("PHIE_CC/PHIE curve present but no finite samples in this segment")
+            else:
+                direct_missing.append("PHIE_CC/PHIE missing in this segment")
+
+        if direct_missing:
+            if sw_present:
+                fallback_reason = "fifth-root fallback input SW was present, but SXO was not written"
+            elif _has_any_curve(well, ("SW", "SWA", "SWT-LOG")):
+                fallback_reason = "fifth-root fallback also unavailable because SW had no finite samples in this segment"
+            else:
+                fallback_reason = "fifth-root fallback also unavailable because SW was missing in this segment"
+            return "direct invaded-zone inputs unavailable: " + "; ".join(direct_missing) + "; " + fallback_reason
+
+        return "direct invaded-zone inputs were present, but no finite SXO values were produced after screening"
 
     if curve == "MHI":
         if not _has_finite_curve(well, "SW"):
@@ -1559,11 +1598,28 @@ def _missing_curve_reason(
         return reason or "no finite PHI_SEC values were produced in this segment"
 
     if curve == "SW":
-        reason = missing_required({
-            "RDEP or RT": _has_finite_any_curve(well, ("RDEP", "RT")),
-            "selected effective porosity": _has_finite_any_curve(well, ("PHIE_CC", "PHIE")),
-            "RW": _has_finite_curve(well, "RW"),
-        })
+        missing_inputs: list[str] = []
+        nonfinite_inputs: list[str] = []
+        for label, candidates in (
+            ("RDEP or RT", ("RDEP", "RT")),
+            ("selected effective porosity", ("PHIE_CC", "PHIE")),
+            ("RW", ("RW",)),
+        ):
+            if _has_finite_any_curve(well, candidates):
+                continue
+            if _has_any_curve(well, candidates):
+                nonfinite_inputs.append(label)
+            else:
+                missing_inputs.append(label)
+        if missing_inputs or nonfinite_inputs:
+            parts = []
+            if missing_inputs:
+                parts.append("missing " + ", ".join(missing_inputs))
+            if nonfinite_inputs:
+                parts.append("present but no finite samples in this segment: " + ", ".join(nonfinite_inputs))
+            reason = "; ".join(parts)
+        else:
+            reason = ""
         if reason:
             return reason
         return "no finite SW values were produced in this segment after saturation routing"
@@ -3341,8 +3397,12 @@ def _permeability_equation_text(method: str, params: dict[str, Any]) -> str:
     return f"{method} empirical equation"
 
 
-def _rw_temperature_formula_text() -> str:
+def _rw_salinity_formula_text() -> str:
     return "Rw75=0.0123+3647.5/salinity^0.955; RW(T)=Rw75*(75+6.77)/(TEMP+6.77)"
+
+
+def _rw_arps_formula_text() -> str:
+    return "RW(T)=RWref*(Tref+6.77)/(TEMP+6.77)"
 
 
 def _vcl_gr_equation(method: str) -> str:
@@ -3438,7 +3498,8 @@ def _rw_curve_note(step: Any, well: "Well") -> str:
     params = getattr(step, "parameters", {}) or {}
     rw_range = _depth_profile_range_text([step], "rw_min", "rw_max", 4, "ohm.m")
     method = getattr(step, "method", "")
-    formula = _rw_temperature_formula_text()
+    arps_formula = _rw_arps_formula_text()
+    salinity_formula = _rw_salinity_formula_text()
 
     if method == "rwa_clean_wet_p5":
         coeff_text = _archie_coefficients_text(params, well).lstrip("; ")
@@ -3446,11 +3507,11 @@ def _rw_curve_note(step: Any, well: "Well") -> str:
             "RW: RWA clean-wet P5; "
             "RWA=RDEP*PHIE^m/a, "
             f"mask=VCL<{params.get('vcl_cutoff')} and PHIE>{params.get('phie_cutoff')}; "
-            f"P5={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
+            f"P5 at reference temperature={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
+            f"Tref={_format_numeric(params.get('rwa_reference_temp_f'), 1)} F, "
             f"samples={params.get('rwa_clean_wet_samples')}, "
-            f"salinity={_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm; "
             + (f"{coeff_text}; " if coeff_text else "")
-            + f"{formula}; RW(T)={rw_range}."
+            + f"{arps_formula}; RW(T)={rw_range}."
         )
     if method == "sp_clean_water":
         rmf_range = _depth_profile_range_text([step], "rmf_min", "rmf_max", 4, "ohm.m")
@@ -3463,35 +3524,33 @@ def _rw_curve_note(step: Any, well: "Well") -> str:
         )
     if method == "rxo_rt_clean_water":
         return (
-            "RW: clean-water Rxo/Rt; RW_clean=RMF(T)*RT/RXO, converted to salinity and corrected by temperature; "
-            f"samples={params.get('n_points')}, salinity={_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm, RW(T)={rw_range}."
+            "RW: clean-water Rxo/Rt; RW_clean=RMF(T)*RT/RXO, then direct Arps temperature correction; "
+            f"samples={params.get('n_points')}, RWref={_format_numeric(params.get('rw_at_reference_temp'), 4)} ohm.m "
+            f"at Tref={_format_numeric(params.get('rw_reference_temp_f'), 1)} F, RW(T)={rw_range}."
         )
     if method == "salinity_conversion":
         return (
             f"RW: salinity conversion; salinity={_format_numeric(params.get('salinity_ppm'), 0)} ppm; "
-            f"{formula}; RW(T)={rw_range}."
+            f"{salinity_formula}; RW(T)={rw_range}."
         )
     if method in {"user_provided_temperature_profile_corrected", "las_metadata_temperature_profile_corrected"}:
         source = "user input" if method.startswith("user") else "LAS metadata"
         return (
             f"RW: {source}; measured RW={_format_numeric(params.get('rw_at_measured_temp'), 4)} ohm.m "
-            f"at { _format_numeric(params.get('measured_temp_f'), 1)} F, converted to salinity "
-            f"{_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm; {formula}; RW(T)={rw_range}."
+            f"at { _format_numeric(params.get('measured_temp_f'), 1)} F; {arps_formula}; RW(T)={rw_range}."
         )
     if method in {"user_provided_assumed_reference_temperature", "las_metadata_assumed_reference_temperature"}:
         source = "user input" if method.startswith("user") else "LAS metadata"
         return (
             f"RW: {source}; RW={_format_numeric(params.get('rw'), 4)} ohm.m at reference "
-            f"{_format_numeric(params.get('reference_temp_f'), 1)} F, converted to salinity "
-            f"{_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm; {formula}; RW(T)={rw_range}."
+            f"{_format_numeric(params.get('reference_temp_f'), 1)} F; {arps_formula}; RW(T)={rw_range}."
         )
     if method == "default_fallback_profile":
         return (
             f"RW: default fallback; RW={_format_numeric(params.get('rw_default'), 4)} ohm.m at "
-            f"{_format_numeric(params.get('reference_temp_f'), 1)} F, converted to salinity and temperature-corrected; "
-            f"{formula}; RW(T)={rw_range}."
+            f"{_format_numeric(params.get('reference_temp_f'), 1)} F; {arps_formula}; RW(T)={rw_range}."
         )
-    return f"RW: {method}; {formula}; RW(T)={rw_range or 'not recorded'}."
+    return f"RW: {method}; {arps_formula}; RW(T)={rw_range or 'not recorded'}."
 
 
 def _core_model_text(params: dict[str, Any]) -> str:
@@ -3553,9 +3612,10 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
             inputs = _finite_input_status_text(
                 well,
                 [
-                    ("SW", ("SW",)),
                     ("RSHA/RXO/RESS", ("RSHA", "RXO", "RESS")),
                     ("RMF", ("RMF",)),
+                    ("PHIE_CC/PHIE", ("PHIE_CC", "PHIE")),
+                    ("SW", ("SW", "SWA", "SWT-LOG")),
                 ],
             )
             return f"SXO: skipped because {reason}. Inputs/status: {inputs}."
@@ -4547,20 +4607,20 @@ def _build_delivery_computation_notes(
             notes.append(note)
         elif methods == ["rxo_rt_clean_water"]:
             rmf_used = _depth_profile_range_text(rw_steps, "rmf_min", "rmf_max", 4, "ohm.m")
-            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
+            rw_ref = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_at_reference_temp"), 4, "ohm.m")
+            reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_reference_temp_f"), 1, "F")
             sample_count = _format_numeric_summary(_step_parameter_values(rw_steps, "n_points"), 0)
             note = (
                 "RW: RW was derived from clean-water Rxo/Rt control points because no direct RW or salinity input was used and the SP route did not produce the selected RW. "
-                "The clean-water estimate used Rw_clean = RMF * Rt / Rxo, then converted those values to salinity, "
-                "and finally wrote depth-wise RW(T) from Rw75 = 0.0123 + 3647.5 / SAL^0.955 and "
-                "Rw(T) = Rw75 * (75 + 6.77) / (T + 6.77)."
+                "The clean-water estimate used Rw_clean = RMF * Rt / Rxo, then direct Arps correction: "
+                "RW(T) = RWref * (Tref + 6.77) / (T + 6.77)."
             )
             if rmf_used:
                 note += f" RMF(T) range used: {rmf_used}."
             if sample_count:
                 note += f" Clean-water sample count: {sample_count}."
-            if salinity:
-                note += f" Salinity inferred from clean-water points: {salinity}."
+            if rw_ref and reference_temp:
+                note += f" Reference RW: {rw_ref} at {reference_temp}."
             if rw_values:
                 note += f" Final RW(T) range: {rw_values}"
                 if temp_profile:
@@ -4588,16 +4648,12 @@ def _build_delivery_computation_notes(
         elif methods == ["las_metadata_temperature_profile_corrected"]:
             measured_rw = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_at_measured_temp"), 4, "ohm.m")
             measured_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "measured_temp_f"), 1, "F")
-            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
             note = (
                 "RW: RW came from the LAS header because RW and RWT metadata were available. "
-                "The header value was converted to equivalent salinity at RWT, then rewritten depth-by-depth with "
-                "Rw75 = 0.0123 + 3647.5 / SAL^0.955 and Rw(T) = Rw75 * (75 + 6.77) / (T + 6.77)."
+                "The header value was corrected directly with Arps: RW(T) = RWmeas * (Tmeas + 6.77) / (T + 6.77)."
             )
             if measured_rw and measured_temp:
                 note += f" Input RW: {measured_rw} at {measured_temp}."
-            if salinity:
-                note += f" Equivalent salinity from the LAS RW input: {salinity}."
             if rw_values:
                 note += f" Final RW(T) range: {rw_values}"
                 if temp_profile:
@@ -4609,17 +4665,13 @@ def _build_delivery_computation_notes(
         elif methods == ["las_metadata_assumed_reference_temperature"]:
             input_rw = _format_numeric_summary(_step_parameter_values(rw_steps, "rw"), 4, "ohm.m")
             reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "reference_temp_f"), 1, "F")
-            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
             note = (
                 "RW: RW came from the LAS header because RW metadata was available. "
-                "No RWT metadata was provided, so the RW input was treated as a reference-temperature value, converted to equivalent salinity, "
-                "and rewritten depth-by-depth with Rw75 = 0.0123 + 3647.5 / SAL^0.955 and "
-                "Rw(T) = Rw75 * (75 + 6.77) / (T + 6.77)."
+                "No RWT metadata was provided, so the RW input was treated as a reference-temperature value and corrected directly with Arps: "
+                "RW(T) = RWref * (Tref + 6.77) / (T + 6.77)."
             )
             if input_rw and reference_temp:
                 note += f" Input RW: {input_rw} at assumed reference temperature {reference_temp}."
-            if salinity:
-                note += f" Equivalent salinity from the LAS RW input: {salinity}."
             if rw_values:
                 note += f" Final RW(T) range: {rw_values}"
                 if temp_profile:
@@ -4632,16 +4684,12 @@ def _build_delivery_computation_notes(
             source = _config_source_phrase(workflow_result, "rw")
             measured_rw = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_at_measured_temp"), 4, "ohm.m")
             measured_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "measured_temp_f"), 1, "F")
-            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
             note = (
                 f"RW: RW came from {source} because an explicit RW value and measurement temperature were available. "
-                "That input was converted to equivalent salinity at the stated measurement temperature, then rewritten depth-by-depth with "
-                "Rw75 = 0.0123 + 3647.5 / SAL^0.955 and Rw(T) = Rw75 * (75 + 6.77) / (T + 6.77)."
+                "That input was corrected directly with Arps: RW(T) = RWmeas * (Tmeas + 6.77) / (T + 6.77)."
             )
             if measured_rw and measured_temp:
                 note += f" Input RW: {measured_rw} at {measured_temp}."
-            if salinity:
-                note += f" Equivalent salinity from the RW input: {salinity}."
             if rw_values:
                 note += f" Final RW(T) range: {rw_values}"
                 if temp_profile:
@@ -4654,17 +4702,13 @@ def _build_delivery_computation_notes(
             source = _config_source_phrase(workflow_result, "rw")
             input_rw = _format_numeric_summary(_step_parameter_values(rw_steps, "rw"), 4, "ohm.m")
             reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "reference_temp_f"), 1, "F")
-            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
             note = (
                 f"RW: RW came from {source} because an explicit RW value was available. "
-                "No RWT metadata was provided, so the RW input was treated as a reference-temperature value, converted to equivalent salinity, "
-                "and rewritten depth-by-depth with Rw75 = 0.0123 + 3647.5 / SAL^0.955 and "
-                "Rw(T) = Rw75 * (75 + 6.77) / (T + 6.77)."
+                "No RWT metadata was provided, so the RW input was treated as a reference-temperature value and corrected directly with Arps: "
+                "RW(T) = RWref * (Tref + 6.77) / (T + 6.77)."
             )
             if input_rw and reference_temp:
                 note += f" Input RW: {input_rw} at assumed reference temperature {reference_temp}."
-            if salinity:
-                note += f" Equivalent salinity from the RW input: {salinity}."
             if rw_values:
                 note += f" Final RW(T) range: {rw_values}"
                 if temp_profile:
@@ -4678,16 +4722,14 @@ def _build_delivery_computation_notes(
             rw_from_rwa = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_from_rwa"), 4, "ohm.m")
             reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "rwa_reference_temp_f"), 1, "F")
             archie_text = _archie_coefficients_text(getattr(rw_steps[0], "parameters", {}) or {}).lstrip("; ")
-            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
             notes.append(
                 "RW: RW was derived from apparent Rw because direct RW metadata/configuration, salinity input, RMF+SP, and RMF+Rxo/Rt routes did not produce usable RW. "
                 "Formula used: RWA = RDEP * PHIE^m / a. Mask used: VCL < 0.30 and PHIE > 0.05. Percentile used: P5. "
-                "The selected RWA value was converted to equivalent salinity and rewritten depth-by-depth as RW(T)."
+                "The selected RWA value was corrected directly with Arps as RW(T)."
                 + (f" {archie_text}." if archie_text else "")
                 + (f" Samples used: {n_samples}." if n_samples else "")
                 + (f" P5 RWA reference value: {rw_from_rwa}." if rw_from_rwa else "")
                 + (f" Reference temperature: {reference_temp}." if reference_temp else "")
-                + (f" Equivalent salinity: {salinity}." if salinity else "")
                 + (f" Final RW(T) range: {rw_values}." if rw_values else "")
                 + (f" Temperature profile: {temp_profile}." if temp_profile else "")
                 + (f" Route reasons: {rw_route_reasons}." if rw_route_reasons else "")
@@ -4696,7 +4738,7 @@ def _build_delivery_computation_notes(
             reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "reference_temp_f"), 1, "F")
             notes.append(
                 "RW: RW used the default 0.05 ohm.m input because direct RW metadata/configuration, salinity input, RMF+SP, RMF+Rxo/Rt, and RWA clean-wet routes all failed. "
-                "The default RW was converted to equivalent salinity and rewritten depth-by-depth."
+                "The default RW was corrected directly with Arps."
                 + (f" Assumed reference temperature: {reference_temp}." if reference_temp else "")
                 + (f" Final RW(T) range: {rw_values}." if rw_values else "")
                 + (f" Route reasons: {rw_route_reasons}." if rw_route_reasons else "")
@@ -6007,7 +6049,12 @@ def _build_reference_json_payload(
             _display_curve_name(name)
             for name in PRIMARY_LOGS_FOR_COMPLETENESS
             if _canonical_delivery_curve_name(name) not in CORE_ONLY_CONTEXT_CURVES
-            and name not in original_curves
+            and not _primary_log_available_for_context(
+                well,
+                workflow_result,
+                name,
+                original_curves,
+            )
         ],
         "derived_log_computation_notes": computation_notes,
     }

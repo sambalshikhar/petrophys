@@ -190,9 +190,6 @@ class SaturationModule:
         rxo_existing = get_curve(well, ["RSHA", "RXO", "RESS"], require_finite=False)
         rxo_data, rxo_mnemonic, rxo_meta = get_curve_data_depthwise(well, ["RSHA", "RXO", "RESS"])
 
-        if rt_data is None:
-            raise ValueError("Deep resistivity (RDEP/RT) with finite samples required")
-
         # Get VCL and effective porosity. PHIE_CC is preferred when present so
         # saturation honors same-well core-corrected porosity.
         if vcl is None:
@@ -209,31 +206,36 @@ class SaturationModule:
             phit_data, _, _ = get_curve_data_depthwise(well, ["PHIT"])
             phit = phit_data if phit_data is not None else phie
 
-        # Estimate Rcl if not provided
-        if rcl is None:
-            rcl = self._estimate_rcl(rt_data, vcl)
-
-        # Auto-routing is applied sample-by-sample so clean and shaly
-        # intervals can coexist within the same well/zone.
-        if self.model == "auto":
-            if isinstance(lithology, np.ndarray):
-                lithology_array = np.asarray(lithology, dtype=object)
-            else:
-                lithology_array = np.full(rt_data.shape, lithology, dtype=object)
-            sw, model_name, model_counts = self._calculate_depth_routed(
-                rt_data, rw, rcl, salinity, vcl, phie, phit,
-                lithology_array, cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
-            )
+        if rt_data is None or rw is None:
+            sw = np.full(well.n_samples, np.nan, dtype=float)
+            model_name = "not_computed_missing_rt" if rt_data is None else "not_computed_missing_rw"
+            model_counts = {}
         else:
-            # Single model for entire well
-            model = self._select_model(vcl, salinity,
-                                       lithology if isinstance(lithology, str) else "clastic",
-                                       cec, b_coeff)
-            sw = self._run_model(model, rt_data, rw, rcl, vcl, phie, phit,
-                                 cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp,
-                                 self.a, self.m, self.n)
-            model_name = model.value
-            model_counts = {model_name: int(rt_data.shape[0])}
+            # Estimate Rcl if not provided
+            if rcl is None:
+                rcl = self._estimate_rcl(rt_data, vcl)
+
+            # Auto-routing is applied sample-by-sample so clean and shaly
+            # intervals can coexist within the same well/zone.
+            if self.model == "auto":
+                if isinstance(lithology, np.ndarray):
+                    lithology_array = np.asarray(lithology, dtype=object)
+                else:
+                    lithology_array = np.full(rt_data.shape, lithology, dtype=object)
+                sw, model_name, model_counts = self._calculate_depth_routed(
+                    rt_data, rw, rcl, salinity, vcl, phie, phit,
+                    lithology_array, cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
+                )
+            else:
+                # Single model for entire well
+                model = self._select_model(vcl, salinity,
+                                           lithology if isinstance(lithology, str) else "clastic",
+                                           cec, b_coeff)
+                sw = self._run_model(model, rt_data, rw, rcl, vcl, phie, phit,
+                                     cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp,
+                                     self.a, self.m, self.n)
+                model_name = model.value
+                model_counts = {model_name: int(rt_data.shape[0])}
 
         # Calculate Sxo from invaded-zone inputs where they are finite;
         # otherwise fall back to the quick-look empirical relation requested
@@ -243,45 +245,50 @@ class SaturationModule:
         sxo_reason = None
         sxo_method_counts: Dict[str, int] = {}
         sw_clipped = np.clip(np.asarray(sw, dtype=float), 0.0, 1.0) if sw is not None else None
-        if sw_clipped is not None:
-            fallback_sxo = np.power(sw_clipped, 0.2)
-            if rxo_data is not None and rmf is not None:
-                archie_sxo = calculate_sxo(rxo_data, rmf, phie, self.a, self.m, self.n)
-                archie_sxo = np.clip(np.asarray(archie_sxo, dtype=float), 0.0, 1.0)
-                finite_archie = np.isfinite(archie_sxo)
-                finite_fallback = np.isfinite(fallback_sxo)
-                use_fallback = ~finite_archie & finite_fallback
+        fallback_sxo = np.power(sw_clipped, 0.2) if sw_clipped is not None else None
+        finite_fallback = (
+            np.isfinite(fallback_sxo)
+            if fallback_sxo is not None
+            else np.zeros(well.n_samples, dtype=bool)
+        )
+        finite_archie = np.zeros(well.n_samples, dtype=bool)
+
+        if rxo_data is not None and rmf is not None:
+            archie_sxo = calculate_sxo(rxo_data, rmf, phie, self.a, self.m, self.n)
+            archie_sxo = np.clip(np.asarray(archie_sxo, dtype=float), 0.0, 1.0)
+            finite_archie = np.isfinite(archie_sxo)
+            if fallback_sxo is not None:
                 sxo = np.where(finite_archie, archie_sxo, fallback_sxo)
-                finite_sw = np.isfinite(sw_clipped)
-                sxo = np.where(finite_sw & np.isfinite(sxo), np.maximum(sxo, sw_clipped), sxo)
-                if np.any(finite_archie):
-                    sxo_method_counts["archie_rxo_rmf"] = int(np.count_nonzero(finite_archie))
-                if np.any(use_fallback):
-                    sxo_method_counts["fifth_root_quicklook"] = int(np.count_nonzero(use_fallback))
-                if np.any(finite_archie) and np.any(use_fallback):
-                    sxo_method = "archie_rxo_rmf+fifth_root_quicklook"
-                    sxo_reason = "invaded-zone Archie used where finite; fifth-root fallback used where RSHA/RXO/RESS/RMF were non-finite"
-                elif np.any(finite_archie):
-                    sxo_method = "archie_rxo_rmf"
-                    sxo_reason = "RSHA/RXO/RESS and RMF available"
-                else:
-                    sxo_method = "fifth_root_quicklook"
-                    if rxo_data is None or not np.any(np.isfinite(np.asarray(rxo_data, dtype=float))):
-                        sxo_reason = "RSHA/RXO/RESS present but had no finite usable samples"
-                    else:
-                        sxo_reason = "invaded-zone Archie produced no finite samples"
             else:
-                sxo = fallback_sxo
+                sxo = np.where(finite_archie, archie_sxo, np.nan)
+            finite_sw = np.isfinite(sw_clipped) if sw_clipped is not None else np.zeros(well.n_samples, dtype=bool)
+            sxo = np.where(finite_sw & np.isfinite(sxo), np.maximum(sxo, sw_clipped), sxo)
+            use_fallback = ~finite_archie & finite_fallback
+            if np.any(finite_archie):
+                sxo_method_counts["archie_rxo_rmf"] = int(np.count_nonzero(finite_archie))
+            if np.any(use_fallback):
+                sxo_method_counts["fifth_root_quicklook"] = int(np.count_nonzero(use_fallback))
+            if np.any(finite_archie) and np.any(use_fallback):
+                sxo_method = "archie_rxo_rmf+fifth_root_quicklook"
+                sxo_reason = "invaded-zone Archie used where finite; fifth-root fallback used where RSHA/RXO/RESS/RMF were non-finite"
+            elif np.any(finite_archie):
+                sxo_method = "archie_rxo_rmf"
+                sxo_reason = "RSHA/RXO/RESS and RMF available"
+            elif np.any(finite_fallback):
                 sxo_method = "fifth_root_quicklook"
-                sxo_method_counts["fifth_root_quicklook"] = int(np.count_nonzero(np.isfinite(fallback_sxo)))
-                if rxo_existing is None and rmf is None:
-                    sxo_reason = "RSHA/RXO/RESS and RMF unavailable"
-                elif rxo_existing is None:
-                    sxo_reason = "RSHA/RXO/RESS unavailable"
-                elif not curve_has_finite_data(rxo_existing):
-                    sxo_reason = "RSHA/RXO/RESS present but had no finite usable samples"
-                else:
-                    sxo_reason = "RMF unavailable"
+                sxo_reason = "invaded-zone Archie produced no finite samples"
+        elif fallback_sxo is not None and np.any(finite_fallback):
+            sxo = fallback_sxo
+            sxo_method = "fifth_root_quicklook"
+            sxo_method_counts["fifth_root_quicklook"] = int(np.count_nonzero(finite_fallback))
+            if rxo_existing is None and rmf is None:
+                sxo_reason = "RSHA/RXO/RESS and RMF unavailable"
+            elif rxo_existing is None:
+                sxo_reason = "RSHA/RXO/RESS unavailable"
+            elif not curve_has_finite_data(rxo_existing):
+                sxo_reason = "RSHA/RXO/RESS present but had no finite usable samples"
+            else:
+                sxo_reason = "RMF unavailable"
 
         return SaturationResult(
             sw=sw,

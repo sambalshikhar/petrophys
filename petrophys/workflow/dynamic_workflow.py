@@ -31,6 +31,9 @@ from petrophys.utils.analysis_helpers import get_curve, get_curve_data_depthwise
 import pandas as pd
 from petrophys.io import ascii_reader, las_reader
 
+DEFAULT_RESISTIVITY_REFERENCE_TEMP_F = 75.0
+
+
 class WorkflowStep(Enum):
     """Individual workflow steps."""
     NORMALIZATION = "normalization"
@@ -385,10 +388,10 @@ class DynamicWorkflowConfig:
     mud_type: str = "WBM"  # WBM or OBM
     mud_has_clay_or_kcl: bool = False
     rmf_at_meas_temp: Optional[float] = None
-    rmf_meas_temp_f: float = 75.0
+    rmf_meas_temp_f: float = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
     rmf_salinity_ppm: Optional[float] = None
     rm: Optional[float] = None
-    rm_meas_temp_f: float = 75.0
+    rm_meas_temp_f: float = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
     mud_water: str = "fresh"  # fresh or salt
 
     # Formation water
@@ -1012,9 +1015,10 @@ class DynamicWorkflow:
         )
 
     def _can_saturation(self, well: "Well") -> bool:
-        return (self._has_curve(well, "RDEP", "RT") and
-                self._has_curve(well, "PHIE_CC", "PHIE") and
-                self._result.rw_computed is not None)
+        has_porosity = self._has_curve(well, "PHIE_CC", "PHIE")
+        can_compute_sw = self._has_curve(well, "RDEP", "RT") and self._result.rw_computed is not None
+        can_compute_sxo = self._has_curve(well, "RSHA", "RXO", "RESS") and self._result.rmf_computed is not None
+        return has_porosity and (can_compute_sw or can_compute_sxo)
 
     def _can_permeability(self, well: "Well") -> bool:
         return self._has_curve(well, "PHIE") or self._has_curve(well, "PHIT")
@@ -1443,12 +1447,12 @@ class DynamicWorkflow:
         rmf_meas_temp_f = (
             self.config.rmf_meas_temp_f
             if self.config.rmf_meas_temp_f is not None
-            else 75.0
+            else DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
         )
-        if rmf_meas_temp_f == 75.0 and well.header.rm_temp is not None:
+        if rmf_meas_temp_f == DEFAULT_RESISTIVITY_REFERENCE_TEMP_F and well.header.rm_temp is not None:
             rmf_meas_temp_f = float(well.header.rm_temp)
         metadata_rmf_temp_f = _parameter_temperature_f(well, "RMFT")
-        if metadata_rmf_temp_f is not None and rmf_meas_temp_f == 75.0:
+        if metadata_rmf_temp_f is not None and rmf_meas_temp_f == DEFAULT_RESISTIVITY_REFERENCE_TEMP_F:
             rmf_meas_temp_f = metadata_rmf_temp_f
 
         las_rmf = well.header.rmf
@@ -1460,12 +1464,12 @@ class DynamicWorkflow:
         rm_meas_temp_f = (
             self.config.rm_meas_temp_f
             if self.config.rm_meas_temp_f is not None
-            else 75.0
+            else DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
         )
-        if rm_meas_temp_f == 75.0 and well.header.rm_temp is not None:
+        if rm_meas_temp_f == DEFAULT_RESISTIVITY_REFERENCE_TEMP_F and well.header.rm_temp is not None:
             rm_meas_temp_f = float(well.header.rm_temp)
         metadata_rm_temp_f = _parameter_temperature_f(well, "RMT")
-        if metadata_rm_temp_f is not None and rm_meas_temp_f == 75.0:
+        if metadata_rm_temp_f is not None and rm_meas_temp_f == DEFAULT_RESISTIVITY_REFERENCE_TEMP_F:
             rm_meas_temp_f = metadata_rm_temp_f
 
         las_rm = well.header.rm
@@ -1513,20 +1517,21 @@ class DynamicWorkflow:
                     },
                 )
             else:
+                assumed_temp_f = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
                 result = rmf_module.calculate(
                     rmf_surface=float(las_rmf),
-                    temp_measured=reference_temp,
+                    temp_measured=assumed_temp_f,
                     temp_formation=temp_profile,
                 )
                 decisions.append(
-                    f"Rmf from LAS metadata used assumed reference temperature {reference_temp:.1f}F and was corrected along the temperature profile"
+                    f"Rmf from LAS metadata used assumed reference temperature {assumed_temp_f:.1f}F and was corrected along the temperature profile"
                 )
                 return _finalize_rmf(
                     "las_metadata_assumed_reference_temperature",
                     result.rmf,
                     {
                         "rmf_at_reference_temp": float(las_rmf),
-                        "reference_temp_f": reference_temp,
+                        "reference_temp_f": assumed_temp_f,
                     },
                 )
 
@@ -1587,8 +1592,9 @@ class DynamicWorkflow:
 
     def _step_rw(self, well: "Well") -> StepResult:
         from petrophys.resistivity.rw.rw_module import RwModule
-        from petrophys.resistivity.rw.salinity_rw import rw_from_salinity, salinity_from_rw
+        from petrophys.resistivity.rw.salinity_rw import rw_from_salinity
         from petrophys.resistivity.rw.sp_rw import estimate_sp_lines, rw_from_sp, rw_from_rxo_rt
+        from petrophys.resistivity.rw.temp_correction import correct_rw_temperature
 
         trace = StepResult(step="rw", success=True)
         decisions = []
@@ -1622,11 +1628,10 @@ class DynamicWorkflow:
 
         if self.config.rw is not None:
             if self.config.rw_meas_temp_f is not None:
-                salinity_est = float(salinity_from_rw(self.config.rw, self.config.rw_meas_temp_f))
-                rw_curve = rw_from_salinity(salinity_est, temp_profile)
+                rw_curve = correct_rw_temperature(self.config.rw, self.config.rw_meas_temp_f, temp_profile, "F")
                 decisions.append(
-                    f"Rw corrected from {self.config.rw:.4f} ohm.m @ {self.config.rw_meas_temp_f:.0f}F "
-                    f"along the temperature profile"
+                    f"Rw directly corrected from {self.config.rw:.4f} ohm.m @ {self.config.rw_meas_temp_f:.0f}F "
+                    f"with Arps along the temperature profile"
                 )
                 return _finalize_rw(
                     "user_provided_temperature_profile_corrected",
@@ -1634,22 +1639,21 @@ class DynamicWorkflow:
                     {
                         "rw_at_measured_temp": self.config.rw,
                         "measured_temp_f": self.config.rw_meas_temp_f,
-                        "salinity_ppm_estimated": salinity_est,
                         "source_priority": "config.rw",
                     },
                 )
-            salinity_est = float(salinity_from_rw(self.config.rw, reference_temp))
-            rw_curve = rw_from_salinity(salinity_est, temp_profile)
+            assumed_temp_f = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
+            rw_curve = correct_rw_temperature(self.config.rw, assumed_temp_f, temp_profile, "F")
             decisions.append(
-                f"Rw input {self.config.rw:.4f} ohm.m used assumed reference temperature {reference_temp:.1f}F and was corrected along the temperature profile"
+                f"Rw input {self.config.rw:.4f} ohm.m used assumed reference temperature {assumed_temp_f:.1f}F "
+                "and was directly corrected with Arps along the temperature profile"
             )
             return _finalize_rw(
                 "user_provided_assumed_reference_temperature",
                 rw_curve,
                 {
                     "rw": float(self.config.rw),
-                    "reference_temp_f": reference_temp,
-                    "salinity_ppm_estimated": salinity_est,
+                    "reference_temp_f": assumed_temp_f,
                     "source_priority": "config.rw",
                 },
             )
@@ -1659,11 +1663,10 @@ class DynamicWorkflow:
             las_rw = _constant_zoned_parameter(well, "RW")
         if las_rw is not None:
             if las_rw_temp_f is not None:
-                salinity_est = float(salinity_from_rw(float(las_rw), las_rw_temp_f))
-                rw_curve = rw_from_salinity(salinity_est, temp_profile)
+                rw_curve = correct_rw_temperature(float(las_rw), las_rw_temp_f, temp_profile, "F")
                 decisions.append(
-                    f"Rw corrected from LAS metadata: {float(las_rw):.4f} ohm.m @ {las_rw_temp_f:.0f}F "
-                    f"along the temperature profile"
+                    f"Rw directly corrected from LAS metadata: {float(las_rw):.4f} ohm.m @ {las_rw_temp_f:.0f}F "
+                    f"with Arps along the temperature profile"
                 )
                 return _finalize_rw(
                     "las_metadata_temperature_profile_corrected",
@@ -1671,22 +1674,21 @@ class DynamicWorkflow:
                     {
                         "rw_at_measured_temp": float(las_rw),
                         "measured_temp_f": las_rw_temp_f,
-                        "salinity_ppm_estimated": salinity_est,
                         "source_priority": "las.RW",
                     },
                 )
-            salinity_est = float(salinity_from_rw(float(las_rw), reference_temp))
-            rw_curve = rw_from_salinity(salinity_est, temp_profile)
+            assumed_temp_f = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
+            rw_curve = correct_rw_temperature(float(las_rw), assumed_temp_f, temp_profile, "F")
             decisions.append(
-                f"Rw from LAS metadata used assumed reference temperature {reference_temp:.1f}F and was corrected along the temperature profile"
+                f"Rw from LAS metadata used assumed reference temperature {assumed_temp_f:.1f}F "
+                "and was directly corrected with Arps along the temperature profile"
             )
             return _finalize_rw(
                 "las_metadata_assumed_reference_temperature",
                 rw_curve,
                 {
                     "rw": float(las_rw),
-                    "reference_temp_f": reference_temp,
-                    "salinity_ppm_estimated": salinity_est,
+                    "reference_temp_f": assumed_temp_f,
                     "source_priority": "las.RW",
                 },
             )
@@ -1780,10 +1782,12 @@ class DynamicWorkflow:
                 if not np.any(valid):
                     raise ValueError("No valid clean-water Rxo/Rt samples")
                 rw_clean = rw_from_rxo_rt(rxo_data[valid], rt_data[valid], rmf_curve[valid])
-                salinity_est = float(np.nanmedian(salinity_from_rw(rw_clean, temp_profile[valid])))
-                rw_curve = rw_from_salinity(salinity_est, temp_profile)
+                rw_reference_temp = float(np.nanmedian(temp_profile[valid]))
+                rw_at_reference = float(np.nanmedian(correct_rw_temperature(rw_clean, temp_profile[valid], rw_reference_temp, "F")))
+                rw_curve = correct_rw_temperature(rw_at_reference, rw_reference_temp, temp_profile, "F")
                 decisions.append(
-                    f"Rw via Rxo/Rt clean-water method using {int(np.count_nonzero(valid))} valid samples and depth-wise temperature correction"
+                    f"Rw via Rxo/Rt clean-water method using {int(np.count_nonzero(valid))} valid samples "
+                    "and direct Arps temperature correction"
                 )
                 return _finalize_rw(
                     "rxo_rt_clean_water",
@@ -1791,7 +1795,8 @@ class DynamicWorkflow:
                     {
                         "rmf_min": float(np.nanmin(rmf_curve)),
                         "rmf_max": float(np.nanmax(rmf_curve)),
-                        "salinity_ppm_estimated": salinity_est,
+                        "rw_at_reference_temp": rw_at_reference,
+                        "rw_reference_temp_f": rw_reference_temp,
                         "n_points": int(np.count_nonzero(valid)),
                         "source_priority": "rmf -> rxo_rt",
                     },
@@ -1827,16 +1832,16 @@ class DynamicWorkflow:
                 rwa = rdep * np.power(phie, archie_m) / archie_a
             valid = clean_wet_mask & np.isfinite(rwa) & (rwa > 0)
             if np.any(valid):
-                rw_value = float(np.percentile(rwa[valid], 5))
                 rwa_reference_temp = float(np.nanmedian(temp_profile[valid]))
-                salinity_est = float(salinity_from_rw(rw_value, rwa_reference_temp))
-                rw_curve = rw_from_salinity(salinity_est, temp_profile)
+                rwa_reference_values = correct_rw_temperature(rwa[valid], temp_profile[valid], rwa_reference_temp, "F")
+                rw_value = float(np.percentile(rwa_reference_values, 5))
+                rw_curve = correct_rw_temperature(rw_value, rwa_reference_temp, temp_profile, "F")
                 decisions.append(
                     "Rw from Rwa clean-wet fallback: P5 of "
                     f"{rt_curve.mnemonic} * {phie_curve.mnemonic}^m / a "
                     f"where VCL < 0.3 and {phie_curve.mnemonic} > 0.05 (n={int(np.count_nonzero(valid))}), "
                     "using lithology-dependent Archie coefficients, "
-                    "then depth-wise temperature correction"
+                    "then direct Arps temperature correction"
                 )
                 return _finalize_rw(
                     "rwa_clean_wet_p5",
@@ -1852,7 +1857,6 @@ class DynamicWorkflow:
                         "archie_coefficients": archie_summary,
                         "archie_lithology_source": self._lithology_source,
                         "rwa_reference_temp_f": rwa_reference_temp,
-                        "salinity_ppm_estimated": salinity_est,
                         "vcl_cutoff": 0.3,
                         "phie_cutoff": 0.05,
                         "source_priority": "Rwa clean-wet fallback",
@@ -1867,13 +1871,14 @@ class DynamicWorkflow:
         decisions.append(
             "All Rw priority sources failed (config/LAS RW, salinity, SP, Rxo/Rt, Rwa clean-wet fallback) -> default 0.05"
         )
-        rw_curve = rw_from_salinity(float(salinity_from_rw(0.05, reference_temp)), temp_profile)
+        assumed_temp_f = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
+        rw_curve = correct_rw_temperature(0.05, assumed_temp_f, temp_profile, "F")
         return _finalize_rw(
             "default_fallback_profile",
             rw_curve,
             {
                 "rw_default": 0.05,
-                "reference_temp_f": reference_temp,
+                "reference_temp_f": assumed_temp_f,
                 "source_priority": "default",
             },
         )
@@ -2467,8 +2472,16 @@ class DynamicWorkflow:
             "archie_a_source": "config_or_las" if self.config.a is not None else "ArchieParameterDefaults",
             "archie_m_source": "config_or_las" if self.config.m is not None else "ArchieParameterDefaults",
             "archie_n_source": "config_or_las" if self.config.n is not None else "ArchieParameterDefaults",
-            "rw_min": float(np.nanmin(np.asarray(self._result.rw_computed, dtype=float))),
-            "rw_max": float(np.nanmax(np.asarray(self._result.rw_computed, dtype=float))),
+            "rw_min": (
+                float(np.nanmin(np.asarray(self._result.rw_computed, dtype=float)))
+                if self._result.rw_computed is not None
+                else None
+            ),
+            "rw_max": (
+                float(np.nanmax(np.asarray(self._result.rw_computed, dtype=float)))
+                if self._result.rw_computed is not None
+                else None
+            ),
             "rcl": self._result.rcl_computed,
             "salinity_ppm": self.config.salinity_ppm,
             "cec": self.config.cec,
@@ -2515,9 +2528,14 @@ class DynamicWorkflow:
                 "Dual Water phi_cl fallback used because "
                 + str(phi_cl_info["phi_cl_fallback_reason"])
             )
-        trace.decisions.append(
-            f"Rw range = {trace.parameters['rw_min']:.4f} to {trace.parameters['rw_max']:.4f}, Rcl = {self._result.rcl_computed}"
-        )
+        if trace.parameters["rw_min"] is not None and trace.parameters["rw_max"] is not None:
+            trace.decisions.append(
+                f"Rw range = {trace.parameters['rw_min']:.4f} to {trace.parameters['rw_max']:.4f}, Rcl = {self._result.rcl_computed}"
+            )
+        else:
+            trace.decisions.append(
+                f"Rw unavailable for SW; Rcl = {self._result.rcl_computed}"
+            )
         if result.sxo_method == "archie_rxo_rmf":
             trace.decisions.append("SXO from Archie invaded-zone equation using RSHA/RXO/RESS and RMF")
         elif result.sxo_method == "archie_rxo_rmf+fifth_root_quicklook":

@@ -556,10 +556,22 @@ def test_rmf_routing_sources_and_temperature_units(
             "user_provided_temperature_profile_corrected",
         ),
         (
+            "rw_config_default_reference_temp",
+            lambda well: well,
+            DynamicWorkflowConfig(rw=0.05),
+            "user_provided_assumed_reference_temperature",
+        ),
+        (
             "rw_las_rw_temp_c_corrected",
             lambda well: (well.set_parameter("RW", 0.05), well.set_parameter("RWT", 25.0), well.set_parameter("RWT__UNIT", "C"), well)[-1],
             DynamicWorkflowConfig(),
             "las_metadata_temperature_profile_corrected",
+        ),
+        (
+            "rw_las_rw_default_reference_temp",
+            lambda well: (well.set_parameter("RW", 0.05), well)[-1],
+            DynamicWorkflowConfig(),
+            "las_metadata_assumed_reference_temperature",
         ),
         (
             "rw_from_salinity",
@@ -582,9 +594,31 @@ def test_rw_routing_sources_and_temperature_units(case_id, mutate, config, expec
     assert step.method == expected_method
     if case_id == "rw_las_rw_temp_c_corrected":
         assert np.isclose(step.parameters["measured_temp_f"], 77.0)
+    if expected_method in {
+        "user_provided_temperature_profile_corrected",
+        "las_metadata_temperature_profile_corrected",
+    }:
+        assert "salinity_ppm_estimated" not in step.parameters
+        rw_in = step.parameters["rw_at_measured_temp"]
+        measured_temp = step.parameters["measured_temp_f"]
+        expected_min = rw_in * (measured_temp + 6.77) / (step.parameters["formation_temp_max_f"] + 6.77)
+        expected_max = rw_in * (measured_temp + 6.77) / (step.parameters["formation_temp_min_f"] + 6.77)
+        assert np.isclose(step.parameters["rw_min"], expected_min)
+        assert np.isclose(step.parameters["rw_max"], expected_max)
+    if expected_method in {
+        "user_provided_assumed_reference_temperature",
+        "las_metadata_assumed_reference_temperature",
+    }:
+        assert "salinity_ppm_estimated" not in step.parameters
+        assert np.isclose(step.parameters["reference_temp_f"], 75.0)
+        rw_in = step.parameters["rw"]
+        expected_min = rw_in * (75.0 + 6.77) / (step.parameters["formation_temp_max_f"] + 6.77)
+        expected_max = rw_in * (75.0 + 6.77) / (step.parameters["formation_temp_min_f"] + 6.77)
+        assert np.isclose(step.parameters["rw_min"], expected_min)
+        assert np.isclose(step.parameters["rw_max"], expected_max)
     if case_id == "rw_rwa_clean_wet_fallback":
         assert "rwa_reference_temp_f" in step.parameters
-        assert "salinity_ppm_estimated" in step.parameters
+        assert "salinity_ppm_estimated" not in step.parameters
         assert step.parameters["rw_min"] < step.parameters["rw_max"]
         rdep = well.get("RDEP").data
         phie = well.get("PHIE").data
@@ -592,6 +626,8 @@ def test_rw_routing_sources_and_temperature_units(case_id, mutate, config, expec
         valid = np.isfinite(rdep) & np.isfinite(phie) & np.isfinite(vcl) & (vcl < 0.3) & (phie > 0.05)
         if isinstance(step.parameters["archie_a"], (int, float)) and isinstance(step.parameters["archie_m"], (int, float)):
             expected_rwa = rdep[valid] * np.power(phie[valid], step.parameters["archie_m"]) / step.parameters["archie_a"]
+            temp = result.well.get("TEMP").data
+            expected_rwa = expected_rwa * (temp[valid] + 6.77) / (step.parameters["rwa_reference_temp_f"] + 6.77)
             assert np.isclose(step.parameters["rw_from_rwa"], np.percentile(expected_rwa, 5))
         else:
             assert step.parameters["archie_coefficients"]
@@ -620,6 +656,8 @@ def test_rw_rwa_fallback_uses_lithology_specific_archie_coefficients(record_rout
     vcl = well.get("VCL").data
     valid = np.isfinite(rdep) & np.isfinite(phie) & np.isfinite(vcl) & (vcl < 0.3) & (phie > 0.05)
     expected_rwa = rdep[valid] * np.power(phie[valid], 2.0) / 1.0
+    temp = result.well.get("TEMP").data
+    expected_rwa = expected_rwa * (temp[valid] + 6.77) / (step.parameters["rwa_reference_temp_f"] + 6.77)
     assert np.isclose(step.parameters["rw_from_rwa"], np.percentile(expected_rwa, 5))
 
 
@@ -930,6 +968,43 @@ def test_saturation_uses_vclay_when_vcl_alias_is_missing(record_route):
 
     assert step.parameters["sw_model_sample_counts"] == {"archie": 4, "simandoux": 8}
     assert step.input_curves == ["RDEP", "PHIE", "VCLAY"]
+
+
+def test_saturation_can_write_sxo_without_sw_inputs(record_route):
+    well = _remove_curves(_routing_well("SAT-SXO-NO-SW"), "RDEP", "RT", "SW", "SXO")
+    result = _run(
+        "saturation_sxo_without_sw_inputs",
+        well,
+        DynamicWorkflowConfig(
+            rmf_at_meas_temp=0.08,
+            rmf_meas_temp_f=75.0,
+            sw_model="archie",
+            skip_steps=[
+                "vclay",
+                "rcl",
+                "lithology",
+                "rw",
+                "invasion",
+                "hc_correction",
+                "porosity",
+                "permeability",
+                "rock_quality",
+                "bvw",
+                "mhi",
+                "net_pay",
+            ],
+        ),
+        record_route,
+        focus_steps=["rmf", "saturation"],
+        curves=["RMF", "SW", "SXO"],
+    )
+    step = _step_by_name(result, "saturation")
+
+    assert step.method == "not_computed_missing_rt"
+    assert step.parameters["sxo_method"] == "archie_rxo_rmf"
+    assert step.parameters["sw_model_sample_counts"] == {}
+    assert np.isnan(well.get("SW").data).all()
+    assert np.isfinite(well.get("SXO").data).all()
 
 
 def test_dual_water_uses_same_phi_cl_as_phie(record_route):
