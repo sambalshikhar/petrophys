@@ -8,6 +8,13 @@ from petrophys.visualization.batch_export import (
     write_visualization_report,
 )
 from petrophys.visualization.log_plot import LogPlot, create_log_plot
+from petrophys.visualization.log_viewer import (
+    DEFAULT_LOG_VIEWER_TEMPLATES,
+    LogViewer,
+    LogViewerTemplate,
+    create_log_viewer,
+    load_log_viewer_template,
+)
 from petrophys.visualization.triple_combo import TripleComboPlot, create_triple_combo
 from petrophys.visualization.interpretation_plot import (
     InterpretationPlot,
@@ -25,6 +32,11 @@ __all__ = [
     # Log plots
     "LogPlot",
     "create_log_plot",
+    "DEFAULT_LOG_VIEWER_TEMPLATES",
+    "LogViewer",
+    "LogViewerTemplate",
+    "create_log_viewer",
+    "load_log_viewer_template",
     # Triple combo
     "TripleComboPlot",
     "create_triple_combo",
