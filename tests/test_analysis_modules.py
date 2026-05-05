@@ -430,6 +430,22 @@ def test_reference_json_omits_derived_log_status_by_default():
     assert "derived_log_status" not in payload["analysis_results"]["data_completeness"]
 
 
+def test_saturation_analysis_derives_so_from_sw():
+    well = Well("SAT-SO")
+    well.depth = np.arange(3.0)
+    well.add_curve("SW", np.array([0.2, 0.65, np.nan]), "v/v", "Water Saturation")
+
+    result = SaturationAnalysis().analyze(well)
+
+    assert "SO" in result.derived_curves
+    np.testing.assert_allclose(
+        result.derived_curves["SO"].data,
+        np.array([0.8, 0.35, np.nan]),
+        equal_nan=True,
+    )
+    assert result.derived_curves["SO"].unit == "v/v"
+
+
 def test_reference_json_primary_completeness_counts_alias_metadata_and_processed_curves():
     well = Well("PAYLOAD-COMPLETENESS")
     well.depth = np.arange(3.0)
