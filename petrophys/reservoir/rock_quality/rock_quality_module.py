@@ -155,7 +155,7 @@ class RockQualityModule:
         Parameters
         ----------
         well : Well
-            Well object with PERM/PERM_CC and PHIE/PHIE_CC curves
+            Well object with PERM_CC/PERM and PHIE_CC/PHIE curves
         perm : np.ndarray, optional
             Permeability array (uses well PERM if not provided)
         phi_e : np.ndarray, optional

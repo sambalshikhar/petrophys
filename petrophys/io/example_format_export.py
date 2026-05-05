@@ -75,6 +75,7 @@ PREFERRED_CURVE_ORDER = [
     "SALAPP",
     "SALMUDAPP",
     "SW",
+    "SO",
     "SXO",
     "PERM",
     "PERM_CC",
@@ -131,6 +132,7 @@ FAMILY_LABELS = {
     "SALAPP": "Apparent Water Salinity",
     "SALMUDAPP": "Apparent Mud Filtrate Salinity",
     "SW": "Water Saturation",
+    "SO": "Oil Saturation",
     "SXO": "Flushed Zone Water Saturation",
     "PERM": "Permeability",
     "PERM_CC": "Core-Calibrated Permeability",
@@ -304,6 +306,7 @@ REFERENCE_DERIVED_LOG_TARGETS = [
     "PHI_SEC",
     "PHIE_CC",
     "SW",
+    "SO",
     "SXO",
     "PERM",
     "PERM_CC",
@@ -416,6 +419,7 @@ CATEGORY_CONTEXT_SPECS = {
             "PHIT",
             "PHIE",
             "SW",
+            "SO",
             "SXO",
             "PERM",
             "PERM_CC",
@@ -1720,7 +1724,7 @@ def _missing_curve_reason(
             "CROSSOVER_FLAG": _has_finite_curve(well, "CROSSOVER_FLAG"),
             "VP_VS_RATIO": _has_finite_curve(well, "VP_VS_RATIO"),
             "selected effective porosity": _has_finite_any_curve(well, ("PHIE_CC", "PHIE")),
-            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
+            "PERM_CC or PERM": _has_finite_curve(well, "PERM_CC") or _has_finite_curve(well, "PERM"),
         }
         missing_inputs = [name for name, present in required.items() if not present]
         if missing_inputs:
@@ -1731,7 +1735,7 @@ def _missing_curve_reason(
         required = {
             "NET_PAY": _has_finite_curve(well, "NET_PAY"),
             "selected effective porosity": _has_finite_any_curve(well, ("PHIE_CC", "PHIE")),
-            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
+            "PERM_CC or PERM": _has_finite_curve(well, "PERM_CC") or _has_finite_curve(well, "PERM"),
         }
         missing_inputs = [name for name, present in required.items() if not present]
         if missing_inputs:
@@ -1820,7 +1824,7 @@ def _missing_curve_reason(
     if curve == "PORO_QUALITY_INDEX":
         reason = missing_required({
             "PHIT": _has_finite_curve(well, "PHIT"),
-            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
+            "PERM_CC or PERM": _has_finite_curve(well, "PERM_CC") or _has_finite_curve(well, "PERM"),
         })
         return reason or "porosity analysis did not write PORO_QUALITY_INDEX"
 
@@ -1838,7 +1842,7 @@ def _missing_curve_reason(
         return f"{curve} was not written after resistivity-ratio screening"
 
     if curve == "KH":
-        reason = missing_required({"PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC")})
+        reason = missing_required({"PERM_CC or PERM": _has_finite_curve(well, "PERM_CC") or _has_finite_curve(well, "PERM")})
         return reason or "permeability analysis did not write KH"
 
     if curve == "PERM_QUALITY_INDEX":
@@ -1848,7 +1852,7 @@ def _missing_curve_reason(
             or _has_finite_curve(well, "RQI")
             or _has_finite_curve(well, "FZI")
         ):
-            return "required input curves unavailable: PERM/PERM_CC, RQI, or FZI"
+            return "required input curves unavailable: PERM_CC/PERM, RQI, or FZI"
         return "permeability analysis did not write PERM_QUALITY_INDEX"
 
     if curve.endswith("_GRAD"):

@@ -14,14 +14,17 @@ def test_value_range_qc_sets_out_of_range_values_to_nan():
     well.depth = np.arange(4.0)
     well.add_curve("PHIT", np.array([-0.01, 0.20, 0.46, 0.45]), "v/v", "Total Porosity")
     well.add_curve("RMF", np.array([0.0005, 0.005, 12.0, 1.0]), "ohm.m", "Mud Filtrate")
+    well.add_curve("SO", np.array([-0.2, 0.4, 1.2, 1.0]), "v/v", "Oil Saturation")
 
     report = apply_value_range_qc(well)
 
     np.testing.assert_allclose(well.get("PHIT").data, np.array([np.nan, 0.20, np.nan, 0.45]), equal_nan=True)
     np.testing.assert_allclose(well.get("RMF").data, np.array([np.nan, 0.005, np.nan, 1.0]), equal_nan=True)
+    np.testing.assert_allclose(well.get("SO").data, np.array([0.0, 0.4, 1.0, 1.0]))
     assert well.get_parameter(VALUE_RANGE_QC_PARAMETER) == report
     assert any(item["curve"] == "PHIT" and item["changed"] == 2 for item in report)
     assert any(item["curve"] == "RMF" and item["changed"] == 2 for item in report)
+    assert any(item["curve"] == "SO" and item["changed"] == 2 for item in report)
 
 
 def test_value_range_qc_clips_saturation_aliases():
