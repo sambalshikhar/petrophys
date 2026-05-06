@@ -15,6 +15,7 @@ from petrophys.analysis import (
 )
 from petrophys.io.example_format_export import (
     _build_lithology_group_segments,
+    _build_reference_bad_hole_qc,
     _build_reference_derived_log_status,
     _build_reference_json_payload,
     _build_reference_statistics,
@@ -410,6 +411,77 @@ def test_category_derived_logs_include_full_workflow_outputs_not_raw_inputs():
     assert "GR" not in computed
 
 
+def test_bad_hole_qc_reports_bs_absent_without_synthetic_bit_size_fallback():
+    well = Well("BAD-HOLE-NO-BS")
+    well.depth = np.arange(3.0)
+    well.depth_unit = "ft"
+    well.add_curve("DEPT", well.depth, "ft", "Depth")
+    well.add_curve("CALI", np.array([8.5, 10.2, 8.6]), "in", "Caliper")
+    well.add_curve("DRHO", np.array([0.01, 0.02, 0.20]), "g/cc", "Density correction")
+
+    workflow_result = SimpleNamespace(
+        base_result=SimpleNamespace(
+            steps_executed=[
+                SimpleNamespace(
+                    step="bad_hole",
+                    parameters={
+                        "bit_size_used": None,
+                        "bit_size_source": None,
+                    },
+                    output_curves=["BAD_HOLE"],
+                )
+            ],
+            steps_skipped=[],
+            warnings=[],
+            errors=[],
+        ),
+        zone_results=[],
+    )
+
+    qc = _build_reference_bad_hole_qc(well, workflow_result)
+
+    assert qc["log_availability"]["BS"] is False
+    assert qc["parameters_used"]["bit_size_used_in"] is None
+    assert qc["parameters_used"]["bit_size_source"] is None
+    assert qc["parameters_used"]["bs_curve_present"] is False
+    assert "DRHO" in qc["parameters_used"]["washout_formula"]
+    assert "skipped" in qc["parameters_used"]["large_hole_formula"]
+
+
+def test_bad_hole_qc_reports_bs_present_when_bs_curve_exists():
+    well = Well("BAD-HOLE-WITH-BS")
+    well.depth = np.arange(3.0)
+    well.depth_unit = "ft"
+    well.add_curve("DEPT", well.depth, "ft", "Depth")
+    well.add_curve("CALI", np.array([8.5, 12.8, 8.6]), "in", "Caliper")
+    well.add_curve("BS", np.array([8.5, 8.5, 8.5]), "in", "Bit size")
+
+    workflow_result = SimpleNamespace(
+        base_result=SimpleNamespace(
+            steps_executed=[
+                SimpleNamespace(
+                    step="bad_hole",
+                    parameters={
+                        "bit_size_used": 8.5,
+                        "bit_size_source": "BS_curve",
+                    },
+                    output_curves=["BAD_HOLE"],
+                )
+            ],
+            steps_skipped=[],
+            warnings=[],
+            errors=[],
+        ),
+        zone_results=[],
+    )
+
+    qc = _build_reference_bad_hole_qc(well, workflow_result)
+
+    assert qc["log_availability"]["BS"] is True
+    assert qc["parameters_used"]["bit_size_source"] == "BS_curve"
+    assert qc["parameters_used"]["bs_curve_present"] is True
+
+
 def test_reference_json_omits_derived_log_status_by_default():
     well = Well("PAYLOAD-STATUS")
     well.depth = np.arange(3.0)
@@ -467,7 +539,7 @@ def test_reference_json_primary_completeness_counts_alias_metadata_and_processed
     )
 
     missing = set(payload["analysis_results"]["data_completeness"]["missing_primary_logs"])
-    assert "BS" not in missing
+    assert "BS" in missing
     assert "RSHA" not in missing
     assert "TEMP" not in missing
     assert "RMF" not in missing

@@ -404,6 +404,28 @@ def test_bad_hole_uses_depth_dependent_bs_curve(record_route):
     )
 
 
+def test_bad_hole_does_not_use_synthetic_bit_size_when_bs_missing(record_route):
+    well = _routing_well("BAD-HOLE-NO-BS")
+    _remove_curves(well, "BS")
+    well.header.bit_size = None
+
+    result = _run(
+        "bad_hole_no_synthetic_bs",
+        well,
+        DynamicWorkflowConfig(skip_steps=["vclay", "lithology", "porosity", "saturation"]),
+        record_route,
+        focus_steps=["bad_hole"],
+        curves=["BAD_HOLE"],
+    )
+    step = _step_by_name(result, "bad_hole")
+
+    assert "BS" not in step.input_curves
+    assert step.parameters["bit_size_used"] is None
+    assert step.parameters["bit_size_source"] is None
+    assert np.nansum(well["BAD_HOLE"].data) == 2
+    assert any("CALI-BS" in decision and "skipped" in decision for decision in step.decisions)
+
+
 @pytest.mark.parametrize(
     "case_id,mutate,expected_method",
     [

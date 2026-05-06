@@ -1142,10 +1142,10 @@ class DynamicWorkflow:
             bit_size_unique_values = sorted({float(value) for value in np.round(finite_bs, 4)}) if finite_bs.size else []
         else:
             header_bit_size = getattr(well.header, "bit_size", None)
-            representative_bit_size = float(header_bit_size) if header_bit_size is not None else 8.5
+            representative_bit_size = float(header_bit_size) if header_bit_size is not None else None
             bit_size = representative_bit_size
-            bit_size_source = "well_header" if header_bit_size is not None else "fallback_8.5"
-            bit_size_unique_values = [float(representative_bit_size)]
+            bit_size_source = "well_header" if header_bit_size is not None else None
+            bit_size_unique_values = [float(representative_bit_size)] if representative_bit_size is not None else []
         if cali is not None: inputs.append(cali.mnemonic)
         if bs_curve is not None: inputs.append("BS")
         if drho is not None: inputs.append("DRHO")
@@ -1165,6 +1165,8 @@ class DynamicWorkflow:
         trace.parameters["bit_size_source"] = bit_size_source
         trace.parameters["bit_size_unique_values"] = bit_size_unique_values
         trace.parameters["bit_size_depth_dependent"] = bs_curve is not None and len(bit_size_unique_values) > 1
+        if bit_size is None:
+            trace.decisions.append("No BS curve or header bit size found; CALI-BS and large-hole criteria skipped")
         trace.decisions.append(f"{n_bad} bad-hole samples flagged out of {len(flags['bad_hole'])}")
         return trace
 
