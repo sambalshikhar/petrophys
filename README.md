@@ -7,12 +7,12 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Petrophys is a Python library for deterministic petrophysical well log analysis,
-formation evaluation, workflow tracing, and agent-ready context generation.
+formation evaluation, workflow tracing, and reproducible context generation.
 
 Version 2 turns the package into a reproducible interpretation environment:
 it can read LAS files, standardize curves, extract LAS `~Params`, route the
 dynamic workflow, compute petrophysical curves, export audit JSON, and build
-context packages that an LLM agent can inspect or reproduce.
+context packages for review, benchmarking, and LLM-assisted reproduction.
 
 ## Version 2 Highlights
 
@@ -64,7 +64,7 @@ pip install -e ".[dev]"
 
 ### Generate workflow JSON traces for LAS files
 
-This is the recommended entry point for reproducible, agent-facing runs.
+This is the recommended entry point for reproducible, audit-facing runs.
 
 ```python
 from pathlib import Path
@@ -245,7 +245,7 @@ Unmapped parameters are retained in the workflow JSON as audit metadata.
 | `petrophys.lithology` | Lithology logs, matrix properties, crossplots, multi-mineral solver |
 | `petrophys.petrophysics` | Porosity, saturation, permeability, HC correction, cementation, elastic properties |
 | `petrophys.reservoir` | BVW, MHI, net pay, rock quality, reservoir flags |
-| `petrophys.analysis` | Category-level analysis summaries for LLM/context workflows |
+| `petrophys.analysis` | Category-level analysis summaries for context and review workflows |
 | `petrophys.workflow` | Standard workflow, dynamic workflow, zone-aware batch workflow, trace export |
 | `petrophys.visualization` | Log plots, triple combos, interpretation plots, log viewer, Pickett plots |
 | `petrophys.summation` | Formation and zone summaries, averages, NTG, HCPV |
@@ -302,9 +302,9 @@ python scripts/generate_category_context_json_by_formation_lithology.py \
   --output-dir /path/to/category_context_json
 ```
 
-## Reproducibility for LLM Agents
+## Reproducibility for LLM Workflows
 
-For an LLM agent, the safest way to reproduce calculations is:
+For an LLM-assisted workflow, the safest way to reproduce calculations is:
 
 1. Read the LAS through the public workflow trace API.
 2. Let the library standardize curves and map LAS `~Params`.
@@ -344,6 +344,11 @@ Full documentation is available at
 
 See [docs/release_notes.rst](docs/release_notes.rst) for Version 2.0.0 changes,
 migration notes, new APIs, behavior changes, and verification guidance.
+
+## Release Process
+
+See [RELEASE.md](RELEASE.md) for the branch policy, versioning rules, annotated
+tag process, GitHub Release flow, and PyPI publication checklist.
 
 ## License
 

@@ -18,16 +18,11 @@ Petrophys Documentation
 **Petrophys** is a comprehensive Python library for petrophysical well log analysis.
 It provides tools for loading, processing, and interpreting wireline and LWD log data.
 
-This library is designed to serve as a **tool-calling environment for Agentic AI workflows**
-and **Agentic Reinforcement Learning (RL)** research. Each module exposes deterministic,
-composable functions that an LLM agent can invoke as tools — enabling autonomous
-petrophysical interpretation pipelines where the agent selects methods, tunes parameters,
-and iterates on results. The modular architecture, full execution traces, and
-structured inputs/outputs make it ideal for:
-
-* **Agentic tool-calling** — LLM agents can call individual modules (VCL, porosity, Sw, net pay, etc.) as discrete tools with typed parameters and structured returns.
-* **Agentic RL environments** — The workflow engine provides a step-by-step MDP-like interface where actions are petrophysical computation steps, observations are well log curves, and rewards can be derived from interpretation quality metrics (NTG, HCPV, calibration error).
-* **Human-in-the-loop and fully autonomous modes** — The standard workflow supports fixed configurations while the dynamic workflow auto-detects inputs and routes models, enabling both supervised and autonomous agent operation.
+The package focuses on deterministic, composable calculations with structured
+inputs, outputs, and workflow traces. This makes it suitable for audited
+petrophysical interpretation, benchmark generation, reproducible notebooks,
+and LLM-assisted review workflows without bundling experimental agent runtime
+infrastructure into the release package.
 
 .. image:: https://img.shields.io/badge/python-3.8+-blue.svg
    :target: https://www.python.org/downloads/

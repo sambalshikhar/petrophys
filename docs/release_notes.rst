@@ -12,7 +12,7 @@ Released with the ``dev`` to ``main`` merge on 2026-05-06.
 Summary
 ~~~~~~~
 
-Version 2.0.0 is the agent-ready petrophysics release. It moves the project
+Version 2.0.0 is the reproducible-workflow petrophysics release. It moves the project
 from a collection of calculation modules into a reproducible workflow and
 context-generation environment. The release adds traceable dynamic routing,
 LAS parameter extraction, context JSON generation, category-level analysis,
@@ -52,7 +52,7 @@ Context JSON export
 * Added reference JSON work package export for whole-well context generation.
 * Added formation-level context JSON export.
 * Added formation/lithology-group context JSON export.
-* Added category-first context JSON export for agent workflows.
+* Added category-first context JSON export for structured review workflows.
 * Added reference curve name mapping output for generated packages.
 
 New scripts
@@ -79,7 +79,7 @@ Added ``petrophys.analysis`` with:
 * ``WellboreQC``
 
 These classes provide category-oriented summaries for context export, review,
-and LLM-agent inspection.
+and LLM-assisted inspection.
 
 Core and formation support
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -193,10 +193,10 @@ Migration Notes
   before final export. Use step-level curve summaries in the JSON trace to audit
   intermediate behavior.
 
-Agent Reproducibility
-~~~~~~~~~~~~~~~~~~~~~
+LLM Reproducibility
+~~~~~~~~~~~~~~~~~~~
 
-The recommended reproducibility path for an LLM agent is:
+The recommended reproducibility path for an LLM-assisted workflow is:
 
 .. code-block:: python
 
