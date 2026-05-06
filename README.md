@@ -224,6 +224,7 @@ Full documentation is available at [https://petrophys.readthedocs.io](https://pe
 - [Quick Start Tutorial](https://petrophys.readthedocs.io/en/latest/quickstart.html)
 - [API Reference](https://petrophys.readthedocs.io/en/latest/api/modules.html)
 - [Tutorials](https://petrophys.readthedocs.io/en/latest/tutorials/index.html)
+- [Release Notes](https://petrophys.readthedocs.io/en/latest/release_notes.html)
 
 ## Contributing
 

@@ -115,6 +115,12 @@ Contents
    tutorials/index
 
 .. toctree::
+   :maxdepth: 2
+   :caption: Releases
+
+   release_notes
+
+.. toctree::
    :maxdepth: 3
    :caption: API Reference
 
