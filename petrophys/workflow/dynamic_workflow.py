@@ -3120,10 +3120,10 @@ def build_workflow_config(cfg: Dict[str, Any], td_ft: float) -> DynamicWorkflowC
         rm=cfg.get("rm"),
         rm_meas_temp_f=cfg.get("rm_meas_temp_f"),
 
-        rw=cfg["rw"],
+        rw=cfg.get("rw"),
         rw_meas_temp_f=cfg.get("rw_meas_temp_f"),
-        matrix_type=cfg["matrix_type"],
-        lithology=cfg["lithology"],
+        matrix_type=cfg.get("matrix_type", "sandstone"),
+        lithology=cfg.get("lithology", "clastic"),
 
         a=cfg.get("a"),
         m=cfg.get("m"),
@@ -3138,45 +3138,80 @@ def build_workflow_config(cfg: Dict[str, Any], td_ft: float) -> DynamicWorkflowC
     )
 
 def run_dynamic_workflow_by_level(
-    well_names: Union[str, List[str]],
+    well_names: Union[str, Path, List[Union[str, Path]]],
     formation_names: Optional[Union[str, List[str]]] = None,
     formation_configs: Optional[List[Any]] = None,  # Adjust type to your FormationConfig class
 ) -> Dict[str, Any]:
     try:
         all_well_results = []
+        well_items = [well_names] if isinstance(well_names, (str, Path)) else list(well_names)
+        formation_filter = (
+            [formation_names]
+            if isinstance(formation_names, str)
+            else list(formation_names or [])
+        )
+        formation_filter_upper = {str(name).upper() for name in formation_filter}
+        formation_configs_by_name: Dict[str, Dict[str, Any]] = {}
 
-        for well in well_names:
+        for config in formation_configs or []:
+            cfg_dict = dict(config) if isinstance(config, dict) else dict(vars(config))
+            name = (
+                cfg_dict.get("formation_name")
+                or cfg_dict.get("formation")
+                or cfg_dict.get("name")
+            )
+            if name:
+                formation_configs_by_name[str(name).upper()] = cfg_dict
+
+        for well in well_items:
             # Load parent well
+            source_path = Path(well)
+            well_label = source_path.stem if source_path.suffix else str(well)
+            if not source_path.exists():
+                all_well_results.append(
+                    {"ok": False, "well_name": well_label, "error": f"Input file not found: {source_path}"}
+                )
+                continue
+
             parent_well = (
-                ascii_reader.read_csv(f, well_name=well, formation_name=formation_names)
-                if f.suffix.lower() == ".csv"
-                else las_reader.read_las(f, well_name=well)
+                ascii_reader.read_csv(source_path, well_name=well_label, formation_name=formation_filter)
+                if source_path.suffix.lower() == ".csv"
+                else las_reader.read_las(source_path, well_name=well_label)
             )
 
             df_well = parent_well.to_dataframe()
             if not df_well.empty and "WELLNAME" in df_well.columns:
-                df = df_well[df_well["WELLNAME"].astype(str).str.upper() == str(well).upper()].copy()
+                df = df_well[df_well["WELLNAME"].astype(str).str.upper() == well_label.upper()].copy()
             else:
                 df = df_well.copy()
 
-            if formation_names and "FORMATION" in df.columns:
-                df = df[df["FORMATION"].astype(str).str.upper().isin([str(x).upper() for x in formation_names])]
+            if formation_filter_upper and "FORMATION" in df.columns:
+                df = df[df["FORMATION"].astype(str).str.upper().isin(formation_filter_upper)]
 
             if df.empty:
-                all_well_results.append({"ok": False, "well_name": well, "error": "No data after filtering"})
+                all_well_results.append({"ok": False, "well_name": well_label, "error": "No data after filtering"})
                 continue
 
             results = []
             has_formation_col = "FORMATION" in df.columns
-            formations = sorted(df["FORMATION"].dropna().astype(str).unique().tolist()) if has_formation_col else []
+            formations = (
+                sorted(df["FORMATION"].dropna().astype(str).unique().tolist())
+                if has_formation_col
+                else (formation_filter or ["WHOLE_WELL"])
+            )
 
             processed_slices = []  # Collect workflow-modified slices here
 
             for fm in formations:
-                if fm not in formation_configs_by_name:
+                fm_key = str(fm).upper()
+                if formation_configs_by_name and fm_key not in formation_configs_by_name:
                     continue
 
-                df_fm = df[df["FORMATION"].astype(str) == fm].copy()
+                df_fm = (
+                    df[df["FORMATION"].astype(str) == fm].copy()
+                    if has_formation_col
+                    else df.copy()
+                )
                 if df_fm.empty:
                     continue
 
@@ -3184,8 +3219,11 @@ def run_dynamic_workflow_by_level(
                 fm_bottom_depth = float(df_fm["DEPTH"].max())
 
                 interval_well = parent_well.depth_slice(top=fm_top_depth, bottom=fm_bottom_depth)
-                cfg = build_workflow_config(formation_configs_by_name[fm], td_ft=interval_well.bottom)
-                
+                cfg = build_workflow_config(
+                    formation_configs_by_name.get(fm_key, {}),
+                    td_ft=interval_well.bottom,
+                )
+
                 # Run workflow (modifies interval_well in-place with computed curves)
                 result = DynamicWorkflow(cfg).run(interval_well)
                 processed_slices.append(interval_well)  #  Save modified slice
@@ -3207,7 +3245,7 @@ def run_dynamic_workflow_by_level(
 
             all_well_results.append({
                 "ok": True,
-                "well_name": well,
+                "well_name": well_label,
                 "n_intervals": len(results),
                 "results": results,
                 "well_obj": reconstructed_well,  # Now contains all workflow-computed curves
