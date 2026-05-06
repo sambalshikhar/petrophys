@@ -277,6 +277,7 @@ MISSING_LITHOLOGY_LABEL = "NO_LITHOLOGY_DATA"
 
 REFERENCE_DERIVED_LOG_EXCLUDE = {
     "BADHOLEFLAG",
+    "SO",
     "SWA",
     "SWXOA",
     "SXO-ARCHIE",
@@ -306,7 +307,6 @@ REFERENCE_DERIVED_LOG_TARGETS = [
     "PHI_SEC",
     "PHIE_CC",
     "SW",
-    "SO",
     "SXO",
     "PERM",
     "PERM_CC",
@@ -419,7 +419,6 @@ CATEGORY_CONTEXT_SPECS = {
             "PHIT",
             "PHIE",
             "SW",
-            "SO",
             "SXO",
             "PERM",
             "PERM_CC",
@@ -1248,8 +1247,6 @@ def _primary_log_available_for_context(
         for curve in original_curves
     }
     if canonical in original_canonical:
-        return True
-    if canonical == "BS" and _bit_size_used_for_bad_hole(well, workflow_result) is not None:
         return True
     return _has_finite_any_curve(well, _target_curve_candidates(canonical))
 
@@ -2576,8 +2573,11 @@ def _bit_size_used_for_bad_hole(well: "Well", workflow_result) -> Optional[float
     if bs_data is not None:
         return _representative_bit_size(bs_data)
 
-    values = _step_parameter_values(_all_step_results(workflow_result, "bad_hole"), "bit_size_used")
-    for value in values:
+    for step in _all_step_results(workflow_result, "bad_hole"):
+        source = str(step.parameters.get("bit_size_source") or "")
+        if source.lower().startswith("fallback"):
+            continue
+        value = step.parameters.get("bit_size_used")
         try:
             numeric = float(value)
         except (TypeError, ValueError):
@@ -2593,6 +2593,39 @@ def _bit_size_used_for_bad_hole(well: "Well", workflow_result) -> Optional[float
     except (TypeError, ValueError):
         return None
     return numeric if np.isfinite(numeric) else None
+
+
+def _bit_size_source_for_bad_hole(well: "Well", workflow_result) -> Optional[str]:
+    bs_data = _bit_size_curve_data(well)
+    if bs_data is not None:
+        unique_count = np.unique(np.round(bs_data[np.isfinite(bs_data)], 4)).size
+        return "BS_curve_depth_by_depth" if unique_count > 1 else "BS_curve"
+
+    values = _step_parameter_values(_all_step_results(workflow_result, "bad_hole"), "bit_size_source")
+    for value in values:
+        if value:
+            if str(value).lower().startswith("fallback"):
+                continue
+            return str(value)
+
+    header_value = getattr(well.header, "bit_size", None)
+    if header_value is not None:
+        return "well_header"
+    return None
+
+
+def _bit_size_context_phrase(bit_size: Optional[float], source: Optional[str]) -> str:
+    if bit_size is None:
+        return ""
+    value = _format_numeric(bit_size, 2)
+    source_text = (source or "").lower()
+    if source_text.startswith("bs_curve"):
+        return f"BS={value} in"
+    if source_text == "well_header":
+        return f"header bit size={value} in"
+    if source_text.startswith("fallback"):
+        return f"fallback bit size={value} in"
+    return f"bit size={value} in"
 
 
 def _flag_intervals(depth: np.ndarray, flag: np.ndarray) -> List[str]:
@@ -2615,6 +2648,7 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
 
     bit_size = _bit_size_used_for_bad_hole(well, workflow_result)
     bs_data = _bit_size_curve_data(well)
+    bit_size_source = _bit_size_source_for_bad_hole(well, workflow_result)
     bit_size_for_flags = bs_data if bs_data is not None else bit_size
     if well.get("CALI") is None and well.get("DRHO") is None:
         return None
@@ -2649,6 +2683,8 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
         "bit_size_depth_dependent": bool(
             bs_data is not None and np.unique(np.round(bs_data[np.isfinite(bs_data)], 4)).size > 1
         ),
+        "bit_size_source": bit_size_source,
+        "bs_curve_present": bs_data is not None,
         "thresholds": {
             "cali_minus_bs_washout_threshold_in": float(DefaultParameters.CALI_BS_THRESHOLD),
             "drho_washout_threshold_g_per_cc": float(DefaultParameters.DRHO_THRESHOLD),
@@ -2658,7 +2694,7 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
         },
         "log_availability": {
             "CALI": well.get("CALI") is not None,
-            "BS": well.get("BS") is not None or bit_size is not None,
+            "BS": bs_data is not None,
             "DRHO": well.get("DRHO") is not None,
             "PEF": well.get("PEF") is not None,
         },
@@ -2857,12 +2893,15 @@ def _curve_route_reason(curve: str, step: Any, well: "Well") -> str:
     if step_name == "bad_hole":
         from petrophys.base.constants import DefaultParameters
 
+        bit_size = params.get("bit_size_used")
+        bit_phrase = _bit_size_context_phrase(bit_size, params.get("bit_size_source"))
+        bit_text = f", {bit_phrase}" if bit_phrase else ", CALI-BS/large-hole skipped because BS/header bit size unavailable"
         return (
             f"caliper/DRHO QC selected because input curves present were {', '.join(_display_curve_list(inputs)) or 'none'}; "
-            f"washout=(CALI-BS)>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in, "
+            f"CALI-BS threshold={DefaultParameters.CALI_BS_THRESHOLD:.2f} in, "
             f"DRHO threshold={DefaultParameters.DRHO_THRESHOLD:.2f} g/cc, "
-            f"large-hole BS>{DefaultParameters.LARGE_HOLE_BS:.2f} in, "
-            f"bit_size_used={_format_numeric(params.get('bit_size_used'), 2)} in"
+            f"large-hole threshold={DefaultParameters.LARGE_HOLE_BS:.2f} in"
+            f"{bit_text}"
         )
 
     if step_name == "vclay":
@@ -3671,18 +3710,35 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         bad_pct = bad_count / max(int(well.n_samples), 1) * 100.0
         bs_data = _bit_size_curve_data(well)
         bit_size = _representative_bit_size(bs_data) if bs_data is not None else params.get("bit_size_used")
+        if bs_data is not None:
+            bit_size_source = "BS_curve_depth_by_depth" if np.unique(np.round(bs_data[np.isfinite(bs_data)], 4)).size > 1 else "BS_curve"
+        else:
+            bit_size_source = params.get("bit_size_source")
         bit_values = (
             sorted({float(value) for value in np.round(bs_data[np.isfinite(bs_data)], 4)})
             if bs_data is not None
             else None
         )
-        bit_text = f"; BS={_format_numeric(bit_size, 2)} in" if bit_size is not None else ""
+        bit_phrase = _bit_size_context_phrase(bit_size, bit_size_source)
+        bit_text = f"; {bit_phrase}" if bit_phrase else ""
         if bit_values and len(bit_values) > 1:
             bit_text = "; BS values=" + ", ".join(_format_numeric(value, 2) for value in bit_values) + " in"
+        washout_terms = []
+        if bit_size is not None and well.get("CALI") is not None:
+            washout_terms.append(f"(CALI-BS)>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in")
+        elif well.get("CALI") is not None:
+            washout_terms.append("CALI-BS skipped because BS/header bit size unavailable")
+        if well.get("DRHO") is not None:
+            washout_terms.append(f"|DRHO|>{DefaultParameters.DRHO_THRESHOLD:.2f} g/cc")
+        washout_text = " or ".join(washout_terms) if washout_terms else "not evaluated"
+        large_hole_text = (
+            f"large_hole=BS>{DefaultParameters.LARGE_HOLE_BS:.2f} in"
+            if bit_size is not None
+            else "large_hole skipped because BS/header bit size unavailable"
+        )
         return (
-            f"{curve}: washout=(CALI-BS)>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in or "
-            f"|DRHO|>{DefaultParameters.DRHO_THRESHOLD:.2f} g/cc; "
-            f"large_hole=BS>{DefaultParameters.LARGE_HOLE_BS:.2f} in; rule=washout OR large_hole"
+            f"{curve}: washout={washout_text}; "
+            f"{large_hole_text}; rule=washout OR large_hole"
             + bit_text
             + f"; flagged={bad_count}/{well.n_samples} ({bad_pct:.0f}%)."
         )
@@ -4362,16 +4418,23 @@ def _build_delivery_computation_notes(
         if details is not None:
             thresholds = details["thresholds"]
             counts = details["counts"]
-            note = (
-                "BAD HOLE QC: "
-                f"Washout = (CALI - BS) > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in"
-            )
-            if details["log_availability"].get("DRHO"):
-                note += (
-                    f" or |DRHO| > {thresholds['drho_washout_threshold_g_per_cc']:.2f} g/cc"
+            washout_terms = []
+            if details["bit_size_used"] is not None and details["log_availability"].get("CALI"):
+                washout_terms.append(
+                    f"(CALI - BS) > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in"
                 )
+            elif details["log_availability"].get("CALI"):
+                washout_terms.append("CALI-BS skipped because BS/header bit size was unavailable")
+            if details["log_availability"].get("DRHO"):
+                washout_terms.append(
+                    f"|DRHO| > {thresholds['drho_washout_threshold_g_per_cc']:.2f} g/cc"
+                )
+            note = "BAD HOLE QC: Washout = " + (" or ".join(washout_terms) if washout_terms else "not evaluated")
+            if details["bit_size_used"] is not None:
+                note += f"; large_hole = BS > {thresholds['large_hole_bit_size_threshold_in']:.2f} in. "
+            else:
+                note += "; large_hole skipped because BS/header bit size was unavailable. "
             note += (
-                f"; large_hole = BS > {thresholds['large_hole_bit_size_threshold_in']:.2f} in. "
                 "Final BAD_HOLE is the logical OR of washout and large_hole."
             )
             if details["bit_size_used"] is not None:
@@ -4380,7 +4443,12 @@ def _build_delivery_computation_notes(
                     values_text = ", ".join(_format_numeric(value, 2) for value in bit_values)
                     note += f" Bit sizes in this segment: {values_text} in."
                 else:
-                    note += f" Bit size used for this well: {_format_numeric(details['bit_size_used'], 2)} in."
+                    bit_phrase = _bit_size_context_phrase(
+                        details["bit_size_used"],
+                        details.get("bit_size_source"),
+                    )
+                    if bit_phrase:
+                        note += f" {bit_phrase[0].upper() + bit_phrase[1:]}."
             note += (
                 f" Counts in this well: washout={counts['washout']}, large_hole={counts['large_hole']}, "
                 f"final BAD_HOLE={counts['bad_hole']} of {counts['total_points']} "
@@ -5906,6 +5974,19 @@ def _build_reference_bad_hole_qc(well: "Well", workflow_result) -> dict[str, Any
 
     thresholds = details["thresholds"]
     counts = details["counts"]
+    washout_terms = []
+    if details["bit_size_used"] is not None and details["log_availability"].get("CALI"):
+        washout_terms.append(f"(CALI - BS) > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in")
+    elif details["log_availability"].get("CALI"):
+        washout_terms.append("CALI-BS skipped because BS/header bit size unavailable")
+    if details["log_availability"].get("DRHO"):
+        washout_terms.append(f"|DRHO| > {thresholds['drho_washout_threshold_g_per_cc']:.2f} g/cc")
+    washout_formula = " OR ".join(washout_terms) if washout_terms else "not evaluated"
+    large_hole_formula = (
+        f"BS > {thresholds['large_hole_bit_size_threshold_in']:.2f} in"
+        if details["bit_size_used"] is not None
+        else "skipped because BS/header bit size unavailable"
+    )
     return {
         "total_points": counts["total_points"],
         "bad_hole_points": counts["bad_hole"],
@@ -5921,15 +6002,10 @@ def _build_reference_bad_hole_qc(well: "Well", workflow_result) -> dict[str, Any
         ),
         "parameters_used": {
             "bit_size_used_in": _json_safe(details["bit_size_used"]),
-            "washout_formula": (
-                f"(CALI - BS) > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in"
-                + (
-                    f" OR |DRHO| > {thresholds['drho_washout_threshold_g_per_cc']:.2f} g/cc"
-                    if details["log_availability"].get("DRHO")
-                    else ""
-                )
-            ),
-            "large_hole_formula": f"BS > {thresholds['large_hole_bit_size_threshold_in']:.2f} in",
+            "bit_size_source": details.get("bit_size_source"),
+            "bs_curve_present": bool(details.get("bs_curve_present")),
+            "washout_formula": washout_formula,
+            "large_hole_formula": large_hole_formula,
             "pef_exclusion_formula": (
                 f"PEF < {thresholds['pef_exclusion_min']:.2f} or "
                 f"PEF > {thresholds['pef_exclusion_max']:.2f}"

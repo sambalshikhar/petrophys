@@ -198,18 +198,15 @@ def generate_bad_hole_flags(
             finite = bit_size[np.isfinite(bit_size)]
             bit_size = float(np.nanmedian(finite)) if finite.size else None
 
-    # Generate washout flag
+    # Generate washout flag. CALI needs a real bit-size source, while DRHO is
+    # an independent washout indicator and can still be evaluated without BS.
     cali, _, _ = get_curve_data_depthwise(well, ["CALI", "CAL"])
     drho, _, _ = get_curve_data_depthwise(well, ["DRHO"])
 
     if cali is not None and bit_size is not None:
-        flags["washout"] = generate_washout_flag(
-            cali,
-            bit_size,
-            drho,
-            cali_threshold,
-            drho_threshold
-        )
+        flags["washout"] |= (cali - bit_size) > cali_threshold
+    if drho is not None:
+        flags["washout"] |= np.abs(drho) > drho_threshold
 
     # Generate large hole flag
     if bit_size is not None:
