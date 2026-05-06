@@ -7,7 +7,7 @@ Version 2.0.0
 Status
 ~~~~~~
 
-Pending merge from ``dev`` into ``main``.
+Released with the ``dev`` to ``main`` merge.
 
 Version 2 is the agent-ready petrophysics release. It expands the library from
 a calculation toolkit into a reproducible workflow environment with traceable
