@@ -4,124 +4,154 @@ Release Notes
 Version 2.0.0
 -------------
 
-Status
-~~~~~~
+Released
+~~~~~~~~
 
-Released with the ``dev`` to ``main`` merge.
+Released with the ``dev`` to ``main`` merge on 2026-05-06.
 
-Version 2 is the agent-ready petrophysics release. It expands the library from
-a calculation toolkit into a reproducible workflow environment with traceable
-dynamic routing, context JSON export, category-level analysis, and richer
-verification coverage.
+Summary
+~~~~~~~
 
-Highlights
-~~~~~~~~~~
+Version 2.0.0 is the agent-ready petrophysics release. It moves the project
+from a collection of calculation modules into a reproducible workflow and
+context-generation environment. The release adds traceable dynamic routing,
+LAS parameter extraction, context JSON generation, category-level analysis,
+and stronger workflow verification.
 
-* Added workflow JSON trace generation for LAS batches through
-  ``write_workflow_json_traces_directory`` and
-  ``scripts/generate_workflow_json_traces.py``.
-* Added context JSON export workflows for reference packages, formation-level
-  packages, lithology-grouped packages, and category-first packages.
-* Added the ``petrophys.analysis`` package for category-oriented analysis:
-  porosity, saturation, permeability, lithology, hydrocarbon, numerical
-  statistics, and wellbore quality checks.
-* Expanded ``DynamicWorkflow`` with richer step traces, input/output curve
-  summaries, method decisions, parameter records, and final curve summaries.
-* Added zone-aware and formation/lithology-aware batch processing helpers for
-  reproducible LAS enrichment and audit output.
-* Added a template-driven well log viewer and batch visualization/export
-  utilities.
-* Added reusable elastic property calculations and a lithology/VCL-aware
-  permeability method.
-* Added broader tests for routing, trace export, value range QC, standardization,
-  log viewing, porosity, saturation, permeability, core correction, and analysis
-  modules.
+Major Changes
+~~~~~~~~~~~~~
 
-Agent and Reproducibility Notes
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Workflow and traceability
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Version 2 exposes the main workflow surfaces needed by an LLM agent:
+* Expanded ``DynamicWorkflow`` with richer step metadata, including method
+  names, input curves, output curves, parameters, decisions, warnings, errors,
+  and per-step curve summaries.
+* Added final curve summaries to workflow JSON so curve statistics can be
+  reproduced and compared across runs.
+* Added ``run_dynamic_workflow_with_zones`` for LAS files with global and zoned
+  parameters.
+* Added ``write_workflow_json_traces_directory`` for batch generation of
+  per-well ``workflow_json`` trace files.
+* Added curve audit and batch report helpers for workflow output review.
 
-* ``DynamicWorkflow``
-* ``DynamicWorkflowConfig``
-* ``run_dynamic_workflow``
-* ``run_dynamic_workflow_with_zones``
-* ``write_workflow_json_traces_directory``
-* ``extract_zoned_parameters``
-* ``WorkflowStep``
-* ``StepResult``
+LAS parameter extraction
+^^^^^^^^^^^^^^^^^^^^^^^^
 
-For LAS files that include ``~Params`` metadata, the zone-aware workflow maps
-recognized LAS parameters into ``DynamicWorkflowConfig`` fields. Examples
-include ``RW``, ``RWT``, ``RMF``, ``RMFT``, ``BHT``, ``TD``, ``CLFL``, ``WSAL``,
-``RBFL``, ``MUD``, ``LITH``, ``A``, ``M``, ``N``, ``RTSH``, ``CEC``, ``RWB``,
-and cutoff/model parameters. This allows an agent to reproduce calculations
-from the same LAS input without hand-building every configuration object.
+* Added mapping from LAS ``~Params`` metadata into ``DynamicWorkflowConfig``.
+* Recognized parameters include ``RW``, ``RWT``, ``RMF``, ``RMFT``, ``RM``,
+  ``RMT``, ``CLFL``, ``WSAL``, ``SAL``, ``BHT``, ``TD``, ``MUD``, ``LITH``,
+  ``MATRIX``, ``A``, ``M``, ``N``, ``RTSH``, ``CEC``, ``B_COEFF``, ``RWB``,
+  ``PNSH``, ``RBFL``, ``RHMA``, and related aliases.
+* Unmapped LAS parameters are now retained in JSON as audit information instead
+  of being silently discarded.
 
-The recommended reproducibility entry point is:
+Context JSON export
+^^^^^^^^^^^^^^^^^^^
 
-.. code-block:: python
+* Added reference JSON work package export for whole-well context generation.
+* Added formation-level context JSON export.
+* Added formation/lithology-group context JSON export.
+* Added category-first context JSON export for agent workflows.
+* Added reference curve name mapping output for generated packages.
 
-   from pathlib import Path
-   from petrophys.workflow import write_workflow_json_traces_directory
-
-   results = write_workflow_json_traces_directory(
-       input_dir=Path("geolink_las_with_params"),
-       output_dir=Path("workflow_trace_output"),
-       pattern="*.las",
-   )
-
-The generated ``workflow_json`` output records:
-
-* LAS source and well name
-* extracted global parameter overrides
-* zone parameter intervals, when present
-* input, output, and computed curve names
-* executed workflow steps
-* step methods, parameters, decisions, warnings, and errors
-* input and output curve summaries for each step
-* final curve summaries for reproduced statistics
-* lithology group summaries and derived log computation notes
-
-New Scripts
-~~~~~~~~~~~
-
-Version 2 adds these reusable CLI scripts:
+New scripts
+^^^^^^^^^^^
 
 * ``scripts/generate_workflow_json_traces.py``
 * ``scripts/generate_context_json_by_formation_lithology.py``
 * ``scripts/generate_category_context_json_by_formation_lithology.py``
 
-These scripts are thin wrappers around public library APIs and are intended to
-be reproducible examples, not one-off notebooks.
+These scripts are wrappers around public library APIs and are intended as
+reproducible command-line examples.
 
-Workflow Behavior Changes
-~~~~~~~~~~~~~~~~~~~~~~~~~
+New analysis package
+^^^^^^^^^^^^^^^^^^^^
 
-* The dynamic workflow now records richer trace metadata for each calculation
-  step, including curve statistics and routing decisions.
-* Saturation routing is more explicit and records per-model sample counts for
-  auto-routed runs.
-* Rw handling is stricter and more explicit about measured temperature versus
-  assumed reference temperature. Exact reproduction of older trace files may
-  require the same library commit or explicit ``rw``/``rw_meas_temp_f`` inputs.
-* Bad-hole, VCL, porosity, saturation, permeability, and net-pay steps now expose
-  more detailed parameter and QC notes in workflow JSON.
-* Input ``LITHOLOGY_GEOLINK`` values are kept authoritative for lithology-aware
-  routing where available.
+Added ``petrophys.analysis`` with:
 
-New and Updated Public APIs
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* ``PorosityAnalysis``
+* ``SaturationAnalysis``
+* ``PermeabilityAnalysis``
+* ``LithologyAnalysis``
+* ``HydrocarbonAnalysis``
+* ``NumericalStatisticalAnalysis``
+* ``WellboreQC``
+
+These classes provide category-oriented summaries for context export, review,
+and LLM-agent inspection.
+
+Core and formation support
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Documented ``petrophys.core`` as the public module for core plug data,
+  core-to-log calibration, porosity correction, poro-perm transforms, Archie
+  ``m`` estimation, and calibration plots.
+* Documented ``petrophys.formation`` as the public module for formation tops,
+  zones, sub-zones, manual intervals, and interval-level summaries.
+* Kept backward-compatible formation re-exports for clay volume and lithology
+  helpers while directing whole-well interpretation through the top-level
+  modules and workflow APIs.
+
+Petrophysical calculation updates
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Improved temperature handling and BHT/fallback gradient routing.
+* Improved RMF and RW routing with explicit measured-temperature versus assumed
+  reference-temperature behavior.
+* Added cleaner RWA clean-wet fallback traces for RW estimation.
+* Expanded saturation model routing and per-model sample count reporting.
+* Added SXO calculation details and fallback reporting.
+* Added lithology-aware Archie coefficients where ``LITHOLOGY_GEOLINK`` is
+  available.
+* Added apparent Swirr estimation and HC-mask-based permeability routing.
+* Added same-well core correction metadata for porosity and permeability.
+* Added reusable elastic property calculations.
+* Added lithology/VCL-aware permeability support.
+* Improved net-pay, BVW, MHI, rock-quality, invasion, bad-hole, and VCL trace
+  output.
+
+Visualization
+^^^^^^^^^^^^^
+
+* Added a template-driven ``LogViewer``.
+* Added reusable log viewer templates.
+* Added batch interpretation plot export and visualization reporting.
+* Updated interpretation plotting to support the expanded Version 2 curve set.
+
+Tests
+^^^^^
+
+Added or expanded tests for:
+
+* alias/unit standardization
+* analysis modules
+* same-well core correction
+* dynamic workflow routing
+* log viewer behavior
+* lithology/VCL permeability
+* porosity calculations
+* saturation routing
+* value range QC
+* workflow trace export
+
+Public APIs Added or Expanded
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Workflow APIs:
 
-* ``petrophys.workflow.write_workflow_json_traces_directory``
 * ``petrophys.workflow.run_dynamic_workflow_with_zones``
+* ``petrophys.workflow.write_workflow_json_traces_directory``
 * ``petrophys.workflow.extract_zoned_parameters``
 * ``petrophys.workflow.process_las_directory_with_workflow``
+* ``petrophys.workflow.write_batch_report``
+* ``petrophys.workflow.write_curve_audit_report``
 
-I/O and context export APIs:
+I/O and context APIs:
 
+* ``petrophys.io.export_example_format_las``
+* ``petrophys.io.export_example_format_directory``
+* ``petrophys.io.export_example_work_package_directory``
 * ``petrophys.io.export_reference_json_work_package_directory``
 * ``petrophys.io.export_reference_json_work_package_by_formation``
 * ``petrophys.io.export_reference_json_work_package_by_formation_lithology``
@@ -141,12 +171,60 @@ Analysis APIs:
 Visualization APIs:
 
 * ``petrophys.visualization.LogViewer``
-* ``petrophys.visualization.batch_export``
+* ``petrophys.visualization.LogViewerTemplate``
+* ``petrophys.visualization.create_log_viewer``
+* ``petrophys.visualization.load_log_viewer_template``
+* ``petrophys.visualization.export_interpretation_plots``
+* ``petrophys.visualization.write_visualization_report``
 
-Verification Guidance
+Migration Notes
+~~~~~~~~~~~~~~~
+
+* Use ``write_workflow_json_traces_directory`` for reproducible batch trace
+  generation instead of custom scripts that directly call workflow internals.
+* Use ``run_dynamic_workflow_with_zones`` when LAS files contain global or zoned
+  ``~Params`` metadata.
+* For historical trace comparisons, pin the package commit or explicitly pass
+  ``rw`` and ``rw_meas_temp_f`` when older RW temperature-reference behavior is
+  required.
+* ``LITHOLOGY_GEOLINK`` is treated as authoritative for lithology-aware routing
+  when present.
+* The workflow now removes or consolidates several intermediate method curves
+  before final export. Use step-level curve summaries in the JSON trace to audit
+  intermediate behavior.
+
+Agent Reproducibility
 ~~~~~~~~~~~~~~~~~~~~~
 
-Before merging Version 2 into ``main``, verify at minimum:
+The recommended reproducibility path for an LLM agent is:
+
+.. code-block:: python
+
+   from pathlib import Path
+   from petrophys.workflow import write_workflow_json_traces_directory
+
+   results = write_workflow_json_traces_directory(
+       input_dir=Path("geolink_las_with_params"),
+       output_dir=Path("workflow_trace_output"),
+       pattern="*.las",
+   )
+
+The generated JSON records:
+
+* source LAS file and well name
+* global parameter overrides extracted from LAS metadata
+* zone metadata, when present
+* input, output, and computed curve names
+* workflow step order and methods
+* step parameters and decisions
+* per-step input/output curve summaries
+* final curve summaries
+* warnings, errors, and unmapped parameters
+
+Verification
+~~~~~~~~~~~~
+
+Recommended checks for this release:
 
 .. code-block:: bash
 
@@ -156,7 +234,7 @@ Before merging Version 2 into ``main``, verify at minimum:
    pytest tests/test_saturation_routing_logic.py
    pytest tests/test_value_range_qc.py
 
-For end-to-end workflow trace reproduction, run:
+End-to-end trace generation:
 
 .. code-block:: bash
 
@@ -167,10 +245,8 @@ For end-to-end workflow trace reproduction, run:
 Known Follow-Up
 ~~~~~~~~~~~~~~~
 
-* Add the package version and git commit hash into every generated workflow JSON
-  file for stronger long-term reproducibility.
-* Keep ``petrophys.workflow.workflow_api`` aligned with the current dynamic
-  workflow step list, including ``CORE_CORRECTION`` and ``ROCK_QUALITY``.
-* Decide whether currently unmapped LAS parameters such as ``FMT`` and ``TGRAD``
-  should be mapped into configuration fields or intentionally reported as audit
-  metadata only.
+* Add package version and git commit hash to every generated workflow JSON file.
+* Keep ``petrophys.workflow.workflow_api`` synchronized with the full dynamic
+  workflow step list.
+* Decide whether LAS parameters such as ``FMT`` and ``TGRAD`` should become
+  active configuration inputs or remain audit-only metadata.

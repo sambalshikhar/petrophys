@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "petrophys"
-version = "0.1.0"
+version = "2.0.0"
 description = "A comprehensive petrophysics library for well log analysis and formation evaluation"
 readme = "README.md"
 license = {text = "MIT"}
@@ -64,10 +64,10 @@ docs = [
 all = ["petrophys[dlis,dev,docs]"]
 
 [project.urls]
-Homepage = "https://github.com/petrophys/petrophys"
+Homepage = "https://github.com/sambalshikhar/petrophys"
 Documentation = "https://petrophys.readthedocs.io"
-Repository = "https://github.com/petrophys/petrophys"
-Issues = "https://github.com/petrophys/petrophys/issues"
+Repository = "https://github.com/sambalshikhar/petrophys"
+Issues = "https://github.com/sambalshikhar/petrophys/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

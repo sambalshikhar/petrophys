@@ -3,222 +3,336 @@
 [![PyPI version](https://badge.fury.io/py/petrophys.svg)](https://badge.fury.io/py/petrophys)
 [![Python Version](https://img.shields.io/pypi/pyversions/petrophys.svg)](https://pypi.org/project/petrophys/)
 [![Documentation Status](https://readthedocs.org/projects/petrophys/badge/?version=latest)](https://petrophys.readthedocs.io/en/latest/?badge=latest)
-[![CI](https://github.com/petrophys/petrophys/actions/workflows/ci.yml/badge.svg)](https://github.com/petrophys/petrophys/actions/workflows/ci.yml)
+[![CI](https://github.com/sambalshikhar/petrophys/actions/workflows/ci.yml/badge.svg)](https://github.com/sambalshikhar/petrophys/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A comprehensive petrophysics library for well log analysis and formation evaluation.
+Petrophys is a Python library for deterministic petrophysical well log analysis,
+formation evaluation, workflow tracing, and agent-ready context generation.
 
-## Features
+Version 2 turns the package into a reproducible interpretation environment:
+it can read LAS files, standardize curves, extract LAS `~Params`, route the
+dynamic workflow, compute petrophysical curves, export audit JSON, and build
+context packages that an LLM agent can inspect or reproduce.
 
-- **Curve Standardization**: Unified mnemonic names and unit handling
-- **Quality Control**: Bad hole detection, log normalization, washout flagging
-- **Formation Evaluation**: Clay volume (GR, SP, N-D methods), clay resistivity (Rcl), lithology determination (multi-mineral solver)
-- **Porosity Calculation**: Density, neutron, sonic, total (weighted N-D), effective (clay-corrected), and secondary porosity
-- **Hydrocarbon Correction**: Preliminary porosity-based NPHI and RHOB corrections for oil/gas zones
-- **Water Saturation**: 5 models with automatic routing — Archie, Simandoux, Indonesia, Waxman-Smits, Dual Water
-- **Permeability Estimation**: Coates-Denoo, Timur, Wyllie-Rose equations with impermeability detection
-- **Rock Quality**: Reservoir Quality Index (RQI), Flow Zone Indicator (FZI), normalized porosity (phi_z)
-- **Reservoir Characterization**: Net pay (lithology-aware cutoffs), BVW, MHI calculations
-- **Dynamic Workflow**: Input-aware pipeline that auto-detects available curves and runs applicable modules
-- **Formation Analysis**: Per-formation summaries from CSV tops (simple, NPD, Danish formats) with report export
-- **Per-Interval Lithology**: CSV-driven per-depth lithology for Sw model routing and net pay cutoffs
-- **Visualization**: Log plots, crossplots, interpretation displays
+## Version 2 Highlights
+
+- Dynamic workflow with full step traces, decisions, parameters, curve inputs,
+  curve outputs, warnings, and final curve summaries.
+- Zone-aware LAS processing that maps `~Params` such as `RW`, `RWT`, `RMF`,
+  `BHT`, `CLFL`, `WSAL`, `RBFL`, `MUD`, `A`, `M`, `N`, `RTSH`, and `CEC`
+  into `DynamicWorkflowConfig`.
+- Context JSON exporters for whole-well, formation-level, formation/lithology,
+  and category-first work packages.
+- New `petrophys.analysis` package for category-oriented porosity, saturation,
+  permeability, lithology, hydrocarbon, statistical, and wellbore QC summaries.
+- Expanded petrophysics calculations for RW/RMF routing, saturation routing,
+  apparent Swirr, core correction, elastic properties, lithology-aware
+  permeability, and log-derived QC.
+- Reproducible CLI scripts for workflow trace generation and context package
+  generation.
+- Template-driven log viewer and batch visualization helpers.
+- Broader tests for workflow routing, trace export, standardization, value
+  range QC, saturation, permeability, porosity, log viewing, and analysis
+  modules.
 
 ## Installation
 
-### From PyPI (recommended)
+From PyPI:
 
 ```bash
 pip install petrophys
 ```
 
-### With optional dependencies
+For optional features:
 
 ```bash
-# For DLIS file support
-pip install petrophys[dlis]
-
-# For development
-pip install petrophys[dev]
-
-# For documentation building
-pip install petrophys[docs]
-
-# All optional dependencies
-pip install petrophys[all]
+pip install petrophys[dlis]   # DLIS support
+pip install petrophys[dev]    # tests and development tools
+pip install petrophys[docs]   # documentation build tools
+pip install petrophys[all]    # all optional dependencies
 ```
 
-### From Source
+From source:
 
 ```bash
-git clone https://github.com/petrophys/petrophys.git
+git clone https://github.com/sambalshikhar/petrophys.git
 cd petrophys
 pip install -e ".[dev]"
 ```
 
 ## Quick Start
 
-### Standard Workflow (fixed configuration)
+### Generate workflow JSON traces for LAS files
+
+This is the recommended entry point for reproducible, agent-facing runs.
 
 ```python
-from petrophys.io import read_las
-from petrophys.workflow import run_standard_workflow, WorkflowConfig
+from pathlib import Path
+from petrophys.workflow import write_workflow_json_traces_directory
 
-# Load well data
-well = read_las("well_data.las")
-
-# Configure parameters
-config = WorkflowConfig(
-    rw=0.05,              # Formation water resistivity
-    matrix_density=2.65,  # Sandstone matrix
-    a=1.0,                # Archie tortuosity
-    m=2.0,                # Cementation exponent
-    n=2.0,                # Saturation exponent
-    vcl_cutoff=0.3,       # VCL cutoff
-    phie_cutoff=0.08,     # Porosity cutoff
-    sw_cutoff=0.7,        # Water saturation cutoff
+results = write_workflow_json_traces_directory(
+    input_dir=Path("geolink_las_with_params"),
+    output_dir=Path("workflow_trace_output"),
+    pattern="*.las",
 )
 
-# Run interpretation
-result = run_standard_workflow(well, config)
-
-# Access computed curves
-vcl = result.well.get("VCL")       # Clay volume
-phie = result.well.get("PHIE")     # Effective porosity
-sw = result.well.get("SW")         # Water saturation
-net_pay = result.well.get("NET_PAY")  # Net pay flags
+for item in results:
+    print(item.source_file, item.success, item.json_log_file)
 ```
 
-### Dynamic Workflow (auto-detects available inputs)
+The generated `workflow_json` files include:
+
+- source LAS file and well name
+- input, output, and computed curve names
+- global LAS parameter overrides
+- zone parameters, when present
+- executed workflow steps
+- step method names, parameters, decisions, warnings, and errors
+- input and output curve summaries per step
+- final curve summaries for reproduced statistics
+- lithology group summaries and derived-log notes
+
+### Run the dynamic workflow programmatically
 
 ```python
 from petrophys.io import read_las
-from petrophys.workflow import run_dynamic_workflow, DynamicWorkflowConfig
+from petrophys.workflow import DynamicWorkflowConfig, run_dynamic_workflow
 
 well = read_las("well_data.las")
 
-# The dynamic workflow inspects the well's curves and runs only
-# applicable modules in the correct pipeline order
 config = DynamicWorkflowConfig(
-    # Temperature (optional — skipped if BHT not provided)
-    bht_f=220,
-    td_ft=8500,
-
-    # Formation water
+    bht_f=220.0,
+    td_ft=8500.0,
     rw=0.05,
-    salinity_ppm=25000,
-
-    # Lithology controls Sw model routing and net pay cutoffs
-    lithology="clastic",              # or "carbonate"
-    lithology_csv="lithology.csv",    # per-interval lithology (optional)
+    salinity_ppm=25000.0,
+    lithology="clastic",
     matrix_type="sandstone",
-
-    # HC correction
-    hc_type="oil",           # or "gas"
-
-    # Archie parameters (from SCAL if available)
-    a=1.0, m=2.0, n=2.0,
 )
 
 result = run_dynamic_workflow(well, config)
 
-# See which steps ran vs were skipped
-print(f"Executed: {[s.step for s in result.steps_executed]}")
-print(f"Skipped:  {result.steps_skipped}")
-print(f"Warnings: {result.warnings}")
+print([step.step for step in result.steps_executed])
+print(result.steps_skipped)
+print(result.warnings)
 
-# All computed curves are added to the well automatically:
-# VCL, PHIE, PHIT, PHIS, PHI_SEC, SW, SXO, PERM, BVW, MHI,
-# RQI, FZI, PHI_Z, NET_ROCK, NET_RES, NET_PAY, etc.
+phie = result.well.get("PHIE")
+sw = result.well.get("SW")
+perm = result.well.get("PERM")
 ```
 
-### Granular Module Usage (individual calculations)
+### Export context JSON packages
 
 ```python
-# Each module can be used independently
-from petrophys.petrophysics.saturation import dual_water, waxman_smits, archie
-from petrophys.reservoir import calculate_rock_quality, calculate_rqi, calculate_fzi
+from pathlib import Path
+from petrophys.io import (
+    export_reference_json_work_package_by_category_formation_lithology,
+    write_reference_curve_name_mapping,
+)
+
+results = export_reference_json_work_package_by_category_formation_lithology(
+    input_dir=Path("las_with_petrophys_params"),
+    output_dir=Path("context_json_by_category"),
+    tops_file=Path("formation_tops.xlsx"),
+    lithology_mapping_file=Path("lithology_mapping.xlsx"),
+    pattern="*.las",
+)
+
+mapping_path = write_reference_curve_name_mapping("context_json_by_category")
+```
+
+### Use individual calculation modules
+
+```python
 from petrophys.clay_volume import calculate_rcl, vcl_from_gr
-from petrophys.petrophysics.permeability import flag_impermeable
+from petrophys.petrophysics.saturation import archie, dual_water, waxman_smits
+from petrophys.petrophysics.permeability import coates_denoo, flag_impermeable
+from petrophys.reservoir import calculate_rock_quality
 
-# Direct function calls for Sw
-sw = archie(rt, rw=0.05, phi=0.15)
-sw = dual_water(phi_t=0.2, phi_e=0.15, rt=10.0, rw=0.05, rwb=0.02, vcl=0.3, phi_cl=0.15)
-sw = waxman_smits(phi_t=0.2, rt=10.0, rw=0.05, cec=10.0, rho_ma=2.65, b_coeff=0.5)
+vcl_gr = vcl_from_gr(gr, gr_min=20.0, gr_max=120.0, method="linear")
+rcl = calculate_rcl(rdep, vcl_gr, vcl_threshold=0.9)
 
-# Rock quality
-rq = calculate_rock_quality(perm_k=100, phi_e=0.2)
-# Returns: {'RQI': ..., 'phi_z': ..., 'FZI': ...}
+sw_archie = archie(rt, rw=0.05, phi=0.18, a=1.0, m=2.0, n=2.0)
+sw_dual = dual_water(phi_t=0.22, phi_e=0.18, rt=8.0, rw=0.05, rwb=0.02, vcl=0.25, phi_cl=0.15)
+sw_ws = waxman_smits(phi_t=0.22, rt=8.0, rw=0.05, cec=10.0, rho_ma=2.65, b_coeff=0.5)
 
-# Clay resistivity from pure-shale zones
-rcl = calculate_rcl(rdep_array, vcl_array, vcl_threshold=0.9)
-
-# Impermeability detection
-imperm_flags = flag_impermeable(phi_s, phi_d, phi_n)
+perm = coates_denoo(phie, swirr=0.22)
+imperm = flag_impermeable(phi_s, phi_d, phi_n)
+rock_quality = calculate_rock_quality(perm_k=100.0, phi_e=0.2)
 ```
 
-## Water Saturation Model Selection
+## Dynamic Workflow
 
-The library automatically routes Sw calculations based on formation properties:
+The dynamic workflow inspects the available curves and configuration, then
+runs only the applicable modules. The current Version 2 order is:
 
+| Step | Workflow step | Main outputs |
+|------|---------------|--------------|
+| 1 | Temperature | `TEMP` |
+| 2 | Bad-hole QC | `BAD_HOLE` |
+| 3 | Clay volume | `VCL`, method curves during processing |
+| 4 | Clay resistivity | `rcl_computed` in trace |
+| 5 | Mud filtrate resistivity | `RMF` |
+| 6 | Hydrocarbon correction | `NPHI_HC`, `RHOB_HC` when enabled |
+| 7 | Porosity | `PHIN`, `PHID`, `PHIS`, `PHIT`, `PHIE`, `PHI_SEC` |
+| 8 | Core correction | `PHIE_CC`, `PERM_CC` when core data is available |
+| 9 | Lithology | `LITHO`, mineral fractions, or authoritative input lithology |
+| 10 | Formation water resistivity | `RW` |
+| 11 | Invasion | `INVASION_RATIO` |
+| 12 | Saturation | `SW`, `SXO` |
+| 13 | Permeability | `PERM`, `SWIRR_APP`, optional flags |
+| 14 | Rock quality | `RQI`, `FZI`, `PHI_Z` |
+| 15 | Bulk volume water | `BVW` |
+| 16 | Moveable hydrocarbon index | `MHI` |
+| 17 | Net pay | `NET_ROCK`, `NET_RES`, `NET_PAY`, `RESFLAG`, `SEALFLAG` |
+
+Steps can be disabled with `DynamicWorkflowConfig(skip_steps=[...])`.
+
+## Saturation Routing
+
+Water saturation can be forced with `sw_model`, or auto-routed. Auto-routing
+uses VCL, lithology, salinity, CEC, Rcl, and available curves.
+
+| Formation context | Typical routed model |
+|-------------------|----------------------|
+| Clean rock below VCL cutoff | Archie |
+| Shaly clastic with high salinity | Simandoux |
+| Shaly clastic with lower salinity | Indonesia |
+| Shaly carbonate | Dual Water |
+| Shaly clastic with CEC support | Waxman-Smits |
+| North Sea style VSH exponent input | North Sea shaly sand |
+
+The workflow JSON records the selected model, per-model sample counts, Archie
+coefficients, RW/RMF ranges, SXO method, and the lithology source.
+
+## LAS Parameter Mapping
+
+When using the zone-aware batch path, recognized LAS `~Params` are mapped into
+workflow configuration fields.
+
+| LAS parameter | Config field |
+|---------------|--------------|
+| `RW` | `rw` |
+| `RWT` | `rw_meas_temp_f` |
+| `RMF` | `rmf_at_meas_temp` |
+| `RMFT` | `rmf_meas_temp_f` |
+| `RM`, `RMT` | `rm`, `rm_meas_temp_f` |
+| `CLFL` | `rmf_salinity_ppm` |
+| `WSAL`, `SAL`, `WATSAL` | `salinity_ppm` |
+| `BHT` | `bht_f` |
+| `TD` | `td_ft` |
+| `MUD`, `MUDTYPE` | `mud_type` |
+| `MUDWATER` | `mud_water` |
+| `LITH`, `LITHOLOGY` | `lithology` |
+| `MATRIX`, `MATRIX_TYPE` | `matrix_type` |
+| `A`, `M`, `N` | Archie coefficients |
+| `RTSH`, `CEC`, `B_COEFF`, `RWB`, `PNSH` | shaly-sand and dual-water parameters |
+| `RBFL`, `RHO_FL`, `RHO_MA`, `RHMA`, `PNMA` | porosity matrix/fluid endpoints |
+
+Unmapped parameters are retained in the workflow JSON as audit metadata.
+
+## Module Map
+
+| Package | Purpose |
+|---------|---------|
+| `petrophys.base` | Core data structures: `Well`, `Curve`, data types, units, classifications |
+| `petrophys.core` | Core plug data, core-to-log calibration, poro-perm transforms, calibration plots |
+| `petrophys.formation` | Formation tops, zones, manual intervals, and interval-level summaries |
+| `petrophys.io` | LAS, DLIS, CSV/ASCII readers; LAS/CSV/Excel writers; context JSON exporters |
+| `petrophys.qaqc` | Curve standardization, unit conversion, value range QC, bad-hole flags, normalization |
+| `petrophys.environmental` | Temperature profiles, gradients, and environmental corrections |
+| `petrophys.clay_volume` | GR, SP, neutron-density VCL, clay resistivity, VCL classification |
+| `petrophys.resistivity` | RMF, RW, salinity conversion, SP/Rxo/Rt heuristics, invasion analysis |
+| `petrophys.lithology` | Lithology logs, matrix properties, crossplots, multi-mineral solver |
+| `petrophys.petrophysics` | Porosity, saturation, permeability, HC correction, cementation, elastic properties |
+| `petrophys.reservoir` | BVW, MHI, net pay, rock quality, reservoir flags |
+| `petrophys.analysis` | Category-level analysis summaries for LLM/context workflows |
+| `petrophys.workflow` | Standard workflow, dynamic workflow, zone-aware batch workflow, trace export |
+| `petrophys.visualization` | Log plots, triple combos, interpretation plots, log viewer, Pickett plots |
+| `petrophys.summation` | Formation and zone summaries, averages, NTG, HCPV |
+| `petrophys.utils` | Statistics, validation, interpolation, analysis helpers |
+
+## Public Workflow APIs
+
+```python
+from petrophys.workflow import (
+    DynamicWorkflow,
+    DynamicWorkflowConfig,
+    run_dynamic_workflow,
+    run_dynamic_workflow_with_zones,
+    write_workflow_json_traces_directory,
+    extract_zoned_parameters,
+    process_las_directory_with_workflow,
+    write_batch_report,
+    write_curve_audit_report,
+)
 ```
-VCL < cutoff (0.3)  →  CLEAN  →  Archie
 
-VCL >= cutoff        →  SHALY:
-    Carbonate                    →  Dual Water
-    Clastic + CEC available      →  Waxman-Smits
-    Clastic + salinity >= 20kppm →  Simandoux
-    Clastic + salinity < 20kppm  →  Indonesia
+## Public Analysis APIs
+
+```python
+from petrophys.analysis import (
+    PorosityAnalysis,
+    SaturationAnalysis,
+    PermeabilityAnalysis,
+    LithologyAnalysis,
+    HydrocarbonAnalysis,
+    NumericalStatisticalAnalysis,
+    WellboreQC,
+)
 ```
 
-Override with `sw_model="archie"` (or any model name) to force a specific model.
+## CLI Scripts
 
-## Pipeline Execution Order
+```bash
+# Generate per-well workflow_json traces
+python scripts/generate_workflow_json_traces.py \
+  --input-dir /path/to/las_with_params \
+  --output-dir /path/to/output
 
-The dynamic workflow follows this sequence:
+# Generate formation/lithology context packages
+python scripts/generate_context_json_by_formation_lithology.py \
+  --input-dir /path/to/las \
+  --tops-file /path/to/tops.xlsx \
+  --output-dir /path/to/context_json
 
-| Step | Module | Description |
-|------|--------|-------------|
-| 1 | Temperature | Linear gradient from BHT |
-| 2 | Bad Hole | Washout and data quality flags |
-| 3 | VCLAY | GR + SP + N-D methods, minimum selection |
-| 4 | Rcl | Clay resistivity from pure-shale zones |
-| 5 | Lithology | Multi-mineral solver (RHOB, NPHI, PEF) |
-| 6 | Rmf | Mud filtrate resistivity (temp-corrected) |
-| 7 | Rw | Formation water resistivity (given / salinity / SP) |
-| 8 | Invasion | Rxo/Rt classification |
-| 9 | HC Correction | NPHI and RHOB hydrocarbon corrections |
-| 10 | Porosity | Total, effective, density, sonic, secondary |
-| 11 | Saturation | Sw via auto-routed model + Sxo |
-| 12 | Permeability | Coates/Timur + impermeability flags |
-| 13 | Rock Quality | RQI, FZI, phi_z |
-| 14 | BVW | Bulk Volume Water |
-| 15 | MHI | Moveable Hydrocarbon Index |
-| 16 | Net Pay | 3-stage cutoff filtering |
+# Generate category-first formation/lithology context packages
+python scripts/generate_category_context_json_by_formation_lithology.py \
+  --input-dir /path/to/las \
+  --tops-file /path/to/tops.xlsx \
+  --output-dir /path/to/category_context_json
+```
 
-Each step runs only if the required input curves are available. Steps can be explicitly skipped via `config.skip_steps`.
+## Reproducibility for LLM Agents
 
-## Module Organization
+For an LLM agent, the safest way to reproduce calculations is:
 
-| Module | Description |
-|--------|-------------|
-| `petrophys.core` | Core data structures (Well, Curve, Units, Classifications) |
-| `petrophys.io` | File I/O (LAS, DLIS, ASCII) |
-| `petrophys.qaqc` | Quality control (bad hole, normalization, standardization) |
-| `petrophys.environmental` | Environmental parameters (temperature profiles) |
-| `petrophys.resistivity` | Resistivity calculations (Rmf, Rw, invasion) |
-| `petrophys.clay_volume` | Clay volume (GR, SP, N-D methods) and clay resistivity (Rcl) |
-| `petrophys.lithology` | Lithology determination (multi-mineral solver, crossplots, CSV intervals) |
-| `petrophys.formation` | Interval-based analysis (backward-compatible re-exports) |
-| `petrophys.petrophysics` | Core calculations (porosity, saturation, HC correction, permeability) |
-| `petrophys.reservoir` | Reservoir evaluation (BVW, MHI, net pay, rock quality) |
-| `petrophys.visualization` | Plotting and display |
-| `petrophys.summation` | Summary, reporting, and formation-level analysis |
-| `petrophys.workflow` | Workflow orchestration (standard, dynamic, batch) |
+1. Read the LAS through the public workflow trace API.
+2. Let the library standardize curves and map LAS `~Params`.
+3. Use `write_workflow_json_traces_directory` or `run_dynamic_workflow_with_zones`.
+4. Compare `global_parameter_overrides`, `step_results`, and `final_curve_summaries`.
+5. Pin the package version or git commit when comparing historical traces.
+
+Exact reproduction of older workflow JSON files can depend on the RW/RMF
+temperature reference behavior used at generation time. Current Version 2 traces
+record the effective RW/RMF parameters and temperature correction path.
+
+## Tests
+
+```bash
+pytest
+
+# Focused checks for Version 2 workflow behavior
+pytest tests/test_workflow_trace_export.py
+pytest tests/test_dynamic_workflow_routing.py
+pytest tests/test_analysis_modules.py
+pytest tests/test_saturation_routing_logic.py
+pytest tests/test_value_range_qc.py
+```
 
 ## Documentation
 
-Full documentation is available at [https://petrophys.readthedocs.io](https://petrophys.readthedocs.io)
+Full documentation is available at
+[https://petrophys.readthedocs.io](https://petrophys.readthedocs.io).
 
 - [Installation Guide](https://petrophys.readthedocs.io/en/latest/installation.html)
 - [Quick Start Tutorial](https://petrophys.readthedocs.io/en/latest/quickstart.html)
@@ -226,29 +340,22 @@ Full documentation is available at [https://petrophys.readthedocs.io](https://pe
 - [Tutorials](https://petrophys.readthedocs.io/en/latest/tutorials/index.html)
 - [Release Notes](https://petrophys.readthedocs.io/en/latest/release_notes.html)
 
-## Contributing
+## Release Notes
 
-Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+See [docs/release_notes.rst](docs/release_notes.rst) for Version 2.0.0 changes,
+migration notes, new APIs, behavior changes, and verification guidance.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License. See [LICENSE](LICENSE) for details.
 
 ## Citation
-
-If you use Petrophys in your research, please cite:
 
 ```bibtex
 @software{petrophys,
   title = {Petrophys: A Python Library for Petrophysical Analysis},
   author = {Petrophys Development Team},
-  year = {2024},
-  url = {https://github.com/petrophys/petrophys}
+  year = {2026},
+  url = {https://github.com/sambalshikhar/petrophys}
 }
 ```

@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.abspath('..'))
 project = 'Petrophys'
 copyright = '2024, Petrophys Development Team'
 author = 'Petrophys Development Team'
-release = '0.1.0'
+release = '2.0.0'
 
 # -- General configuration ---------------------------------------------------
 extensions = [
