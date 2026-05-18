@@ -110,31 +110,41 @@ class CoreImageData:
     def from_las(
         cls,
         filepath: Union[str, Path],
-        grey_mnemonic: Optional[str] = "GREY",
-        grey_std_mnemonic: Optional[str] = "GREY_STD",
-        r_mnemonic: Optional[str] = "R",
-        g_mnemonic: Optional[str] = "G",
-        b_mnemonic: Optional[str] = "B",
-        hue_mnemonic: Optional[str] = "HUE",
-        sat_mnemonic: Optional[str] = "SAT",
-        val_mnemonic: Optional[str] = "VAL",
-        depth_mnemonic: str = "DEPT",
+        grey_mnemonic: Optional[str] = "E_MBWP",
+        grey_std_mnemonic: Optional[str] = "E_STDP",
+        r_mnemonic: Optional[str] = "E_MRPX",
+        g_mnemonic: Optional[str] = "E_MGPX",
+        b_mnemonic: Optional[str] = "E_MBPX",
+        hue_mnemonic: Optional[str] = "E_MHPX",
+        sat_mnemonic: Optional[str] = "E_MSPX",
+        val_mnemonic: Optional[str] = "E_MVPX",
+        depth_mnemonic: str = "DEPTH",
         null_value: float = -999.25,
     ) -> "CoreImageData":
         """
         Load color data from a LAS file.
 
+        Defaults match the EpsLog/Stratum Reservoir ``Image_10.0mm_WL.las``
+        mnemonic convention (``E_MBWP``, ``E_MRPX``, etc.).
+
+        EpsLog stores RGB, grey level, saturation, and value on a **0–255**
+        scale and hue in **degrees (0–360)**. This loader normalises
+        saturation and value to 0–1 automatically when their stored maximum
+        exceeds 1.5, so that ``color_index()`` and ``lithology_from_color()``
+        work correctly regardless of source scale.
+
         Parameters
         ----------
         filepath : str or Path
         grey_mnemonic : str, optional
-            Average grey level mnemonic.
+            Average grey level mnemonic (EpsLog: ``E_MBWP``).
         grey_std_mnemonic : str, optional
-            Grey level standard deviation mnemonic.
+            Grey level standard deviation (EpsLog: ``E_STDP``).
         r_mnemonic, g_mnemonic, b_mnemonic : str, optional
-            RGB channel mnemonics.
+            RGB channel mnemonics (EpsLog: ``E_MRPX``, ``E_MGPX``, ``E_MBPX``).
         hue_mnemonic, sat_mnemonic, val_mnemonic : str, optional
-            HSV channel mnemonics.
+            HSV channel mnemonics (EpsLog: ``E_MHPX``, ``E_MSPX``, ``E_MVPX``).
+            Hue is kept in degrees; saturation and value are normalised to 0–1.
         depth_mnemonic : str
         null_value : float
         """
@@ -150,12 +160,22 @@ class CoreImageData:
             arr[arr == null_value] = np.nan
             return arr
 
+        def _norm01(arr):
+            """Normalise to [0,1] if the stored range clearly exceeds 1."""
+            if arr is None:
+                return None
+            mx = np.nanmax(arr)
+            return arr / mx if mx > 1.5 else arr
+
         depth = np.array(las[depth_mnemonic], dtype=float)
         meta = {
             "well": las.well.WELL.value if hasattr(las.well, "WELL") else "",
             "source": str(filepath),
         }
 
+        # Saturation and value: normalise to [0,1] (EpsLog stores 0-255).
+        # Hue stays in degrees. Grey and RGB stay in raw 0-255 (used as-is
+        # in rgb_to_hsv and normalised inside brightness_index).
         return cls(
             depth=depth,
             grey_level=_get(grey_mnemonic),
@@ -164,8 +184,8 @@ class CoreImageData:
             g=_get(g_mnemonic),
             b=_get(b_mnemonic),
             hue=_get(hue_mnemonic),
-            saturation=_get(sat_mnemonic),
-            value=_get(val_mnemonic),
+            saturation=_norm01(_get(sat_mnemonic)),
+            value=_norm01(_get(val_mnemonic)),
             metadata=meta,
         )
 
