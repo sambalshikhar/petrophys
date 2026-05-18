@@ -107,16 +107,18 @@ class MultiMineralSolver:
         minerals_no_pef: list = None,
         clay_mineral: str = "clay",
         fluid: str = "water",
+        closure_tolerance: float = 0.05,
     ):
         if minerals is None:
             minerals = ["quartz", "calcite", "dolomite", "anhydrite"]
         if minerals_no_pef is None:
             minerals_no_pef = minerals[:3]
 
-        self.minerals        = minerals
-        self.minerals_no_pef = minerals_no_pef
-        self.clay_mineral    = clay_mineral
-        self.fluid           = fluid
+        self.minerals          = minerals
+        self.minerals_no_pef   = minerals_no_pef
+        self.clay_mineral      = clay_mineral
+        self.fluid             = fluid
+        self.closure_tolerance = closure_tolerance
 
         self._load_properties()
 
@@ -135,7 +137,7 @@ class MultiMineralSolver:
         phie: float,
         pef: Optional[float],
         dt: Optional[float],
-    ) -> Tuple[str, ...]:
+    ) -> Tuple[list, tuple, float, bool]:
         """
         Solve for mineral fractions at a single depth sample.
 
@@ -162,8 +164,11 @@ class MultiMineralSolver:
         Returns
         -------
         tuple
-            (active_minerals, fractions) where active_minerals is the
-            list of mineral names used and fractions are the solved volumes
+            (active_minerals, fractions, residual, poor_fit) where
+            active_minerals is the list of mineral names used,
+            fractions are the solved (normalized) volumes,
+            residual is the NNLS least-squares residual, and
+            poor_fit is True when closure error exceeds closure_tolerance.
         """
         vcl  = float(np.clip(vcl,  0.0, 1.0))
         phie = float(np.clip(phie, 0.0, 1.0))
@@ -208,15 +213,17 @@ class MultiMineralSolver:
             add_row([mi["dt"] for mi in m],
                     cl_val=cl["dt"],  fl_val=fl["dt"],  log_val=dt)
 
-        x, _ = nnls(np.array(A_rows), np.array(b_rows))
+        x, residual = nnls(np.array(A_rows), np.array(b_rows))
 
-        # Check closure against available mineral space (1 - Vcl - φe)
         available_fraction = 1.0 - vcl - phie
-        if abs(x.sum() - available_fraction) > 0.05:
-            return active_minerals, tuple(np.nan for _ in active_minerals)
+        closure_error = abs(x.sum() - available_fraction)
+        poor_fit = closure_error > self.closure_tolerance
+
+        # Always normalize — never discard a solution just for closure error.
+        # The poor_fit flag and residual give the caller full quality info.
         x = _constrain_mineral_fractions(x, available_fraction)
 
-        return active_minerals, tuple(float(v) for v in x)
+        return active_minerals, tuple(float(v) for v in x), float(residual), poor_fit
 
     def solve(
         self,
@@ -266,15 +273,17 @@ class MultiMineralSolver:
         all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef))
 
         result = {mineral: np.zeros(n) for mineral in all_minerals}
-        result["vcl"]     = vcl.copy()
-        result["phie"]    = phie.copy()
-        result["qc_flag"] = np.zeros(n, dtype=bool)
+        result["vcl"]      = vcl.copy()
+        result["phie"]     = phie.copy()
+        result["residual"] = np.zeros(n)
+        result["qc_flag"]  = np.zeros(n, dtype=bool)
 
         for i in range(n):
             if any(np.isnan([rhob[i], nphi[i], vcl[i], phie[i]])):
                 for mineral in all_minerals:
                     result[mineral][i] = np.nan
-                result["qc_flag"][i] = True
+                result["residual"][i] = np.nan
+                result["qc_flag"][i]  = True
                 continue
 
             pef_i = float(pef_arr[i]) if pef_arr is not None else None
@@ -285,15 +294,15 @@ class MultiMineralSolver:
             if dt_i  is not None and np.isnan(dt_i):
                 dt_i  = None
 
-            active_minerals, fractions = self._solve_sample(
+            active_minerals, fractions, residual, poor_fit = self._solve_sample(
                 rhob[i], nphi[i], vcl[i], phie[i], pef_i, dt_i
             )
 
             for mineral, v in zip(active_minerals, fractions):
                 result[mineral][i] = v
 
-            if any(np.isnan(fractions)):
-                result["qc_flag"][i] = True
+            result["residual"][i] = residual
+            result["qc_flag"][i]  = poor_fit
 
         return result
 
