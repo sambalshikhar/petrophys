@@ -91,12 +91,14 @@ class CoreMechanical:
         vp_mnemonic: Optional[str] = "VP",
         vs_mnemonic: Optional[str] = "VS",
         poisson_mnemonic: Optional[str] = None,
-        depth_mnemonic: str = "DEPT",
         extra_ucs_mnemonics: Optional[Dict[str, str]] = None,
         null_value: float = -999.25,
     ) -> "CoreMechanical":
         """
         Load mechanical properties from a LAS file.
+
+        Depth is read via ``lasio``'s ``las.index`` property (always the
+        first column, regardless of mnemonic name).
 
         Parameters
         ----------
@@ -109,8 +111,6 @@ class CoreMechanical:
             Mnemonic for S-wave velocity (m/s).
         poisson_mnemonic : str, optional
             Mnemonic for dynamic Poisson's ratio.
-        depth_mnemonic : str
-            Mnemonic for depth curve.
         extra_ucs_mnemonics : dict, optional
             Additional UCS curves keyed by a label, e.g.
             {"5cm": "UCS_5CM", "30cm": "UCS_30CM"}.
@@ -129,7 +129,7 @@ class CoreMechanical:
             arr[arr == null_value] = np.nan
             return arr
 
-        depth = np.array(las[depth_mnemonic], dtype=float)
+        depth = np.array(las.index, dtype=float)
         ucs = _get(ucs_mnemonic)
         if ucs is None:
             raise ValueError(f"UCS mnemonic '{ucs_mnemonic}' not found in {filepath}")

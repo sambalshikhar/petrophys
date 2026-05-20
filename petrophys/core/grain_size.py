@@ -114,11 +114,13 @@ class GrainSizeData:
         d50_mnemonic: str = "GS_P50",
         d13_mnemonic: Optional[str] = "GS_P13",
         d87_mnemonic: Optional[str] = "GS_P87",
-        depth_mnemonic: str = "DEPT",
         null_value: float = -999.25,
     ) -> "GrainSizeData":
         """
         Load grain size data from a LAS file.
+
+        Depth is read via ``lasio``'s ``las.index`` property (always the
+        first column, regardless of mnemonic name).
 
         Parameters
         ----------
@@ -129,7 +131,6 @@ class GrainSizeData:
             Mnemonic for the P13 grain size curve.
         d87_mnemonic : str, optional
             Mnemonic for the P87 grain size curve.
-        depth_mnemonic : str
         null_value : float
         """
         if not HAS_LASIO:
@@ -144,7 +145,7 @@ class GrainSizeData:
             arr[arr == null_value] = np.nan
             return arr
 
-        depth = np.array(las[depth_mnemonic], dtype=float)
+        depth = np.array(las.index, dtype=float)
         d50 = _get(d50_mnemonic)
         if d50 is None:
             raise ValueError(f"D50 mnemonic '{d50_mnemonic}' not found in {filepath}")

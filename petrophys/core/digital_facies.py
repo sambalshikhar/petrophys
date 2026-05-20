@@ -310,15 +310,15 @@ class DigitalCoreFacies:
         cls,
         filepath: Union[str, Path],
         facies_mnemonic: str = "FACIES",
-        depth_mnemonic: str = "DEPT",
         null_value: float = -999.25,
         **kwargs,
     ) -> "FaciesResult":
         """
         Load a pre-computed facies log from a LAS file.
 
-        Use this when the facies were computed externally (e.g. by EpsLog)
-        and you want to load them for analysis or plotting.
+        Depth is read via ``lasio``'s ``las.index`` property.  Use this when
+        the facies were computed externally (e.g. by EpsLog) and you want to
+        load them for analysis or plotting.
 
         Returns
         -------
@@ -329,7 +329,7 @@ class DigitalCoreFacies:
             raise ImportError("lasio is required: pip install lasio")
 
         las = lasio.read(str(filepath))
-        depth = np.array(las[depth_mnemonic], dtype=float)
+        depth = np.array(las.index, dtype=float)
         facies_raw = np.array(las[facies_mnemonic], dtype=float)
         facies_raw[facies_raw == null_value] = 0
         facies = facies_raw.astype(int)

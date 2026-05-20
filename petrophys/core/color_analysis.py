@@ -118,7 +118,6 @@ class CoreImageData:
         hue_mnemonic: Optional[str] = "E_MHPX",
         sat_mnemonic: Optional[str] = "E_MSPX",
         val_mnemonic: Optional[str] = "E_MVPX",
-        depth_mnemonic: str = "DEPTH",
         null_value: float = -999.25,
     ) -> "CoreImageData":
         """
@@ -133,6 +132,9 @@ class CoreImageData:
         exceeds 1.5, so that ``color_index()`` and ``lithology_from_color()``
         work correctly regardless of source scale.
 
+        Depth is read via ``lasio``'s ``las.index`` property (always the
+        first column, regardless of mnemonic name).
+
         Parameters
         ----------
         filepath : str or Path
@@ -145,7 +147,6 @@ class CoreImageData:
         hue_mnemonic, sat_mnemonic, val_mnemonic : str, optional
             HSV channel mnemonics (EpsLog: ``E_MHPX``, ``E_MSPX``, ``E_MVPX``).
             Hue is kept in degrees; saturation and value are normalised to 0–1.
-        depth_mnemonic : str
         null_value : float
         """
         if not HAS_LASIO:
@@ -167,7 +168,7 @@ class CoreImageData:
             mx = np.nanmax(arr)
             return arr / mx if mx > 1.5 else arr
 
-        depth = np.array(las[depth_mnemonic], dtype=float)
+        depth = np.array(las.index, dtype=float)
         meta = {
             "well": las.well.WELL.value if hasattr(las.well, "WELL") else "",
             "source": str(filepath),
