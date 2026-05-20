@@ -27,6 +27,7 @@ from petrophys.nmr.nmr_data import (
     T2_CUTOFF_CLASTIC,
     T2_CUTOFF_CARBONATE,
 )
+from petrophys.nmr.calibration import NMRCalibration
 from petrophys.nmr.permeability import (
     sdr_permeability,
     coates_permeability,
@@ -38,6 +39,8 @@ from petrophys.nmr.permeability import (
 __all__ = [
     # Data container
     "NMRData",
+    # Calibration
+    "NMRCalibration",
     # Constants
     "DEFAULT_T2_CENTERS",
     "T2_CUTOFF_CLASTIC",
