@@ -41,22 +41,6 @@ DEFAULT_BIN_COLS = ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"]
 T2_CUTOFF_CLASTIC   = 32.0   # Gulf of Mexico clastics (matches bin boundary)
 T2_CUTOFF_CARBONATE = 92.0   # Carbonates
 
-# Depth mnemonic aliases tried in order when auto-detecting
-_DEPTH_ALIASES = ["DEPT", "DEPTH", "MD", "TDEP", "DEPTH_MD", "DEPTH.M", "DEPTH.FT"]
-
-
-def _find_depth_mnemonic(las, preferred: str) -> str:
-    """Return the first depth mnemonic that exists in the LAS file."""
-    if preferred in las.keys():
-        return preferred
-    for alias in _DEPTH_ALIASES:
-        if alias in las.keys():
-            return alias
-    raise ValueError(
-        f"No depth curve found in LAS file. Tried '{preferred}' and "
-        f"{_DEPTH_ALIASES}. Pass depth_mnemonic= explicitly."
-    )
-
 
 @dataclass
 class NMRData:
@@ -246,7 +230,6 @@ class NMRData:
     def from_las(
         cls,
         filepath: Union[str, Path],
-        depth_mnemonic: str             = "DEPT",
         mphi_mnemonic:  str             = "MPHI",
         mffi_mnemonic:  Optional[str]   = "MFFI",
         mbvi_mnemonic:  Optional[str]   = "MBVI",
@@ -259,14 +242,12 @@ class NMRData:
         """
         Load NMR data from a LAS file.
 
-        The depth curve is auto-detected when ``depth_mnemonic`` is not
-        found — common aliases (DEPTH, MD, TDEP) are tried automatically.
+        Depth is read via ``lasio``'s ``las.index`` property, which always
+        returns the first column regardless of its mnemonic name.
 
         Parameters
         ----------
         filepath : str or Path
-        depth_mnemonic : str
-            Preferred depth mnemonic.  Falls back to common aliases.
         mphi_mnemonic : str
         mffi_mnemonic, mbvi_mnemonic : str, optional
         t2lm_mnemonic : str, optional
@@ -283,8 +264,6 @@ class NMRData:
 
         las = lasio.read(str(filepath))
 
-        depth_mn = _find_depth_mnemonic(las, depth_mnemonic)
-
         def _get(mn: Optional[str]) -> Optional[np.ndarray]:
             if mn is None or mn not in las.keys():
                 return None
@@ -292,7 +271,7 @@ class NMRData:
             arr[arr == null_value] = np.nan
             return arr
 
-        depth = np.array(las[depth_mn], dtype=float)
+        depth = np.array(las.index, dtype=float)
         mphi  = _get(mphi_mnemonic)
         if mphi is None:
             raise ValueError(f"MPHI mnemonic '{mphi_mnemonic}' not found in {filepath}")

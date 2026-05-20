@@ -100,23 +100,20 @@ class XRFData:
     def from_las(
         cls,
         filepath: Union[str, Path],
-        depth_mnemonic: str = "DEPT",
         error_suffix: str = "_ERR",
         null_value: float = -999.25,
     ) -> "XRFData":
         """
         Load XRF data from a LAS file.
 
-        Element curves are any curve whose mnemonic does not end with
-        ``error_suffix``. Error curves (mnemonic ends with ``error_suffix``)
-        are stored separately.
+        Depth is read via ``lasio``'s ``las.index`` property (always the
+        first column, regardless of mnemonic name).  Element curves are any
+        curve whose mnemonic does not end with ``error_suffix``.
 
         Parameters
         ----------
         filepath : str or Path
             Path to the LAS file.
-        depth_mnemonic : str
-            Mnemonic used for the depth curve (default: "DEPT").
         error_suffix : str
             Suffix that identifies error/uncertainty curves (default: "_ERR").
         null_value : float
@@ -126,7 +123,8 @@ class XRFData:
             raise ImportError("lasio is required: pip install lasio")
 
         las = lasio.read(str(filepath))
-        depth = np.array(las[depth_mnemonic])
+        depth = np.array(las.index, dtype=float)
+        depth_mnemonic = las.curves[0].mnemonic  # for skip-check below
 
         elements: Dict[str, np.ndarray] = {}
         units: Dict[str, str] = {}
