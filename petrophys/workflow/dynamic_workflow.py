@@ -2448,7 +2448,22 @@ class DynamicWorkflow:
             shale_exp=self.config.shale_exp,
         )
 
-        well.add_curve("SW", result.sw, "v/v", f"Water Saturation ({result.model})")
+        computed_sw = np.asarray(result.sw, dtype=float)
+        source_sw, source_sw_source, source_sw_meta = get_curve_data_depthwise(
+            well, ["SW_INPUT", "SW_RAW", "SW_SOURCE"]
+        )
+        source_sw_mask = (
+            np.isfinite(source_sw)
+            & (source_sw >= 0.0)
+            & (source_sw <= 1.0)
+            if source_sw is not None
+            else np.zeros(well.n_samples, dtype=bool)
+        )
+        final_sw = computed_sw.copy()
+        if source_sw is not None:
+            final_sw[source_sw_mask] = source_sw[source_sw_mask]
+
+        well.add_curve("SW", final_sw, "v/v", f"Water Saturation ({result.model}; source input priority)")
         outputs = ["SW"]
         if result.sxo is not None:
             well.add_curve("SXO", result.sxo, "v/v", "Flushed Zone Water Saturation")
@@ -2459,7 +2474,7 @@ class DynamicWorkflow:
         _, phie_source, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE", "PHIT"])
         _, vcl_source, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY"])
         trace.input_curves = [
-            source for source in (rt_source, phie_source, vcl_source) if source
+            source for source in (source_sw_source, rt_source, phie_source, vcl_source) if source
         ]
         trace.output_curves = outputs
         trace.parameters = {
@@ -2506,6 +2521,10 @@ class DynamicWorkflow:
             "sxo_reason": result.sxo_reason,
             "sxo_method_counts": result.sxo_method_counts or {},
             "sxo_input_sources": result.sxo_input_sources or {},
+            "source_sw_curve": source_sw_source,
+            "source_sw_samples_used": int(np.count_nonzero(source_sw_mask)),
+            "archie_sw_samples_used": int(np.count_nonzero(~source_sw_mask & np.isfinite(computed_sw))),
+            "source_sw_input_sources": source_sw_meta.get("source_counts", {}) if source_sw_meta else {},
         }
         if self._result.rmf_computed is not None:
             trace.parameters["rmf_min"] = float(np.nanmin(np.asarray(self._result.rmf_computed, dtype=float)))
@@ -2522,6 +2541,13 @@ class DynamicWorkflow:
             "Archie coefficients from lithology"
             + (f" ({self._lithology_source})" if self._lithology_source else "")
         )
+        if np.any(source_sw_mask):
+            trace.decisions.append(
+                f"SW uses source input {source_sw_source} for {int(np.count_nonzero(source_sw_mask))} finite samples; "
+                "Archie fills remaining samples where inputs are finite"
+            )
+        else:
+            trace.decisions.append("No finite source SW input was available; SW is Archie-computed where inputs are finite")
         trace.decisions.append(
             f"Dual Water phi_cl = {phi_cl:.3f} from {phi_cl_info['phi_cl_source']}"
         )
@@ -2557,8 +2583,8 @@ class DynamicWorkflow:
             trace.decisions.append(
                 f"SXO fallback: SXO = SW^(1/5) because {result.sxo_reason}"
             )
-        if np.any(np.isfinite(result.sw)):
-            trace.decisions.append(f"Sw range: {np.nanmin(result.sw):.3f} - {np.nanmax(result.sw):.3f}")
+        if np.any(np.isfinite(final_sw)):
+            trace.decisions.append(f"Sw range: {np.nanmin(final_sw):.3f} - {np.nanmax(final_sw):.3f}")
         else:
             trace.decisions.append("Sw range: all values are NaN")
         return trace

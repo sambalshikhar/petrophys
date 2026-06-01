@@ -201,6 +201,7 @@ EXCLUDED_LAS_CURVES = {
     "BAD_HOLE",
     "BADHOLEFLAG",
     "BS",
+    "SO",
     "CALI_SMOOTH",
     "CALI_ROUGHNESS",
     "COMPOSITE_CLAY",
@@ -2623,8 +2624,6 @@ def _bit_size_context_phrase(bit_size: Optional[float], source: Optional[str]) -
         return f"bit size={value} in"
     if source_text == "well_header":
         return f"header bit size={value} in"
-    if source_text.startswith("fallback"):
-        return f"fallback bit size={value} in"
     return f"bit size={value} in"
 
 
