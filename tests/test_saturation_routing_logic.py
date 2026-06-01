@@ -74,6 +74,48 @@ def test_forced_saturation_models_produce_one_curve(forced_model, kwargs):
     assert np.isfinite(result.sw).all()
 
 
+def test_simandoux_broadcasts_scalar_vcl_for_non_quadratic_exponent():
+    from petrophys.petrophysics.saturation.simandoux import simandoux
+
+    sw = simandoux(
+        rt=np.array([10.0, 20.0]),
+        rw=0.05,
+        phi=np.array([0.20, 0.25]),
+        vcl=0.10,
+        rcl=2.0,
+        n=1.8,
+    )
+
+    assert sw.shape == (2,)
+    assert np.isfinite(sw).all()
+
+
+def test_waxman_smits_broadcasts_scalar_rt_and_phi_inputs():
+    from petrophys.petrophysics.saturation.waxman_smits import waxman_smits
+
+    sw_phi_array = waxman_smits(
+        phi_t=np.array([0.20, 0.25]),
+        rt=10.0,
+        rw=0.05,
+        cec=0.10,
+        rho_ma=2.65,
+        b_coeff=4.0,
+    )
+    sw_rt_array = waxman_smits(
+        phi_t=0.20,
+        rt=np.array([10.0, 20.0]),
+        rw=0.05,
+        cec=0.10,
+        rho_ma=2.65,
+        b_coeff=4.0,
+    )
+
+    assert sw_phi_array.shape == (2,)
+    assert sw_rt_array.shape == (2,)
+    assert np.isfinite(sw_phi_array).all()
+    assert np.isfinite(sw_rt_array).all()
+
+
 def test_saturation_defaults_missing_vcl_to_clean_archie_route():
     well = _saturation_well(vcl=0.6)
     well.remove_curve("VCL")

@@ -254,29 +254,39 @@ class Curve:
         )
 
     # Statistical methods
+    def _non_nan_data(self) -> np.ndarray:
+        """Return values that are not NaN."""
+        return self._data[~np.isnan(self._data)]
+
     def min(self) -> float:
         """Return minimum value (excluding NaN)."""
-        return float(np.nanmin(self._data))
+        data = self._non_nan_data()
+        return float(np.min(data)) if data.size else float("nan")
 
     def max(self) -> float:
         """Return maximum value (excluding NaN)."""
-        return float(np.nanmax(self._data))
+        data = self._non_nan_data()
+        return float(np.max(data)) if data.size else float("nan")
 
     def mean(self) -> float:
         """Return mean value (excluding NaN)."""
-        return float(np.nanmean(self._data))
+        data = self._non_nan_data()
+        return float(np.mean(data)) if data.size else float("nan")
 
     def std(self) -> float:
         """Return standard deviation (excluding NaN)."""
-        return float(np.nanstd(self._data))
+        data = self._non_nan_data()
+        return float(np.std(data)) if data.size else float("nan")
 
     def median(self) -> float:
         """Return median value (excluding NaN)."""
-        return float(np.nanmedian(self._data))
+        data = self._non_nan_data()
+        return float(np.median(data)) if data.size else float("nan")
 
     def percentile(self, q: float) -> float:
         """Return percentile value (excluding NaN)."""
-        return float(np.nanpercentile(self._data, q))
+        data = self._non_nan_data()
+        return float(np.percentile(data, q)) if data.size else float("nan")
 
     def valid_count(self) -> int:
         """Return count of non-NaN values."""

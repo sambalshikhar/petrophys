@@ -113,10 +113,14 @@ def waxman_smits(
     float or np.ndarray
         Water saturation Sw (fraction, clipped 0-1)
     """
-    scalar_input = np.isscalar(phi_t) and np.isscalar(rt)
+    scalar_input = np.isscalar(phi_t) and np.isscalar(rt) and np.isscalar(rw)
 
-    phi_t = np.atleast_1d(np.asarray(phi_t, dtype=float))
-    rt    = np.atleast_1d(np.asarray(rt,    dtype=float))
+    phi_t, rt = np.broadcast_arrays(
+        np.asarray(phi_t, dtype=float),
+        np.asarray(rt, dtype=float),
+    )
+    phi_t = np.atleast_1d(phi_t.astype(float, copy=False))
+    rt = np.atleast_1d(rt.astype(float, copy=False))
 
     phi_safe = np.where(phi_t <= 0, 1e-10, phi_t)
     rt_safe  = np.where(rt    <= 0, 1e-10, rt)

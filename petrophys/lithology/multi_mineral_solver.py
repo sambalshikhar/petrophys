@@ -260,14 +260,35 @@ class MultiMineralSolver:
             are present as keys — depths where a mineral was not in the
             active set are filled with 0.
         """
-        rhob = np.atleast_1d(np.asarray(rhob, dtype=float))
-        nphi = np.atleast_1d(np.asarray(nphi, dtype=float))
-        vcl  = np.atleast_1d(np.asarray(vcl,  dtype=float))
-        phie = np.atleast_1d(np.asarray(phie, dtype=float))
-        n    = len(rhob)
+        raw_arrays = {
+            "rhob": np.atleast_1d(np.asarray(rhob, dtype=float)),
+            "nphi": np.atleast_1d(np.asarray(nphi, dtype=float)),
+            "vcl": np.atleast_1d(np.asarray(vcl, dtype=float)),
+            "phie": np.atleast_1d(np.asarray(phie, dtype=float)),
+        }
+        if pef is not None:
+            raw_arrays["pef"] = np.atleast_1d(np.asarray(pef, dtype=float))
+        if dt is not None:
+            raw_arrays["dt"] = np.atleast_1d(np.asarray(dt, dtype=float))
 
-        pef_arr = np.atleast_1d(np.asarray(pef, dtype=float)) if pef is not None else None
-        dt_arr  = np.atleast_1d(np.asarray(dt,  dtype=float)) if dt  is not None else None
+        lengths = [len(values) for values in raw_arrays.values()]
+        n = max(lengths)
+
+        def _broadcast(name: str, values: np.ndarray) -> np.ndarray:
+            if len(values) == n:
+                return values.astype(float, copy=False)
+            if len(values) == 1:
+                return np.full(n, float(values[0]), dtype=float)
+            raise ValueError(
+                f"{name} length ({len(values)}) must be 1 or match solve length ({n})"
+            )
+
+        rhob = _broadcast("rhob", raw_arrays["rhob"])
+        nphi = _broadcast("nphi", raw_arrays["nphi"])
+        vcl = _broadcast("vcl", raw_arrays["vcl"])
+        phie = _broadcast("phie", raw_arrays["phie"])
+        pef_arr = _broadcast("pef", raw_arrays["pef"]) if pef is not None else None
+        dt_arr = _broadcast("dt", raw_arrays["dt"]) if dt is not None else None
 
         # All possible minerals across both sets
         all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef))
