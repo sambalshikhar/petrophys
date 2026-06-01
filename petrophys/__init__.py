@@ -34,6 +34,12 @@ from petrophys.analysis import (
     WellboreQC,
 )
 from petrophys.workflow import run_comprehensive_analysis
+from petrophys.imputation import (
+    CurveImputationResult,
+    PretrainedCurveImputer,
+    impute_las_file,
+    impute_missing_curve,
+)
 
 __all__ = [
     "__version__",
@@ -54,4 +60,8 @@ __all__ = [
     "NumericalStatisticalAnalysis",
     "WellboreQC",
     "run_comprehensive_analysis",
+    "CurveImputationResult",
+    "PretrainedCurveImputer",
+    "impute_las_file",
+    "impute_missing_curve",
 ]

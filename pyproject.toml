@@ -47,6 +47,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dlis = ["dlisio>=0.3.0"]
+ml = [
+    "scikit-learn>=1.1.0",
+    "joblib>=1.2.0",
+    "xgboost>=1.7.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=3.0.0",
@@ -61,7 +66,7 @@ docs = [
     "sphinx-autodoc-typehints>=1.18.0",
     "numpydoc>=1.4.0",
 ]
-all = ["petrophys[dlis,dev,docs]"]
+all = ["petrophys[dlis,dev,docs,ml]"]
 
 [project.urls]
 Homepage = "https://github.com/petrophys/petrophys"
@@ -74,7 +79,7 @@ where = ["."]
 include = ["petrophys*"]
 
 [tool.setuptools.package-data]
-petrophys = ["py.typed"]
+petrophys = ["py.typed", "imputation/pretrained/*.joblib"]
 
 [tool.black]
 line-length = 88
