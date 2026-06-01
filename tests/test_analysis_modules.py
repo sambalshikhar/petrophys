@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from petrophys import Well
 from petrophys.analysis import (
@@ -765,6 +766,35 @@ def test_multi_mineral_fraction_constraint_enforces_available_volume():
 
     assert np.all(constrained >= 0.0)
     assert np.sum(constrained) <= 0.65 + 1e-12
+
+
+def test_multi_mineral_solver_broadcasts_scalar_inputs_across_rows():
+    from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
+
+    result = MultiMineralSolver().solve(
+        rhob=np.array([2.30, 2.40, 2.50]),
+        nphi=np.array([0.20, 0.22, 0.24]),
+        vcl=0.10,
+        phie=0.15,
+        pef=3.0,
+    )
+
+    assert result["quartz"].shape == (3,)
+    assert result["vcl"].shape == (3,)
+    np.testing.assert_allclose(result["vcl"], np.array([0.10, 0.10, 0.10]))
+    assert np.all(np.isfinite(result["residual"]))
+
+
+def test_multi_mineral_solver_rejects_incompatible_lengths_cleanly():
+    from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
+
+    with pytest.raises(ValueError, match="nphi length"):
+        MultiMineralSolver().solve(
+            rhob=np.array([2.30, 2.40, 2.50]),
+            nphi=np.array([0.20, 0.22]),
+            vcl=0.10,
+            phie=0.15,
+        )
 
 
 def test_run_comprehensive_analysis_returns_all_categories_and_curves():

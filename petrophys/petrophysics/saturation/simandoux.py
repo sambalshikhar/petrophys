@@ -54,9 +54,14 @@ def simandoux(
     """
     scalar = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vcl)
 
-    rt  = np.atleast_1d(np.asarray(rt,  dtype=float))
-    phi = np.atleast_1d(np.asarray(phi, dtype=float))
-    vcl = np.atleast_1d(np.asarray(vcl, dtype=float))
+    rt, phi, vcl = np.broadcast_arrays(
+        np.asarray(rt, dtype=float),
+        np.asarray(phi, dtype=float),
+        np.asarray(vcl, dtype=float),
+    )
+    rt = np.atleast_1d(rt.astype(float, copy=False))
+    phi = np.atleast_1d(phi.astype(float, copy=False))
+    vcl = np.atleast_1d(vcl.astype(float, copy=False))
 
     rt  = np.where(rt  <= 0, 1e-10, rt)
     phi = np.where(phi <= 0, 1e-10, phi)

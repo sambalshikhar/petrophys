@@ -206,14 +206,20 @@ class Well:
     def top(self) -> Optional[float]:
         """Return top depth."""
         if self._depth is not None:
-            return float(np.nanmin(self._depth))
+            finite = self._depth[np.isfinite(self._depth)]
+            if finite.size == 0:
+                return None
+            return float(np.min(finite))
         return None
 
     @property
     def bottom(self) -> Optional[float]:
         """Return bottom depth."""
         if self._depth is not None:
-            return float(np.nanmax(self._depth))
+            finite = self._depth[np.isfinite(self._depth)]
+            if finite.size == 0:
+                return None
+            return float(np.max(finite))
         return None
 
     @property

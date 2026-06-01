@@ -388,6 +388,7 @@ REFERENCE_CURVE_TO_STEP = {
 
 PRIMARY_LOGS_FOR_COMPLETENESS = [
     "CALI",
+    "BS",
     "DRHO",
     "GR",
     "SP",
@@ -6002,6 +6003,7 @@ def _build_reference_bad_hole_qc(well: "Well", workflow_result) -> dict[str, Any
         "parameters_used": {
             "bit_size_used_in": _json_safe(details["bit_size_used"]),
             "bit_size_source": details.get("bit_size_source"),
+            "bs_curve_present": bool(details.get("bs_curve_present", False)),
             "washout_formula": washout_formula,
             "large_hole_formula": large_hole_formula,
             "pef_exclusion_formula": (
