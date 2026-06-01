@@ -16,6 +16,32 @@ except ImportError:
     HAS_LASIO = False
 
 
+ML_IMPUTATION_NOTES_PARAMETER = "ML_IMPUTATION_NOTES"
+
+
+def _export_well_other_comments(las, well: "Well") -> None:
+    """Write workflow comments into the LAS ~Other section."""
+    lines = []
+    existing_other = ""
+    if hasattr(well, "get_parameter"):
+        existing_other = well.get_parameter("LAS_OTHER", "") or ""
+    if existing_other:
+        lines.extend(str(existing_other).splitlines())
+
+    notes = []
+    if hasattr(well, "get_parameter"):
+        notes = well.get_parameter(ML_IMPUTATION_NOTES_PARAMETER, []) or []
+    if isinstance(notes, str):
+        notes = [notes]
+    for note in notes:
+        text = str(note).strip()
+        if text:
+            lines.append(text)
+
+    if lines:
+        las.other = "\n".join(lines)
+
+
 def _export_well_parameters(las, well: "Well") -> None:
     """Preserve Well parameters in the LAS ~Params section."""
     parameters = getattr(well, "_parameters", {})
@@ -26,6 +52,8 @@ def _export_well_parameters(las, well: "Well") -> None:
         if not isinstance(name, str):
             continue
         if "__" in name or name.startswith("_"):
+            continue
+        if name in {ML_IMPUTATION_NOTES_PARAMETER, "LAS_OTHER"}:
             continue
 
         unit = parameters.get(f"{name}__UNIT", "")
@@ -169,6 +197,7 @@ def export_las(
     )
 
     _export_well_parameters(las, well)
+    _export_well_other_comments(las, well)
 
     # Add depth curve
     if well.depth is not None:
