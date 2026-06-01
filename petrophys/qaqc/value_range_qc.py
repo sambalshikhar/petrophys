@@ -170,7 +170,7 @@ def value_range_qc_note(report: Iterable[Mapping[str, Any]], max_items: int = 12
     changed_items = [item for item in items if int(item.get("changed") or 0) > 0]
     base = (
         "VALUE RANGE QC: finite values outside configured ranges were set to NaN; "
-        "SW/SWA, SO, and SXO/SWXO/SWXOA were clipped to 0-1."
+        "SW/SWA and SXO/SWXO/SWXOA were clipped to 0-1."
     )
     if not changed_items:
         return base + " No values changed in this segment."
