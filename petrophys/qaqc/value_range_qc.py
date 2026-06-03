@@ -9,7 +9,6 @@ from typing import Any, Iterable, Mapping, Optional
 
 import numpy as np
 
-
 VALUE_RANGE_QC_PARAMETER = "VALUE_RANGE_QC_REPORT"
 
 
@@ -25,7 +24,7 @@ class ValueRangeRule:
 
 VALUE_RANGE_RULES: dict[str, ValueRangeRule] = {
     "RMF": ValueRangeRule(0.001, 10.0, "nan", ("RMF",)),
-    "TEMP": ValueRangeRule(-5.0, 400.0, "nan", ("TEMP", "TMPC")),
+    "TEMP": ValueRangeRule(-5.0, 400.0, "nan", ("TEMP", "TMPC", "CMR_TEMP")),
     "RXO": ValueRangeRule(0.01, 2000.0, "nan", ("RXO", "RSHA", "RESS", "MSFL", "SFL")),
     "RDEP": ValueRangeRule(0.01, 2000.0, "nan", ("RDEP", "RT", "RMED", "RESM", "ILD")),
     "GR": ValueRangeRule(0.0, 400.0, "nan", ("GR", "GRC")),
@@ -34,7 +33,9 @@ VALUE_RANGE_RULES: dict[str, ValueRangeRule] = {
     "RHOB": ValueRangeRule(1.0, 3.5, "nan", ("RHOB",)),
     "NPHI": ValueRangeRule(-0.15, 0.60, "nan", ("NPHI",)),
     "PEF": ValueRangeRule(0.0, 15.0, "nan", ("PEF",)),
-    "CALI": ValueRangeRule(4.0, 40.0, "nan", ("CALI", "CAL", "DCAL")),
+    "CALI": ValueRangeRule(
+        4.0, 40.0, "nan", ("CALI", "CAL", "DCAL", "HD1_PPC1", "HD2_PPC1")
+    ),
     "BS": ValueRangeRule(4.0, 40.0, "nan", ("BS",)),
     "PHIS": ValueRangeRule(-0.05, 0.60, "nan", ("PHIS",)),
     "PERM": ValueRangeRule(1e-4, 2e4, "nan", ("PERM",)),
@@ -46,8 +47,21 @@ VALUE_RANGE_RULES: dict[str, ValueRangeRule] = {
     "PHIT": ValueRangeRule(0.0, 0.45, "nan", ("PHIT",)),
     "PHIE": ValueRangeRule(0.0, 0.45, "nan", ("PHIE",)),
     "PHIE_CC": ValueRangeRule(0.0, 0.45, "nan", ("PHIE_CC",)),
+    "NMR_PHIT": ValueRangeRule(0.0, 100.0, "nan", ("NMR_PHIT", "MPHI", "TCMR")),
+    "NMR_FFI": ValueRangeRule(0.0, 100.0, "nan", ("NMR_FFI", "MFFI", "CMFF")),
+    "NMR_BVI": ValueRangeRule(0.0, 100.0, "nan", ("NMR_BVI", "MBVI", "CBVI")),
+    "NMR_T2LM": ValueRangeRule(0.0, 10000.0, "nan", ("NMR_T2LM", "T2LM", "T2ML")),
+    "NMR_T2CUTOFF": ValueRangeRule(0.0, 10000.0, "nan", ("NMR_T2CUTOFF", "T2CUTOFF")),
+    "NMR_KSDR": ValueRangeRule(0.0, 2e4, "nan", ("NMR_KSDR", "KSDR")),
+    "NMR_KTIM": ValueRangeRule(0.0, 2e4, "nan", ("NMR_KTIM", "KTIM")),
+    "NMR_3MS": ValueRangeRule(0.0, 100.0, "nan", ("NMR_3MS", "CMRP_3MS")),
     "PHI_SEC": ValueRangeRule(-0.05, 0.60, "nan", ("PHI_SEC",)),
-    "RESFLAG": ValueRangeRule(0.0, 1.0, "nan", ("RESFLAG", "NET_ROCK", "NET_RES", "NET_PAY", "SEALFLAG", "CROSSOVER_FLAG")),
+    "RESFLAG": ValueRangeRule(
+        0.0,
+        1.0,
+        "nan",
+        ("RESFLAG", "NET_ROCK", "NET_RES", "NET_PAY", "SEALFLAG", "CROSSOVER_FLAG"),
+    ),
     "RW": ValueRangeRule(0.005, 20.0, "nan", ("RW",)),
     "RWA": ValueRangeRule(0.005, 20.0, "nan", ("RWA",)),
     "SW": ValueRangeRule(0.0, 1.0, "clip", ("SW", "SWA", "SWT-LOG")),
@@ -60,7 +74,12 @@ VALUE_RANGE_RULES: dict[str, ValueRangeRule] = {
     "VLIM": ValueRangeRule(0.0, 1.0, "nan", ("VLIM", "VCALC")),
     "VSAND": ValueRangeRule(0.0, 1.0, "nan", ("VSAND", "VQUAR")),
     "VANHY": ValueRangeRule(0.0, 1.0, "nan", ("VANHY",)),
-    "VSH": ValueRangeRule(0.0, 1.0, "nan", ("VSH", "VCL", "VCLAY", "VSHGR", "VSHND", "VCL_GR", "VCL_SP", "VCL_ND")),
+    "VSH": ValueRangeRule(
+        0.0,
+        1.0,
+        "nan",
+        ("VSH", "VCL", "VCLAY", "VSHGR", "VSHND", "VCL_GR", "VCL_SP", "VCL_ND"),
+    ),
     "VP_VS_RATIO": ValueRangeRule(0.5, 5.0, "nan", ("VP_VS_RATIO",)),
     "POISSON_RATIO": ValueRangeRule(0.0, 0.49, "nan", ("POISSON_RATIO",)),
     "BRITTLENESS_INDEX": ValueRangeRule(0.0, 1.0, "nan", ("BRITTLENESS_INDEX",)),
@@ -94,7 +113,9 @@ def rule_for_curve(mnemonic: str) -> Optional[tuple[str, ValueRangeRule]]:
     return _RULE_LOOKUP.get(upper)
 
 
-def _qc_curve_data(data: np.ndarray, rule: ValueRangeRule) -> tuple[np.ndarray, dict[str, int]]:
+def _qc_curve_data(
+    data: np.ndarray, rule: ValueRangeRule
+) -> tuple[np.ndarray, dict[str, int]]:
     arr = np.asarray(data, dtype=float).copy()
     finite = np.isfinite(arr)
     below = finite & (arr < rule.low)
@@ -111,7 +132,9 @@ def _qc_curve_data(data: np.ndarray, rule: ValueRangeRule) -> tuple[np.ndarray, 
     }
 
 
-def clean_curve_values(mnemonic: str, data: Any) -> tuple[np.ndarray, Optional[dict[str, Any]]]:
+def clean_curve_values(
+    mnemonic: str, data: Any
+) -> tuple[np.ndarray, Optional[dict[str, Any]]]:
     """Clean one curve array with its configured value-range rule."""
     match = rule_for_curve(mnemonic)
     arr = np.asarray(data, dtype=float)
@@ -164,7 +187,9 @@ def apply_value_range_qc(
     return report
 
 
-def value_range_qc_note(report: Iterable[Mapping[str, Any]], max_items: int = 12) -> str:
+def value_range_qc_note(
+    report: Iterable[Mapping[str, Any]], max_items: int = 12
+) -> str:
     """Build a compact human-readable value QC note."""
     items = list(report or [])
     changed_items = [item for item in items if int(item.get("changed") or 0) > 0]

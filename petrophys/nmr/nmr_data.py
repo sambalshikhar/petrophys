@@ -21,12 +21,14 @@ import numpy as np
 
 try:
     import pandas as pd
+
     HAS_PANDAS = True
 except ImportError:
     HAS_PANDAS = False
 
 try:
     import lasio
+
     HAS_LASIO = True
 except ImportError:
     HAS_LASIO = False
@@ -38,8 +40,69 @@ DEFAULT_T2_CENTERS = np.array([4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0])
 DEFAULT_BIN_COLS = ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"]
 
 # T2 cutoff defaults (ms)
-T2_CUTOFF_CLASTIC   = 32.0   # Gulf of Mexico clastics (matches bin boundary)
-T2_CUTOFF_CARBONATE = 92.0   # Carbonates
+T2_CUTOFF_CLASTIC = 32.0  # Gulf of Mexico clastics (matches bin boundary)
+T2_CUTOFF_CARBONATE = 92.0  # Carbonates
+
+CMR_MPHI_ALIASES = ("TCMR", "CMR_TOT", "CMR_TOTAL", "CMRPHI", "NMRP", "PHINMR")
+CMR_MFFI_ALIASES = ("CMFF", "CMR_FFI", "NMR_FFI", "FFI")
+CMR_MBVI_ALIASES = ("CBVI", "CMR_BVI", "NMR_BVI", "BVI")
+T2LM_ALIASES = ("T2ML", "T2LM_CMR", "T2LOGMEAN")
+T2_CUTOFF_ALIASES = ("T2_CUTOFF", "T2CUT", "T2CO")
+SDR_PERM_ALIASES = ("KSDR", "K_SDR", "KSDR_CMR")
+TIMUR_PERM_ALIASES = ("KTIM", "K_TIM", "KTC", "K_COATES")
+CMR_EXTRA_ALIASES = (
+    "CMRP_3MS",
+    "CMR_TEMP",
+    "CDF",
+    "STIT",
+    "TENS",
+    "HD1_PPC1",
+    "HD2_PPC1",
+    "BS",
+    "GR_EDTC",
+)
+
+
+def _finite_median(values: np.ndarray, default: float) -> float:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    return float(np.nanmedian(finite)) if finite.size else float(default)
+
+
+def _looks_fractional(values: np.ndarray) -> bool:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    return bool(finite.size and np.nanmax(np.abs(finite)) <= 1.5)
+
+
+def _porosity_to_pu(
+    values: Optional[np.ndarray],
+    unit: str = "",
+    mnemonic: str = "",
+) -> Optional[np.ndarray]:
+    """Return porosity in percent/porosity units, preserving old NMR semantics."""
+    if values is None:
+        return None
+    arr = np.asarray(values, dtype=float).copy()
+    unit_text = (unit or "").strip().lower().replace(" ", "")
+    mnemonic_text = (mnemonic or "").strip().upper()
+    fraction_unit = (
+        "v/v" in unit_text
+        or unit_text in {"vv", "frac", "fraction", "decimal"}
+        or unit_text.endswith("/v")
+    )
+    fraction_mnemonic = mnemonic_text in {
+        "TCMR",
+        "CMFF",
+        "CMRP_3MS",
+        "CMR_FFI",
+        "CMR_BVI",
+        "NMR_FFI",
+        "NMR_BVI",
+    }
+    if fraction_unit or (fraction_mnemonic and _looks_fractional(arr)):
+        arr = arr * 100.0
+    return arr
 
 
 @dataclass
@@ -79,15 +142,18 @@ class NMRData:
     >>> k_cal = nmr.permeability_sdr(calibration=cal)
     """
 
-    depth:       np.ndarray
-    mphi:        np.ndarray
-    mffi:        Optional[np.ndarray]  = None
-    mbvi:        Optional[np.ndarray]  = None
-    bins:        Optional[np.ndarray]  = None
-    t2lm_stored: Optional[np.ndarray]  = None
-    t2_centers:  np.ndarray            = field(default_factory=lambda: DEFAULT_T2_CENTERS.copy())
-    t2_cutoff:   float                 = T2_CUTOFF_CLASTIC
-    metadata:    Dict[str, Any]        = field(default_factory=dict)
+    depth: np.ndarray
+    mphi: np.ndarray
+    mffi: Optional[np.ndarray] = None
+    mbvi: Optional[np.ndarray] = None
+    bins: Optional[np.ndarray] = None
+    t2lm_stored: Optional[np.ndarray] = None
+    t2_cutoff_curve: Optional[np.ndarray] = None
+    t2_centers: np.ndarray = field(default_factory=lambda: DEFAULT_T2_CENTERS.copy())
+    t2_cutoff: float = T2_CUTOFF_CLASTIC
+    stored_permeability: Dict[str, np.ndarray] = field(default_factory=dict)
+    extra_curves: Dict[str, np.ndarray] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
     # Properties
@@ -126,15 +192,15 @@ class NMRData:
     def from_csv(
         cls,
         filepath: Union[str, Path],
-        depth_col:  str             = "Depth",
-        mphi_col:   str             = "MPHI",
-        mffi_col:   Optional[str]   = "MFFI",
-        mbvi_col:   Optional[str]   = "MBVI",
-        bin_cols:   Optional[List[str]] = None,
-        t2lm_col:   Optional[str]   = None,
+        depth_col: str = "Depth",
+        mphi_col: str = "MPHI",
+        mffi_col: Optional[str] = "MFFI",
+        mbvi_col: Optional[str] = "MBVI",
+        bin_cols: Optional[List[str]] = None,
+        t2lm_col: Optional[str] = None,
         t2_centers: Optional[np.ndarray] = None,
-        t2_cutoff:  float           = T2_CUTOFF_CLASTIC,
-        null_value: float           = -999.25,
+        t2_cutoff: float = T2_CUTOFF_CLASTIC,
+        null_value: float = -999.25,
         **read_csv_kwargs,
     ) -> "NMRData":
         """
@@ -180,15 +246,15 @@ class NMRData:
     def from_dataframe(
         cls,
         df: "pd.DataFrame",
-        depth_col:  str             = "Depth",
-        mphi_col:   str             = "MPHI",
-        mffi_col:   Optional[str]   = "MFFI",
-        mbvi_col:   Optional[str]   = "MBVI",
-        bin_cols:   Optional[List[str]] = None,
-        t2lm_col:   Optional[str]   = None,
+        depth_col: str = "Depth",
+        mphi_col: str = "MPHI",
+        mffi_col: Optional[str] = "MFFI",
+        mbvi_col: Optional[str] = "MBVI",
+        bin_cols: Optional[List[str]] = None,
+        t2lm_col: Optional[str] = None,
         t2_centers: Optional[np.ndarray] = None,
-        t2_cutoff:  float           = T2_CUTOFF_CLASTIC,
-        null_value: float           = -999.25,
+        t2_cutoff: float = T2_CUTOFF_CLASTIC,
+        null_value: float = -999.25,
     ) -> "NMRData":
         """Create NMRData from a pandas DataFrame."""
         if not HAS_PANDAS:
@@ -205,7 +271,7 @@ class NMRData:
             return arr
 
         depth = df[depth_col].values.astype(float)
-        mphi  = _col(mphi_col)
+        mphi = _col(mphi_col)
         if mphi is None:
             raise ValueError(f"MPHI column '{mphi_col}' not found")
 
@@ -230,14 +296,18 @@ class NMRData:
     def from_las(
         cls,
         filepath: Union[str, Path],
-        mphi_mnemonic:  str             = "MPHI",
-        mffi_mnemonic:  Optional[str]   = "MFFI",
-        mbvi_mnemonic:  Optional[str]   = "MBVI",
-        t2lm_mnemonic:  Optional[str]   = "T2LM",
-        bin_mnemonics:  Optional[List[str]] = None,
-        t2_centers:     Optional[np.ndarray] = None,
-        t2_cutoff:      float           = T2_CUTOFF_CLASTIC,
-        null_value:     float           = -999.25,
+        mphi_mnemonic: str = "MPHI",
+        mffi_mnemonic: Optional[str] = "MFFI",
+        mbvi_mnemonic: Optional[str] = "MBVI",
+        t2lm_mnemonic: Optional[str] = "T2LM",
+        t2_cutoff_mnemonic: Optional[str] = "T2CUTOFF",
+        ksdr_mnemonic: Optional[str] = "KSDR",
+        ktim_mnemonic: Optional[str] = "KTIM",
+        bin_mnemonics: Optional[List[str]] = None,
+        t2_centers: Optional[np.ndarray] = None,
+        t2_cutoff: float = T2_CUTOFF_CLASTIC,
+        null_value: float = -999.25,
+        derive_mbvi: bool = True,
     ) -> "NMRData":
         """
         Load NMR data from a LAS file.
@@ -263,43 +333,182 @@ class NMRData:
             raise ImportError("lasio is required: pip install lasio")
 
         las = lasio.read(str(filepath))
+        key_lookup = {str(key).upper(): str(key) for key in las.keys()}
+        unit_lookup = {
+            str(curve.mnemonic).upper(): (curve.unit or "") for curve in las.curves
+        }
 
-        def _get(mn: Optional[str]) -> Optional[np.ndarray]:
-            if mn is None or mn not in las.keys():
+        def _resolve(
+            mnemonic: Optional[str],
+            aliases: tuple[str, ...] = (),
+        ) -> Optional[str]:
+            candidates = []
+            if mnemonic:
+                candidates.append(str(mnemonic))
+            candidates.extend(aliases)
+            for candidate in candidates:
+                key = key_lookup.get(str(candidate).upper())
+                if key is not None:
+                    return key
+            return None
+
+        def _get_resolved(mn: Optional[str]) -> Optional[np.ndarray]:
+            if mn is None:
                 return None
             arr = np.array(las[mn], dtype=float)
             arr[arr == null_value] = np.nan
             return arr
 
+        def _unit(mn: Optional[str]) -> str:
+            return unit_lookup.get(str(mn or "").upper(), "")
+
+        mphi_name = _resolve(mphi_mnemonic, CMR_MPHI_ALIASES)
+        mffi_name = _resolve(mffi_mnemonic, CMR_MFFI_ALIASES) if mffi_mnemonic else None
+        mbvi_name = _resolve(mbvi_mnemonic, CMR_MBVI_ALIASES) if mbvi_mnemonic else None
+        t2lm_name = _resolve(t2lm_mnemonic, T2LM_ALIASES) if t2lm_mnemonic else None
+        t2_cutoff_name = (
+            _resolve(t2_cutoff_mnemonic, T2_CUTOFF_ALIASES)
+            if t2_cutoff_mnemonic
+            else None
+        )
+        ksdr_name = _resolve(ksdr_mnemonic, SDR_PERM_ALIASES) if ksdr_mnemonic else None
+        ktim_name = (
+            _resolve(ktim_mnemonic, TIMUR_PERM_ALIASES) if ktim_mnemonic else None
+        )
+
         depth = np.array(las.index, dtype=float)
-        mphi  = _get(mphi_mnemonic)
+        mphi = _porosity_to_pu(
+            _get_resolved(mphi_name),
+            _unit(mphi_name),
+            mphi_name or "",
+        )
         if mphi is None:
             raise ValueError(f"MPHI mnemonic '{mphi_mnemonic}' not found in {filepath}")
 
+        mffi = _porosity_to_pu(
+            _get_resolved(mffi_name),
+            _unit(mffi_name),
+            mffi_name or "",
+        )
+        mbvi = _porosity_to_pu(
+            _get_resolved(mbvi_name),
+            _unit(mbvi_name),
+            mbvi_name or "",
+        )
+        if mbvi is None and derive_mbvi and mffi is not None:
+            with np.errstate(invalid="ignore"):
+                mbvi = np.where(
+                    np.isfinite(mphi) & np.isfinite(mffi), mphi - mffi, np.nan
+                )
+                mbvi = np.where(mbvi >= 0, mbvi, np.nan)
+
         bins = None
-        if bin_mnemonics:
-            arrays = [_get(mn) for mn in bin_mnemonics]
+        resolved_bins = None
+        if bin_mnemonics is None:
+            p_bins = [_resolve(mn) for mn in DEFAULT_BIN_COLS]
+            t2_bins = [_resolve(f"T2B{i:02d}") for i in range(1, 9)]
+            if all(name is not None for name in p_bins):
+                resolved_bins = p_bins
+            elif all(name is not None for name in t2_bins):
+                resolved_bins = t2_bins
+        else:
+            resolved_bins = [_resolve(mn) for mn in bin_mnemonics]
+
+        if resolved_bins:
+            arrays = [
+                _porosity_to_pu(_get_resolved(mn), _unit(mn), mn or "")
+                for mn in resolved_bins
+            ]
             if all(a is not None for a in arrays):
                 bins = np.column_stack(arrays).astype(float)
 
         t2c = t2_centers if t2_centers is not None else DEFAULT_T2_CENTERS.copy()
+        t2_cutoff_curve = _get_resolved(t2_cutoff_name)
+        cutoff_value = (
+            _finite_median(t2_cutoff_curve, t2_cutoff)
+            if t2_cutoff_curve is not None
+            else float(t2_cutoff)
+        )
+
+        stored_permeability: Dict[str, np.ndarray] = {}
+        ksdr = _get_resolved(ksdr_name)
+        ktim = _get_resolved(ktim_name)
+        if ksdr is not None:
+            stored_permeability["KSDR"] = ksdr
+        if ktim is not None:
+            stored_permeability["KTIM"] = ktim
+
+        extra_curves: Dict[str, np.ndarray] = {}
+        for name in CMR_EXTRA_ALIASES:
+            resolved = _resolve(name)
+            if resolved is None:
+                continue
+            arr = _get_resolved(resolved)
+            if arr is None:
+                continue
+            if resolved.upper() == "CMRP_3MS":
+                arr = _porosity_to_pu(arr, _unit(resolved), resolved)
+            extra_curves[resolved.upper()] = arr
+        if t2_cutoff_curve is not None:
+            extra_curves["T2CUTOFF"] = t2_cutoff_curve
+        for key, value in stored_permeability.items():
+            extra_curves[key] = value
 
         meta = {
-            "well":   las.well.WELL.value if hasattr(las.well, "WELL") else "",
+            "well": las.well.WELL.value if hasattr(las.well, "WELL") else "",
             "source": str(filepath),
+            "profile": (
+                "schlumberger_cmr"
+                if (mphi_name or "").upper() == "TCMR"
+                else "generic_nmr"
+            ),
+            "porosity_unit": "pu",
+            "source_mnemonics": {
+                "mphi": mphi_name,
+                "mffi": mffi_name,
+                "mbvi": mbvi_name,
+                "t2lm": t2lm_name,
+                "t2_cutoff": t2_cutoff_name,
+                "ksdr": ksdr_name,
+                "ktim": ktim_name,
+                "bins": resolved_bins or [],
+            },
+            "mbvi_derived": bool(mbvi_name is None and mbvi is not None),
         }
 
         return cls(
             depth=depth,
             mphi=mphi,
-            mffi=_get(mffi_mnemonic),
-            mbvi=_get(mbvi_mnemonic),
+            mffi=mffi,
+            mbvi=mbvi,
             bins=bins,
-            t2lm_stored=_get(t2lm_mnemonic),
+            t2lm_stored=_get_resolved(t2lm_name),
+            t2_cutoff_curve=t2_cutoff_curve,
             t2_centers=np.asarray(t2c, dtype=float),
-            t2_cutoff=t2_cutoff,
+            t2_cutoff=cutoff_value,
+            stored_permeability=stored_permeability,
+            extra_curves=extra_curves,
             metadata=meta,
         )
+
+    @classmethod
+    def from_cmr_las(
+        cls,
+        filepath: Union[str, Path],
+        **kwargs,
+    ) -> "NMRData":
+        """Load a processed Schlumberger CMR LAS summary log."""
+        defaults = {
+            "mphi_mnemonic": "TCMR",
+            "mffi_mnemonic": "CMFF",
+            "mbvi_mnemonic": None,
+            "t2_cutoff_mnemonic": "T2CUTOFF",
+            "ksdr_mnemonic": "KSDR",
+            "ktim_mnemonic": "KTIM",
+            "derive_mbvi": True,
+        }
+        defaults.update(kwargs)
+        return cls.from_las(filepath, **defaults)
 
     # ------------------------------------------------------------------
     # T2 distribution analysis
@@ -320,7 +529,7 @@ class NMRData:
         """
         if self.has_bins:
             ln_t2 = np.log(self.t2_centers)
-            phi   = self.bins
+            phi = self.bins
             total = np.nansum(phi, axis=1)
             with np.errstate(divide="ignore", invalid="ignore"):
                 return np.where(
@@ -348,8 +557,21 @@ class NMRData:
         """
         if not self.has_bins:
             raise ValueError("T2 bin data required for bvi_from_bins()")
-        cutoff = cutoff_ms if cutoff_ms is not None else self.t2_cutoff
-        return np.nansum(self.bins[:, self.t2_centers < cutoff], axis=1)
+        cutoff = cutoff_ms
+        if cutoff is None:
+            cutoff = (
+                self.t2_cutoff_curve
+                if self.t2_cutoff_curve is not None
+                else self.t2_cutoff
+            )
+        if np.isscalar(cutoff):
+            return np.nansum(self.bins[:, self.t2_centers < float(cutoff)], axis=1)
+
+        cutoff_arr = np.asarray(cutoff, dtype=float)
+        if cutoff_arr.shape != (self.n_samples,):
+            raise ValueError("Per-depth T2 cutoff must match the number of samples")
+        mask = self.t2_centers[None, :] < cutoff_arr[:, None]
+        return np.nansum(np.where(mask, self.bins, 0.0), axis=1)
 
     def ffi_from_bins(self, cutoff_ms: Optional[float] = None) -> np.ndarray:
         """
@@ -362,8 +584,21 @@ class NMRData:
         """
         if not self.has_bins:
             raise ValueError("T2 bin data required for ffi_from_bins()")
-        cutoff = cutoff_ms if cutoff_ms is not None else self.t2_cutoff
-        return np.nansum(self.bins[:, self.t2_centers >= cutoff], axis=1)
+        cutoff = cutoff_ms
+        if cutoff is None:
+            cutoff = (
+                self.t2_cutoff_curve
+                if self.t2_cutoff_curve is not None
+                else self.t2_cutoff
+            )
+        if np.isscalar(cutoff):
+            return np.nansum(self.bins[:, self.t2_centers >= float(cutoff)], axis=1)
+
+        cutoff_arr = np.asarray(cutoff, dtype=float)
+        if cutoff_arr.shape != (self.n_samples,):
+            raise ValueError("Per-depth T2 cutoff must match the number of samples")
+        mask = self.t2_centers[None, :] >= cutoff_arr[:, None]
+        return np.nansum(np.where(mask, self.bins, 0.0), axis=1)
 
     def t2_distribution(self, depth_index: int) -> Tuple[np.ndarray, np.ndarray]:
         """Return (t2_centers, bin_porosities) at one depth index."""
@@ -397,6 +632,7 @@ class NMRData:
         self,
         c: float = 4.0,
         calibration: Optional["NMRCalibration"] = None,
+        prefer_stored: bool = True,
     ) -> np.ndarray:
         """
         SDR (Schlumberger-Doll Research) NMR permeability.
@@ -420,12 +656,14 @@ class NMRData:
         np.ndarray
             Permeability (mD).
         """
+        if calibration is None and prefer_stored and "KSDR" in self.stored_permeability:
+            return self.stored_permeability["KSDR"].copy()
         if calibration is not None:
             c = calibration.params["c"]
-        phi  = self.mphi / 100.0
+        phi = self.mphi / 100.0
         t2lm = self.t2_lm()
         with np.errstate(invalid="ignore"):
-            return c * phi ** 4 * t2lm ** 2
+            return c * phi**4 * t2lm**2
 
     def permeability_coates(
         self,
@@ -433,6 +671,7 @@ class NMRData:
         a: float = 4.0,
         b: float = 2.0,
         calibration: Optional["NMRCalibration"] = None,
+        prefer_stored: bool = True,
     ) -> np.ndarray:
         """
         Timur-Coates NMR permeability.
@@ -454,6 +693,8 @@ class NMRData:
         np.ndarray
             Permeability (mD).  NaN where BVI = 0.
         """
+        if calibration is None and prefer_stored and "KTIM" in self.stored_permeability:
+            return self.stored_permeability["KTIM"].copy()
         if calibration is not None:
             c = calibration.params["c"]
             a = calibration.params.get("a", a)
@@ -465,7 +706,7 @@ class NMRData:
 
         with np.errstate(divide="ignore", invalid="ignore"):
             ratio = np.where(bvi > 0, ffi / bvi, np.nan)
-            return (phi / c) ** a * ratio ** b
+            return (phi / c) ** a * ratio**b
 
     # ------------------------------------------------------------------
     # Calibration (delegates to calibration.py)
@@ -474,7 +715,7 @@ class NMRData:
     def calibrate_sdr(
         self,
         core_depth: Union[np.ndarray, list],
-        core_perm:  Union[np.ndarray, list],
+        core_perm: Union[np.ndarray, list],
     ) -> "NMRCalibration":
         """
         Calibrate the SDR constant ``c`` against core permeability.
@@ -495,13 +736,14 @@ class NMRData:
         NMRCalibration
         """
         from petrophys.nmr.calibration import calibrate_sdr as _cal
+
         return _cal(self, core_depth, core_perm)
 
     def calibrate_coates(
         self,
-        core_depth:     Union[np.ndarray, list],
-        core_perm:      Union[np.ndarray, list],
-        fit_exponents:  bool = False,
+        core_depth: Union[np.ndarray, list],
+        core_perm: Union[np.ndarray, list],
+        fit_exponents: bool = False,
     ) -> "NMRCalibration":
         """
         Calibrate Timur-Coates parameters against core permeability.
@@ -521,6 +763,7 @@ class NMRData:
         NMRCalibration
         """
         from petrophys.nmr.calibration import calibrate_coates as _cal
+
         return _cal(self, core_depth, core_perm, fit_exponents=fit_exponents)
 
     # ------------------------------------------------------------------
@@ -591,16 +834,26 @@ class NMRData:
 
     def filter_by_depth(self, top: float, bottom: float) -> "NMRData":
         """Return a new NMRData filtered to [top, bottom]."""
-        mask = (self.depth >= top) & (self.depth <= bottom)
+        lo, hi = sorted((float(top), float(bottom)))
+        mask = (self.depth >= lo) & (self.depth <= hi)
         return NMRData(
             depth=self.depth[mask],
             mphi=self.mphi[mask],
-            mffi=self.mffi[mask]        if self.mffi        is not None else None,
-            mbvi=self.mbvi[mask]        if self.mbvi        is not None else None,
-            bins=self.bins[mask]        if self.bins        is not None else None,
-            t2lm_stored=self.t2lm_stored[mask] if self.t2lm_stored is not None else None,
+            mffi=self.mffi[mask] if self.mffi is not None else None,
+            mbvi=self.mbvi[mask] if self.mbvi is not None else None,
+            bins=self.bins[mask] if self.bins is not None else None,
+            t2lm_stored=(
+                self.t2lm_stored[mask] if self.t2lm_stored is not None else None
+            ),
+            t2_cutoff_curve=(
+                self.t2_cutoff_curve[mask] if self.t2_cutoff_curve is not None else None
+            ),
             t2_centers=self.t2_centers.copy(),
             t2_cutoff=self.t2_cutoff,
+            stored_permeability={
+                key: value[mask] for key, value in self.stored_permeability.items()
+            },
+            extra_curves={key: value[mask] for key, value in self.extra_curves.items()},
             metadata=dict(self.metadata),
         )
 
@@ -624,16 +877,35 @@ class NMRData:
             data["MBVI"] = self.mbvi
         if self.t2lm_stored is not None:
             data["T2LM_LAS"] = self.t2lm_stored
+        if self.t2_cutoff_curve is not None:
+            data["T2CUTOFF"] = self.t2_cutoff_curve
         if self.has_bins:
             for i, t2 in enumerate(self.t2_centers):
                 data[f"P{i+1}"] = self.bins[:, i]
+        for key, values in self.extra_curves.items():
+            if key not in data:
+                data[key] = values
+        for key, values in self.stored_permeability.items():
+            data[f"{key}_LAS"] = values
 
         if include_derived and self.has_t2lm:
-            data["T2LM"]     = self.t2_lm()
-            data["K_SDR"]    = self.permeability_sdr()
-            data["K_COATES"] = self.permeability_coates()
-            data["PORE_R"]   = self.pore_size()
-            data["SWIRR"]    = self.swirr_nmr()
+            data["T2LM"] = self.t2_lm()
+            data["K_SDR"] = self.permeability_sdr()
+            try:
+                data["K_COATES"] = self.permeability_coates()
+            except ValueError:
+                pass
+            data["PORE_R"] = self.pore_size()
+
+        if include_derived:
+            if "KSDR" in self.stored_permeability and "K_SDR" not in data:
+                data["K_SDR"] = self.permeability_sdr()
+            if "KTIM" in self.stored_permeability and "K_COATES" not in data:
+                data["K_COATES"] = self.permeability_coates()
+            try:
+                data["SWIRR"] = self.swirr_nmr()
+            except ValueError:
+                pass
 
         return pd.DataFrame(data)
 
@@ -647,6 +919,11 @@ class NMRData:
             parts.append("MFFI")
         if self.mbvi is not None:
             parts.append("MBVI")
+        if self.stored_permeability:
+            parts.append("stored perm")
+        profile = self.metadata.get("profile")
+        if profile:
+            parts.append(str(profile))
         parts.append(f"cutoff={self.t2_cutoff}ms")
         return f"NMRData({', '.join(parts)})"
 

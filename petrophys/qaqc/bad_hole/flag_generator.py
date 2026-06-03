@@ -17,7 +17,7 @@ def generate_washout_flag(
     bit_size: Union[float, np.ndarray],
     drho: Optional[np.ndarray] = None,
     cali_threshold: float = DefaultParameters.CALI_BS_THRESHOLD,
-    drho_threshold: float = DefaultParameters.DRHO_THRESHOLD
+    drho_threshold: float = DefaultParameters.DRHO_THRESHOLD,
 ) -> np.ndarray:
     """
     Generate washout flag based on caliper and density correction.
@@ -57,7 +57,7 @@ def generate_washout_flag(
 
 def generate_large_hole_flag(
     bit_size: Union[float, np.ndarray],
-    threshold: float = DefaultParameters.LARGE_HOLE_BS
+    threshold: float = DefaultParameters.LARGE_HOLE_BS,
 ) -> Union[bool, np.ndarray]:
     """
     Generate large hole flag.
@@ -80,8 +80,7 @@ def generate_large_hole_flag(
 
 
 def generate_low_density_flag(
-    rhob: np.ndarray,
-    threshold: float = DefaultParameters.RHOB_MIN
+    rhob: np.ndarray, threshold: float = DefaultParameters.RHOB_MIN
 ) -> np.ndarray:
     """
     Generate low density flag.
@@ -106,7 +105,7 @@ def generate_low_density_flag(
 def generate_pef_exclusion_flag(
     pef: np.ndarray,
     max_threshold: float = DefaultParameters.PEF_MAX,
-    min_threshold: float = DefaultParameters.PEF_MIN
+    min_threshold: float = DefaultParameters.PEF_MIN,
 ) -> np.ndarray:
     """
     Generate PEF exclusion flag.
@@ -140,7 +139,7 @@ def generate_bad_hole_flags(
     rhob_min: float = DefaultParameters.RHOB_MIN,
     pef_max: float = DefaultParameters.PEF_MAX,
     pef_min: float = DefaultParameters.PEF_MIN,
-    large_hole_threshold: float = DefaultParameters.LARGE_HOLE_BS
+    large_hole_threshold: float = DefaultParameters.LARGE_HOLE_BS,
 ) -> dict:
     """
     Generate all bad hole flags for a well.
@@ -198,9 +197,29 @@ def generate_bad_hole_flags(
             finite = bit_size[np.isfinite(bit_size)]
             bit_size = float(np.nanmedian(finite)) if finite.size else None
 
+    def _pad_caliper_max() -> Optional[np.ndarray]:
+        pad_curves = []
+        for aliases in (["HD1_PPC1", "HD1", "C1"], ["HD2_PPC1", "HD2", "C2"]):
+            data, _, _ = get_curve_data_depthwise(well, aliases)
+            if data is not None:
+                pad_curves.append(np.asarray(data, dtype=float))
+        if not pad_curves:
+            return None
+        stacked = np.column_stack(pad_curves)
+        finite = np.isfinite(stacked)
+        any_finite = np.any(finite, axis=1)
+        result = np.full(n_samples, np.nan, dtype=float)
+        result[any_finite] = np.max(
+            np.where(finite, stacked, -np.inf),
+            axis=1,
+        )[any_finite]
+        return result
+
     # Generate washout flag. CALI needs a real bit-size source, while DRHO is
     # an independent washout indicator and can still be evaluated without BS.
     cali, _, _ = get_curve_data_depthwise(well, ["CALI", "CAL"])
+    if cali is None:
+        cali = _pad_caliper_max()
     drho, _, _ = get_curve_data_depthwise(well, ["DRHO"])
 
     if cali is not None and bit_size is not None:
@@ -224,9 +243,7 @@ def generate_bad_hole_flags(
     # Generate PEF exclusion flag
     pef, _, _ = get_curve_data_depthwise(well, ["PEF"])
     if pef is not None:
-        flags["pef_exclusion"] = generate_pef_exclusion_flag(
-            pef, pef_max, pef_min
-        )
+        flags["pef_exclusion"] = generate_pef_exclusion_flag(pef, pef_max, pef_min)
 
     # Combined bad hole flag
     #
@@ -234,9 +251,6 @@ def generate_bad_hole_flags(
     # library's bad-hole output is driven only by caliper/DRHO washout
     # and large-hole geometry criteria. The low-density flag is still
     # returned separately for QC reference.
-    flags["bad_hole"] = (
-        flags["washout"] |
-        flags["large_hole"]
-    )
+    flags["bad_hole"] = flags["washout"] | flags["large_hole"]
 
     return flags
