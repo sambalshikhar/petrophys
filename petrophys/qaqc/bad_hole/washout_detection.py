@@ -79,7 +79,7 @@ class WashoutDetection:
         rhob_min: float = DefaultParameters.RHOB_MIN,
         pef_max: float = DefaultParameters.PEF_MAX,
         pef_min: float = DefaultParameters.PEF_MIN,
-        large_hole_threshold: float = DefaultParameters.LARGE_HOLE_BS
+        large_hole_threshold: float = DefaultParameters.LARGE_HOLE_BS,
     ):
         self.cali_threshold = cali_threshold
         self.drho_threshold = drho_threshold
@@ -88,11 +88,7 @@ class WashoutDetection:
         self.pef_min = pef_min
         self.large_hole_threshold = large_hole_threshold
 
-    def detect(
-        self,
-        well: "Well",
-        bit_size: Optional[float] = None
-    ) -> WashoutResult:
+    def detect(self, well: "Well", bit_size: Optional[float] = None) -> WashoutResult:
         """
         Detect washout and bad hole conditions.
 
@@ -117,13 +113,13 @@ class WashoutDetection:
             rhob_min=self.rhob_min,
             pef_max=self.pef_max,
             pef_min=self.pef_min,
-            large_hole_threshold=self.large_hole_threshold
+            large_hole_threshold=self.large_hole_threshold,
         )
 
         # Find washout intervals
         intervals = self._find_intervals(
             flags["washout"],
-            well.depth if well.depth is not None else np.arange(well.n_samples)
+            well.depth if well.depth is not None else np.arange(well.n_samples),
         )
 
         # Calculate statistics
@@ -136,14 +132,10 @@ class WashoutDetection:
             pef_exclusion_flag=flags["pef_exclusion"],
             bad_hole_flag=flags["bad_hole"],
             washout_intervals=intervals,
-            statistics=statistics
+            statistics=statistics,
         )
 
-    def _find_intervals(
-        self,
-        flag: np.ndarray,
-        depth: np.ndarray
-    ) -> List[tuple]:
+    def _find_intervals(self, flag: np.ndarray, depth: np.ndarray) -> List[tuple]:
         """Find continuous intervals where flag is True."""
         intervals = []
 
@@ -165,13 +157,11 @@ class WashoutDetection:
         return intervals
 
     def _calculate_statistics(
-        self,
-        flags: Dict[str, np.ndarray],
-        well: "Well"
+        self, flags: Dict[str, np.ndarray], well: "Well"
     ) -> Dict[str, Any]:
         """Calculate summary statistics."""
         n_samples = well.n_samples
-        depth_step = well.step or 1.0
+        depth_step = abs(well.step or 1.0)
 
         stats = {}
 
@@ -187,7 +177,7 @@ class WashoutDetection:
         self,
         well: "Well",
         result: Optional[WashoutResult] = None,
-        bit_size: Optional[float] = None
+        bit_size: Optional[float] = None,
     ) -> "Well":
         """
         Add bad hole flags as curves to well.
@@ -214,19 +204,19 @@ class WashoutDetection:
             "WASHOUT_FLAG",
             result.washout_flag.astype(float),
             unit="",
-            description="Washout Flag (1=bad)"
+            description="Washout Flag (1=bad)",
         )
         well.add_curve(
             "BAD_HOLE_FLAG",
             result.bad_hole_flag.astype(float),
             unit="",
-            description="Bad Hole Flag (1=bad)"
+            description="Bad Hole Flag (1=bad)",
         )
         well.add_curve(
             "PEF_EXCL_FLAG",
             result.pef_exclusion_flag.astype(float),
             unit="",
-            description="PEF Exclusion Flag (1=exclude)"
+            description="PEF Exclusion Flag (1=exclude)",
         )
 
         # Store statistics
@@ -236,9 +226,7 @@ class WashoutDetection:
 
 
 def detect_washout(
-    well: "Well",
-    bit_size: Optional[float] = None,
-    **kwargs
+    well: "Well", bit_size: Optional[float] = None, **kwargs
 ) -> WashoutResult:
     """
     Convenience function for washout detection.

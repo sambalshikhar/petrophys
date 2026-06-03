@@ -50,14 +50,14 @@ class NMRCalibration:
     >>> k = nmr.permeability_sdr(calibration=cal)
     """
 
-    model:       str
-    params:      Dict[str, float]
-    r2_log:      float
-    rmse_log:    float
-    n_points:    int
-    core_depth:  np.ndarray
-    core_perm:   np.ndarray
-    nmr_perm:    np.ndarray
+    model: str
+    params: Dict[str, float]
+    r2_log: float
+    rmse_log: float
+    n_points: int
+    core_depth: np.ndarray
+    core_perm: np.ndarray
+    nmr_perm: np.ndarray
 
     def __repr__(self) -> str:
         p = self.params
@@ -76,6 +76,7 @@ class NMRCalibration:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _interp_at_core(
     nmr: "NMRData",
     core_depth: np.ndarray,
@@ -90,8 +91,26 @@ def _interp_at_core(
         All arrays reduced to rows where both core_perm > 0 and NMR MPHI > 0.
     """
     core_depth = np.asarray(core_depth, dtype=float)
-    core_perm  = np.asarray(core_perm,  dtype=float)
+    core_perm = np.asarray(core_perm, dtype=float)
     return core_depth, core_perm
+
+
+def _interp_curve_at_depth(
+    log_depth: np.ndarray,
+    log_values: np.ndarray,
+    target_depth: np.ndarray,
+) -> np.ndarray:
+    """Interpolate a log curve safely for ascending or descending depth."""
+    depth = np.asarray(log_depth, dtype=float)
+    values = np.asarray(log_values, dtype=float)
+    targets = np.asarray(target_depth, dtype=float)
+    valid = np.isfinite(depth) & np.isfinite(values)
+    if np.count_nonzero(valid) < 2:
+        return np.full(targets.shape, np.nan, dtype=float)
+    depth = depth[valid]
+    values = values[valid]
+    order = np.argsort(depth)
+    return np.interp(targets, depth[order], values[order], left=np.nan, right=np.nan)
 
 
 def _log_r2(log_pred: np.ndarray, log_true: np.ndarray) -> float:
@@ -104,6 +123,7 @@ def _log_r2(log_pred: np.ndarray, log_true: np.ndarray) -> float:
 # ---------------------------------------------------------------------------
 # Public calibration functions
 # ---------------------------------------------------------------------------
+
 
 def calibrate_sdr(
     nmr: "NMRData",
@@ -135,14 +155,15 @@ def calibrate_sdr(
     NMRCalibration
     """
     core_depth = np.asarray(core_depth, dtype=float)
-    core_perm  = np.asarray(core_perm,  dtype=float)
+    core_perm = np.asarray(core_perm, dtype=float)
 
     if core_depth.shape != core_perm.shape:
         raise ValueError("core_depth and core_perm must have the same length")
 
-    # Interpolate NMR phi and T2lm to core depths
-    phi_log   = np.interp(core_depth, nmr.depth, nmr.mphi / 100.0)
-    t2lm_log  = np.interp(core_depth, nmr.depth, nmr.t2_lm())
+    # Interpolate NMR phi and T2lm to core depths. CMR run files are often
+    # descending in depth, so sort before interpolation.
+    phi_log = _interp_curve_at_depth(nmr.depth, nmr.mphi / 100.0, core_depth)
+    t2lm_log = _interp_curve_at_depth(nmr.depth, nmr.t2_lm(), core_depth)
 
     # Valid mask: core perm > 0, phi > 0, T2lm > 0
     valid = (core_perm > 0) & (phi_log > 0) & (t2lm_log > 0)
@@ -153,22 +174,20 @@ def calibrate_sdr(
             f"and that MPHI > 0 at those depths)."
         )
 
-    k_c   = core_perm[valid]
+    k_c = core_perm[valid]
     phi_v = phi_log[valid]
-    t2_v  = t2lm_log[valid]
-    cd_v  = core_depth[valid]
+    t2_v = t2lm_log[valid]
+    cd_v = core_depth[valid]
 
     # Closed-form solution
-    log_c = np.mean(
-        np.log10(k_c) - 4.0 * np.log10(phi_v) - 2.0 * np.log10(t2_v)
-    )
-    c_opt = float(10.0 ** log_c)
+    log_c = np.mean(np.log10(k_c) - 4.0 * np.log10(phi_v) - 2.0 * np.log10(t2_v))
+    c_opt = float(10.0**log_c)
 
     # Diagnostics
-    log_k_nmr  = np.log10(c_opt) + 4.0 * np.log10(phi_v) + 2.0 * np.log10(t2_v)
-    k_nmr      = 10.0 ** log_k_nmr
-    rmse_log   = float(np.sqrt(np.mean((log_k_nmr - np.log10(k_c)) ** 2)))
-    r2         = _log_r2(log_k_nmr, np.log10(k_c))
+    log_k_nmr = np.log10(c_opt) + 4.0 * np.log10(phi_v) + 2.0 * np.log10(t2_v)
+    k_nmr = 10.0**log_k_nmr
+    rmse_log = float(np.sqrt(np.mean((log_k_nmr - np.log10(k_c)) ** 2)))
+    r2 = _log_r2(log_k_nmr, np.log10(k_c))
 
     return NMRCalibration(
         model="sdr",
@@ -226,34 +245,29 @@ def calibrate_coates(
     NMRCalibration
     """
     core_depth = np.asarray(core_depth, dtype=float)
-    core_perm  = np.asarray(core_perm,  dtype=float)
+    core_perm = np.asarray(core_perm, dtype=float)
 
     if core_depth.shape != core_perm.shape:
         raise ValueError("core_depth and core_perm must have the same length")
 
-    # Interpolate NMR properties to core depths
-    phi_at_core = np.interp(core_depth, nmr.depth, nmr.mphi)
-    ffi_at_core = np.interp(core_depth, nmr.depth, nmr._ffi())
-    bvi_at_core = np.interp(core_depth, nmr.depth, nmr._bvi())
+    # Interpolate NMR properties to core depths.
+    phi_at_core = _interp_curve_at_depth(nmr.depth, nmr.mphi, core_depth)
+    ffi_at_core = _interp_curve_at_depth(nmr.depth, nmr._ffi(), core_depth)
+    bvi_at_core = _interp_curve_at_depth(nmr.depth, nmr._bvi(), core_depth)
 
     # Valid mask
-    valid = (
-        (core_perm > 0)
-        & (phi_at_core > 0)
-        & (ffi_at_core > 0)
-        & (bvi_at_core > 0)
-    )
+    valid = (core_perm > 0) & (phi_at_core > 0) & (ffi_at_core > 0) & (bvi_at_core > 0)
     if valid.sum() < (3 if fit_exponents else 2):
         raise ValueError(
             f"Need at least {3 if fit_exponents else 2} valid core-NMR pairs "
             f"for Coates calibration; got {valid.sum()}."
         )
 
-    k_c   = core_perm[valid]
+    k_c = core_perm[valid]
     phi_v = phi_at_core[valid]
     ffi_v = ffi_at_core[valid]
     bvi_v = bvi_at_core[valid]
-    cd_v  = core_depth[valid]
+    cd_v = core_depth[valid]
 
     ratio_v = ffi_v / bvi_v
 
@@ -263,33 +277,34 @@ def calibrate_coates(
         log_c = np.mean(
             (np.log10(phi_v) + 0.5 * np.log10(ratio_v) - 0.25 * np.log10(k_c))
         )
-        c_opt = float(10.0 ** log_c)
+        c_opt = float(10.0**log_c)
         params = {"c": c_opt, "a": a, "b": b}
     else:
         # Full OLS: log10(k) = a*log10(phi) + b*log10(ffi/bvi) + intercept
         # where intercept = -a*log10(c)
-        X = np.column_stack([
-            np.log10(phi_v),
-            np.log10(ratio_v),
-            np.ones(len(k_c)),
-        ])
+        X = np.column_stack(
+            [
+                np.log10(phi_v),
+                np.log10(ratio_v),
+                np.ones(len(k_c)),
+            ]
+        )
         y = np.log10(k_c)
         theta, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
-        a     = float(theta[0])
-        b     = float(theta[1])
+        a = float(theta[0])
+        b = float(theta[1])
         intercept = float(theta[2])
         # intercept = -a * log10(c)  =>  log10(c) = -intercept / a
         c_opt = float(10.0 ** (-intercept / a)) if a != 0 else 10.0
         params = {"c": c_opt, "a": a, "b": b}
 
     # Compute fitted permeability for diagnostics
-    log_k_nmr = (
-        params["a"] * np.log10(phi_v / params["c"])
-        + params["b"] * np.log10(ratio_v)
+    log_k_nmr = params["a"] * np.log10(phi_v / params["c"]) + params["b"] * np.log10(
+        ratio_v
     )
-    k_nmr    = 10.0 ** log_k_nmr
+    k_nmr = 10.0**log_k_nmr
     rmse_log = float(np.sqrt(np.mean((log_k_nmr - np.log10(k_c)) ** 2)))
-    r2       = _log_r2(log_k_nmr, np.log10(k_c))
+    r2 = _log_r2(log_k_nmr, np.log10(k_c))
 
     return NMRCalibration(
         model="coates",
