@@ -11,7 +11,8 @@ import warnings
 import numpy as np
 
 try:
-    import dlisio
+    from dlisio import dlis
+
     HAS_DLISIO = True
 except ImportError:
     HAS_DLISIO = False
@@ -50,8 +51,8 @@ class DLISReader:
             raise FileNotFoundError(f"DLIS file not found: {filepath}")
 
         # Open DLIS file
-        self._physical_file, *tail = dlisio.load(str(self.filepath))
-        self._logical_files = [self._physical_file] + tail
+        self._physical_file = dlis.load(str(self.filepath))
+        self._logical_files = list(self._physical_file)
         self._active_file_idx = 0
 
     @property
@@ -106,9 +107,7 @@ class DLISReader:
         return info
 
     def to_well(
-        self,
-        frame_name: Optional[str] = None,
-        channels: Optional[List[str]] = None
+        self, frame_name: Optional[str] = None, channels: Optional[List[str]] = None
     ) -> "Well":
         """
         Convert DLIS data to Well object.
@@ -186,30 +185,42 @@ class DLISReader:
 
             data = frame_data[ch.name]
 
-            # Handle multi-dimensional data
+            # Handle multi-dimensional data. FMI/image channels often arrive
+            # as (n_depth, 1, n_buttons); squeeze singleton dimensions, then
+            # split true per-depth columns into separate scalar curves.
             if len(data.shape) > 1:
-                # For multi-dimensional, add each column as separate curve
-                for i in range(data.shape[1]):
-                    curve_name = f"{ch.name}_{i}" if data.shape[1] > 1 else ch.name
+                squeezed = np.squeeze(data)
+                if squeezed.ndim == 1:
+                    squeezed = squeezed.reshape(-1, 1)
+                if squeezed.ndim != 2 or squeezed.shape[0] != well.n_samples:
+                    warnings.warn(
+                        f"Skipping multidimensional DLIS channel {ch.name!r} "
+                        f"with unsupported shape {data.shape}; use "
+                        "BoreholeImageData.from_dlis() for image frames."
+                    )
+                    continue
+
+                for i in range(squeezed.shape[1]):
+                    curve_name = f"{ch.name}_{i}" if squeezed.shape[1] > 1 else ch.name
                     metadata = CurveMetadata(
                         description=ch.long_name or "",
                         source="DLIS",
-                        data_type=DataType.CURVE
+                        data_type=DataType.CURVE,
                     )
                     curve = Curve(
                         mnemonic=curve_name,
-                        data=data[:, i].flatten(),
+                        data=squeezed[:, i].flatten(),
                         unit=ch.units or "",
                         depth=well._depth,
                         depth_unit=well._depth_unit,
-                        metadata=metadata
+                        metadata=metadata,
                     )
                     well._curves[curve_name.upper()] = curve
             else:
                 metadata = CurveMetadata(
                     description=ch.long_name or "",
                     source="DLIS",
-                    data_type=DataType.CURVE
+                    data_type=DataType.CURVE,
                 )
                 curve = Curve(
                     mnemonic=ch.name,
@@ -217,7 +228,7 @@ class DLISReader:
                     unit=ch.units or "",
                     depth=well._depth,
                     depth_unit=well._depth_unit,
-                    metadata=metadata
+                    metadata=metadata,
                 )
                 well._curves[ch.name.upper()] = curve
 
@@ -225,8 +236,8 @@ class DLISReader:
 
     def close(self):
         """Close the DLIS file."""
-        if hasattr(self, '_physical_file'):
-            dlisio.close(self._physical_file)
+        if hasattr(self, "_physical_file"):
+            self._physical_file.close()
 
     def __enter__(self):
         return self
@@ -240,7 +251,7 @@ def read_dlis(
     frame_name: Optional[str] = None,
     channels: Optional[List[str]] = None,
     logical_file: int = 0,
-    **kwargs
+    **kwargs,
 ) -> "Well":
     """
     Read DLIS file and return Well object.
