@@ -24,6 +24,11 @@ from petrophys.visualization.interpretation_plot import (
 from petrophys.visualization.crossplot_viewer import CrossPlot, create_crossplot
 from petrophys.visualization.pickett_plot import PickettPlot, create_pickett_plot
 from petrophys.visualization.zone_flags import plot_zone_flags, add_zone_shading
+from petrophys.visualization.specialist_panels import (
+    create_fmi_panel,
+    create_nmr_cmr_panel,
+    has_nmr_cmr_curves,
+)
 
 __all__ = [
     # Batch export
@@ -54,4 +59,8 @@ __all__ = [
     # Zone flags
     "plot_zone_flags",
     "add_zone_shading",
+    # Specialist panels
+    "create_fmi_panel",
+    "create_nmr_cmr_panel",
+    "has_nmr_cmr_curves",
 ]

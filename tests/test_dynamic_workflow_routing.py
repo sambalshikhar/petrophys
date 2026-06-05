@@ -1103,6 +1103,17 @@ def test_saturation_skips_when_phie_is_unavailable_even_if_rhob_exists(record_ro
         ("permeability_user_swirr", lambda well: well, DynamicWorkflowConfig(perm_method="timur", swirr=0.25), "user"),
         ("permeability_swirr_curve", lambda well: (well.add_curve("SWIRR", np.full(well.n_samples, 0.22), "v/v", "Swirr"), well)[-1], DynamicWorkflowConfig(perm_method="timur"), "swirr"),
         (
+            "permeability_nmr_swirr",
+            lambda well: (
+                _remove_curves(well, "SWIRR", "SWI", "SWIR"),
+                well.add_curve("TCMR", np.full(well.n_samples, 0.30), "v/v", "Total CMR Porosity"),
+                well.add_curve("CMFF", np.full(well.n_samples, 0.21), "v/v", "CMR Free Fluid"),
+                well,
+            )[-1],
+            DynamicWorkflowConfig(perm_method="timur", skip_steps=["vclay", "porosity", "saturation"]),
+            "nmr_derived",
+        ),
+        (
             "permeability_hc_mask_p5",
             lambda well: (
                 _remove_curves(well, "SWIRR", "SWI", "SWIR"),
@@ -1120,7 +1131,7 @@ def test_saturation_skips_when_phie_is_unavailable_even_if_rhob_exists(record_ro
 )
 def test_permeability_routes_swirr_sources(case_id, mutate, config, expected_swirr_source, record_route):
     well = mutate(_routing_well(case_id))
-    result = _run(case_id, well, config, record_route, focus_steps=["permeability"], curves=["PERM", "RESFLAG", "SWIRR_APP"])
+    result = _run(case_id, well, config, record_route, focus_steps=["permeability"], curves=["PERM", "RESFLAG", "SWIRR_NMR", "SWIRR_APP"])
     step = _step_by_name(result, "permeability")
     assert step.parameters["swirr_source"] == expected_swirr_source
     if expected_swirr_source in {"hc_mask_p5", "default_0.20"}:
@@ -1134,6 +1145,12 @@ def test_permeability_routes_swirr_sources(case_id, mutate, config, expected_swi
         np.testing.assert_allclose(swirr_app.data, step.parameters["swirr"])
     if expected_swirr_source == "default_0.20":
         assert step.parameters["swirr"] == 0.20
+    if expected_swirr_source == "nmr_derived":
+        assert well.get("SWIRR_NMR") is not None
+        assert well.get("SWIRR_APP") is None
+        assert "SWIRR_NMR" in step.output_curves
+        assert "RESFLAG" not in step.output_curves
+        np.testing.assert_allclose(well["SWIRR_NMR"].data, np.full(well.n_samples, 0.30))
     assert well.get("PERM") is not None
 
 

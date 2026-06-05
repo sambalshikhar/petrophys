@@ -65,9 +65,16 @@ def test_processed_cmr_las_auto_maps_units_and_vendor_outputs(tmp_path):
     assert nmr.t2_cutoff == 33.0
 
     df = nmr.to_dataframe()
-    assert {"MPHI", "MFFI", "MBVI", "T2CUTOFF", "K_SDR", "K_COATES", "SWIRR"} <= set(
-        df.columns
-    )
+    assert {
+        "MPHI",
+        "MFFI",
+        "MBVI",
+        "T2CUTOFF",
+        "K_SDR",
+        "K_COATES",
+        "SWIRR_NMR",
+        "SWIRR",
+    } <= set(df.columns)
     np.testing.assert_allclose(df["KSDR_LAS"], [0.1, 0.2, 0.3])
 
 
@@ -94,6 +101,7 @@ def test_cmr_pad_calipers_drive_bad_hole_and_descending_thickness_is_positive(tm
 def test_cmr_mnemonics_are_standardized_and_range_qced():
     assert get_standard_mnemonic("TCMR") == "NMR_PHIT"
     assert get_standard_mnemonic("CMFF") == "NMR_FFI"
+    assert get_standard_mnemonic("SWIRR_NMR") == "NMR_SWIRR"
     assert get_standard_mnemonic("KSDR") == "NMR_KSDR"
     assert find_curve_type("KTIM") == "NMR Timur/Coates Permeability"
 

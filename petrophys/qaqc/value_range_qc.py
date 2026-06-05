@@ -55,6 +55,12 @@ VALUE_RANGE_RULES: dict[str, ValueRangeRule] = {
     "NMR_KSDR": ValueRangeRule(0.0, 2e4, "nan", ("NMR_KSDR", "KSDR")),
     "NMR_KTIM": ValueRangeRule(0.0, 2e4, "nan", ("NMR_KTIM", "KTIM")),
     "NMR_3MS": ValueRangeRule(0.0, 100.0, "nan", ("NMR_3MS", "CMRP_3MS")),
+    "NMR_SWIRR": ValueRangeRule(
+        0.0,
+        1.0,
+        "nan",
+        ("NMR_SWIRR", "SWIRR_NMR", "SWIRR_CMR", "CMR_SWIRR"),
+    ),
     "PHI_SEC": ValueRangeRule(-0.05, 0.60, "nan", ("PHI_SEC",)),
     "RESFLAG": ValueRangeRule(
         0.0,

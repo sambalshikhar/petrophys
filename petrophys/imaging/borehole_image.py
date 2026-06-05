@@ -391,6 +391,14 @@ class BoreholeImageData:
     def filter_by_depth(self, top: float, bottom: float) -> "BoreholeImageData":
         lo, hi = sorted((float(top), float(bottom)))
         mask = (self.depth >= lo) & (self.depth <= hi)
+        metadata = dict(self.metadata)
+        navigation = metadata.get("_navigation")
+        if isinstance(navigation, dict):
+            metadata["_navigation"] = {
+                key: np.asarray(value)[mask]
+                for key, value in navigation.items()
+                if np.asarray(value).shape[:1] == self.depth.shape[:1]
+            }
         return BoreholeImageData(
             depth=self.depth[mask],
             image=self.image[mask],
@@ -399,7 +407,7 @@ class BoreholeImageData:
             image_type=self.image_type,
             depth_unit=self.depth_unit,
             value_unit=self.value_unit,
-            metadata=dict(self.metadata),
+            metadata=metadata,
         )
 
     def normalized_image(self) -> np.ndarray:
