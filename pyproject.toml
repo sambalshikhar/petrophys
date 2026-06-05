@@ -43,6 +43,7 @@ dependencies = [
     "matplotlib>=3.4.0",
     "lasio>=0.30",
     "pint>=0.18",
+    "openpyxl>=3.1.0",
 ]
 
 [project.optional-dependencies]
@@ -79,7 +80,11 @@ where = ["."]
 include = ["petrophys*"]
 
 [tool.setuptools.package-data]
-petrophys = ["py.typed", "imputation/pretrained/*.joblib"]
+petrophys = [
+    "py.typed",
+    "imputation/pretrained/*.joblib",
+    "visualization/templates/*.xml",
+]
 
 [tool.black]
 line-length = 88

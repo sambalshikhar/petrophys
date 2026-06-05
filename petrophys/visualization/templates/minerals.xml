@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graph name="minerals">
+  <track display_name="DEPTH" width="0.55" tick_spacing="50" number_spacing="250" line_spacing="100"/>
+  <track display_name="MINERAL VOLUMES" width="1.50" left="0" right="1" cumulative="true" major_lines="5">
+    <curve display_name="VCLAY" curve_name="VCLAY" color="#7a6a53" fill_color="#7a6a53" fill_alpha="0.85"/>
+    <curve display_name="VQUAR" curve_name="VQUAR" color="#f1d27a" fill_color="#f1d27a" fill_alpha="0.85"/>
+    <curve display_name="VCALC" curve_name="VCALC" color="#b8b8b8" fill_color="#b8b8b8" fill_alpha="0.85"/>
+    <curve display_name="VDOLO" curve_name="VDOLO" color="#7e8fa6" fill_color="#7e8fa6" fill_alpha="0.85"/>
+    <curve display_name="VANHY" curve_name="VANHY" color="#92c5de" fill_color="#92c5de" fill_alpha="0.85"/>
+  </track>
+  <track display_name="POROSITY / SW" width="1.25" major_lines="5">
+    <curve display_name="PHIE" curve_name="PHIE" color="#d73027" left="0.45" right="0" fill="right" fill_color="#fee08b"/>
+    <curve display_name="PHIT" curve_name="PHIT" color="#253494" left="0.45" right="0"/>
+    <curve display_name="Sw" curve_name="SW" color="#0571b0" left="1" right="0" fill="right" fill_color="#9ecae1"/>
+  </track>
+</graph>

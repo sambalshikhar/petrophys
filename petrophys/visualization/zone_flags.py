@@ -215,7 +215,7 @@ def create_net_pay_summary_plot(
 
     ax2.set_xlim(0, 1)
     ax2.set_xticks([0.165, 0.5, 0.83])
-    ax2.set_xticklabels(['Rock', 'Res', 'Pay'])
+    ax2.set_xticklabels(['Clean Rock', 'Res', 'Pay'])
     ax2.set_xlabel("Net Flags")
     ax2.legend(loc='upper right', fontsize=8)
     ax2.grid(True, alpha=0.3)

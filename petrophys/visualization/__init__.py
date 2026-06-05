@@ -12,6 +12,7 @@ from petrophys.visualization.log_viewer import (
     DEFAULT_LOG_VIEWER_TEMPLATES,
     LogViewer,
     LogViewerTemplate,
+    create_adaptive_log_viewer_template,
     create_log_viewer,
     load_log_viewer_template,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "DEFAULT_LOG_VIEWER_TEMPLATES",
     "LogViewer",
     "LogViewerTemplate",
+    "create_adaptive_log_viewer_template",
     "create_log_viewer",
     "load_log_viewer_template",
     # Triple combo
