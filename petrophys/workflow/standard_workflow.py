@@ -538,7 +538,7 @@ class StandardWorkflow:
             )
             well.add_curve("PERM", result.perm, "mD", f"Permeability ({result.method})")
             empirical_method = result.metadata.get("empirical_method") or self.config.perm_fallback_method
-            if empirical_method == "lith_vcl" and result.metadata.get("input_curves"):
+            if result.metadata.get("input_curves"):
                 trace.input_curves = list(dict.fromkeys(result.metadata["input_curves"]))
             else:
                 trace.input_curves = [result.metadata.get("porosity_curve", "PHIE")]
@@ -562,6 +562,15 @@ class StandardWorkflow:
                 )
                 trace.output_curves.append("PERM_CC")
             swirr_metadata = dict(result.swi_metadata)
+            swirr_nmr = swirr_metadata.pop("swirr_nmr", None)
+            if swirr_nmr is not None and empirical_method != "lith_vcl":
+                well.add_curve(
+                    "SWIRR_NMR",
+                    swirr_nmr,
+                    "v/v",
+                    "NMR irreducible water saturation",
+                )
+                trace.output_curves.append("SWIRR_NMR")
             swirr_app = swirr_metadata.pop("swirr_app", None)
             if swirr_app is not None and empirical_method != "lith_vcl":
                 well.add_curve(

@@ -25,6 +25,19 @@ from petrophys.utils.analysis_helpers import get_curve, get_curve_data_depthwise
 
 PERMEABILITY_MAX_MD = DEFAULT_MAX_PERM_MD
 
+SWIRR_EXPLICIT_CURVES = ("SWIRR", "SWI", "SWIR")
+NMR_SWIRR_CURVES = ("SWIRR_NMR", "NMR_SWIRR", "SWIRR_CMR", "CMR_SWIRR")
+NMR_TOTAL_POROSITY_CURVES = (
+    "NMR_PHIT",
+    "MPHI",
+    "TCMR",
+    "CMRPHI",
+    "NMRP",
+    "PHINMR",
+)
+NMR_BVI_CURVES = ("NMR_BVI", "MBVI", "CBVI", "CMR_BVI", "BVI")
+NMR_FFI_CURVES = ("NMR_FFI", "MFFI", "CMFF", "CMR_FFI", "FFI")
+
 
 def _cap_permeability(perm: np.ndarray, max_perm: float = PERMEABILITY_MAX_MD) -> np.ndarray:
     """Cap finite permeability values while preserving NaNs."""
@@ -32,6 +45,46 @@ def _cap_permeability(perm: np.ndarray, max_perm: float = PERMEABILITY_MAX_MD) -
     finite = np.isfinite(capped)
     capped[finite] = np.minimum(capped[finite], max_perm)
     return capped
+
+
+def _as_fraction_if_percent(values: np.ndarray) -> np.ndarray:
+    """Convert percentage-like saturation values to fractions."""
+    arr = np.asarray(values, dtype=float).copy()
+    finite = arr[np.isfinite(arr)]
+    if finite.size and np.nanmax(np.abs(finite)) > 1.5 and np.nanmax(np.abs(finite)) <= 100.0:
+        arr = arr / 100.0
+    return arr
+
+
+def _valid_swirr(values: np.ndarray) -> np.ndarray:
+    arr = _as_fraction_if_percent(values)
+    return np.isfinite(arr) & (arr > 0.0) & (arr <= 1.0)
+
+
+def _filled_swirr_result(
+    data: np.ndarray,
+    source: str,
+    source_curve: Optional[str],
+    metadata: Dict[str, Any],
+) -> tuple[Union[float, np.ndarray], str, Optional[float], Dict[str, Any]]:
+    """Return a Swirr curve when broadly populated, otherwise its valid median."""
+    values = _as_fraction_if_percent(data)
+    valid = _valid_swirr(values)
+    valid_fraction = np.count_nonzero(valid) / max(len(values), 1)
+    metadata = dict(metadata)
+    metadata.update(
+        {
+            "source": source,
+            "source_curve": source_curve,
+            "valid_fraction": float(valid_fraction),
+        }
+    )
+    if valid_fraction >= 0.5:
+        filled = values.copy()
+        filled[~valid] = float(np.nanmedian(values[valid]))
+        return filled, source, None, metadata
+
+    return float(np.nanmedian(values[valid])), f"{source}_median", None, metadata
 
 
 @dataclass
@@ -177,6 +230,82 @@ def _resolve_resflag(well: "Well", phi: np.ndarray) -> tuple[np.ndarray, str]:
     return resflag, "derived_phie"
 
 
+def _resolve_nmr_swirr_details(
+    well: "Well",
+) -> Optional[tuple[Union[float, np.ndarray], str, Optional[float], Dict[str, Any]]]:
+    """Resolve NMR Swirr from explicit curves or NMR porosity components."""
+    data, source_curve, meta = get_curve_data_depthwise(well, NMR_SWIRR_CURVES)
+    if data is not None:
+        valid = _valid_swirr(data)
+        if np.any(valid):
+            result = _filled_swirr_result(
+                data,
+                "nmr_swirr",
+                source_curve,
+                {
+                    "method": "nmr_swirr_curve",
+                    "source_counts": meta.get("source_counts", {}),
+                },
+            )
+            result[3]["swirr_nmr"] = (
+                result[0].copy()
+                if isinstance(result[0], np.ndarray)
+                else np.full(int(getattr(well, "n_samples", 0) or 0), float(result[0]))
+            )
+            return result
+
+    total, total_source, total_meta = get_curve_data_depthwise(
+        well, NMR_TOTAL_POROSITY_CURVES
+    )
+    if total is None:
+        return None
+
+    bvi, bvi_source, bvi_meta = get_curve_data_depthwise(well, NMR_BVI_CURVES)
+    ffi, ffi_source, ffi_meta = get_curve_data_depthwise(well, NMR_FFI_CURVES)
+
+    method = None
+    if bvi is not None:
+        numerator = bvi
+        method = "nmr_bvi_over_total_porosity"
+    elif ffi is not None:
+        numerator = total - ffi
+        method = "nmr_total_minus_ffi_over_total_porosity"
+    else:
+        return None
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        swirr = np.where(
+            np.isfinite(total) & (total > 0) & np.isfinite(numerator),
+            numerator / total,
+            np.nan,
+        )
+    swirr = np.where(swirr > 0.0, swirr, np.nan)
+    valid = _valid_swirr(swirr)
+    if not np.any(valid):
+        return None
+
+    result = _filled_swirr_result(
+        swirr,
+        "nmr_derived",
+        "SWIRR_NMR",
+        {
+            "method": method,
+            "nmr_total_porosity_curve": total_source,
+            "nmr_total_porosity_source_counts": total_meta.get("source_counts", {}),
+            "nmr_bvi_curve": bvi_source,
+            "nmr_bvi_source_counts": bvi_meta.get("source_counts", {}),
+            "nmr_ffi_curve": ffi_source,
+            "nmr_ffi_source_counts": ffi_meta.get("source_counts", {}),
+        },
+    )
+    result[3]["swirr_nmr"] = (
+        result[0].copy()
+        if isinstance(result[0], np.ndarray)
+        else np.full(int(getattr(well, "n_samples", 0) or 0), float(result[0]))
+    )
+    return result
+
+
 def _resolve_swirr_details(
     well: "Well",
     phi: Optional[np.ndarray] = None,
@@ -188,22 +317,22 @@ def _resolve_swirr_details(
             raise ValueError("PHIE or PHIT with finite samples required to resolve Swirr")
     phi = np.asarray(phi, dtype=float)
 
-    data, swirr_source_curve, swirr_meta = get_curve_data_depthwise(well, ["SWIRR", "SWI", "SWIR"])
+    data, swirr_source_curve, swirr_meta = get_curve_data_depthwise(
+        well, SWIRR_EXPLICIT_CURVES
+    )
     if data is not None:
-        valid = np.isfinite(data) & (data > 0) & (data <= 1)
+        valid = _valid_swirr(data)
         if np.any(valid):
-            valid_fraction = np.count_nonzero(valid) / max(len(data), 1)
-            metadata = {
-                "source_curve": swirr_source_curve,
-                "source_counts": swirr_meta.get("source_counts", {}),
-                "valid_fraction": float(valid_fraction),
-            }
-            if valid_fraction >= 0.5:
-                filled = data.copy()
-                filled[~valid] = float(np.nanmedian(data[valid]))
-                return filled, "swirr", None, metadata
+            return _filled_swirr_result(
+                data,
+                "swirr",
+                swirr_source_curve,
+                {"source_counts": swirr_meta.get("source_counts", {})},
+            )
 
-            return float(np.nanmedian(data[valid])), "swirr_curve_median", None, metadata
+    nmr_result = _resolve_nmr_swirr_details(well)
+    if nmr_result is not None:
+        return nmr_result
 
     sw, sw_source, _ = get_curve_data_depthwise(well, ["SW", "SWA", "SWT-LOG"])
     rdep, rdep_source, rdep_meta = get_curve_data_depthwise(well, ["RDEP", "RT"])
@@ -720,10 +849,10 @@ class PermeabilityModule:
                 "porosity_exponent": 4.0,
             }
         elif swi_source != "user":
-            input_curves.append("SWIRR/SW")
+            input_curves.append(swi_metadata.get("source_curve") or "SWIRR/SW")
 
         if empirical_method == "coates" and swi_source != "user":
-            input_curves.append("SWIRR/SW")
+            input_curves.append(swi_metadata.get("source_curve") or "SWIRR/SW")
 
         return PermeabilityResult(
             perm=perm,

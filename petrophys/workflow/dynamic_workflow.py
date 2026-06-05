@@ -949,6 +949,34 @@ class DynamicWorkflow:
         """Check if any named curve has finite usable numeric samples."""
         return get_curve(well, names) is not None
 
+    def _has_nmr_swirr_route(self, well: "Well") -> bool:
+        """Return True when NMR Swirr can be read or derived."""
+        if self._has_curve(well, "SWIRR_NMR", "NMR_SWIRR", "SWIRR_CMR", "CMR_SWIRR"):
+            return True
+        has_total = self._has_curve(
+            well,
+            "NMR_PHIT",
+            "MPHI",
+            "TCMR",
+            "CMRPHI",
+            "NMRP",
+            "PHINMR",
+        )
+        has_bvi_or_ffi = self._has_curve(
+            well,
+            "NMR_BVI",
+            "MBVI",
+            "CBVI",
+            "CMR_BVI",
+            "BVI",
+            "NMR_FFI",
+            "MFFI",
+            "CMFF",
+            "CMR_FFI",
+            "FFI",
+        )
+        return bool(has_total and has_bvi_or_ffi)
+
     # ---- CAN-RUN checks ----
 
     def _can_temperature(self, well: "Well") -> bool:
@@ -2597,7 +2625,12 @@ class DynamicWorkflow:
         resflag_info = None
         perm_method_norm = str(self.config.perm_method or "").strip().lower().replace("-", "_")
         perm_method_uses_swirr = perm_method_norm not in {"lith_vcl", "lithology_vcl", "dunite", "dunite_basic"}
-        if perm_method_uses_swirr and self.config.swirr is None and not self._has_curve(well, "SWIRR", "SWI", "SWIR"):
+        if (
+            perm_method_uses_swirr
+            and self.config.swirr is None
+            and not self._has_curve(well, "SWIRR", "SWI", "SWIR")
+            and not self._has_nmr_swirr_route(well)
+        ):
             resflag_info = self._ensure_resflag_for_swirr(well)
         outputs = []
 
@@ -2672,6 +2705,15 @@ class DynamicWorkflow:
             )
             outputs.append("PERM_CC")
         swirr_metadata = dict(result.swi_metadata)
+        swirr_nmr = swirr_metadata.pop("swirr_nmr", None)
+        if swirr_nmr is not None and empirical_method != "lith_vcl":
+            well.add_curve(
+                "SWIRR_NMR",
+                swirr_nmr,
+                "v/v",
+                "NMR irreducible water saturation",
+            )
+            outputs.append("SWIRR_NMR")
         swirr_app = swirr_metadata.pop("swirr_app", None)
         if swirr_app is not None and empirical_method != "lith_vcl":
             well.add_curve(
@@ -2683,7 +2725,11 @@ class DynamicWorkflow:
             outputs.append("SWIRR_APP")
         method_metadata = result.metadata.get("method_metadata") or {}
         method_input_curves = result.metadata.get("input_curves") or []
-        input_curves = list(method_input_curves) if empirical_method == "lith_vcl" else [result.metadata.get("porosity_curve", "PHIE")]
+        input_curves = (
+            list(method_input_curves)
+            if method_input_curves
+            else [result.metadata.get("porosity_curve", "PHIE")]
+        )
         if empirical_method != "lith_vcl" and result.swi_source in {"hc_mask_p5", "default_0.20"}:
             input_curves.append("SW")
             rt_curve = swirr_metadata.get("rt_curve")

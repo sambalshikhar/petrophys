@@ -120,6 +120,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
     "NMR_KSDR": ["KSDR", "K_SDR", "KSDR_CMR"],
     "NMR_KTIM": ["KTIM", "K_TIM", "KTC", "K_COATES"],
     "NMR_3MS": ["CMRP_3MS", "CMR_3MS"],
+    "NMR_SWIRR": ["SWIRR_NMR", "NMR_SWIRR", "SWIRR_CMR", "CMR_SWIRR"],
 }
 
 # Reverse mapping: alias -> standard mnemonic
@@ -216,6 +217,7 @@ def find_curve_type(mnemonic: str) -> Optional[str]:
         "NMR_KSDR": "NMR SDR Permeability",
         "NMR_KTIM": "NMR Timur/Coates Permeability",
         "NMR_3MS": "CMR 3ms Porosity",
+        "NMR_SWIRR": "NMR Irreducible Water Saturation",
     }
 
     return type_map.get(standard)
@@ -249,6 +251,7 @@ STANDARD_UNITS: Dict[str, str] = {
     "NMR_KSDR": "mD",
     "NMR_KTIM": "mD",
     "NMR_3MS": "pu",
+    "NMR_SWIRR": "v/v",
 }
 
 

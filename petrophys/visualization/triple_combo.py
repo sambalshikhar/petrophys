@@ -127,7 +127,7 @@ class TripleComboPlot:
                         linestyle='--', label='BS')
 
         ax.set_xlabel("GR [API]", fontsize=8)
-        ax.legend(loc='upper right', fontsize=8)
+        self._apply_legend(ax)
 
     def _plot_track2(self, ax: "Axes", rt_range: Tuple[float, float]) -> None:
         """Plot resistivity track."""
@@ -157,7 +157,7 @@ class TripleComboPlot:
         ax.set_xscale('log')
         ax.set_xlim(rt_range)
         ax.set_xlabel("Resistivity [ohm.m]", fontsize=8)
-        ax.legend(loc='upper right', fontsize=8)
+        self._apply_legend(ax)
 
     def _plot_track3(
         self,
@@ -200,7 +200,13 @@ class TripleComboPlot:
                 )
 
         ax.set_xlabel("RHOB [g/cc]", fontsize=8)
-        ax.legend(loc='upper right', fontsize=8)
+        self._apply_legend(ax)
+
+    def _apply_legend(self, ax: "Axes") -> None:
+        """Only draw a legend when labeled artists exist."""
+        handles, _ = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(loc='upper right', fontsize=8)
 
     def show(self) -> None:
         """Display the plot."""

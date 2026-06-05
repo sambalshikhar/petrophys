@@ -15,6 +15,7 @@ from petrophys.io.export import export_las, export_csv, export_excel
 from petrophys.imaging import (
     read_borehole_image_dlis,
     read_borehole_image_las,
+    read_fmi_dlis,
     BoreholeImageData,
 )
 from petrophys.io.example_format_export import (
@@ -36,6 +37,7 @@ __all__ = [
     "DLISReader",
     "read_borehole_image_dlis",
     "read_borehole_image_las",
+    "read_fmi_dlis",
     "BoreholeImageData",
     "read_ascii",
     "read_csv",
