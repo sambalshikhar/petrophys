@@ -348,6 +348,22 @@ Visualization
    interp = create_interpretation_plot(well, depth_range=(2200, 3200))
    interp.show()
 
+**XML Template Log Viewer**
+
+.. code-block:: python
+
+   from petrophys.visualization import create_log_viewer
+
+   # Default auto mode adapts to the curves available in the LAS file
+   viewer = create_log_viewer(well, depth_range=(2200, 3200))
+   viewer.save("well_log.png")
+
+   # Or use a PetroPy-style XML file with a <graph> or <template> root
+   viewer = create_log_viewer(well, template_xml_path="my_template.xml")
+
+   # Packaged templates are also available
+   viewer = create_log_viewer(well, template_defaults="comprehensive")
+
 **Crossplot**
 
 .. code-block:: python

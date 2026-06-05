@@ -318,16 +318,8 @@ class InterpretationPlot:
             ax,
             ["KH_CORE", "CPERM", "K_CORE", "PERM_CORE"],
             color="darkgreen",
-            label="Core K",
+            label="Kh Core",
             marker="x",
-            positive_only=True,
-        )
-        self._scatter_curve_points(
-            ax,
-            ["KV_CORE"],
-            color="teal",
-            label="Core Kv",
-            marker="+",
             positive_only=True,
         )
 
