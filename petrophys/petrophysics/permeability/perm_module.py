@@ -233,26 +233,21 @@ def _resolve_resflag(well: "Well", phi: np.ndarray) -> tuple[np.ndarray, str]:
 def _resolve_nmr_swirr_details(
     well: "Well",
 ) -> Optional[tuple[Union[float, np.ndarray], str, Optional[float], Dict[str, Any]]]:
-    """Resolve NMR Swirr from explicit curves or NMR porosity components."""
+    """Resolve Swirr from NMR curves without creating a separate output curve."""
     data, source_curve, meta = get_curve_data_depthwise(well, NMR_SWIRR_CURVES)
     if data is not None:
         valid = _valid_swirr(data)
         if np.any(valid):
-            result = _filled_swirr_result(
+            return _filled_swirr_result(
                 data,
                 "nmr_swirr",
                 source_curve,
                 {
                     "method": "nmr_swirr_curve",
+                    "input_curves": [source_curve] if source_curve else [],
                     "source_counts": meta.get("source_counts", {}),
                 },
             )
-            result[3]["swirr_nmr"] = (
-                result[0].copy()
-                if isinstance(result[0], np.ndarray)
-                else np.full(int(getattr(well, "n_samples", 0) or 0), float(result[0]))
-            )
-            return result
 
     total, total_source, total_meta = get_curve_data_depthwise(
         well, NMR_TOTAL_POROSITY_CURVES
@@ -284,12 +279,14 @@ def _resolve_nmr_swirr_details(
     if not np.any(valid):
         return None
 
-    result = _filled_swirr_result(
+    input_curves = [name for name in (total_source, bvi_source, ffi_source) if name]
+    return _filled_swirr_result(
         swirr,
         "nmr_derived",
-        "SWIRR_NMR",
+        total_source,
         {
             "method": method,
+            "input_curves": input_curves,
             "nmr_total_porosity_curve": total_source,
             "nmr_total_porosity_source_counts": total_meta.get("source_counts", {}),
             "nmr_bvi_curve": bvi_source,
@@ -298,12 +295,6 @@ def _resolve_nmr_swirr_details(
             "nmr_ffi_source_counts": ffi_meta.get("source_counts", {}),
         },
     )
-    result[3]["swirr_nmr"] = (
-        result[0].copy()
-        if isinstance(result[0], np.ndarray)
-        else np.full(int(getattr(well, "n_samples", 0) or 0), float(result[0]))
-    )
-    return result
 
 
 def _resolve_swirr_details(
@@ -374,8 +365,9 @@ def resolve_swirr(
 
     Priority:
     1. Explicit ``SWIRR`` / ``SWI`` curves
-    2. ``P5(SW)`` where reservoir flag is true and ``RDEP > 5 ohm.m``
-    3. Scalar fallback ``0.20``
+    2. NMR-derived Swirr from NMR/CMR curves when available
+    3. ``P5(SW)`` where reservoir flag is true and ``RDEP > 5 ohm.m``
+    4. Scalar fallback ``0.20``
     """
     swirr, source, bvw_irr, _ = _resolve_swirr_details(well, phi=phi)
     return swirr, source, bvw_irr
@@ -849,10 +841,16 @@ class PermeabilityModule:
                 "porosity_exponent": 4.0,
             }
         elif swi_source != "user":
-            input_curves.append(swi_metadata.get("source_curve") or "SWIRR/SW")
+            input_curves.extend(
+                swi_metadata.get("input_curves")
+                or [swi_metadata.get("source_curve") or "SWIRR/SW"]
+            )
 
         if empirical_method == "coates" and swi_source != "user":
-            input_curves.append(swi_metadata.get("source_curve") or "SWIRR/SW")
+            input_curves.extend(
+                swi_metadata.get("input_curves")
+                or [swi_metadata.get("source_curve") or "SWIRR/SW"]
+            )
 
         return PermeabilityResult(
             perm=perm,

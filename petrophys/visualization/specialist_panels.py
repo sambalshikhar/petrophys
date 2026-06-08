@@ -263,7 +263,7 @@ def _porosity_xlim(arrays: Sequence[np.ndarray]) -> tuple[float, float]:
 def _nmr_swirr_for_plot(well: "Well") -> tuple[Optional[np.ndarray], Optional[str]]:
     swirr, swirr_name = _curve_data(well, NMR_SWIRR_ALIASES)
     if swirr is not None:
-        return _fraction_if_percent(swirr), swirr_name
+        return _fraction_if_percent(swirr), f"Swirr ({swirr_name})"
     total, total_name = _curve_data(well, NMR_TOTAL_ALIASES)
     if total is None:
         return None, None
@@ -276,7 +276,7 @@ def _nmr_swirr_for_plot(well: "Well") -> tuple[Optional[np.ndarray], Optional[st
     with np.errstate(divide="ignore", invalid="ignore"):
         result = np.where(np.isfinite(total) & (total > 0), bvi / total, np.nan)
     result = np.where((result > 0.0) & (result <= 1.0), result, np.nan)
-    return result, f"SWIRR_NMR ({total_name})"
+    return result, f"Swirr (NMR-derived from {total_name})"
 
 
 def _fraction_if_percent(values: np.ndarray) -> np.ndarray:

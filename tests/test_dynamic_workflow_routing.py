@@ -1131,7 +1131,7 @@ def test_saturation_skips_when_phie_is_unavailable_even_if_rhob_exists(record_ro
 )
 def test_permeability_routes_swirr_sources(case_id, mutate, config, expected_swirr_source, record_route):
     well = mutate(_routing_well(case_id))
-    result = _run(case_id, well, config, record_route, focus_steps=["permeability"], curves=["PERM", "RESFLAG", "SWIRR_NMR", "SWIRR_APP"])
+    result = _run(case_id, well, config, record_route, focus_steps=["permeability"], curves=["PERM", "RESFLAG", "SWIRR_APP"])
     step = _step_by_name(result, "permeability")
     assert step.parameters["swirr_source"] == expected_swirr_source
     if expected_swirr_source in {"hc_mask_p5", "default_0.20"}:
@@ -1146,11 +1146,12 @@ def test_permeability_routes_swirr_sources(case_id, mutate, config, expected_swi
     if expected_swirr_source == "default_0.20":
         assert step.parameters["swirr"] == 0.20
     if expected_swirr_source == "nmr_derived":
-        assert well.get("SWIRR_NMR") is not None
+        assert well.get("SWIRR_NMR") is None
         assert well.get("SWIRR_APP") is None
-        assert "SWIRR_NMR" in step.output_curves
+        assert "SWIRR_NMR" not in step.output_curves
         assert "RESFLAG" not in step.output_curves
-        np.testing.assert_allclose(well["SWIRR_NMR"].data, np.full(well.n_samples, 0.30))
+        assert step.parameters["swirr_metadata"]["method"] == "nmr_total_minus_ffi_over_total_porosity"
+        assert {"TCMR", "CMFF"} <= set(step.input_curves)
     assert well.get("PERM") is not None
 
 

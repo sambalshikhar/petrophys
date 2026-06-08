@@ -2705,15 +2705,6 @@ class DynamicWorkflow:
             )
             outputs.append("PERM_CC")
         swirr_metadata = dict(result.swi_metadata)
-        swirr_nmr = swirr_metadata.pop("swirr_nmr", None)
-        if swirr_nmr is not None and empirical_method != "lith_vcl":
-            well.add_curve(
-                "SWIRR_NMR",
-                swirr_nmr,
-                "v/v",
-                "NMR irreducible water saturation",
-            )
-            outputs.append("SWIRR_NMR")
         swirr_app = swirr_metadata.pop("swirr_app", None)
         if swirr_app is not None and empirical_method != "lith_vcl":
             well.add_curve(
