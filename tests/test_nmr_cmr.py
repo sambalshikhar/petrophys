@@ -72,9 +72,9 @@ def test_processed_cmr_las_auto_maps_units_and_vendor_outputs(tmp_path):
         "T2CUTOFF",
         "K_SDR",
         "K_COATES",
-        "SWIRR_NMR",
         "SWIRR",
     } <= set(df.columns)
+    assert "SWIRR_NMR" not in df.columns
     np.testing.assert_allclose(df["KSDR_LAS"], [0.1, 0.2, 0.3])
 
 

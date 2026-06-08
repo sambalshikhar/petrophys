@@ -903,9 +903,7 @@ class NMRData:
             if "KTIM" in self.stored_permeability and "K_COATES" not in data:
                 data["K_COATES"] = self.permeability_coates()
             try:
-                swirr_nmr = self.swirr_nmr()
-                data["SWIRR_NMR"] = swirr_nmr
-                data["SWIRR"] = swirr_nmr
+                data["SWIRR"] = self.swirr_nmr()
             except ValueError:
                 pass
 
