@@ -288,8 +288,10 @@ class FormationTops:
         -------
         FormationTops
         """
-        well_top = float(np.nanmin(well.depth))
-        well_bottom = float(np.nanmax(well.depth))
+        well_top = getattr(well, "top", None)
+        well_bottom = getattr(well, "bottom", None)
+        if well_top is None or well_bottom is None:
+            return FormationTops([])
 
         clipped = []
         for iv in self._intervals:

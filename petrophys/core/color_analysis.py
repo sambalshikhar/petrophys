@@ -11,6 +11,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import numpy as np
 
+from petrophys.utils.statistics import finite_min_max
+
 try:
     import pandas as pd
     HAS_PANDAS = True
@@ -87,12 +89,12 @@ class CoreImageData:
         return len(self.depth)
 
     @property
-    def top(self) -> float:
-        return float(np.nanmin(self.depth))
+    def top(self) -> Optional[float]:
+        return finite_min_max(self.depth)[0]
 
     @property
-    def bottom(self) -> float:
-        return float(np.nanmax(self.depth))
+    def bottom(self) -> Optional[float]:
+        return finite_min_max(self.depth)[1]
 
     @property
     def has_rgb(self) -> bool:
@@ -165,7 +167,10 @@ class CoreImageData:
             """Normalise to [0,1] if the stored range clearly exceeds 1."""
             if arr is None:
                 return None
-            mx = np.nanmax(arr)
+            finite = arr[np.isfinite(arr)]
+            if finite.size == 0:
+                return arr
+            mx = np.nanmax(finite)
             return arr / mx if mx > 1.5 else arr
 
         depth = np.array(las.index, dtype=float)
@@ -241,12 +246,18 @@ class CoreImageData:
         """
         if self.grey_level is not None:
             raw = self.grey_level
-            mx = np.nanmax(raw)
+            finite = raw[np.isfinite(raw)]
+            if finite.size == 0:
+                return raw.astype(float, copy=True)
+            mx = np.nanmax(finite)
             return raw / mx if mx > 0 else raw
 
         if self.has_rgb:
             raw = (self.r + self.g + self.b) / 3.0
-            mx = np.nanmax(raw)
+            finite = raw[np.isfinite(raw)]
+            if finite.size == 0:
+                return raw.astype(float, copy=True)
+            mx = np.nanmax(finite)
             return raw / mx if mx > 0 else raw
 
         if self.value is not None:
@@ -273,8 +284,12 @@ class CoreImageData:
         if self.has_rgb:
             # Approximate saturation from RGB: (max - min) / max
             stack = np.stack([self.r, self.g, self.b], axis=1)
-            rgb_max = np.nanmax(stack, axis=1)
-            rgb_min = np.nanmin(stack, axis=1)
+            finite_rows = np.isfinite(stack).any(axis=1)
+            rgb_max = np.full(stack.shape[0], np.nan, dtype=float)
+            rgb_min = np.full(stack.shape[0], np.nan, dtype=float)
+            if np.any(finite_rows):
+                rgb_max[finite_rows] = np.nanmax(stack[finite_rows], axis=1)
+                rgb_min[finite_rows] = np.nanmin(stack[finite_rows], axis=1)
             with np.errstate(divide="ignore", invalid="ignore"):
                 return np.where(rgb_max > 0, (rgb_max - rgb_min) / rgb_max, np.nan)
 
@@ -289,7 +304,10 @@ class CoreImageData:
         """
         if self.grey_std is None:
             return np.full(self.n_samples, np.nan)
-        mx = np.nanmax(self.grey_std)
+        finite = self.grey_std[np.isfinite(self.grey_std)]
+        if finite.size == 0:
+            return self.grey_std.astype(float, copy=True)
+        mx = np.nanmax(finite)
         return self.grey_std / mx if mx > 0 else self.grey_std
 
     def rgb_to_hsv(self) -> Dict[str, np.ndarray]:
@@ -445,6 +463,11 @@ class CoreImageData:
             channels.append("HSV")
         if self.grey_std is not None:
             channels.append("texture")
+        depth_text = (
+            f"{self.top:.1f}-{self.bottom:.1f}"
+            if self.top is not None and self.bottom is not None
+            else "None-None"
+        )
         return (f"CoreImageData(samples={self.n_samples}, "
-                f"depth={self.top:.1f}-{self.bottom:.1f}, "
+                f"depth={depth_text}, "
                 f"channels=[{', '.join(channels) or 'none'}])")

@@ -53,6 +53,8 @@ def histogram_matching(
     all_values = np.concatenate([source_valid, ref_valid])
     value_min = np.min(all_values)
     value_max = np.max(all_values)
+    if value_min == value_max:
+        return source.copy()
 
     # Compute histograms
     source_hist, bins = np.histogram(

@@ -6,6 +6,14 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 import numpy as np
 
+from petrophys.utils.analysis_helpers import resolve_well_depth_range, well_depth_array
+
+
+def _nanmean_or_nan(values: np.ndarray) -> float:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    return float(np.mean(finite)) if finite.size else np.nan
+
 
 @dataclass
 class QuickLookResult:
@@ -82,12 +90,8 @@ class QuickLook:
         QuickLookResult
             Quick look results
         """
-        depth = well.depth
-
-        if top_depth is None:
-            top_depth = well.start_depth or np.nanmin(depth)
-        if bottom_depth is None:
-            bottom_depth = well.stop_depth or np.nanmax(depth)
+        depth = well_depth_array(well)
+        top_depth, bottom_depth = resolve_well_depth_range(well, top_depth, bottom_depth)
 
         result = QuickLookResult(
             well_name=well.header.get("WELL", "Unknown"),
@@ -107,24 +111,24 @@ class QuickLook:
         # Calculate quick averages
         if result.has_gr:
             gr = well.get("GR").data[mask]
-            result.avg_gr = float(np.nanmean(gr))
+            result.avg_gr = _nanmean_or_nan(gr)
             result.estimated_vcl = self._quick_vcl(result.avg_gr)
 
         if result.has_resistivity:
             for name in ["RT", "LLD", "ILD", "RDEP"]:
                 rt = well.get(name)
                 if rt is not None:
-                    result.avg_rt = float(np.nanmean(rt.data[mask]))
+                    result.avg_rt = _nanmean_or_nan(rt.data[mask])
                     break
 
         if result.has_density:
             rhob = well.get("RHOB").data[mask]
-            result.avg_rhob = float(np.nanmean(rhob))
+            result.avg_rhob = _nanmean_or_nan(rhob)
             result.estimated_porosity = self._quick_porosity(result.avg_rhob)
 
         if result.has_neutron:
             nphi = well.get("NPHI").data[mask]
-            result.avg_nphi = float(np.nanmean(nphi))
+            result.avg_nphi = _nanmean_or_nan(nphi)
 
         # Estimate Sw if we have enough data
         if result.has_resistivity and result.estimated_porosity > 0:
@@ -178,7 +182,7 @@ class QuickLook:
     ) -> List[Dict]:
         """Find potential pay zones based on log response."""
         zones = []
-        depth = well.depth
+        depth = well_depth_array(well)
 
         # Look for low GR, high resistivity intervals
         gr = well.get("GR")
@@ -203,22 +207,27 @@ class QuickLook:
         in_zone = False
         zone_start = 0
 
+        def _append_zone(start: int, stop: int) -> None:
+            thickness = abs(depth[stop - 1] - depth[start])
+            if thickness >= 2.0:
+                zones.append({
+                    "top": float(min(depth[start], depth[stop - 1])),
+                    "bottom": float(max(depth[start], depth[stop - 1])),
+                    "thickness": float(thickness),
+                    "avg_gr": _nanmean_or_nan(gr_data[start:stop]),
+                    "avg_rt": _nanmean_or_nan(rt_data[start:stop]),
+                })
+
         for i in range(len(pay_flag)):
             if pay_flag[i] and not in_zone:
                 zone_start = i
                 in_zone = True
             elif not pay_flag[i] and in_zone:
-                zone_end = i
-                thickness = depth[zone_end - 1] - depth[zone_start]
-                if thickness >= 2.0:  # Minimum 2 ft
-                    zones.append({
-                        "top": float(depth[zone_start]),
-                        "bottom": float(depth[zone_end - 1]),
-                        "thickness": float(thickness),
-                        "avg_gr": float(np.nanmean(gr_data[zone_start:zone_end])),
-                        "avg_rt": float(np.nanmean(rt_data[zone_start:zone_end])),
-                    })
+                _append_zone(zone_start, i)
                 in_zone = False
+
+        if in_zone:
+            _append_zone(zone_start, len(pay_flag))
 
         return zones
 

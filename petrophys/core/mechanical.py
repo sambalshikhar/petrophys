@@ -11,6 +11,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import numpy as np
 
+from petrophys.utils.statistics import finite_min_max
+
 try:
     import pandas as pd
     HAS_PANDAS = True
@@ -74,12 +76,12 @@ class CoreMechanical:
         return len(self.depth)
 
     @property
-    def top(self) -> float:
-        return float(np.nanmin(self.depth))
+    def top(self) -> Optional[float]:
+        return finite_min_max(self.depth)[0]
 
     @property
-    def bottom(self) -> float:
-        return float(np.nanmax(self.depth))
+    def bottom(self) -> Optional[float]:
+        return finite_min_max(self.depth)[1]
 
     # ---- Loaders ----
 
@@ -308,7 +310,11 @@ class CoreMechanical:
         if self.n_samples < 2:
             return self
 
-        dz = float(np.nanmedian(np.diff(self.depth)))
+        diffs = np.abs(np.diff(np.asarray(self.depth, dtype=float)))
+        diffs = diffs[np.isfinite(diffs) & (diffs > 0.0)]
+        if diffs.size == 0:
+            return self
+        dz = float(np.median(diffs))
         half = int(round(window_m / dz / 2))
 
         def _smooth(arr):
@@ -318,7 +324,8 @@ class CoreMechanical:
             for i in range(len(arr)):
                 lo = max(0, i - half)
                 hi = min(len(arr), i + half + 1)
-                out[i] = np.nanmean(arr[lo:hi])
+                finite = arr[lo:hi][np.isfinite(arr[lo:hi])]
+                out[i] = float(np.mean(finite)) if finite.size else np.nan
             return out
 
         extra = {k: _smooth(v) for k, v in self.extra_scales.items()}
@@ -373,6 +380,11 @@ class CoreMechanical:
             has.append("poisson")
         if self.extra_scales:
             has.append(f"{len(self.extra_scales)} extra scales")
+        depth_text = (
+            f"{self.top:.1f}-{self.bottom:.1f}"
+            if self.top is not None and self.bottom is not None
+            else "None-None"
+        )
         return (f"CoreMechanical(samples={self.n_samples}, "
-                f"depth={self.top:.1f}-{self.bottom:.1f}, "
+                f"depth={depth_text}, "
                 f"data=[{', '.join(has)}])")

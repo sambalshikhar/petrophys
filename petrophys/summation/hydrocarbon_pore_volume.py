@@ -6,6 +6,12 @@ from typing import Optional, Dict
 from dataclasses import dataclass
 import numpy as np
 
+from petrophys.utils.analysis_helpers import (
+    depth_step_array,
+    resolve_well_depth_range,
+    well_depth_array,
+)
+
 
 @dataclass
 class HCPVResult:
@@ -258,13 +264,8 @@ def calculate_hcpv_from_well(
     HCPVResult
         HCPV results
     """
-    depth = well.depth
-    step = well.step or 0.5
-
-    if top_depth is None:
-        top_depth = well.start_depth or np.nanmin(depth)
-    if bottom_depth is None:
-        bottom_depth = well.stop_depth or np.nanmax(depth)
+    depth = well_depth_array(well)
+    top_depth, bottom_depth = resolve_well_depth_range(well, top_depth, bottom_depth)
 
     # Get pay mask
     mask = (depth >= top_depth) & (depth <= bottom_depth)
@@ -276,8 +277,7 @@ def calculate_hcpv_from_well(
         pay_mask = mask
 
     # Calculate net pay thickness
-    net_pay_samples = np.sum(pay_mask)
-    net_pay_ft = net_pay_samples * step
+    net_pay_ft = float(np.sum(depth_step_array(depth)[pay_mask]))
 
     # Get average properties over pay
     phie = well.get("PHIE")
@@ -285,13 +285,13 @@ def calculate_hcpv_from_well(
 
     if phie is not None:
         phie_data = phie.data[pay_mask]
-        avg_porosity = float(np.nanmean(phie_data))
+        avg_porosity = float(np.nanmean(phie_data)) if np.any(np.isfinite(phie_data)) else np.nan
     else:
         avg_porosity = 0.15  # Default
 
     if sw is not None:
         sw_data = sw.data[pay_mask]
-        avg_sw = float(np.nanmean(sw_data))
+        avg_sw = float(np.nanmean(sw_data)) if np.any(np.isfinite(sw_data)) else np.nan
     else:
         avg_sw = 0.3  # Default
 

@@ -6,6 +6,12 @@ from typing import Optional, List, Dict, Union
 from dataclasses import dataclass
 import numpy as np
 
+from petrophys.utils.analysis_helpers import (
+    depth_step_array,
+    resolve_well_depth_range,
+    well_depth_array,
+)
+
 
 @dataclass
 class NetGrossResult:
@@ -54,18 +60,16 @@ def calculate_net_gross(
     NetGrossResult
         Net-to-gross results
     """
-    depth = well.depth
-    step = well.step or 0.5
-
+    depth = well_depth_array(well)
     # Set depth range
-    if top_depth is None:
-        top_depth = well.start_depth or np.nanmin(depth)
-    if bottom_depth is None:
-        bottom_depth = well.stop_depth or np.nanmax(depth)
+    top_depth, bottom_depth = resolve_well_depth_range(well, top_depth, bottom_depth)
 
     # Get depth mask
     mask = (depth >= top_depth) & (depth <= bottom_depth)
-    gross_thickness = bottom_depth - top_depth
+    sample_thickness = depth_step_array(depth)
+    gross_thickness = float(np.sum(sample_thickness[mask]))
+    if gross_thickness <= 0:
+        gross_thickness = abs(bottom_depth - top_depth)
 
     # Get flags
     net_pay_c = well.get(net_pay_curve)
@@ -75,15 +79,16 @@ def calculate_net_gross(
     net_rock_thick = 0.0
     net_res_thick = 0.0
     net_pay_thick = 0.0
+    zone_thickness = sample_thickness[mask]
 
     if net_rock_c is not None:
-        net_rock_thick = float(np.sum(net_rock_c.data[mask] > 0.5) * step)
+        net_rock_thick = float(np.sum(zone_thickness[net_rock_c.data[mask] > 0.5]))
 
     if net_res_c is not None:
-        net_res_thick = float(np.sum(net_res_c.data[mask] > 0.5) * step)
+        net_res_thick = float(np.sum(zone_thickness[net_res_c.data[mask] > 0.5]))
 
     if net_pay_c is not None:
-        net_pay_thick = float(np.sum(net_pay_c.data[mask] > 0.5) * step)
+        net_pay_thick = float(np.sum(zone_thickness[net_pay_c.data[mask] > 0.5]))
 
     # Calculate ratios
     ntg_rock = net_rock_thick / gross_thickness if gross_thickness > 0 else 0

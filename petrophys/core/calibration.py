@@ -105,7 +105,16 @@ def interpolate_log_at_core(
     curve = well.get(curve_name)
     if curve is None:
         raise ValueError(f"Curve '{curve_name}' not found on well")
-    return np.interp(core.depth, well.depth, curve.data)
+    if well.depth is None:
+        raise ValueError("Well has no depth data")
+    depth = np.asarray(well.depth, dtype=float).reshape(-1)
+    values = np.asarray(curve.data, dtype=float).reshape(-1)
+    if depth.size != values.size:
+        raise ValueError(
+            f"Curve '{curve_name}' length ({values.size}) does not match "
+            f"well depth length ({depth.size})"
+        )
+    return _interp_curve_at_depth(depth, values, core.depth)
 
 
 def core_data_from_well(
@@ -377,6 +386,8 @@ def fit_poro_perm_transform(
 
     valid = (~np.isnan(core.porosity) & ~np.isnan(core.permeability)
              & (core.porosity > 0) & (core.permeability > min_perm))
+    if np.count_nonzero(valid) < 2:
+        raise ValueError("At least two valid core porosity/permeability pairs are required")
 
     phi = core.porosity[valid]
     log_k = np.log10(core.permeability[valid])
@@ -567,14 +578,20 @@ def correct_porosity_with_grain_density(
     if rhob is None:
         raise ValueError(f"Curve '{rhob_curve}' not found")
 
-    depth = well.depth
+    if well.depth is None:
+        raise ValueError("Well has no depth data")
+    depth = np.asarray(well.depth, dtype=float).reshape(-1)
+    core_top = core.top
+    core_bottom = core.bottom
+    if core_top is None or core_bottom is None:
+        raise ValueError("CoreData has no finite depth interval")
 
     # Build per-depth grain density: interpolate within cored interval
     rho_ma = np.full_like(depth, default_rho_ma)
-    core_mask = (depth >= core.top) & (depth <= core.bottom)
+    core_mask = (depth >= core_top) & (depth <= core_bottom)
     if np.any(core_mask):
-        rho_ma[core_mask] = np.interp(
-            depth[core_mask], core.depth, core.grain_density,
+        rho_ma[core_mask] = _interp_curve_at_depth(
+            core.depth, core.grain_density, depth[core_mask],
         )
 
     # PHID = (rho_ma - RHOB) / (rho_ma - rho_fluid)
@@ -660,6 +677,48 @@ def estimate_archie_m(
 
 
 # ---- Internal helpers ----
+
+
+def _interp_curve_at_depth(
+    source_depth: np.ndarray,
+    source_values: np.ndarray,
+    target_depth: np.ndarray,
+) -> np.ndarray:
+    """Interpolate numeric values after sorting and de-duplicating depth support."""
+    source_depth = np.asarray(source_depth, dtype=float).reshape(-1)
+    source_values = np.asarray(source_values, dtype=float).reshape(-1)
+    targets = np.asarray(target_depth, dtype=float).reshape(-1)
+    if source_depth.size != source_values.size:
+        raise ValueError("source_depth and source_values must have the same length")
+
+    out = np.full(targets.shape, np.nan, dtype=float)
+    valid = np.isfinite(source_depth) & np.isfinite(source_values)
+    if not np.any(valid):
+        return out
+
+    x = source_depth[valid]
+    y = source_values[valid]
+    order = np.argsort(x)
+    x = x[order]
+    y = y[order]
+    unique, inverse = np.unique(x, return_inverse=True)
+    sums = np.zeros(unique.size, dtype=float)
+    counts = np.zeros(unique.size, dtype=float)
+    np.add.at(sums, inverse, y)
+    np.add.at(counts, inverse, 1.0)
+    support = sums / counts
+
+    finite_targets = np.isfinite(targets)
+    if np.any(finite_targets):
+        out[finite_targets] = np.interp(
+            targets[finite_targets],
+            unique,
+            support,
+            left=np.nan,
+            right=np.nan,
+        )
+    return out
+
 
 def _compute_calibration(
     name: str,

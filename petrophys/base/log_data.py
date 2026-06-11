@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from petrophys.utils.statistics import finite_min_max
+
 
 @dataclass
 class DepthInterval:
@@ -235,19 +237,22 @@ class DepthIndex:
         return self._depth
 
     @property
-    def top(self) -> float:
-        return float(np.nanmin(self._depth))
+    def top(self) -> Optional[float]:
+        return finite_min_max(self._depth)[0]
 
     @property
-    def bottom(self) -> float:
-        return float(np.nanmax(self._depth))
+    def bottom(self) -> Optional[float]:
+        return finite_min_max(self._depth)[1]
 
     @property
     def step(self) -> float:
         """Return median step size."""
-        if len(self._depth) < 2:
+        finite = self._depth[np.isfinite(self._depth)]
+        if len(finite) < 2:
             return 0.0
-        return float(np.median(np.diff(self._depth)))
+        steps = np.abs(np.diff(finite))
+        steps = steps[np.isfinite(steps) & (steps > 0)]
+        return float(np.median(steps)) if steps.size else 0.0
 
     @property
     def is_uniform(self) -> bool:
@@ -281,7 +286,12 @@ class DepthIndex:
 
     def find_nearest(self, target_depth: float) -> Tuple[int, float]:
         """Find index of nearest depth and the actual depth value."""
-        idx = np.argmin(np.abs(self._depth - target_depth))
+        finite = np.isfinite(self._depth)
+        if not np.any(finite):
+            raise ValueError("Cannot find nearest depth in an empty/non-finite DepthIndex")
+        candidates = np.where(finite)[0]
+        local_idx = np.argmin(np.abs(self._depth[finite] - target_depth))
+        idx = candidates[local_idx]
         return int(idx), float(self._depth[idx])
 
     def resample(
@@ -290,7 +300,13 @@ class DepthIndex:
         method: str = "linear"
     ) -> "DepthIndex":
         """Resample to new step size."""
-        new_depth = np.arange(self.top, self.bottom + new_step, new_step)
+        if new_step <= 0:
+            raise ValueError("new_step must be positive")
+        top = self.top
+        bottom = self.bottom
+        if top is None or bottom is None:
+            raise ValueError("Cannot resample an empty/non-finite DepthIndex")
+        new_depth = np.arange(top, bottom + new_step, new_step)
         return DepthIndex(new_depth, self.unit)
 
     def __len__(self) -> int:

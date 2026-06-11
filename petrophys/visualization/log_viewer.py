@@ -22,6 +22,8 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
+from petrophys.utils.statistics import finite_min_max
+
 try:
     import matplotlib.pyplot as plt
     from matplotlib.axes import Axes
@@ -1204,11 +1206,11 @@ class LogViewer:
 
     def _depth(self) -> np.ndarray:
         if getattr(self.well, "depth", None) is not None:
-            return np.asarray(self.well.depth, dtype=float)
+            return np.asarray(self.well.depth, dtype=float).reshape(-1)
         for name in CURVE_ALIAS_CANDIDATES["DEPT"]:
             curve = self.well.get(name)
             if curve is not None:
-                return np.asarray(curve.data, dtype=float)
+                return np.asarray(curve.data, dtype=float).reshape(-1)
         raise ValueError("Well has no depth array or DEPT/DEPTH/MD curve")
 
     def _resolve_depth_window(
@@ -1222,11 +1224,16 @@ class LogViewer:
             return float(depth_range[0]), float(depth_range[1])
         top_value = top if top is not None else self.template.top
         height_value = height if height is not None else self.template.height
+        inferred_top, inferred_bottom = finite_min_max(depth)
         if top_value is None:
-            top_value = float(np.nanmin(depth))
+            top_value = inferred_top
         if height_value is not None:
+            if top_value is None:
+                raise ValueError("Cannot resolve plot window without finite depth values")
             return float(top_value), float(top_value + height_value)
-        return float(top_value), float(np.nanmax(depth))
+        if inferred_bottom is None or top_value is None:
+            raise ValueError("Cannot resolve plot window without finite depth values")
+        return float(top_value), float(inferred_bottom)
 
     def _filter_visible_tracks(
         self,

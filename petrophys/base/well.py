@@ -235,8 +235,13 @@ class Well:
     @property
     def step(self) -> Optional[float]:
         """Return depth step (assuming uniform sampling)."""
-        if self._depth is not None and len(self._depth) > 1:
-            return float(np.median(np.diff(self._depth)))
+        if self._depth is not None:
+            finite = self._depth[np.isfinite(self._depth)]
+            if len(finite) > 1:
+                steps = np.abs(np.diff(finite))
+                steps = steps[np.isfinite(steps) & (steps > 0)]
+                if steps.size:
+                    return float(np.median(steps))
         return None
 
     def __repr__(self) -> str:

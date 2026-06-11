@@ -6,6 +6,8 @@ from typing import Optional, List, Dict, Union
 from dataclasses import dataclass, field
 import numpy as np
 
+from petrophys.utils.analysis_helpers import depth_step_array, well_depth_array
+
 
 @dataclass
 class ZoneSummary:
@@ -69,9 +71,7 @@ def calculate_zone_summary(
     ZoneSummary
         Zone summary results
     """
-    depth = well.depth
-    step = well.step or 0.5
-
+    depth = well_depth_array(well)
     # Get depth mask
     mask = (depth >= top_depth) & (depth <= bottom_depth)
     n_samples = np.sum(mask)
@@ -90,7 +90,10 @@ def calculate_zone_summary(
             n_pay_samples=0
         )
 
-    gross_thickness = (bottom_depth - top_depth)
+    sample_thickness = depth_step_array(depth)
+    gross_thickness = float(np.sum(sample_thickness[mask]))
+    if gross_thickness <= 0:
+        gross_thickness = abs(bottom_depth - top_depth)
 
     # Get flags
     net_pay_c = well.get(net_pay_curve)
@@ -101,9 +104,10 @@ def calculate_zone_summary(
     net_res_flag = net_res_c.data[mask] if net_res_c is not None else np.zeros(n_samples)
     net_rock_flag = net_rock_c.data[mask] if net_rock_c is not None else np.zeros(n_samples)
 
-    net_rock_thick = float(np.sum(net_rock_flag > 0.5) * step)
-    net_res_thick = float(np.sum(net_res_flag > 0.5) * step)
-    net_pay_thick = float(np.sum(net_pay_flag > 0.5) * step)
+    zone_thickness = sample_thickness[mask]
+    net_rock_thick = float(np.sum(zone_thickness[net_rock_flag > 0.5]))
+    net_res_thick = float(np.sum(zone_thickness[net_res_flag > 0.5]))
+    net_pay_thick = float(np.sum(zone_thickness[net_pay_flag > 0.5]))
 
     ntg = net_pay_thick / gross_thickness if gross_thickness > 0 else 0
 

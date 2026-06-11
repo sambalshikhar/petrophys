@@ -11,6 +11,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import numpy as np
 
+from petrophys.utils.statistics import finite_min_max
+
 try:
     import pandas as pd
     HAS_PANDAS = True
@@ -85,14 +87,14 @@ class XRFData:
         return len(self.depth)
 
     @property
-    def top(self) -> float:
+    def top(self) -> Optional[float]:
         """Shallowest depth."""
-        return float(np.nanmin(self.depth))
+        return finite_min_max(self.depth)[0]
 
     @property
-    def bottom(self) -> float:
+    def bottom(self) -> Optional[float]:
         """Deepest depth."""
-        return float(np.nanmax(self.depth))
+        return finite_min_max(self.depth)[1]
 
     # ---- Loaders ----
 
@@ -294,11 +296,12 @@ class XRFData:
         fe = self.get("Fe")
 
         if si is not None and al is not None:
+            zeros = np.zeros_like(si, dtype=float)
             total = np.nansum([
                 si,
-                np.where(al is not None, al, 0),
-                np.where(ca is not None, ca, 0),
-                np.where(fe is not None, fe, 0),
+                al if al is not None else zeros,
+                ca if ca is not None else zeros,
+                fe if fe is not None else zeros,
             ], axis=0)
             with np.errstate(divide="ignore", invalid="ignore"):
                 proxies["quartz_index"] = np.where(total > 0, si / total, np.nan)
@@ -339,11 +342,18 @@ class XRFData:
     @staticmethod
     def _normalize(arr: np.ndarray) -> np.ndarray:
         """Min-max normalize to [0, 1], ignoring NaN."""
-        mn = np.nanmin(arr)
-        mx = np.nanmax(arr)
+        arr = np.asarray(arr, dtype=float)
+        out = np.full(arr.shape, np.nan, dtype=float)
+        finite = np.isfinite(arr)
+        if not np.any(finite):
+            return out
+        mn = float(np.nanmin(arr[finite]))
+        mx = float(np.nanmax(arr[finite]))
         if mx == mn:
-            return np.zeros_like(arr, dtype=float)
-        return (arr - mn) / (mx - mn)
+            out[finite] = 0.0
+            return out
+        out[finite] = (arr[finite] - mn) / (mx - mn)
+        return out
 
     # ---- Utilities ----
 
@@ -372,6 +382,11 @@ class XRFData:
         elems = ", ".join(self.element_names[:8])
         if len(self.element_names) > 8:
             elems += f" … (+{len(self.element_names) - 8} more)"
+        depth_text = (
+            f"{self.top:.1f}-{self.bottom:.1f}"
+            if self.top is not None and self.bottom is not None
+            else "None-None"
+        )
         return (f"XRFData(samples={self.n_samples}, "
-                f"depth={self.top:.1f}-{self.bottom:.1f}, "
+                f"depth={depth_text}, "
                 f"elements=[{elems}])")

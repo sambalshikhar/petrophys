@@ -1,4 +1,5 @@
 import numpy as np
+import warnings
 
 from petrophys import Well
 from petrophys.imaging import BoreholeImageData
@@ -48,6 +49,22 @@ def test_borehole_image_summary_curves_can_be_added_to_well():
     assert well.depth_unit == "m"
     np.testing.assert_allclose(well["FMI_MEAN"].data, [2.0, 4.0])
     np.testing.assert_allclose(well["FMI_COVERAGE"].data, [2.0 / 3.0, 1.0])
+
+
+def test_borehole_image_statistics_handle_all_nan_rows_without_warnings():
+    image = BoreholeImageData.from_arrays(
+        depth=np.array([10.0, 10.5]),
+        image=np.array([[np.nan, np.nan], [2.0, 4.0]]),
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        stats = image.per_depth_statistics()
+
+    assert not any(issubclass(item.category, RuntimeWarning) for item in caught)
+    assert np.isnan(stats["mean"][0])
+    assert stats["coverage"][0] == 0.0
+    assert stats["mean"][1] == 3.0
 
 
 def test_flattened_fmi_las_is_reassembled_into_image(tmp_path):

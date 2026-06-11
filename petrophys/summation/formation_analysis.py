@@ -19,6 +19,7 @@ import csv
 
 from petrophys.summation.zone_summary import ZoneSummary, calculate_zone_summary
 from petrophys.formation.intervals import Formation
+from petrophys.utils.statistics import finite_min_max
 
 
 @dataclass
@@ -358,12 +359,27 @@ def analyze_formations(
     >>> result.print_report()
     >>> result.to_csv("formation_results.csv")
     """
-    depth = well._depth
+    depth = getattr(well, "depth", None)
     depth_unit = getattr(well, "_depth_unit", "ft")
 
+    if depth is None:
+        return FormationAnalysisResult(
+            well_name=well.header.well_name or "Unknown",
+            formations=[],
+            summaries=[],
+            depth_unit=depth_unit,
+        )
+    depth = np.asarray(depth, dtype=float)
+
     # Filter formations to well depth range
-    well_top = float(np.nanmin(depth))
-    well_bottom = float(np.nanmax(depth))
+    well_top, well_bottom = finite_min_max(depth)
+    if well_top is None or well_bottom is None:
+        return FormationAnalysisResult(
+            well_name=well.header.well_name or "Unknown",
+            formations=[],
+            summaries=[],
+            depth_unit=depth_unit,
+        )
 
     valid_formations = []
     for fm in formations:

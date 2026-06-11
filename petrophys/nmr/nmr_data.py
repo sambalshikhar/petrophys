@@ -19,6 +19,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
+from petrophys.utils.statistics import finite_min_max
+
 try:
     import pandas as pd
 
@@ -168,12 +170,12 @@ class NMRData:
         return len(self.t2_centers)
 
     @property
-    def top(self) -> float:
-        return float(np.nanmin(self.depth))
+    def top(self) -> Optional[float]:
+        return finite_min_max(self.depth)[0]
 
     @property
-    def bottom(self) -> float:
-        return float(np.nanmax(self.depth))
+    def bottom(self) -> Optional[float]:
+        return finite_min_max(self.depth)[1]
 
     @property
     def has_bins(self) -> bool:
@@ -910,7 +912,12 @@ class NMRData:
         return pd.DataFrame(data)
 
     def __repr__(self) -> str:
-        parts = [f"samples={self.n_samples}", f"depth={self.top:.1f}-{self.bottom:.1f}"]
+        depth_text = (
+            f"{self.top:.1f}-{self.bottom:.1f}"
+            if self.top is not None and self.bottom is not None
+            else "None-None"
+        )
+        parts = [f"samples={self.n_samples}", f"depth={depth_text}"]
         if self.has_bins:
             parts.append(f"{self.n_bins} T2 bins")
         if self.t2lm_stored is not None:

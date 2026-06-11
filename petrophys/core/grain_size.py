@@ -11,6 +11,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import numpy as np
 
+from petrophys.utils.statistics import finite_min_max
+
 try:
     import pandas as pd
     HAS_PANDAS = True
@@ -98,12 +100,12 @@ class GrainSizeData:
         return len(self.depth)
 
     @property
-    def top(self) -> float:
-        return float(np.nanmin(self.depth))
+    def top(self) -> Optional[float]:
+        return finite_min_max(self.depth)[0]
 
     @property
-    def bottom(self) -> float:
-        return float(np.nanmax(self.depth))
+    def bottom(self) -> Optional[float]:
+        return finite_min_max(self.depth)[1]
 
     # ---- Loaders ----
 
@@ -340,7 +342,18 @@ class GrainSizeData:
             has.append("d13")
         if self.d87 is not None:
             has.append("d87")
+        depth_text = (
+            f"{self.top:.1f}-{self.bottom:.1f}"
+            if self.top is not None and self.bottom is not None
+            else "None-None"
+        )
+        d50_min, d50_max = finite_min_max(self.d50)
+        d50_text = (
+            f"{d50_min:.1f}-{d50_max:.1f}"
+            if d50_min is not None and d50_max is not None
+            else "None-None"
+        )
         return (f"GrainSizeData(samples={self.n_samples}, "
-                f"depth={self.top:.1f}-{self.bottom:.1f}, "
-                f"d50_range={np.nanmin(self.d50):.1f}-{np.nanmax(self.d50):.1f} µm, "
+                f"depth={depth_text}, "
+                f"d50_range={d50_text} µm, "
                 f"data=[{', '.join(has)}])")

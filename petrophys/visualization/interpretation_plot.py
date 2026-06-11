@@ -15,6 +15,8 @@ except ImportError:
 
 import numpy as np
 
+from petrophys.utils.analysis_helpers import resolve_well_depth_range, well_depth_array
+
 
 class InterpretationPlot:
     """
@@ -64,14 +66,13 @@ class InterpretationPlot:
             sharey=True
         )
 
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         # Set depth range
         if depth_range:
             top, bottom = depth_range
         else:
-            top = self.well.start_depth or np.nanmin(depth)
-            bottom = self.well.stop_depth or np.nanmax(depth)
+            top, bottom = resolve_well_depth_range(self.well)
 
         # Plot each track
         self._plot_track1_gr(self.axes[0])
@@ -114,7 +115,7 @@ class InterpretationPlot:
         positive_only: bool = False,
     ) -> None:
         """Overlay sparse curve values as point markers."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
         for curve_name in curve_names:
             curve = self.well.get(curve_name)
             if curve is None:
@@ -141,7 +142,7 @@ class InterpretationPlot:
 
     def _plot_track1_gr(self, ax: "Axes") -> None:
         """GR track."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         gr = self.well.get("GR")
         if gr is not None:
@@ -154,7 +155,7 @@ class InterpretationPlot:
 
     def _plot_track2_resistivity(self, ax: "Axes") -> None:
         """Resistivity track."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         for names, color in [(["RT", "RDEP", "LLD", "ILD"], "red"),
                               (["RMED", "ILM", "LLS"], "blue"),
@@ -172,7 +173,7 @@ class InterpretationPlot:
 
     def _plot_track3_density_neutron(self, ax: "Axes") -> None:
         """Density-Neutron track."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         rhob = self.well.get("RHOB")
         if rhob is not None:
@@ -191,7 +192,7 @@ class InterpretationPlot:
 
     def _plot_track4_vcl(self, ax: "Axes") -> None:
         """VCL track."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         vcl = self.well.get("VCL")
         if vcl is not None:
@@ -204,7 +205,7 @@ class InterpretationPlot:
 
     def _plot_track5_porosity(self, ax: "Axes") -> None:
         """Porosity track."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         phit = self.well.get("PHIT")
         phie = self.well.get("PHIE")
@@ -271,7 +272,7 @@ class InterpretationPlot:
 
     def _plot_track6_saturation(self, ax: "Axes") -> None:
         """Saturation track."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         sw = self.well.get("SW")
         if sw is not None:
@@ -297,7 +298,7 @@ class InterpretationPlot:
 
     def _plot_track7_permeability(self, ax: "Axes") -> None:
         """Permeability track."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         perm = self.well.get("PERM")
         if perm is not None:
@@ -330,7 +331,7 @@ class InterpretationPlot:
 
     def _plot_track8_flags(self, ax: "Axes") -> None:
         """Net pay flags track."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         # Net Pay
         net_pay = self.well.get("NET_PAY")

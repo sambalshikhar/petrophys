@@ -215,8 +215,9 @@ class NumericalStatisticalAnalysis:
         if rhob is not None:
             valid = np.isfinite(rhob)
             sv[valid] = np.cumsum((rhob[valid] * 1000.0) * 9.81 * dz_m[valid]) / 1e6
-        if depth_m.size:
-            seawater = (1025.0 * 9.81 * 100.0 / 1e6) if np.nanmax(np.abs(depth_m)) > 200.0 else 0.0
+        finite_depth_m = depth_m[np.isfinite(depth_m)]
+        if finite_depth_m.size:
+            seawater = (1025.0 * 9.81 * 100.0 / 1e6) if np.nanmax(np.abs(finite_depth_m)) > 200.0 else 0.0
             pp = (1000.0 * 9.81 * np.abs(depth_m) / 1e6) + seawater
         valid_sh = np.isfinite(poisson_ratio) & np.isfinite(sv) & np.isfinite(pp) & (poisson_ratio < 0.999)
         sh_min[valid_sh] = ((poisson_ratio[valid_sh] / (1.0 - poisson_ratio[valid_sh])) * (sv[valid_sh] - pp[valid_sh])) + pp[valid_sh]
