@@ -10,6 +10,7 @@ from typing import Any, Optional, Sequence
 import numpy as np
 
 from petrophys.base.data_types import DataType
+from petrophys.utils.statistics import finite_min_max
 
 
 @dataclass
@@ -107,6 +108,48 @@ def get_curve_data(
     if require_finite and combine_aliases:
         data, mnemonic, _ = get_curve_data_depthwise(well, names)
         return data, mnemonic
+
+    curve = get_curve(well, names, require_finite=require_finite)
+    if curve is None:
+        return None, None
+    return np.asarray(curve.data, dtype=float), curve.mnemonic
+
+
+def well_depth_array(well: "Well", require_finite: bool = False) -> np.ndarray:
+    """Return a well depth array with a clear error when depth is unavailable."""
+    depth = getattr(well, "depth", None)
+    if depth is None:
+        raise ValueError("Well has no depth data")
+    depth_arr = np.asarray(depth, dtype=float).reshape(-1)
+    if require_finite and not np.any(np.isfinite(depth_arr)):
+        raise ValueError("Well has no finite depth values")
+    return depth_arr
+
+
+def resolve_well_depth_range(
+    well: "Well",
+    top_depth: Optional[float] = None,
+    bottom_depth: Optional[float] = None,
+) -> tuple[float, float]:
+    """Resolve an analysis interval from explicit bounds or finite well depth."""
+    top_value = top_depth
+    bottom_value = bottom_depth
+
+    if top_value is None:
+        top_value = getattr(well, "start_depth", None)
+    if bottom_value is None:
+        bottom_value = getattr(well, "stop_depth", None)
+
+    if top_value is None or bottom_value is None:
+        inferred_top, inferred_bottom = finite_min_max(well_depth_array(well))
+        if top_value is None:
+            top_value = inferred_top
+        if bottom_value is None:
+            bottom_value = inferred_bottom
+
+    if top_value is None or bottom_value is None:
+        raise ValueError("Well has no finite depth range")
+    return float(top_value), float(bottom_value)
 
     curve = get_curve(well, names, require_finite=require_finite)
     if curve is None:
@@ -294,9 +337,9 @@ def depth_step_array(depth: np.ndarray) -> np.ndarray:
     if depth_arr.size == 1:
         return np.ones(1, dtype=float)
     dz = np.abs(np.diff(depth_arr, prepend=depth_arr[0]))
-    if dz.size > 1 and dz[0] == 0.0:
-        dz[0] = float(np.nanmedian(dz[1:])) if np.any(dz[1:] > 0) else 1.0
-    dz[dz <= 0.0] = float(np.nanmedian(dz[dz > 0.0])) if np.any(dz > 0.0) else 1.0
+    positive = dz[np.isfinite(dz) & (dz > 0.0)]
+    fallback = float(np.median(positive)) if positive.size else 1.0
+    dz[~np.isfinite(dz) | (dz <= 0.0)] = fallback
     return dz
 
 

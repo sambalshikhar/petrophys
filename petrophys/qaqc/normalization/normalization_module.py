@@ -98,11 +98,12 @@ class NormalizationModule:
         np.ndarray
             Normalized log data
         """
-        # Extract array from Curve if needed
-        if hasattr(data, 'data'):
-            values = data.data.copy()
+        # Extract array from Curve-like objects without treating ndarray.data
+        # memoryviews as curve data.
+        if not isinstance(data, np.ndarray) and hasattr(data, "data"):
+            values = np.asarray(data.data, dtype=np.float64).copy()
         else:
-            values = np.asarray(data, dtype=np.float64)
+            values = np.asarray(data, dtype=np.float64).copy()
 
         # Auto-detect source range if not provided
         valid_data = values[~np.isnan(values)]
@@ -295,8 +296,11 @@ def linear_normalization(
     np.ndarray
         Normalized data
     """
+    data = np.asarray(data, dtype=float)
     if log_high == log_low:
-        return np.full_like(data, (log_min + log_max) / 2)
+        normalized = np.full_like(data, (log_min + log_max) / 2, dtype=float)
+        normalized[~np.isfinite(data)] = np.nan
+        return normalized
 
     normalized = log_min + (log_max - log_min) * (data - log_low) / (log_high - log_low)
     return normalized

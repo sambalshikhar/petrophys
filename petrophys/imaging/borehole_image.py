@@ -418,14 +418,22 @@ class BoreholeImageData:
         """Return image mean, min, max, standard deviation, and coverage."""
         arr = np.asarray(self.image, dtype=float)
         finite = np.isfinite(arr)
+        any_row = finite.any(axis=1)
+        stats = {
+            "mean": np.full(arr.shape[0], np.nan, dtype=float),
+            "min": np.full(arr.shape[0], np.nan, dtype=float),
+            "max": np.full(arr.shape[0], np.nan, dtype=float),
+            "std": np.full(arr.shape[0], np.nan, dtype=float),
+            "coverage": np.mean(finite, axis=1),
+        }
         with np.errstate(invalid="ignore"):
-            return {
-                "mean": np.nanmean(arr, axis=1),
-                "min": np.nanmin(arr, axis=1),
-                "max": np.nanmax(arr, axis=1),
-                "std": np.nanstd(arr, axis=1),
-                "coverage": np.mean(finite, axis=1),
-            }
+            if np.any(any_row):
+                valid = arr[any_row]
+                stats["mean"][any_row] = np.nanmean(valid, axis=1)
+                stats["min"][any_row] = np.nanmin(valid, axis=1)
+                stats["max"][any_row] = np.nanmax(valid, axis=1)
+                stats["std"][any_row] = np.nanstd(valid, axis=1)
+        return stats
 
     def to_well_curves(
         self, well: Optional["Well"] = None, prefix: str = "IMG"

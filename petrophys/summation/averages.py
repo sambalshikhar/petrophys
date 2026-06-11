@@ -5,6 +5,8 @@ Average calculations for zones and intervals.
 from typing import Optional, List, Dict, Union
 import numpy as np
 
+from petrophys.utils.analysis_helpers import resolve_well_depth_range, well_depth_array
+
 
 def calculate_zone_averages(
     well: "Well",
@@ -40,7 +42,7 @@ def calculate_zone_averages(
     dict
         Dictionary of curve averages
     """
-    depth = well.depth
+    depth = well_depth_array(well)
     mask = (depth >= top_depth) & (depth <= bottom_depth)
 
     if curves is None:
@@ -117,12 +119,8 @@ def calculate_pay_averages(
     dict
         Dictionary of averages over net pay
     """
-    depth = well.depth
-
-    if top_depth is None:
-        top_depth = well.start_depth or np.nanmin(depth)
-    if bottom_depth is None:
-        bottom_depth = well.stop_depth or np.nanmax(depth)
+    depth = well_depth_array(well)
+    top_depth, bottom_depth = resolve_well_depth_range(well, top_depth, bottom_depth)
 
     # Get pay mask
     net_pay = well.get(net_pay_curve)
@@ -194,12 +192,8 @@ def calculate_weighted_averages(
     dict
         Dictionary of weighted averages
     """
-    depth = well.depth
-
-    if top_depth is None:
-        top_depth = well.start_depth or np.nanmin(depth)
-    if bottom_depth is None:
-        bottom_depth = well.stop_depth or np.nanmax(depth)
+    depth = well_depth_array(well)
+    top_depth, bottom_depth = resolve_well_depth_range(well, top_depth, bottom_depth)
 
     # Build mask
     mask = (depth >= top_depth) & (depth <= bottom_depth)
@@ -271,12 +265,8 @@ def calculate_statistics(
     dict
         Dictionary with statistics
     """
-    depth = well.depth
-
-    if top_depth is None:
-        top_depth = well.start_depth or np.nanmin(depth)
-    if bottom_depth is None:
-        bottom_depth = well.stop_depth or np.nanmax(depth)
+    depth = well_depth_array(well)
+    top_depth, bottom_depth = resolve_well_depth_range(well, top_depth, bottom_depth)
 
     mask = (depth >= top_depth) & (depth <= bottom_depth)
 

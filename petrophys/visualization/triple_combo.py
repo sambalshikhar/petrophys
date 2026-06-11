@@ -14,6 +14,8 @@ except ImportError:
 
 import numpy as np
 
+from petrophys.utils.analysis_helpers import resolve_well_depth_range, well_depth_array
+
 
 class TripleComboPlot:
     """
@@ -64,14 +66,13 @@ class TripleComboPlot:
         """
         self.fig, self.axes = plt.subplots(1, 3, figsize=self.figsize, sharey=True)
 
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         # Set depth range
         if depth_range:
             top, bottom = depth_range
         else:
-            top = self.well.start_depth or np.nanmin(depth)
-            bottom = self.well.stop_depth or np.nanmax(depth)
+            top, bottom = resolve_well_depth_range(self.well)
 
         # Track 1: GR and Caliper
         ax1 = self.axes[0]
@@ -102,7 +103,7 @@ class TripleComboPlot:
 
     def _plot_track1(self, ax: "Axes", gr_range: Tuple[float, float]) -> None:
         """Plot GR and Caliper track."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         # GR
         gr_curve = self.well.get("GR")
@@ -131,7 +132,7 @@ class TripleComboPlot:
 
     def _plot_track2(self, ax: "Axes", rt_range: Tuple[float, float]) -> None:
         """Plot resistivity track."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         # Deep resistivity
         for name in ["RT", "LLD", "ILD", "RDEP", "AT90"]:
@@ -166,7 +167,7 @@ class TripleComboPlot:
         nphi_range: Tuple[float, float]
     ) -> None:
         """Plot density-neutron track."""
-        depth = self.well.depth
+        depth = well_depth_array(self.well)
 
         # Density
         rhob_curve = self.well.get("RHOB")

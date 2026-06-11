@@ -6,6 +6,15 @@ from typing import Optional, Dict, Union, Tuple
 import numpy as np
 
 
+def finite_min_max(values: np.ndarray) -> Tuple[Optional[float], Optional[float]]:
+    """Return finite min/max values, or ``(None, None)`` when none exist."""
+    arr = np.asarray(values, dtype=float).reshape(-1)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return None, None
+    return float(np.nanmin(finite)), float(np.nanmax(finite))
+
+
 def weighted_average(
     values: np.ndarray,
     weights: Optional[np.ndarray] = None,

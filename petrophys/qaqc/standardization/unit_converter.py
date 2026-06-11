@@ -215,13 +215,15 @@ def standardize_porosity_units(
 
     if current_unit in ["v/v", "fraction", "decimal"]:
         # Check if data looks like percentage
-        if np.nanmax(data) > 1.0:
+        finite = data[np.isfinite(data)]
+        if finite.size and np.nanmax(finite) > 1.0:
             data = data / 100.0
     elif current_unit in ["%", "pu", "percent"]:
         data = data / 100.0
     else:
         # Unknown unit, try to guess
-        if np.nanmax(data) > 1.0:
+        finite = data[np.isfinite(data)]
+        if finite.size and np.nanmax(finite) > 1.0:
             data = data / 100.0
 
     return data, "v/v"

@@ -71,8 +71,21 @@ def plot_calibration(
         label="Data",
     )
 
-    vmin = min(np.nanmin(result.core_values), np.nanmin(result.log_values))
-    vmax = max(np.nanmax(result.core_values), np.nanmax(result.log_values))
+    finite = np.concatenate(
+        [
+            np.asarray(result.core_values, dtype=float)[np.isfinite(result.core_values)],
+            np.asarray(result.log_values, dtype=float)[np.isfinite(result.log_values)],
+        ]
+    )
+    if finite.size:
+        vmin = float(np.nanmin(finite))
+        vmax = float(np.nanmax(finite))
+    else:
+        vmin, vmax = 0.0, 1.0
+    if vmax <= vmin:
+        pad = abs(vmax) * 0.1 if vmax else 1.0
+        vmin -= pad
+        vmax += pad
     ax.plot([vmin, vmax], [vmin, vmax], "r--", linewidth=1.5, label="1:1 line")
 
     if show_fit and not np.isnan(result.slope):

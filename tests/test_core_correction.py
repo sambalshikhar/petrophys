@@ -1,6 +1,13 @@
 import numpy as np
+import pytest
 
 from petrophys.base import Well
+from petrophys.core.calibration import (
+    correct_porosity_with_grain_density,
+    fit_poro_perm_transform,
+    interpolate_log_at_core,
+)
+from petrophys.core.core_data import CoreData
 from petrophys.petrophysics.permeability.perm_module import PermeabilityModule
 from petrophys.workflow.dynamic_workflow import DynamicWorkflow, DynamicWorkflowConfig, WorkflowStep
 
@@ -120,3 +127,39 @@ def test_peer_core_is_not_used_unless_explicitly_enabled():
     assert result.metadata["peer_core_enabled"] is False
     assert result.metadata["peer_core_models"] == 0
     assert result.metadata["perm_core"] is None
+
+
+def test_core_log_interpolation_sorts_descending_depth_and_averages_duplicates():
+    well = Well("CORE-INTERP")
+    well.depth = np.array([102.0, 100.0, 101.0, 101.0])
+    well.add_curve("PHIE", np.array([0.30, 0.10, 0.20, 0.22]), "v/v", "Porosity")
+    core = CoreData(depth=np.array([100.0, 101.0, 102.0]), porosity=np.ones(3))
+
+    values = interpolate_log_at_core(well, core, "PHIE")
+
+    np.testing.assert_allclose(values, [0.10, 0.21, 0.30])
+
+
+def test_grain_density_correction_interpolates_descending_core_depth():
+    well = Well("GDEN-DESC")
+    well.depth = np.array([100.0, 101.0, 102.0])
+    well.add_curve("RHOB", np.array([2.30, 2.30, 2.30]), "g/cc", "Bulk density")
+    core = CoreData(
+        depth=np.array([102.0, 100.0]),
+        grain_density=np.array([2.80, 2.60]),
+    )
+
+    phid = correct_porosity_with_grain_density(well, core)
+
+    np.testing.assert_allclose(phid, [(2.60 - 2.30) / 1.60, (2.70 - 2.30) / 1.70, (2.80 - 2.30) / 1.80])
+
+
+def test_poro_perm_transform_requires_two_valid_core_pairs():
+    core = CoreData(
+        depth=np.array([100.0, 101.0]),
+        porosity=np.array([0.20, np.nan]),
+        permeability=np.array([10.0, 20.0]),
+    )
+
+    with pytest.raises(ValueError, match="At least two valid"):
+        fit_poro_perm_transform(core)

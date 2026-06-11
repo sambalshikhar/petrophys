@@ -11,6 +11,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import numpy as np
 
+from petrophys.utils.statistics import finite_min_max
+
 try:
     import pandas as pd
     HAS_PANDAS = True
@@ -66,14 +68,14 @@ class CoreData:
         return len(self.depth)
 
     @property
-    def top(self) -> float:
+    def top(self) -> Optional[float]:
         """Shallowest core depth."""
-        return float(np.nanmin(self.depth))
+        return finite_min_max(self.depth)[0]
 
     @property
-    def bottom(self) -> float:
+    def bottom(self) -> Optional[float]:
         """Deepest core depth."""
-        return float(np.nanmax(self.depth))
+        return finite_min_max(self.depth)[1]
 
     # ---- Loaders ----
 
@@ -262,6 +264,11 @@ class CoreData:
             props.append("GD")
         if self.sw is not None:
             props.append("Sw")
+        depth_text = (
+            f"{self.top:.1f}-{self.bottom:.1f}"
+            if self.top is not None and self.bottom is not None
+            else "None-None"
+        )
         return (f"CoreData(plugs={self.n_plugs}, "
-                f"depth={self.top:.1f}-{self.bottom:.1f}, "
+                f"depth={depth_text}, "
                 f"props=[{', '.join(props)}])")

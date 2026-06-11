@@ -15,6 +15,8 @@ except ImportError:
 
 import numpy as np
 
+from petrophys.utils.analysis_helpers import resolve_well_depth_range, well_depth_array
+
 
 def plot_zone_flags(
     well: "Well",
@@ -54,16 +56,17 @@ def plot_zone_flags(
 
     fig, ax = plt.subplots(figsize=figsize)
 
-    depth = well.depth
+    depth = well_depth_array(well)
 
     # Set depth range
     if depth_range:
         top, bottom = depth_range
     else:
-        top = well.start_depth or np.nanmin(depth)
-        bottom = well.stop_depth or np.nanmax(depth)
+        top, bottom = resolve_well_depth_range(well)
 
     n_flags = len(flag_curves)
+    if n_flags == 0:
+        raise ValueError("At least one flag curve is required")
     width = 1.0 / n_flags
 
     for i, curve_name in enumerate(flag_curves):
@@ -89,7 +92,9 @@ def plot_zone_flags(
     ax.set_ylim(bottom, top)
     ax.set_xticks([])
     ax.set_ylabel("Depth")
-    ax.legend(loc='upper right', fontsize=8)
+    handles, _ = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(loc='upper right', fontsize=8)
 
     well_name = well.name or "Unknown Well"
     ax.set_title(f"Zone Flags - {well_name}")
@@ -172,14 +177,13 @@ def create_net_pay_summary_plot(
 
     fig, axes = plt.subplots(1, 2, figsize=figsize, sharey=True)
 
-    depth = well.depth
+    depth = well_depth_array(well)
 
     # Set depth range
     if depth_range:
         top, bottom = depth_range
     else:
-        top = well.start_depth or np.nanmin(depth)
-        bottom = well.stop_depth or np.nanmax(depth)
+        top, bottom = resolve_well_depth_range(well)
 
     # Track 1: GR for reference
     ax1 = axes[0]
@@ -217,7 +221,9 @@ def create_net_pay_summary_plot(
     ax2.set_xticks([0.165, 0.5, 0.83])
     ax2.set_xticklabels(['Clean Rock', 'Res', 'Pay'])
     ax2.set_xlabel("Net Flags")
-    ax2.legend(loc='upper right', fontsize=8)
+    handles, _ = ax2.get_legend_handles_labels()
+    if handles:
+        ax2.legend(loc='upper right', fontsize=8)
     ax2.grid(True, alpha=0.3)
 
     # Common settings
