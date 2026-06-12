@@ -240,18 +240,21 @@ def test_full_dynamic_workflow_records_trace_for_every_module(record_route):
 
     expected_steps = {
         "temperature", "bad_hole", "vclay", "rcl", "lithology", "rmf", "rw",
-        "invasion", "hc_correction", "porosity", "saturation", "permeability",
-        "rock_quality", "bvw", "mhi", "net_pay",
+        "invasion", "hc_correction", "porosity", "porosity_refinement",
+        "saturation", "permeability", "rock_quality", "bvw", "mhi", "net_pay",
     }
     executed = {step.step for step in result.steps_executed if step.success}
     assert expected_steps.issubset(executed)
     assert result.success
 
 
-def test_pipeline_solves_porosity_before_mineral_volumes():
+def test_pipeline_solves_provisional_porosity_before_lithology_then_refines():
     pipeline_steps = [step.value for step, _, _ in DynamicWorkflow().get_pipeline()]
 
     assert pipeline_steps.index("porosity") < pipeline_steps.index("lithology")
+    assert pipeline_steps.index("lithology") < pipeline_steps.index("porosity_refinement")
+    assert pipeline_steps.index("porosity_refinement") < pipeline_steps.index("core_correction")
+    assert pipeline_steps.index("core_correction") < pipeline_steps.index("saturation")
 
 
 def test_dynamic_workflow_preserves_vendor_vcl_and_phie_as_active_curves():
@@ -957,6 +960,59 @@ def test_porosity_phin_uses_lithology_specific_nphi_ma(record_route):
     assert endpoints["LIMESTONE"] == 0.00
     assert endpoints["DOLOMITE"] == 0.02
     assert any("lithology-specific matrix neutron endpoints" in item for item in step.decisions)
+
+
+def test_porosity_refinement_uses_computed_lithology_matrix_endpoints(record_route):
+    well = _routing_well("porosity_refined_from_computed_lithology", n=8)
+
+    result = _run(
+        "porosity_refined_from_computed_lithology",
+        well,
+        DynamicWorkflowConfig(
+            rw=0.05,
+            matrix_type="sandstone",
+            skip_steps=[
+                "temperature", "bad_hole", "vclay", "rcl", "rmf", "hc_correction",
+                "core_correction", "rw", "invasion", "saturation", "permeability",
+                "rock_quality", "bvw", "mhi", "net_pay",
+            ],
+        ),
+        record_route,
+        focus_steps=["porosity", "lithology", "porosity_refinement"],
+        curves=["LITHO", "PHIN", "PHID", "PHIT", "PHIE"],
+    )
+
+    initial = _step_by_name(result, "porosity")
+    refined = _step_by_name(result, "porosity_refinement")
+
+    assert initial.parameters["porosity_pass"] == "initial"
+    assert initial.parameters["matrix_mode"] == "constant"
+    assert refined.parameters["porosity_pass"] == "refined_after_computed_lithology"
+    assert refined.parameters["matrix_mode"] == "lithology_dependent"
+    assert refined.parameters["matrix_source"] == "computed_lithology_curve"
+    assert refined.parameters["uses_computed_lithology"] is True
+    assert refined.parameters["matrix_endpoints"]
+    assert well.get("LITHO") is not None
+    assert any("computed lithology matrix endpoints" in item for item in refined.decisions)
+
+
+def test_porosity_refinement_skips_when_porosity_step_is_skipped():
+    well = _routing_well("porosity_refinement_skip_follows_porosity")
+
+    result = DynamicWorkflow(
+        DynamicWorkflowConfig(
+            rw=0.05,
+            skip_steps=[
+                "temperature", "bad_hole", "vclay", "rcl", "rmf", "hc_correction",
+                "porosity", "core_correction", "rw", "invasion", "saturation",
+                "permeability", "rock_quality", "bvw", "mhi", "net_pay",
+            ],
+        )
+    ).run(well)
+
+    assert "porosity" in result.steps_skipped
+    assert "porosity_refinement" in result.steps_skipped
+    assert _step_or_none(result, "porosity_refinement") is None
 
 
 def test_porosity_phit_falls_back_to_phid_where_nphi_missing(record_route):

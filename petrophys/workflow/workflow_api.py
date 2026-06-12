@@ -70,6 +70,13 @@ STEP_META: dict[str, dict] = {
         "required": True,
         "methods": ["density", "neutron", "sonic", "density_neutron"],
     },
+    WorkflowStep.POROSITY_REFINEMENT: {
+        "description": "Recompute porosity after inferred lithology is available, using lithology-specific matrix endpoints.",
+        "inputs":  ["RHOB", "NPHI", "DTC", "LITHO"],
+        "outputs": ["PHIN", "PHID", "PHIS", "PHIT", "PHIE"],
+        "required": False,
+        "methods": ["density", "neutron", "sonic", "density_neutron"],
+    },
     WorkflowStep.SATURATION: {
         "description": "Compute water saturation (Sw) via Archie or Simandoux.",
         "inputs":  ["RT", "PHIE", "RW", "VCL"],
@@ -110,11 +117,13 @@ CATEGORY_STEP_MAP: dict[str, list[WorkflowStep]] = {
         WorkflowStep.TEMPERATURE, WorkflowStep.BAD_HOLE, WorkflowStep.VCLAY,
         WorkflowStep.RCL, WorkflowStep.LITHOLOGY, WorkflowStep.RMF, WorkflowStep.RW,
         WorkflowStep.INVASION, WorkflowStep.HC_CORRECTION, WorkflowStep.POROSITY,
+        WorkflowStep.POROSITY_REFINEMENT,
         WorkflowStep.SATURATION, WorkflowStep.PERMEABILITY, WorkflowStep.BVW,
         WorkflowStep.MHI, WorkflowStep.NET_PAY,
     ],
     "porosity": [
         WorkflowStep.TEMPERATURE, WorkflowStep.BAD_HOLE, WorkflowStep.POROSITY,
+        WorkflowStep.POROSITY_REFINEMENT,
     ],
     "saturation": [
         WorkflowStep.TEMPERATURE, WorkflowStep.BAD_HOLE,
@@ -125,7 +134,7 @@ CATEGORY_STEP_MAP: dict[str, list[WorkflowStep]] = {
     ],
     "lithology": [
         WorkflowStep.TEMPERATURE, WorkflowStep.BAD_HOLE, WorkflowStep.VCLAY,
-        WorkflowStep.LITHOLOGY,
+        WorkflowStep.POROSITY, WorkflowStep.LITHOLOGY, WorkflowStep.POROSITY_REFINEMENT,
     ],
     "hydrocarbon": [
         WorkflowStep.TEMPERATURE, WorkflowStep.BAD_HOLE, WorkflowStep.SATURATION, WorkflowStep.BVW, WorkflowStep.MHI, WorkflowStep.NET_PAY,
