@@ -365,7 +365,7 @@ def resolve_swirr(
 
     Priority:
     1. Explicit ``SWIRR`` / ``SWI`` curves
-    2. NMR-derived Swirr from NMR/CMR curves when available
+    2. NMR-derived Swirr from NMR curves when available
     3. ``P5(SW)`` where reservoir flag is true and ``RDEP > 5 ohm.m``
     4. Scalar fallback ``0.20``
     """
