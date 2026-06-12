@@ -6,8 +6,8 @@ from petrophys import Well
 from petrophys.imaging import BoreholeImageData
 from petrophys.visualization import (
     create_fmi_panel,
-    create_nmr_cmr_panel,
-    has_nmr_cmr_curves,
+    create_nmr_panel,
+    has_nmr_curves,
 )
 
 
@@ -26,11 +26,11 @@ def _nmr_well():
     return well
 
 
-def test_nmr_cmr_specialist_panel_saves(tmp_path):
+def test_nmr_specialist_panel_saves(tmp_path):
     well = _nmr_well()
 
-    assert has_nmr_cmr_curves(well)
-    fig = create_nmr_cmr_panel(well)
+    assert has_nmr_curves(well)
+    fig = create_nmr_panel(well)
     output = tmp_path / "nmr_panel.png"
     fig.savefig(output, dpi=40)
 

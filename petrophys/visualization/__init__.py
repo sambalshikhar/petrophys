@@ -26,8 +26,8 @@ from petrophys.visualization.pickett_plot import PickettPlot, create_pickett_plo
 from petrophys.visualization.zone_flags import plot_zone_flags, add_zone_shading
 from petrophys.visualization.specialist_panels import (
     create_fmi_panel,
-    create_nmr_cmr_panel,
-    has_nmr_cmr_curves,
+    create_nmr_panel,
+    has_nmr_curves,
 )
 
 __all__ = [
@@ -61,6 +61,6 @@ __all__ = [
     "add_zone_shading",
     # Specialist panels
     "create_fmi_panel",
-    "create_nmr_cmr_panel",
-    "has_nmr_cmr_curves",
+    "create_nmr_panel",
+    "has_nmr_curves",
 ]

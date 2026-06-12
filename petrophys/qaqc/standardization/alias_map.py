@@ -111,7 +111,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
     "TEMP": ["TEMP", "TEMPERATURE", "BHT", "TLOG", "GTMP", "CMR_TEMP"],
     # Core-calibrated porosity
     "PHIE_CC": ["PHIE_CC", "PHIE_CORECAL"],
-    # NMR / CMR processed outputs
+    # NMR processed outputs, including vendor-specific aliases
     "NMR_PHIT": ["MPHI", "TCMR", "CMRPHI", "NMRP", "PHINMR"],
     "NMR_FFI": ["MFFI", "CMFF", "CMR_FFI", "NMR_FFI", "FFI"],
     "NMR_BVI": ["MBVI", "CBVI", "CMR_BVI", "NMR_BVI", "BVI"],

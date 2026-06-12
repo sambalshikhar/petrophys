@@ -160,13 +160,24 @@ def read_ascii(
         else:
             delimiter = r'\s+'  # whitespace
 
+    if column_names:
+        skiprow_indices = set(range(skiprows + header_line + 1))
+        if units_line is not None:
+            skiprow_indices.add(units_line)
+        read_skiprows = sorted(skiprow_indices)
+    else:
+        skiprow_indices = set(range(skiprows))
+        if units_line is not None and units_line != header_line:
+            skiprow_indices.add(units_line)
+        read_skiprows = sorted(skiprow_indices) if skiprow_indices else None
+
     # Read data
     if column_names:
         df = pd.read_csv(
             filepath,
             delimiter=delimiter,
             names=column_names,
-            skiprows=skiprows + header_line + 1,
+            skiprows=read_skiprows,
             na_values=na_values,
             **kwargs
         )
@@ -174,7 +185,7 @@ def read_ascii(
         df = pd.read_csv(
             filepath,
             delimiter=delimiter,
-            skiprows=skiprows,
+            skiprows=read_skiprows,
             header=header_line,
             na_values=na_values,
             **kwargs

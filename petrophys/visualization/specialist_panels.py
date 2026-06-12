@@ -3,7 +3,7 @@ Specialist visualization panels for logs outside the normal triple-combo view.
 
 The regular visualization stack already provides triple-combo, petrophysical
 interpretation, crossplots, Pickett plots, zone flags, and template-driven log
-viewer pages. This module only adds specialist panels for NMR/CMR and FMI data.
+viewer pages. This module only adds specialist panels for NMR and FMI data.
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ NMR_BVI_ALIASES = ("MBVI", "CBVI", "NMR_BVI", "CMR_BVI", "BVI")
 NMR_SWIRR_ALIASES = ("SWIRR_NMR", "NMR_SWIRR", "SWIRR_CMR", "CMR_SWIRR")
 
 
-def has_nmr_cmr_curves(well: "Well") -> bool:
-    """Return True when a well contains NMR/CMR summary curves."""
+def has_nmr_curves(well: "Well") -> bool:
+    """Return True when a well contains NMR summary curves."""
     return any(
         _curve(well, aliases) is not None
         for aliases in (
@@ -46,12 +46,12 @@ def has_nmr_cmr_curves(well: "Well") -> bool:
     )
 
 
-def create_nmr_cmr_panel(
+def create_nmr_panel(
     well: "Well",
     depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (15, 11),
 ) -> "plt.Figure":
-    """Create an NMR/CMR specialist panel for processed NMR summary logs."""
+    """Create an NMR specialist panel for processed NMR summary logs."""
     _require_matplotlib()
     depth = _depth(well)
     top, bottom = _resolve_depth_range(depth, depth_range)
@@ -104,7 +104,7 @@ def create_nmr_cmr_panel(
         ax_t2.set_xlabel("T2 cutoff [ms]", fontsize=8)
         _set_data_xlim(ax_t2, cutoff)
 
-    _finalize_log_figure(fig, axes, well, "NMR / CMR Panel")
+    _finalize_log_figure(fig, axes, well, "NMR Panel")
     return fig
 
 
@@ -304,6 +304,6 @@ def _require_matplotlib() -> None:
 
 __all__ = [
     "create_fmi_panel",
-    "create_nmr_cmr_panel",
-    "has_nmr_cmr_curves",
+    "create_nmr_panel",
+    "has_nmr_curves",
 ]

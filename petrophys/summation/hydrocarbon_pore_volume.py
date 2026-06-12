@@ -278,6 +278,15 @@ def calculate_hcpv_from_well(
 
     # Calculate net pay thickness
     net_pay_ft = float(np.sum(depth_step_array(depth)[pay_mask]))
+    if net_pay_ft <= 0.0:
+        return calculate_hcpv(
+            area_acres=area_acres,
+            net_pay_ft=0.0,
+            porosity=0.0,
+            sw=0.0,
+            bo=bo,
+            bg=bg
+        )
 
     # Get average properties over pay
     phie = well.get("PHIE")
