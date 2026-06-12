@@ -26,9 +26,23 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RLA5",
         "ILS",
         "M2RX",
+        "RESDEP",
+        "RVDR",
+        "RVDRU",
     ],
     # Medium Resistivity (RMED)
-    "RMED": ["AT10", "RLLS", "SFLU", "RESS", "ILM", "AT30", "RM", "RMED", "RLA3"],
+    "RMED": [
+        "AT10",
+        "RLLS",
+        "SFLU",
+        "RESS",
+        "ILM",
+        "AT30",
+        "RM",
+        "RMED",
+        "RLA3",
+        "RESMED",
+    ],
     # Shallow Resistivity (RSHA)
     "RSHA": [
         "LLS",
@@ -42,9 +56,24 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RS",
         "RSHAL",
         "RSHALLOW",
+        "RVSR",
+        "RVSRU",
     ],
     # Flushed zone Resistivity (RXO)
-    "RXO": ["MSFL", "MCFL", "MLL", "RXOZ", "RXO", "RMLL", "PL"],
+    "RXO": [
+        "MSFL",
+        "MCFL",
+        "MLL",
+        "RXOZ",
+        "RXO",
+        "RMLL",
+        "PL",
+        "RESMIC",
+        "RXO8",
+        "RXO82",
+        "RXOI",
+        "RXR",
+    ],
     # Bulk Density (RHOB)
     "RHOB": [
         "RHOB",
@@ -57,6 +86,8 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RHOM",
         "DENB",
         "BULK_DEN",
+        "RHO8",
+        "RHOI",
     ],
     # Density Correction (DRHO)
     "DRHO": ["DRHO", "DCOR", "HDRA", "DENC"],
@@ -96,7 +127,22 @@ ALIAS_MAP: Dict[str, List[str]] = {
     # Caliper (CALI)
     "CALI": ["CALI", "HCAL", "CAL", "CALIPER", "C1", "C2", "HD1_PPC1", "HD2_PPC1"],
     # Gamma Ray (GR)
-    "GR": ["GR", "SGR", "CGR", "GAMMA", "GAPI", "GRN", "GRD", "GR_EDTC", "HSGR"],
+    "GR": [
+        "GR",
+        "SGR",
+        "CGR",
+        "GAMMA",
+        "GAPI",
+        "GRN",
+        "GRD",
+        "GR_EDTC",
+        "HSGR",
+        "ECGR",
+        "ECGR_EDTC",
+        "HCGR",
+        "HGR",
+        "HGR_EDTC",
+    ],
     # Spectral Gamma - Total (SGR)
     "SGR": ["SGR", "GR_S", "HSGR", "SGRC"],
     # Spectral Gamma - Computed (CGR)
@@ -109,6 +155,10 @@ ALIAS_MAP: Dict[str, List[str]] = {
     "DEPTH": ["DEPT", "DEPTH", "MD", "TVD", "TVDSS", "DEPH"],
     # Temperature
     "TEMP": ["TEMP", "TEMPERATURE", "BHT", "TLOG", "GTMP", "CMR_TEMP"],
+    # Interpreted porosity and shale/clay volume
+    "PHIT": ["PHIT", "PHIT_HILT"],
+    "PHIE": ["PHIE", "PHIE_HILT", "PHIE_D", "PHIE_ND", "PHIE_S"],
+    "VCL": ["VCL", "VCLAY", "VSH", "VSH_GR", "VSH_ND", "VCL_HILT"],
     # Core-calibrated porosity
     "PHIE_CC": ["PHIE_CC", "PHIE_CORECAL"],
     # NMR processed outputs, including vendor-specific aliases
@@ -209,6 +259,9 @@ def find_curve_type(mnemonic: str) -> Optional[str]:
         "BS": "Bit Size",
         "DEPTH": "Depth",
         "TEMP": "Temperature",
+        "PHIT": "Total Porosity",
+        "PHIE": "Effective Porosity",
+        "VCL": "Clay Volume",
         "NMR_PHIT": "NMR Total Porosity",
         "NMR_FFI": "NMR Free Fluid",
         "NMR_BVI": "NMR Bound Fluid",
@@ -243,6 +296,9 @@ STANDARD_UNITS: Dict[str, str] = {
     "BS": "in",
     "DEPTH": "ft",
     "TEMP": "F",
+    "PHIT": "v/v",
+    "PHIE": "v/v",
+    "VCL": "v/v",
     "NMR_PHIT": "pu",
     "NMR_FFI": "pu",
     "NMR_BVI": "pu",

@@ -108,7 +108,7 @@ class BatchProcessor:
                 if path.suffix.lower() == '.las':
                     well = read_las(str(path))
                 elif path.suffix.lower() in ['.dlis', '.dls']:
-                    well = read_dlis(str(path))
+                    well = read_dlis(str(path), merge_frames=True)
                 else:
                     self.results.append(BatchResult(
                         well_name=path.stem,

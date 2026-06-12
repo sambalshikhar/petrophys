@@ -9,7 +9,7 @@ This module provides readers and writers for common well log formats:
 """
 
 from petrophys.io.las_reader import read_las, LASReader
-from petrophys.io.dlis_reader import read_dlis, DLISReader
+from petrophys.io.dlis_reader import read_dlis, read_dlis_merged, DLISReader
 from petrophys.io.ascii_reader import read_ascii, read_csv
 from petrophys.io.export import export_las, export_csv, export_excel
 from petrophys.imaging import (
@@ -34,6 +34,7 @@ __all__ = [
     "read_las",
     "LASReader",
     "read_dlis",
+    "read_dlis_merged",
     "DLISReader",
     "read_borehole_image_dlis",
     "read_borehole_image_las",

@@ -238,8 +238,9 @@ class CurveStandardizer:
                 standard_unit = get_standard_unit(standard_name)
                 if standard_unit and curve.unit:
                     factor = get_conversion_factor(curve.unit, standard_unit)
-                    if factor is not None and factor != 1.0:
-                        new_curve._data = new_curve._data * factor
+                    if factor is not None:
+                        if factor != 1.0:
+                            new_curve._data = new_curve._data * factor
                         new_curve.unit = standard_unit
 
             _screen_standard_curve_values(new_curve, standard_name)
@@ -304,7 +305,8 @@ class CurveStandardizer:
             if standard_unit and curve.unit:
                 factor = get_conversion_factor(curve.unit, standard_unit)
                 if factor is not None:
-                    new_curve._data = new_curve._data * factor
+                    if factor != 1.0:
+                        new_curve._data = new_curve._data * factor
                     new_curve.unit = standard_unit
 
         _screen_standard_curve_values(new_curve, standard_name)

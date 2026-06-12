@@ -5,7 +5,7 @@ This module provides functionality to read DLIS (Digital Log Interchange Standar
 files and convert them to Well objects.
 """
 
-from typing import Optional, Union, Dict, Any, List
+from typing import Optional, Union, Dict, Any, List, Iterable, Tuple
 from pathlib import Path
 import warnings
 import numpy as np
@@ -16,6 +16,176 @@ try:
     HAS_DLISIO = True
 except ImportError:
     HAS_DLISIO = False
+
+
+DEPTH_CHANNELS = {"TDEP", "DEPTH", "DEPT", "MD"}
+FRAME_NUMBER_FIELDS = {"FRAMENO"}
+COMMON_NULL_VALUES = (-999.25, -999.0, -9999.0, -99999.0)
+
+
+def _unit_text(unit: str) -> str:
+    return (unit or "").strip().lower().replace(" ", "")
+
+
+def _depth_to_m_factor(unit: str) -> Optional[float]:
+    unit_norm = _unit_text(unit)
+    if unit_norm in {"m", "meter", "meters", "metre", "metres"}:
+        return 1.0
+    if unit_norm in {"ft", "feet", "foot"}:
+        return 0.3048
+    if unit_norm in {"in", "inch", "inches"}:
+        return 0.0254
+    if unit_norm in {"0.1in", ".1in", "1/10in", "0.1inch", "0.1inches"}:
+        return 0.00254
+    return None
+
+
+def _convert_depth(
+    depth: np.ndarray,
+    source_unit: str,
+    target_unit: Optional[str] = None,
+) -> Tuple[np.ndarray, str]:
+    """Return depth in a plotting/workflow-friendly unit."""
+    arr = np.asarray(depth, dtype=float).copy()
+    source = source_unit or ""
+    source_norm = _unit_text(source)
+
+    if target_unit is None:
+        # DLIS tool depth is commonly stored as integer tenths of an inch.
+        # Treat it as an encoding and expose measured depth in metres.
+        target_unit = "m" if source_norm in {"0.1in", ".1in", "1/10in"} else source
+
+    if not target_unit:
+        return arr, source
+
+    source_to_m = _depth_to_m_factor(source)
+    target_to_m = _depth_to_m_factor(target_unit)
+    if source_to_m is None or target_to_m is None:
+        return arr, source
+
+    return arr * source_to_m / target_to_m, target_unit
+
+
+def _channel_field_names(frame, frame_data) -> List[Optional[str]]:
+    """Map DLIS channels to structured-array field names."""
+    dtype_names = list(frame_data.dtype.names or [])
+    fields = [name for name in dtype_names if name.upper() not in FRAME_NUMBER_FIELDS]
+    channels = list(frame.channels)
+
+    if len(fields) >= len(channels):
+        return fields[:len(channels)]
+
+    used: set[str] = set()
+    resolved: List[Optional[str]] = []
+    for channel in channels:
+        name = str(channel.name)
+        exact = next((field for field in fields if field == name and field not in used), None)
+        if exact is None:
+            prefix = f"{name}."
+            exact = next(
+                (field for field in fields if field.startswith(prefix) and field not in used),
+                None,
+            )
+        if exact is not None:
+            used.add(exact)
+        resolved.append(exact)
+    return resolved
+
+
+def _clean_numeric(data: np.ndarray) -> np.ndarray:
+    arr = np.asarray(data, dtype=float).copy()
+    for null_value in COMMON_NULL_VALUES:
+        arr[np.isclose(arr, null_value, equal_nan=False)] = np.nan
+    return arr
+
+
+def _as_scalar_curve(data: np.ndarray, n_samples: int) -> Optional[np.ndarray]:
+    arr = np.asarray(data)
+    squeezed = np.squeeze(arr)
+    if squeezed.ndim == 1 and len(squeezed) == n_samples:
+        return _clean_numeric(squeezed)
+    if squeezed.ndim == 2 and squeezed.shape[0] == n_samples and squeezed.shape[1] == 1:
+        return _clean_numeric(squeezed[:, 0])
+    return None
+
+
+def _finite_depth_range(depth: np.ndarray) -> Optional[Tuple[float, float]]:
+    finite = np.asarray(depth, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return None
+    return float(np.nanmin(finite)), float(np.nanmax(finite))
+
+
+def _median_step(depth: np.ndarray) -> Optional[float]:
+    finite = np.asarray(depth, dtype=float)
+    finite = np.unique(finite[np.isfinite(finite)])
+    if finite.size < 2:
+        return None
+    steps = np.diff(np.sort(finite))
+    steps = steps[np.isfinite(steps) & (steps > 0)]
+    if steps.size == 0:
+        return None
+    return float(np.nanmedian(steps))
+
+
+def _prepare_for_resample(
+    depth: np.ndarray,
+    values: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    depth_arr = np.asarray(depth, dtype=float)
+    value_arr = np.asarray(values, dtype=float)
+    valid = np.isfinite(depth_arr) & np.isfinite(value_arr)
+    if np.count_nonzero(valid) < 2:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    depth_arr = depth_arr[valid]
+    value_arr = value_arr[valid]
+    order = np.argsort(depth_arr)
+    depth_arr = depth_arr[order]
+    value_arr = value_arr[order]
+
+    unique_depth, inverse = np.unique(depth_arr, return_inverse=True)
+    if unique_depth.size == depth_arr.size:
+        return depth_arr, value_arr
+
+    sums = np.zeros(unique_depth.size, dtype=float)
+    counts = np.zeros(unique_depth.size, dtype=float)
+    np.add.at(sums, inverse, value_arr)
+    np.add.at(counts, inverse, 1.0)
+    return unique_depth, sums / counts
+
+
+def _resample_to_depth(
+    source_depth: np.ndarray,
+    values: np.ndarray,
+    target_depth: np.ndarray,
+) -> np.ndarray:
+    depth, data = _prepare_for_resample(source_depth, values)
+    if depth.size < 2:
+        return np.full_like(target_depth, np.nan, dtype=float)
+    return np.interp(target_depth, depth, data, left=np.nan, right=np.nan)
+
+
+def _name_set(names: Optional[Iterable[str]]) -> Optional[set[str]]:
+    if names is None:
+        return None
+    if isinstance(names, str):
+        return {names.upper()}
+    return {str(name).upper() for name in names}
+
+
+def _channel_requested(channel_name: str, requested: Optional[set[str]]) -> bool:
+    if requested is None:
+        return True
+    name = str(channel_name).upper()
+    if name in requested:
+        return True
+    try:
+        from petrophys.qaqc.standardization.alias_map import get_standard_mnemonic
+    except Exception:
+        return False
+    return get_standard_mnemonic(name).upper() in requested
 
 
 class DLISReader:
@@ -107,7 +277,11 @@ class DLISReader:
         return info
 
     def to_well(
-        self, frame_name: Optional[str] = None, channels: Optional[List[str]] = None
+        self,
+        frame_name: Optional[str] = None,
+        channels: Optional[List[str]] = None,
+        depth_unit: Optional[str] = None,
+        include_vector_channels: bool = True,
     ) -> "Well":
         """
         Convert DLIS data to Well object.
@@ -118,6 +292,9 @@ class DLISReader:
             Name of frame to read (default: first frame)
         channels : list of str, optional
             Specific channels to read (default: all)
+        depth_unit : str, optional
+            Target depth unit. DLIS ``0.1 in`` tool depth is converted to metres
+            by default.
 
         Returns
         -------
@@ -154,41 +331,54 @@ class DLISReader:
         else:
             frame = frames[0]
 
+        requested = _name_set(channels)
+
         # Read frame data
         frame_data = frame.curves()
+        field_names = _channel_field_names(frame, frame_data)
 
         # Find depth channel
         depth_data = None
-        depth_unit = "ft"
+        target_depth_unit = depth_unit
         depth_channel = None
 
-        for ch in frame.channels:
-            if ch.name.upper() in ["TDEP", "DEPTH", "DEPT", "MD"]:
+        for ch, field_name in zip(frame.channels, field_names):
+            if ch.name.upper() in DEPTH_CHANNELS and field_name is not None:
                 depth_channel = ch.name
-                depth_data = frame_data[ch.name]
-                depth_unit = ch.units or "ft"
+                depth_data = frame_data[field_name]
+                source_depth_unit = ch.units or "ft"
                 break
 
         if depth_data is not None:
             # Handle multi-dimensional depth (take first column if needed)
             if len(depth_data.shape) > 1:
                 depth_data = depth_data[:, 0]
-            well._depth = depth_data.flatten()
-            well._depth_unit = depth_unit
+            well._depth, well._depth_unit = _convert_depth(
+                depth_data.flatten(),
+                source_depth_unit,
+                target_depth_unit,
+            )
 
         # Add channels as curves
-        for ch in frame.channels:
-            if channels and ch.name not in channels:
+        for ch, field_name in zip(frame.channels, field_names):
+            if not _channel_requested(ch.name, requested):
                 continue
             if ch.name == depth_channel:
                 continue
+            if ch.name.upper() in DEPTH_CHANNELS:
+                continue
+            if field_name is None:
+                warnings.warn(f"Skipping DLIS channel {ch.name!r}: no data field found")
+                continue
 
-            data = frame_data[ch.name]
+            data = frame_data[field_name]
 
             # Handle multi-dimensional data. FMI/image channels often arrive
             # as (n_depth, 1, n_buttons); squeeze singleton dimensions, then
             # split true per-depth columns into separate scalar curves.
             if len(data.shape) > 1:
+                if not include_vector_channels:
+                    continue
                 squeezed = np.squeeze(data)
                 if squeezed.ndim == 1:
                     squeezed = squeezed.reshape(-1, 1)
@@ -209,7 +399,7 @@ class DLISReader:
                     )
                     curve = Curve(
                         mnemonic=curve_name,
-                        data=squeezed[:, i].flatten(),
+                        data=_clean_numeric(squeezed[:, i].flatten()),
                         unit=ch.units or "",
                         depth=well._depth,
                         depth_unit=well._depth_unit,
@@ -224,7 +414,7 @@ class DLISReader:
                 )
                 curve = Curve(
                     mnemonic=ch.name,
-                    data=data.flatten(),
+                    data=_clean_numeric(data.flatten()),
                     unit=ch.units or "",
                     depth=well._depth,
                     depth_unit=well._depth_unit,
@@ -232,6 +422,161 @@ class DLISReader:
                 )
                 well._curves[ch.name.upper()] = curve
 
+        return well
+
+    def to_merged_well(
+        self,
+        frame_names: Optional[Iterable[str]] = None,
+        channels: Optional[Iterable[str]] = None,
+        depth_unit: str = "m",
+        step: Optional[float] = None,
+        target_depth: Optional[np.ndarray] = None,
+        standardize: bool = True,
+    ) -> "Well":
+        """
+        Merge scalar channels from multiple DLIS frames onto one depth index.
+
+        This path is intended for conventional scalar log interpretation. Vector
+        channels such as spectra and borehole images are skipped; image DLIS files
+        should use the imaging readers.
+        """
+        from petrophys.base.well import Well
+        from petrophys.base.curve import Curve, CurveMetadata
+        from petrophys.base.data_types import DataType
+
+        selected_frames = _name_set(frame_names)
+        requested = _name_set(channels)
+        well_info = self.get_well_info()
+
+        frame_payloads: List[Dict[str, Any]] = []
+        for frame in self.active_file.frames:
+            if selected_frames and frame.name.upper() not in selected_frames:
+                continue
+
+            try:
+                frame_data = frame.curves()
+            except Exception as exc:
+                warnings.warn(f"Skipping DLIS frame {frame.name!r}: {exc}")
+                continue
+
+            field_names = _channel_field_names(frame, frame_data)
+            depth = None
+            for ch, field_name in zip(frame.channels, field_names):
+                if ch.name.upper() in DEPTH_CHANNELS and field_name is not None:
+                    raw_depth = np.asarray(frame_data[field_name], dtype=float)
+                    if raw_depth.ndim > 1:
+                        raw_depth = raw_depth[:, 0]
+                    depth, _ = _convert_depth(
+                        raw_depth.flatten(),
+                        ch.units or "",
+                        depth_unit,
+                    )
+                    break
+            if depth is None or _finite_depth_range(depth) is None:
+                continue
+
+            curves: List[Dict[str, Any]] = []
+            n_samples = len(depth)
+            for ch, field_name in zip(frame.channels, field_names):
+                name = ch.name.upper()
+                if not _channel_requested(name, requested):
+                    continue
+                if name in DEPTH_CHANNELS or field_name is None:
+                    continue
+
+                values = _as_scalar_curve(frame_data[field_name], n_samples)
+                if values is None or not np.any(np.isfinite(values)):
+                    continue
+
+                curves.append({
+                    "name": ch.name,
+                    "unit": ch.units or "",
+                    "description": ch.long_name or "",
+                    "values": values,
+                    "frame": frame.name,
+                })
+
+            if curves:
+                frame_payloads.append({
+                    "name": frame.name,
+                    "depth": depth,
+                    "curves": curves,
+                    "step": _median_step(depth),
+                })
+
+        well = Well(name=well_info.get("well_name", ""))
+        well.header.well_name = well_info.get("well_name", "")
+        well.header.field = well_info.get("field_name", "")
+        well.header.company = well_info.get("company", "")
+
+        if not frame_payloads:
+            warnings.warn("No scalar DLIS frames could be merged")
+            return well
+
+        if target_depth is None:
+            ranges = [_finite_depth_range(payload["depth"]) for payload in frame_payloads]
+            ranges = [item for item in ranges if item is not None]
+            top = min(item[0] for item in ranges)
+            bottom = max(item[1] for item in ranges)
+            if step is None:
+                steps = [
+                    payload["step"]
+                    for payload in frame_payloads
+                    if payload["step"] is not None and payload["step"] > 0
+                ]
+                step = max(steps) if steps else (bottom - top)
+            target_depth = np.arange(top, bottom + float(step) * 0.5, float(step))
+        else:
+            target_depth = np.asarray(target_depth, dtype=float)
+
+        well._depth = np.asarray(target_depth, dtype=float)
+        well._depth_unit = depth_unit
+
+        best_counts: Dict[str, int] = {}
+        source_frames: Dict[str, str] = {}
+        for payload in frame_payloads:
+            source_depth = payload["depth"]
+            for curve_info in payload["curves"]:
+                mnemonic = str(curve_info["name"]).upper()
+                resampled = _resample_to_depth(
+                    source_depth,
+                    curve_info["values"],
+                    well._depth,
+                )
+                valid_count = int(np.count_nonzero(np.isfinite(resampled)))
+                if valid_count == 0:
+                    continue
+                if mnemonic in best_counts and valid_count <= best_counts[mnemonic]:
+                    continue
+
+                metadata = CurveMetadata(
+                    description=curve_info["description"],
+                    source="DLIS",
+                    data_type=DataType.CURVE,
+                    custom={"frame": curve_info["frame"]},
+                )
+                well._curves[mnemonic] = Curve(
+                    mnemonic=mnemonic,
+                    data=resampled,
+                    unit=curve_info["unit"],
+                    depth=well._depth,
+                    depth_unit=well._depth_unit,
+                    metadata=metadata,
+                )
+                best_counts[mnemonic] = valid_count
+                source_frames[mnemonic] = curve_info["frame"]
+
+        well._parameters["dlis_merge"] = {
+            "frames": [payload["name"] for payload in frame_payloads],
+            "depth_unit": depth_unit,
+            "step": float(step) if step is not None else None,
+            "source_frames": source_frames,
+        }
+
+        if standardize:
+            from petrophys.qaqc.standardization import standardize_curves
+
+            well = standardize_curves(well, rename_curves=True, convert_units=True)
         return well
 
     def close(self):
@@ -251,6 +596,11 @@ def read_dlis(
     frame_name: Optional[str] = None,
     channels: Optional[List[str]] = None,
     logical_file: int = 0,
+    depth_unit: Optional[str] = None,
+    include_vector_channels: bool = True,
+    merge_frames: Optional[bool] = None,
+    standardize: bool = True,
+    step: Optional[float] = None,
     **kwargs,
 ) -> "Well":
     """
@@ -266,6 +616,12 @@ def read_dlis(
         Specific channels to read
     logical_file : int, optional
         Index of logical file to read (default: 0)
+    depth_unit : str, optional
+        Target depth unit. DLIS ``0.1 in`` depth is converted to metres by default.
+    merge_frames : bool, optional
+        Merge scalar channels from all selected frames onto one depth index.
+        By default, this is enabled when no frame_name is supplied so DLIS behaves
+        like a full well-log input. Set False to read a single frame.
     **kwargs
         Additional arguments (reserved)
 
@@ -282,4 +638,41 @@ def read_dlis(
     with DLISReader(filepath) as reader:
         if logical_file > 0:
             reader.set_active_file(logical_file)
-        return reader.to_well(frame_name=frame_name, channels=channels)
+        do_merge = frame_name is None if merge_frames is None else merge_frames
+        if do_merge:
+            frame_names = [frame_name] if frame_name else None
+            return reader.to_merged_well(
+                frame_names=frame_names,
+                channels=channels,
+                depth_unit=depth_unit or "m",
+                step=step,
+                standardize=standardize,
+            )
+        return reader.to_well(
+            frame_name=frame_name,
+            channels=channels,
+            depth_unit=depth_unit,
+            include_vector_channels=include_vector_channels,
+        )
+
+
+def read_dlis_merged(
+    filepath: Union[str, Path],
+    frame_names: Optional[Iterable[str]] = None,
+    channels: Optional[Iterable[str]] = None,
+    logical_file: int = 0,
+    depth_unit: str = "m",
+    step: Optional[float] = None,
+    standardize: bool = True,
+) -> "Well":
+    """Read scalar DLIS log frames, merge them, and return one Well."""
+    with DLISReader(filepath) as reader:
+        if logical_file > 0:
+            reader.set_active_file(logical_file)
+        return reader.to_merged_well(
+            frame_names=frame_names,
+            channels=channels,
+            depth_unit=depth_unit,
+            step=step,
+            standardize=standardize,
+        )
