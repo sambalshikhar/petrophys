@@ -6,13 +6,13 @@ available input curves and runs the appropriate modules in the correct
 order. It supports both granular (single-module) and full pipeline
 execution modes.
 
-Pipeline execution order (from design doc):
+Pipeline execution order:
     Module 1: QC & Pre-Processing
-    Module 2: Volume of Clay (VCLAY) & Clay Resistivity
-    Module 3: Lithology Determination
-    Module 4: Fluid Resistivity (Rmf, Rw)
-    Module 5: HC Correction
-    Module 6: Porosity
+    Module 2: Volume of Clay, Clay Resistivity, Rmf, and HC preparation
+    Module 3: Provisional Porosity
+    Module 4: Lithology Determination
+    Module 5: Porosity Refinement and Core Correction
+    Module 6: Formation Water Resistivity
     Module 7: Water Saturation
     Module 8: Permeability
     Module 9: Rock Quality (RQI, FZI)
@@ -57,6 +57,7 @@ class WorkflowStep(Enum):
     INVASION = "invasion"
     HC_CORRECTION = "hc_correction"
     POROSITY = "porosity"
+    POROSITY_REFINEMENT = "porosity_refinement"
     CORE_CORRECTION = "core_correction"
     SATURATION = "saturation"
     PERMEABILITY = "permeability"
@@ -823,6 +824,7 @@ class DynamicWorkflow:
         self._result: Optional[DynamicWorkflowResult] = None
         self._lithology_log: Optional[np.ndarray] = None
         self._lithology_source: str = "config"
+        self._computed_lithology_written = False
         self._last_phit_nd_average_mask: Optional[np.ndarray] = None
         self._last_phi_cl_info: Optional[Dict[str, Any]] = None
 
@@ -881,8 +883,9 @@ class DynamicWorkflow:
             (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
             (WorkflowStep.HC_CORRECTION, self._step_hc_correction, self._can_hc_correction),
             (WorkflowStep.POROSITY, self._step_porosity, self._can_porosity),
-            (WorkflowStep.CORE_CORRECTION, self._step_core_correction, self._can_core_correction),
             (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
+            (WorkflowStep.POROSITY_REFINEMENT, self._step_porosity_refinement, self._can_porosity_refinement),
+            (WorkflowStep.CORE_CORRECTION, self._step_core_correction, self._can_core_correction),
             (WorkflowStep.RW, self._step_rw, self._can_rw),
             (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
             (WorkflowStep.SATURATION, self._step_saturation, self._can_saturation),
@@ -898,6 +901,9 @@ class DynamicWorkflow:
         Execute only the specified workflow steps, in pipeline order.
         """
         self._result = DynamicWorkflowResult(well=well, config=self.config)
+        self._lithology_log = None
+        self._lithology_source = "config"
+        self._computed_lithology_written = False
         self._last_phit_nd_average_mask = None
         self._last_phi_cl_info = None
 
@@ -934,6 +940,9 @@ class DynamicWorkflow:
         DynamicWorkflowResult
         """
         self._result = DynamicWorkflowResult(well=well, config=self.config)
+        self._lithology_log = None
+        self._lithology_source = "config"
+        self._computed_lithology_written = False
         self._last_phit_nd_average_mask = None
         self._last_phi_cl_info = None
 
@@ -941,25 +950,7 @@ class DynamicWorkflow:
         available = self._detect_available_curves(well)
 
         # Execute pipeline in order
-        pipeline = [
-            (WorkflowStep.TEMPERATURE, self._step_temperature, self._can_temperature),
-            (WorkflowStep.BAD_HOLE, self._step_bad_hole, self._can_bad_hole),
-            (WorkflowStep.VCLAY, self._step_vclay, self._can_vclay),
-            (WorkflowStep.RCL, self._step_rcl, self._can_rcl),
-            (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
-            (WorkflowStep.HC_CORRECTION, self._step_hc_correction, self._can_hc_correction),
-            (WorkflowStep.POROSITY, self._step_porosity, self._can_porosity),
-            (WorkflowStep.CORE_CORRECTION, self._step_core_correction, self._can_core_correction),
-            (WorkflowStep.LITHOLOGY, self._step_lithology, self._can_lithology),
-            (WorkflowStep.RW, self._step_rw, self._can_rw),
-            (WorkflowStep.INVASION, self._step_invasion, self._can_invasion),
-            (WorkflowStep.SATURATION, self._step_saturation, self._can_saturation),
-            (WorkflowStep.PERMEABILITY, self._step_permeability, self._can_permeability),
-            (WorkflowStep.ROCK_QUALITY, self._step_rock_quality, self._can_rock_quality),
-            (WorkflowStep.BVW, self._step_bvw, self._can_bvw),
-            (WorkflowStep.MHI, self._step_mhi, self._can_mhi),
-            (WorkflowStep.NET_PAY, self._step_net_pay, self._can_net_pay),
-        ]
+        pipeline = self.get_pipeline()
 
         for step_enum, step_fn, can_fn in pipeline:
             step_name = step_enum.value
@@ -1086,6 +1077,14 @@ class DynamicWorkflow:
 
     def _can_porosity(self, well: "Well") -> bool:
         return self._has_curve(well, "RHOB", "NPHI", "DTC", "PHIN", "PHIT", "PHID", "PHIS")
+
+    def _can_porosity_refinement(self, well: "Well") -> bool:
+        return (
+            WorkflowStep.POROSITY.value not in self.config.skip_steps
+            and self._computed_lithology_written
+            and self._can_porosity(well)
+            and self._has_curve(well, "LITHO")
+        )
 
     def _can_core_correction(self, well: "Well") -> bool:
         return (
@@ -1505,6 +1504,10 @@ class DynamicWorkflow:
         )
         write_lithology_code = not input_lithology_available
         litho_module.add_to_well(well, result, include_lithology_code=write_lithology_code)
+        if write_lithology_code:
+            self._lithology_log = None
+            self._lithology_source = "config"
+            self._computed_lithology_written = True
 
         trace.output_curves = ["VQUAR", "VCALC", "VDOLO", "VANHY"]
         if write_lithology_code:
@@ -2227,14 +2230,23 @@ class DynamicWorkflow:
             "phi_cl_fallback_reason": fallback_reason or "no usable neutron-density averaged PHIT shale-control samples",
         }
 
-    def _step_porosity(self, well: "Well") -> StepResult:
+    def _step_porosity_refinement(self, well: "Well") -> StepResult:
+        self._lithology_log = None
+        self._lithology_source = "config"
+        return self._step_porosity(well, refinement=True)
+
+    def _step_porosity(self, well: "Well", refinement: bool = False) -> StepResult:
         from petrophys.petrophysics.porosity.density_porosity import density_porosity
         from petrophys.petrophysics.porosity.effective_porosity import effective_porosity
         from petrophys.petrophysics.porosity.neutron_porosity import neutron_porosity
         from petrophys.petrophysics.porosity.sonic_porosity import secondary_porosity, wyllie_time_average
         from petrophys.petrophysics.porosity.total_porosity import total_porosity
 
-        trace = StepResult(step="porosity", success=True, method="component_based")
+        trace = StepResult(
+            step="porosity_refinement" if refinement else "porosity",
+            success=True,
+            method="component_based_lithology_refined" if refinement else "component_based",
+        )
         decisions = []
         inputs = []
         outputs = []
@@ -2261,6 +2273,18 @@ class DynamicWorkflow:
         rho_ma = matrix_info["rho_ma"]
         dt_ma = matrix_info["dt_ma"]
         nphi_ma = matrix_info["nphi_ma"]
+        if refinement:
+            decisions.append(
+                "Refinement pass after inferred LITHO: porosity curves recomputed using computed lithology matrix endpoints"
+            )
+        elif matrix_info["matrix_mode"] == "lithology_dependent":
+            decisions.append(
+                "Initial porosity pass used an available lithology log for matrix endpoints"
+            )
+        else:
+            decisions.append(
+                "Initial porosity pass used configured matrix endpoints; it will be refined if the workflow infers LITHO"
+            )
 
         phin = None
         phid = None
@@ -2276,7 +2300,12 @@ class DynamicWorkflow:
         if nphi_curve is not None:
             inputs.append("NPHI")
             phin = neutron_porosity(nphi_curve.data, nphi_matrix=nphi_ma)
-            well.add_curve("PHIN", phin, "v/v", "Neutron Porosity")
+            well.add_curve(
+                "PHIN",
+                phin,
+                "v/v",
+                "Neutron Porosity refined with computed lithology" if refinement else "Neutron Porosity",
+            )
             outputs.append("PHIN")
             if matrix_info["matrix_mode"] == "lithology_dependent":
                 decisions.append(
@@ -2294,7 +2323,12 @@ class DynamicWorkflow:
         if rhob_curve is not None:
             inputs.append("RHOB")
             phid = density_porosity(rhob_curve.data, rho_ma, self.config.rho_fl)
-            well.add_curve("PHID", phid, "v/v", "Density Porosity")
+            well.add_curve(
+                "PHID",
+                phid,
+                "v/v",
+                "Density Porosity refined with computed lithology" if refinement else "Density Porosity",
+            )
             outputs.append("PHID")
             if matrix_info["matrix_mode"] == "lithology_dependent":
                 decisions.append("PHID = (rho_ma(depth) - RHOB) / (rho_ma(depth) - rho_fl)")
@@ -2308,7 +2342,12 @@ class DynamicWorkflow:
         if dtc_curve is not None:
             inputs.append("DTC")
             phis = wyllie_time_average(dtc_curve.data, dt_ma, self.config.dt_fl)
-            well.add_curve("PHIS", phis, "v/v", "Sonic Porosity")
+            well.add_curve(
+                "PHIS",
+                phis,
+                "v/v",
+                "Sonic Porosity refined with computed lithology" if refinement else "Sonic Porosity",
+            )
             outputs.append("PHIS")
             if matrix_info["matrix_mode"] == "lithology_dependent":
                 decisions.append("PHIS from Wyllie time-average equation using dt_ma(depth)")
@@ -2392,7 +2431,11 @@ class DynamicWorkflow:
             phit_description = (
                 "Calculated total porosity; input PHIT preserved as active"
                 if preserve_existing_phit
-                else "Total Porosity"
+                else (
+                    "Total Porosity refined with computed lithology"
+                    if refinement
+                    else "Total Porosity"
+                )
             )
             well.add_curve(
                 phit_output,
@@ -2431,7 +2474,11 @@ class DynamicWorkflow:
             phie_description = (
                 "Calculated effective porosity; input PHIE preserved as active"
                 if preserve_existing_phie
-                else "Effective Porosity"
+                else (
+                    "Effective Porosity refined with computed lithology"
+                    if refinement
+                    else "Effective Porosity"
+                )
             )
             well.add_curve(
                 phie_output,
@@ -2471,6 +2518,8 @@ class DynamicWorkflow:
             "matrix_type": self.config.matrix_type,
             "matrix_mode": matrix_info["matrix_mode"],
             "matrix_source": matrix_info["matrix_source"],
+            "porosity_pass": "refined_after_computed_lithology" if refinement else "initial",
+            "uses_computed_lithology": matrix_info["matrix_source"] == "computed_lithology_curve",
             "matrix_groups_used": matrix_info["matrix_groups_used"],
             "matrix_endpoints": matrix_info["matrix_endpoints"],
             "nphi_ma": matrix_info["fallback_nphi_ma"] if matrix_info["matrix_mode"] == "constant" else None,
