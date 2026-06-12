@@ -87,6 +87,8 @@ def test_curve_standardization_renames_aliases_and_corrects_units():
     well.add_curve("CAL", np.array([216.0, 254.0]), "mm", "Caliper")
     well.add_curve("RSHAL", np.array([1.5, 2.5]), "ohm.m", "Shallow resistivity")
     well.add_curve("PHIE_CORECAL", np.array([0.12, 0.18]), "v/v", "Legacy core-calibrated porosity")
+    well.add_curve("PHIE_D", np.array([0.10, 0.20]), "m3/m3", "Effective porosity")
+    well.add_curve("VSH", np.array([0.30, 0.40]), "m3/m3", "Shale volume")
 
     standardized = standardize_curves(well, rename_curves=True, convert_units=True)
 
@@ -96,6 +98,8 @@ def test_curve_standardization_renames_aliases_and_corrects_units():
     assert standardized.get("CALI") is not None
     assert standardized.get("RSHA") is not None
     assert standardized.get("PHIE_CC") is not None
+    assert standardized.get("PHIE") is not None
+    assert standardized.get("VCL") is not None
     assert standardized.get("PHIE_CORECAL") is None
     np.testing.assert_allclose(standardized["RDEP"].data, np.array([3.048, 6.096]))
     np.testing.assert_allclose(standardized["RHOB"].data, np.array([2.2, 2.4]))
@@ -103,6 +107,10 @@ def test_curve_standardization_renames_aliases_and_corrects_units():
     np.testing.assert_allclose(standardized["CALI"].data, np.array([8.5039416, 10.0000054]))
     np.testing.assert_allclose(standardized["RSHA"].data, np.array([1.5, 2.5]))
     np.testing.assert_allclose(standardized["PHIE_CC"].data, np.array([0.12, 0.18]))
+    np.testing.assert_allclose(standardized["PHIE"].data, np.array([0.10, 0.20]))
+    np.testing.assert_allclose(standardized["VCL"].data, np.array([0.30, 0.40]))
+    assert standardized["PHIE"].unit == "v/v"
+    assert standardized["VCL"].unit == "v/v"
 
 
 def test_dte_is_not_treated_as_shear_sonic():
