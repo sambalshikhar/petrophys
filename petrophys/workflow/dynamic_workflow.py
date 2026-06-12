@@ -27,11 +27,21 @@ import numpy as np
 from pathlib import Path
 import re
 from petrophys.base.well import Well
+from petrophys.base.data_types import DataType
 from petrophys.utils.analysis_helpers import get_curve, get_curve_data_depthwise
 import pandas as pd
 from petrophys.io import ascii_reader, las_reader
 
 DEFAULT_RESISTIVITY_REFERENCE_TEMP_F = 75.0
+INPUT_INTERPRETATION_SOURCES = {"LAS", "DLIS", "CSV", "ASCII", "DATAFRAME"}
+INTERPRETATION_DESCRIPTION_MARKERS = (
+    "HILT",
+    "LITHOLOGY COMPUTATION",
+    "INTERPRET",
+    "PROCESSED",
+    "VENDOR",
+    "SPECTROLITH",
+)
 
 
 class WorkflowStep(Enum):
@@ -71,6 +81,48 @@ def _parameter_text(well: "Well", name: str) -> str:
     """Fetch a text well parameter if present."""
     value = well.get_parameter(name)
     return str(value or "").strip()
+
+
+def _curve_is_computed(curve: Any) -> bool:
+    metadata = getattr(curve, "metadata", None)
+    data_type = getattr(metadata, "data_type", "")
+    value = getattr(data_type, "value", data_type)
+    return str(value or "").strip().lower() == "computed"
+
+
+def _curve_source_text(curve: Any) -> str:
+    metadata = getattr(curve, "metadata", None)
+    return str(getattr(metadata, "source", "") or "").strip()
+
+
+def _curve_description_text(curve: Any) -> str:
+    metadata = getattr(curve, "metadata", None)
+    return str(getattr(metadata, "description", "") or "").strip()
+
+
+def _is_prioritized_input_interpretation_curve(curve: Any, curve_type: str) -> bool:
+    """Return True for imported interpretation curves that should stay active."""
+    if curve is None or _curve_is_computed(curve):
+        return False
+
+    source = _curve_source_text(curve).upper()
+    description = _curve_description_text(curve).upper()
+    mnemonic = str(getattr(curve, "mnemonic", "") or "").upper()
+    curve_type = curve_type.upper()
+
+    if curve_type in {"VCL", "PHIE", "PHIT"} and source in INPUT_INTERPRETATION_SOURCES:
+        return True
+    return any(marker in description or marker in mnemonic for marker in INTERPRETATION_DESCRIPTION_MARKERS)
+
+
+def _prioritized_curve_label(curve: Any) -> str:
+    if curve is None:
+        return ""
+    source = _curve_source_text(curve) or "input"
+    description = _curve_description_text(curve)
+    if description:
+        return f"{getattr(curve, 'mnemonic', '')} from {source}: {description}"
+    return f"{getattr(curve, 'mnemonic', '')} from {source}"
 
 
 def _temperature_to_f(value: float, unit: str) -> float:
@@ -1244,6 +1296,11 @@ class DynamicWorkflow:
 
         trace = StepResult(step="vclay", success=True)
         decisions = []
+        existing_vcl_curve = get_curve(well, ["VCL", "VCLAY"])
+        preserve_existing_vcl = _is_prioritized_input_interpretation_curve(
+            existing_vcl_curve,
+            "VCL",
+        )
 
         gr_min = self.config.gr_min
         gr_max = self.config.gr_max
@@ -1298,15 +1355,49 @@ class DynamicWorkflow:
             sp_min=sp_min, sp_max=sp_max
         )
         result = vcl_module.calculate(well)
-        vcl_module.add_to_well(well, result)
 
         inputs = ["GR"]
-        outputs = ["VCL", "VCLAY"]
+        outputs = []
         if use_sp: inputs.append("SP")
         if use_nd: inputs.extend(["NPHI", "RHOB"])
-        if result.vcl_gr is not None: outputs.extend(["VCL_GR", "VCLGR"])
-        if result.vcl_sp is not None: outputs.extend(["VCL_SP", "VCLSP"])
-        if result.vcl_nd is not None: outputs.extend(["VCL_ND", "VCLND"])
+        if preserve_existing_vcl:
+            well.add_curve(
+                "VCL_CALC",
+                result.vcl,
+                unit="v/v",
+                description="Calculated clay volume; input VCL preserved as active",
+                data_type=DataType.COMPUTED,
+            )
+            well.add_curve(
+                "VCLAY_CALC",
+                result.vcl,
+                unit="v/v",
+                description="Calculated clay volume; input VCLAY/VCL preserved as active",
+                data_type=DataType.COMPUTED,
+            )
+            outputs.extend(["VCL_CALC", "VCLAY_CALC"])
+            decisions.append(
+                "Existing interpreted clay-volume curve preserved as active: "
+                + _prioritized_curve_label(existing_vcl_curve)
+            )
+            decisions.append("Workflow clay-volume calculation written to VCL_CALC/VCLAY_CALC")
+        else:
+            well.add_curve("VCL", result.vcl, unit="v/v", description="Clay Volume")
+            well.add_curve("VCLAY", result.vcl, unit="v/v", description="Clay Volume")
+            outputs.extend(["VCL", "VCLAY"])
+
+        if result.vcl_gr is not None:
+            well.add_curve("VCL_GR", result.vcl_gr, unit="v/v", description="VCL from GR")
+            well.add_curve("VCLGR", result.vcl_gr, unit="v/v", description="VCL from GR")
+            outputs.extend(["VCL_GR", "VCLGR"])
+        if result.vcl_sp is not None:
+            well.add_curve("VCL_SP", result.vcl_sp, unit="v/v", description="VCL from SP")
+            well.add_curve("VCLSP", result.vcl_sp, unit="v/v", description="VCL from SP")
+            outputs.extend(["VCL_SP", "VCLSP"])
+        if result.vcl_nd is not None:
+            well.add_curve("VCL_ND", result.vcl_nd, unit="v/v", description="VCL from N-D")
+            well.add_curve("VCLND", result.vcl_nd, unit="v/v", description="VCL from N-D")
+            outputs.extend(["VCL_ND", "VCLND"])
 
         decisions.append(f"Final VCL = min(available methods), range: "
                         f"{np.nanmin(result.vcl):.3f} - {np.nanmax(result.vcl):.3f}")
@@ -1327,6 +1418,8 @@ class DynamicWorkflow:
             "nd_clean2_neutron": 0.40,
             "nd_clay_density": 2.62,
             "nd_clay_neutron": 0.38,
+            "active_vcl_source": "input_interpretation" if preserve_existing_vcl else "workflow_calculation",
+            "computed_vcl_curve": "VCL_CALC" if preserve_existing_vcl else "VCL",
         }
         trace.decisions = decisions
         return trace
@@ -2153,7 +2246,16 @@ class DynamicWorkflow:
         existing_phid_curve = get_curve(well, ["PHID"])
         existing_phis_curve = get_curve(well, ["PHIS"])
         existing_phit_curve = get_curve(well, ["PHIT"])
+        existing_phie_curve = get_curve(well, ["PHIE"])
         vcl_curve = get_curve(well, ["VCL", "VCLAY"])
+        preserve_existing_phit = _is_prioritized_input_interpretation_curve(
+            existing_phit_curve,
+            "PHIT",
+        )
+        preserve_existing_phie = _is_prioritized_input_interpretation_curve(
+            existing_phie_curve,
+            "PHIE",
+        )
 
         matrix_info = self._resolve_matrix_arrays(well)
         rho_ma = matrix_info["rho_ma"]
@@ -2286,9 +2388,27 @@ class DynamicWorkflow:
                 decisions.append("PHIT reused from existing well curve")
 
         if phit is not None:
-            well.add_curve("PHIT", phit, "v/v", "Total Porosity")
-            if "PHIT" not in outputs:
-                outputs.append("PHIT")
+            phit_output = "PHIT_CALC" if preserve_existing_phit else "PHIT"
+            phit_description = (
+                "Calculated total porosity; input PHIT preserved as active"
+                if preserve_existing_phit
+                else "Total Porosity"
+            )
+            well.add_curve(
+                phit_output,
+                phit,
+                "v/v",
+                phit_description,
+                data_type=DataType.COMPUTED,
+            )
+            if phit_output not in outputs:
+                outputs.append(phit_output)
+            if preserve_existing_phit:
+                decisions.append(
+                    "Existing interpreted total porosity curve preserved as active: "
+                    + _prioritized_curve_label(existing_phit_curve)
+                )
+                decisions.append("Workflow total-porosity calculation written to PHIT_CALC")
 
         phi_cl_info = self._resolve_phi_cl(
             well,
@@ -2307,14 +2427,32 @@ class DynamicWorkflow:
                 vcl = np.zeros(well.n_samples, dtype=float)
 
             phie = effective_porosity(phie_basis, vcl, phi_cl)
-            well.add_curve("PHIE", phie, "v/v", "Effective Porosity")
-            outputs.append("PHIE")
+            phie_output = "PHIE_CALC" if preserve_existing_phie else "PHIE"
+            phie_description = (
+                "Calculated effective porosity; input PHIE preserved as active"
+                if preserve_existing_phie
+                else "Effective Porosity"
+            )
+            well.add_curve(
+                phie_output,
+                phie,
+                "v/v",
+                phie_description,
+                data_type=DataType.COMPUTED,
+            )
+            outputs.append(phie_output)
             if vcl_curve is not None:
                 decisions.append(
-                    f"PHIE = {phie_basis_name} - {vcl_curve.mnemonic} * phi_cl ({phi_cl:.3f})"
+                    f"{phie_output} = {phie_basis_name} - {vcl_curve.mnemonic} * phi_cl ({phi_cl:.3f})"
                 )
             else:
-                decisions.append(f"PHIE = {phie_basis_name} (no clay curve available)")
+                decisions.append(f"{phie_output} = {phie_basis_name} (no clay curve available)")
+            if preserve_existing_phie:
+                decisions.append(
+                    "Existing interpreted effective porosity curve preserved as active: "
+                    + _prioritized_curve_label(existing_phie_curve)
+                )
+                decisions.append("Workflow effective-porosity calculation written to PHIE_CALC")
             if phi_cl_info.get("phi_cl_source") == "config_or_default" and phi_cl_info.get("phi_cl_fallback_reason"):
                 decisions.append(
                     "phi_cl fallback used because "
@@ -2355,6 +2493,10 @@ class DynamicWorkflow:
             "phit_method": phit_method,
             "phit_source_counts": phit_source_counts,
             "phit_nd_average_samples": int(np.count_nonzero(phit_nd_average_mask)) if phit_nd_average_mask is not None else 0,
+            "active_phit_source": "input_interpretation" if preserve_existing_phit else "workflow_calculation",
+            "active_phie_source": "input_interpretation" if preserve_existing_phie else "workflow_calculation",
+            "computed_phit_curve": "PHIT_CALC" if preserve_existing_phit else "PHIT",
+            "computed_phie_curve": "PHIE_CALC" if preserve_existing_phie else "PHIE",
         }
         trace.decisions = decisions
         self._last_phit_nd_average_mask = phit_nd_average_mask
