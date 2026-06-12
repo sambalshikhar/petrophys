@@ -254,6 +254,59 @@ def test_pipeline_solves_porosity_before_mineral_volumes():
     assert pipeline_steps.index("porosity") < pipeline_steps.index("lithology")
 
 
+def test_dynamic_workflow_preserves_vendor_vcl_and_phie_as_active_curves():
+    depth = np.arange(1000.0, 1006.0)
+    well = Well("VENDOR-INTERP")
+    well.depth = depth
+    well.depth_unit = "m"
+    well.add_curve("DEPT", depth, "m", "Depth")
+    well.add_curve("GR", np.array([45.0, 50.0, 55.0, 60.0, 65.0, 70.0]), "API", "Gamma Ray")
+    well.add_curve("RHOB", np.array([2.45, 2.43, 2.42, 2.40, 2.39, 2.38]), "g/cm3", "Bulk Density")
+    well.add_curve("NPHI", np.array([0.18, 0.17, 0.16, 0.15, 0.14, 0.13]), "v/v", "Neutron")
+    well.add_curve("PEF", np.full(depth.size, 2.8), "", "Photoelectric Factor")
+    well.add_curve("RDEP", np.full(depth.size, 20.0), "ohm.m", "Deep Resistivity")
+    well.add_curve("RSHA", np.full(depth.size, 10.0), "ohm.m", "Shallow Resistivity")
+    well.add_curve("BS", np.full(depth.size, 8.5), "in", "Bit Size")
+
+    vendor_vcl = np.linspace(0.72, 0.95, depth.size)
+    vendor_phie = np.linspace(0.02, 0.05, depth.size)
+    well.add_curve(
+        "VCL",
+        vendor_vcl,
+        "v/v",
+        "Volume of Clay type Material relative to Total Volume from HILT Lithology Computation",
+    )
+    well["VCL"].metadata.source = "DLIS"
+    well.add_curve(
+        "PHIE",
+        vendor_phie,
+        "v/v",
+        "Effective Porosity from HILT Lithology Computation",
+    )
+    well["PHIE"].metadata.source = "DLIS"
+
+    result = DynamicWorkflow(
+        DynamicWorkflowConfig(rw=0.05, lithology="clastic", matrix_type="sandstone")
+    ).run(well)
+
+    assert result.success
+    np.testing.assert_allclose(well["VCL"].data, vendor_vcl)
+    np.testing.assert_allclose(well["PHIE"].data, vendor_phie)
+    assert "VCL_CALC" in well
+    assert "PHIE_CALC" in well
+    assert not np.allclose(well["VCL_CALC"].data, vendor_vcl)
+    assert not np.allclose(well["PHIE_CALC"].data, vendor_phie)
+
+    vcl_step = _step_by_name(result, "vclay")
+    por_step = _step_by_name(result, "porosity")
+    assert vcl_step.parameters["active_vcl_source"] == "input_interpretation"
+    assert vcl_step.parameters["computed_vcl_curve"] == "VCL_CALC"
+    assert por_step.parameters["active_phie_source"] == "input_interpretation"
+    assert por_step.parameters["computed_phie_curve"] == "PHIE_CALC"
+    assert any("preserved as active" in decision for decision in vcl_step.decisions)
+    assert any("preserved as active" in decision for decision in por_step.decisions)
+
+
 def test_dynamic_workflow_skips_modules_when_inputs_are_missing(record_route):
     well = Well("DEPTH-ONLY")
     depth = np.arange(1000.0, 1005.0)
