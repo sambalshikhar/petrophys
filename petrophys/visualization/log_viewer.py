@@ -23,6 +23,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 from petrophys.utils.statistics import finite_min_max
+from petrophys.visualization.curve_labels import porosity_display_label
 
 try:
     import matplotlib.pyplot as plt
@@ -183,7 +184,7 @@ CURVE_ALIAS_CANDIDATES: Dict[str, List[str]] = {
 }
 
 
-NO_LITHOLOGY_LABEL = "No lithology avialable"
+NO_LITHOLOGY_LABEL = "No lithology available"
 
 
 MINERAL_VOLUME_TRACK_NAMES = {
@@ -265,6 +266,118 @@ GEOLINK_LITHOLOGY_CODE_LABELS: Dict[int, str] = {
 
 
 LITHOLOGY_CODE_LABELS = GEOLINK_LITHOLOGY_CODE_LABELS
+
+
+INDUSTRY_LITHOLOGY_LABEL_ALIASES: Dict[str, str] = {
+    "aeolian sandstone": "SANDSTONE",
+    "anhydrite": "ANHYDRITE",
+    "argillaceous": "ARGILLACEOUS",
+    "argillaceous limestone": "LIMESTONE",
+    "arkose": "SANDSTONE",
+    "basement": "IGNEOUS/INTRUSIVE METAMORPHIC",
+    "biogenic ooze": "SHALE",
+    "breccia": "BRECCIA",
+    "calcareous": "CALCAREOUS",
+    "calcareous cement": "CALCAREOUS",
+    "calcareous debris flow": "BRECCIA",
+    "calcareous sand": "SANDSTONE",
+    "calcareous sandstone": "SANDSTONE",
+    "calcareous shale": "CALCAREOUS CLAY/SHALE",
+    "carnallite": "HALITE",
+    "chalk": "CHALK",
+    "chert": "CHERT",
+    "cinerite": "TUFF",
+    "clay": "CLAYSTONE/MUDSTONE",
+    "clay shale": "CLAYSTONE/MUDSTONE",
+    "claystone": "CLAYSTONE/MUDSTONE",
+    "coal": "COAL (LIGNITE PEAT DESCRIPTORS)",
+    "conglomerate": "CONGLOMERATE",
+    "cross bedded sand": "SANDSTONE",
+    "cross bedded sandstone": "SANDSTONE",
+    "cross bedded sst": "SANDSTONE",
+    "crossbedded sand": "SANDSTONE",
+    "dolomite": "DOLOMITE",
+    "dolomite2": "DOLOMITE",
+    "dolomitic": "DOLOMITIC",
+    "extrusive": "VOLCANICS",
+    "foraminifera": "FORAMINIFERA",
+    "gap": "UNKNOWN",
+    "glauconite": "GLAUCONITE",
+    "gravel": "CONGLOMERATE",
+    "gypsum": "GYPSUM",
+    "halite": "HALITE",
+    "igneous": "IGNEOUS/INTRUSIVE METAMORPHIC",
+    "igneous intrusive metamorphic": "IGNEOUS/INTRUSIVE METAMORPHIC",
+    "intrusive": "IGNEOUS/INTRUSIVE METAMORPHIC",
+    "intrusive acid igneous": "INTRUSIVE ACID IGNEOUS",
+    "intrusive basic igneous": "INTRUSIVE BASIC IGNEOUS",
+    "kainite": "HALITE",
+    "kaīnite": "HALITE",
+    "limestone": "LIMESTONE",
+    "marl": "MARL",
+    "marlstone": "MARL",
+    "metamorphic": "METAMORPHIC ROCK",
+    "metamorphic rock": "METAMORPHIC ROCK",
+    "mica": "MICA",
+    "mixed": "MIXED",
+    "mudstone": "CLAYSTONE/MUDSTONE",
+    "plutonic rock": "IGNEOUS/INTRUSIVE METAMORPHIC",
+    "polyhalite": "POLYHALITE",
+    "porous limestone": "LIMESTONE",
+    "pyrite": "PYRITE",
+    "sand": "SANDSTONE",
+    "sandy": "SANDY",
+    "sandy limestone": "LIMESTONE",
+    "sandy shale": "SHALE",
+    "sandy silt": "SILTSTONE/SILT",
+    "sandstone": "SANDSTONE",
+    "salt": "HALITE",
+    "shale": "SHALE",
+    "shaly sand": "SANDSTONE",
+    "shaly sandstone": "SANDSTONE",
+    "shaly silt": "SILTSTONE/SILT",
+    "silt": "SILTSTONE/SILT",
+    "siltstone": "SILTSTONE/SILT",
+    "silty": "SILTY",
+    "silty sand": "SANDSTONE",
+    "silty shale": "SHALE",
+    "spiculite": "CHERT",
+    "sylvinite": "HALITE",
+    "tuff": "TUFF",
+    "unknown": "UNKNOWN",
+    "volcanic": "VOLCANICS",
+    "volcanic rock": "VOLCANICS",
+    "volcanic tuff": "TUFF",
+    "volcanics": "VOLCANICS",
+}
+
+
+def _lithology_label_key(label: Any) -> str:
+    text = str(label or "").strip().lower()
+    text = re.sub(r"[\s_/\-()]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _lithology_style_text(label: Any) -> str:
+    key = _lithology_label_key(label)
+    alias = INDUSTRY_LITHOLOGY_LABEL_ALIASES.get(key)
+    if alias is None:
+        return key
+    return f"{key} {_lithology_label_key(alias)}"
+
+
+def _lookup_lithology_style(label: Any, styles: Mapping[str, Any], default: Any = "") -> Any:
+    exact_key = _lithology_label_key(label)
+    sorted_styles = sorted(styles.items(), key=lambda item: len(item[0]), reverse=True)
+    for key, value in sorted_styles:
+        if _lithology_label_key(key) == exact_key:
+            return value
+
+    lowered = _lithology_style_text(label)
+    for key, value in sorted_styles:
+        if _lithology_label_key(key) in lowered:
+            return value
+    return default
 
 
 GEOLINK_LITHOLOGY_MAPPING_FILENAMES: Tuple[str, ...] = (
@@ -384,40 +497,82 @@ def _default_geolink_lithology_mapping() -> Dict[Any, str]:
 
 LITHOLOGY_LABEL_COLORS: Dict[str, str] = {
     "unknown": "#d9d9d9",
-    "calcareous sandstone": "#fb9a99",
-    "calcareous shale": "#8dd3c7",
-    "crossbedded sand": "#ffff33",
-    "shaly sandstone": "#ff7f00",
-    "shaly sand": "#b15928",
-    "sandy limestone": "#80b1d3",
-    "sandy shale": "#bc80bd",
-    "claystone": "#6b6ecf",
-    "sandstone": "#fdb462",
-    "dolomite2": "#7570b3",
-    "dolomite": "#6a3d9a",
-    "anhydrite": "#1f78b4",
-    "conglomerate": "#a65628",
-    "limestone": "#c7c7c7",
-    "extrusive": "#fb8072",
-    "intrusive": "#7f0000",
-    "volcanic": "#b2182b",
-    "basement": "#984ea3",
-    "breccia": "#e41a1c",
-    "gypsum": "#a6cee3",
-    "halite": "#f781bf",
-    "gravel": "#999999",
-    "calcite": "#e5c494",
-    "quartz": "#e6ab02",
-    "chalk": "#b3de69",
-    "chert": "#33a02c",
-    "shale": "#4d4d4d",
-    "clay": "#8c6d31",
-    "marl": "#66c2a5",
-    "silt": "#bebada",
-    "salt": "#e78ac3",
+    "gap": "#ffffff",
+    "claystone/mudstone": "#8b6208",
+    "mudstone": "#8b6208",
+    "claystone": "#8b6208",
+    "clay": "#8b6208",
+    "shale": "#8b6208",
+    "conglomerate": "#f57f17",
+    "gravel": "#f57f17",
+    "calcareous sandstone": "#f6e58d",
+    "shaly sandstone": "#f6e58d",
+    "shaly sand": "#f6e58d",
+    "silty sand": "#f6e58d",
+    "sandstone": "#f6e58d",
+    "cross bedded sst": "#f6e58d",
+    "crossbedded sand": "#f6e58d",
+    "arkose": "#f6e58d",
+    "sand": "#f6e58d",
+    "siltstone/silt": "#e6bf3f",
+    "sandy silt": "#e6bf3f",
+    "shaly silt": "#e6bf3f",
+    "siltstone": "#e6bf3f",
+    "silt": "#e6bf3f",
+    "breccia": "#b35806",
+    "coal (lignite peat descriptors)": "#000000",
     "coal": "#000000",
-    "sand": "#ffd92f",
-    "ooze": "#b2df8a",
+    "chalk": "#b7f4e6",
+    "sandy limestone": "#b7f4e6",
+    "porous limestone": "#b7f4e6",
+    "argillaceous limestone": "#b7f4e6",
+    "limestone": "#b7f4e6",
+    "dolomite": "#b7f4e6",
+    "dolomite2": "#b7f4e6",
+    "calcareous clay/shale": "#cfe6e8",
+    "calcareous shale": "#cfe6e8",
+    "marl": "#cfe6e8",
+    "marlstone": "#cfe6e8",
+    "halite": "#f3b2de",
+    "salt": "#f3b2de",
+    "sylvinite": "#f3b2de",
+    "carnallite": "#f3b2de",
+    "kainite": "#f3b2de",
+    "anhydrite": "#f3b2de",
+    "gypsum": "#f3b2de",
+    "polyhalite": "#e4b6d7",
+    "calcareous cement": "#f7f7f7",
+    "calcareous debris flow": "#f57f17",
+    "intrusive acid igneous": "#f5223a",
+    "intrusive basic igneous": "#f5223a",
+    "igneous/intrusive metamorphic": "#f5223a",
+    "basement": "#f5223a",
+    "plutonic rock": "#f5223a",
+    "intrusive": "#f5223a",
+    "extrusive": "#f5223a",
+    "cinerite": "#bf27ea",
+    "volcanic tuff": "#bf27ea",
+    "tuff": "#bf27ea",
+    "volcanics": "#f5223a",
+    "volcanic": "#f5223a",
+    "metamorphic rock": "#f5223a",
+    "sandy": "#f7f7f7",
+    "silty": "#eeeeee",
+    "argillaceous": "#fafafa",
+    "limestone stringer": "#f0f0f0",
+    "dolomite stringer": "#f5f5f5",
+    "calcareous": "#fdfdfd",
+    "dolomitic": "#f2f2f2",
+    "macrofossils": "#e0e0e0",
+    "foraminifera": "#e8e8e8",
+    "chert": "#ffffff",
+    "silty shale": "#8b6208",
+    "biogenic ooze": "#8b6208",
+    "spiculite": "#ffffff",
+    "glauconite": "#4daf4a",
+    "mica": "#bdbdbd",
+    "pyrite": "#9e9e9e",
+    "carbonaceous": "#303030",
     "mixed": "#cab2d6",
 }
 
@@ -455,7 +610,333 @@ RESISTIVITY_CURVE_NAMES = {
 }
 
 
-LITHOLOGY_HATCH_PATTERNS: Dict[str, str] = {}
+FRACTION_SATURATION_CURVE_NAMES = {
+    "SW",
+    "SWT",
+    "SWE",
+    "SWA",
+    "SWC",
+    "SXO",
+    "SO",
+    "SOC",
+    "SG",
+    "SH",
+    "SWI",
+    "SWIR",
+    "SWIRR",
+    "SWIRR_APP",
+    "NMR_SWIRR",
+    "SWIRR_NMR",
+    "CMR_SWIRR",
+    "SWIRR_CMR",
+}
+
+
+DEFAULT_CURVE_DISPLAY_UNITS: Dict[str, str] = {
+    "GR": "API",
+    "SGR": "API",
+    "CGR": "API",
+    "HGR": "API",
+    "CALI": "in",
+    "CAL": "in",
+    "BS": "in",
+    "BITSIZE": "in",
+    "DTC": "us/ft",
+    "DT": "us/ft",
+    "DTS": "us/ft",
+    "RHOB": "g/cc",
+    "RHOZ": "g/cc",
+    "DRHO": "g/cc",
+    "PEF": "b/e",
+    "PE": "b/e",
+    "NPHI": "v/v",
+    "PHIN": "v/v",
+    "PHIT": "v/v",
+    "PHIE": "v/v",
+    "PHIE_CC": "v/v",
+    "PHIT_GAS_CORR": "v/v",
+    "PHID": "v/v",
+    "PHIS": "v/v",
+    "PHIC": "v/v",
+    "CPOR": "v/v",
+    "VCL": "v/v",
+    "VCLAY": "v/v",
+    "VSH": "v/v",
+    "BVW": "v/v",
+    "PERM": "mD",
+    "PERM_CC": "mD",
+    "K": "mD",
+    "KH": "mD",
+    "RQI": "microns",
+    "FZI": "microns",
+    "PHIZ": "v/v",
+    "PHI_Z": "v/v",
+    "VQUAR": "v/v",
+    "VCALC": "v/v",
+    "VDOLO": "v/v",
+    "VANHY": "v/v",
+    "VHALI": "v/v",
+}
+
+
+UNIT_DISPLAY_ALIASES: Dict[str, str] = {
+    "api": "API",
+    "gapi": "API",
+    "in": "in",
+    "inch": "in",
+    "inches": "in",
+    "ohmm": "ohm.m",
+    "ohm.m": "ohm.m",
+    "ohm-m": "ohm.m",
+    "ohm m": "ohm.m",
+    "ohmmeter": "ohm.m",
+    "ohm.meter": "ohm.m",
+    "ohm-meter": "ohm.m",
+    "ohmmetre": "ohm.m",
+    "ohm.metre": "ohm.m",
+    "ohm-metre": "ohm.m",
+    "us/ft": "us/ft",
+    "us/f": "us/ft",
+    "usec/ft": "us/ft",
+    "usec/f": "us/ft",
+    "microsecond/ft": "us/ft",
+    "microseconds/ft": "us/ft",
+    "g/cc": "g/cc",
+    "g/cm3": "g/cc",
+    "g/c3": "g/cc",
+    "gm/cc": "g/cc",
+    "b/e": "b/e",
+    "barn/e": "b/e",
+    "barns/e": "b/e",
+    "v/v": "v/v",
+    "vol/vol": "v/v",
+    "frac": "frac",
+    "fraction": "frac",
+    "decimal": "frac",
+    "dec": "frac",
+    "unitless": "frac",
+    "%": "%",
+    "percent": "%",
+    "md": "mD",
+    "millidarcy": "mD",
+    "millidarcies": "mD",
+    "um": "microns",
+    "micron": "microns",
+    "microns": "microns",
+}
+
+
+LITHOLOGY_HATCH_PATTERNS: Dict[str, str] = {
+    "claystone/mudstone": "--",
+    "mudstone": "--",
+    "claystone": "--",
+    "clay": "--",
+    "shale": "----",
+    "conglomerate": "oo",
+    "gravel": "oo",
+    "calcareous sandstone": "..",
+    "shaly sandstone": "..",
+    "shaly sand": "..",
+    "sandstone": "..",
+    "cross bedded sst": "..",
+    "crossbedded sand": "..",
+    "arkose": "..",
+    "sand": "..",
+    "siltstone/silt": "-.",
+    "siltstone": "-.",
+    "silt": "-.",
+    "breccia": "xx",
+    "chalk": "++",
+    "sandy limestone": "+",
+    "porous limestone": "+",
+    "argillaceous limestone": "+",
+    "limestone": "+",
+    "dolomite": "//",
+    "dolomite2": "//",
+    "calcareous clay/shale": "+-",
+    "calcareous shale": "+-",
+    "marl": "--",
+    "marlstone": "--",
+    "halite": "++",
+    "salt": "++",
+    "sylvinite": "++",
+    "carnallite": "++",
+    "kainite": "++",
+    "anhydrite": "..",
+    "gypsum": "\\\\",
+    "polyhalite": "xx",
+    "intrusive acid igneous": "+.",
+    "intrusive basic igneous": "x.",
+    "igneous/intrusive metamorphic": "//",
+    "basement": "//",
+    "plutonic rock": "//",
+    "intrusive": "//",
+    "extrusive": "**",
+    "cinerite": "\\\\",
+    "tuff": "\\\\",
+    "volcanics": "**",
+    "volcanic": "**",
+    "metamorphic rock": "////",
+    "sandy": "..",
+    "silty": "-.",
+    "argillaceous": "-",
+    "limestone stringer": "+-",
+    "dolomite stringer": "//",
+    "calcareous": "+",
+    "dolomitic": "/",
+    "macrofossils": "o",
+    "foraminifera": "oo",
+    "chert": "*",
+    "glauconite": "*",
+    "pyrite": "o",
+    "mica": ".",
+}
+
+
+LITHOLOGY_CUSTOM_PATTERNS: Dict[str, str] = {
+    "claystone/mudstone": "dash",
+    "mudstone": "dash",
+    "claystone": "dash",
+    "clay": "dash",
+    "shale": "horizontal_dense",
+    "conglomerate": "pebbles",
+    "gravel": "pebbles",
+    "sandstone": "dots",
+    "cross bedded sst": "dots",
+    "crossbedded sand": "dots",
+    "arkose": "dots",
+    "sand": "dots",
+    "siltstone/silt": "dash_dot",
+    "siltstone": "dash_dot",
+    "silt": "dash_dot",
+    "breccia": "triangles",
+    "coal": "solid",
+    "chalk": "chalk_grid",
+    "argillaceous limestone": "block_grid",
+    "limestone": "block_grid",
+    "dolomite": "diagonal",
+    "calcareous clay/shale": "calcareous_clay",
+    "calcareous shale": "calcareous_clay",
+    "marl": "waves",
+    "marlstone": "waves",
+    "halite": "grid",
+    "salt": "grid",
+    "sylvinite": "grid",
+    "carnallite": "grid",
+    "kainite": "grid",
+    "anhydrite": "carets",
+    "gypsum": "chevrons_left",
+    "polyhalite": "cross_diagonal",
+    "intrusive acid igneous": "plus_symbols",
+    "intrusive basic igneous": "x_symbols",
+    "igneous/intrusive metamorphic": "igneous_dash",
+    "basement": "igneous_dash",
+    "plutonic rock": "igneous_dash",
+    "intrusive": "igneous_dash",
+    "extrusive": "volcanic_v",
+    "cinerite": "tuff_slashes",
+    "volcanic tuff": "tuff_slashes",
+    "tuff": "tuff_slashes",
+    "volcanics": "volcanic_v",
+    "volcanic": "volcanic_v",
+    "metamorphic rock": "diagonal_dense",
+    "sandy": "dots",
+    "silty": "dash_dot",
+    "argillaceous": "argillaceous_dash",
+    "limestone stringer": "limestone_stringer",
+    "dolomite stringer": "dolomite_stringer",
+    "calcareous": "calcareous_t",
+    "dolomitic": "dolomitic_slash",
+    "macrofossils": "macrofossils",
+    "foraminifera": "foraminifera",
+    "calcareous debris flow": "triangles",
+    "chert": "triangle_single",
+    "spiculite": "triangle_single",
+    "glauconite": "star_symbols",
+    "pyrite": "square_symbols",
+    "mica": "mica_symbols",
+    "carbonaceous": "carbonaceous_bar",
+}
+
+
+LITHOLOGY_TILE_PATTERNS = {
+    "chalk_grid": "chalk",
+    "block_grid": "limestone",
+    "diagonal": "dolomite",
+    "calcareous_clay": "calcareous_clay",
+    "waves": "marl",
+}
+
+
+COMMON_LITHOLOGY_LEGEND_LABELS: Dict[str, str] = {
+    "unknown": "Unknown",
+    "gap": "Gap",
+    "claystone/mudstone": "Shale/Claystone",
+    "mudstone": "Shale/Claystone",
+    "claystone": "Shale/Claystone",
+    "clay": "Shale/Claystone",
+    "silty shale": "Shale/Claystone",
+    "shale": "Shale/Claystone",
+    "biogenic ooze": "Shale/Claystone",
+    "sandstone": "Sandstone",
+    "silty sand": "Sandstone",
+    "cross bedded sst": "Sandstone",
+    "crossbedded sand": "Sandstone",
+    "aeolian sandstone": "Sandstone",
+    "arkose": "Sandstone",
+    "sand": "Sandstone",
+    "siltstone/silt": "Siltstone/Silt",
+    "sandy silt": "Siltstone/Silt",
+    "shaly silt": "Siltstone/Silt",
+    "siltstone": "Siltstone/Silt",
+    "silt": "Siltstone/Silt",
+    "conglomerate": "Conglomerate/Breccia",
+    "breccia": "Conglomerate/Breccia",
+    "gravel": "Conglomerate/Breccia",
+    "chalk": "Limestone/Chalk",
+    "porous limestone": "Limestone/Chalk",
+    "argillaceous limestone": "Limestone/Chalk",
+    "limestone": "Limestone/Chalk",
+    "dolomite": "Dolomite",
+    "dolomite2": "Dolomite",
+    "calcareous clay/shale": "Marl/Calcareous Shale",
+    "calcareous shale": "Marl/Calcareous Shale",
+    "marl": "Marl/Calcareous Shale",
+    "marlstone": "Marl/Calcareous Shale",
+    "halite": "Evaporite",
+    "salt": "Evaporite",
+    "sylvinite": "Evaporite",
+    "carnallite": "Evaporite",
+    "kainite": "Evaporite",
+    "anhydrite": "Evaporite",
+    "gypsum": "Evaporite",
+    "polyhalite": "Evaporite",
+    "coal": "Coal",
+    "coal (lignite peat descriptors)": "Coal",
+    "chert": "Chert/Siliceous",
+    "spiculite": "Chert/Siliceous",
+    "intrusive acid igneous": "Igneous/Volcanic",
+    "intrusive basic igneous": "Igneous/Volcanic",
+    "igneous/intrusive metamorphic": "Igneous/Volcanic",
+    "basement": "Igneous/Volcanic",
+    "plutonic rock": "Igneous/Volcanic",
+    "intrusive": "Igneous/Volcanic",
+    "extrusive": "Igneous/Volcanic",
+    "cinerite": "Igneous/Volcanic",
+    "volcanic tuff": "Igneous/Volcanic",
+    "tuff": "Igneous/Volcanic",
+    "volcanics": "Igneous/Volcanic",
+    "volcanic": "Igneous/Volcanic",
+    "metamorphic rock": "Metamorphic",
+    "calcareous cement": "Calcareous Cement",
+    "calcareous debris flow": "Conglomerate/Breccia",
+}
+
+
+BUILTIN_LITHOLOGY_LABEL_KEYS = {
+    _lithology_label_key(label)
+    for label in (*GEOLINK_LITHOLOGY_CODE_LABELS.values(), *COMPUTED_LITHOLOGY_CODE_LABELS.values())
+}
 
 
 AUTO_TEMPLATE_SKIP_CURVES = {
@@ -747,7 +1228,7 @@ def create_adaptive_log_viewer_template(
             _adaptive_spec("NPHI", "NPHI", 0.45, -0.15, "#0571b0"),
             _adaptive_spec("NPHI_HC", "NPHI HC", 0.45, -0.15, "#2166ac", line_style="--"),
             _adaptive_spec("DRHO", "DRHO", -0.25, 0.25, "#4d4d4d", line_style=":"),
-            _adaptive_spec("PEF", "PEF", 0, 10, "#762a83"),
+            _adaptive_spec("PEF", "PEF", 0, 10, "#b35806"),
         ],
         width=1.35,
     )
@@ -1103,7 +1584,7 @@ class LogViewer:
 
         width_ratios = [self._track_width_ratio(track) for track in tracks]
         max_label_rows = max((self._track_header_row_count(track) for track in tracks), default=1)
-        header_ratio = min(0.45, max(0.22, 0.10 + max_label_rows * 0.050))
+        header_ratio = min(0.30, max(0.14, 0.075 + max_label_rows * 0.032))
         figsize = self.figsize or (max(sum(width_ratios) * 1.75, 11.0), 14.5)
 
         self.fig = plt.figure(figsize=figsize, constrained_layout=False)
@@ -1587,7 +2068,7 @@ class LogViewer:
             transform = header_ax.transAxes
 
         unit = self._mineral_volume_unit(plotted_items)
-        scale_y = 0.78
+        scale_y = 0.58
         header_ax.plot(
             [0.08, 0.92],
             [scale_y, scale_y],
@@ -1630,8 +2111,8 @@ class LogViewer:
                 clip_on=True,
             )
 
-        legend_top = 0.55
-        legend_bottom = 0.10
+        legend_top = 0.40
+        legend_bottom = 0.08
         row_count = max(len(plotted_items), 1)
         row_step = 0.0 if row_count == 1 else (legend_top - legend_bottom) / (row_count - 1)
         for index, item in enumerate(plotted_items):
@@ -1698,7 +2179,9 @@ class LogViewer:
         for index, code in enumerate(unique_codes):
             label = self._lithology_label(code, curve.mnemonic)
             color = self._lithology_color(code, label, cmap, index, len(unique_codes))
-            hatch = self._lithology_hatch(label)
+            pattern = self._lithology_pattern(label)
+            hatch = "" if pattern else self._lithology_hatch(label)
+            legend_hatch = self._lithology_hatch(label)
             mask = visible & np.isclose(data, code)
             ax.fill_betweenx(
                 depth,
@@ -1712,20 +2195,26 @@ class LogViewer:
                 linewidth=0.2 if hatch else 0.0,
                 zorder=1,
             )
-            if label not in legend_handles_by_label:
-                legend_handles_by_label[label] = Patch(
+            if pattern:
+                for segment_indices in self._lithology_segments(mask):
+                    y0, y1 = self._lithology_segment_bounds(depth, segment_indices, top, bottom)
+                    self._draw_lithology_pattern(ax, label, y0, y1)
+            legend_label = self._lithology_legend_label(label)
+            if legend_label not in legend_handles_by_label:
+                legend_handles_by_label[legend_label] = Patch(
                     facecolor=color,
                     edgecolor="0.28",
-                    hatch=hatch,
-                    label=label,
+                    hatch=legend_hatch,
+                    label=legend_label,
                 )
 
         ax.set_xlim(0.0, 1.0)
         legend_handles = list(legend_handles_by_label.values())
         if legend_handles:
-            max_cols = min(3, max(1, len(legend_handles)))
+            legend_handles = legend_handles[:18]
+            max_cols = min(4, max(1, len(legend_handles)))
             ax.legend(
-                handles=legend_handles[:12],
+                handles=legend_handles,
                 loc="upper center",
                 bbox_to_anchor=(0.5, -0.025),
                 fontsize=8.0,
@@ -1749,6 +2238,476 @@ class LogViewer:
             transform=ax.transAxes,
         )
         self._header_row_counts[id(ax)] = 1
+
+    def _lithology_segments(self, mask: np.ndarray) -> List[np.ndarray]:
+        indices = np.flatnonzero(mask)
+        if indices.size == 0:
+            return []
+        split_at = np.flatnonzero(np.diff(indices) > 1) + 1
+        return [segment for segment in np.split(indices, split_at) if segment.size > 0]
+
+    def _lithology_segment_bounds(
+        self,
+        depth: np.ndarray,
+        indices: np.ndarray,
+        top: float,
+        bottom: float,
+    ) -> Tuple[float, float]:
+        segment_depth = np.asarray(depth[indices], dtype=float)
+        segment_depth = segment_depth[np.isfinite(segment_depth)]
+        if segment_depth.size == 0:
+            return float(top), float(top)
+
+        finite_depth = np.asarray(depth[np.isfinite(depth)], dtype=float)
+        if finite_depth.size > 1:
+            step = float(np.nanmedian(np.abs(np.diff(finite_depth))))
+            if not np.isfinite(step) or step <= 0:
+                step = 1.0
+        else:
+            step = 1.0
+
+        lo = float(np.nanmin(segment_depth) - step * 0.5)
+        hi = float(np.nanmax(segment_depth) + step * 0.5)
+        visible_lo, visible_hi = sorted((float(top), float(bottom)))
+        return max(lo, visible_lo), min(hi, visible_hi)
+
+    def _lithology_pattern(self, label: str) -> str:
+        return _lookup_lithology_style(label, LITHOLOGY_CUSTOM_PATTERNS, "")
+
+    def _lithology_legend_label(self, label: str) -> str:
+        if _lithology_label_key(label) not in BUILTIN_LITHOLOGY_LABEL_KEYS:
+            return str(label)
+        grouped = _lookup_lithology_style(label, COMMON_LITHOLOGY_LEGEND_LABELS, "")
+        return grouped or str(label)
+
+    def _pattern_grid(
+        self,
+        y0: float,
+        y1: float,
+        rows: int,
+        cols: int,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        y_low, y_high = sorted((float(y0), float(y1)))
+        if rows <= 0 or cols <= 0 or y_high <= y_low:
+            return np.asarray([]), np.asarray([])
+        xs = np.linspace(0.14, 0.86, cols)
+        ys = np.linspace(y_low, y_high, rows + 2)[1:-1]
+        xx, yy = np.meshgrid(xs, ys)
+        if rows > 1 and cols > 1:
+            spacing = xs[1] - xs[0]
+            xx[1::2] = np.clip(xx[1::2] + spacing * 0.38, 0.14, 0.90)
+        return xx.ravel(), yy.ravel()
+
+    def _lithology_tile_rgba(self, tile_name: str) -> np.ndarray:
+        height, width = 46, 92
+        image = np.zeros((height, width, 4), dtype=float)
+        line = np.asarray([0.10, 0.10, 0.10, 0.82], dtype=float)
+
+        def bounds(value: int, upper: int) -> int:
+            return int(max(0, min(upper, value)))
+
+        def hline(y: int, x0: int = 0, x1: Optional[int] = None, thickness: int = 1) -> None:
+            x1 = width if x1 is None else x1
+            y0 = bounds(y - thickness // 2, height)
+            y1 = bounds(y0 + thickness, height)
+            image[y0:y1, bounds(x0, width):bounds(x1, width), :] = line
+
+        def vline(x: int, y0: int = 0, y1: Optional[int] = None, thickness: int = 1) -> None:
+            y1 = height if y1 is None else y1
+            x0 = bounds(x - thickness // 2, width)
+            x1 = bounds(x0 + thickness, width)
+            image[bounds(y0, height):bounds(y1, height), x0:x1, :] = line
+
+        def diagonal(x0: int, y0: int, x1: int, y1: int, thickness: int = 1) -> None:
+            steps = max(abs(x1 - x0), abs(y1 - y0), 1) + 1
+            xs = np.linspace(x0, x1, steps).round().astype(int)
+            ys = np.linspace(y0, y1, steps).round().astype(int)
+            radius = max(0, thickness // 2)
+            paint_points(xs, ys, radius)
+
+        def paint_points(xs: np.ndarray, ys: np.ndarray, radius: int) -> None:
+            for x, y in zip(xs, ys):
+                image[
+                    bounds(y - radius, height):bounds(y + radius + 1, height),
+                    bounds(x - radius, width):bounds(x + radius + 1, width),
+                    :,
+                ] = line
+
+        def wave(y_center: int, amplitude: int = 3, cycles: float = 2.0, thickness: int = 1) -> None:
+            xs = np.arange(4, width - 4)
+            phase = np.linspace(0.0, cycles * 2.0 * np.pi, xs.size)
+            ys = np.rint(y_center + amplitude * np.sin(phase)).astype(int)
+            paint_points(xs, ys, max(0, thickness // 2))
+
+        def calcareous_marker(cx: int, cy: int) -> None:
+            hline(cy, cx - 6, cx + 7, thickness=2)
+            vline(cx, cy - 8, cy + 1, thickness=2)
+
+        mid = height // 2
+        if tile_name == "chalk":
+            hline(mid, thickness=2)
+            for x in (8, 14, width - 16, width - 9):
+                vline(x, 0, mid, thickness=2)
+            vline(width // 2, mid, height, thickness=2)
+        elif tile_name == "limestone":
+            hline(mid, thickness=2)
+            for x in (14, width - 18):
+                vline(x, 0, mid, thickness=2)
+            vline(width // 2, mid, height, thickness=2)
+        elif tile_name == "dolomite":
+            hline(mid, thickness=2)
+            for x in (24, 70):
+                diagonal(x, 0, x + 14, mid, thickness=3)
+                diagonal(x - 14, mid, x, height, thickness=3)
+        elif tile_name == "calcareous_clay":
+            for cx, cy in ((18, 13), (47, 24), (74, 14), (25, 37), (68, 36)):
+                calcareous_marker(cx, cy)
+        elif tile_name == "marl":
+            for y_center in (12, 24, 36):
+                wave(y_center, amplitude=3, cycles=2.3, thickness=2)
+        return image
+
+    def _draw_lithology_tile(
+        self,
+        ax: Axes,
+        tile_name: str,
+        y0: float,
+        y1: float,
+        zorder: float,
+    ) -> None:
+        tile = self._lithology_tile_rgba(tile_name)
+        if tile.size == 0:
+            return
+
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        y_low, y_high = sorted((float(y0), float(y1)))
+        axis_span = abs(float(np.diff(ylim)[0])) or (y_high - y_low)
+        interval_fraction = min(1.0, max(0.0, (y_high - y_low) / axis_span))
+        bbox = ax.get_window_extent()
+        width_px = int(max(tile.shape[1], bbox.width or tile.shape[1] * 3))
+        height_px = int(max(tile.shape[0], (bbox.height or tile.shape[0] * 3) * interval_fraction))
+        repeat_x = max(1, math.ceil(width_px / tile.shape[1]))
+        repeat_y = max(1, math.ceil(height_px / tile.shape[0]))
+        tiled = np.tile(tile, (repeat_y, repeat_x, 1))
+
+        ax.imshow(
+            tiled,
+            extent=(0.0, 1.0, y_low, y_high),
+            origin="upper",
+            aspect="auto",
+            interpolation="nearest",
+            zorder=zorder,
+            clip_on=True,
+        )
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+
+    def _draw_lithology_pattern(self, ax: Axes, label: str, y0: float, y1: float) -> None:
+        pattern = self._lithology_pattern(label)
+        if not pattern or pattern == "solid":
+            return
+
+        y_low, y_high = sorted((float(y0), float(y1)))
+        height = y_high - y_low
+        if not np.isfinite(height) or height <= 0:
+            return
+
+        axis_span = abs(float(np.diff(ax.get_ylim())[0])) or height
+        rows = max(2, min(4, int(math.ceil(height / max(axis_span * 0.045, 1e-9)))))
+        cols = 4
+        color = "0.15"
+        if pattern == "shale_lines":
+            color = "0.45"
+        elif pattern == "spiculite_trees":
+            color = "0.35"
+        zorder = 2.8
+        tile_name = LITHOLOGY_TILE_PATTERNS.get(pattern)
+        if tile_name:
+            self._draw_lithology_tile(ax, tile_name, y_low, y_high, zorder)
+            return
+
+        def regular_points(
+            rows_count: int,
+            cols_count: int,
+            x0: float = 0.14,
+            x1: float = 0.86,
+        ) -> Tuple[np.ndarray, np.ndarray]:
+            if rows_count <= 0 or cols_count <= 0:
+                return np.asarray([]), np.asarray([])
+            xs = np.linspace(x0, x1, cols_count)
+            ys = np.linspace(y_low, y_high, rows_count + 2)[1:-1]
+            xx, yy = np.meshgrid(xs, ys)
+            return xx.ravel(), yy.ravel()
+
+        def regular_scatter(
+            marker: Any,
+            size: float,
+            rows_count: int,
+            cols_count: int,
+            x0: float = 0.14,
+            x1: float = 0.86,
+            **kwargs: Any,
+        ) -> None:
+            xs, ys = regular_points(rows_count, cols_count, x0=x0, x1=x1)
+            if xs.size == 0:
+                return
+            scatter_kwargs = {
+                "marker": marker,
+                "s": size,
+                "linewidths": kwargs.pop("linewidths", 0.6),
+                "zorder": zorder,
+                "clip_on": True,
+            }
+            if "facecolors" not in kwargs and "edgecolors" not in kwargs:
+                scatter_kwargs["color"] = kwargs.pop("color", color)
+            scatter_kwargs.update(kwargs)
+            ax.scatter(xs, ys, **scatter_kwargs)
+
+        def scatter(marker: Any, size: float = 12.0, rows_override: Optional[int] = None,
+                    cols_override: Optional[int] = None, **kwargs: Any) -> None:
+            xs, ys = self._pattern_grid(
+                y_low,
+                y_high,
+                rows_override if rows_override is not None else rows,
+                cols_override if cols_override is not None else cols,
+            )
+            if xs.size == 0:
+                return
+            scatter_kwargs = {
+                "marker": marker,
+                "s": size,
+                "linewidths": kwargs.pop("linewidths", 0.6),
+                "zorder": zorder,
+                "clip_on": True,
+            }
+            if "facecolors" not in kwargs and "edgecolors" not in kwargs:
+                scatter_kwargs["color"] = kwargs.pop("color", color)
+            scatter_kwargs.update(kwargs)
+            ax.scatter(xs, ys, **scatter_kwargs)
+
+        def horizontal_lines(count: int, linewidth: float = 0.45, x0: float = 0.06, x1: float = 0.94) -> None:
+            ys = np.linspace(y_low, y_high, count + 2)[1:-1]
+            ax.hlines(ys, x0, x1, color=color, linewidth=linewidth, zorder=zorder, clip_on=True)
+
+        def vertical_lines(count: int, linewidth: float = 0.45, ypad: float = 0.0) -> None:
+            xs = np.linspace(0.10, 0.90, count)
+            ax.vlines(xs, y_low + ypad, y_high - ypad, color=color, linewidth=linewidth, zorder=zorder, clip_on=True)
+
+        def short_dashes(with_dots: bool = False, dot_count: int = 1) -> None:
+            ys = np.linspace(y_low, y_high, rows + 2)[1:-1]
+            for row, y in enumerate(ys):
+                offset = 0.06 if row % 2 else 0.0
+                for x_start in (0.12 + offset, 0.42 + offset, 0.72 + offset):
+                    if x_start + 0.14 <= 0.94:
+                        ax.hlines(y, x_start, x_start + 0.14, color=color, linewidth=0.6, zorder=zorder, clip_on=True)
+                if with_dots:
+                    xs = np.linspace(0.30, 0.70, dot_count)
+                    ax.scatter(xs, np.full(xs.shape, y), marker=".", s=8, color=color, zorder=zorder, clip_on=True)
+
+        def diagonal_lines(direction: int = 1, count: Optional[int] = None, linewidth: float = 0.6) -> None:
+            n_lines = count or max(3, min(9, rows + 3))
+            starts = np.linspace(-0.35, 0.95, n_lines)
+            for start in starts:
+                x_start = max(0.04, start)
+                x_end = min(0.96, start + 0.38)
+                if x_end <= 0.04 or x_start >= 0.96 or x_end <= x_start:
+                    continue
+                frac0 = (x_start - start) / 0.38
+                frac1 = (x_end - start) / 0.38
+                if direction > 0:
+                    yy0 = y_high - frac0 * height
+                    yy1 = y_high - frac1 * height
+                else:
+                    yy0 = y_low + frac0 * height
+                    yy1 = y_low + frac1 * height
+                ax.plot([x_start, x_end], [yy0, yy1], color=color, linewidth=linewidth, zorder=zorder, clip_on=True)
+
+        if pattern == "horizontal_dense":
+            horizontal_lines(8, linewidth=0.45)
+        elif pattern == "shale_lines":
+            horizontal_lines(14, linewidth=0.35)
+        elif pattern == "dash":
+            short_dashes()
+        elif pattern == "dash_dot":
+            short_dashes(with_dots=True, dot_count=1)
+        elif pattern == "dots":
+            scatter(".", size=10, rows_override=4, cols_override=5)
+        elif pattern == "vertical_dot_columns":
+            regular_scatter(".", size=9, rows_count=7, cols_count=7)
+        elif pattern == "silt_strokes":
+            dash_ys = np.linspace(y_low, y_high, 7 + 2)[1:-1]
+            for group_x in (0.14, 0.42, 0.70):
+                ax.hlines(dash_ys, group_x, group_x + 0.16, color=color, linewidth=0.55, zorder=zorder, clip_on=True)
+                ax.vlines(
+                    group_x + 0.13,
+                    y_low + height * 0.18,
+                    y_high - height * 0.18,
+                    color=color,
+                    linewidth=0.55,
+                    zorder=zorder,
+                    clip_on=True,
+                )
+        elif pattern == "pebbles":
+            scatter("o", size=13, rows_override=3, cols_override=4, facecolors="none", edgecolors=color)
+            scatter(".", size=6, rows_override=3, cols_override=5)
+        elif pattern == "vertical_open_circles":
+            regular_scatter("o", size=15, rows_count=5, cols_count=6, facecolors="none", edgecolors=color)
+        elif pattern == "triangles":
+            scatter("^", size=18, rows_override=3, cols_override=4, color=color)
+            scatter(".", size=6, rows_override=3, cols_override=5)
+        elif pattern == "chalk_grid":
+            vertical_lines(5, linewidth=0.55)
+            horizontal_lines(2, linewidth=0.45)
+        elif pattern == "carbonate_grid_dense":
+            vertical_lines(4, linewidth=0.45)
+            horizontal_lines(8, linewidth=0.35)
+        elif pattern == "block_grid":
+            vertical_lines(4, linewidth=0.55)
+            horizontal_lines(2, linewidth=0.55)
+        elif pattern == "argillaceous_limestone":
+            stripe = Rectangle(
+                (0.38, y_low + height * 0.12),
+                0.24,
+                height * 0.76,
+                facecolor="#2f2f2f",
+                edgecolor="none",
+                alpha=0.18,
+                zorder=zorder - 0.1,
+                clip_on=True,
+            )
+            ax.add_patch(stripe)
+            ax.hlines(
+                np.linspace(y_low + height * 0.18, y_high - height * 0.18, 10),
+                0.38,
+                0.62,
+                color="0.20",
+                linewidth=0.35,
+                zorder=zorder,
+                clip_on=True,
+            )
+        elif pattern == "diagonal":
+            diagonal_lines(direction=1)
+        elif pattern == "diagonal_dense":
+            diagonal_lines(direction=1, count=max(7, rows + 5), linewidth=0.65)
+        elif pattern == "cross_diagonal":
+            diagonal_lines(direction=1, linewidth=0.55)
+            diagonal_lines(direction=-1, linewidth=0.55)
+        elif pattern == "grid":
+            vertical_lines(4, linewidth=0.55)
+            horizontal_lines(2, linewidth=0.55)
+        elif pattern == "evaporite_grid_dense":
+            vertical_lines(4, linewidth=0.45)
+            horizontal_lines(8, linewidth=0.35)
+        elif pattern == "calcareous_clay":
+            regular_scatter("+", size=18, rows_count=4, cols_count=5)
+        elif pattern == "waves":
+            centers = np.linspace(y_low, y_high, max(2, rows) + 2)[1:-1]
+            xs = np.linspace(0.12, 0.88, 60)
+            amplitude = height * 0.035
+            for y_center in centers:
+                ys = y_center + amplitude * np.sin(np.linspace(0, 4 * np.pi, xs.size))
+                ax.plot(xs, ys, color=color, linewidth=0.55, zorder=zorder, clip_on=True)
+        elif pattern == "waves_dense":
+            centers = np.linspace(y_low, y_high, 6 + 2)[1:-1]
+            xs = np.linspace(0.10, 0.90, 80)
+            amplitude = height * 0.025
+            for y_center in centers:
+                ys = y_center + amplitude * np.sin(np.linspace(0, 4 * np.pi, xs.size))
+                ax.plot(xs, ys, color=color, linewidth=0.50, zorder=zorder, clip_on=True)
+        elif pattern == "carets":
+            scatter("^", size=20, rows_override=2, cols_override=3,
+                    facecolors="none", edgecolors=color, linewidths=0.9)
+        elif pattern == "vertical_carets":
+            regular_scatter("^", size=22, rows_count=4, cols_count=5, facecolors="none", edgecolors=color, linewidths=0.9)
+        elif pattern == "chevrons_left":
+            scatter("<", size=20, rows_override=2, cols_override=3,
+                    facecolors="none", edgecolors=color, linewidths=0.9)
+        elif pattern == "plus_symbols":
+            scatter("+", size=24, rows_override=2, cols_override=3)
+        elif pattern == "x_symbols":
+            scatter("x", size=22, rows_override=2, cols_override=3)
+        elif pattern == "igneous_dash":
+            short_dashes()
+            scatter("|", size=16, rows_override=max(2, rows), cols_override=3)
+        elif pattern == "basement_symbols":
+            for group_x in (0.16, 0.44, 0.72):
+                dash_ys = np.linspace(y_low + height * 0.16, y_high - height * 0.16, 5)
+                ax.hlines(dash_ys, group_x, group_x + 0.14, color=color, linewidth=0.65, zorder=zorder, clip_on=True)
+                ax.vlines(
+                    group_x + 0.11,
+                    y_low + height * 0.18,
+                    y_high - height * 0.18,
+                    color=color,
+                    linewidth=0.55,
+                    zorder=zorder,
+                    clip_on=True,
+                )
+        elif pattern == "tuff_slashes":
+            scatter(r"$/$", size=22, rows_override=2, cols_override=3, linewidths=0.8)
+        elif pattern == "lightning_columns":
+            for x in (0.18, 0.36, 0.54, 0.72, 0.86):
+                ys = np.linspace(y_low + height * 0.10, y_high - height * 0.10, 8)
+                offsets = np.asarray([0.00, -0.012, 0.010, -0.014, 0.012, -0.010, 0.014, 0.00])
+                ax.plot(x + offsets, ys, color=color, linewidth=0.9, zorder=zorder, clip_on=True)
+        elif pattern == "volcanic_chevrons":
+            regular_scatter("v", size=22, rows_count=4, cols_count=6, facecolors="none", edgecolors=color, linewidths=0.9)
+        elif pattern == "volcanic_v":
+            scatter("v", size=20, rows_override=2, cols_override=3,
+                    facecolors="none", edgecolors=color, linewidths=0.9)
+        elif pattern == "argillaceous_dash":
+            horizontal_lines(max(1, rows), linewidth=0.7, x0=0.35, x1=0.65)
+        elif pattern == "limestone_stringer":
+            horizontal_lines(max(1, rows), linewidth=0.7, x0=0.25, x1=0.75)
+            vertical_lines(2, linewidth=0.6, ypad=height * 0.30)
+        elif pattern == "dolomite_stringer":
+            diagonal_lines(direction=1, count=max(2, rows), linewidth=0.7)
+            horizontal_lines(max(1, rows), linewidth=0.55, x0=0.25, x1=0.75)
+        elif pattern == "calcareous_t":
+            horizontal_lines(max(1, rows), linewidth=0.7, x0=0.35, x1=0.65)
+            xs, ys = self._pattern_grid(y_low, y_high, max(1, rows), 1)
+            ax.vlines(xs, ys, ys + height * 0.05, color=color, linewidth=0.7, zorder=zorder, clip_on=True)
+        elif pattern == "dolomitic_slash":
+            diagonal_lines(direction=1, count=max(2, rows), linewidth=0.7)
+        elif pattern == "macrofossils":
+            scatter(r"$\sim$", size=30, rows_override=max(1, rows), cols_override=2)
+        elif pattern == "foraminifera":
+            scatter("o", size=16, rows_override=max(1, rows), cols_override=3, facecolors="none", edgecolors=color, color=color)
+        elif pattern == "triangle_single":
+            scatter("^", size=28, rows_override=max(1, rows), cols_override=2)
+        elif pattern == "star_symbols":
+            scatter("*", size=28, rows_override=max(1, rows), cols_override=2)
+        elif pattern == "square_symbols":
+            scatter("s", size=18, rows_override=max(1, rows), cols_override=2, facecolors="none", edgecolors=color, color=color)
+        elif pattern == "mica_symbols":
+            scatter(r"$m$", size=26, rows_override=max(1, rows), cols_override=2)
+        elif pattern == "carbonaceous_bar":
+            ys = np.linspace(y_low, y_high, max(1, rows) + 2)[1:-1]
+            ax.hlines(ys, 0.35, 0.65, color="black", linewidth=3.0, zorder=zorder, clip_on=True)
+        elif pattern == "calcareous_cement":
+            dot_ys = np.linspace(y_low + height * 0.15, y_high - height * 0.15, 5)
+            ax.scatter(
+                np.full(dot_ys.shape, 0.18),
+                dot_ys,
+                marker=".",
+                s=8,
+                color=color,
+                zorder=zorder,
+                clip_on=True,
+            )
+            ax.hlines(
+                np.linspace(y_low + height * 0.22, y_high - height * 0.22, 8),
+                0.36,
+                0.66,
+                color=color,
+                linewidth=0.45,
+                zorder=zorder,
+                clip_on=True,
+            )
+        elif pattern == "spiculite_trees":
+            for x in (0.24, 0.50, 0.76):
+                ax.vlines(x, y_low + height * 0.18, y_high - height * 0.16, color=color, linewidth=0.75, zorder=zorder, clip_on=True)
+            regular_scatter("^", size=24, rows_count=2, cols_count=3, facecolors=color, edgecolors=color, linewidths=0.7)
 
     def _plot_flag_track(self, ax: Axes, track: LogTrackSpec, depth: np.ndarray) -> None:
         available_specs: List[Tuple[LogCurveSpec, Any]] = []
@@ -1888,8 +2847,13 @@ class LogViewer:
         else:
             transform = header_ax.transAxes
             row_count = max(self._header_row_counts.get(id(ax), 1), 1)
-            row_step = min(0.15, 0.80 / row_count)
-            row_center = 0.78 - row * row_step
+            if row_count == 1:
+                row_step = 0.22
+                row_center = 0.46
+            else:
+                row_step = min(0.135, 0.64 / (row_count - 1))
+                row_top = min(0.72, 0.14 + row_step * (row_count - 1))
+                row_center = row_top - row * row_step
 
         label_text, unit_text = self._split_header_label(label)
         if str(scale).lower() == "log":
@@ -1966,14 +2930,30 @@ class LogViewer:
         mnemonic = str(getattr(curve, "mnemonic", spec.curve_name)).upper()
         if mnemonic in RESISTIVITY_CURVE_NAMES or spec.curve_name.upper() in RESISTIVITY_CURVE_NAMES:
             return mnemonic
-        return spec.display_name or getattr(curve, "mnemonic", spec.curve_name)
+        label = spec.display_name or getattr(curve, "mnemonic", spec.curve_name)
+        return porosity_display_label(label, curve)
 
     def _curve_unit(self, curve: Any) -> str:
         unit = getattr(curve, "unit", None) or getattr(curve, "units", None) or ""
         unit = str(unit).strip()
-        if unit.lower() in {"", "-", "none", "nan"}:
+        mnemonic = str(getattr(curve, "mnemonic", "") or "").upper()
+        normalized = self._normalize_display_unit(unit)
+        if mnemonic in FRACTION_SATURATION_CURVE_NAMES and normalized in {"", "v/v", "frac"}:
+            return "frac"
+        if mnemonic in RESISTIVITY_CURVE_NAMES and normalized in {"", "ohm.m"}:
+            return "ohm.m"
+        if normalized:
+            return normalized
+        return DEFAULT_CURVE_DISPLAY_UNITS.get(mnemonic, "")
+
+    def _normalize_display_unit(self, unit: str) -> str:
+        text = str(unit or "").strip()
+        if text.lower() in {"", "-", "none", "nan"}:
             return ""
-        return unit
+        key = re.sub(r"\s+", " ", text.lower().replace("_", " ")).strip()
+        key = key.replace("ohm-m", "ohm.m")
+        key = key.replace("ohm m", "ohm.m")
+        return UNIT_DISPLAY_ALIASES.get(key, text)
 
     def _split_header_label(self, label: str) -> Tuple[str, str]:
         match = re.match(r"^(?P<name>.*?)\s*(?P<unit>\[[^\]]+\])\s*$", str(label))
@@ -2271,20 +3251,15 @@ class LogViewer:
         return "Unknown lithology"
 
     def _lithology_color(self, code: float, label: str, cmap: Any, index: int, total: int) -> Any:
-        lowered = label.lower()
-        for key, color in sorted(
-            LITHOLOGY_LABEL_COLORS.items(),
-            key=lambda item: len(item[0]),
-            reverse=True,
-        ):
-            if key in lowered:
-                return color
+        color = _lookup_lithology_style(label, LITHOLOGY_LABEL_COLORS, None)
+        if color is not None:
+            return color
         if total <= 1:
             return cmap(0.1)
         return cmap(index / max(total - 1, 1))
 
     def _lithology_hatch(self, label: str) -> str:
-        return ""
+        return _lookup_lithology_style(label, LITHOLOGY_HATCH_PATTERNS, "")
 
     def _coerce_formation_tops(self, source: Optional[Any]) -> List[FormationTopSpec]:
         if source is None:

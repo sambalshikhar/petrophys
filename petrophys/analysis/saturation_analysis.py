@@ -59,7 +59,7 @@ class SaturationAnalysis:
             so = np.full(n_samples, np.nan, dtype=float)
             valid = np.isfinite(sw)
             so[valid] = 1.0 - sw[valid]
-            derived_curves["SO"] = DerivedCurve(so, "v/v", "Oil Saturation")
+            derived_curves["SO"] = DerivedCurve(so, "frac", "Oil Saturation")
 
         if mhi is None and sw is not None and sxo is not None:
             mhi = calculate_mhi(sxo, sw)

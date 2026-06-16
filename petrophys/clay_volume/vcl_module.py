@@ -206,7 +206,10 @@ class VclModule:
         else:
             # Stack all methods and take minimum
             stacked = np.vstack(vcl_methods)
-            vcl_final = np.nanmin(stacked, axis=0)
+            valid_any = np.any(np.isfinite(stacked), axis=0)
+            vcl_final = np.full(n_samples, np.nan, dtype=float)
+            if np.any(valid_any):
+                vcl_final[valid_any] = np.nanmin(stacked[:, valid_any], axis=0)
 
             # Track which method was used
             method_used = np.empty(n_samples, dtype=object)

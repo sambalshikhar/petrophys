@@ -391,7 +391,7 @@ def _finalize_export_curves(well: "Well", original_curves: set[str]) -> None:
         for alias in ("SWA", "SWT-LOG"):
             curve = well.get(alias)
             if curve is not None:
-                well.add_curve("SW", curve.data, "v/v", "Water Saturation")
+                well.add_curve("SW", curve.data, "frac", "Water Saturation")
                 break
 
     if well.get("SXO") is None:
@@ -406,7 +406,7 @@ def _finalize_export_curves(well: "Well", original_curves: set[str]) -> None:
                     sxo_curve = well.get(curve_name)
                     break
         if sxo_curve is not None:
-            well.add_curve("SXO", sxo_curve.data, "v/v", "Flushed Zone Water Saturation")
+            well.add_curve("SXO", sxo_curve.data, "frac", "Flushed Zone Water Saturation")
 
     well.remove_curve("SWA")
     well.remove_curve("SWXOA")

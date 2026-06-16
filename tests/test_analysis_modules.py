@@ -516,7 +516,7 @@ def test_saturation_analysis_derives_so_from_sw():
         np.array([0.8, 0.35, np.nan]),
         equal_nan=True,
     )
-    assert result.derived_curves["SO"].unit == "v/v"
+    assert result.derived_curves["SO"].unit == "frac"
 
 
 def test_reference_json_primary_completeness_counts_alias_metadata_and_processed_curves():
@@ -783,6 +783,61 @@ def test_multi_mineral_solver_broadcasts_scalar_inputs_across_rows():
     assert result["vcl"].shape == (3,)
     np.testing.assert_allclose(result["vcl"], np.array([0.10, 0.10, 0.10]))
     assert np.all(np.isfinite(result["residual"]))
+
+
+def test_multi_mineral_solver_uses_pef_dtc_when_neutron_missing():
+    from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
+
+    result = MultiMineralSolver().solve(
+        rhob=np.array([2.45, 2.58, 2.70]),
+        nphi=np.array([np.nan, np.nan, np.nan]),
+        vcl=np.array([0.20, 0.25, 0.15]),
+        phie=np.array([0.12, 0.08, 0.05]),
+        pef=np.array([2.4, 3.0, 4.2]),
+        dt=np.array([78.0, 72.0, 65.0]),
+    )
+
+    solved = np.asarray(result["solved"], dtype=bool)
+    assert np.all(solved)
+    assert np.all(np.isfinite(result["quartz"]))
+    assert np.all(np.isfinite(result["calcite"]))
+    assert np.all(np.isfinite(result["dolomite"]))
+
+
+def test_multi_mineral_add_to_well_does_not_require_neutron_when_pef_dtc_present():
+    from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
+
+    depth = np.array([1000.0, 1000.5, 1001.0])
+    well = Well("NO-NEUTRON-MINERALS")
+    well.depth = depth
+    well.add_curve("DEPT", depth, "ft", "Depth")
+    well.add_curve("RHOB", np.array([2.45, 2.58, 2.70]), "g/cc", "Bulk Density")
+    well.add_curve("VCL", np.array([0.20, 0.25, 0.15]), "v/v", "Clay Volume")
+    well.add_curve("PHIE", np.array([0.12, 0.08, 0.05]), "v/v", "Effective Porosity")
+    well.add_curve("PEF", np.array([2.4, 3.0, 4.2]), "b/e", "Photoelectric Factor")
+    well.add_curve("DTC", np.array([78.0, 72.0, 65.0]), "us/ft", "Compressional Slowness")
+
+    MultiMineralSolver().add_to_well(well)
+
+    for curve in ("VQTZ", "VCAL", "VDOL", "VANH"):
+        assert well.get(curve) is not None
+        assert np.all(np.isfinite(well.get(curve).data))
+    assert well.get("MMQC") is not None
+    assert well.get("VRESI") is None
+
+
+def test_multi_mineral_add_to_well_requires_some_discriminator_curve():
+    from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
+
+    depth = np.array([1000.0, 1000.5])
+    well = Well("NO-MINERAL-DISCRIMINATOR")
+    well.depth = depth
+    well.add_curve("RHOB", np.array([2.45, 2.58]), "g/cc", "Bulk Density")
+    well.add_curve("VCL", np.array([0.20, 0.25]), "v/v", "Clay Volume")
+    well.add_curve("PHIE", np.array([0.12, 0.08]), "v/v", "Effective Porosity")
+
+    with pytest.raises(ValueError, match="NPHI/PHIN, PEF, or DTC/DT"):
+        MultiMineralSolver().add_to_well(well)
 
 
 def test_multi_mineral_solver_rejects_incompatible_lengths_cleanly():

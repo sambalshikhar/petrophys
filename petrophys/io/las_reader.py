@@ -16,6 +16,16 @@ except ImportError:
     HAS_LASIO = False
 
 
+def _normalize_depth_unit(unit: str) -> str:
+    text = str(unit or "").strip()
+    normalized = text.lower().replace(".", "")
+    if normalized in {"f", "ft", "feet", "foot"}:
+        return "ft"
+    if normalized in {"m", "meter", "meters", "metre", "metres"}:
+        return "m"
+    return text or "ft"
+
+
 class LASReader:
     """
     Reader for LAS (Log ASCII Standard) files.
@@ -149,7 +159,7 @@ class LASReader:
             # Get depth unit
             for curve in self._las.curves:
                 if curve.mnemonic == depth_curve:
-                    well._depth_unit = curve.unit or "ft"
+                    well._depth_unit = _normalize_depth_unit(curve.unit)
                     break
 
         # Add curves
