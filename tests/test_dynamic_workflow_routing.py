@@ -1,11 +1,13 @@
 import json
 import os
+import warnings
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from petrophys import Well
+from petrophys.clay_volume.vcl_module import VclModule
 from petrophys.io import read_las
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 
@@ -403,6 +405,24 @@ def test_vclay_routing_by_available_methods(
     assert "VCLAY" in step.output_curves
 
 
+def test_vclay_keeps_nan_where_all_methods_are_missing_without_runtime_warning():
+    well = Well("VCL-ALL-MISSING-ROW")
+    well.depth = np.array([1000.0, 1001.0, 1002.0])
+    well.add_curve("GR", np.array([40.0, np.nan, 90.0]), "API", "Gamma Ray")
+    well.add_curve("NPHI", np.array([0.15, np.nan, 0.35]), "v/v", "Neutron")
+    well.add_curve("RHOB", np.array([2.45, np.nan, 2.20]), "g/cc", "Density")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = VclModule(gr_min=20.0, gr_max=120.0, use_sp=False, use_nd=True).calculate(well)
+
+    assert np.isnan(result.vcl[1])
+    assert not any(
+        issubclass(item.category, RuntimeWarning) and "All-NaN slice" in str(item.message)
+        for item in caught
+    )
+
+
 @pytest.mark.parametrize("curve_to_keep", ["CALI", "CAL"])
 def test_bad_hole_accepts_cali_and_cal_namings(curve_to_keep, record_route):
     case_id = f"bad_hole_{curve_to_keep.lower()}_only"
@@ -581,6 +601,34 @@ def test_lithology_fallback_writes_litho_when_input_lithology_absent(record_rout
     assert "LITHO" in step.output_curves
     for curve in ("VQUAR", "VCALC", "VDOLO", "VANHY", "LITHO"):
         assert well.get(curve) is not None
+
+
+def test_lithology_solves_with_pef_dtc_when_neutron_missing(record_route):
+    well = _remove_curves(_routing_well("lithology_without_neutron", n=8), "NPHI", "PHIN")
+
+    result = _run(
+        "lithology_without_neutron",
+        well,
+        DynamicWorkflowConfig(
+            rw=0.05,
+            skip_steps=[
+                "temperature", "bad_hole", "rcl", "rmf", "hc_correction",
+                "porosity_refinement", "core_correction", "invasion", "saturation",
+                "permeability", "rock_quality", "bvw", "mhi", "net_pay",
+            ],
+        ),
+        record_route,
+        focus_steps=["porosity", "lithology"],
+        curves=["PHID", "PHIT", "PHIE", "VQUAR", "VCALC", "VDOLO", "VANHY", "MMQC", "LITHO"],
+    )
+
+    lith_step = _step_by_name(result, "lithology")
+    assert lith_step.success is True
+    assert lith_step.parameters["multi_mineral_solved_samples"] == well.n_samples
+    assert "MMQC" in lith_step.output_curves
+    for curve in ("VQUAR", "VCALC", "VDOLO", "VANHY"):
+        assert np.any(np.isfinite(well.get(curve).data))
+    assert well.get("MMQC") is not None
 
 
 @pytest.mark.parametrize(
@@ -918,19 +966,38 @@ def test_hc_correction_is_opt_in_by_default(record_route):
 
 
 @pytest.mark.parametrize(
-    "case_id,mutate,expected_method",
+    "case_id,mutate,expected_method,expected_apparent_source",
     [
-        ("porosity_full_density_neutron_sonic", lambda well: well, "adaptive_nd"),
-        ("porosity_density_only", lambda well: _remove_curves(well, "NPHI", "DTC", "PHIN", "PHIS", "PHIT"), "density_only"),
-        ("porosity_existing_phit_reused", lambda well: _remove_curves(well, "NPHI", "RHOB", "DTC", "PHIN", "PHID", "PHIS"), "existing_phit"),
+        ("porosity_full_density_neutron_sonic", lambda well: well, "adaptive_nd", None),
+        ("porosity_density_only", lambda well: _remove_curves(well, "NPHI", "DTC", "PHIN", "PHIS", "PHIT"), "density_only", "density-derived"),
+        ("porosity_neutron_only", lambda well: _remove_curves(well, "RHOB", "DTC", "PHID", "PHIS", "PHIT"), "neutron_only", "neutron-derived"),
+        ("porosity_sonic_only", lambda well: _remove_curves(well, "NPHI", "RHOB", "PHIN", "PHID", "PHIT"), "sonic_only", "sonic-derived"),
+        ("porosity_existing_phit_reused", lambda well: _remove_curves(well, "NPHI", "RHOB", "DTC", "PHIN", "PHID", "PHIS"), "existing_phit", None),
     ],
 )
-def test_porosity_routes_by_available_inputs(case_id, mutate, expected_method, record_route):
+def test_porosity_routes_by_available_inputs(case_id, mutate, expected_method, expected_apparent_source, record_route):
     well = mutate(_routing_well(case_id))
     result = _run(case_id, well, DynamicWorkflowConfig(rw=0.05), record_route, focus_steps=["porosity"], curves=["PHIN", "PHID", "PHIS", "PHIT", "PHIE"])
     step = _step_by_name(result, "porosity")
     assert step.parameters["phit_method"] == expected_method
     assert "PHIE" in step.output_curves
+    assert step.parameters["phit_apparent"] is bool(expected_apparent_source)
+    assert step.parameters["phie_apparent"] is bool(expected_apparent_source)
+    assert step.parameters["apparent_porosity_source"] == expected_apparent_source
+
+    phit = well.get(step.parameters["computed_phit_curve"])
+    phie = well.get(step.parameters["computed_phie_curve"])
+    assert phit is not None
+    assert phie is not None
+    assert phit.metadata.custom["porosity_apparent"] is bool(expected_apparent_source)
+    assert phie.metadata.custom["porosity_apparent"] is bool(expected_apparent_source)
+    if expected_apparent_source:
+        assert expected_apparent_source in phit.metadata.description
+        assert expected_apparent_source in phie.metadata.description
+        assert any("apparent total porosity" in item for item in step.decisions)
+        assert any("apparent effective porosity" in item for item in step.decisions)
+    else:
+        assert "Apparent" not in phit.metadata.description
 
 
 def test_porosity_phin_uses_lithology_specific_nphi_ma(record_route):

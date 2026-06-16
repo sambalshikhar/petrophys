@@ -44,6 +44,8 @@ class LithologyResult:
     v_clay: np.ndarray
     lithology_code: np.ndarray
     lithology_name: np.ndarray
+    qc_flag: np.ndarray
+    solved: np.ndarray
 
 
 class LithologyModule:
@@ -128,28 +130,29 @@ class LithologyModule:
         The solver provides mineral volumes; raw curves are then used to keep
         petrophysical families aligned with field-observed lithologies.
         """
-        if not np.isfinite(rhob) or not np.isfinite(nphi):
+        if not np.isfinite(rhob):
             return "unknown"
 
         carbonate_volume = v_calcite + v_dolomite
+        nphi_valid = np.isfinite(nphi)
         dtc_valid = np.isfinite(dtc)
         gr_valid = np.isfinite(gr)
 
-        if rhob < 1.95 and nphi > 0.35:
+        if nphi_valid and rhob < 1.95 and nphi > 0.35:
             return "coal"
 
-        if (((v_anhydrite > 0.55) and nphi < 0.10 and (not dtc_valid or dtc < 70))
-                or (rhob > 2.90 and nphi < 0.08 and (not gr_valid or gr < 60)
+        if (((v_anhydrite > 0.55) and (not nphi_valid or nphi < 0.10) and (not dtc_valid or dtc < 70))
+                or (rhob > 2.90 and (not nphi_valid or nphi < 0.08) and (not gr_valid or gr < 60)
                     and (not dtc_valid or dtc < 70))
-                or (rhob < 2.25 and nphi < 0.05 and (not gr_valid or gr < 35))):
+                or (rhob < 2.25 and (nphi_valid and nphi < 0.05) and (not gr_valid or gr < 35))):
             return "anhydrite" if (v_anhydrite > 0.55 or rhob > 2.90) else "salt"
 
-        if vcl > 0.45 or (gr_valid and gr > 150 and nphi > 0.32):
+        if vcl > 0.45 or (gr_valid and gr > 150 and (not nphi_valid or nphi > 0.32)):
             return "shale"
 
         carbonate_signature = (
-            (gr_valid and gr < 45 and rhob > 2.38 and nphi < 0.24 and (not dtc_valid or dtc < 90))
-            or (carbonate_volume >= max(v_quartz, 0.20) and gr_valid and gr < 55 and nphi < 0.28)
+            (gr_valid and gr < 45 and rhob > 2.38 and (not nphi_valid or nphi < 0.24) and (not dtc_valid or dtc < 90))
+            or (carbonate_volume >= max(v_quartz, 0.20) and gr_valid and gr < 55 and (not nphi_valid or nphi < 0.28))
         )
         if carbonate_signature:
             return "dolomite" if v_dolomite > v_calcite else "limestone"
@@ -157,7 +160,7 @@ class LithologyModule:
         clastic_signature = (
             v_quartz > 0.25
             or (gr_valid and gr >= 35)
-            or nphi > 0.20
+            or (nphi_valid and nphi > 0.20)
             or (dtc_valid and dtc > 80)
             or rhob < 2.45
         )
@@ -177,7 +180,8 @@ class LithologyModule:
         Parameters
         ----------
         well : Well
-            Well with required curves (RHOB, NPHI, PEF, VCL)
+            Well with RHOB, VCL/PHIE, and enough NPHI/PEF/DTC information
+            for a reduced or full mineral solve.
         vcl : np.ndarray, optional
             Clay volume (uses VCL curve if not provided)
 
@@ -197,8 +201,10 @@ class LithologyModule:
         dtc, _, _ = get_curve_data_depthwise(well, ["DTC", "DT"])
         gr, _, _ = get_curve_data_depthwise(well, ["GR"])
 
-        if rhob is None or nphi is None:
-            raise ValueError("RHOB and NPHI/PHIN with finite samples required for lithology")
+        if rhob is None:
+            raise ValueError("RHOB with finite samples required for lithology")
+        if nphi is None and pef is None and dtc is None:
+            raise ValueError("NPHI/PHIN, PEF, or DTC with finite samples required for lithology")
 
         # Get VCL
         if vcl is None and self.include_clay:
@@ -209,6 +215,7 @@ class LithologyModule:
 
         pef_clean = self._screen_pef(pef) if pef is not None else None
         dtc_clean = self._screen_dtc(dtc) if dtc is not None else None
+        nphi_data = np.asarray(nphi, dtype=float).copy() if nphi is not None else np.full(n_samples, np.nan)
         phie_data = np.asarray(phie, dtype=float).copy() if phie is not None else np.zeros(n_samples)
         gr_data = np.asarray(gr, dtype=float).copy() if gr is not None else np.full(n_samples, np.nan)
 
@@ -235,7 +242,7 @@ class LithologyModule:
         for i in range(n_samples):
             lith_name = self._classify_sample(
                 rhob=float(rhob[i]),
-                nphi=float(nphi[i]),
+                nphi=float(nphi_data[i]),
                 gr=float(gr_data[i]) if np.isfinite(gr_data[i]) else np.nan,
                 dtc=float(dtc_clean[i]) if dtc_clean is not None and np.isfinite(dtc_clean[i]) else np.nan,
                 vcl=float(vcl[i]),
@@ -254,7 +261,9 @@ class LithologyModule:
             v_anhydrite=v_anhydrite,
             v_clay=vcl,
             lithology_code=lithology_code,
-            lithology_name=lithology_name
+            lithology_name=lithology_name,
+            qc_flag=np.asarray(result.get("qc_flag", np.zeros(n_samples, dtype=bool)), dtype=bool),
+            solved=np.asarray(result.get("solved", np.zeros(n_samples, dtype=bool)), dtype=bool),
         )
 
     def add_to_well(
@@ -289,6 +298,7 @@ class LithologyModule:
         well.add_curve("VCALC", result.v_calcite, "v/v", "Calcite Volume")
         well.add_curve("VDOLO", result.v_dolomite, "v/v", "Dolomite Volume")
         well.add_curve("VANHY", result.v_anhydrite, "v/v", "Anhydrite Volume")
+        well.add_curve("MMQC", result.qc_flag.astype(float), "", "Multi-mineral QC flag (1 = poor fit or unsolved)")
         if include_lithology_code:
             well.add_curve("LITHO", result.lithology_code.astype(float), "", "Lithology Code")
 

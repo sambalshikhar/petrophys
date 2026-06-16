@@ -16,6 +16,7 @@ except ImportError:
 import numpy as np
 
 from petrophys.utils.analysis_helpers import resolve_well_depth_range, well_depth_array
+from petrophys.visualization.curve_labels import porosity_display_label
 
 
 class InterpretationPlot:
@@ -221,6 +222,8 @@ class InterpretationPlot:
         if phit_data is not None and phie_data is not None:
             phie_plot = np.minimum(phie_data, phit_data)
             valid = np.isfinite(phit_data) & np.isfinite(phie_plot)
+            phie_label = porosity_display_label("PHIE", phie)
+            phit_label = porosity_display_label("PHIT", phit)
 
             ax.fill_betweenx(
                 depth,
@@ -231,12 +234,14 @@ class InterpretationPlot:
                 color='gold',
                 label='PHIE fill',
             )
-            ax.plot(phie_plot, depth, color='crimson', linewidth=0.7, label='PHIE')
-            ax.plot(phit_data, depth, color='navy', linewidth=0.8, label='PHIT')
+            ax.plot(phie_plot, depth, color='crimson', linewidth=0.7, label=phie_label)
+            ax.plot(phit_data, depth, color='navy', linewidth=0.8, label=phit_label)
         elif phit_data is not None:
-            ax.plot(phit_data, depth, color='navy', linewidth=0.8, label='PHIT')
+            phit_label = porosity_display_label("PHIT", phit)
+            ax.plot(phit_data, depth, color='navy', linewidth=0.8, label=phit_label)
         elif phie_data is not None:
             valid = np.isfinite(phie_data)
+            phie_label = porosity_display_label("PHIE", phie)
             ax.fill_betweenx(
                 depth,
                 0,
@@ -246,7 +251,7 @@ class InterpretationPlot:
                 color='gold',
                 label='PHIE fill',
             )
-            ax.plot(phie_data, depth, color='crimson', linewidth=0.7, label='PHIE')
+            ax.plot(phie_data, depth, color='crimson', linewidth=0.7, label=phie_label)
 
         if phie_cc_data is not None:
             ax.plot(
@@ -266,7 +271,7 @@ class InterpretationPlot:
             marker="x",
         )
 
-        ax.set_xlim(0, 0.4)
+        ax.set_xlim(0.4, 0)
         ax.set_xlabel("Porosity [v/v]")
         self._apply_legend(ax)
 
@@ -277,8 +282,6 @@ class InterpretationPlot:
         sw = self.well.get("SW")
         if sw is not None:
             ax.plot(sw.data, depth, 'b-', linewidth=0.5, label='Sw')
-            ax.fill_betweenx(depth, sw.data, 1, alpha=0.3, color='green',
-                            label='Hydrocarbon')
 
         sxo = self.well.get("SXO")
         if sxo is not None:
@@ -292,8 +295,8 @@ class InterpretationPlot:
             marker="x",
         )
 
-        ax.set_xlim(0, 1)
-        ax.set_xlabel("Saturation [v/v]")
+        ax.set_xlim(1, 0)
+        ax.set_xlabel("Saturation [frac]")
         self._apply_legend(ax)
 
     def _plot_track7_permeability(self, ax: "Axes") -> None:

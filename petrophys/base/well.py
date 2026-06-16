@@ -432,12 +432,37 @@ class Well:
         well = cls(name=name)
 
         if depth_column in df.columns:
-            well._depth = df[depth_column].values
+            well._depth = pd.to_numeric(
+                df[depth_column],
+                errors="coerce",
+            ).to_numpy(dtype=float)
             well._depth_unit = depth_unit
 
+        skipped_non_numeric: Dict[str, List[str]] = {}
         for col in df.columns:
-            if col != depth_column:
-                well.add_curve(col, df[col].values)
+            if col == depth_column:
+                continue
+
+            series = df[col]
+            numeric = pd.to_numeric(series, errors="coerce")
+            has_numeric = bool(numeric.notna().any())
+            has_value = bool(series.notna().any())
+            if has_numeric or not has_value:
+                well.add_curve(col, numeric.to_numpy(dtype=float))
+                continue
+
+            values = series.dropna().astype(str).unique()[:20].tolist()
+            skipped_non_numeric[col] = values
+            if (
+                not well.name
+                and col.upper() in {"WELL", "WELLNAME", "WELL_NAME"}
+                and len(values) == 1
+            ):
+                well.name = values[0]
+
+        if skipped_non_numeric:
+            well.set_parameter("SKIPPED_NON_NUMERIC_COLUMNS", sorted(skipped_non_numeric))
+            well.set_parameter("SKIPPED_NON_NUMERIC_VALUES", skipped_non_numeric)
 
         return well
 

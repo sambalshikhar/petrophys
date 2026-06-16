@@ -115,7 +115,7 @@ def test_log_viewer_lithology_track_uses_names_not_codes(monkeypatch):
         log_viewer_module._default_geolink_lithology_mapping.cache_clear()
 
     assert "Sandstone" in texts
-    assert "Silty Shale" in texts
+    assert "Shale/Claystone" in texts
     assert not any(text.startswith("Code ") for text in texts)
 
 
@@ -163,53 +163,73 @@ def test_log_viewer_lithology_track_states_when_not_available():
     viewer = create_log_viewer(well, template_defaults="auto", depth_range=(1000.0, 1009.5))
     texts = _viewer_texts(viewer)
 
-    assert "No lithology avialable" in texts
+    assert "No lithology available" in texts
 
 
-def test_log_viewer_lithology_uses_color_only_symbols():
+def test_log_viewer_lithology_uses_industry_style_pattern_symbols():
     viewer = create_log_viewer(
         _plot_well(),
         template_defaults="auto",
         depth_range=(1000.0, 1009.5),
     )
 
-    assert viewer._lithology_hatch("Calcareous Sandstone") == ""
-    assert viewer._lithology_hatch("Sandy Shale") == ""
-    assert viewer._lithology_hatch("Shale") == ""
-    assert viewer._lithology_hatch("Breccia") == ""
+    assert viewer._lithology_hatch("Calcareous Sandstone") == ".."
+    assert viewer._lithology_hatch("Sandy Shale") == "----"
+    assert viewer._lithology_hatch("Shale") == "----"
+    assert viewer._lithology_hatch("Breccia") == "xx"
+    assert viewer._lithology_hatch("Halite") == "++"
+    assert viewer._lithology_hatch("Dolomite") == "//"
 
 
-def test_log_viewer_lithology_colors_are_distinct_for_common_labels():
+def test_log_viewer_lithology_styles_group_families_and_distinguish_patterns():
     viewer = create_log_viewer(
         _plot_well(),
         template_defaults="auto",
         depth_range=(1000.0, 1009.5),
     )
-    labels = [
-        "Sand",
-        "Sandstone",
-        "Shaly Sandstone",
-        "Shaly Sand",
-        "Sandy Shale",
-        "Calcareous Sandstone",
-        "Shale",
-        "Limestone",
-        "Dolomite2",
-    ]
     cmap = log_viewer_module.plt.get_cmap("tab20")
-    colors = [viewer._lithology_color(0.0, label, cmap, index, len(labels)) for index, label in enumerate(labels)]
+    sandstone = viewer._lithology_color(0.0, "Sandstone", cmap, 0, 6)
+    shale = viewer._lithology_color(0.0, "Shale", cmap, 1, 6)
+    silt = viewer._lithology_color(0.0, "Siltstone/Silt", cmap, 2, 6)
+    limestone = viewer._lithology_color(0.0, "Limestone", cmap, 3, 6)
+    dolomite = viewer._lithology_color(0.0, "Dolomite", cmap, 4, 6)
+    halite = viewer._lithology_color(0.0, "Halite", cmap, 5, 6)
+    anhydrite = viewer._lithology_color(0.0, "Anhydrite", cmap, 5, 6)
 
-    assert len(set(colors)) == len(labels)
-    assert viewer._lithology_color(0.0, "Sand", cmap, 0, 2) != viewer._lithology_color(
-        0.0,
-        "Shaly Sandstone",
-        cmap,
-        1,
-        2,
+    assert sandstone != shale
+    assert sandstone != silt
+    assert limestone == dolomite
+    assert halite == anhydrite
+    assert viewer._lithology_pattern("Sandstone") == "dots"
+    assert viewer._lithology_pattern("Limestone") == "block_grid"
+    assert viewer._lithology_pattern("Dolomite") == "diagonal"
+    assert viewer._lithology_pattern("Halite") == "grid"
+    assert viewer._lithology_pattern("Anhydrite") == "carets"
+
+
+def test_log_viewer_uses_tiles_for_carbonate_lithology_patterns():
+    viewer = create_log_viewer(
+        _plot_well(),
+        template_defaults="auto",
+        depth_range=(1000.0, 1009.5),
     )
-    assert len(set(log_viewer_module.LITHOLOGY_LABEL_COLORS.values())) == len(
-        log_viewer_module.LITHOLOGY_LABEL_COLORS
-    )
+
+    assert log_viewer_module.LITHOLOGY_TILE_PATTERNS[viewer._lithology_pattern("Chalk")] == "chalk"
+    assert log_viewer_module.LITHOLOGY_TILE_PATTERNS[viewer._lithology_pattern("Limestone")] == "limestone"
+    assert log_viewer_module.LITHOLOGY_TILE_PATTERNS[viewer._lithology_pattern("Dolomite")] == "dolomite"
+    assert log_viewer_module.LITHOLOGY_TILE_PATTERNS[viewer._lithology_pattern("Calcareous Shale")] == "calcareous_clay"
+    assert log_viewer_module.LITHOLOGY_TILE_PATTERNS[viewer._lithology_pattern("Marlstone")] == "marl"
+
+    for tile_name in ("limestone", "calcareous_clay", "marl"):
+        tile = viewer._lithology_tile_rgba(tile_name)
+        assert tile.shape[-1] == 4
+        assert tile[..., 3].max() > 0
+        assert tile[..., 3].min() == 0
+
+    dolomite = viewer._lithology_tile_rgba("dolomite")
+    upper = np.argwhere(dolomite[: dolomite.shape[0] // 2, :, 3] > 0)
+    lower = np.argwhere(dolomite[dolomite.shape[0] // 2 :, :, 3] > 0)
+    assert float(np.mean(upper[:, 1])) > float(np.mean(lower[:, 1]))
 
 
 def test_log_viewer_lithology_legend_deduplicates_same_display_label():
@@ -227,7 +247,70 @@ def test_log_viewer_lithology_legend_deduplicates_same_display_label():
     )
     texts = _viewer_texts(viewer)
 
-    assert texts.count("Silt") == 1
+    assert texts.count("Siltstone/Silt") == 1
+
+
+def test_log_viewer_groups_builtin_lithology_legend_to_common_families():
+    viewer = create_log_viewer(
+        _plot_well(),
+        template_defaults="auto",
+        depth_range=(1000.0, 1009.5),
+    )
+
+    common_labels = {
+        viewer._lithology_legend_label(label)
+        for label in log_viewer_module.GEOLINK_LITHOLOGY_CODE_LABELS.values()
+    }
+
+    assert "Sandstone" in common_labels
+    assert "Shale/Claystone" in common_labels
+    assert "Limestone/Chalk" in common_labels
+    assert "Marl/Calcareous Shale" in common_labels
+    assert "Evaporite" in common_labels
+    assert len(common_labels) < len(log_viewer_module.GEOLINK_LITHOLOGY_CODE_LABELS)
+    assert viewer._lithology_legend_label("Workbook Shale") == "Workbook Shale"
+
+
+def test_log_viewer_all_geolink_codes_plot_common_lithology_legend():
+    depth = np.arange(1000.0, 1000.0 + 36.0, 1.0)
+    well = Well("ALL-GEOLINK-LITHOLOGY")
+    well.depth = depth
+    well.add_curve("DEPT", depth, "ft", "Depth")
+    well.add_curve("LITHOLOGY_GEOLINK", np.arange(1.0, 37.0), "", "Lithology")
+
+    viewer = create_log_viewer(
+        well,
+        template_defaults="auto",
+        depth_range=(float(depth.min()), float(depth.max())),
+    )
+    texts = _viewer_texts(viewer)
+
+    assert "Sandstone" in texts
+    assert "Limestone/Chalk" in texts
+    assert "Evaporite" in texts
+    assert "Igneous/Volcanic" in texts
+    assert "Chert/Siliceous" in texts
+    assert "Metamorphic" in texts
+    assert "Silty Sand" not in texts
+    assert "Volcanic Tuff" not in texts
+
+
+def test_log_viewer_lithology_defaults_keep_labels_and_use_pattern_styles(monkeypatch):
+    monkeypatch.setattr(log_viewer_module, "GEOLINK_LITHOLOGY_MAPPING_FILENAMES", ())
+    log_viewer_module._default_geolink_lithology_mapping.cache_clear()
+    try:
+        viewer = create_log_viewer(_plot_well(), template_defaults="auto", depth_range=(1000.0, 1009.5))
+        assert viewer._lithology_label(1.0, "LITHOLOGY_GEOLINK") == "Sandstone"
+        assert viewer._lithology_label(7.0, "LITHOLOGY_GEOLINK") == "Silty Shale"
+        assert viewer._lithology_label(21.0, "LITHOLOGY_GEOLINK") == "Halite"
+        assert viewer._lithology_label(22.0, "LITHOLOGY_GEOLINK") == "Anhydrite"
+        assert viewer._lithology_label(32.0, "LITHOLOGY_GEOLINK") == "Polyhalite"
+        assert viewer._lithology_hatch("Sandstone") == ".."
+        assert viewer._lithology_hatch("Silty Shale") == "----"
+        assert viewer._lithology_hatch("Halite") == "++"
+        assert viewer._lithology_hatch("Polyhalite") == "xx"
+    finally:
+        log_viewer_module._default_geolink_lithology_mapping.cache_clear()
 
 
 def test_log_viewer_adds_units_and_formation_tops():
@@ -376,6 +459,57 @@ def test_log_viewer_auto_template_shades_sw_from_zero_side():
     assert sw_spec.left == 1
     assert sw_spec.right == 0
     assert sw_spec.fill == "right"
+
+
+def test_log_viewer_auto_template_uses_distinct_dtc_and_pef_colors():
+    depth = np.arange(1000.0, 1010.0, 0.5)
+    well = Well("DTC-PEF-PLOT")
+    well.depth = depth
+    well.add_curve("DEPT", depth, "ft", "Depth")
+    well.add_curve("DTC", np.linspace(110.0, 70.0, depth.size), "us/ft", "Compressional Sonic")
+    well.add_curve("PEF", np.linspace(1.8, 5.0, depth.size), "b/e", "Photoelectric Factor")
+
+    template = create_adaptive_log_viewer_template(well)
+    density_track = next(track for track in template.tracks if track.display_name == "DENSITY / NEUTRON")
+    colors = {spec.curve_name: spec.color for spec in density_track.curves}
+
+    assert colors["DTC"] != colors["PEF"]
+
+
+def test_log_viewer_normalizes_common_display_units():
+    depth = np.arange(1000.0, 1010.0, 0.5)
+    well = Well("UNIT-PLOT")
+    well.depth = depth
+    well.add_curve("DEPT", depth, "ft", "Depth")
+    well.add_curve("RDEP", np.geomspace(1.0, 100.0, depth.size), "", "Deep Resistivity")
+    well.add_curve("DTC", np.linspace(110.0, 70.0, depth.size), "", "Compressional Sonic")
+    well.add_curve("RHOB", np.linspace(2.2, 2.6, depth.size), "", "Bulk Density")
+    well.add_curve("SW", np.linspace(0.2, 0.8, depth.size), "v/v", "Water Saturation")
+    well.add_curve("BVW", np.linspace(0.05, 0.15, depth.size), "v/v", "Bulk Volume Water")
+
+    viewer = create_log_viewer(well, template_defaults="auto", depth_range=(1000.0, 1009.5))
+    texts = _viewer_texts(viewer)
+
+    assert "[ohm.m], log" in texts
+    assert "[us/ft]" in texts
+    assert "[g/cc]" in texts
+    assert "[frac]" in texts
+    assert viewer._curve_unit(well.get("SW")) == "frac"
+    assert viewer._curve_unit(well.get("BVW")) == "v/v"
+
+
+def test_log_viewer_marks_apparent_porosity_labels():
+    well = _plot_well()
+    well.get("PHIT").metadata.description = "Apparent total porosity, density-derived from PHID"
+    well.get("PHIT").metadata.custom["porosity_apparent"] = True
+    well.get("PHIE").metadata.description = "Apparent effective porosity from density-derived PHIT"
+    well.get("PHIE").metadata.custom["porosity_apparent"] = True
+
+    viewer = create_log_viewer(well, template_defaults="auto", depth_range=(1000.0, 1009.5))
+    texts = "\n".join(_viewer_texts(viewer))
+
+    assert "PHIT app" in texts
+    assert "PHIE app" in texts
 
 
 def test_log_viewer_mineral_volumes_do_not_add_phie_remainder():

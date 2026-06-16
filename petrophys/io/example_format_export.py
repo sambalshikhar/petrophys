@@ -92,6 +92,28 @@ PREFERRED_CURVE_ORDER = [
     "MHI",
 ]
 
+FRACTION_SATURATION_EXPORT_CURVES = {
+    "SW",
+    "SWA",
+    "SWT",
+    "SWE",
+    "SXO",
+    "SWXOA",
+    "SO",
+    "SOC",
+    "SG",
+    "SWC",
+    "CSW",
+    "SWI",
+    "SWIR",
+    "SWIRR",
+    "SWIRR_APP",
+    "NMR_SWIRR",
+    "SWIRR_NMR",
+    "CMR_SWIRR",
+    "SWIRR_CMR",
+}
+
 FAMILY_LABELS = {
     "DEPT": "Measured Depth",
     "CALI": "Caliper",
@@ -660,6 +682,27 @@ def _curve_family(mnemonic: str, description: str) -> str:
     return FAMILY_LABELS.get(mnemonic, description or mnemonic.replace("_", " ").title())
 
 
+def _export_curve_unit(mnemonic: str, unit: str) -> str:
+    text = str(unit or "").strip()
+    lower = text.lower()
+    upper = str(mnemonic or "").upper()
+    if upper in FRACTION_SATURATION_EXPORT_CURVES and lower in {
+        "",
+        "-",
+        "none",
+        "nan",
+        "v/v",
+        "fraction",
+        "decimal",
+        "dec",
+        "unitless",
+    }:
+        return "frac"
+    if lower in {"ohmm", "ohm-m", "ohm m", "ohm.meter", "ohm-meter"}:
+        return "ohm.m"
+    return text
+
+
 def _convert_temperature_to_celsius(data: np.ndarray, unit: str) -> np.ndarray:
     text = (unit or "").strip().lower()
     numeric = _normalize_numeric_array(data)
@@ -713,7 +756,7 @@ def _build_alias_specs(well: "Well") -> List[ExportCurveSpec]:
         specs.append(
             ExportCurveSpec(
                 mnemonic="SW",
-                unit="v/v",
+                unit=_export_curve_unit("SW", sw.unit),
                 description="Water Saturation",
                 family=FAMILY_LABELS["SW"],
                 data=_normalize_numeric_array(sw.data),
@@ -726,7 +769,7 @@ def _build_alias_specs(well: "Well") -> List[ExportCurveSpec]:
         specs.append(
             ExportCurveSpec(
                 mnemonic="SXO",
-                unit="v/v",
+                unit=_export_curve_unit("SXO", sxo.unit),
                 description="Flushed Zone Water Saturation",
                 family=FAMILY_LABELS["SXO"],
                 data=_normalize_numeric_array(sxo.data),
@@ -783,7 +826,7 @@ def _direct_curve_spec(well: "Well", mnemonic: str) -> Optional[ExportCurveSpec]
     description = _curve_description(mnemonic, curve)
     return ExportCurveSpec(
         mnemonic=mnemonic,
-        unit=curve.unit or "",
+        unit=_export_curve_unit(mnemonic, curve.unit),
         description=description,
         family=_curve_family(mnemonic, description),
         data=_normalize_numeric_array(curve.data),
@@ -5088,7 +5131,7 @@ def _build_delivery_computation_notes(
             for step in permeability_steps
             if step.parameters.get("swirr_source")
         )
-        swirr_scalar = _format_numeric_summary(_step_parameter_values(permeability_steps, "swirr"), 4, "v/v")
+        swirr_scalar = _format_numeric_summary(_step_parameter_values(permeability_steps, "swirr"), 4, "frac")
         perm_present = well.get("PERM") is not None
         perm_cc_present = well.get("PERM_CC") is not None
         failure_reasons = _ordered_unique(

@@ -58,14 +58,11 @@ class MultiMineralSolver:
     pre-computed before calling this solver. Both are subtracted
     from the RHS of every equation before solving.
 
-    The active mineral set and equations are determined per depth
-    based on curve availability:
-
-        PEF available              → 4 minerals (quartz, calcite, dolomite,
-                                     anhydrite) + PEF row (+ DTC if present)
-        PEF absent, DTC available  → 4 minerals (quartz, calcite, dolomite,
-                                     anhydrite) + DTC row
-        Neither available          → 3 minerals, RHOB + NPHI only
+    The active mineral set and equations are determined per depth from the
+    equations available at that sample. Unity and RHOB are always used; NPHI,
+    PEF, and DTC are optional discriminator rows. The full mineral set is used
+    when enough independent rows are available, otherwise the solver falls
+    back to the reduced mineral set.
 
     PEF is preferred over DTC for mineral discrimination because U = PEF × ρ
     has a much wider spread across carbonates (quartz: 4.77, dolomite: 8.90,
@@ -98,7 +95,7 @@ class MultiMineralSolver:
     Examples
     --------
     >>> solver = MultiMineralSolver()
-    >>> result = solver.solve(rhob, nphi, vcl, phie, pef=pef, dt=dt)
+    >>> result = solver.solve(rhob, nphi=None, vcl=vcl, phie=phie, pef=pef, dt=dt)
     """
 
     def __init__(
@@ -132,7 +129,7 @@ class MultiMineralSolver:
     def _solve_sample(
         self,
         rhob: float,
-        nphi: float,
+        nphi: Optional[float],
         vcl: float,
         phie: float,
         pef: Optional[float],
@@ -141,17 +138,16 @@ class MultiMineralSolver:
         """
         Solve for mineral fractions at a single depth sample.
 
-        Active mineral set is chosen based on available curves:
-            PEF present → self.minerals (4 minerals)
-            PEF absent, DTC present → self.minerals (4 minerals) + DTC row
-            Neither → self.minerals_no_pef (3 minerals, RHOB+NPHI only)
+        Active mineral set is chosen from equation count. Unity and RHOB are
+        always present. NPHI, PEF, and DTC are optional rows; neutron is not
+        required when PEF/DTC provide enough independent equations.
 
         Parameters
         ----------
         rhob : float
             Bulk density (g/cm³)
-        nphi : float
-            Neutron porosity (v/v)
+        nphi : float or None
+            Neutron porosity (v/v), omitted when unavailable.
         vcl : float
             Clay volume fraction (0-1)
         phie : float
@@ -173,12 +169,13 @@ class MultiMineralSolver:
         vcl  = float(np.clip(vcl,  0.0, 1.0))
         phie = float(np.clip(phie, 0.0, 1.0))
 
-        # Select active mineral set based on curve availability.
-        # 4 minerals need at least 4 equations: Unity + RHOB + NPHI + (PEF or DTC).
-        # Drop to 3 minerals only when neither is available,
-        # leaving exactly 3 equations for 3 unknowns.
-        has_discriminator = pef is not None or dt is not None
-        active_minerals = self.minerals if has_discriminator else self.minerals_no_pef
+        available_equations = 2 + sum(value is not None for value in (nphi, pef, dt))
+        if available_equations >= len(self.minerals):
+            active_minerals = self.minerals
+        elif available_equations >= len(self.minerals_no_pef):
+            active_minerals = self.minerals_no_pef
+        else:
+            return [], tuple(), np.nan, True
 
         m  = [self.mineral_props[name] for name in active_minerals]
         fl = self.fluid_props
@@ -200,8 +197,9 @@ class MultiMineralSolver:
                 cl_val=cl["density"], fl_val=fl["density"], log_val=rhob)
 
         # Neutron
-        add_row([mi["nphi"] for mi in m],
-                cl_val=cl["nphi"],    fl_val=fl["nphi"],    log_val=nphi)
+        if nphi is not None:
+            add_row([mi["nphi"] for mi in m],
+                    cl_val=cl["nphi"],    fl_val=fl["nphi"],    log_val=nphi)
 
         # U = PEF × ρ
         if pef is not None:
@@ -228,7 +226,7 @@ class MultiMineralSolver:
     def solve(
         self,
         rhob: Union[float, np.ndarray],
-        nphi: Union[float, np.ndarray],
+        nphi: Optional[Union[float, np.ndarray]],
         vcl:  Union[float, np.ndarray],
         phie: Union[float, np.ndarray],
         pef:  Optional[Union[float, np.ndarray]] = None,
@@ -241,8 +239,8 @@ class MultiMineralSolver:
         ----------
         rhob : float or np.ndarray
             Bulk density (g/cm³)
-        nphi : float or np.ndarray
-            Neutron porosity (v/v)
+        nphi : float or np.ndarray, optional
+            Neutron porosity (v/v). Pass None when unavailable.
         vcl : float or np.ndarray
             Pre-computed clay volume (0-1)
         phie : float or np.ndarray
@@ -262,10 +260,11 @@ class MultiMineralSolver:
         """
         raw_arrays = {
             "rhob": np.atleast_1d(np.asarray(rhob, dtype=float)),
-            "nphi": np.atleast_1d(np.asarray(nphi, dtype=float)),
             "vcl": np.atleast_1d(np.asarray(vcl, dtype=float)),
             "phie": np.atleast_1d(np.asarray(phie, dtype=float)),
         }
+        if nphi is not None:
+            raw_arrays["nphi"] = np.atleast_1d(np.asarray(nphi, dtype=float))
         if pef is not None:
             raw_arrays["pef"] = np.atleast_1d(np.asarray(pef, dtype=float))
         if dt is not None:
@@ -284,7 +283,7 @@ class MultiMineralSolver:
             )
 
         rhob = _broadcast("rhob", raw_arrays["rhob"])
-        nphi = _broadcast("nphi", raw_arrays["nphi"])
+        nphi_arr = _broadcast("nphi", raw_arrays["nphi"]) if nphi is not None else None
         vcl = _broadcast("vcl", raw_arrays["vcl"])
         phie = _broadcast("phie", raw_arrays["phie"])
         pef_arr = _broadcast("pef", raw_arrays["pef"]) if pef is not None else None
@@ -298,32 +297,44 @@ class MultiMineralSolver:
         result["phie"]     = phie.copy()
         result["residual"] = np.zeros(n)
         result["qc_flag"]  = np.zeros(n, dtype=bool)
+        result["solved"]   = np.zeros(n, dtype=bool)
 
         for i in range(n):
-            if any(np.isnan([rhob[i], nphi[i], vcl[i], phie[i]])):
+            if any(np.isnan([rhob[i], vcl[i], phie[i]])):
                 for mineral in all_minerals:
                     result[mineral][i] = np.nan
                 result["residual"][i] = np.nan
                 result["qc_flag"][i]  = True
                 continue
 
+            nphi_i = float(nphi_arr[i]) if nphi_arr is not None else None
             pef_i = float(pef_arr[i]) if pef_arr is not None else None
             dt_i  = float(dt_arr[i])  if dt_arr  is not None else None
 
+            if nphi_i is not None and np.isnan(nphi_i):
+                nphi_i = None
             if pef_i is not None and np.isnan(pef_i):
                 pef_i = None
             if dt_i  is not None and np.isnan(dt_i):
                 dt_i  = None
 
             active_minerals, fractions, residual, poor_fit = self._solve_sample(
-                rhob[i], nphi[i], vcl[i], phie[i], pef_i, dt_i
+                rhob[i], nphi_i, vcl[i], phie[i], pef_i, dt_i
             )
+
+            if not active_minerals:
+                for mineral in all_minerals:
+                    result[mineral][i] = np.nan
+                result["residual"][i] = np.nan
+                result["qc_flag"][i] = True
+                continue
 
             for mineral, v in zip(active_minerals, fractions):
                 result[mineral][i] = v
 
             result["residual"][i] = residual
             result["qc_flag"][i]  = poor_fit
+            result["solved"][i] = True
 
         return result
 
@@ -331,10 +342,10 @@ class MultiMineralSolver:
         """
         Add lithology curves to well.
 
-        Requires RHOB, NPHI, VCL, and PHIE on the well object.
-        VCL must have been added by VclModule and PHIE by
-        PorosityModule before calling this. PEF and DTC are
-        read if present and determine the active mineral set.
+        Requires RHOB plus VCL and PHIE/PHIT on the well object. At least one
+        discriminator curve from NPHI/PHIN, PEF, or DTC/DT must be present.
+        Neutron is helpful but not mandatory when PEF/DTC provide enough
+        independent equations.
 
         Parameters
         ----------
@@ -355,11 +366,13 @@ class MultiMineralSolver:
 
         missing = [
             name for name, data in zip(
-                ["RHOB", "NPHI/PHIN", "VCL/VCLAY/VSH", "PHIE/PHIT"],
-                [rhob, nphi, vcl, phie],
+                ["RHOB", "VCL/VCLAY/VSH", "PHIE/PHIT"],
+                [rhob, vcl, phie],
             )
             if data is None
         ]
+        if nphi is None and pef is None and dt is None:
+            missing.append("NPHI/PHIN, PEF, or DTC/DT")
         if missing:
             raise ValueError(f"Missing required curves: {missing}")
 
@@ -376,7 +389,7 @@ class MultiMineralSolver:
             "anhydrite": "VANH",
         }
         for mineral, values in result.items():
-            if mineral in ("vcl", "phie", "qc_flag"):
+            if mineral in ("vcl", "phie", "residual", "qc_flag", "solved"):
                 continue
             curve_name = curve_names.get(mineral, f"V{mineral.upper()[:4]}")
             well.add_curve(
@@ -394,7 +407,7 @@ class MultiMineralSolver:
 
 def solve_two_mineral(
     rhob: Union[float, np.ndarray],
-    nphi: Union[float, np.ndarray],
+    nphi: Optional[Union[float, np.ndarray]] = None,
     vcl: Optional[Union[float, np.ndarray]] = None,
     phie: Optional[Union[float, np.ndarray]] = None,
     minerals: Sequence[str] = ("quartz", "calcite"),
@@ -410,7 +423,7 @@ def solve_two_mineral(
     to zero when they are not provided.
     """
     rhob_arr = np.atleast_1d(np.asarray(rhob, dtype=float))
-    nphi_arr = np.atleast_1d(np.asarray(nphi, dtype=float))
+    nphi_arr = None if nphi is None else np.atleast_1d(np.asarray(nphi, dtype=float))
     vcl_arr = np.zeros_like(rhob_arr) if vcl is None else np.atleast_1d(np.asarray(vcl, dtype=float))
     phie_arr = np.zeros_like(rhob_arr) if phie is None else np.atleast_1d(np.asarray(phie, dtype=float))
 
@@ -424,7 +437,7 @@ def solve_two_mineral(
 
 def solve_three_mineral(
     rhob: Union[float, np.ndarray],
-    nphi: Union[float, np.ndarray],
+    nphi: Optional[Union[float, np.ndarray]] = None,
     vcl: Optional[Union[float, np.ndarray]] = None,
     phie: Optional[Union[float, np.ndarray]] = None,
     minerals: Sequence[str] = ("quartz", "calcite", "dolomite"),
@@ -439,7 +452,7 @@ def solve_three_mineral(
     failures while using the newer ``MultiMineralSolver`` implementation.
     """
     rhob_arr = np.atleast_1d(np.asarray(rhob, dtype=float))
-    nphi_arr = np.atleast_1d(np.asarray(nphi, dtype=float))
+    nphi_arr = None if nphi is None else np.atleast_1d(np.asarray(nphi, dtype=float))
     vcl_arr = np.zeros_like(rhob_arr) if vcl is None else np.atleast_1d(np.asarray(vcl, dtype=float))
     phie_arr = np.zeros_like(rhob_arr) if phie is None else np.atleast_1d(np.asarray(phie, dtype=float))
 

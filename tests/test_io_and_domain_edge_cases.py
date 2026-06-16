@@ -3,7 +3,7 @@ import pytest
 
 from petrophys.base import Well
 from petrophys.core.core_data import CoreData
-from petrophys.io import read_ascii, read_csv
+from petrophys.io import read_ascii, read_csv, read_las
 from petrophys.lithology import build_lithology_log, load_lithology_csv
 from petrophys.nmr.permeability import t2lm_from_bins
 from petrophys.petrophysics.saturation.archie import archie
@@ -29,6 +29,57 @@ def test_read_csv_preserves_negative_log_values_and_custom_nulls(tmp_path):
     np.testing.assert_allclose(well["SP"].data[[0, 2]], [-42.5, -10.0])
     assert np.isnan(well["SP"].data[1])
     assert np.isnan(well["GR"].data[1])
+
+
+def test_read_csv_skips_non_numeric_metadata_columns(tmp_path):
+    path = tmp_path / "curated_logs.csv"
+    path.write_text(
+        "DEPT,WELLNAME,FORMATION,GR,DENS\n"
+        "1000.0,Kapuni-15,Sandstone,85.0,2.45\n"
+        "1000.5,Kapuni-15,Shale,95.0,2.50\n"
+    )
+
+    well = read_csv(path, depth_column="DEPT", depth_unit="m")
+
+    assert well.n_samples == 2
+    assert "GR" in well
+    assert "DENS" in well
+    assert "WELLNAME" not in well
+    assert "FORMATION" not in well
+    assert well.get_parameter("SKIPPED_NON_NUMERIC_COLUMNS") == ["FORMATION", "WELLNAME"]
+    assert well.get_parameter("SKIPPED_NON_NUMERIC_VALUES")["WELLNAME"] == ["Kapuni-15"]
+
+
+def test_read_las_normalizes_f_depth_unit_to_ft(tmp_path):
+    path = tmp_path / "feet_unit_f.las"
+    path.write_text(
+        "\n".join(
+            [
+                "~VERSION INFORMATION",
+                "VERS. 2.0 : CWLS Log ASCII Standard",
+                "WRAP. NO",
+                "~WELL INFORMATION",
+                "STRT.F 1000.0000 : START DEPTH",
+                "STOP.F 1001.0000 : STOP DEPTH",
+                "STEP.F 0.5000 : STEP",
+                "NULL. -999.25 : NULL VALUE",
+                "WELL. F-DEPTH : WELL",
+                "~CURVE INFORMATION",
+                "DEPT.F : DEPTH",
+                "GR.API : Gamma Ray",
+                "~A",
+                "1000.0000 80.0",
+                "1000.5000 82.0",
+                "1001.0000 85.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    well = read_las(path)
+
+    assert well.depth_unit == "ft"
+    np.testing.assert_allclose(well.depth, [1000.0, 1000.5, 1001.0])
 
 
 def test_read_ascii_skips_units_row_below_header_and_assigns_units(tmp_path):

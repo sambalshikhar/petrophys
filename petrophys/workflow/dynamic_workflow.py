@@ -42,6 +42,28 @@ INTERPRETATION_DESCRIPTION_MARKERS = (
     "VENDOR",
     "SPECTROLITH",
 )
+APPARENT_POROSITY_METHODS = {
+    "density_only": {
+        "source": "density-derived",
+        "basis": "PHID",
+        "reason": "only density porosity (PHID) was available",
+    },
+    "neutron_only": {
+        "source": "neutron-derived",
+        "basis": "PHIN",
+        "reason": "only neutron porosity (PHIN) was available",
+    },
+    "sonic_only": {
+        "source": "sonic-derived",
+        "basis": "PHIS",
+        "reason": "only sonic porosity (PHIS) was available",
+    },
+}
+
+
+def _apparent_porosity_info(phit_method: Optional[str]) -> Optional[Dict[str, str]]:
+    """Return provenance for single-log porosity routes."""
+    return APPARENT_POROSITY_METHODS.get(str(phit_method or "").strip().lower())
 
 
 class WorkflowStep(Enum):
@@ -1038,11 +1060,13 @@ class DynamicWorkflow:
         return self._has_curve(well, "RDEP", "RT") and self._has_curve(well, "VCL", "VCLAY")
 
     def _can_lithology(self, well: "Well") -> bool:
-        return (self._has_curve(well, "RHOB") and
-                self._has_curve(well, "NPHI") and
-                self._has_curve(well, "PEF", "DTC") and
-                self._has_curve(well, "VCL") and
-                self._has_curve(well, "PHIE"))
+        has_discriminator = self._has_curve(well, "NPHI", "PHIN", "PEF", "DTC", "DT")
+        return (
+            self._has_curve(well, "RHOB")
+            and has_discriminator
+            and self._has_curve(well, "VCL")
+            and self._has_curve(well, "PHIE", "PHIT")
+        )
 
     def _can_rmf(self, well: "Well") -> bool:
         return (
@@ -1488,9 +1512,14 @@ class DynamicWorkflow:
         from petrophys.lithology.lithology_module import LithologyModule
 
         trace = StepResult(step="lithology", success=True, method="multi_mineral_solver")
-        trace.input_curves = ["RHOB", "NPHI", "VCL"]
+        trace.input_curves = ["RHOB", "VCL"]
+        nphi_curve = get_curve(well, ["NPHI", "PHIN"])
+        if nphi_curve is not None:
+            trace.input_curves.append(nphi_curve.mnemonic)
         if self._has_curve(well, "PHIE"):
             trace.input_curves.append("PHIE")
+        elif self._has_curve(well, "PHIT"):
+            trace.input_curves.append("PHIT")
         if self._has_curve(well, "PEF"):
             trace.input_curves.append("PEF")
         if self._has_curve(well, "DTC"):
@@ -1509,13 +1538,16 @@ class DynamicWorkflow:
             self._lithology_source = "config"
             self._computed_lithology_written = True
 
-        trace.output_curves = ["VQUAR", "VCALC", "VDOLO", "VANHY"]
+        trace.output_curves = ["VQUAR", "VCALC", "VDOLO", "VANHY", "MMQC"]
         if write_lithology_code:
             trace.output_curves.append("LITHO")
         trace.parameters["lithology_curve_written"] = write_lithology_code
         trace.parameters["lithology_source_priority"] = (
             "multi_mineral_fallback" if write_lithology_code else "input_lithology"
         )
+        trace.parameters["multi_mineral_solved_samples"] = int(np.count_nonzero(result.solved))
+        trace.parameters["multi_mineral_qc_flagged_samples"] = int(np.count_nonzero(result.qc_flag))
+        trace.parameters["multi_mineral_total_samples"] = int(well.n_samples)
         if write_lithology_code:
             trace.decisions.append(
                 "No input lithology curve was available -> inferred LITHO from mineral volumes"
@@ -1526,6 +1558,10 @@ class DynamicWorkflow:
             )
         trace.decisions.append("Raw-log multi-mineral solve with VCL/PHIE clay-porosity terms")
         trace.decisions.append("PEF screened for plausibility; DTC used when PEF is absent or invalid")
+        trace.decisions.append(
+            f"Multi-mineral solved {int(np.count_nonzero(result.solved))}/{well.n_samples} samples; "
+            f"QC flagged {int(np.count_nonzero(result.qc_flag))}"
+        )
         return trace
 
     def _step_rmf(self, well: "Well") -> StepResult:
@@ -2427,25 +2463,50 @@ class DynamicWorkflow:
                 decisions.append("PHIT reused from existing well curve")
 
         if phit is not None:
+            apparent_info = _apparent_porosity_info(phit_method)
             phit_output = "PHIT_CALC" if preserve_existing_phit else "PHIT"
-            phit_description = (
-                "Calculated total porosity; input PHIT preserved as active"
-                if preserve_existing_phit
-                else (
-                    "Total Porosity refined with computed lithology"
-                    if refinement
-                    else "Total Porosity"
+            if apparent_info is not None:
+                phit_description = (
+                    f"Apparent total porosity, {apparent_info['source']} "
+                    f"from {apparent_info['basis']}"
                 )
-            )
-            well.add_curve(
+                if preserve_existing_phit:
+                    phit_description += "; input PHIT preserved as active"
+                elif refinement:
+                    phit_description += " with computed lithology matrix endpoints"
+            else:
+                phit_description = (
+                    "Calculated total porosity; input PHIT preserved as active"
+                    if preserve_existing_phit
+                    else (
+                        "Total Porosity refined with computed lithology"
+                        if refinement
+                        else "Total Porosity"
+                    )
+                )
+            phit_curve = well.add_curve(
                 phit_output,
                 phit,
                 "v/v",
                 phit_description,
                 data_type=DataType.COMPUTED,
             )
+            phit_curve.metadata.custom.update(
+                {
+                    "porosity_role": "total",
+                    "porosity_method": phit_method,
+                    "porosity_apparent": apparent_info is not None,
+                    "porosity_basis": apparent_info["basis"] if apparent_info else phie_basis_name,
+                    "porosity_source": apparent_info["source"] if apparent_info else "workflow_calculation",
+                }
+            )
             if phit_output not in outputs:
                 outputs.append(phit_output)
+            if apparent_info is not None:
+                decisions.append(
+                    f"{phit_output} written as apparent total porosity "
+                    f"({apparent_info['source']}) because {apparent_info['reason']}"
+                )
             if preserve_existing_phit:
                 decisions.append(
                     "Existing interpreted total porosity curve preserved as active: "
@@ -2471,23 +2532,53 @@ class DynamicWorkflow:
 
             phie = effective_porosity(phie_basis, vcl, phi_cl)
             phie_output = "PHIE_CALC" if preserve_existing_phie else "PHIE"
-            phie_description = (
-                "Calculated effective porosity; input PHIE preserved as active"
-                if preserve_existing_phie
-                else (
-                    "Effective Porosity refined with computed lithology"
-                    if refinement
-                    else "Effective Porosity"
+            apparent_info = _apparent_porosity_info(phit_method)
+            if apparent_info is not None:
+                correction_text = (
+                    f"{vcl_curve.mnemonic} correction"
+                    if vcl_curve is not None
+                    else "no clay-curve correction"
                 )
-            )
-            well.add_curve(
+                phie_description = (
+                    f"Apparent effective porosity from {apparent_info['source']} "
+                    f"PHIT and {correction_text}"
+                )
+                if preserve_existing_phie:
+                    phie_description += "; input PHIE preserved as active"
+                elif refinement:
+                    phie_description += " with computed lithology matrix endpoints"
+            else:
+                phie_description = (
+                    "Calculated effective porosity; input PHIE preserved as active"
+                    if preserve_existing_phie
+                    else (
+                        "Effective Porosity refined with computed lithology"
+                        if refinement
+                        else "Effective Porosity"
+                    )
+                )
+            phie_curve = well.add_curve(
                 phie_output,
                 phie,
                 "v/v",
                 phie_description,
                 data_type=DataType.COMPUTED,
             )
+            phie_curve.metadata.custom.update(
+                {
+                    "porosity_role": "effective",
+                    "porosity_method": phit_method,
+                    "porosity_apparent": apparent_info is not None,
+                    "porosity_basis": phie_basis_name,
+                    "porosity_source": apparent_info["source"] if apparent_info else "workflow_calculation",
+                }
+            )
             outputs.append(phie_output)
+            if apparent_info is not None:
+                decisions.append(
+                    f"{phie_output} written as apparent effective porosity from "
+                    f"{apparent_info['source']} {phie_basis_name}"
+                )
             if vcl_curve is not None:
                 decisions.append(
                     f"{phie_output} = {phie_basis_name} - {vcl_curve.mnemonic} * phi_cl ({phi_cl:.3f})"
@@ -2546,6 +2637,13 @@ class DynamicWorkflow:
             "active_phie_source": "input_interpretation" if preserve_existing_phie else "workflow_calculation",
             "computed_phit_curve": "PHIT_CALC" if preserve_existing_phit else "PHIT",
             "computed_phie_curve": "PHIE_CALC" if preserve_existing_phie else "PHIE",
+            "phit_apparent": _apparent_porosity_info(phit_method) is not None,
+            "phie_apparent": _apparent_porosity_info(phit_method) is not None and phie is not None,
+            "apparent_porosity_source": (
+                _apparent_porosity_info(phit_method)["source"]
+                if _apparent_porosity_info(phit_method) is not None
+                else None
+            ),
         }
         trace.decisions = decisions
         self._last_phit_nd_average_mask = phit_nd_average_mask
@@ -2682,10 +2780,10 @@ class DynamicWorkflow:
         if source_sw is not None:
             final_sw[source_sw_mask] = source_sw[source_sw_mask]
 
-        well.add_curve("SW", final_sw, "v/v", f"Water Saturation ({result.model}; source input priority)")
+        well.add_curve("SW", final_sw, "frac", f"Water Saturation ({result.model}; source input priority)")
         outputs = ["SW"]
         if result.sxo is not None:
-            well.add_curve("SXO", result.sxo, "v/v", "Flushed Zone Water Saturation")
+            well.add_curve("SXO", result.sxo, "frac", "Flushed Zone Water Saturation")
             outputs.append("SXO")
 
         trace.method = result.model
