@@ -54,9 +54,13 @@ class MultiMineralSolver:
     This class solves for mineral fractions using multiple
     log measurements simultaneously.
 
-    Vcl (from VclModule) and PHIE (from PorosityModule) must be
-    pre-computed before calling this solver. Both are subtracted
-    from the RHS of every equation before solving.
+    Vcl (from VclModule) must be pre-computed before calling this solver and is
+    subtracted from the RHS of every equation. Porosity is NOT taken as an input
+    (a pre-computed PHIE depends on the assumed matrix, which would bias the
+    result); it is solved as an extra unknown alongside the minerals, so the
+    mineral solution is independent of any matrix guess. The ``phie`` argument is
+    accepted for backward compatibility but is not used in the solve; the solved
+    porosity is returned in ``result["phie"]``.
 
     The active mineral set and equations are determined per depth from the
     equations available at that sample. Unity and RHOB are always used; NPHI,
@@ -69,14 +73,16 @@ class MultiMineralSolver:
     calcite: 13.82 b/cm³) and is the only tool that reliably separates
     anhydrite from dolomite.
 
-    Tool Response Equations (linear mixing):
-        Unity:   V1 + V2 + ... + Vn         = 1    - Vcl - φe
-        Density: V1·ρ1 + V2·ρ2 + ... + Vn·ρn = ρlog - Vcl·ρcl - φe·ρfl
-        Neutron: V1·N1 + V2·N2 + ... + Vn·Nn = Nlog - Vcl·Ncl - φe·Nfl
-        U:       V1·U1 + V2·U2 + ... + Vn·Un = Ulog - Vcl·Ucl - φe·Ufl
-        Sonic:   V1·D1 + V2·D2 + ... + Vn·Dn = Dlog - Vcl·Dcl - φe·Dfl
+    Tool Response Equations (linear mixing), with porosity φ as an unknown:
+        Unity:   V1 + ... + Vn + φ          = 1    - Vcl
+        Density: V1·ρ1 + ... + Vn·ρn + φ·ρfl = ρlog - Vcl·ρcl
+        Neutron: V1·N1 + ... + Vn·Nn + φ·Nfl = Nlog - Vcl·Ncl
+        U:       V1·U1 + ... + Vn·Un + φ·Ufl = Ulog - Vcl·Ucl
+        Sonic:   V1·D1 + ... + Vn·Dn + φ·Dfl = Dlog - Vcl·Dcl
 
-    where U = PEF × ρ (volumetric photoelectric cross-section).
+    where U = PEF × ρ (volumetric photoelectric cross-section). Solving φ as an
+    unknown (rather than subtracting a pre-computed PHIE) is what makes the
+    mineral result independent of the assumed matrix.
 
     Parameters
     ----------
@@ -134,7 +140,8 @@ class MultiMineralSolver:
         phie: float,
         pef: Optional[float],
         dt: Optional[float],
-    ) -> Tuple[list, tuple, float, bool]:
+        phi_fixed: Optional[float] = None,
+    ) -> Tuple[list, tuple, float, bool, float]:
         """
         Solve for mineral fractions at a single depth sample.
 
@@ -167,15 +174,25 @@ class MultiMineralSolver:
             poor_fit is True when closure error exceeds closure_tolerance.
         """
         vcl  = float(np.clip(vcl,  0.0, 1.0))
-        phie = float(np.clip(phie, 0.0, 1.0))
+        # Porosity handling:
+        #   - if a known (core) porosity is supplied, fix it -> the matrix density
+        #     is determined, which resolves quartz/calcite even without PEF;
+        #   - otherwise solve porosity as an unknown so the result does not depend
+        #     on a matrix-biased PHIE.
+        # Either way only Vcl (matrix-independent, GR-driven) is on the RHS.
+        use_fixed_phi = phi_fixed is not None and np.isfinite(phi_fixed)
+        if use_fixed_phi:
+            phi_fixed = float(np.clip(phi_fixed, 0.0, 1.0))
 
+        # Porosity is an extra unknown only when it is NOT fixed.
+        n_porosity_unknowns = 0 if use_fixed_phi else 1
         available_equations = 2 + sum(value is not None for value in (nphi, pef, dt))
-        if available_equations >= len(self.minerals):
+        if available_equations >= len(self.minerals) + n_porosity_unknowns:
             active_minerals = self.minerals
-        elif available_equations >= len(self.minerals_no_pef):
+        elif available_equations >= len(self.minerals_no_pef) + n_porosity_unknowns:
             active_minerals = self.minerals_no_pef
         else:
-            return [], tuple(), np.nan, True
+            return [], tuple(), np.nan, True, np.nan
 
         m  = [self.mineral_props[name] for name in active_minerals]
         fl = self.fluid_props
@@ -183,45 +200,59 @@ class MultiMineralSolver:
 
         A_rows, b_rows = [], []
 
-        def add_row(mineral_vals, cl_val, fl_val, log_val):
-            rhs = log_val - vcl * cl_val - phie * fl_val
-            A_rows.append(mineral_vals)
-            b_rows.append(rhs)
+        def add_row(mineral_vals, fl_val, cl_val, log_val):
+            if use_fixed_phi:
+                # Known porosity: subtract Vcl and the fixed fluid term; minerals only.
+                A_rows.append(list(mineral_vals))
+                b_rows.append(log_val - vcl * cl_val - phi_fixed * fl_val)
+            else:
+                # Unknowns are [minerals..., porosity]; porosity column carries fluid.
+                A_rows.append(list(mineral_vals) + [fl_val])
+                b_rows.append(log_val - vcl * cl_val)
 
         # Unity  (cl and fl endpoints are both 1)
         add_row([1.0] * len(active_minerals),
-                cl_val=1.0,           fl_val=1.0,           log_val=1.0)
+                fl_val=1.0,           cl_val=1.0,           log_val=1.0)
 
         # Density
         add_row([mi["density"] for mi in m],
-                cl_val=cl["density"], fl_val=fl["density"], log_val=rhob)
+                fl_val=fl["density"], cl_val=cl["density"], log_val=rhob)
 
         # Neutron
         if nphi is not None:
             add_row([mi["nphi"] for mi in m],
-                    cl_val=cl["nphi"],    fl_val=fl["nphi"],    log_val=nphi)
+                    fl_val=fl["nphi"],    cl_val=cl["nphi"],    log_val=nphi)
 
         # U = PEF × ρ
         if pef is not None:
             add_row([mi["u"] for mi in m],
-                    cl_val=cl["u"],   fl_val=fl["u"],   log_val=_u(pef, rhob))
+                    fl_val=fl["u"],   cl_val=cl["u"],   log_val=_u(pef, rhob))
 
         # Sonic (DTC) — used when PEF absent, or as extra row when both present
         if dt is not None:
             add_row([mi["dt"] for mi in m],
-                    cl_val=cl["dt"],  fl_val=fl["dt"],  log_val=dt)
+                    fl_val=fl["dt"],  cl_val=cl["dt"],  log_val=dt)
 
         x, residual = nnls(np.array(A_rows), np.array(b_rows))
 
-        available_fraction = 1.0 - vcl - phie
-        closure_error = abs(x.sum() - available_fraction)
+        if use_fixed_phi:
+            mineral_x = x
+            phi_solved = phi_fixed
+        else:
+            # Last unknown is the solved porosity; the rest are mineral volumes.
+            mineral_x = x[:-1]
+            phi_solved = float(np.clip(x[-1], 0.0, 1.0))
+
+        available_fraction = max(1.0 - vcl - phi_solved, 0.0)
+        closure_error = abs(mineral_x.sum() - available_fraction)
         poor_fit = closure_error > self.closure_tolerance
 
         # Always normalize — never discard a solution just for closure error.
         # The poor_fit flag and residual give the caller full quality info.
-        x = _constrain_mineral_fractions(x, available_fraction)
+        mineral_x = _constrain_mineral_fractions(mineral_x, available_fraction)
 
-        return active_minerals, tuple(float(v) for v in x), float(residual), poor_fit
+        return (active_minerals, tuple(float(v) for v in mineral_x),
+                float(residual), poor_fit, phi_solved)
 
     def solve(
         self,
@@ -231,6 +262,7 @@ class MultiMineralSolver:
         phie: Union[float, np.ndarray],
         pef:  Optional[Union[float, np.ndarray]] = None,
         dt:   Optional[Union[float, np.ndarray]] = None,
+        core_phi: Optional[Union[float, np.ndarray]] = None,
     ) -> Dict[str, np.ndarray]:
         """
         Solve for mineral fractions.
@@ -269,6 +301,8 @@ class MultiMineralSolver:
             raw_arrays["pef"] = np.atleast_1d(np.asarray(pef, dtype=float))
         if dt is not None:
             raw_arrays["dt"] = np.atleast_1d(np.asarray(dt, dtype=float))
+        if core_phi is not None:
+            raw_arrays["core_phi"] = np.atleast_1d(np.asarray(core_phi, dtype=float))
 
         lengths = [len(values) for values in raw_arrays.values()]
         n = max(lengths)
@@ -288,6 +322,7 @@ class MultiMineralSolver:
         phie = _broadcast("phie", raw_arrays["phie"])
         pef_arr = _broadcast("pef", raw_arrays["pef"]) if pef is not None else None
         dt_arr = _broadcast("dt", raw_arrays["dt"]) if dt is not None else None
+        core_phi_arr = _broadcast("core_phi", raw_arrays["core_phi"]) if core_phi is not None else None
 
         # All possible minerals across both sets
         all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef))
@@ -310,6 +345,7 @@ class MultiMineralSolver:
             nphi_i = float(nphi_arr[i]) if nphi_arr is not None else None
             pef_i = float(pef_arr[i]) if pef_arr is not None else None
             dt_i  = float(dt_arr[i])  if dt_arr  is not None else None
+            core_phi_i = float(core_phi_arr[i]) if core_phi_arr is not None else None
 
             if nphi_i is not None and np.isnan(nphi_i):
                 nphi_i = None
@@ -317,9 +353,11 @@ class MultiMineralSolver:
                 pef_i = None
             if dt_i  is not None and np.isnan(dt_i):
                 dt_i  = None
+            if core_phi_i is not None and np.isnan(core_phi_i):
+                core_phi_i = None
 
-            active_minerals, fractions, residual, poor_fit = self._solve_sample(
-                rhob[i], nphi_i, vcl[i], phie[i], pef_i, dt_i
+            active_minerals, fractions, residual, poor_fit, phi_solved = self._solve_sample(
+                rhob[i], nphi_i, vcl[i], phie[i], pef_i, dt_i, phi_fixed=core_phi_i
             )
 
             if not active_minerals:
@@ -332,6 +370,8 @@ class MultiMineralSolver:
             for mineral, v in zip(active_minerals, fractions):
                 result[mineral][i] = v
 
+            # Report the solver-derived (matrix-independent) porosity.
+            result["phie"][i] = phi_solved
             result["residual"][i] = residual
             result["qc_flag"][i]  = poor_fit
             result["solved"][i] = True

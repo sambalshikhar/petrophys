@@ -20,6 +20,7 @@ Pipeline execution order:
 """
 
 from typing import Optional, List, Dict, Any, Union
+import dataclasses
 from dataclasses import dataclass, field
 from enum import Enum
 import json
@@ -604,7 +605,14 @@ class DynamicWorkflowResult:
 
     @property
     def success(self) -> bool:
-        return len(self.errors) == 0
+        # Honest success: no hard errors AND no executed step reported failure.
+        # Previously this only checked `errors`, which `run()` never populates,
+        # so a workflow in which every step threw still reported success=True.
+        step_failed = any(
+            getattr(step, "success", True) is False
+            for step in self.steps_executed
+        )
+        return len(self.errors) == 0 and not step_failed
 
     def print_trace(self) -> None:
         """Print a comprehensive human-readable trace of all steps."""
@@ -849,6 +857,60 @@ class DynamicWorkflow:
         self._computed_lithology_written = False
         self._last_phit_nd_average_mask: Optional[np.ndarray] = None
         self._last_phi_cl_info: Optional[Dict[str, Any]] = None
+        self._auto_matrix = False
+        self._auto_lith = False
+        self._lithology_pending = False
+
+    def _set_auto_lithology(self, res) -> list:
+        """Write an auto-resolved lithology/matrix to the (copied) run config."""
+        applied = []
+        if self._auto_matrix:
+            self.config.matrix_type = res.matrix
+            applied.append(f"matrix_type={res.matrix}")
+        if self._auto_lith:
+            self.config.lithology = res.lithology
+            applied.append(f"lithology={res.lithology}")
+        return applied
+
+    def _apply_lithology_resolution(self, res, iterations: int = 0) -> None:
+        """Apply a resolution and record it (single-shot: vendor log / default)."""
+        applied = self._set_auto_lithology(res)
+        self._lithology_pending = False
+        if self._result is not None and applied:
+            iter_note = f", {iterations} iteration(s)" if iterations else ""
+            self._result.warnings.append(
+                f"Auto lithology resolved via {res.method} "
+                f"({res.confidence:.0%} of {res.n} samples{iter_note}): " + ", ".join(applied)
+            )
+
+    def _converge_auto_matrix(self, well, max_iters: int = 3) -> None:
+        """Close the VCL <-> multi-mineral-solver loop by iterating to a fixed point.
+
+        The N-D VCL clean line needs a matrix; the solver-derived matrix needs VCL.
+        Re-run VCLAY -> POROSITY -> LITHOLOGY with each newly-resolved matrix until
+        the solver's dominant matrix stops changing (or max_iters is hit).
+        """
+        from petrophys.lithology.matrix_inference import resolve_from_minerals
+
+        last_matrix = None
+        final_res = None
+        iterations = 0
+        for _ in range(max_iters):
+            res = resolve_from_minerals(well, warn=False)
+            if res is None:
+                return  # can't resolve; leave pending -> end-of-run default
+            final_res = res
+            if res.matrix == last_matrix:
+                break  # converged
+            last_matrix = res.matrix
+            self._set_auto_lithology(res)
+            iterations += 1
+            # recompute the VCL -> porosity -> lithology cycle with the new matrix
+            self._step_vclay(well)
+            self._step_porosity(well)
+            self._step_lithology(well)
+        if final_res is not None:
+            self._apply_lithology_resolution(final_res, iterations=iterations)
 
     def _archie_coefficients_for_lithology(
         self,
@@ -932,16 +994,23 @@ class DynamicWorkflow:
         allowed = set(steps)
 
         for step_enum, step_fn, _ in self.get_pipeline():
-            print(f"step_enum: {step_enum}")
             if step_enum not in allowed:
                 continue
 
+            step_name = step_enum.value
             try:
-                step_fn(well)
-                self._result.steps_executed.append(step_enum.name)
+                step_trace = step_fn(well)
+                if step_trace is None:
+                    step_trace = StepResult(step=step_name, success=True)
+                step_trace.step = step_name
+                step_trace.success = True
+                # Record a StepResult (same type as run()) for consistent consumers.
+                self._result.steps_executed.append(step_trace)
             except Exception as e:
                 self._result.specific_steps_skipped[step_enum.name] = str(e)
-
+                self._result.steps_executed.append(
+                    StepResult(step=step_name, success=False, message=str(e))
+                )
 
         return self._result
 
@@ -961,12 +1030,36 @@ class DynamicWorkflow:
         -------
         DynamicWorkflowResult
         """
+        # Resolve "auto" lithology/matrix on a per-run copy so we never mutate the
+        # caller's config (it may be reused across wells).
+        self._auto_matrix = str(self.config.matrix_type).strip().lower() == "auto"
+        self._auto_lith = str(self.config.lithology).strip().lower() == "auto"
+        if self._auto_matrix or self._auto_lith:
+            self.config = dataclasses.replace(self.config)
+
         self._result = DynamicWorkflowResult(well=well, config=self.config)
         self._lithology_log = None
         self._lithology_source = "config"
         self._computed_lithology_written = False
         self._last_phit_nd_average_mask = None
         self._last_phi_cl_info = None
+
+        # Tiers 0-1: resolve auto lithology from raw-input sources up front (a vendor
+        # lithology log, else core-porosity apparent matrix density), so it drives the
+        # whole pipeline (N-D VCL clean line, porosity matrix, Sw, cutoffs). Both are
+        # independent of VCL/porosity, so there is no circularity here.
+        self._lithology_pending = self._auto_matrix or self._auto_lith
+        if self._lithology_pending:
+            from petrophys.lithology.matrix_inference import (
+                resolve_from_lithology_log, resolve_from_core_matrix,
+            )
+            rho_hc = {"oil": 0.8, "gas": 0.25, "condensate": 0.5}.get(
+                str(self.config.hc_type).lower(), 0.8
+            )
+            res = (resolve_from_lithology_log(well, warn=False)
+                   or resolve_from_core_matrix(well, rho_hc=rho_hc, warn=False))
+            if res is not None:
+                self._apply_lithology_resolution(res)
 
         # Detect available curves
         available = self._detect_available_curves(well)
@@ -989,6 +1082,12 @@ class DynamicWorkflow:
                     step_trace.step = step_name
                     step_trace.success = True
                     self._result.steps_executed.append(step_trace)
+                    # Tier 1: once the multi-mineral solver has run, iterate the
+                    # VCL <-> solver loop to a fixed point, resolving any still-pending
+                    # auto lithology before the later saturation / net-pay steps.
+                    if (step_name == WorkflowStep.LITHOLOGY.value
+                            and self._lithology_pending):
+                        self._converge_auto_matrix(well)
                 except Exception as e:
                     msg = f"{step_name}: {str(e)}"
                     self._result.warnings.append(msg)
@@ -997,6 +1096,12 @@ class DynamicWorkflow:
                     )
             else:
                 self._result.steps_skipped.append(step_name)
+
+        # Fallback: if auto lithology is still unresolved (no vendor log, solver
+        # skipped), apply the default (sandstone/clastic) with a warning.
+        if self._lithology_pending:
+            from petrophys.lithology.matrix_inference import resolve_well_lithology
+            self._apply_lithology_resolution(resolve_well_lithology(well, warn=False))
 
         return self._result
 
@@ -1375,7 +1480,8 @@ class DynamicWorkflow:
             gr_min=gr_min, gr_max=gr_max,
             gr_method=self.config.gr_method,
             use_sp=use_sp, use_nd=use_nd,
-            sp_min=sp_min, sp_max=sp_max
+            sp_min=sp_min, sp_max=sp_max,
+            matrix=self.config.matrix_type,
         )
         result = vcl_module.calculate(well)
 

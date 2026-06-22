@@ -158,13 +158,19 @@ class InterpretationPlot:
         """Resistivity track."""
         depth = well_depth_array(self.well)
 
+        from petrophys.visualization.wrap import plot_wrapped_log_curve
         for names, color in [(["RT", "RDEP", "LLD", "ILD"], "red"),
                               (["RMED", "ILM", "LLS"], "blue"),
                               (["RSHA", "MSFL", "SFL", "RXO"], "green")]:
             for name in names:
                 curve = self.well.get(name)
                 if curve is not None:
-                    ax.plot(curve.data, depth, color=color, linewidth=0.5, label=name)
+                    # industrial wraparound: values above 2000 ohm.m re-enter
+                    # from the left as a dashed backup curve
+                    plot_wrapped_log_curve(
+                        ax, depth, curve.data, 0.2, 2000,
+                        color=color, linewidth=0.5, label=name,
+                    )
                     break
 
         ax.set_xscale('log')
@@ -303,9 +309,13 @@ class InterpretationPlot:
         """Permeability track."""
         depth = well_depth_array(self.well)
 
+        from petrophys.visualization.wrap import plot_wrapped_log_curve
         perm = self.well.get("PERM")
         if perm is not None:
-            ax.plot(perm.data, depth, 'k-', linewidth=0.5, label='Perm')
+            plot_wrapped_log_curve(
+                ax, depth, perm.data, 0.01, 10000,
+                color='k', linewidth=0.5, label='Perm',
+            )
 
         perm_cc = self.well.get("PERM_CC")
         if perm_cc is not None:

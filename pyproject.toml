@@ -32,6 +32,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Physics",
 ]
@@ -42,7 +43,6 @@ dependencies = [
     "scipy>=1.7.0",
     "matplotlib>=3.4.0",
     "lasio>=0.30",
-    "pint>=0.18",
     "openpyxl>=3.1.0",
 ]
 
@@ -105,4 +105,7 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-addopts = "-v --cov=petrophys --cov-report=term-missing"
+# Keep default invocation (`pytest`) working without the optional pytest-cov.
+# Run coverage explicitly, e.g.:
+#   pytest --cov=petrophys --cov-report=term-missing
+addopts = "-ra"

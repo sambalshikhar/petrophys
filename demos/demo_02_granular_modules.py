@@ -26,8 +26,8 @@ from petrophys.qaqc.standardization import standardize_curves
 # ─────────────────────────────────────────────
 # Load and standardize
 # ─────────────────────────────────────────────
-LAS_PATH = os.path.expanduser(
-    "~/energy_gpt/EvalGen2/geolink_las/30_6-5.las"
+LAS_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "geolink_data", "30_6-5.las"
 )
 
 print("=" * 60)
@@ -64,7 +64,7 @@ if gr_curve is not None:
           f"min={np.nanmin(vcl_linear):.3f}, max={np.nanmax(vcl_linear):.3f}")
 
     # Method 2: Larionov (tertiary rocks)
-    vcl_larionov = vcl_from_gr(gr_data, gr_min=gr_min, gr_max=gr_max, method="larionov")
+    vcl_larionov = vcl_from_gr(gr_data, gr_min=gr_min, gr_max=gr_max, method="larionov_tertiary")
     print(f"VCL (Larionov):  mean={np.nanmean(vcl_larionov):.3f}")
 
     # Method 3: Multi-method VCL via module (uses GR + SP + N-D, takes minimum)
@@ -123,19 +123,22 @@ print("4. WATER SATURATION (Sw)")
 print("=" * 60)
 
 from petrophys.petrophysics.saturation import (
-    calculate_sw, archie, simandoux, indonesia
+    SaturationModule, archie, simandoux, indonesia
 )
 
 # a) Direct Archie on a sample point (clean zone, VCL < 0.3)
 sw_point = archie(rt=10.0, rw=0.05, phi=0.15, a=1.0, m=2.0, n=2.0)
 print(f"Archie example (Rt=10, phi=0.15): Sw = {sw_point:.3f}")
 
-# b) Auto-routed Sw calculation using well data
-#    For clastic with salinity >= 20kppm, shaly zones route to Simandoux
+# b) Auto-routed Sw calculation using well data.
+#    Use SaturationModule directly to get the rich result object (.sw/.model/.sxo).
+#    NOTE: the convenience function calculate_sw(...) returns a bare ndarray, so it
+#    has no .model/.sxo attributes — use the module when you need those.
+#    For clastic with salinity >= 20kppm, shaly zones route to Simandoux.
 rw = 0.05  # formation water resistivity
 salinity_ppm = 35000  # North Sea typical
 
-sw_result = calculate_sw(
+sw_result = SaturationModule(a=1.0, m=2.0, n=2.0, model="auto").calculate(
     well,
     rw=rw,
     lithology="clastic",
@@ -159,9 +162,11 @@ print("\n" + "=" * 60)
 print("5. PERMEABILITY")
 print("=" * 60)
 
-from petrophys.petrophysics.permeability import calculate_permeability, flag_impermeable
+from petrophys.petrophysics.permeability import PermeabilityModule, flag_impermeable
 
-perm_result = calculate_permeability(well, method="timur")
+# Use PermeabilityModule directly for the rich result object (.perm/.method).
+# The convenience calculate_permeability(...) returns a bare ndarray.
+perm_result = PermeabilityModule(method="timur").calculate(well)
 well.add_curve("PERM", perm_result.perm, "mD", f"Permeability ({perm_result.method})")
 
 valid_perm = perm_result.perm[~np.isnan(perm_result.perm)]

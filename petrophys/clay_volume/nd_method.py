@@ -5,6 +5,35 @@ from typing import Union, Tuple
 import numpy as np
 
 
+# N-D clean-line endpoints per matrix: (den_cl1, neu_cl1, den_cl2, neu_cl2).
+# Cl1 is the zero-porosity matrix point (from MINERAL_PROPERTIES); Cl2 is the
+# same matrix at ~40 p.u. water-filled: den = den_ma*(1-0.4) + 1.0*0.4,
+# neu = neu_ma + 0.4. The limestone row reproduces the historical defaults
+# exactly so carbonate results are unchanged.
+_ND_CLEAN_LINES = {
+    "limestone": (2.71, 0.00, 2.03, 0.40),   # calcite (historical default)
+    "sandstone": (2.65, -0.02, 1.99, 0.38),  # quartz
+    "dolomite": (2.87, 0.02, 2.12, 0.42),    # dolomite
+}
+
+_ND_MATRIX_ALIASES = {
+    "quartz": "sandstone", "clastic": "sandstone", "sand": "sandstone",
+    "siliciclastic": "sandstone",
+    "calcite": "limestone", "carbonate": "limestone", "chalk": "limestone",
+    "dolostone": "dolomite",
+}
+
+
+def nd_clean_line(matrix: str = "limestone") -> Tuple[float, float, float, float]:
+    """Return (den_cl1, neu_cl1, den_cl2, neu_cl2) for the given matrix.
+
+    Unknown/None matrix falls back to limestone (the historical default).
+    """
+    key = str(matrix or "limestone").strip().lower()
+    key = _ND_MATRIX_ALIASES.get(key, key)
+    return _ND_CLEAN_LINES.get(key, _ND_CLEAN_LINES["limestone"])
+
+
 def vcl_from_nd(
     nphi: Union[float, np.ndarray],
     rhob: Union[float, np.ndarray],

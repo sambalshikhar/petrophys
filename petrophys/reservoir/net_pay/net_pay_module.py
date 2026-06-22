@@ -4,6 +4,7 @@ Main Net Pay calculation module.
 
 from typing import Optional, Union
 from dataclasses import dataclass
+import warnings
 import numpy as np
 
 from petrophys.base.constants import DefaultParameters
@@ -87,6 +88,12 @@ class NetPayModule:
         if vcl is None:
             vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
             if vcl is None:
+                warnings.warn(
+                    "No clay-volume curve (VCL/VCLAY/VSH) found; assuming VCL=0 for "
+                    "net-pay flags. Every sample will pass the VCL test, so net rock "
+                    "(and thus net reservoir/pay) may be over-estimated.",
+                    stacklevel=2,
+                )
                 vcl = np.zeros(well.n_samples)
 
         if phie is None:

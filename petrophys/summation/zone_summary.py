@@ -29,8 +29,11 @@ class ZoneSummary:
     avg_perm: float = np.nan
 
     # Hydrocarbon properties
-    hcpv: float = np.nan  # Hydrocarbon pore volume
-    bvw: float = np.nan   # Bulk volume water
+    # NOTE: hcpv here is a hydrocarbon-column INDEX = avg_phie*(1-avg_sw)*net_pay
+    # (units of depth/length, per unit area), NOT a volume. For volumetric
+    # OOIP/OGIP in acre-ft/bbl/m3 use summation.hydrocarbon_pore_volume.calculate_hcpv.
+    hcpv: float = np.nan  # Hydrocarbon pore thickness index (length, per unit area)
+    bvw: float = np.nan   # Bulk volume water (fraction): avg_phie*avg_sw
 
     # Statistics
     n_samples: int = 0

@@ -31,9 +31,10 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RVDRU",
     ],
     # Medium Resistivity (RMED)
+    # NOTE: AT10 (10in array induction) and RLLS (laterolog shallow) belong to RSHA,
+    # not here. They were duplicated across RMED/RSHA; with a last-write-wins reverse
+    # map that silently mislabeled them. AT30 (30in) is the medium curve and stays.
     "RMED": [
-        "AT10",
-        "RLLS",
         "SFLU",
         "RESS",
         "ILM",
@@ -44,12 +45,12 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RESMED",
     ],
     # Shallow Resistivity (RSHA)
+    # AT30 removed (it is the medium array-induction spacing -> RMED).
     "RSHA": [
         "LLS",
         "RLLS",
         "AT10",
         "AT20",
-        "AT30",
         "SFL",
         "RSFL",
         "RLA1",

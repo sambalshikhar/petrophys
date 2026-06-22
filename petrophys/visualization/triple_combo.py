@@ -132,28 +132,22 @@ class TripleComboPlot:
 
     def _plot_track2(self, ax: "Axes", rt_range: Tuple[float, float]) -> None:
         """Plot resistivity track."""
+        from petrophys.visualization.wrap import plot_wrapped_log_curve
         depth = well_depth_array(self.well)
+        rmin, rmax = (rt_range if rt_range and len(rt_range) == 2 else (0.2, 2000))
 
-        # Deep resistivity
-        for name in ["RT", "LLD", "ILD", "RDEP", "AT90"]:
-            curve = self.well.get(name)
-            if curve is not None:
-                ax.plot(curve.data, depth, color='red', linewidth=0.5, label=name)
-                break
-
-        # Medium resistivity
-        for name in ["RMED", "ILM", "LLS", "AT60"]:
-            curve = self.well.get(name)
-            if curve is not None:
-                ax.plot(curve.data, depth, color='blue', linewidth=0.5, label=name)
-                break
-
-        # Shallow resistivity
-        for name in ["RSHA", "MSFL", "SFL", "AT10"]:
-            curve = self.well.get(name)
-            if curve is not None:
-                ax.plot(curve.data, depth, color='green', linewidth=0.5, label=name)
-                break
+        for names, color in [(["RT", "LLD", "ILD", "RDEP", "AT90"], 'red'),
+                             (["RMED", "ILM", "LLS", "AT60"], 'blue'),
+                             (["RSHA", "MSFL", "SFL", "AT10"], 'green')]:
+            for name in names:
+                curve = self.well.get(name)
+                if curve is not None:
+                    # industrial wraparound for off-scale resistivity
+                    plot_wrapped_log_curve(
+                        ax, depth, curve.data, rmin, rmax,
+                        color=color, linewidth=0.5, label=name,
+                    )
+                    break
 
         ax.set_xscale('log')
         ax.set_xlim(rt_range)

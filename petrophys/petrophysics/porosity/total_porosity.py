@@ -48,8 +48,9 @@ def total_porosity(
 
     The adaptive method uses different weightings based on
     neutron-density separation:
-    - If φN < φD + 0.05: wD = 1, wN = 0 (gas effect)
-    - Else: wD = 0.6, wN = 0.4
+    - If φD > φN + 0.05 (density reads higher than neutron => gas effect):
+      wD = 1, wN = 0, i.e. PHIT = φD
+    - Else: PHIT = 0.6*φD + 0.4*φN (density-weighted shale-free average)
 
     Parameters
     ----------
