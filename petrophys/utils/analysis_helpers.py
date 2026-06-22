@@ -151,11 +151,6 @@ def resolve_well_depth_range(
         raise ValueError("Well has no finite depth range")
     return float(top_value), float(bottom_value)
 
-    curve = get_curve(well, names, require_finite=require_finite)
-    if curve is None:
-        return None, None
-    return np.asarray(curve.data, dtype=float), curve.mnemonic
-
 
 def curve_has_finite_data(curve: Any) -> bool:
     """Return True when a curve object has at least one finite numeric sample."""
@@ -329,8 +324,14 @@ def build_section(
     )
 
 
-def depth_step_array(depth: np.ndarray) -> np.ndarray:
-    """Return per-sample depth increments using the actual depth spacing."""
+def depth_step_array(depth: np.ndarray, max_gap_factor: float = 3.0) -> np.ndarray:
+    """Return per-sample depth increments using the actual depth spacing.
+
+    A sample that follows a data gap would otherwise be credited the entire gap
+    as its thickness (inflating zone/net-pay/HCPV thickness). Steps larger than
+    ``max_gap_factor`` times the median sampling are capped to the median, so a
+    gap is not counted as a thick cell.
+    """
     depth_arr = np.asarray(depth, dtype=float)
     if depth_arr.size == 0:
         return np.array([], dtype=float)
@@ -338,8 +339,12 @@ def depth_step_array(depth: np.ndarray) -> np.ndarray:
         return np.ones(1, dtype=float)
     dz = np.abs(np.diff(depth_arr, prepend=depth_arr[0]))
     positive = dz[np.isfinite(dz) & (dz > 0.0)]
-    fallback = float(np.median(positive)) if positive.size else 1.0
-    dz[~np.isfinite(dz) | (dz <= 0.0)] = fallback
+    median_step = float(np.median(positive)) if positive.size else 1.0
+    dz[~np.isfinite(dz) | (dz <= 0.0)] = median_step
+    # Cap gap-inflated steps so a single sample spanning a gap is not credited
+    # the full gap thickness.
+    if max_gap_factor and median_step > 0.0:
+        dz[dz > max_gap_factor * median_step] = median_step
     return dz
 
 

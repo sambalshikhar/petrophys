@@ -200,6 +200,11 @@ class LithologyModule:
         phie, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
         dtc, _, _ = get_curve_data_depthwise(well, ["DTC", "DT"])
         gr, _, _ = get_curve_data_depthwise(well, ["GR"])
+        # Core (lab) porosity, if present, pins the matrix density and lets the
+        # solver resolve quartz/calcite even without PEF.
+        core_phi, _, _ = get_curve_data_depthwise(
+            well, ["PHIE_CC", "PHIT_CC", "CPOR", "CPOR_CC", "PHIC"]
+        )
 
         if rhob is None:
             raise ValueError("RHOB with finite samples required for lithology")
@@ -228,6 +233,7 @@ class LithologyModule:
             pef=pef_clean,
             phie=phie_data,
             dt=dtc_clean,
+            core_phi=core_phi,
         )
 
         v_quartz = result.get("quartz", np.zeros(n_samples))

@@ -18,13 +18,14 @@ Petrophys supports multiple file formats for well log data.
    well = read_las("path/to/well.las")
 
    # View well information
-   print(f"Well name: {well.header.get('WELL')}")
-   print(f"Depth range: {well.start_depth} - {well.stop_depth}")
+   print(f"Well name: {well.header.well_name}")
+   print(f"Depth range: {well.top} - {well.bottom} {well.depth_unit}")
    print(f"Number of curves: {len(well.curves)}")
 
-   # List available curves
-   for curve in well.curves:
-       print(f"  {curve.name}: {curve.unit}")
+   # List available curves (well.curves is a list of mnemonic strings)
+   for name in well.curves:
+       curve = well.get(name)
+       print(f"  {curve.mnemonic}: {curve.unit}")
 
 **DLIS Files**
 
@@ -104,8 +105,8 @@ Each calculation module can be used independently for maximum flexibility.
    )
 
    # Or use specific models directly
-   sw = archie(rt, rw=0.05, phi=0.15, a=1.0, m=2.0, n=2.0)
-   sw = dual_water(phi_t=0.2, phi_e=0.15, rt=10.0, rw=0.05, rwb=0.02,
+   sw = archie(rt=10.0, rw=0.05, phi=0.15, a=1.0, m=2.0, n=2.0)
+   sw = dual_water(phi_t=0.2, rt=10.0, rw=0.05, rwb=0.02,
                     vcl=0.3, phi_cl=0.15)
    sw = waxman_smits(phi_t=0.2, rt=10.0, rw=0.05, cec=10.0,
                       rho_ma=2.65, b_coeff=0.5)
@@ -426,21 +427,28 @@ Load core plug measurements and calibrate log curves against lab data.
    # From a CSV file
    core = CoreData.from_csv("core_data.csv")
 
-   # From a DataFrame
+   # From a DataFrame. from_dataframe defaults to DEPTH/CPOR/CPERM/CGD column
+   # names; map custom names with the *_col arguments.
    df = pd.DataFrame({
        "depth": [2500.0, 2510.0, 2520.0, 2530.0, 2540.0],
        "porosity": [0.18, 0.22, 0.19, 0.25, 0.21],
        "permeability": [50.0, 150.0, 75.0, 300.0, 120.0],
        "grain_density": [2.65, 2.64, 2.66, 2.63, 2.65],
    })
-   core = CoreData.from_dataframe(df)
+   core = CoreData.from_dataframe(
+       df, depth_col="depth", porosity_col="porosity",
+       perm_col="permeability", gd_col="grain_density",
+   )
 
-   # From a dictionary
-   core = CoreData.from_dict({
-       "depth": [2500.0, 2510.0, 2520.0],
-       "porosity": [0.18, 0.22, 0.19],
-       "permeability": [50.0, 150.0, 75.0],
-   })
+   # From a dictionary — build a DataFrame first
+   core = CoreData.from_dataframe(
+       pd.DataFrame({
+           "depth": [2500.0, 2510.0, 2520.0],
+           "porosity": [0.18, 0.22, 0.19],
+           "permeability": [50.0, 150.0, 75.0],
+       }),
+       depth_col="depth", porosity_col="porosity", perm_col="permeability",
+   )
 
 **Porosity & Permeability Calibration**
 

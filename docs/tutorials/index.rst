@@ -17,8 +17,8 @@ This tutorial shows how to load well log data and perform basic inspection.
 
 .. code-block:: python
 
+   import numpy as np
    from petrophys.io import read_las
-   from petrophys import Well
 
    # Load a LAS file
    well = read_las("example_well.las")
@@ -26,36 +26,30 @@ This tutorial shows how to load well log data and perform basic inspection.
    # Display well information
    print("Well Header Information:")
    print("-" * 40)
-   for key, value in well.header.items():
-       print(f"{key}: {value}")
+   print(f"Well name : {well.header.well_name}")
+   print(f"Depth     : {well.top} - {well.bottom} {well.depth_unit}")
 
-   # Display curve inventory
+   # Display curve inventory (well.curves is a list of mnemonic strings)
    print("\nAvailable Curves:")
    print("-" * 40)
-   for curve in well.curves:
-       stats = curve.statistics()
-       print(f"{curve.name:10s} [{curve.unit:6s}] "
-             f"min={stats['min']:8.2f} max={stats['max']:8.2f}")
+   for name in well.curves:
+       curve = well.get(name)
+       print(f"{curve.mnemonic:10s} [{curve.unit:6s}] "
+             f"min={curve.min():8.2f} max={curve.max():8.2f}")
 
 Clay Volume Calculation
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
-   from petrophys.clay_volume import VclModule
+   from petrophys.clay_volume import calculate_vcl
 
-   # Initialize VCL calculator
-   vcl_module = VclModule(
-       gr_clean=20,      # GR in clean sand
-       gr_shale=120,     # GR in shale
-       method="larionov_tertiary"
-   )
-
-   # Calculate VCL
-   result = vcl_module.calculate(well)
+   # Multi-method VCL (minimum of GR, SP, N-D). gr_min/gr_max are the
+   # clean-sand and shale GR baselines.
+   result = calculate_vcl(well, gr_min=20, gr_max=120, gr_method="larionov_tertiary")
 
    # Add to well
-   vcl_module.add_to_well(well, result)
+   well.add_curve("VCL", result.vcl, "v/v", "Clay Volume")
 
    # View results
    vcl = well.get("VCL")
@@ -67,25 +61,22 @@ Porosity Calculation
 
 .. code-block:: python
 
-   from petrophys.petrophysics.porosity import PorosityModule
+   from petrophys.petrophysics.porosity import calculate_porosity
 
-   # Initialize porosity calculator
-   por_module = PorosityModule(
-       rho_ma=2.65,   # Matrix density (sandstone)
-       rho_fl=1.0,    # Fluid density
-       dt_ma=55.5,    # Matrix sonic
-       dt_fl=189.0    # Fluid sonic
-   )
-
-   # Calculate porosity
-   result = por_module.calculate(well)
+   # Calculate all porosity types (density, sonic, total, effective, secondary).
+   # `matrix` selects the matrix endpoints (sandstone -> rho_ma 2.65, dt_ma 55.5).
+   result = calculate_porosity(well, matrix="sandstone", rhob_fluid=1.0)
 
    # Add results to well
-   por_module.add_to_well(well, result)
+   well.add_curve("PHID", result.phid, "v/v", "Density Porosity")
+   well.add_curve("PHIT", result.phit, "v/v", "Total Porosity")
+   well.add_curve("PHIE", result.phie, "v/v", "Effective Porosity")
+   if result.phis is not None:
+       well.add_curve("PHIS", result.phis, "v/v", "Sonic Porosity")
 
    # View different porosity types
    print("Porosity Summary:")
-   for name in ["PHID", "PHIN", "PHIS", "PHIT", "PHIE"]:
+   for name in ["PHID", "PHIS", "PHIT", "PHIE"]:
        curve = well.get(name)
        if curve is not None:
            print(f"  {name}: {curve.mean():.3f}")
@@ -104,20 +95,19 @@ The Archie equation is used for clean (non-shaly) formations:
 
 .. code-block:: python
 
-   from petrophys.petrophysics.saturation import SwModule
+   from petrophys.petrophysics.saturation import SaturationModule
 
    # Archie parameters
-   sw_module = SwModule(
-       rw=0.05,      # Formation water resistivity
+   sw_module = SaturationModule(
        a=1.0,        # Tortuosity factor
        m=2.0,        # Cementation exponent
        n=2.0,        # Saturation exponent
-       model="archie"
+       model="archie",
    )
 
-   # Calculate Sw
-   result = sw_module.calculate(well)
-   sw_module.add_to_well(well, result)
+   # Calculate Sw (returns a SaturationResult with .sw, .model, .sxo)
+   result = sw_module.calculate(well, rw=0.05)
+   well.add_curve("SW", result.sw, "v/v", f"Water Saturation ({result.model})")
 
 Shaly Sand Methods
 ~~~~~~~~~~~~~~~~~~
@@ -126,29 +116,13 @@ For shaly formations, use Simandoux or Indonesia equations:
 
 .. code-block:: python
 
-   # Simandoux model
-   sw_module = SwModule(
-       rw=0.05,
-       a=1.0,
-       m=2.0,
-       n=2.0,
-       model="simandoux",
-       rsh=2.0  # Shale resistivity
-   )
-
-   result = sw_module.calculate(well)
+   # Simandoux model (rcl = clay/shale resistivity, passed to calculate())
+   sw_module = SaturationModule(a=1.0, m=2.0, n=2.0, model="simandoux")
+   result = sw_module.calculate(well, rw=0.05, rcl=2.0)
 
    # Indonesia model
-   sw_module = SwModule(
-       rw=0.05,
-       a=1.0,
-       m=2.0,
-       n=2.0,
-       model="indonesia",
-       rsh=2.0
-   )
-
-   result = sw_module.calculate(well)
+   sw_module = SaturationModule(a=1.0, m=2.0, n=2.0, model="indonesia")
+   result = sw_module.calculate(well, rw=0.05, rcl=2.0)
 
 Permeability Estimation
 -----------------------
@@ -158,12 +132,12 @@ Using Timur Equation
 
 .. code-block:: python
 
-   from petrophys.petrophysics.permeability import PermModule
+   from petrophys.petrophysics.permeability import PermeabilityModule
 
-   # Timur equation
-   perm_module = PermModule(method="timur")
+   # Timur equation (returns a PermeabilityResult with .perm, .method)
+   perm_module = PermeabilityModule(method="timur")
    result = perm_module.calculate(well)
-   perm_module.add_to_well(well, result)
+   well.add_curve("PERM", result.perm, "mD", f"Permeability ({result.method})")
 
    # View permeability statistics
    perm = well.get("PERM")
@@ -176,37 +150,44 @@ When core data is available:
 
 .. code-block:: python
 
-   from petrophys.petrophysics.permeability import calibrate_to_core
-   import numpy as np
-
-   # Core data
-   core_depth = np.array([8050, 8100, 8150])
-   core_perm = np.array([100, 250, 50])
-
-   # Calibrate log permeability
-   calibrated_perm = calibrate_to_core(
-       well,
-       core_depth=core_depth,
-       core_perm=core_perm
+   import pandas as pd
+   from petrophys.core import (
+       CoreData, fit_poro_perm_transform, apply_poro_perm_transform
    )
+
+   # Core plug data. CoreData.from_dataframe defaults to column names
+   # DEPTH/CPOR/CPERM/CGD; pass *_col to map custom names.
+   core = CoreData.from_dataframe(
+       pd.DataFrame({
+           "depth": [8050.0, 8100.0, 8150.0],
+           "porosity": [0.18, 0.24, 0.12],
+           "permeability": [100.0, 250.0, 50.0],
+       }),
+       depth_col="depth", porosity_col="porosity", perm_col="permeability",
+   )
+
+   # Fit log(K) = A * PHI + B from core, then apply to the log porosity
+   transform = fit_poro_perm_transform(core)
+   calibrated_perm = apply_poro_perm_transform(well, transform)
+   well.add_curve("PERM_CORE", calibrated_perm, "mD", "Core-Calibrated Perm")
 
 Net Pay Determination
 ---------------------
 
 .. code-block:: python
 
-   from petrophys.reservoir.net_pay import NetPayModule
+   from petrophys.reservoir import calculate_net_pay
 
-   # Define cutoffs
-   np_module = NetPayModule(
-       vcl_cutoff=0.3,   # Max VCL
-       phie_cutoff=0.08, # Min porosity
-       sw_cutoff=0.7     # Max water saturation
+   # Define cutoffs (or pass lithology="carbonate" for lithology-aware PHIE cutoffs)
+   result = calculate_net_pay(
+       well,
+       vcl_cutoff=0.3,    # Max VCL
+       phie_cutoff=0.08,  # Min porosity
+       sw_cutoff=0.7,     # Max water saturation
    )
 
-   # Calculate net pay
-   result = np_module.calculate(well)
-   np_module.add_to_well(well, result)
+   # Add the net-pay flag to the well
+   well.add_curve("NET_PAY", result.net_pay.astype(float), "", "Net Pay flag")
 
    # Summary
    print(f"Gross thickness: {result.gross_thickness:.1f} ft")
@@ -347,13 +328,19 @@ measurements and calibrating log curves against laboratory data.
    )
    import pandas as pd
 
-   # Create synthetic core data (in practice, load from CSV/Excel)
-   core = CoreData.from_dataframe(pd.DataFrame({
-       "depth": [2500, 2510, 2520, 2530, 2540, 2550, 2560],
-       "porosity": [0.18, 0.22, 0.19, 0.25, 0.21, 0.17, 0.23],
-       "permeability": [50, 150, 75, 300, 120, 30, 180],
-       "grain_density": [2.65, 2.64, 2.66, 2.63, 2.65, 2.67, 2.64],
-   }))
+   # Create synthetic core data (in practice, load from CSV/Excel).
+   # from_dataframe defaults to DEPTH/CPOR/CPERM/CGD columns; map custom names
+   # with the *_col arguments.
+   core = CoreData.from_dataframe(
+       pd.DataFrame({
+           "depth": [2500, 2510, 2520, 2530, 2540, 2550, 2560],
+           "porosity": [0.18, 0.22, 0.19, 0.25, 0.21, 0.17, 0.23],
+           "permeability": [50, 150, 75, 300, 120, 30, 180],
+           "grain_density": [2.65, 2.64, 2.66, 2.63, 2.65, 2.67, 2.64],
+       }),
+       depth_col="depth", porosity_col="porosity",
+       perm_col="permeability", gd_col="grain_density",
+   )
 
    # Calibrate log porosity vs core
    cal = calibrate_porosity(well, core, log_curve="PHIE")

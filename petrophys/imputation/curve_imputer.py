@@ -8,6 +8,7 @@ It does not create a new target curve when the target is absent from the well.
 from __future__ import annotations
 
 import copy
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
@@ -194,6 +195,13 @@ class PretrainedCurveImputer:
     model_path : str or Path, optional
         Path to a joblib model pack. If omitted, the bundled geolink pack is
         loaded.
+
+    Security
+    --------
+    Model packs are deserialized with ``joblib.load`` (pickle), which executes
+    arbitrary code embedded in the file. Only load packs from a trusted source.
+    Loading a ``model_path`` that did not come from you is unsafe; a warning is
+    emitted whenever a non-default path is loaded.
     """
 
     def __init__(
@@ -202,11 +210,19 @@ class PretrainedCurveImputer:
         model_path: Optional[Union[str, Path]] = None,
     ):
         if model_pack is None:
-            path = Path(model_path) if model_path is not None else default_pretrained_model_path()
+            default_path = default_pretrained_model_path()
+            path = Path(model_path) if model_path is not None else default_path
             if not path.exists():
                 raise FileNotFoundError(
                     f"Pretrained curve-imputation model pack not found: {path}. "
                     "Generate it with scripts/train_curve_imputation_models.py."
+                )
+            if path != default_path:
+                warnings.warn(
+                    f"Loading a curve-imputation model pack from {path} with "
+                    "joblib.load (pickle). This executes arbitrary code in the "
+                    "file — only load packs you trust.",
+                    stacklevel=2,
                 )
             joblib = _load_joblib()
             model_pack = joblib.load(path)

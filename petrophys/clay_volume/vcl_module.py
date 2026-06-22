@@ -13,7 +13,7 @@ from petrophys.base.well import Well
 from petrophys.base.constants import DefaultParameters
 from petrophys.clay_volume.gr_method import vcl_from_gr
 from petrophys.clay_volume.sp_method import vcl_from_sp, should_use_sp
-from petrophys.clay_volume.nd_method import vcl_from_nd
+from petrophys.clay_volume.nd_method import vcl_from_nd, nd_clean_line
 from petrophys.clay_volume.classification import classify_vcl
 from petrophys.utils.analysis_helpers import get_curve_data_depthwise
 
@@ -79,13 +79,17 @@ class VclModule:
         use_sp: bool = True,
         use_nd: bool = True,
         sp_max: Optional[float] = None,
-        sp_min: Optional[float] = None
+        sp_min: Optional[float] = None,
+        matrix: Optional[str] = None,
     ):
         self.gr_min = gr_min
         self.gr_max = gr_max
         self.gr_method = gr_method
         self.use_sp = use_sp
         self.use_nd = use_nd
+        # Matrix selects the N-D crossplot clean line (sandstone for clastic,
+        # limestone for carbonate, dolomite). None -> limestone (back-compat).
+        self.matrix = matrix
         self.sp_max = sp_max
         self.sp_min = sp_min
 
@@ -192,7 +196,12 @@ class VclModule:
         nphi_data, _, _ = get_curve_data_depthwise(well, [nphi_name, "PHIN"])
         rhob_data, _, _ = get_curve_data_depthwise(well, [rhob_name])
         if self.use_nd and nphi_data is not None and rhob_data is not None:
-            vcl_nd = vcl_from_nd(nphi_data, rhob_data)
+            den_cl1, neu_cl1, den_cl2, neu_cl2 = nd_clean_line(self.matrix)
+            vcl_nd = vcl_from_nd(
+                nphi_data, rhob_data,
+                den_cl1=den_cl1, neu_cl1=neu_cl1,
+                den_cl2=den_cl2, neu_cl2=neu_cl2,
+            )
             vcl_methods.append(vcl_nd)
             method_names.append("ND")
 
@@ -281,6 +290,7 @@ def calculate_vcl(
     gr_method: str = "linear",
     use_sp: bool = True,
     use_nd: bool = True,
+    matrix: Optional[str] = None,
     **kwargs
 ) -> VclResult:
     """
@@ -322,6 +332,7 @@ def calculate_vcl(
         gr_method=gr_method,
         use_sp=use_sp,
         use_nd=use_nd,
+        matrix=matrix,
         **kwargs
     )
     return module.calculate(well)

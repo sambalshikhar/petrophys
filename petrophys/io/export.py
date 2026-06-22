@@ -220,9 +220,10 @@ def export_las(
             continue
         curve = well._curves[mnemonic]
 
-        # Replace NaN with null value
-        data = curve.data.copy()
-        data = np.where(np.isnan(data), -999.25, data)
+        # Replace non-finite values (NaN, +/-Inf) with the LAS null value.
+        # Inf was previously written literally as "inf", breaking re-read round-trips.
+        data = curve.data.copy().astype(float)
+        data = np.where(np.isfinite(data), data, -999.25)
 
         las.append_curve(
             mnemonic,
@@ -272,6 +273,10 @@ def export_csv(
         curves = [c.upper() for c in curves]
 
     df = well.to_dataframe(curves=curves, include_depth=include_depth)
+
+    # Coerce non-finite values to NaN so Inf is not written literally as "inf"
+    # (which would re-read as a float inf rather than a null).
+    df = df.replace([np.inf, -np.inf], np.nan)
 
     # Handle null values
     if null_value != "":

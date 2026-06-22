@@ -394,6 +394,20 @@ def analyze_formations(
             )
             valid_formations.append(clipped)
 
+    # Guard: if formations were supplied but NONE overlap the log, the tops are
+    # almost certainly in a different depth reference/unit (e.g. metres vs feet).
+    if formations and not valid_formations:
+        import warnings
+        fm_top = min(fm.top_depth for fm in formations)
+        fm_bot = max(fm.bottom_depth for fm in formations)
+        warnings.warn(
+            f"None of the {len(formations)} formation tops "
+            f"({fm_top:.0f}-{fm_bot:.0f}) overlap the well depth range "
+            f"({well_top:.0f}-{well_bottom:.0f} {depth_unit}). Check that the tops "
+            "use the same depth reference and unit (ft vs m) as the log.",
+            stacklevel=2,
+        )
+
     summaries = []
     for fm in valid_formations:
         # Zone summary (net pay, NTG, averages over pay)

@@ -7,6 +7,7 @@ files and convert them to Well objects.
 
 from typing import Optional, Union, Dict, Any, List
 from pathlib import Path
+import warnings
 import numpy as np
 
 try:
@@ -14,6 +15,36 @@ try:
     HAS_LASIO = True
 except ImportError:
     HAS_LASIO = False
+
+
+def _warn_on_depth_issues(depth: Optional[np.ndarray], source: object = "") -> None:
+    """Warn (do not raise) when the depth index is not strictly increasing.
+
+    Many downstream aggregations (thickness, net pay, zone summaries) assume a
+    monotonic depth axis. Reversed/duplicate/non-monotonic depth is accepted but
+    can silently bias results, so surface it to the caller.
+    """
+    if depth is None:
+        return
+    arr = np.asarray(depth, dtype=float)
+    finite = arr[np.isfinite(arr)]
+    if finite.size < 2:
+        return
+    diffs = np.diff(finite)
+    issues = []
+    if np.any(diffs == 0):
+        issues.append("duplicate depth values")
+    if np.any(diffs < 0):
+        if np.all(diffs <= 0):
+            issues.append("depth is decreasing (reversed)")
+        else:
+            issues.append("non-monotonic depth")
+    if issues:
+        warnings.warn(
+            f"Depth index issue in {source!s}: {', '.join(issues)}. "
+            "Downstream thickness/net-pay/zone calculations assume increasing depth.",
+            stacklevel=3,
+        )
 
 
 def _normalize_depth_unit(unit: str) -> str:
@@ -161,6 +192,7 @@ class LASReader:
                 if curve.mnemonic == depth_curve:
                     well._depth_unit = _normalize_depth_unit(curve.unit)
                     break
+            _warn_on_depth_issues(well._depth, self.filepath)
 
         # Add curves
         for las_curve in self._las.curves:

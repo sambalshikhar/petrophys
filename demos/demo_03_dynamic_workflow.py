@@ -25,8 +25,8 @@ from petrophys.workflow import run_dynamic_workflow, DynamicWorkflowConfig
 # ─────────────────────────────────────────────
 # 1. Load and standardize
 # ─────────────────────────────────────────────
-LAS_PATH = os.path.expanduser(
-    "~/energy_gpt/EvalGen2/geolink_las/30_6-5.las"
+LAS_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "geolink_data", "30_6-5.las"
 )
 
 print("=" * 60)

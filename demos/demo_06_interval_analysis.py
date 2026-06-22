@@ -35,8 +35,8 @@ from petrophys.formation import (
     analyze_interval,
 )
 
-LAS_PATH = os.path.expanduser(
-    "~/energy_gpt/EvalGen2/geolink_las/30_6-5.las"
+LAS_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "geolink_data", "30_6-5.las"
 )
 LITHOLOGY_CSV = os.path.join(os.path.dirname(__file__), "lithology_30_6-5.csv")
 FORMATIONS_CSV = os.path.join(os.path.dirname(__file__), "formations_30_6-5.csv")

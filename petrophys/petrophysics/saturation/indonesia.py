@@ -48,19 +48,24 @@ def indonesia(
     float or np.ndarray
         Water saturation (0-1)
     """
-    # Avoid division by zero
-    rt = np.where(rt <= 0, 1e-10, rt) if isinstance(rt, np.ndarray) else max(rt, 1e-10)
-    phi = np.where(phi <= 0, 1e-10, phi) if isinstance(phi, np.ndarray) else max(phi, 1e-10)
-    rcl = max(rcl, 1e-10)
+    # Track whether the caller passed scalars so we return a scalar
+    scalar_input = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vcl)
+
+    # Normalize numeric inputs to arrays (0-d for scalars) and avoid division by zero.
+    # Using np.asarray keeps scalar inputs working through the array code paths below
+    # (a 0-d array has .shape == () and supports np.where/np.power), which previously
+    # crashed with AttributeError on scalar rt.
+    rt = np.asarray(rt, dtype=float)
+    rt = np.where(rt <= 0, 1e-10, rt)
+    phi = np.asarray(phi, dtype=float)
+    phi = np.where(phi <= 0, 1e-10, phi)
+    rcl = max(float(rcl), 1e-10)
     rw = np.asarray(rw, dtype=float)
-    if rw.ndim == 0:
-        rw = np.full(rt.shape, float(rw), dtype=float)
-    else:
-        rw = np.broadcast_to(rw, rt.shape).astype(float)
+    rw = np.broadcast_to(rw, rt.shape).astype(float)
     rw = np.where(rw <= 0, 1e-10, rw)
 
     # Clip vcl to valid range
-    vcl = np.clip(vcl, 0, 0.99)
+    vcl = np.clip(np.asarray(vcl, dtype=float), 0, 0.99)
 
     # Indonesia equation components
     # Term 1: Clay contribution
@@ -92,7 +97,8 @@ def indonesia(
     sw_half_n = lhs / sand_term_base
     sw = np.power(sw_half_n, 2 / n)
 
-    return np.clip(sw, 0, 1)
+    sw = np.clip(sw, 0, 1)
+    return float(sw) if scalar_input else sw
 
 
 def indonesia_sw(

@@ -113,4 +113,7 @@ def calculate_mhi(
         sxo_safe = max(sxo, 0.01)
 
     mhi = sw / sxo_safe
-    return np.clip(mhi, 0, 1)
+    # Do NOT clip the upper bound: MHI = Sw/Sxo > 1 is diagnostic (Sxo < Sw means
+    # no moveable hydrocarbon, or a shallow/no-invasion / bad-Rxo QC flag). Clipping
+    # to 1 would collapse that entire interpretive band. Only floor at 0.
+    return np.maximum(mhi, 0)

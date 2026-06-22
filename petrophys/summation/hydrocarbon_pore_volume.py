@@ -114,7 +114,10 @@ def calculate_hcpv(
         hcpv_acft=hcpv_acft,
         hcpv_bbl=hcpv_bbl,
         hcpv_m3=hcpv_m3,
-        ooip_bbl=hcpv_bbl,
+        # OOIP is a surface (stock-tank) quantity: divide reservoir HCPV by Bo.
+        # Previously ooip_bbl was set to the reservoir-condition hcpv_bbl, which
+        # mislabeled reservoir barrels as oil-in-place.
+        ooip_bbl=ooip_stb,
         ooip_stb=ooip_stb,
         ogip_mcf=ogip_mcf,
         ogip_bcf=ogip_bcf

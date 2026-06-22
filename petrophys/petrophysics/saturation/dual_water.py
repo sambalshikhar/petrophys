@@ -82,18 +82,23 @@ def dual_water(
 
     swb = phi_bw / phi_t_safe
 
-    # Apparent total water resistivity
-    rwt = 1.0 / (swb / rwb + (1.0 - swb) / rw)
-
-    # Total Sw via Archie on total porosity
-    swt = ((a * rwt) / (phi_t_safe ** m * rt)) ** (1.0 / n)
-
-    # Convert to effective Sw
+    # Bound-water saturation cannot exceed 1 (happens when Vcl*phi_cl > phi_t).
+    # Clamp BEFORE it is used so the apparent-Rwt mixing term (1 - swb)/rw stays
+    # physical; previously rwt was built from the raw swb, giving a negative
+    # conductivity contribution and an invalid Rwt in that regime.
     swb_safe = (
         np.where(swb >= 1.0, 0.999, swb)
         if isinstance(swb, np.ndarray)
         else min(swb, 0.999)
     )
+
+    # Apparent total water resistivity
+    rwt = 1.0 / (swb_safe / rwb + (1.0 - swb_safe) / rw)
+
+    # Total Sw via Archie on total porosity
+    swt = ((a * rwt) / (phi_t_safe ** m * rt)) ** (1.0 / n)
+
+    # Convert to effective Sw
     swe = (swt - swb_safe) / (1.0 - swb_safe)
 
     return np.clip(swe, 0.0, 1.0)

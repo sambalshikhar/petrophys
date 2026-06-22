@@ -142,8 +142,8 @@ from petrophys.clay_volume import calculate_rcl, vcl_from_gr
 from petrophys.petrophysics.permeability import flag_impermeable
 
 # Direct function calls for Sw
-sw = archie(rt, rw=0.05, phi=0.15)
-sw = dual_water(phi_t=0.2, phi_e=0.15, rt=10.0, rw=0.05, rwb=0.02, vcl=0.3, phi_cl=0.15)
+sw = archie(rt=10.0, rw=0.05, phi=0.15)
+sw = dual_water(phi_t=0.2, rt=10.0, rw=0.05, rwb=0.02, vcl=0.3, phi_cl=0.15)
 sw = waxman_smits(phi_t=0.2, rt=10.0, rw=0.05, cec=10.0, rho_ma=2.65, b_coeff=0.5)
 
 # Rock quality
@@ -183,18 +183,23 @@ The dynamic workflow follows this sequence:
 | 2 | Bad Hole | Washout and data quality flags |
 | 3 | VCLAY | GR + SP + N-D methods, minimum selection |
 | 4 | Rcl | Clay resistivity from pure-shale zones |
-| 5 | Lithology | Multi-mineral solver (RHOB, NPHI, PEF) |
-| 6 | Rmf | Mud filtrate resistivity (temp-corrected) |
-| 7 | Rw | Formation water resistivity (given / salinity / SP) |
-| 8 | Invasion | Rxo/Rt classification |
-| 9 | HC Correction | NPHI and RHOB hydrocarbon corrections |
-| 10 | Porosity | Total, effective, density, sonic, secondary |
-| 11 | Saturation | Sw via auto-routed model + Sxo |
-| 12 | Permeability | Coates/Timur + impermeability flags |
-| 13 | Rock Quality | RQI, FZI, phi_z |
-| 14 | BVW | Bulk Volume Water |
-| 15 | MHI | Moveable Hydrocarbon Index |
-| 16 | Net Pay | 3-stage cutoff filtering |
+| 5 | Rmf | Mud filtrate resistivity (temp-corrected) |
+| 6 | HC Correction | NPHI and RHOB hydrocarbon corrections |
+| 7 | Porosity | Total, effective, density, sonic, secondary |
+| 8 | Lithology | Multi-mineral solver (RHOB, NPHI, PEF) |
+| 9 | Porosity Refinement | Re-run porosity with computed-lithology matrices |
+| 10 | Core Correction | Calibrate porosity/perm to core (if core curves present) |
+| 11 | Rw | Formation water resistivity (given / salinity / SP) |
+| 12 | Invasion | Rxo/Rt classification |
+| 13 | Saturation | Sw via auto-routed model + Sxo |
+| 14 | Permeability | Coates/Timur + impermeability flags |
+| 15 | Rock Quality | RQI, FZI, phi_z |
+| 16 | BVW | Bulk Volume Water |
+| 17 | MHI | Moveable Hydrocarbon Index |
+| 18 | Net Pay | 3-stage cutoff filtering |
+
+> Note: Lithology runs **after** the first porosity pass; the *Porosity Refinement*
+> step then recomputes porosity using the computed-lithology matrix endpoints.
 
 Each step runs only if the required input curves are available. Steps can be explicitly skipped via `config.skip_steps`.
 
@@ -202,7 +207,8 @@ Each step runs only if the required input curves are available. Steps can be exp
 
 | Module | Description |
 |--------|-------------|
-| `petrophys.core` | Core data structures (Well, Curve, Units, Classifications) |
+| `petrophys.base` | Core data structures (Well, Curve, Units, Classifications) |
+| `petrophys.core` | Core/SCAL lab data (poro-perm, XRF, mechanical, calibration) |
 | `petrophys.io` | File I/O (LAS, DLIS, ASCII) |
 | `petrophys.qaqc` | Quality control (bad hole, normalization, standardization) |
 | `petrophys.environmental` | Environmental parameters (temperature profiles) |

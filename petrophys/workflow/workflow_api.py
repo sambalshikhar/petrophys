@@ -117,9 +117,9 @@ CATEGORY_STEP_MAP: dict[str, list[WorkflowStep]] = {
         WorkflowStep.TEMPERATURE, WorkflowStep.BAD_HOLE, WorkflowStep.VCLAY,
         WorkflowStep.RCL, WorkflowStep.LITHOLOGY, WorkflowStep.RMF, WorkflowStep.RW,
         WorkflowStep.INVASION, WorkflowStep.HC_CORRECTION, WorkflowStep.POROSITY,
-        WorkflowStep.POROSITY_REFINEMENT,
-        WorkflowStep.SATURATION, WorkflowStep.PERMEABILITY, WorkflowStep.BVW,
-        WorkflowStep.MHI, WorkflowStep.NET_PAY,
+        WorkflowStep.POROSITY_REFINEMENT, WorkflowStep.CORE_CORRECTION,
+        WorkflowStep.SATURATION, WorkflowStep.PERMEABILITY, WorkflowStep.ROCK_QUALITY,
+        WorkflowStep.BVW, WorkflowStep.MHI, WorkflowStep.NET_PAY,
     ],
     "porosity": [
         WorkflowStep.TEMPERATURE, WorkflowStep.BAD_HOLE, WorkflowStep.POROSITY,
