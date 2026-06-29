@@ -124,6 +124,9 @@ def get_mineral_properties(mineral: str, property_name: Optional[str] = None):
                 "slowness": props.slowness,
                 "nphi": props.nphi,
                 "pef": props.pef,
+                # volumetric photoelectric factor U = PEF x density (consumers
+                # such as the multi-mineral solver read "u" unconditionally).
+                "u": props.pef * props.density,
             }
         except KeyError:
             raise KeyError(f"Unknown mineral: {mineral}")

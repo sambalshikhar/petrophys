@@ -251,6 +251,8 @@ def plot_core_on_logs(
 
     depth = well.depth
     if depth_range is None:
+        if core.top is None or core.bottom is None:
+            raise ValueError("core has no finite top/bottom depth; pass depth_range explicitly")
         depth_range = (core.top - 50, core.bottom + 50)
     d_mask = (depth >= depth_range[0]) & (depth <= depth_range[1])
 

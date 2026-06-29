@@ -3311,17 +3311,27 @@ def _segment_saturation_model_counts(well: "Well", params: dict[str, Any]) -> di
     if requested and requested != "auto":
         return {requested: routed_samples}
 
+    def _fit_length(arr, fill):
+        # Pad (with fill) or truncate to n_samples; avoid np.resize's cyclic tiling.
+        arr = np.asarray(arr).ravel()
+        if arr.shape[0] == n_samples:
+            return arr
+        out = np.full(n_samples, fill, dtype=arr.dtype if arr.size else type(fill))
+        k = min(arr.shape[0], n_samples)
+        out[:k] = arr[:k]
+        return out
+
     vcl_curve = _first_curve(well, ["VCL", "VCLAY", "VSH"])
     if vcl_curve is not None:
         vcl = _normalize_numeric_array(vcl_curve.data)
     else:
         vcl = np.zeros(n_samples, dtype=float)
-    vcl = np.resize(vcl, n_samples)
+    vcl = _fit_length(vcl, np.nan)
 
     lithology = _segment_lithology_groups_for_saturation(
         well, params.get("lithology_type") or "clastic"
     )
-    lithology = np.resize(lithology, n_samples)
+    lithology = _fit_length(lithology, params.get("lithology_type") or "clastic")
 
     cutoff = float(params.get("vcl_cutoff_for_routing") or 0.3)
     salinity = params.get("salinity_ppm")

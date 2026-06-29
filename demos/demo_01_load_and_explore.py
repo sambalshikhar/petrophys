@@ -22,9 +22,8 @@ from petrophys.qaqc.standardization import standardize_curves, CurveStandardizer
 # ─────────────────────────────────────────────
 # 1. Load the LAS file
 # ─────────────────────────────────────────────
-LAS_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "geolink_data", "30_6-5.las"
-)
+import petrophys
+LAS_PATH = petrophys.sample("30_6-5")
 
 print("=" * 60)
 print("DEMO 01: Loading and Exploring Well 30/6-5")

@@ -164,8 +164,12 @@ class VclModule:
         vcl_sp = None
         vcl_nd = None
 
-        # GR method (primary)
-        gr_data, _, _ = get_curve_data_depthwise(well, [gr_name])
+        # GR method (primary). When the default "GR" is requested, fall back to the
+        # GR family (computed/spectral) so a well that only carries CGR/SGR is still
+        # usable -- alias_map keeps SGR/CGR as their own standards, so a plain "GR"
+        # lookup would otherwise miss them.
+        gr_candidates = [gr_name] if gr_name != "GR" else ["GR", "CGR", "SGR", "HSGR", "HCGR", "GAMMA"]
+        gr_data, _, _ = get_curve_data_depthwise(well, gr_candidates)
         if gr_data is not None:
             gr_min, gr_max = self._resolve_gr_baselines(gr_data)
             vcl_gr = vcl_from_gr(

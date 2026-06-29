@@ -156,6 +156,8 @@ class PickettPlot:
 
         # Remove invalid values
         mask = ~np.isnan(phie) & ~np.isnan(rt) & (phie > 0) & (rt > 0)
+        if int(np.count_nonzero(mask)) < 2:
+            raise ValueError("add_trend_line needs >= 2 valid (phie, rt) points")
         log_phie = np.log10(phie[mask])
         log_rt = np.log10(rt[mask])
 

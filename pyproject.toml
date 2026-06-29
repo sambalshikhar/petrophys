@@ -84,6 +84,10 @@ petrophys = [
     "py.typed",
     "imputation/pretrained/*.joblib",
     "visualization/templates/*.xml",
+    "data/*.csv",
+    "data/*.md",
+    "data/costa/*.las",
+    "data/geolink/*.las",
 ]
 
 [tool.black]

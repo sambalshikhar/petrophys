@@ -30,9 +30,8 @@ from petrophys.summation import (
     Formation,
 )
 
-LAS_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "geolink_data", "30_6-5.las"
-)
+import petrophys
+LAS_PATH = petrophys.sample("30_6-5")
 FORMATIONS_CSV = os.path.join(os.path.dirname(__file__), "formations_30_6-5.csv")
 
 # ─────────────────────────────────────────────

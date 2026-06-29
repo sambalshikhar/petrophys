@@ -168,7 +168,7 @@ class WashoutDetection:
         for name, flag in flags.items():
             count = np.sum(flag)
             stats[f"{name}_count"] = int(count)
-            stats[f"{name}_percent"] = float(count / n_samples * 100)
+            stats[f"{name}_percent"] = float(count / n_samples * 100) if n_samples else 0.0
             stats[f"{name}_thickness"] = float(count * depth_step)
 
         return stats

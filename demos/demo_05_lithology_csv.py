@@ -35,9 +35,8 @@ from petrophys.workflow import run_dynamic_workflow, DynamicWorkflowConfig
 # ─────────────────────────────────────────────
 # Paths
 # ─────────────────────────────────────────────
-LAS_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "geolink_data", "30_6-5.las"
-)
+import petrophys
+LAS_PATH = petrophys.sample("30_6-5")
 LITHOLOGY_CSV = os.path.join(os.path.dirname(__file__), "lithology_30_6-5.csv")
 
 print("=" * 60)

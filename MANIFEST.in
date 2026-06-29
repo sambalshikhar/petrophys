@@ -9,6 +9,7 @@ recursive-include petrophys *.py
 recursive-include petrophys py.typed
 recursive-include petrophys *.joblib
 recursive-include petrophys *.xml
+recursive-include petrophys/data *.las *.csv *.md
 
 recursive-include docs *.rst *.py Makefile make.bat
 recursive-include tests *.py

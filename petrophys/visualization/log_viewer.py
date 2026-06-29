@@ -212,6 +212,26 @@ MINERAL_VOLUME_CURVE_NAMES = {
 }
 
 
+# Maps mineral-volume curves to the lithology whose GeoLink colour + pattern they
+# should inherit, so the cumulative mineral-composition track is styled identically
+# to the lithology track (quartz -> sandstone dots, calcite -> limestone brick, etc.).
+MINERAL_VOLUME_LITHOLOGY_LABELS: Dict[str, str] = {
+    "VCLAY": "Shale", "VCL": "Shale", "VSH": "Shale", "VSHALE": "Shale", "VCLA": "Shale",
+    "VQUAR": "Sandstone", "VQTZ": "Sandstone", "VSAND": "Sandstone",
+    "VQUARTZ": "Sandstone", "VSND": "Sandstone",
+    "VCALC": "Limestone", "VCAL": "Limestone", "VLIM": "Limestone",
+    "VCALCITE": "Limestone", "VLIME": "Limestone",
+    "VDOLO": "Dolomite", "VDOL": "Dolomite", "VDOLOMITE": "Dolomite",
+    "VANHY": "Anhydrite", "VANH": "Anhydrite", "VANHYDRITE": "Anhydrite",
+    "VHALI": "Halite", "VHALITE": "Halite", "VSALT": "Halite",
+    "VSILT": "Silt",
+    "VCOAL": "Coal",
+    "VPYR": "Pyrite", "VPYRITE": "Pyrite",
+    "VGYP": "Gypsum", "VGYPSUM": "Gypsum",
+    "VFELD": "Arkose", "VFELDSPAR": "Arkose", "VKFELD": "Arkose",
+}
+
+
 COMPUTED_LITHOLOGY_CODE_LABELS: Dict[int, str] = {
     0: "Unknown",
     1: "Sandstone",
@@ -495,67 +515,90 @@ def _default_geolink_lithology_mapping() -> Dict[Any, str]:
     return {}
 
 
+# Industry-standard lithology fill colours, keyed by normalized label.
+# Follows the reference industry legend by FAMILY (yellow sands, teal carbonates,
+# pink evaporites, red igneous/volcanic, orange conglomerate, brown shale) but
+# each member within a family is given a clearly stepped shade so adjacent codes
+# (e.g. sandstone vs cross-bedded vs arkose, or halite vs sylvinite vs carnallite)
+# are visually distinguishable, not just told apart by their pattern.
 LITHOLOGY_LABEL_COLORS: Dict[str, str] = {
     "unknown": "#d9d9d9",
     "gap": "#ffffff",
+    # --- shale / clay (brown family) ---
     "claystone/mudstone": "#8b6208",
     "mudstone": "#8b6208",
     "claystone": "#8b6208",
     "clay": "#8b6208",
-    "shale": "#8b6208",
-    "conglomerate": "#f57f17",
-    "gravel": "#f57f17",
-    "calcareous sandstone": "#f6e58d",
-    "shaly sandstone": "#f6e58d",
-    "shaly sand": "#f6e58d",
-    "silty sand": "#f6e58d",
-    "sandstone": "#f6e58d",
-    "cross bedded sst": "#f6e58d",
-    "crossbedded sand": "#f6e58d",
-    "arkose": "#f6e58d",
-    "sand": "#f6e58d",
+    "silty shale": "#6e7a36",                # olive (silt+clay)
+    "shale": "#8b6208",                       # brown (anchor)
+    "biogenic ooze": "#b58a22",               # light gold-brown
+    # --- sands (yellow family) ---
+    "sandstone": "#ffd000",                   # vivid yellow (anchor)
+    "silty sand": "#e4d27a",                  # muted khaki-yellow
+    "cross bedded sst": "#ffab00",            # amber
+    "crossbedded sand": "#ffab00",
+    "aeolian sandstone": "#fceeb0",           # pale cream
+    "arkose": "#d49a3a",                       # goldenrod-tan (feldspathic)
+    "calcareous sandstone": "#f0e08a",
+    "shaly sandstone": "#e6d488",
+    "shaly sand": "#e6d488",
+    "sand": "#ffd000",
+    # --- silts ---
+    "sandy silt": "#d9b36a",                  # tan
+    "silt": "#f2a06a",                         # salmon-orange
+    "shaly silt": "#ae9226",                   # dark olive-gold
     "siltstone/silt": "#e6bf3f",
-    "sandy silt": "#e6bf3f",
-    "shaly silt": "#e6bf3f",
     "siltstone": "#e6bf3f",
-    "silt": "#e6bf3f",
-    "breccia": "#b35806",
+    # --- conglomerate / breccia (orange family) ---
+    "conglomerate": "#f57f17",                 # orange (anchor)
+    "gravel": "#f57f17",
+    "breccia": "#b5400c",                       # burnt orange
+    "calcareous debris flow": "#f7a833",        # amber
+    # --- coal ---
     "coal (lignite peat descriptors)": "#000000",
     "coal": "#000000",
-    "chalk": "#b7f4e6",
-    "sandy limestone": "#b7f4e6",
-    "porous limestone": "#b7f4e6",
-    "argillaceous limestone": "#b7f4e6",
-    "limestone": "#b7f4e6",
-    "dolomite": "#b7f4e6",
-    "dolomite2": "#b7f4e6",
-    "calcareous clay/shale": "#cfe6e8",
-    "calcareous shale": "#cfe6e8",
-    "marl": "#cfe6e8",
-    "marlstone": "#cfe6e8",
-    "halite": "#f3b2de",
+    # --- carbonates (teal family) ---
+    "chalk": "#cff3e4",                         # pale mint
+    "porous limestone": "#74d4be",              # deeper teal
+    "limestone": "#b0f0e0",                     # light teal (anchor)
+    "argillaceous limestone": "#95c9d6",        # blue-gray teal (clay)
+    "sandy limestone": "#a6e8d6",
+    "dolomite": "#7fe4d2",                      # cyan-teal
+    "dolomite2": "#7fe4d2",
+    # --- marl / calcareous shale (light blue) ---
+    "marl": "#bfe3ec",
+    "marlstone": "#bfe3ec",
+    "calcareous clay/shale": "#a4d2dc",
+    "calcareous shale": "#a4d2dc",
+    # --- evaporites (pink / magenta family) ---
+    "halite": "#f3b2de",                        # pink (anchor)
     "salt": "#f3b2de",
-    "sylvinite": "#f3b2de",
-    "carnallite": "#f3b2de",
-    "kainite": "#f3b2de",
-    "anhydrite": "#f3b2de",
-    "gypsum": "#f3b2de",
-    "polyhalite": "#e4b6d7",
+    "sylvinite": "#e87bc4",                     # rose-magenta
+    "carnallite": "#d646ac",                    # magenta
+    "kainite": "#fbdcef",                       # pale lavender-pink
+    "polyhalite": "#dca6ce",                    # mauve
+    "anhydrite": "#efa6e8",                     # lilac
+    "gypsum": "#eec2ea",                        # pale lilac
     "calcareous cement": "#f7f7f7",
-    "calcareous debris flow": "#f57f17",
-    "intrusive acid igneous": "#f5223a",
-    "intrusive basic igneous": "#f5223a",
-    "igneous/intrusive metamorphic": "#f5223a",
-    "basement": "#f5223a",
-    "plutonic rock": "#f5223a",
-    "intrusive": "#f5223a",
-    "extrusive": "#f5223a",
-    "cinerite": "#bf27ea",
-    "volcanic tuff": "#bf27ea",
-    "tuff": "#bf27ea",
-    "volcanics": "#f5223a",
-    "volcanic": "#f5223a",
-    "metamorphic rock": "#f5223a",
+    # --- igneous / volcanic / metamorphic (red / magenta family) ---
+    "basement": "#f2705a",                      # salmon-red
+    "plutonic rock": "#dc1c28",                 # deep red
+    "intrusive acid igneous": "#dc1c28",
+    "intrusive basic igneous": "#b82a34",
+    "igneous/intrusive metamorphic": "#dc1c28",
+    "intrusive": "#dc1c28",
+    "volcanic rock": "#ff7a2e",                 # orange-red
+    "volcanics": "#ff7a2e",
+    "volcanic": "#ff7a2e",
+    "extrusive": "#ff6347",
+    "metamorphic rock": "#c4366a",              # crimson-purple
+    "cinerite": "#c44fea",                      # purple
+    "volcanic tuff": "#e83abe",                 # magenta
+    "tuff": "#e83abe",
+    # --- chert / spiculite ---
+    "chert": "#eaeaea",                         # very light gray
+    "spiculite": "#cccccc",                     # gray
+    # --- accessory / modifier labels ---
     "sandy": "#f7f7f7",
     "silty": "#eeeeee",
     "argillaceous": "#fafafa",
@@ -565,10 +608,6 @@ LITHOLOGY_LABEL_COLORS: Dict[str, str] = {
     "dolomitic": "#f2f2f2",
     "macrofossils": "#e0e0e0",
     "foraminifera": "#e8e8e8",
-    "chert": "#ffffff",
-    "silty shale": "#8b6208",
-    "biogenic ooze": "#8b6208",
-    "spiculite": "#ffffff",
     "glauconite": "#4daf4a",
     "mica": "#bdbdbd",
     "pyrite": "#9e9e9e",
@@ -1587,6 +1626,10 @@ class LogViewer:
         header_ratio = min(0.30, max(0.14, 0.075 + max_label_rows * 0.032))
         figsize = self.figsize or (max(sum(width_ratios) * 1.75, 11.0), 14.5)
 
+        # Close a figure from a previous create() on this viewer so repeated
+        # builds don't leak figures.
+        if self.fig is not None:
+            plt.close(self.fig)
         self.fig = plt.figure(figsize=figsize, constrained_layout=False)
         grid = self.fig.add_gridspec(
             2,
@@ -1646,6 +1689,12 @@ class LogViewer:
         if self.fig is None:
             self.create()
         plt.show()
+
+    def close(self) -> None:
+        """Close the underlying matplotlib figure and release it (frees memory)."""
+        if self.fig is not None:
+            plt.close(self.fig)
+            self.fig = None
 
     def save(self, filename: str | Path, dpi: int = 150) -> None:
         """Save the plot to disk."""
@@ -2022,13 +2071,17 @@ class LogViewer:
             x0 = self._normalize(cumulative, track.left, track.right, track.scale)
             x1 = self._normalize(next_cumulative, track.left, track.right, track.scale)
             valid = finite & np.isfinite(x0) & np.isfinite(x1)
-            fill_color = spec.fill_color or spec.color
+            litho_label = self._mineral_lithology_label(spec, curve)
+            fill_color = self._mineral_fill_color(litho_label, spec.fill_color or spec.color)
+            hatch = self._lithology_hatch(litho_label) if litho_label else ""
             ax.fill_betweenx(
                 depth,
                 x0,
                 x1,
                 where=valid,
                 color=fill_color,
+                hatch=hatch,
+                edgecolor="0.30" if hatch else "none",
                 alpha=min(spec.fill_alpha, 0.90),
                 linewidth=0.0,
                 zorder=1,
@@ -2041,9 +2094,17 @@ class LogViewer:
                     "curve": curve,
                     "label": spec.display_name or curve.mnemonic,
                     "color": fill_color,
+                    "hatch": hatch,
                 }
             )
             cumulative = next_cumulative
+
+        # Close the volumetric stack with the porosity wedge (white). Our clay term
+        # (VCLAY) is a wet-shale volume that already carries its clay-bound water, so
+        # the complement that makes minerals + clay + porosity = 1.0 is the EFFECTIVE
+        # porosity (PHIE), not total (PHIT, which would double-count clay-bound water).
+        if plotted_items:
+            self._plot_mineral_porosity_wedge(ax, track, depth, cumulative, plotted_items)
 
         left_x = self._normalize_scalar(track.left, track.left, track.right, track.scale)
         right_x = self._normalize_scalar(track.right, track.left, track.right, track.scale)
@@ -2053,6 +2114,66 @@ class LogViewer:
 
         if plotted_items:
             self._add_mineral_volume_header(ax, track, plotted_items)
+
+    def _plot_mineral_porosity_wedge(
+        self,
+        ax: Axes,
+        track: LogTrackSpec,
+        depth: np.ndarray,
+        cumulative: np.ndarray,
+        plotted_items: List[Dict[str, Any]],
+    ) -> None:
+        """Draw the effective-porosity (PHIE) wedge that closes the mineral stack to 1.0."""
+        spec = LogCurveSpec("PHIE", candidates=["PHIE", "PHIE_CC", "PHIT", "PHI"])
+        curve = self._get_curve(spec)
+        if curve is None:
+            return
+        data = np.asarray(curve.data, dtype=float)
+        finite = np.isfinite(data) & np.isfinite(depth)
+        if not np.any(finite):
+            return
+
+        phi = np.where(finite, np.clip(data, 0.0, None), 0.0)
+        next_cumulative = cumulative + phi
+        x0 = self._normalize(cumulative, track.left, track.right, track.scale)
+        x1 = self._normalize(next_cumulative, track.left, track.right, track.scale)
+        valid = finite & np.isfinite(x0) & np.isfinite(x1)
+        ax.fill_betweenx(
+            depth,
+            x0,
+            x1,
+            where=valid,
+            color="white",
+            edgecolor="0.30",
+            linewidth=0.0,
+            zorder=1,
+        )
+        boundary = np.where(valid, x1, np.nan)
+        ax.plot(boundary, depth, color="0.32", linewidth=0.32, alpha=0.75, zorder=2)
+        plotted_items.append(
+            {
+                "spec": spec,
+                "curve": curve,
+                "label": "PHIE",
+                "color": "white",
+                "hatch": "",
+            }
+        )
+
+    def _mineral_lithology_label(self, spec: LogCurveSpec, curve: Any) -> str:
+        """Resolve the lithology label whose GeoLink style a mineral curve inherits."""
+        for name in (spec.curve_name, getattr(curve, "mnemonic", None), spec.display_name):
+            key = str(name or "").strip().upper()
+            if key in MINERAL_VOLUME_LITHOLOGY_LABELS:
+                return MINERAL_VOLUME_LITHOLOGY_LABELS[key]
+        return ""
+
+    def _mineral_fill_color(self, litho_label: str, default: Any) -> Any:
+        if litho_label:
+            color = _lookup_lithology_style(litho_label, LITHOLOGY_LABEL_COLORS, None)
+            if color is not None:
+                return color
+        return default
 
     def _add_mineral_volume_header(
         self,
@@ -2118,6 +2239,7 @@ class LogViewer:
         for index, item in enumerate(plotted_items):
             y_pos = legend_top - index * row_step if row_count > 1 else legend_top
             color = str(item["color"])
+            hatch = str(item.get("hatch", "") or "")
             label = self._compact_header_label(str(item["label"]).upper(), limit=18)
             header_ax.add_patch(
                 Rectangle(
@@ -2127,6 +2249,7 @@ class LogViewer:
                     facecolor=color,
                     edgecolor="0.25",
                     linewidth=0.35,
+                    hatch=hatch,
                     transform=transform,
                     clip_on=True,
                 )
@@ -2183,21 +2306,29 @@ class LogViewer:
             hatch = "" if pattern else self._lithology_hatch(label)
             legend_hatch = self._lithology_hatch(label)
             mask = visible & np.isclose(data, code)
-            ax.fill_betweenx(
-                depth,
-                0.0,
-                1.0,
-                where=mask,
-                color=color,
-                hatch=hatch,
-                edgecolor="0.28" if hatch else "none",
-                alpha=spec.fill_alpha if spec.fill_alpha > 0.5 else 0.85,
-                linewidth=0.2 if hatch else 0.0,
-                zorder=1,
-            )
-            if pattern:
-                for segment_indices in self._lithology_segments(mask):
-                    y0, y1 = self._lithology_segment_bounds(depth, segment_indices, top, bottom)
+            fill_alpha = spec.fill_alpha if spec.fill_alpha > 0.5 else 0.85
+            # Fill each contiguous bed edge-to-edge (segment bounds reach the sample
+            # midpoints) so adjacent beds abut. fill_betweenx(where=mask) instead
+            # leaves a one-sample white sliver at every lithology transition, which
+            # stacks into visible gaps in finely interbedded sections. Genuine data
+            # gaps (missing samples) remain unfilled because the segment split keeps
+            # them apart.
+            for segment_indices in self._lithology_segments(mask):
+                y0, y1 = self._lithology_segment_bounds(depth, segment_indices, top, bottom)
+                if not (np.isfinite(y0) and np.isfinite(y1)) or y1 <= y0:
+                    continue
+                ax.fill_betweenx(
+                    [y0, y1],
+                    0.0,
+                    1.0,
+                    color=color,
+                    hatch=hatch,
+                    edgecolor="0.28" if hatch else "none",
+                    alpha=fill_alpha,
+                    linewidth=0.2 if hatch else 0.0,
+                    zorder=1,
+                )
+                if pattern:
                     self._draw_lithology_pattern(ax, label, y0, y1)
             legend_label = self._lithology_legend_label(label)
             if legend_label not in legend_handles_by_label:
@@ -2403,7 +2534,14 @@ class LogViewer:
         ax.set_xlim(xlim)
         ax.set_ylim(ylim)
 
-    def _draw_lithology_pattern(self, ax: Axes, label: str, y0: float, y1: float) -> None:
+    def _draw_lithology_pattern(
+        self,
+        ax: Axes,
+        label: str,
+        y0: float,
+        y1: float,
+        density_fraction: Optional[float] = None,
+    ) -> None:
         pattern = self._lithology_pattern(label)
         if not pattern or pattern == "solid":
             return
@@ -2414,7 +2552,21 @@ class LogViewer:
             return
 
         axis_span = abs(float(np.diff(ax.get_ylim())[0])) or height
-        rows = max(2, min(4, int(math.ceil(height / max(axis_span * 0.045, 1e-9)))))
+        # Pattern density is keyed to the bed's on-screen fraction, so spacing stays
+        # constant per pixel and thin beds (< ~0.6%) drop the pattern entirely. A
+        # legend swatch fills its whole tile (fraction ~1) yet must still render at a
+        # normal density, so callers can pass density_fraction to set the density
+        # independently of the fill extent (0.05 reproduces the reference look).
+        bed_fraction = (
+            float(density_fraction) if density_fraction is not None
+            else height / max(axis_span, 1e-9)
+        )
+        if bed_fraction < 0.006:
+            return
+        # rows grows with bed height so the vertical pattern spacing is constant per
+        # pixel for every bed (the ceiling is only a safety cap); cols is fixed since
+        # the track width does not change.
+        rows = int(np.clip(math.ceil(bed_fraction / 0.045), 2, 40))
         cols = 4
         color = "0.15"
         if pattern == "shale_lines":
@@ -2506,7 +2658,7 @@ class LogViewer:
                     ax.scatter(xs, np.full(xs.shape, y), marker=".", s=8, color=color, zorder=zorder, clip_on=True)
 
         def diagonal_lines(direction: int = 1, count: Optional[int] = None, linewidth: float = 0.6) -> None:
-            n_lines = count or max(3, min(9, rows + 3))
+            n_lines = count or max(3, rows + 3)
             starts = np.linspace(-0.35, 0.95, n_lines)
             for start in starts:
                 x_start = max(0.04, start)
@@ -2523,16 +2675,25 @@ class LogViewer:
                     yy1 = y_low + frac1 * height
                 ax.plot([x_start, x_end], [yy0, yy1], color=color, linewidth=linewidth, zorder=zorder, clip_on=True)
 
+        def vrows(base: float, ref: float = 0.05) -> int:
+            """Vertical repeat count for constant on-screen spacing: a pattern's
+            base count is preserved at a reference bed (~5% of track height) and
+            scales with thickness so every bed reads at the same density."""
+            return int(max(1, round(base * bed_fraction / ref)))
+
         if pattern == "horizontal_dense":
-            horizontal_lines(8, linewidth=0.45)
+            # Count grows with bed height so the line SPACING is constant per pixel
+            # for every bed (the high ceiling is only a safety cap, not a target).
+            horizontal_lines(int(np.clip(round(bed_fraction / 0.012), 1, 120)), linewidth=0.45)
         elif pattern == "shale_lines":
-            horizontal_lines(14, linewidth=0.35)
+            horizontal_lines(int(np.clip(round(bed_fraction / 0.012), 1, 120)), linewidth=0.35)
         elif pattern == "dash":
             short_dashes()
         elif pattern == "dash_dot":
             short_dashes(with_dots=True, dot_count=1)
         elif pattern == "dots":
-            scatter(".", size=10, rows_override=4, cols_override=5)
+            scatter(".", size=10, cols_override=5,
+                    rows_override=int(np.clip(round(bed_fraction / 0.012), 1, 60)))
         elif pattern == "vertical_dot_columns":
             regular_scatter(".", size=9, rows_count=7, cols_count=7)
         elif pattern == "silt_strokes":
@@ -2549,13 +2710,13 @@ class LogViewer:
                     clip_on=True,
                 )
         elif pattern == "pebbles":
-            scatter("o", size=13, rows_override=3, cols_override=4, facecolors="none", edgecolors=color)
-            scatter(".", size=6, rows_override=3, cols_override=5)
+            scatter("o", size=13, rows_override=vrows(3), cols_override=4, facecolors="none", edgecolors=color)
+            scatter(".", size=6, rows_override=vrows(3), cols_override=5)
         elif pattern == "vertical_open_circles":
             regular_scatter("o", size=15, rows_count=5, cols_count=6, facecolors="none", edgecolors=color)
         elif pattern == "triangles":
-            scatter("^", size=18, rows_override=3, cols_override=4, color=color)
-            scatter(".", size=6, rows_override=3, cols_override=5)
+            scatter("^", size=18, rows_override=vrows(3), cols_override=4, color=color)
+            scatter(".", size=6, rows_override=vrows(3), cols_override=5)
         elif pattern == "chalk_grid":
             vertical_lines(5, linewidth=0.55)
             horizontal_lines(2, linewidth=0.45)
@@ -2595,7 +2756,7 @@ class LogViewer:
             diagonal_lines(direction=-1, linewidth=0.55)
         elif pattern == "grid":
             vertical_lines(4, linewidth=0.55)
-            horizontal_lines(2, linewidth=0.55)
+            horizontal_lines(vrows(2), linewidth=0.55)
         elif pattern == "evaporite_grid_dense":
             vertical_lines(4, linewidth=0.45)
             horizontal_lines(8, linewidth=0.35)
@@ -2616,17 +2777,17 @@ class LogViewer:
                 ys = y_center + amplitude * np.sin(np.linspace(0, 4 * np.pi, xs.size))
                 ax.plot(xs, ys, color=color, linewidth=0.50, zorder=zorder, clip_on=True)
         elif pattern == "carets":
-            scatter("^", size=20, rows_override=2, cols_override=3,
+            scatter("^", size=20, rows_override=vrows(2), cols_override=3,
                     facecolors="none", edgecolors=color, linewidths=0.9)
         elif pattern == "vertical_carets":
             regular_scatter("^", size=22, rows_count=4, cols_count=5, facecolors="none", edgecolors=color, linewidths=0.9)
         elif pattern == "chevrons_left":
-            scatter("<", size=20, rows_override=2, cols_override=3,
+            scatter("<", size=20, rows_override=vrows(2), cols_override=3,
                     facecolors="none", edgecolors=color, linewidths=0.9)
         elif pattern == "plus_symbols":
-            scatter("+", size=24, rows_override=2, cols_override=3)
+            scatter("+", size=24, rows_override=vrows(2), cols_override=3)
         elif pattern == "x_symbols":
-            scatter("x", size=22, rows_override=2, cols_override=3)
+            scatter("x", size=22, rows_override=vrows(2), cols_override=3)
         elif pattern == "igneous_dash":
             short_dashes()
             scatter("|", size=16, rows_override=max(2, rows), cols_override=3)
@@ -2644,7 +2805,7 @@ class LogViewer:
                     clip_on=True,
                 )
         elif pattern == "tuff_slashes":
-            scatter(r"$/$", size=22, rows_override=2, cols_override=3, linewidths=0.8)
+            scatter(r"$/$", size=22, rows_override=vrows(2), cols_override=3, linewidths=0.8)
         elif pattern == "lightning_columns":
             for x in (0.18, 0.36, 0.54, 0.72, 0.86):
                 ys = np.linspace(y_low + height * 0.10, y_high - height * 0.10, 8)
@@ -2653,7 +2814,7 @@ class LogViewer:
         elif pattern == "volcanic_chevrons":
             regular_scatter("v", size=22, rows_count=4, cols_count=6, facecolors="none", edgecolors=color, linewidths=0.9)
         elif pattern == "volcanic_v":
-            scatter("v", size=20, rows_override=2, cols_override=3,
+            scatter("v", size=20, rows_override=vrows(2), cols_override=3,
                     facecolors="none", edgecolors=color, linewidths=0.9)
         elif pattern == "argillaceous_dash":
             horizontal_lines(max(1, rows), linewidth=0.7, x0=0.35, x1=0.65)

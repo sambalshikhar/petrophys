@@ -1433,31 +1433,6 @@ def test_mhi_skips_when_sxo_is_only_fifth_root_fallback(record_route):
             {"rmf", "hc_correction"},
             {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "NET_PAY"},
         ),
-        (
-            "real_eval_35_8_2",
-            Path("C:/Users/HP/Desktop/Plots/LAS_with_petrophys_params/eval/35_8-2.las"),
-            {
-                "temperature": "linear_gradient_from_BHT",
-                "rmf": "las_metadata_profile_temperature_correction",
-                "rw": "default_fallback_profile",
-            },
-            {
-                "bad_hole", "vclay", "rcl", "lithology", "invasion", "hc_correction",
-                "porosity", "saturation", "permeability", "rock_quality", "bvw", "mhi", "net_pay",
-            },
-            {"TEMP", "RW", "RMF"},
-        ),
-        (
-            "real_eval_25_10_9",
-            Path("C:/Users/HP/Desktop/Plots/LAS_with_petrophys_params/eval/25_10-9.las"),
-            {
-                "temperature": "linear_gradient_from_BHT",
-                "rcl": "lithology_shale_median_rt",
-                "rw": "rwa_clean_wet_p5",
-            },
-            {"rmf", "hc_correction"},
-            {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "NET_PAY"},
-        ),
     ],
 )
 def test_real_las_wells_route_through_dynamic_workflow(

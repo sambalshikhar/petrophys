@@ -154,7 +154,21 @@ Thumbs.db
 *.LAS
 *.DLIS
 
+# ...but DO ship the small curated sample data bundled inside the package
+!petrophys/data/
+!petrophys/data/**/
+!petrophys/data/**/*.csv
+!petrophys/data/**/*.las
+!petrophys/data/**/*.LAS
+!petrophys/data/**/*.md
+!petrophys/data/**/*.py
+petrophys/data/**/__pycache__/
+petrophys/data/**/*.py[cod]
+
 # Local reference data / generated outputs
 EvalGen2/
 reports/
 tmp_*/
+outputs/
+notebooks/
+/*.xlsx

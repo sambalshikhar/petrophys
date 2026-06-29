@@ -198,8 +198,11 @@ def test_log_viewer_lithology_styles_group_families_and_distinguish_patterns():
 
     assert sandstone != shale
     assert sandstone != silt
-    assert limestone == dolomite
-    assert halite == anhydrite
+    # Every code is visually distinguishable: members share a colour FAMILY but
+    # are stepped to distinct shades (e.g. limestone vs dolomite teal, halite vs
+    # anhydrite pink) on top of their distinct patterns.
+    assert limestone != dolomite
+    assert halite != anhydrite
     assert viewer._lithology_pattern("Sandstone") == "dots"
     assert viewer._lithology_pattern("Limestone") == "block_grid"
     assert viewer._lithology_pattern("Dolomite") == "diagonal"
@@ -512,10 +515,12 @@ def test_log_viewer_marks_apparent_porosity_labels():
     assert "PHIE app" in texts
 
 
-def test_log_viewer_mineral_volumes_do_not_add_phie_remainder():
+def test_log_viewer_mineral_volumes_close_stack_with_phie_porosity_wedge():
     template = create_adaptive_log_viewer_template(_mineral_well())
     track = next(track for track in template.tracks if track.display_name == "MINERAL VOLUMES")
 
+    # The template still lists only the solid mineral curves; the porosity wedge is
+    # added at render time (the actual PHIE curve, not a synthetic 1 - sum remainder).
     assert [spec.display_name for spec in track.curves] == ["VCLAY", "VQUAR", "VCALC", "VDOLO"]
 
     viewer = create_log_viewer(_mineral_well(), template_defaults="auto", depth_range=(1000.0, 1009.5))
@@ -523,9 +528,9 @@ def test_log_viewer_mineral_volumes_do_not_add_phie_remainder():
 
     assert "MINERAL VOLUMES" in texts
     assert "VCLAY" in texts
-    assert "Pore" not in texts
-    assert "PHIE (white)" not in texts
     mineral_header = _header_texts_for_track(viewer, "MINERAL VOLUMES")
+    # Effective porosity (PHIE) closes the wet-clay volumetric stack to 1.0.
+    assert "PHIE" in mineral_header
     assert mineral_header.count("[v/v]") == 1
     assert mineral_header.count("0") == 1
     assert mineral_header.count("0.5") == 1

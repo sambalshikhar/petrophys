@@ -23,6 +23,13 @@ from petrophys.reservoir.rock_quality import (
     calculate_phi_z,
     calculate_fzi,
 )
+from petrophys.reservoir.flow_units import (
+    FlowUnitModule,
+    FlowUnitResult,
+    calculate_flow_units,
+    assign_flow_units,
+    predict_perm_from_fzi,
+)
 
 __all__ = [
     "calculate_bvw",
@@ -38,4 +45,9 @@ __all__ = [
     "calculate_rqi",
     "calculate_phi_z",
     "calculate_fzi",
+    "FlowUnitModule",
+    "FlowUnitResult",
+    "calculate_flow_units",
+    "assign_flow_units",
+    "predict_perm_from_fzi",
 ]
