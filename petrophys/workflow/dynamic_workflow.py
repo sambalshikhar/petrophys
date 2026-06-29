@@ -150,9 +150,17 @@ def _prioritized_curve_label(curve: Any) -> str:
 
 
 def _temperature_to_f(value: float, unit: str) -> float:
-    """Convert a temperature value to Fahrenheit when units indicate Celsius."""
-    text = (unit or "").strip().lower()
-    if "c" in text and "f" not in text:
+    """Convert a temperature value to Fahrenheit when units indicate Celsius.
+
+    Matches explicit Celsius/Fahrenheit tokens rather than testing for a stray
+    'c'/'f' character, so a unit like 'deg C (from log)' is not misread because
+    'from' contains an 'f'.
+    """
+    text = (unit or "").strip().lower().replace("°", "")
+    compact = text.replace(" ", "").replace(".", "")
+    is_f = text == "f" or "degf" in compact or "fahrenheit" in text
+    is_c = text == "c" or "degc" in compact or "celsius" in text or "centigrade" in text
+    if is_c and not is_f:
         return (float(value) * 9.0 / 5.0) + 32.0
     return float(value)
 
@@ -923,7 +931,12 @@ class DynamicWorkflow:
         if isinstance(lithology, np.ndarray):
             lithology_values = np.asarray(lithology, dtype=object)
             if lithology_values.shape != (n_samples,):
-                lithology_values = np.resize(lithology_values, n_samples)
+                # Pad/truncate to n_samples; never cyclically tile (np.resize), which
+                # would mis-assign per-depth Archie/matrix endpoints.
+                fixed = np.full(n_samples, self.config.lithology, dtype=object)
+                k = min(lithology_values.size, n_samples)
+                fixed[:k] = lithology_values.ravel()[:k]
+                lithology_values = fixed
         else:
             lithology_values = np.full(n_samples, lithology or self.config.lithology, dtype=object)
 
@@ -1159,7 +1172,8 @@ class DynamicWorkflow:
         return self._has_curve(well, "CALI", "CAL") or self._has_curve(well, "DRHO")
 
     def _can_vclay(self, well: "Well") -> bool:
-        return self._has_curve(well, "GR")
+        # Accept the GR family: a CGR/SGR-only well still supports GR-based VCL.
+        return self._has_curve(well, "GR", "CGR", "SGR", "HSGR", "HCGR")
 
     def _can_rcl(self, well: "Well") -> bool:
         return self._has_curve(well, "RDEP", "RT") and self._has_curve(well, "VCL", "VCLAY")
@@ -1436,7 +1450,7 @@ class DynamicWorkflow:
         gr_max_source = "user" if gr_max is not None else "auto"
 
         if gr_min is None or gr_max is None:
-            gr_curve = get_curve(well, ["GR"])
+            gr_curve = get_curve(well, ["GR", "CGR", "SGR", "HSGR", "HCGR"])
             if gr_curve is not None:
                 valid_gr = gr_curve.data[~np.isnan(gr_curve.data)]
                 if len(valid_gr) > 0:
@@ -1445,8 +1459,11 @@ class DynamicWorkflow:
                     if gr_max is None:
                         gr_max = float(np.percentile(valid_gr, 95))
 
-        gr_min = gr_min or 20.0
-        gr_max = gr_max or 100.0
+        # Use `is None` (not `or`) so a legitimately computed gr_min of 0.0 is kept.
+        if gr_min is None:
+            gr_min = 20.0
+        if gr_max is None:
+            gr_max = 100.0
 
         use_sp = (self._has_curve(well, "SP") and
                   not self.config.mud_has_clay_or_kcl)

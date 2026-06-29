@@ -102,10 +102,14 @@ class FaciesResult:
                 "proportion_pct": float(np.sum(mask)) / self.n_samples * 100,
             }
             for feat, arr in data.items():
-                subset = np.asarray(arr)[mask]
-                row[f"{feat}_P13"] = float(np.nanpercentile(subset, 13))
-                row[f"{feat}_P50"] = float(np.nanpercentile(subset, 50))
-                row[f"{feat}_P87"] = float(np.nanpercentile(subset, 87))
+                subset = np.asarray(arr, dtype=float)[mask]
+                subset = subset[np.isfinite(subset)]
+                if subset.size == 0:
+                    row[f"{feat}_P13"] = row[f"{feat}_P50"] = row[f"{feat}_P87"] = float("nan")
+                    continue
+                row[f"{feat}_P13"] = float(np.percentile(subset, 13))
+                row[f"{feat}_P50"] = float(np.percentile(subset, 50))
+                row[f"{feat}_P87"] = float(np.percentile(subset, 87))
             rows.append(row)
 
         return pd.DataFrame(rows).set_index("facies")

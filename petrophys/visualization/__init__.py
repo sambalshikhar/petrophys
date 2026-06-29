@@ -1,3 +1,10 @@
+from petrophys.visualization.lithology_crossplots import (
+    create_nd_crossplot, create_mn_plot, create_mid_plot,
+    create_buckles_plot, create_hingle_plot,
+)
+from petrophys.visualization.xrf_panel import create_xrf_panel
+from petrophys.visualization.flow_unit_plot import create_flow_unit_plot
+from petrophys.visualization.saturation_height_plot import create_saturation_height_plot
 """
 Visualization module for petrophysics log plots.
 """
@@ -31,6 +38,9 @@ from petrophys.visualization.specialist_panels import (
 )
 
 __all__ = [
+    "create_buckles_plot", "create_hingle_plot", "create_xrf_panel",
+    "create_flow_unit_plot", "create_saturation_height_plot",
+    "create_nd_crossplot", "create_mn_plot", "create_mid_plot",
     # Batch export
     "BatchVisualizationResult",
     "export_interpretation_plots",

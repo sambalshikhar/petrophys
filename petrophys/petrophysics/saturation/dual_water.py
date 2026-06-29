@@ -80,6 +80,12 @@ def dual_water(
         else max(phi_t, 1e-10)
     )
 
+    # Guard the resistivities against zero/negative (matches the other Sw models),
+    # otherwise rwt and swt divide by zero on a scalar 0 or propagate NaN.
+    rw_safe = np.where(rw <= 0, 1e-10, rw) if isinstance(rw, np.ndarray) else max(rw, 1e-10)
+    rwb_safe = np.where(rwb <= 0, 1e-10, rwb) if isinstance(rwb, np.ndarray) else max(rwb, 1e-10)
+    rt_safe = np.where(rt <= 0, 1e-10, rt) if isinstance(rt, np.ndarray) else max(rt, 1e-10)
+
     swb = phi_bw / phi_t_safe
 
     # Bound-water saturation cannot exceed 1 (happens when Vcl*phi_cl > phi_t).
@@ -93,10 +99,10 @@ def dual_water(
     )
 
     # Apparent total water resistivity
-    rwt = 1.0 / (swb_safe / rwb + (1.0 - swb_safe) / rw)
+    rwt = 1.0 / (swb_safe / rwb_safe + (1.0 - swb_safe) / rw_safe)
 
     # Total Sw via Archie on total porosity
-    swt = ((a * rwt) / (phi_t_safe ** m * rt)) ** (1.0 / n)
+    swt = ((a * rwt) / (phi_t_safe ** m * rt_safe)) ** (1.0 / n)
 
     # Convert to effective Sw
     swe = (swt - swb_safe) / (1.0 - swb_safe)

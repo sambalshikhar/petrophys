@@ -201,7 +201,12 @@ class XRFData:
 
     def get(self, element: str) -> Optional[np.ndarray]:
         """Return concentration array for an element, or None if not present."""
-        return self.elements.get(element.upper()) or self.elements.get(element)
+        # NOTE: `a or b` on numpy arrays raises "truth value ambiguous"; pick
+        # explicitly instead.
+        value = self.elements.get(element.upper())
+        if value is None:
+            value = self.elements.get(element)
+        return value
 
     def _ratio(self, num: str, den: str) -> np.ndarray:
         """Compute element ratio, returning NaN where denominator is zero."""

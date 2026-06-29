@@ -423,8 +423,12 @@ def train_pretrained_model_pack(
                 test_size=test_size,
                 random_state=random_state,
             )
+            held_out = True
         else:
+            # Too few samples to hold out a test set: metrics are in-sample
+            # (train == test), so flag them rather than report them as test scores.
             X_train, X_test, y_train, y_test = X, X, y, y
+            held_out = False
 
         target_metadata = {
             "samples": int(len(target_frame)),
@@ -443,6 +447,7 @@ def train_pretrained_model_pack(
                 "mae": float(deps["mean_absolute_error"](y_test, predictions)),
                 "train_samples": int(len(X_train)),
                 "test_samples": int(len(X_test)),
+                "evaluation": "held_out_test" if held_out else "in_sample_train",
             }
             pack["models"][model_name][target] = {
                 "estimator": estimator,

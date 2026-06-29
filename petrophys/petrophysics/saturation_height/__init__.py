@@ -1,0 +1,41 @@
+"""
+Saturation-height modeling.
+
+Capillary-pressure primitives (Pc<->height, lab<->reservoir, Leverett J) plus
+fitted saturation functions (J power-law, Brooks-Corey) and a log-column
+Sw-vs-height predictor.
+"""
+
+from petrophys.petrophysics.saturation_height.capillary import (
+    pc_from_height,
+    height_from_pc,
+    convert_pc_lab_to_reservoir,
+    leverett_j,
+    pc_from_j,
+    FLUID_SYSTEMS,
+    WATER_GRADIENT_PSI_PER_FT,
+    J_CONST,
+)
+from petrophys.petrophysics.saturation_height.saturation_height_module import (
+    JFunctionModel,
+    BrooksCoreyModel,
+    fit_j_function,
+    fit_brooks_corey,
+    saturation_height_from_logs,
+)
+
+__all__ = [
+    "pc_from_height",
+    "height_from_pc",
+    "convert_pc_lab_to_reservoir",
+    "leverett_j",
+    "pc_from_j",
+    "FLUID_SYSTEMS",
+    "WATER_GRADIENT_PSI_PER_FT",
+    "J_CONST",
+    "JFunctionModel",
+    "BrooksCoreyModel",
+    "fit_j_function",
+    "fit_brooks_corey",
+    "saturation_height_from_logs",
+]

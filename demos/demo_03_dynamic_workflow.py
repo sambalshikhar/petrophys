@@ -25,9 +25,8 @@ from petrophys.workflow import run_dynamic_workflow, DynamicWorkflowConfig
 # ─────────────────────────────────────────────
 # 1. Load and standardize
 # ─────────────────────────────────────────────
-LAS_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "geolink_data", "30_6-5.las"
-)
+import petrophys
+LAS_PATH = petrophys.sample("30_6-5")
 
 print("=" * 60)
 print("DEMO 03: Dynamic Workflow - Well 30/6-5")

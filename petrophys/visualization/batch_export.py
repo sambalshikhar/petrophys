@@ -77,6 +77,7 @@ def export_interpretation_plots(
         export_path.parent.mkdir(parents=True, exist_ok=True)
 
         plot = None
+        figs_before = set(plt.get_fignums()) if plt is not None else set()
         try:
             well = read_las(file_path)
             if standardize:
@@ -106,8 +107,14 @@ def export_interpretation_plots(
                 )
             )
         finally:
-            if plot is not None and getattr(plot, "fig", None) is not None and plt is not None:
-                plt.close(plot.fig)
+            if plt is not None:
+                if plot is not None and getattr(plot, "fig", None) is not None:
+                    plt.close(plot.fig)
+                # Close any figure orphaned by a mid-build failure (build raised
+                # after creating a figure but before returning it), without
+                # touching figures the caller already had open.
+                for num in set(plt.get_fignums()) - figs_before:
+                    plt.close(num)
 
     return results
 

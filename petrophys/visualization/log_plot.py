@@ -265,6 +265,8 @@ def create_log_plot(
     >>> plot.show()
     """
     # Determine number of tracks
+    if not curves:
+        raise ValueError("create_log_plot requires at least one curve spec")
     n_tracks = max(c.get("track", 0) for c in curves) + 1
 
     plot = LogPlot(well, figsize=figsize)

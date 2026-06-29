@@ -8,6 +8,7 @@ viewer pages. This module only adds specialist panels for NMR and FMI data.
 
 from __future__ import annotations
 
+import warnings
 from typing import Optional, Sequence, Tuple
 
 import numpy as np
@@ -131,8 +132,16 @@ def _prepared_fmi_image(
     orient: bool,
 ) -> BoreholeImageData:
     data = image.filter_by_depth(*depth_range) if depth_range is not None else image
-    if orient and not data.metadata.get("oriented") and get_navigation(data):
-        return orient_to_azimuth(data)
+    if orient and not data.metadata.get("oriented"):
+        if get_navigation(data):
+            return orient_to_azimuth(data)
+        warnings.warn(
+            "create_fmi_panel: orientation requested but no navigation curve "
+            "(P1AZ/HAZI/RB) was found; plotting the raw un-oriented image "
+            "(x-axis is borehole sample, not azimuth). Provide navigation or "
+            "pass orient=False to silence this.",
+            stacklevel=3,
+        )
     return data
 
 
