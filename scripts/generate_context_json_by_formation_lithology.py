@@ -29,19 +29,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--input-dir",
         type=Path,
-        default=Path(r"C:\Users\HP\Desktop\Plots\LAS_with_petrophys_params"),
+        default=Path(os.environ.get("PETROPHYS_DATA_DIR", Path(__file__).resolve().parents[1] / "petrophys" / "data" / "geolink")),
         help="Directory containing source LAS files.",
     )
     parser.add_argument(
         "--tops-file",
         type=Path,
-        default=Path(r"C:\Users\HP\Desktop\Plots\NPD stratigraphic picks north sea.xlsx"),
+        default=Path(os.environ.get("PETROPHYS_TOPS_FILE", Path(__file__).resolve().parents[1] / "petrophys" / "data" / "NPD_stratigraphic_picks.xlsx")),
         help="Excel workbook containing formation tops.",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path(r"C:\Users\HP\Desktop\Plots\LAS_with_petrophys_reference_json_package_by_formation_lithology"),
+        default=Path(os.environ.get("PETROPHYS_OUTPUT_DIR", Path(__file__).resolve().parents[1] / "outputs" / "reference_json_package_by_formation_lithology")),
         help="Output directory for the generated package.",
     )
     parser.add_argument(
@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--lithology-mapping-file",
         type=Path,
-        default=Path(r"C:\Users\HP\Desktop\Plots\Litho_Nomenclature_Kingdom.xlsx"),
+        default=Path(os.environ.get("PETROPHYS_LITHO_FILE", Path(__file__).resolve().parents[1] / "petrophys" / "data" / "Litho_Nomenclature_Kingdom.xlsx")),
         help="Workbook used to map LITHOLOGY_GEOLINK codes to lithology-group labels.",
     )
     return parser

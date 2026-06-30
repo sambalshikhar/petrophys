@@ -82,9 +82,17 @@ class NetPayModule:
         well: "Well",
         vcl: Optional[np.ndarray] = None,
         phie: Optional[np.ndarray] = None,
-        sw: Optional[np.ndarray] = None
+        sw: Optional[np.ndarray] = None,
+        quality_mask: Optional[np.ndarray] = None,
     ) -> NetPayResult:
-        """Calculate net pay."""
+        """Calculate net pay.
+
+        ``quality_mask`` (optional): boolean array, True where the log data are
+        usable. Samples that are False (e.g. washed-out / bad-hole intervals,
+        where RHOB and NPHI -- and therefore PHIE and Sw -- are unreliable) are
+        excluded from net reservoir and net pay. This prevents borehole washout
+        from being certified as hydrocarbon pay.
+        """
         if vcl is None:
             vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
             if vcl is None:
@@ -112,6 +120,12 @@ class NetPayModule:
             vcl, phie, sw,
             self.vcl_cutoff, phie_cutoff, self.sw_cutoff
         )
+
+        if quality_mask is not None:
+            usable = np.asarray(quality_mask, dtype=bool)
+            if usable.shape == flags["net_reservoir"].shape:
+                flags["net_reservoir"] = flags["net_reservoir"] & usable
+                flags["net_pay"] = flags["net_pay"] & usable
 
         step = well.step or 0.5
         gross = well.n_samples * step

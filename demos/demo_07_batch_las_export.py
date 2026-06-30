@@ -15,7 +15,7 @@ from petrophys.workflow import (
 )
 
 
-INPUT_DIR = Path(r"C:\Users\HP\Desktop\Plots\LAS_with_petrophys_params")
+INPUT_DIR = Path(os.environ.get("PETROPHYS_DATA_DIR", Path(__file__).resolve().parents[1] / "petrophys" / "data" / "geolink"))
 OUTPUT_DIR = INPUT_DIR.parent / f"{INPUT_DIR.name}_enriched"
 REPORT_DIR = Path(__file__).resolve().parents[1] / "reports"
 REPORT_PATH = REPORT_DIR / "batch_workflow_report.csv"

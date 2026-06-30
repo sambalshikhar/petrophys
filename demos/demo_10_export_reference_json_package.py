@@ -14,7 +14,7 @@ from petrophys.io import (
 )
 
 
-INPUT_DIR = Path(r"C:\Users\HP\Desktop\Plots\LAS_with_petrophys_params")
+INPUT_DIR = Path(os.environ.get("PETROPHYS_DATA_DIR", Path(__file__).resolve().parents[1] / "petrophys" / "data" / "geolink"))
 OUTPUT_DIR = INPUT_DIR.parent / "LAS_with_petrophys_reference_json_package"
 REPORT_PATH = OUTPUT_DIR / "batch_reference_json_report.csv"
 

@@ -11,7 +11,7 @@ from petrophys.petrophysics.sonic_saturation.rock_physics import (
     MINERAL_ELASTIC, FLUID_ELASTIC,
     slowness_to_velocity, vs_from_vp_greenberg_castagna, velocity_to_moduli,
     dry_rock_modulus, gassmann_ksat, gassmann_kfl,
-    wood_fluid_modulus, sw_from_fluid_modulus,
+    wood_fluid_modulus, sw_from_fluid_modulus, fluid_substitution_dtc_swing,
 )
 from petrophys.petrophysics.sonic_saturation.sonic_saturation_module import (
     SonicSaturationModule, SonicSaturationResult, sonic_water_saturation,
@@ -21,6 +21,6 @@ __all__ = [
     "MINERAL_ELASTIC", "FLUID_ELASTIC",
     "slowness_to_velocity", "vs_from_vp_greenberg_castagna", "velocity_to_moduli",
     "dry_rock_modulus", "gassmann_ksat", "gassmann_kfl",
-    "wood_fluid_modulus", "sw_from_fluid_modulus",
+    "wood_fluid_modulus", "sw_from_fluid_modulus", "fluid_substitution_dtc_swing",
     "SonicSaturationModule", "SonicSaturationResult", "sonic_water_saturation",
 ]

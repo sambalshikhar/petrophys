@@ -120,3 +120,31 @@ def sw_from_fluid_modulus(k_fl: ArrayLike, k_brine: float, k_hc: float) -> Array
     k_fl = np.asarray(k_fl, dtype=float)
     sw = (1.0 / k_fl - 1.0 / k_hc) / (1.0 / k_brine - 1.0 / k_hc)
     return np.clip(sw, 0.0, 1.0)
+
+
+def fluid_substitution_dtc_swing(
+    k_dry: ArrayLike, k_min: ArrayLike, mu: ArrayLike, phi: ArrayLike,
+    rhob: ArrayLike, k_brine: float, k_hc: float,
+) -> ArrayLike:
+    """Compressional slowness swing (us/ft) between full brine and full HC.
+
+    This is the TOTAL fluid signal a sonic-Sw inversion has to work with at a
+    given porosity and frame: the change in DTC if the rock went from 100 %
+    water to 100 % hydrocarbon (density held at the measured value, so this
+    isolates the Gassmann fluid-modulus effect). When this swing is comparable
+    to or smaller than the sonic measurement noise, Sw is not resolvable from
+    the sonic regardless of how the inversion is implemented -- which is exactly
+    why the method is unreliable in stiff, low-porosity rock.
+    """
+    k_b = gassmann_ksat(k_dry, k_min, k_brine, phi)
+    k_h = gassmann_ksat(k_dry, k_min, k_hc, phi)
+    mu = np.asarray(mu, dtype=float)
+    rho = np.asarray(rhob, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        m_b = k_b + 4.0 / 3.0 * mu
+        m_h = k_h + 4.0 / 3.0 * mu
+        vp_b = np.sqrt(np.where(m_b > 0, m_b, np.nan) / rho * 1e6)
+        vp_h = np.sqrt(np.where(m_h > 0, m_h, np.nan) / rho * 1e6)
+        dtc_b = 304800.0 / vp_b
+        dtc_h = 304800.0 / vp_h
+    return np.abs(dtc_h - dtc_b)

@@ -14,8 +14,8 @@ from petrophys.io import (
 )
 
 
-INPUT_DIR = Path(r"C:\Users\HP\Desktop\Plots\LAS_with_petrophys_params")
-TOPS_FILE = Path(r"C:\Users\HP\Desktop\Plots\NPD stratigraphic picks north sea.xlsx")
+INPUT_DIR = Path(os.environ.get("PETROPHYS_DATA_DIR", Path(__file__).resolve().parents[1] / "petrophys" / "data" / "geolink"))
+TOPS_FILE = Path(os.environ.get("PETROPHYS_TOPS_FILE", Path(__file__).resolve().parents[1] / "petrophys" / "data" / "NPD_stratigraphic_picks.xlsx"))
 OUTPUT_DIR = INPUT_DIR.parent / "LAS_with_petrophys_reference_json_package_by_formation"
 
 

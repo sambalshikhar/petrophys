@@ -70,7 +70,9 @@ def test_recovers_known_sw_with_measured_dts():
     phi = np.full(n, 0.22) + 0.04 * np.sin(np.linspace(0, 8, n))
     sw_true = np.where(np.arange(n) < 240, 0.25, 1.0)   # HC top, water below
     w = _synthetic_well(sw_true, phi, with_dts=True)
-    r = sonic_water_saturation(w, hc_type="oil", water_zone_mask=(sw_true >= 0.85))
+    # Noise-free synthetic -> disable the detectability gate (any signal counts).
+    r = sonic_water_saturation(w, hc_type="oil", water_zone_mask=(sw_true >= 0.85),
+                               dtc_noise_us_ft=0.0)
     assert r.vs_estimated is False
     err = np.abs(r.sw - sw_true)
     assert np.nanmean(err) < 0.05                        # near-exact recovery
@@ -83,9 +85,34 @@ def test_flags_vs_estimated_without_dts():
     phi = np.full(n, 0.22)
     sw_true = np.where(np.arange(n) < 120, 0.3, 1.0)
     w = _synthetic_well(sw_true, phi, with_dts=False)
-    r = sonic_water_saturation(w, hc_type="oil", water_zone_mask=(sw_true >= 0.85))
+    r = sonic_water_saturation(w, hc_type="oil", water_zone_mask=(sw_true >= 0.85),
+                               dtc_noise_us_ft=0.0)
     assert r.vs_estimated is True                        # estimated from Vp
     assert "approximate" in r.notes.lower()
+
+
+def test_detectability_gate_masks_low_signal_keeps_high_signal():
+    # High-porosity GAS sand: large brine->gas DTC swing -> detectable, Sw kept.
+    n = 120
+    phi = np.full(n, 0.30)
+    sw_true = np.where(np.arange(n) < 60, 0.2, 1.0)
+    w = _synthetic_well(sw_true, phi, with_dts=True)
+    r = sonic_water_saturation(w, hc_type="gas", water_zone_mask=(sw_true >= 0.85),
+                               dtc_noise_us_ft=2.0, detect_factor=2.0)
+    assert r.detectable.mean() > 0.5                     # gas signal is resolvable
+    assert np.isfinite(r.sw).any()
+    assert (r.dtc_fluid_swing[np.isfinite(r.dtc_fluid_swing)] > 0).all()
+
+    # Stiff, very-low-porosity OIL sand: tiny swing -> below noise -> Sw all NaN.
+    phi2 = np.full(n, 0.03)
+    w2 = _synthetic_well(sw_true, phi2, with_dts=True)
+    r2 = sonic_water_saturation(w2, hc_type="oil", water_zone_mask=(sw_true >= 0.85),
+                                dtc_noise_us_ft=2.0, detect_factor=2.0)
+    assert not r2.detectable.any()                       # signal below noise
+    assert np.isnan(r2.sw).all()                         # honestly returns nothing
+    assert "below noise" in r2.notes.lower()
+    # Raw (ungated) Sw is still available for inspection.
+    assert r2.sw_raw is not None
 
 
 def test_requires_core_curves():

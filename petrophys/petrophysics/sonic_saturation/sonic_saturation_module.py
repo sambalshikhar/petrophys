@@ -23,6 +23,15 @@ Applicability / limitations (validated, not marketing):
     not a turnkey Sw -- treat it qualitatively unless locally calibrated.
   * Without DTS, Vs is estimated from Vp (Greenberg-Castagna), which absorbs the
     fluid signal and makes the result only indicative (flagged: vs_estimated).
+
+Detectability gate (how the unreliability is made honest, not hidden):
+  Rather than always returning a number, the method computes the brine->HC
+  compressional-slowness swing per sample (the total fluid signal available) and
+  reports Sw ONLY where that swing exceeds ``detect_factor`` x the sonic noise.
+  Where the signal is below noise (stiff, low-porosity rock; oil/condensate),
+  Sw is set to NaN and ``detectable`` is False, with a per-sample
+  ``sw_uncertainty``. So the result is trustworthy where it is reported and
+  abstains where the physics does not support an answer.
 """
 
 from __future__ import annotations
@@ -36,19 +45,24 @@ from petrophys.petrophysics.sonic_saturation.rock_physics import (
     MINERAL_ELASTIC, FLUID_ELASTIC,
     slowness_to_velocity, vs_from_vp_greenberg_castagna, velocity_to_moduli,
     dry_rock_modulus, gassmann_kfl, sw_from_fluid_modulus,
+    fluid_substitution_dtc_swing,
 )
 from petrophys.utils.analysis_helpers import get_curve_data_depthwise
 
 
 @dataclass
 class SonicSaturationResult:
-    sw: np.ndarray
+    sw: np.ndarray         # Sw, NaN where the fluid signal is below detectability
     k_sat: np.ndarray      # measured saturated bulk modulus (GPa)
     k_dry: np.ndarray      # dry-frame bulk modulus used (GPa)
     k_fl: np.ndarray       # inverted in-situ fluid modulus (GPa)
     vs_estimated: bool     # True if Vs was estimated from Vp (no DTS)
     kdry_method: str
     notes: str = ""
+    sw_raw: Optional[np.ndarray] = None      # Sw before the detectability mask
+    detectable: Optional[np.ndarray] = None  # True where fluid swing > detect_factor*noise
+    sw_uncertainty: Optional[np.ndarray] = None  # +/- Sw from the sonic noise (clipped 0..1)
+    dtc_fluid_swing: Optional[np.ndarray] = None  # brine->HC DTC swing (us/ft)
 
 
 def _mineral_k_min(well, lithology: str, n: int) -> np.ndarray:
@@ -115,6 +129,8 @@ def sonic_water_saturation(
     sw_ref: Optional[Sequence[float]] = None,
     sw_water_cut: float = 0.85,
     frame_model: str = "krief",
+    dtc_noise_us_ft: float = 2.0,
+    detect_factor: float = 2.0,
 ) -> SonicSaturationResult:
     """Estimate water saturation from sonic + density via Gassmann.
 
@@ -126,6 +142,12 @@ def sonic_water_saturation(
         ``water_zone_mask`` or ``sw_ref``); falls back to ``model`` if unavailable.
     sw_ref : array, optional        a reference Sw (e.g. Archie) used only to flag
         the water zone (Sw >= sw_water_cut) for K_dry calibration.
+    dtc_noise_us_ft : float         assumed compressional-slowness noise (us/ft).
+    detect_factor : float           Sw is reported only where the full brine->HC
+        DTC swing exceeds ``detect_factor * dtc_noise_us_ft``; elsewhere the fluid
+        signal is below the noise and Sw is set to NaN (``detectable`` is False).
+        This is the honest scope of the method: it returns a number only where the
+        sonic can actually resolve the fluid.
     """
     n = well.n_samples
     dt, _, _ = get_curve_data_depthwise(well, ["DTC", "DT"])
@@ -168,14 +190,33 @@ def sonic_water_saturation(
         k_dry = np.asarray(k_dry, dtype=float)
 
     k_fl = gassmann_kfl(k_sat, k_dry, k_min, phi)
-    sw = sw_from_fluid_modulus(k_fl, kb, khc)
-    sw = np.where(np.isfinite(k_sat) & np.isfinite(k_dry) & (phi > 0.01), sw, np.nan)
+    sw_raw = sw_from_fluid_modulus(k_fl, kb, khc)
+    valid = np.isfinite(k_sat) & np.isfinite(k_dry) & (phi > 0.01)
+    sw_raw = np.where(valid, sw_raw, np.nan)
 
-    notes = ("Vs estimated from Vp (Greenberg-Castagna); result is approximate."
-             if vs_estimated else "Measured DTS used.")
-    return SonicSaturationResult(sw=sw, k_sat=k_sat, k_dry=np.asarray(k_dry, dtype=float),
-                                 k_fl=k_fl, vs_estimated=vs_estimated,
-                                 kdry_method=method, notes=notes)
+    # Detectability: how much DTC actually moves between full brine and full HC.
+    # If that swing is at/below the sonic noise, no inversion can resolve Sw, so
+    # we report NaN there rather than a confident-looking but meaningless number.
+    swing = fluid_substitution_dtc_swing(
+        np.asarray(k_dry, dtype=float), k_min, mu, phi, rhob, kb, khc)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sw_uncertainty = np.clip(dtc_noise_us_ft / swing, 0.0, 1.0)
+    detectable = valid & np.isfinite(swing) & (swing >= detect_factor * dtc_noise_us_ft)
+    sw = np.where(detectable, sw_raw, np.nan)
+
+    n_det = int(np.count_nonzero(detectable))
+    n_val = int(np.count_nonzero(valid))
+    frac = (n_det / n_val) if n_val else 0.0
+    notes = ("Vs estimated from Vp (Greenberg-Castagna); result is approximate. "
+             if vs_estimated else "Measured DTS used. ")
+    notes += (f"Sw resolvable on {n_det}/{n_val} samples ({frac:.0%}): the brine->HC "
+              f"DTC swing exceeds {detect_factor:g}x the {dtc_noise_us_ft:g} us/ft sonic "
+              "noise only there; elsewhere Sw is NaN (fluid signal below noise).")
+    return SonicSaturationResult(
+        sw=sw, k_sat=k_sat, k_dry=np.asarray(k_dry, dtype=float),
+        k_fl=k_fl, vs_estimated=vs_estimated, kdry_method=method, notes=notes,
+        sw_raw=sw_raw, detectable=detectable, sw_uncertainty=sw_uncertainty,
+        dtc_fluid_swing=swing)
 
 
 class SonicSaturationModule:
