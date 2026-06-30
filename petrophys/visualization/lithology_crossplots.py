@@ -29,13 +29,14 @@ _RHO_FL, _NPHI_FL, _DT_FL = 1.0, 1.0, 189.0
 
 
 def _xy(well, names, depth_range):
-    data, _, depth = get_curve_data_depthwise(well, names)
+    data, _, _ = get_curve_data_depthwise(well, names)
     if data is None:
         return None, None
     arr = np.asarray(data, dtype=float)
-    if depth_range is not None and depth is not None:
+    depth = np.asarray(getattr(well, "depth", None), dtype=float)
+    if depth_range is not None and depth.shape == arr.shape:
         lo, hi = depth_range
-        m = (np.asarray(depth) >= lo) & (np.asarray(depth) <= hi)
+        m = (depth >= lo) & (depth <= hi)
         arr = np.where(m, arr, np.nan)
     return arr, depth
 

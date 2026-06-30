@@ -21,13 +21,9 @@ from petrophys.petrophysics.permeability.lith_vcl import lith_vcl_permeability
 from petrophys.petrophysics.permeability.classification import classify_permeability
 from petrophys.petrophysics.permeability.impermeable_flag import flag_impermeable
 
-# Backward-compatible alias
-PermModule = PermeabilityModule
-
 __all__ = [
     "CorePermModel",
     "PermeabilityModule",
-    "PermModule",
     "calculate_permeability",
     "estimate_apparent_swirr",
     "estimate_hc_swirr",

@@ -184,56 +184,15 @@ class MultiMineralSolver:
         if use_fixed_phi:
             phi_fixed = float(np.clip(phi_fixed, 0.0, 1.0))
 
-        # Porosity is an extra unknown only when it is NOT fixed.
-        n_porosity_unknowns = 0 if use_fixed_phi else 1
-        available_equations = 2 + sum(value is not None for value in (nphi, pef, dt))
-        if available_equations >= len(self.minerals) + n_porosity_unknowns:
-            active_minerals = self.minerals
-        elif available_equations >= len(self.minerals_no_pef) + n_porosity_unknowns:
-            active_minerals = self.minerals_no_pef
-        else:
+        active_minerals = self._active_minerals(nphi, pef, dt, use_fixed_phi)
+        if not active_minerals:
             return [], tuple(), np.nan, True, np.nan
 
-        m  = [self.mineral_props[name] for name in active_minerals]
-        fl = self.fluid_props
-        cl = self.clay_props
-
-        A_rows, b_rows = [], []
-
-        def add_row(mineral_vals, fl_val, cl_val, log_val):
-            if use_fixed_phi:
-                # Known porosity: subtract Vcl and the fixed fluid term; minerals only.
-                A_rows.append(list(mineral_vals))
-                b_rows.append(log_val - vcl * cl_val - phi_fixed * fl_val)
-            else:
-                # Unknowns are [minerals..., porosity]; porosity column carries fluid.
-                A_rows.append(list(mineral_vals) + [fl_val])
-                b_rows.append(log_val - vcl * cl_val)
-
-        # Unity  (cl and fl endpoints are both 1)
-        add_row([1.0] * len(active_minerals),
-                fl_val=1.0,           cl_val=1.0,           log_val=1.0)
-
-        # Density
-        add_row([mi["density"] for mi in m],
-                fl_val=fl["density"], cl_val=cl["density"], log_val=rhob)
-
-        # Neutron
-        if nphi is not None:
-            add_row([mi["nphi"] for mi in m],
-                    fl_val=fl["nphi"],    cl_val=cl["nphi"],    log_val=nphi)
-
-        # U = PEF × ρ
-        if pef is not None:
-            add_row([mi["u"] for mi in m],
-                    fl_val=fl["u"],   cl_val=cl["u"],   log_val=_u(pef, rhob))
-
-        # Sonic (DTC) — used when PEF absent, or as extra row when both present
-        if dt is not None:
-            add_row([mi["dt"] for mi in m],
-                    fl_val=fl["dt"],  cl_val=cl["dt"],  log_val=dt)
-
-        x, residual = nnls(np.array(A_rows), np.array(b_rows))
+        A_arr, b_arr, _row_labels, _columns = self._assemble_sample(
+            active_minerals, rhob, nphi, vcl, pef, dt,
+            phi_fixed if use_fixed_phi else None,
+        )
+        x, residual = nnls(A_arr, b_arr)
 
         if use_fixed_phi:
             mineral_x = x
@@ -247,12 +206,104 @@ class MultiMineralSolver:
         closure_error = abs(mineral_x.sum() - available_fraction)
         poor_fit = closure_error > self.closure_tolerance
 
-        # Always normalize — never discard a solution just for closure error.
+        # Always normalize, never discard a solution just for closure error.
         # The poor_fit flag and residual give the caller full quality info.
         mineral_x = _constrain_mineral_fractions(mineral_x, available_fraction)
 
         return (active_minerals, tuple(float(v) for v in mineral_x),
                 float(residual), poor_fit, phi_solved)
+
+    def _active_minerals(self, nphi, pef, dt, use_fixed_phi: bool) -> list:
+        """Pick the mineral set the available equations can resolve at a sample."""
+        n_porosity_unknowns = 0 if use_fixed_phi else 1
+        available_equations = 2 + sum(v is not None for v in (nphi, pef, dt))
+        if available_equations >= len(self.minerals) + n_porosity_unknowns:
+            return self.minerals
+        if available_equations >= len(self.minerals_no_pef) + n_porosity_unknowns:
+            return self.minerals_no_pef
+        return []
+
+    def _assemble_sample(self, active_minerals, rhob, nphi, vcl, pef, dt, phi_fixed):
+        """Build the labelled response system A x = b for one sample.
+
+        Returns (A, b, row_labels, column_labels). Shared by the solver and by
+        :meth:`explain_sample`, so what you inspect is exactly what is solved.
+        """
+        use_fixed_phi = phi_fixed is not None and np.isfinite(phi_fixed)
+        vcl = float(np.clip(vcl, 0.0, 1.0))
+        m = [self.mineral_props[name] for name in active_minerals]
+        fl, cl = self.fluid_props, self.clay_props
+        A_rows, b_rows, labels = [], [], []
+
+        def add_row(label, key, log_val):
+            mineral_vals = [1.0] * len(m) if key is None else [mi[key] for mi in m]
+            fl_val = 1.0 if key is None else fl[key]
+            cl_val = 1.0 if key is None else cl[key]
+            if use_fixed_phi:
+                A_rows.append(list(mineral_vals))
+                b_rows.append(log_val - vcl * cl_val - phi_fixed * fl_val)
+            else:
+                A_rows.append(list(mineral_vals) + [fl_val])
+                b_rows.append(log_val - vcl * cl_val)
+            labels.append(label)
+
+        add_row("Unity", None, 1.0)
+        add_row("Density (RHOB)", "density", rhob)
+        if nphi is not None:
+            add_row("Neutron (NPHI)", "nphi", nphi)
+        if pef is not None:
+            add_row("U = PEF·ρ", "u", _u(pef, rhob))
+        if dt is not None:
+            add_row("Sonic (DT)", "dt", dt)
+
+        columns = list(active_minerals) + ([] if use_fixed_phi else ["porosity"])
+        return np.array(A_rows, dtype=float), np.array(b_rows, dtype=float), labels, columns
+
+    def explain_sample(self, well: "Well" = None, index: int = 0, *, depth=None,
+                       rhob=None, nphi=None, vcl=None, pef=None, dt=None,
+                       core_phi=None) -> Dict[str, object]:
+        """Return the exact linear system solved at one depth, for auditing and teaching.
+
+        Pass a ``well`` (uses sample ``index``, or the nearest sample to ``depth``)
+        or the log values directly. The returned dict has the labelled response
+        matrix ``A``, right-hand side ``b``, the NNLS solution ``x``, the
+        ``residual``, and the row/column labels, so you can see precisely how a
+        mineral solution was produced.
+        """
+        if well is not None and depth is not None:
+            dep = np.asarray(well.depth, dtype=float)
+            index = int(np.nanargmin(np.abs(dep - float(depth))))
+        if well is not None:
+            pick = lambda *names: next((np.asarray(well.get(n).data, dtype=float)[index]
+                                        for n in names if well.get(n) is not None), None)
+            rhob = pick("RHOB") if rhob is None else rhob
+            nphi = pick("NPHI", "PHIN") if nphi is None else nphi
+            vcl = pick("VCL", "VCLAY", "VSH") if vcl is None else vcl
+            pef = pick("PEF") if pef is None else pef
+            dt = pick("DTC", "DT") if dt is None else dt
+            if core_phi is None:
+                core_phi = pick("PHIC", "CPOR")
+        vcl = 0.0 if vcl is None or not np.isfinite(vcl) else float(vcl)
+        phi_fixed = float(core_phi) if core_phi is not None and np.isfinite(core_phi) else None
+        for name, val in (("rhob", rhob),):
+            if val is None or not np.isfinite(val):
+                raise ValueError(f"explain_sample needs a finite {name}")
+        nphi = None if nphi is None or not np.isfinite(nphi) else float(nphi)
+        pef = None if pef is None or not np.isfinite(pef) else float(pef)
+        dt = None if dt is None or not np.isfinite(dt) else float(dt)
+
+        use_fixed_phi = phi_fixed is not None
+        active = self._active_minerals(nphi, pef, dt, use_fixed_phi)
+        if not active:
+            raise ValueError("not enough equations to resolve any mineral at this sample")
+        A, b, row_labels, columns = self._assemble_sample(
+            active, float(rhob), nphi, vcl, pef, dt, phi_fixed)
+        x, residual = nnls(A, b)
+        return {
+            "minerals": list(active), "row_labels": row_labels, "columns": columns,
+            "A": A, "b": b, "x": x, "residual": float(residual),
+            "vcl": vcl, "porosity_solved": (phi_fixed if use_fixed_phi else float(x[-1])),
+        }
 
     def solve(
         self,
@@ -278,16 +329,16 @@ class MultiMineralSolver:
         phie : float or np.ndarray
             Pre-computed effective porosity (0-1)
         pef : float or np.ndarray, optional
-            Photoelectric factor (b/e) — omit if curve absent
+            Photoelectric factor (b/e); omit if curve absent
         dt : float or np.ndarray, optional
-            Sonic slowness (μs/ft) — omit if curve absent
+            Sonic slowness (μs/ft); omit if curve absent
 
         Returns
         -------
         dict
             Dictionary with mineral fractions, vcl, phie, and qc_flag.
             All minerals from both self.minerals and self.minerals_no_pef
-            are present as keys — depths where a mineral was not in the
+            are present as keys; depths where a mineral was not in the
             active set are filled with 0.
         """
         raw_arrays = {

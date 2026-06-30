@@ -285,9 +285,6 @@ GEOLINK_LITHOLOGY_CODE_LABELS: Dict[int, str] = {
 }
 
 
-LITHOLOGY_CODE_LABELS = GEOLINK_LITHOLOGY_CODE_LABELS
-
-
 INDUSTRY_LITHOLOGY_LABEL_ALIASES: Dict[str, str] = {
     "aeolian sandstone": "SANDSTONE",
     "anhydrite": "ANHYDRITE",
@@ -1272,16 +1269,6 @@ def create_adaptive_log_viewer_template(
         width=1.35,
     )
     add_track(
-        "ELASTIC",
-        [
-            _adaptive_spec("DTS", "DTS", 300, 80, "#762a83"),
-            _adaptive_spec("VP_VS_RATIO", "VP/VS", 1, 4, "#1b7837"),
-            _adaptive_spec("POISSON", "Poisson", 0, 0.5, "#08519c"),
-            _adaptive_spec("UCS", "UCS", color="#4d4d4d"),
-        ],
-        width=1.25,
-    )
-    add_track(
         "POROSITY",
         [
             _adaptive_spec("PHIT", "PHIT", 0.45, 0, "#253494"),
@@ -1320,19 +1307,6 @@ def create_adaptive_log_viewer_template(
         scale="log",
         left=0.01,
         right=10000,
-    )
-    add_track(
-        "ROCK QUALITY",
-        [
-            _adaptive_spec("RQI", "RQI", 0.001, 1000, "#1b7837"),
-            _adaptive_spec("FZI", "FZI", 0.001, 1000, "#762a83"),
-            _adaptive_spec("R35", "R35", 0.001, 1000, "#d73027"),
-            _adaptive_spec("PHI_Z", "Phi Z", 0.001, 1000, "#08519c"),
-        ],
-        width=1.2,
-        scale="log",
-        left=0.001,
-        right=1000,
     )
     if not _is_geolink_well(well):
         add_track(

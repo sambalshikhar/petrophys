@@ -625,7 +625,7 @@ class DynamicWorkflowResult:
     def print_trace(self) -> None:
         """Print a comprehensive human-readable trace of all steps."""
         print(f"\n{'=' * 90}")
-        print(f"WORKFLOW TRACE — {self.well.name or 'Unknown Well'}")
+        print(f"WORKFLOW TRACE: {self.well.name or 'Unknown Well'}")
         print(f"{'=' * 90}")
         print(f"Overall: {'SUCCESS' if self.success else 'FAILED'} | "
               f"Executed: {len(self.steps_executed)} | Skipped: {len(self.steps_skipped)}")
@@ -1495,8 +1495,8 @@ class DynamicWorkflow:
 
         # Combine rule: when the neutron-density indicator is available, make it
         # primary ("auto") so non-radioactive / soft clay that GR and SP miss is
-        # not collapsed by the legacy minimum rule. Falls back to "min" when N-D
-        # is unavailable (the helper then reduces to the single available method).
+        # represented. Falls back to "min" when N-D is unavailable (the helper
+        # then reduces to the single available method).
         vcl_combine = "auto" if use_nd else "min"
         vcl_module = VclModule(
             gr_min=gr_min, gr_max=gr_max,

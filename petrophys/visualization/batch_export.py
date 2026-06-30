@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - handled by plotting module
 
 from petrophys.io import read_las
 from petrophys.qaqc.standardization import standardize_curves
-from petrophys.visualization.interpretation_plot import create_interpretation_plot
+from petrophys.visualization.log_viewer import create_log_viewer
 
 
 @dataclass
@@ -83,8 +83,9 @@ def export_interpretation_plots(
             if standardize:
                 well = standardize_curves(well, rename_curves=True, convert_units=True)
 
-            plot = create_interpretation_plot(
+            plot = create_log_viewer(
                 well,
+                template_defaults="interpretation",
                 depth_range=depth_range,
                 figsize=figsize,
             )

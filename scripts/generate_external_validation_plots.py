@@ -25,7 +25,6 @@ import matplotlib.pyplot as plt
 
 from petrophys.io import read_las
 from petrophys.visualization import (
-    create_interpretation_plot,
     create_log_viewer,
     create_triple_combo,
 )
@@ -68,7 +67,7 @@ def _plot_well(tag: str, cfg: dict) -> dict:
                   "warnings": []})
     plt.close(combo.fig)
 
-    interp = create_interpretation_plot(well, depth_range=depth_range)
+    interp = create_log_viewer(well, template_defaults="interpretation", depth_range=depth_range)
     interp.save(str(PLOTS / f"{tag}_interpretation.png"))
     plots.append({"name": "interpretation",
                   "path": str((PLOTS / f"{tag}_interpretation.png").relative_to(BASE.parents[1])),

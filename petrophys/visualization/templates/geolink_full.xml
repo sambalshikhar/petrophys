@@ -23,10 +23,6 @@
     <curve display_name="NPHI" curve_name="NPHI" color="#0571b0" left="0.45" right="-0.15"/>
     <curve display_name="NPHI HC" curve_name="NPHI_HC" color="#2166ac" left="0.45" right="-0.15" line_style="--"/>
   </track>
-  <track display_name="ELASTIC" width="1.20" major_lines="5">
-    <curve display_name="DTS" curve_name="DTS" color="#762a83" left="300" right="80"/>
-    <curve display_name="VP/VS" curve_name="VP_VS_RATIO" color="#1b7837" left="1" right="4"/>
-  </track>
   <track display_name="POROSITY" width="1.35" major_lines="5">
     <curve display_name="PHIT" curve_name="PHIT" color="#253494" left="0.45" right="0"/>
     <curve display_name="PHIT Gas" curve_name="PHIT_GAS_CORR" color="#313695" left="0.45" right="0" line_style="--"/>
@@ -54,11 +50,6 @@
     <curve display_name="Coates" curve_name="PERM_COATES" color="#1a9850" left="0.01" right="10000"/>
     <curve display_name="MB" curve_name="PERM_MORRIS_BIGGS_MODIFIED" color="#0571b0" left="0.01" right="10000"/>
     <curve display_name="Kh Core" curve_name="KH_CORE" color="#08519c" left="0.01" right="10000" marker="x"/>
-  </track>
-  <track display_name="ROCK QUALITY" width="1.20" scale="log" left="0.001" right="1000">
-    <curve display_name="RQI" curve_name="RQI" color="#1b7837" left="0.001" right="1000"/>
-    <curve display_name="FZI" curve_name="FZI" color="#762a83" left="0.001" right="1000"/>
-    <curve display_name="R35" curve_name="R35" color="#d73027" left="0.001" right="1000"/>
   </track>
   <track display_name="MINERAL VOLUMES" width="1.35" left="0" right="1" cumulative="true" major_lines="5">
     <curve display_name="VCLAY" curve_name="VCLAY" color="#7a6a53" fill_color="#7a6a53" fill_alpha="0.85"/>
