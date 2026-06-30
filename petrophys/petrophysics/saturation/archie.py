@@ -57,20 +57,6 @@ def archie(
     sw = np.power(sw_n, 1 / n)
 
     return np.clip(sw, 0, 1)
-
-
-def archie_sw(
-    rt: Union[float, np.ndarray],
-    rw: float,
-    phi: Union[float, np.ndarray],
-    a: float = 1.0,
-    m: float = 2.0,
-    n: float = 2.0
-) -> Union[float, np.ndarray]:
-    """Alias for archie function."""
-    return archie(rt, rw, phi, a, m, n)
-
-
 def archie_f(
     phi: Union[float, np.ndarray],
     a: float = 1.0,

@@ -15,7 +15,7 @@ from petrophys.petrophysics.permeability.perm_module import (
     estimate_swirr_app,
     resolve_swirr,
 )
-from petrophys.petrophysics.permeability.timur import timur, timur_perm
+from petrophys.petrophysics.permeability.timur import timur
 from petrophys.petrophysics.permeability.coates_denoo import coates_denoo
 from petrophys.petrophysics.permeability.lith_vcl import lith_vcl_permeability
 from petrophys.petrophysics.permeability.classification import classify_permeability
@@ -30,7 +30,6 @@ __all__ = [
     "estimate_swirr_app",
     "resolve_swirr",
     "timur",
-    "timur_perm",
     "coates_denoo",
     "lith_vcl_permeability",
     "classify_permeability",

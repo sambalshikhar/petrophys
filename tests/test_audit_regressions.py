@@ -24,6 +24,48 @@ def test_indonesia_accepts_scalar_rt():
 
 
 # ---------------------------------------------------------------------------
+# indonesia() must use the canonical Poupon-Leveaux common-factor form,
+# 1/sqrt(Rt) = (clay_term + sand_term) * Sw^(n/2), not the old form that put
+# Sw^(n/2) on the sand term only (which under-predicted Sw in shaly zones).
+# ---------------------------------------------------------------------------
+def test_indonesia_common_factor_round_trip():
+    from petrophys.petrophysics.saturation.indonesia import indonesia
+
+    vcl, phi, rw, rcl, a, m, n = 0.30, 0.20, 0.10, 5.0, 1.0, 2.0, 2.0
+    clay = vcl ** (1 - vcl / 2) / np.sqrt(rcl)
+    sand = phi ** (m / 2) / np.sqrt(a * rw)
+    # Build Rt by hand from a known Sw via the canonical form, then recover it.
+    for sw_true in (0.30, 0.55, 1.00):
+        rt = 1.0 / ((clay + sand) * sw_true ** (n / 2)) ** 2
+        recovered = float(indonesia(rt, rw, phi, vcl, rcl, a, m, n))
+        assert recovered == pytest.approx(sw_true, rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# The mineral solver's U row must be internally consistent: a pure mineral fed
+# its own endpoint properties must resolve to ~100% of that mineral (residual
+# ~0). Previously the U endpoints were hardcoded literature constants while the
+# log term used PEF*RHOB, injecting a few-percent spurious mineral.
+# ---------------------------------------------------------------------------
+def test_mineral_solver_pure_minerals_resolve_exactly():
+    from petrophys.lithology.multi_mineral_solver import (
+        MINERAL_PROPERTIES,
+        MultiMineralSolver,
+    )
+
+    solver = MultiMineralSolver()
+    for name in ("quartz", "calcite", "dolomite", "anhydrite"):
+        p = MINERAL_PROPERTIES[name]
+        r = solver.explain_sample(
+            rhob=p["density"], nphi=p["nphi"], pef=p["pef"],
+            dt=p["slowness"], vcl=0.0,
+        )
+        frac = dict(zip(r["columns"], r["x"]))
+        assert frac[name] == pytest.approx(1.0, abs=1e-6)
+        assert float(r["residual"]) < 1e-6
+
+
+# ---------------------------------------------------------------------------
 # MHI = Sw/Sxo must NOT be clipped at 1 (the >1 band is diagnostic)
 # ---------------------------------------------------------------------------
 def test_mhi_not_clipped_above_one():

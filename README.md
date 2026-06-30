@@ -144,7 +144,7 @@ from petrophys.petrophysics.permeability import flag_impermeable
 # Direct function calls for Sw
 sw = archie(rt=10.0, rw=0.05, phi=0.15)
 sw = dual_water(phi_t=0.2, rt=10.0, rw=0.05, rwb=0.02, vcl=0.3, phi_cl=0.15)
-sw = waxman_smits(phi_t=0.2, rt=10.0, rw=0.05, cec=10.0, rho_ma=2.65, b_coeff=0.5)
+sw = waxman_smits(phi_t=0.2, rt=10.0, rw=0.05, cec=0.1, rho_ma=2.65, b_coeff=0.5)  # cec in meq/g
 
 # Rock quality
 rq = calculate_rock_quality(perm_k=100, phi_e=0.2)

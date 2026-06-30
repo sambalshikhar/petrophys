@@ -17,6 +17,7 @@ import pandas as pd
 from petrophys.imputation.curve_imputer import (
     DEFAULT_FEATURE_CURVES,
     DEFAULT_TARGET_CURVES,
+    _canonical_curve_name,
     default_pretrained_model_path,
 )
 from petrophys.qaqc.standardization.alias_map import get_standard_mnemonic
@@ -71,12 +72,6 @@ def _require_xgboost():
             "Install the ML extras with: pip install petrophys[ml]"
         ) from exc
     return XGBRegressor
-
-
-def _canonical_curve_name(mnemonic: str) -> str:
-    return get_standard_mnemonic(str(mnemonic).strip().upper()).upper()
-
-
 def _normalize_model_names(model_names: Sequence[str]) -> List[str]:
     aliases = {
         "random_forest": "rf",

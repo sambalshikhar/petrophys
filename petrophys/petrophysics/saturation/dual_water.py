@@ -108,18 +108,3 @@ def dual_water(
     swe = (swt - swb_safe) / (1.0 - swb_safe)
 
     return np.clip(swe, 0.0, 1.0)
-
-
-def dual_water_sw(
-    phi_t: Union[float, np.ndarray],
-    rt: Union[float, np.ndarray],
-    rw: float,
-    rwb: float,
-    vcl: Union[float, np.ndarray],
-    phi_cl: float,
-    a: float = 1.0,
-    m: float = 2.0,
-    n: float = 2.0
-) -> Union[float, np.ndarray]:
-    """Alias for dual_water."""
-    return dual_water(phi_t, rt, rw, rwb, vcl, phi_cl, a, m, n)

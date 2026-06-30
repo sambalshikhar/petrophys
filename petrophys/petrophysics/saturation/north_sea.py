@@ -87,18 +87,3 @@ def north_sea_shaly_sand(
     sw = np.clip(sw, 0.0, 1.0)
 
     return float(sw[0]) if scalar else sw
-
-
-def north_sea_shaly_sand_sw(
-    rt: Union[float, np.ndarray],
-    rw: float,
-    phi: Union[float, np.ndarray],
-    vsh: Union[float, np.ndarray],
-    rtsh: float,
-    a: float = 1.0,
-    m: float = 1.7,
-    n: float = 1.9,
-    vsh_exp: float = 1.6,
-) -> Union[float, np.ndarray]:
-    """Alias for north_sea_shaly_sand."""
-    return north_sea_shaly_sand(rt, rw, phi, vsh, rtsh, a, m, n, vsh_exp)

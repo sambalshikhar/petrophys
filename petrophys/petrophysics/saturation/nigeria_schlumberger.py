@@ -82,18 +82,3 @@ def nigeria_schlumberger(
     sw = np.clip(sw, 0.0, 1.0)
 
     return float(sw[0]) if scalar else sw
-
-
-def nigeria_schlumberger_sw(
-    rt: Union[float, np.ndarray],
-    rw: float,
-    phi: Union[float, np.ndarray],
-    vcl: Union[float, np.ndarray],
-    rsh: float,
-    a: float = 1.0,
-    m: float = 2.0,
-    n: float = 2.0,
-    shale_exp: float = 1.6,
-) -> Union[float, np.ndarray]:
-    """Alias for nigeria_schlumberger."""
-    return nigeria_schlumberger(rt, rw, phi, vcl, rsh, a, m, n, shale_exp)
