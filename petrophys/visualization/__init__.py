@@ -23,11 +23,7 @@ from petrophys.visualization.log_viewer import (
     create_log_viewer,
     load_log_viewer_template,
 )
-from petrophys.visualization.triple_combo import TripleComboPlot, create_triple_combo
-from petrophys.visualization.interpretation_plot import (
-    InterpretationPlot,
-    create_interpretation_plot,
-)
+from petrophys.visualization.triple_combo import create_triple_combo
 from petrophys.visualization.crossplot_viewer import CrossPlot, create_crossplot
 from petrophys.visualization.pickett_plot import PickettPlot, create_pickett_plot
 from petrophys.visualization.zone_flags import plot_zone_flags, add_zone_shading
@@ -55,11 +51,7 @@ __all__ = [
     "create_log_viewer",
     "load_log_viewer_template",
     # Triple combo
-    "TripleComboPlot",
     "create_triple_combo",
-    # Interpretation
-    "InterpretationPlot",
-    "create_interpretation_plot",
     # Crossplots
     "CrossPlot",
     "create_crossplot",

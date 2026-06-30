@@ -96,9 +96,9 @@ class VclModule:
         self.sp_max = sp_max
         self.sp_min = sp_min
         # How to combine the per-method clay indicators:
-        #   "min"  -- minimum of all methods (legacy default; under-reads
-        #             non-radioactive / soft clay because a low SP or GR
-        #             collapses the estimate below the neutron-density signal).
+        #   "min"  -- minimum of all methods at each depth. Simple, but a low SP
+        #             or GR can pull the estimate below the true clay content in
+        #             non-radioactive / soft clay.
         #   "auto" -- neutron-density is the primary clay indicator (it responds
         #             to clay mineralogy, not radioactivity or SP suppression);
         #             GR is used only where gas crossover invalidates N-D or N-D
@@ -146,8 +146,8 @@ class VclModule:
         most reliable single clay indicator in water/oil-bearing clastics: GR
         under-reads non-radioactive (kaolinite-type) clay and over-reads
         feldspathic/micaceous sands, while SP is suppressed by fresh mud and
-        thin beds. The legacy ``min`` rule therefore collapses VCL below the
-        true clay content whenever GR or SP happens to read low.
+        thin beds. A plain minimum of the methods can therefore fall below the
+        true clay content wherever GR or SP happens to read low.
 
         Rule:
           * N-D is the primary estimate where it is finite and the interval is
@@ -291,7 +291,7 @@ class VclModule:
                 n_samples, vcl_gr, vcl_sp, vcl_nd, nphi_data, rhob_data
             )
         else:
-            # Legacy: minimum of all methods at each depth.
+            # Minimum of all available methods at each depth.
             stacked = np.vstack(vcl_methods)
             valid_any = np.any(np.isfinite(stacked), axis=0)
             vcl_final = np.full(n_samples, np.nan, dtype=float)

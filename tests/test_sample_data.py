@@ -24,7 +24,7 @@ def test_sample_loads_a_well():
 def test_list_samples_kinds():
     costa = petrophys.list_samples("costa")
     assert len(costa) == 17 and "HW-3" in costa
-    assert set(petrophys.list_samples("geolink")) == {"30_6-5", "16_7-1"}
+    assert set(petrophys.list_samples("geolink")) == {"30_6-5", "16_7-1", "25_5-1", "15_9-14"}
 
 
 def test_sample_unknown_raises_helpful_error():

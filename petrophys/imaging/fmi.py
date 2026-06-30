@@ -288,8 +288,6 @@ def orient_to_azimuth(
     )
 
 
-orient_fmi_to_azimuth = orient_to_azimuth
-
 
 def equalize_static(image: np.ndarray, clip: tuple[float, float] = (2.0, 98.0)) -> np.ndarray:
     """Apply one percentile clip/rescale function to the whole image."""
@@ -736,7 +734,6 @@ __all__ = [
     "filter_by_depth_with_navigation",
     "fmi_colormap",
     "get_navigation",
-    "orient_fmi_to_azimuth",
     "orient_to_azimuth",
     "plot_fmi",
     "read_fmi_dlis",

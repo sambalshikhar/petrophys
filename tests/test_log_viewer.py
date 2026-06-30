@@ -397,7 +397,6 @@ def test_log_viewer_comprehensive_template_accepts_derived_curve_aliases(tmp_pat
     well.add_curve("PHIE", np.linspace(0.22, 0.04, depth.size), "v/v", "Effective Porosity")
     well.add_curve("SW_ARCHIE", np.linspace(0.28, 0.88, depth.size), "v/v", "Archie Sw")
     well.add_curve("PERM_TIMUR", np.geomspace(0.04, 400.0, depth.size), "mD", "Timur Permeability")
-    well.add_curve("RQI", np.geomspace(0.01, 4.0, depth.size), "", "RQI")
 
     viewer = create_log_viewer(
         well,
@@ -406,7 +405,7 @@ def test_log_viewer_comprehensive_template_accepts_derived_curve_aliases(tmp_pat
     )
 
     assert viewer.fig is not None
-    assert len(viewer.axes) == 11
+    assert len(viewer.axes) == 9
     assert viewer.curve_lookup["GR"] == "SGR"
     assert viewer.curve_lookup["VCL"] == "VSHALE_GR_LINEAR"
     assert viewer.curve_lookup["SW"] == "SW_ARCHIE"
