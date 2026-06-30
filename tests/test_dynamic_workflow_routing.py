@@ -207,6 +207,33 @@ def _remove_curves(well, *names):
     return well
 
 
+def _expected_adaptive_rwa(well, result, step):
+    """Reconstruct the adaptive Rwa clean-wet Rw from the step's reported params.
+
+    Mirrors the workflow: clean-wet mask at the reported cutoffs (the tight cut
+    also excludes bad hole), direct Arps temperature correction, then the
+    reported adaptive percentile (P50 for a narrow all-wet spread, P10 when a
+    hydrocarbon leg broadens it).
+    """
+    rdep = np.asarray(well.get("RDEP").data, dtype=float)
+    phie = np.asarray(well.get("PHIE").data, dtype=float)
+    vcl = np.asarray(well.get("VCL").data, dtype=float)
+    a = step.parameters["archie_a"]
+    m = step.parameters["archie_m"]
+    vcut = step.parameters["vcl_cutoff"]
+    pcut = step.parameters["phie_cutoff"]
+    rwa = rdep * np.power(phie, m) / a
+    valid = (np.isfinite(rdep) & np.isfinite(phie) & np.isfinite(vcl)
+             & np.isfinite(rwa) & (rwa > 0) & (vcl < vcut) & (phie > pcut))
+    bad_hole = result.well.get("BAD_HOLE")
+    if vcut <= 0.2 and bad_hole is not None:
+        valid &= ~(np.asarray(bad_hole.data, dtype=float) > 0.5)
+    temp = np.asarray(result.well.get("TEMP").data, dtype=float)
+    ref = step.parameters["rwa_reference_temp_f"]
+    rwa_ref = rwa[valid] * (temp[valid] + 6.77) / (ref + 6.77)
+    return float(np.percentile(rwa_ref, step.parameters["rwa_percentile"]))
+
+
 def _run(case_id, well, config=None, record_route=None, focus_steps=None, curves=None, notes=None):
     result = DynamicWorkflow(config or DynamicWorkflowConfig()).run(well)
     if record_route is not None:
@@ -709,7 +736,7 @@ def test_rmf_routing_sources_and_temperature_units(
             "rw_rwa_clean_wet_fallback",
             lambda well: _remove_curves(well, "SP", "RXO", "RSHA", "RESS"),
             DynamicWorkflowConfig(),
-            "rwa_clean_wet_p5",
+            "rwa_clean_wet_adaptive",
         ),
     ],
 )
@@ -746,15 +773,14 @@ def test_rw_routing_sources_and_temperature_units(case_id, mutate, config, expec
         assert "rwa_reference_temp_f" in step.parameters
         assert "salinity_ppm_estimated" not in step.parameters
         assert step.parameters["rw_min"] < step.parameters["rw_max"]
-        rdep = well.get("RDEP").data
-        phie = well.get("PHIE").data
-        vcl = well.get("VCL").data
-        valid = np.isfinite(rdep) & np.isfinite(phie) & np.isfinite(vcl) & (vcl < 0.3) & (phie > 0.05)
+        # Adaptive percentile: median for a narrow (all-wet) Rwa spread, low tail
+        # (P10) when a hydrocarbon leg broadens it.
+        assert step.parameters["rwa_percentile"] in (10.0, 50.0)
+        assert step.parameters["rwa_regime"] in (
+            "narrow_spread_all_wet_median", "wide_spread_hc_leg_low_tail")
         if isinstance(step.parameters["archie_a"], (int, float)) and isinstance(step.parameters["archie_m"], (int, float)):
-            expected_rwa = rdep[valid] * np.power(phie[valid], step.parameters["archie_m"]) / step.parameters["archie_a"]
-            temp = result.well.get("TEMP").data
-            expected_rwa = expected_rwa * (temp[valid] + 6.77) / (step.parameters["rwa_reference_temp_f"] + 6.77)
-            assert np.isclose(step.parameters["rw_from_rwa"], np.percentile(expected_rwa, 5))
+            expected = _expected_adaptive_rwa(well, result, step)
+            assert np.isclose(step.parameters["rw_from_rwa"], expected)
         else:
             assert step.parameters["archie_coefficients"]
             assert np.isfinite(step.parameters["rw_from_rwa"])
@@ -774,17 +800,11 @@ def test_rw_rwa_fallback_uses_lithology_specific_archie_coefficients(record_rout
     )
     step = _step_by_name(result, "rw")
 
-    assert step.method == "rwa_clean_wet_p5"
+    assert step.method == "rwa_clean_wet_adaptive"
     assert step.parameters["archie_coefficients"]["LIMESTONE"]["a"] == 1.0
     assert step.parameters["archie_a"] == 1.0
-    rdep = well.get("RDEP").data
-    phie = well.get("PHIE").data
-    vcl = well.get("VCL").data
-    valid = np.isfinite(rdep) & np.isfinite(phie) & np.isfinite(vcl) & (vcl < 0.3) & (phie > 0.05)
-    expected_rwa = rdep[valid] * np.power(phie[valid], 2.0) / 1.0
-    temp = result.well.get("TEMP").data
-    expected_rwa = expected_rwa * (temp[valid] + 6.77) / (step.parameters["rwa_reference_temp_f"] + 6.77)
-    assert np.isclose(step.parameters["rw_from_rwa"], np.percentile(expected_rwa, 5))
+    assert step.parameters["rwa_percentile"] in (10.0, 50.0)
+    assert np.isclose(step.parameters["rw_from_rwa"], _expected_adaptive_rwa(well, result, step))
 
 
 def test_saturation_uses_lithology_specific_archie_coefficients(record_route):
@@ -1417,7 +1437,7 @@ def test_mhi_skips_when_sxo_is_only_fifth_root_fallback(record_route):
             {
                 "temperature": "fallback_geothermal_gradient",
                 "rcl": "lithology_shale_median_rt",
-                "rw": "rwa_clean_wet_p5",
+                "rw": "rwa_clean_wet_adaptive",
             },
             {"rmf", "hc_correction"},
             {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "NET_PAY"},
@@ -1428,7 +1448,7 @@ def test_mhi_skips_when_sxo_is_only_fifth_root_fallback(record_route):
             {
                 "temperature": "fallback_geothermal_gradient",
                 "rcl": "lithology_shale_median_rt",
-                "rw": "rwa_clean_wet_p5",
+                "rw": "rwa_clean_wet_adaptive",
             },
             {"rmf", "hc_correction"},
             {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "NET_PAY"},

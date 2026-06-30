@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import numpy as np
@@ -131,12 +132,11 @@ def test_safe_per_depth_statistics_handles_all_nan_rows():
 
 
 def test_daydream_processed_fmi_dlis_can_be_read_and_oriented_when_available():
-    path = Path(
-        r"C:\Users\HP\OneDrive - ku.ac.ae\MBZUAI\NMR CMR FMI"
-        r"\Daydream 1_FMI_Processed_Dynamic_Image.dlis"
-    )
+    # Optional integration fixture: set PETROPHYS_FMI_DLIS to a processed FMI
+    # DLIS to run this; otherwise it skips.
+    path = Path(os.environ.get("PETROPHYS_FMI_DLIS", "_unset_fmi.dlis"))
     if not path.exists():
-        pytest.skip("Daydream FMI DLIS is not available on this machine")
+        pytest.skip("FMI DLIS not available; set PETROPHYS_FMI_DLIS to enable")
 
     data = read_fmi_dlis(path)
     navigation = get_navigation(data)

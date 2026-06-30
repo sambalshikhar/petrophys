@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import numpy as np
@@ -12,14 +13,10 @@ from petrophys.io.dlis_reader import (
 )
 
 
-DEEP_DAYDREAM_DLIS = Path(
-    r"C:\Users\HP\OneDrive - ku.ac.ae\MBZUAI\NMR CMR FMI"
-    r"\QGC_Daydream-1_Dual-PEX-APS-PPC-ECS.dlis"
-)
-SHALLOW_DAYDREAM_DLIS = Path(
-    r"C:\Users\HP\OneDrive - ku.ac.ae\MBZUAI\NMR CMR FMI"
-    r"\QGC_Daydream1_R2-APS-PEX-HNGS_1860-835_Main.dlis"
-)
+# Optional integration fixtures: point these env vars at local DLIS files to run
+# the reader integration tests; otherwise they skip (see _skip_without_dlisio_and_file).
+DEEP_DAYDREAM_DLIS = Path(os.environ.get("PETROPHYS_DLIS_DEEP", "_unset_deep_daydream.dlis"))
+SHALLOW_DAYDREAM_DLIS = Path(os.environ.get("PETROPHYS_DLIS_SHALLOW", "_unset_shallow_daydream.dlis"))
 
 
 class _FakeChannel:

@@ -16,7 +16,7 @@ from petrophys.visualization import (
 )
 
 
-INPUT_DIR = Path(r"C:\Users\HP\Desktop\Plots\LAS_with_petrophys_params_enriched")
+INPUT_DIR = Path(os.environ.get("PETROPHYS_DATA_DIR", Path(__file__).resolve().parents[1] / "petrophys" / "data" / "geolink"))
 OUTPUT_DIR = INPUT_DIR.parent / f"{INPUT_DIR.name}_visualizations"
 REPORT_DIR = Path(__file__).resolve().parents[1] / "reports"
 REPORT_PATH = REPORT_DIR / "batch_visualization_report.csv"

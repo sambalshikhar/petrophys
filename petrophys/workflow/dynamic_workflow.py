@@ -1493,12 +1493,19 @@ class DynamicWorkflow:
             decisions.append(f"SP_clean = {sp_max:.1f} ({sp_max_source}, P5 of SP)")
             decisions.append(f"SP_shale = {sp_min:.1f} ({sp_min_source}, P95 of SP)")
 
+        # Combine rule: when the neutron-density indicator is available, make it
+        # primary ("auto") so non-radioactive / soft clay that GR and SP miss is
+        # not collapsed by the legacy minimum rule. Falls back to "min" when N-D
+        # is unavailable (the helper then reduces to the single available method).
+        vcl_combine = "auto" if use_nd else "min"
         vcl_module = VclModule(
             gr_min=gr_min, gr_max=gr_max,
             gr_method=self.config.gr_method,
             use_sp=use_sp, use_nd=use_nd,
             sp_min=sp_min, sp_max=sp_max,
             matrix=self.config.matrix_type,
+            combine=vcl_combine,
+            rho_fl=self.config.rho_fl,
         )
         result = vcl_module.calculate(well)
 
@@ -1545,7 +1552,9 @@ class DynamicWorkflow:
             well.add_curve("VCLND", result.vcl_nd, unit="v/v", description="VCL from N-D")
             outputs.extend(["VCL_ND", "VCLND"])
 
-        decisions.append(f"Final VCL = min(available methods), range: "
+        combine_desc = ("neutron-density-primary (GR where gas invalidates N-D)"
+                        if vcl_combine == "auto" else "min(available methods)")
+        decisions.append(f"Final VCL = {combine_desc}, range: "
                         f"{np.nanmin(result.vcl):.3f} - {np.nanmax(result.vcl):.3f}")
 
         trace.method = self.config.gr_method
@@ -2106,33 +2115,59 @@ class DynamicWorkflow:
                 lithology,
                 well.n_samples,
             )
-            clean_wet_mask = (
-                np.isfinite(rdep)
-                & np.isfinite(phie)
-                & np.isfinite(vcl)
-                & (vcl < 0.3)
-                & (phie > 0.05)
+            # Exclude washed-out hole: there RDEP/PHIE are unreliable and would
+            # corrupt Rwa.
+            bad_hole, _, _ = get_curve_data_depthwise(well, ["BAD_HOLE"])
+            good_hole = (
+                ~(np.asarray(bad_hole, dtype=float) > 0.5)
+                if bad_hole is not None else np.ones_like(rdep, dtype=bool)
             )
             with np.errstate(divide="ignore", invalid="ignore"):
                 rwa = rdep * np.power(phie, archie_m) / archie_a
-            valid = clean_wet_mask & np.isfinite(rwa) & (rwa > 0)
+            # Prefer a tight cleanliness cut (cleaner Rwa); relax if too sparse.
+            base = np.isfinite(rdep) & np.isfinite(phie) & np.isfinite(vcl) & np.isfinite(rwa) & (rwa > 0)
+            tight = base & good_hole & (vcl < 0.2) & (phie > 0.08)
+            loose = base & (vcl < 0.3) & (phie > 0.05)
+            if int(np.count_nonzero(tight)) >= 100:
+                valid, vcl_cut, phie_cut = tight, 0.2, 0.08
+            else:
+                valid, vcl_cut, phie_cut = loose, 0.3, 0.05
             if np.any(valid):
                 rwa_reference_temp = float(np.nanmedian(temp_profile[valid]))
                 rwa_reference_values = correct_rw_temperature(rwa[valid], temp_profile[valid], rwa_reference_temp, "F")
-                rw_value = float(np.percentile(rwa_reference_values, 5))
+                # Adaptive percentile from the meaning of Rwa = Rt*phi^m/a:
+                # it equals Rw in 100% water and EXCEEDS Rw where hydrocarbons
+                # are present. If the clean-sand Rwa spread is narrow the section
+                # is essentially all-wet and its median estimates Rw; if it is
+                # broad a hydrocarbon leg has inflated the upper part, so the low
+                # tail (P10) estimates the water-leg Rw. Using a fixed low
+                # percentile (P5) biases Rw low in all-water wells -> Archie then
+                # false-flags pay; using the median biases it high in HC wells
+                # -> Archie misses pay. The spread test resolves both.
+                p5 = float(np.percentile(rwa_reference_values, 5))
+                p10 = float(np.percentile(rwa_reference_values, 10))
+                p50 = float(np.percentile(rwa_reference_values, 50))
+                spread = p50 / p5 if p5 > 0 else np.inf
+                if spread < 3.0:
+                    rw_value, rwa_pct, regime = p50, 50.0, "narrow_spread_all_wet_median"
+                else:
+                    rw_value, rwa_pct, regime = p10, 10.0, "wide_spread_hc_leg_low_tail"
                 rw_curve = correct_rw_temperature(rw_value, rwa_reference_temp, temp_profile, "F")
                 decisions.append(
-                    "Rw from Rwa clean-wet fallback: P5 of "
+                    f"Rw from Rwa clean-wet fallback: adaptive P{rwa_pct:.0f} "
+                    f"({regime}, P50/P5 spread={spread:.1f}) of "
                     f"{rt_curve.mnemonic} * {phie_curve.mnemonic}^m / a "
-                    f"where VCL < 0.3 and {phie_curve.mnemonic} > 0.05 (n={int(np.count_nonzero(valid))}), "
-                    "using lithology-dependent Archie coefficients, "
-                    "then direct Arps temperature correction"
+                    f"where VCL < {vcl_cut} and {phie_curve.mnemonic} > {phie_cut} "
+                    f"(n={int(np.count_nonzero(valid))}), lithology-dependent Archie "
+                    "coefficients, direct Arps temperature correction"
                 )
                 return _finalize_rw(
-                    "rwa_clean_wet_p5",
+                    "rwa_clean_wet_adaptive",
                     rw_curve,
                     {
-                        "rwa_percentile": 5.0,
+                        "rwa_percentile": rwa_pct,
+                        "rwa_regime": regime,
+                        "rwa_spread_p50_p5": float(spread),
                         "rwa_clean_wet_samples": int(np.count_nonzero(valid)),
                         "rwa_min": float(np.nanmin(rwa[valid])),
                         "rwa_max": float(np.nanmax(rwa[valid])),
@@ -2142,13 +2177,13 @@ class DynamicWorkflow:
                         "archie_coefficients": archie_summary,
                         "archie_lithology_source": self._lithology_source,
                         "rwa_reference_temp_f": rwa_reference_temp,
-                        "vcl_cutoff": 0.3,
-                        "phie_cutoff": 0.05,
+                        "vcl_cutoff": vcl_cut,
+                        "phie_cutoff": phie_cut,
                         "source_priority": "Rwa clean-wet fallback",
                     },
                     [rt_curve.mnemonic, phie_curve.mnemonic, vcl_curve.mnemonic],
                 )
-            decisions.append("Rwa clean-wet fallback skipped because no valid VCL < 0.3 and effective porosity > 0.05 samples were available")
+            decisions.append("Rwa clean-wet fallback skipped because no valid clean-wet samples were available")
         else:
             decisions.append("Rwa clean-wet fallback skipped because RDEP/RT, effective porosity, or VCL is unavailable")
 
@@ -2304,6 +2339,64 @@ class DynamicWorkflow:
             "fallback_nphi_ma": fallback_nphi_ma,
         }
 
+    def _clay_porosity_trend(self, well, porosity, valid_source_mask):
+        """Fit a compaction (depth) trend for clay porosity from the high-VCL envelope.
+
+        Clay porosity decreases with compaction, so a single constant phi_cl
+        (usually anchored by deep compacted shale) under-corrects shallow soft
+        clay. Per depth bin, the median total porosity of the locally clay-richest
+        samples (VCL >= bin P75 and > 0.3) estimates the clay porosity at that
+        depth; a line through those bin anchors gives phi_cl(z). This is
+        lithology-log independent, so it works where a vendor lithology mislabels
+        or omits shallow shaly intervals (numeric/foreign facies codes).
+
+        Returns (phi_cl_values aligned to well depth, note) or (None, reason).
+        Falls back (None) unless there are >=3 clay-bearing bins spanning >=400 m,
+        so a single constant phi_cl is used when coverage is too thin to trust.
+        Clean, in-gauge reservoir (low VCL) is essentially unaffected because the
+        VCL*phi_cl(z) correction is small where VCL is small.
+        """
+        depth = np.asarray(getattr(well, "depth", None), dtype=float)
+        por = np.asarray(porosity, dtype=float)
+        vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
+        if vcl is None:
+            return None, "no VCL curve for a clay-porosity depth trend"
+        vcl = np.asarray(vcl, dtype=float)
+        base = np.asarray(valid_source_mask, dtype=bool) & np.isfinite(depth) & np.isfinite(por) & np.isfinite(vcl)
+        if int(np.count_nonzero(base)) < 50:
+            return None, "too few neutron-density samples for a clay-porosity trend"
+        bin_w = 200.0
+        zmin, zmax = float(np.nanmin(depth[base])), float(np.nanmax(depth[base]))
+        if (zmax - zmin) < 400.0:
+            return None, "data depth span < 400 m"
+        edges = np.arange(np.floor(zmin), np.ceil(zmax) + bin_w, bin_w)
+        idx = np.digitize(depth, edges) - 1
+        centers, anchors = [], []
+        for b in range(len(edges) - 1):
+            sel = base & (idx == b)
+            if np.count_nonzero(sel) < 20:
+                continue
+            vthr = max(0.35, float(np.percentile(vcl[sel], 75)))
+            clay = sel & (vcl >= vthr) & (vcl > 0.3)
+            if np.count_nonzero(clay) < 8:
+                continue
+            centers.append(0.5 * (edges[b] + edges[b + 1]))
+            anchors.append(float(np.median(por[clay])))
+        if len(centers) < 3:
+            return None, "fewer than 3 clay-bearing depth bins for a trend"
+        centers = np.asarray(centers); anchors = np.asarray(anchors)
+        order = np.argsort(centers)
+        centers, anchors = centers[order], anchors[order]
+        # Piecewise-linear interpolation between bin anchors (not a single global
+        # line): the compaction curve is convex, so a global line overshoots in
+        # the middle and would over-correct clean mid-depth reservoir. np.interp
+        # holds the end anchors beyond the fitted range.
+        values = np.clip(np.interp(depth, centers, anchors), 0.0, 0.6)
+        note = (f"depth trend over {len(centers)} clay-bearing bins "
+                f"({zmin:.0f}-{zmax:.0f} m): phi_cl {anchors.max():.3f} (shallow) "
+                f"-> {anchors.min():.3f} (deep)")
+        return values.astype(float), note
+
     def _resolve_phi_cl(
         self,
         well: "Well",
@@ -2365,13 +2458,24 @@ class DynamicWorkflow:
             phi_cl = float(np.clip(np.nanmean(porosity[valid_mask]), 0.0, 0.6))
             label_clean = str(label or "porosity").lower()
             source = f"{basis}_average_{label_clean}_nd"
-            return {
+            # Clay porosity falls with compaction, so a single constant (typically
+            # anchored by deep compacted shale) badly under-corrects shallow soft
+            # clay. Fit a depth trend phi_cl(z) through the shale-control samples
+            # so PHIE = PHIT - VCL*phi_cl(z) removes the right amount of clay-bound
+            # water at every depth. Clean, in-gauge reservoir (VCL~0) is unaffected.
+            phi_cl_values, trend_note = self._clay_porosity_trend(well, porosity, source_mask)
+            result = {
                 "phi_cl": phi_cl,
-                "phi_cl_source": source,
+                "phi_cl_source": source if phi_cl_values is None else source + "_depth_trend",
                 "phi_cl_basis_count": int(np.count_nonzero(valid_mask)),
                 "phi_cl_basis": source,
                 "phi_cl_fallback_reason": None,
             }
+            if phi_cl_values is not None:
+                result["phi_cl_values"] = phi_cl_values
+                result["phi_cl"] = float(np.clip(np.nanmedian(phi_cl_values), 0.0, 0.6))
+                result["phi_cl_trend"] = trend_note
+            return result
 
         preferred = from_porosity(
             porosity_basis,
@@ -2644,7 +2748,10 @@ class DynamicWorkflow:
             porosity_basis_name=phie_basis_name,
             porosity_basis_valid_mask=phit_nd_average_mask if phie_basis_name == "PHIT" else None,
         )
-        phi_cl = float(phi_cl_info["phi_cl"])
+        # Depth-varying clay porosity when a compaction trend was fitted, else scalar.
+        phi_cl = phi_cl_info.get("phi_cl_values")
+        if phi_cl is None:
+            phi_cl = float(phi_cl_info["phi_cl"])
 
         if phie_basis is not None:
             if vcl_curve is not None:
@@ -2703,9 +2810,15 @@ class DynamicWorkflow:
                     f"{apparent_info['source']} {phie_basis_name}"
                 )
             if vcl_curve is not None:
-                decisions.append(
-                    f"{phie_output} = {phie_basis_name} - {vcl_curve.mnemonic} * phi_cl ({phi_cl:.3f})"
-                )
+                if phi_cl_info.get("phi_cl_values") is not None:
+                    decisions.append(
+                        f"{phie_output} = {phie_basis_name} - {vcl_curve.mnemonic} * phi_cl(depth); "
+                        + phi_cl_info.get("phi_cl_trend", "compaction trend")
+                    )
+                else:
+                    decisions.append(
+                        f"{phie_output} = {phie_basis_name} - {vcl_curve.mnemonic} * phi_cl ({float(phi_cl):.3f})"
+                    )
             else:
                 decisions.append(f"{phie_output} = {phie_basis_name} (no clay curve available)")
             if preserve_existing_phie:
@@ -3383,7 +3496,15 @@ class DynamicWorkflow:
         vcl, vcl_source, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
         phie, phie_source, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE", "PHIT"])
         sw, sw_source, _ = get_curve_data_depthwise(well, ["SW", "SWA", "SWT-LOG"])
-        result = np_module.calculate(well, vcl=vcl, phie=phie, sw=sw)
+        # Exclude washed-out (bad-hole) intervals from net reservoir / pay: there
+        # RHOB and NPHI are unreliable, so PHIE and Sw cannot certify pay.
+        bad_hole, _, _ = get_curve_data_depthwise(well, ["BAD_HOLE"])
+        quality_mask = None
+        n_excluded = 0
+        if bad_hole is not None:
+            quality_mask = ~(np.asarray(bad_hole, dtype=float) > 0.5)
+            n_excluded = int(np.count_nonzero(~quality_mask))
+        result = np_module.calculate(well, vcl=vcl, phie=phie, sw=sw, quality_mask=quality_mask)
         np_module.add_to_well(well, result)
 
         well.add_curve("RESFLAG", result.net_reservoir.astype(float), "", "Reservoir Flag")
@@ -3419,6 +3540,10 @@ class DynamicWorkflow:
         trace.decisions.append(f"NET_ROCK: VCL < {self.config.vcl_cutoff} -> {n_rock} samples ({n_rock*step_m:.1f} m)")
         trace.decisions.append(f"NET_RES:  + {phie_source} > {self.config.phie_cutoff} -> {n_res} samples ({n_res*step_m:.1f} m)")
         trace.decisions.append(f"NET_PAY:  + {sw_source} < {self.config.sw_cutoff} -> {n_pay} samples ({n_pay*step_m:.1f} m)")
+        if n_excluded:
+            trace.decisions.append(
+                f"Bad-hole exclusion: {n_excluded} washed-out samples removed from net reservoir/pay"
+            )
         trace.decisions.append(f"SEALFLAG: VCL >= 0.8 -> {n_seal} samples ({n_seal*step_m:.1f} m)")
         if well.get("CROSSOVER_FLAG") is not None:
             n_crossover = int(np.nansum(np.asarray(well.get("CROSSOVER_FLAG").data, dtype=float) > 0.5))

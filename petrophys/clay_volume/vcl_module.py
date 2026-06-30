@@ -10,11 +10,12 @@ from dataclasses import dataclass
 import numpy as np
 
 from petrophys.base.well import Well
-from petrophys.base.constants import DefaultParameters
+from petrophys.base.constants import DefaultParameters, MatrixProperties
 from petrophys.clay_volume.gr_method import vcl_from_gr
 from petrophys.clay_volume.sp_method import vcl_from_sp, should_use_sp
 from petrophys.clay_volume.nd_method import vcl_from_nd, nd_clean_line
 from petrophys.clay_volume.classification import classify_vcl
+from petrophys.petrophysics.porosity.density_porosity import density_porosity
 from petrophys.utils.analysis_helpers import get_curve_data_depthwise
 
 
@@ -26,7 +27,7 @@ class VclResult:
     Attributes
     ----------
     vcl : np.ndarray
-        Final VCL (minimum of all methods)
+        Final VCL (combined per ``combine`` rule)
     vcl_gr : np.ndarray
         VCL from gamma ray
     vcl_sp : np.ndarray
@@ -34,7 +35,7 @@ class VclResult:
     vcl_nd : np.ndarray
         VCL from neutron-density (if available)
     method_used : np.ndarray
-        Which method provided the minimum at each depth
+        Which method provided the final value at each depth
     """
 
     vcl: np.ndarray
@@ -81,6 +82,8 @@ class VclModule:
         sp_max: Optional[float] = None,
         sp_min: Optional[float] = None,
         matrix: Optional[str] = None,
+        combine: str = "min",
+        rho_fl: float = DefaultParameters.FLUID_DENSITY,
     ):
         self.gr_min = gr_min
         self.gr_max = gr_max
@@ -92,6 +95,17 @@ class VclModule:
         self.matrix = matrix
         self.sp_max = sp_max
         self.sp_min = sp_min
+        # How to combine the per-method clay indicators:
+        #   "min"  -- minimum of all methods (legacy default; under-reads
+        #             non-radioactive / soft clay because a low SP or GR
+        #             collapses the estimate below the neutron-density signal).
+        #   "auto" -- neutron-density is the primary clay indicator (it responds
+        #             to clay mineralogy, not radioactivity or SP suppression);
+        #             GR is used only where gas crossover invalidates N-D or N-D
+        #             is unavailable; SP is a reported cross-check that never
+        #             pulls the final value down. Recommended for clastics.
+        self.combine = str(combine or "min").strip().lower()
+        self.rho_fl = rho_fl
 
     def _resolve_gr_baselines(self, gr_data: np.ndarray) -> tuple[float, float]:
         """
@@ -124,6 +138,62 @@ class VclModule:
             gr_max = self.gr_max
 
         return gr_min, gr_max
+
+    def _combine_nd_primary(self, n_samples, vcl_gr, vcl_sp, vcl_nd, nphi_data, rhob_data):
+        """Neutron-density-primary clay combination.
+
+        The neutron-density crossplot responds to clay *mineralogy* and is the
+        most reliable single clay indicator in water/oil-bearing clastics: GR
+        under-reads non-radioactive (kaolinite-type) clay and over-reads
+        feldspathic/micaceous sands, while SP is suppressed by fresh mud and
+        thin beds. The legacy ``min`` rule therefore collapses VCL below the
+        true clay content whenever GR or SP happens to read low.
+
+        Rule:
+          * N-D is the primary estimate where it is finite and the interval is
+            NOT gas-crossover affected (gas suppresses the neutron, making N-D
+            under-read clay).
+          * GR is used where gas invalidates N-D, or where N-D is unavailable.
+          * SP is only a fallback where neither GR nor N-D exists; it never
+            pulls the final value down (it remains reported as VCL_SP).
+        """
+        vcl_final = np.full(n_samples, np.nan, dtype=float)
+        method_used = np.full(n_samples, "NaN", dtype=object)
+
+        gr = np.asarray(vcl_gr, dtype=float) if vcl_gr is not None else None
+        nd = np.asarray(vcl_nd, dtype=float) if vcl_nd is not None else None
+        sp = np.asarray(vcl_sp, dtype=float) if vcl_sp is not None else None
+
+        # Gas crossover flag (density porosity exceeds neutron) -> N-D unreliable.
+        gas = np.zeros(n_samples, dtype=bool)
+        if nd is not None and nphi_data is not None and rhob_data is not None:
+            try:
+                rho_ma = MatrixProperties.get(self.matrix or "sandstone").density
+            except (KeyError, AttributeError):
+                rho_ma = 2.65
+            phid = density_porosity(np.asarray(rhob_data, dtype=float), rho_ma, self.rho_fl)
+            nphi = np.asarray(nphi_data, dtype=float)
+            gas = np.isfinite(phid) & np.isfinite(nphi) & (phid > nphi + 0.05)
+
+        # Start from GR (most universally present), then prefer N-D in non-gas.
+        if gr is not None:
+            ok = np.isfinite(gr)
+            vcl_final[ok] = gr[ok]
+            method_used[ok] = "GR"
+        if nd is not None:
+            use_nd = np.isfinite(nd) & ~gas
+            vcl_final[use_nd] = nd[use_nd]
+            method_used[use_nd] = "ND"
+            # Where GR is missing, also use N-D in gas zones (best available).
+            nd_fill = np.isfinite(nd) & ~np.isfinite(vcl_final)
+            vcl_final[nd_fill] = nd[nd_fill]
+            method_used[nd_fill] = "ND"
+        if sp is not None:
+            sp_fill = np.isfinite(sp) & ~np.isfinite(vcl_final)
+            vcl_final[sp_fill] = sp[sp_fill]
+            method_used[sp_fill] = "SP"
+
+        return np.clip(vcl_final, 0.0, 1.0), method_used
 
     def calculate(
         self,
@@ -209,15 +279,19 @@ class VclModule:
             vcl_methods.append(vcl_nd)
             method_names.append("ND")
 
-        # Select minimum VCL at each point
+        # Select VCL at each point
         if len(vcl_methods) == 0:
             raise ValueError("No VCL methods could be applied. Check curve availability.")
 
         if len(vcl_methods) == 1:
             vcl_final = vcl_methods[0]
             method_used = np.full(n_samples, method_names[0])
+        elif self.combine in ("auto", "nd_primary", "robust"):
+            vcl_final, method_used = self._combine_nd_primary(
+                n_samples, vcl_gr, vcl_sp, vcl_nd, nphi_data, rhob_data
+            )
         else:
-            # Stack all methods and take minimum
+            # Legacy: minimum of all methods at each depth.
             stacked = np.vstack(vcl_methods)
             valid_any = np.any(np.isfinite(stacked), axis=0)
             vcl_final = np.full(n_samples, np.nan, dtype=float)
@@ -234,10 +308,6 @@ class VclModule:
                     method_used[i] = min_name
                 else:
                     method_used[i] = "NaN"
-            # for i in range(n_samples):
-            #     values = [m[i] for m in vcl_methods]
-            #     min_idx = np.nanargmin(values)
-            #     method_used[i] = method_names[min_idx]
 
         return VclResult(
             vcl=vcl_final,

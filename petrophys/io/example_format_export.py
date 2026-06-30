@@ -2415,6 +2415,7 @@ def _method_label(name: str) -> str:
         "salinity_conversion": "salinity-to-RW conversion",
         "sp_clean_water": "SP clean-water method",
         "rxo_rt_clean_water": "Rxo/Rt clean-water method",
+        "rwa_clean_wet_adaptive": "Rwa clean-wet adaptive (P50/P10) fallback",
         "rwa_clean_wet_p5": "Rwa clean-wet P5 fallback",
         "default_fallback": "default RW fallback (0.05 ohm.m)",
         "default_fallback_profile": "default RW fallback (0.05 ohm.m) with depth-wise temperature correction",
@@ -2568,7 +2569,7 @@ def _rw_route_reason_text(rw_steps: Sequence[Any], selected_method: str) -> str:
             reasons.append("SP route skipped because " + sp_decision.split("because", 1)[1].strip())
         elif sp_failure:
             reasons.append("SP route failed because " + sp_failure.split(":", 1)[1].strip())
-        elif selected in {"rxo_rt_clean_water", "rwa_clean_wet_p5", "default_fallback_profile"}:
+        elif selected in {"rxo_rt_clean_water", "rwa_clean_wet_p5", "rwa_clean_wet_adaptive", "default_fallback_profile"}:
             reasons.append("SP route did not supply the selected RW curve")
 
     rxo_failure = next(
@@ -2578,7 +2579,7 @@ def _rw_route_reason_text(rw_steps: Sequence[Any], selected_method: str) -> str:
     if selected != "rxo_rt_clean_water":
         if rxo_failure:
             reasons.append("Rxo/Rt route failed because " + rxo_failure.split(":", 1)[1].strip())
-        elif selected in {"rwa_clean_wet_p5", "default_fallback_profile"}:
+        elif selected in {"rwa_clean_wet_p5", "rwa_clean_wet_adaptive", "default_fallback_profile"}:
             reasons.append("Rxo/Rt route did not supply the selected RW curve")
 
     if selected == "default_fallback_profile":
@@ -3597,13 +3598,16 @@ def _rw_curve_note(step: Any, well: "Well") -> str:
     arps_formula = _rw_arps_formula_text()
     salinity_formula = _rw_salinity_formula_text()
 
-    if method == "rwa_clean_wet_p5":
+    if method in ("rwa_clean_wet_p5", "rwa_clean_wet_adaptive"):
         coeff_text = _archie_coefficients_text(params, well).lstrip("; ")
+        pct = params.get("rwa_percentile", 5)
+        regime = params.get("rwa_regime")
+        regime_text = f" ({regime})" if regime else ""
         return (
-            "RW: RWA clean-wet P5; "
+            f"RW: RWA clean-wet adaptive P{_format_numeric(pct, 0)}{regime_text}; "
             "RWA=RDEP*PHIE^m/a, "
             f"mask=VCL<{params.get('vcl_cutoff')} and PHIE>{params.get('phie_cutoff')}; "
-            f"P5 at reference temperature={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
+            f"P{_format_numeric(pct, 0)} at reference temperature={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
             f"Tref={_format_numeric(params.get('rwa_reference_temp_f'), 1)} F, "
             f"samples={params.get('rwa_clean_wet_samples')}, "
             + (f"{coeff_text}; " if coeff_text else "")
@@ -4842,7 +4846,7 @@ def _build_delivery_computation_notes(
             if rw_route_reasons:
                 note += f" Route reasons: {rw_route_reasons}."
             notes.append(note)
-        elif methods == ["rwa_clean_wet_p5"]:
+        elif methods in (["rwa_clean_wet_adaptive"], ["rwa_clean_wet_p5"]):
             n_samples = _format_numeric_summary(_step_parameter_values(rw_steps, "rwa_clean_wet_samples"), 0, "samples")
             rw_from_rwa = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_from_rwa"), 4, "ohm.m")
             reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "rwa_reference_temp_f"), 1, "F")
