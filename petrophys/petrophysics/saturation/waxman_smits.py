@@ -94,7 +94,8 @@ def waxman_smits(
     rw : float
         Formation water resistivity (ohm.m)
     cec : float
-        Cation exchange capacity (meq/100g)
+        Cation exchange capacity (meq/g). Note this is meq per gram, not the
+        meq/100g lab-reporting convention; divide a meq/100g value by 100.
     rho_ma : float
         Matrix density (g/cc)
     b_coeff : float
@@ -146,19 +147,3 @@ def waxman_smits(
 
     sw = np.clip(sw, 0.0, 1.0)
     return float(sw[0]) if scalar_input else sw
-
-
-def waxman_smits_sw(
-    phi_t: Union[float, np.ndarray],
-    rt: Union[float, np.ndarray],
-    rw: float,
-    cec: float,
-    rho_ma: float,
-    b_coeff: float,
-    m_star: float = 2.0,
-    n: float = 2.0,
-    max_iter: int = 10,
-    tol: float = 1e-6
-) -> Union[float, np.ndarray]:
-    """Alias for waxman_smits."""
-    return waxman_smits(phi_t, rt, rw, cec, rho_ma, b_coeff, m_star, n, max_iter, tol)

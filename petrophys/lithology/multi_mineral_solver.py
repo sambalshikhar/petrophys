@@ -29,7 +29,11 @@ def _get_endpoints(name: str) -> Dict[str, float]:
         "density": p["density"],
         "nphi":    p["nphi"],
         "pef":     p["pef"],
-        "u":       p["u"],
+        # Derive the U endpoint with the same rule as the measured log term
+        # (U = PEF·ρ, see _u) so the solver's U row is internally consistent.
+        # The hardcoded literature "u" values differ from PEF·ρ by up to ~0.1
+        # and otherwise inject a small spurious-mineral bias on pure lithologies.
+        "u":       _u(p["pef"], p["density"]),
         "dt":      p["slowness"],
     }
 

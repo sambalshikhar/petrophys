@@ -46,11 +46,3 @@ def timur(
     phi_pct = phi * 100.0
     swi_pct = swi * 100.0
     return a * np.power(phi_pct, b) / np.power(swi_pct, c)
-
-
-def timur_perm(
-    phi: Union[float, np.ndarray],
-    swi: Union[float, np.ndarray],
-) -> Union[float, np.ndarray]:
-    """Alias for timur function with default parameters."""
-    return timur(phi, swi)

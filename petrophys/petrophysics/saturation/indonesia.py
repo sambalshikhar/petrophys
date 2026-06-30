@@ -22,7 +22,7 @@ def indonesia(
     """
     Calculate water saturation using Indonesia equation.
 
-    1/sqrt(Rt) = (Vcl^(1-Vcl/2) / sqrt(Rcl)) + (φ^(m/2) × Sw^(n/2) / sqrt(a×Rw))
+    1/sqrt(Rt) = [ Vcl^(1-Vcl/2) / sqrt(Rcl) + φ^(m/2) / sqrt(a×Rw) ] × Sw^(n/2)
 
     Parameters
     ----------
@@ -75,41 +75,19 @@ def indonesia(
     # Term 2: Sand contribution (without Sw)
     sand_term_base = np.power(phi, m / 2) / np.sqrt(a * rw)
 
-    # Solve for Sw
-    # 1/sqrt(Rt) = clay_term + sand_term_base × Sw^(n/2)
-    # sand_term_base × Sw^(n/2) = 1/sqrt(Rt) - clay_term
-    # Sw^(n/2) = (1/sqrt(Rt) - clay_term) / sand_term_base
-
-    lhs = 1 / np.sqrt(rt) - clay_term
-
-    # Handle negative values (when clay dominates)
-    if isinstance(lhs, np.ndarray):
-        lhs = np.maximum(lhs, 0)
+    # Solve for Sw. In the Poupon-Leveaux Indonesia equation the saturation
+    # factor Sw^(n/2) multiplies the whole bracket, so the clay and matrix
+    # conduction paths scale with saturation together:
+    #   1/sqrt(Rt) = (clay_term + sand_term_base) * Sw^(n/2)
+    #   Sw^(n/2)   = (1/sqrt(Rt)) / (clay_term + sand_term_base)
+    denom = clay_term + sand_term_base
+    if isinstance(denom, np.ndarray):
+        denom = np.where(denom <= 0, 1e-10, denom)
     else:
-        lhs = max(lhs, 0)
+        denom = max(denom, 1e-10)
 
-    # Avoid division by zero
-    if isinstance(sand_term_base, np.ndarray):
-        sand_term_base = np.where(sand_term_base <= 0, 1e-10, sand_term_base)
-    else:
-        sand_term_base = max(sand_term_base, 1e-10)
-
-    sw_half_n = lhs / sand_term_base
+    sw_half_n = (1.0 / np.sqrt(rt)) / denom
     sw = np.power(sw_half_n, 2 / n)
 
     sw = np.clip(sw, 0, 1)
     return float(sw) if scalar_input else sw
-
-
-def indonesia_sw(
-    rt: Union[float, np.ndarray],
-    rw: float,
-    phi: Union[float, np.ndarray],
-    vcl: Union[float, np.ndarray],
-    rcl: float,
-    a: float = 1.0,
-    m: float = 2.0,
-    n: float = 2.0
-) -> Union[float, np.ndarray]:
-    """Alias for indonesia function."""
-    return indonesia(rt, rw, phi, vcl, rcl, a, m, n)

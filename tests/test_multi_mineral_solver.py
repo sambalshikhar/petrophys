@@ -62,13 +62,21 @@ def test_core_porosity_constraint_pins_phi_and_resolves_carbonate():
 
 
 def test_solver_porosity_is_solved_and_physical():
-    # A porous quartz sand: rhob between matrix and fluid -> positive solved phi.
+    # A porous quartz sand built as a self-consistent quartz + water mixture at
+    # phi = 0.16, using the solver's own endpoints so the forward model and the
+    # log readings agree on every channel (including U = PEF * rho, whose bulk
+    # PEF here is ~1.70, not the 1.80 quartz-matrix value). The solver must then
+    # invert it back to exactly quartz = 0.84, phi = 0.16.
+    from petrophys.lithology.multi_mineral_solver import _get_endpoints
+
     s = MultiMineralSolver()
-    rhob = np.array([2.39])      # ~0.16 porosity quartz
-    nphi = np.array([0.16])
-    pef = np.array([1.8])
-    dt = np.array([75.0])
-    vcl = np.zeros(1)
-    r = s.solve(rhob, nphi, vcl, np.zeros(1), pef=pef, dt=dt)
-    assert r["phie"][0] == pytest.approx(0.16, abs=0.05)
-    assert r["quartz"][0] == pytest.approx(0.84, abs=0.06)
+    q, fl = _get_endpoints("quartz"), _get_endpoints("water")
+    phi, vq = 0.16, 0.84
+    rhob = np.array([vq * q["density"] + phi * fl["density"]])
+    nphi = np.array([vq * q["nphi"] + phi * fl["nphi"]])
+    u = vq * q["u"] + phi * fl["u"]              # U mixes volumetrically
+    pef = np.array([u / rhob[0]])                # PEF = U / rho_bulk
+    dt = np.array([vq * q["dt"] + phi * fl["dt"]])
+    r = s.solve(rhob, nphi, np.zeros(1), np.zeros(1), pef=pef, dt=dt)
+    assert r["phie"][0] == pytest.approx(0.16, abs=1e-3)
+    assert r["quartz"][0] == pytest.approx(0.84, abs=1e-3)

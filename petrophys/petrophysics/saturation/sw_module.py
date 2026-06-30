@@ -168,7 +168,7 @@ class SaturationModule:
         lithology : str or np.ndarray, optional
             'clastic' or 'carbonate' globally, or per-depth array
         cec : float, optional
-            Cation exchange capacity (for Waxman-Smits, meq/100g)
+            Cation exchange capacity (for Waxman-Smits, meq/g)
         b_coeff : float, optional
             Counter-ion conductance (for Waxman-Smits)
         rho_ma : float, optional

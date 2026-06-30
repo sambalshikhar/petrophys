@@ -98,17 +98,3 @@ def simandoux(
 
     sw = np.clip(sw, 0, 1)
     return float(sw[0]) if scalar else sw
-
-
-def simandoux_sw(
-    rt: Union[float, np.ndarray],
-    rw: float,
-    phi: Union[float, np.ndarray],
-    vcl: Union[float, np.ndarray],
-    rcl: float,
-    a: float = 1.0,
-    m: float = 2.0,
-    n: float = 2.0
-) -> Union[float, np.ndarray]:
-    """Alias for simandoux."""
-    return simandoux(rt, rw, phi, vcl, rcl, a, m, n)

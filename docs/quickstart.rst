@@ -108,7 +108,7 @@ Each calculation module can be used independently for maximum flexibility.
    sw = archie(rt=10.0, rw=0.05, phi=0.15, a=1.0, m=2.0, n=2.0)
    sw = dual_water(phi_t=0.2, rt=10.0, rw=0.05, rwb=0.02,
                     vcl=0.3, phi_cl=0.15)
-   sw = waxman_smits(phi_t=0.2, rt=10.0, rw=0.05, cec=10.0,
+   sw = waxman_smits(phi_t=0.2, rt=10.0, rw=0.05, cec=0.1,  # cec in meq/g
                       rho_ma=2.65, b_coeff=0.5)
 
 **Rock Quality**
@@ -252,7 +252,7 @@ modules in the correct pipeline order:
        hc_type="oil",
 
        # Waxman-Smits (optional — if CEC available)
-       # cec=10.0, b_coeff=0.5,
+       # cec=0.1, b_coeff=0.5,   # cec in meq/g
 
        # Dual Water (optional — if rwb available for carbonates)
        # rwb=0.02,
