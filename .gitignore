@@ -170,5 +170,4 @@ EvalGen2/
 reports/
 tmp_*/
 outputs/
-notebooks/
 /*.xlsx
