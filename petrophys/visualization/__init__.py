@@ -32,6 +32,14 @@ from petrophys.visualization.specialist_panels import (
     create_nmr_panel,
     has_nmr_curves,
 )
+from petrophys.visualization.analytics import (
+    create_multiwell_overlay,
+    create_bar_comparison,
+    create_tornado_plot,
+    create_histogram_comparison,
+    create_line_comparison,
+    create_heatmap,
+)
 
 __all__ = [
     "create_buckles_plot", "create_hingle_plot", "create_xrf_panel",
@@ -65,4 +73,11 @@ __all__ = [
     "create_fmi_panel",
     "create_nmr_panel",
     "has_nmr_curves",
+    # Analytics charts
+    "create_multiwell_overlay",
+    "create_bar_comparison",
+    "create_tornado_plot",
+    "create_histogram_comparison",
+    "create_line_comparison",
+    "create_heatmap",
 ]

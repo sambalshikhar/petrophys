@@ -1,53 +1,73 @@
-# Petrophys notebooks
+# Petrophys Tutorial Curriculum
 
-Worked examples for the `petrophys` library, in three groups. The **foundations** get you
-loading data and running a full interpretation; the **per-property** notebooks each cover one
-computation (read the one you need); the **deep dives** open up how the harder pieces actually
-work. Every notebook runs on the sample wells bundled with the package
-(`petrophys/data/geolink/`), so no external data is needed.
+A progressive, hands-on curriculum that teaches you how to leverage the **petrophys**
+library end-to-end — from loading raw well logs to a full formation evaluation and the
+library's advanced, differentiating capabilities.
 
-```bash
-pip install -e .          # install petrophys from the repo root
-pip install jupyter       # if you don't already have it
-jupyter lab notebooks/
+Every notebook runs entirely on the **bundled sample data** (no downloads) via
+`petrophys.sample(...)` and `petrophys.list_samples(...)`.
+
+## How to use this curriculum
+
+Work through the notebooks **in order** — each builds on concepts from the previous ones.
+Every notebook follows the same rhythm:
+
+1. **Learning goals** — what you'll be able to do afterwards
+2. **Why it matters** — the physics / interpretation context
+3. **Load data** → **step-by-step** with explanation
+4. **Visualize** the result
+5. **Pitfalls & parameter choices**
+6. **Recap** + a **"Try it yourself"** exercise + **what's next**
+
+## Datasets
+
+| Dataset | Wells | Character | Best for |
+|---------|-------|-----------|----------|
+| **Geolink** (North Sea) | `30_6-5` (primary), `15_9-14`, `16_7-1`, `25_5-1` | Clastic, rich curve set, formation tops + per-interval lithology, core PHIC/KH_CORE/SWC | Full clastic formation evaluation, mineral solving, dynamic workflow |
+| **Costa** | `HW-3` … `HW-32` (17 wells) | Carbonate, core PHIE_CC / SW_INPUT / PERM_CC, Archie header params | Carbonate Archie Sw, core calibration, multi-well/field studies |
+
+```python
+import petrophys
+petrophys.list_samples()            # all bundled wells
+petrophys.list_samples("geolink")   # ['15_9-14', '16_7-1', '25_5-1', '30_6-5']
+petrophys.list_samples("costa")     # 17 carbonate wells
+from petrophys.io import read_las
+well = read_las(petrophys.sample("30_6-5"))
 ```
 
-## Foundations
+## Part A — Foundations & Core Science
 
-| Notebook | What it covers |
-|----------|----------------|
-| `00_index` | What the library is and a one-cell sanity check — start here |
-| `01_loading_data` | Read a LAS/DLIS well, find curves, standardize names and units |
-| `02_automated_workflow` | One call from raw logs to a full interpretation |
+| # | Notebook | You will learn |
+|---|----------|----------------|
+| 00 | `00_orientation_and_setup` | What petrophys is, install/extras, data access, the two datasets, how to read this curriculum |
+| 01 | `01_loading_and_inspecting_data` | The `Well`/`Curve` model, headers, curve inventory, units |
+| 02 | `02_qaqc_and_standardization` | Mnemonic aliasing, unit conversion, bad-hole/washout, value-range QC, normalization |
+| 03 | `03_clay_volume` | Vcl from GR (linear/Larionov/Steiber/Clavier), SP, neutron-density; clay resistivity |
+| 04 | `04_porosity` | Density/neutron/sonic/total/effective porosity; hydrocarbon correction |
+| 05 | `05_lithology_and_mineral_solver` | N-D/PEF crossplots; 2- & 3-mineral least-squares solver; deterministic transparency |
+| 06 | `06_formation_water_and_environment` | Rw (SP/salinity), Rmf, temperature profile, invasion |
+| 07 | `07_water_saturation` | Archie + shaly-sand models; Pickett m/n; clastic vs carbonate model selection |
+| 08 | `08_permeability` | Timur/Coates; core poro-perm calibration; impermeable flags |
+| 09 | `09_reservoir_quality_and_net_pay` | RQI/FZI/flow units; BVW/MHI; 3-stage net pay; HCPV/OOIP/OGIP |
 
-## One per property
+## Part B — Integrated & Advanced Workflows
 
-| Notebook | What it covers |
-|----------|----------------|
-| `03_clay_volume` | Clay volume — gamma ray vs. neutron-density, and where they disagree |
-| `04_porosity` | Density/neutron/sonic porosity; total vs. effective (clay-bound water) |
-| `05_water_saturation` | Archie and the shaly-sand models; reading Rw and m from a Pickett plot |
-| `06_permeability` | Log estimate vs. core-calibrated permeability |
-| `07_lithology` | Mineral volumes and lithology from the multi-mineral solve |
-| `08_net_pay` | Net rock → reservoir → pay, and the cutoffs behind them |
+| # | Notebook | You will learn |
+|---|----------|----------------|
+| 10 | `10_dynamic_workflow_glass_box` | Auto method selection, 10-module pipeline, step traces, overrides, zoned-by-formation |
+| 11 | `11_formation_and_interval_analysis` | Tops CSV, zones/subzones, per-interval & formation-level summaries |
+| 12 | `12_core_calibration_and_digital_core` | Core→log calibration; digital-core facies (K-means), XRF, grain size, geomechanics |
+| 13 | `13_ml_curve_imputation` | Pretrained XGBoost geolink model; impute missing curves; confidence |
+| 14 | `14_nmr_petrophysics` | NMR T2 bins; SDR & Coates permeability; BVI/FFI; NMR vs D-N porosity |
+| 15 | `15_capillary_pressure_saturation_height` | J-function, Brooks–Corey fitting, Pc↔height, log-based Sw-height |
+| 16 | `16_borehole_image_fmi` | FMI pads → oriented image, equalization, azimuthal coverage |
+| 17 | `17_visualization_masterclass` | XML templates, adaptive viewer, all crossplots, specialist panels, batch export |
+| 18 | `18_multiwell_field_study` | Costa 17-well batch, normalization, cross-well comparison, portfolio summary |
 
-## Visualization
+## Runtime
 
-| Notebook | What it covers |
-|----------|----------------|
-| `09_plotting` | The standard displays — triple combo, crossplots, Pickett |
+Notebooks are authored and verified against the **`xtts_env`** conda environment
+(registered Jupyter kernel: **Python (xtts_env)**). Optional ML notebooks (12, 13) require
+`scikit-learn`, `xgboost`, `joblib`.
 
-## Deep dives
-
-How the harder pieces work under the hood — these go past usage into the method and the evidence.
-
-| Notebook | What it covers |
-|----------|----------------|
-| `10_deterministic_mineral_solver` | The mineral solver as a linear system — the actual A·x=b at one depth |
-| `11_glass_box_dynamic_workflow` | The workflow's decision trace, and how it reroutes on a sparser well |
-| `12_petrophysics_for_llm_agents` | JSON traces, statistics, and QC facts as an agent backend |
-| `13_core_calibration_and_validation` | Porosity and permeability against core, and validation vs. NPD ground truth |
-| `14_fmi_pads_to_oriented_image` | Rotating FMI buttons to azimuth, and image equalization |
-
-The deep-dive notebooks ship executed, with their figures embedded. `14` needs a processed FMI
-DLIS (set `PETROPHYS_FMI_DLIS`); the rest run on the bundled wells as-is.
+> The previous notebook set is preserved unchanged under [`legacy/`](legacy/).
