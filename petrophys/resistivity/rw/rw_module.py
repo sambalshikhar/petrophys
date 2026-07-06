@@ -211,6 +211,13 @@ class RwModule:
 
                 ssp = sp_clean - sp_shale
                 rw = rw_from_sp(sp_clean, sp_shale, rmf, temperature)
+                # The median of per-sample Rw corresponds to the MEDIAN profile
+                # temperature, not the reference/BHT temperature; record that
+                # basis so downstream labels can state it (and Arps-shift it).
+                temp_arr = np.asarray(temperature, dtype=float)
+                eff_temp = (
+                    float(np.nanmedian(temp_arr)) if temp_arr.ndim else float(temp_arr)
+                )
                 return RwResult(
                     rw=float(np.nanmedian(np.asarray(rw, dtype=float))),
                     method="sp_clean_water",
@@ -220,6 +227,7 @@ class RwModule:
                         "sp_clean_mv": float(sp_clean),
                         "sp_shale_mv": float(sp_shale),
                         "ssp_mv": float(ssp),
+                        "rw_temperature_f": eff_temp,
                     },
                 )
 

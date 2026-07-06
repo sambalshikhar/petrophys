@@ -68,7 +68,7 @@ def calculate_net_gross(
     mask = (depth >= top_depth) & (depth <= bottom_depth)
     sample_thickness = depth_step_array(depth)
     gross_thickness = float(np.sum(sample_thickness[mask]))
-    if gross_thickness <= 0:
+    if gross_thickness <= 0 and np.any(mask):
         gross_thickness = abs(bottom_depth - top_depth)
 
     # Get flags

@@ -306,7 +306,8 @@ class DepthIndex:
         bottom = self.bottom
         if top is None or bottom is None:
             raise ValueError("Cannot resample an empty/non-finite DepthIndex")
-        new_depth = np.arange(top, bottom + new_step, new_step)
+        new_depth = np.arange(top, bottom + new_step / 2, new_step)
+        new_depth = new_depth[new_depth <= bottom + 1e-9]
         return DepthIndex(new_depth, self.unit)
 
     def __len__(self) -> int:

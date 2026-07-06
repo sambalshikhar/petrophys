@@ -96,6 +96,7 @@ def export_interpretation_plots(
                     source_file=str(file_path),
                     output_file=str(export_path),
                     success=True,
+                    warnings=list(getattr(plot, "warnings", []) or []),
                 )
             )
         except Exception as exc:

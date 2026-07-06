@@ -94,7 +94,7 @@ class QuickLook:
         top_depth, bottom_depth = resolve_well_depth_range(well, top_depth, bottom_depth)
 
         result = QuickLookResult(
-            well_name=well.header.get("WELL", "Unknown"),
+            well_name=well.name or "Unknown",
             top_depth=top_depth,
             bottom_depth=bottom_depth
         )

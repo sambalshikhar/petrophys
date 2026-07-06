@@ -141,6 +141,7 @@ def create_bar_comparison(
             series_labels = [None] if mat.shape[0] == 1 else [f"series {i}" for i in range(mat.shape[0])]
 
     cats = list(categories)
+    order = None
     if sort_by is not None:
         order = np.argsort(mat[sort_by])
         if descending:
@@ -154,9 +155,23 @@ def create_bar_comparison(
     width = 0.8 / n_series
     default_colors = colors or plt.get_cmap("tab10")(np.linspace(0, 1, max(n_series, 2)))
 
+    # A single series with one color per category means per-bar coloring
+    # (e.g. red/orange/green status bars); reorder with any sort applied.
+    per_bar = (
+        n_series == 1
+        and not isinstance(default_colors, np.ndarray)
+        and len(default_colors) == n_cat
+        and n_cat > 1
+    )
+    if per_bar and order is not None:
+        default_colors = [default_colors[i] for i in order]
+
     for s in range(n_series):
         offset = (s - (n_series - 1) / 2) * width
-        color = default_colors[s % len(default_colors)] if not isinstance(default_colors, np.ndarray) else default_colors[s]
+        if per_bar:
+            color = list(default_colors)
+        else:
+            color = default_colors[s % len(default_colors)] if not isinstance(default_colors, np.ndarray) else default_colors[s]
         if horizontal:
             bars = ax.barh(idx + offset, mat[s], height=width, color=color, label=series_labels[s])
         else:

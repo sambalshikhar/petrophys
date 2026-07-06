@@ -161,10 +161,12 @@ def read_ascii(
             delimiter = r'\s+'  # whitespace
 
     if column_names:
-        skiprow_indices = set(range(skiprows + header_line + 1))
+        # column_names means the file has no header row: only skip rows the
+        # caller explicitly asked for (plus a units line, if any).
+        skiprow_indices = set(range(skiprows))
         if units_line is not None:
             skiprow_indices.add(units_line)
-        read_skiprows = sorted(skiprow_indices)
+        read_skiprows = sorted(skiprow_indices) if skiprow_indices else None
     else:
         skiprow_indices = set(range(skiprows))
         if units_line is not None and units_line != header_line:

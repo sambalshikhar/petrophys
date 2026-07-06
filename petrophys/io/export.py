@@ -98,7 +98,8 @@ def export_las(
     curves : list of str, optional
         Specific curves to export (default: all)
     **kwargs
-        Additional arguments
+        Additional arguments passed to lasio's LASFile.write
+        (e.g. ``fmt="%.8f"`` to control numeric precision)
 
     Examples
     --------
@@ -233,7 +234,7 @@ def export_las(
         )
 
     # Write file
-    las.write(str(filepath), version=version)
+    las.write(str(filepath), version=version, **kwargs)
 
 
 def export_csv(

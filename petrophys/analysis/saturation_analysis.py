@@ -85,7 +85,9 @@ class SaturationAnalysis:
         movability_labels = np.full(n_samples, "NO_INVASION_DATA", dtype=object)
         if mhi is not None:
             mhi_classes = MhiClassification.classify(mhi)
-            movability_labels[:] = "MINIMAL_MOVEABLE_HC"
+            # Only samples with finite MHI get a definite class; NaN samples
+            # keep NO_INVASION_DATA rather than a false MINIMAL label.
+            movability_labels[np.isfinite(mhi)] = "MINIMAL_MOVEABLE_HC"
             movability_labels[mhi_classes == MhiClassification.LOW_MOVEABLE_HC] = "LOW_MOVEABLE_HC"
             movability_labels[mhi_classes == MhiClassification.MODERATE_MOVEABLE_HC] = "MODERATE_MOVEABLE_HC"
             movability_labels[mhi_classes == MhiClassification.HIGH_MOVEABLE_HC] = "HIGH_MOVEABLE_HC"

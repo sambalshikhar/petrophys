@@ -34,9 +34,10 @@ ALIAS_MAP: Dict[str, List[str]] = {
     # NOTE: AT10 (10in array induction) and RLLS (laterolog shallow) belong to RSHA,
     # not here. They were duplicated across RMED/RSHA; with a last-write-wins reverse
     # map that silently mislabeled them. AT30 (30in) is the medium curve and stays.
+    # RESS and SFLU moved to RSHA: the rest of the library (analysis, workflow
+    # gating, log viewer) treats RESS as shallow/flushed-zone, and SFL-family
+    # curves are the shallow member of the classic DIL-SFL suite.
     "RMED": [
-        "SFLU",
-        "RESS",
         "ILM",
         "AT30",
         "RM",
@@ -52,7 +53,9 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "AT10",
         "AT20",
         "SFL",
+        "SFLU",
         "RSFL",
+        "RESS",
         "RLA1",
         "RS",
         "RSHAL",
@@ -152,8 +155,10 @@ ALIAS_MAP: Dict[str, List[str]] = {
     "SP": ["SP", "SPON", "SSP", "PSP"],
     # Bit Size (BS)
     "BS": ["BS", "BIT", "BITSZ", "BIT_SIZE"],
-    # Depth variants
-    "DEPTH": ["DEPT", "DEPTH", "MD", "TVD", "TVDSS", "DEPH"],
+    # Depth variants. TVD/TVDSS are deliberately NOT aliased to DEPTH: they are
+    # physically distinct from measured depth and must not collide with it on
+    # deviated wells.
+    "DEPTH": ["DEPT", "DEPTH", "MD", "DEPH"],
     # Temperature
     "TEMP": ["TEMP", "TEMPERATURE", "BHT", "TLOG", "GTMP", "CMR_TEMP"],
     # Interpreted porosity and shale/clay volume

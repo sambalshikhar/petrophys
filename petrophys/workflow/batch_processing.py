@@ -133,7 +133,7 @@ class BatchProcessor:
 
     def _process_single_well(self, well: "Well", file_path: str) -> BatchResult:
         """Process a single well."""
-        well_name = well.header.get("WELL", Path(file_path).stem)
+        well_name = well.name or Path(file_path).stem
 
         if self.workflow_func is None:
             # Default: run standard workflow

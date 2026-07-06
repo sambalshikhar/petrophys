@@ -41,7 +41,7 @@ MINERAL_PROPERTIES: Dict[str, Dict[str, float]] = {
     },
     "gypsum": {
         "density": 2.31,
-        "slowness": 83.0,
+        "slowness": 52.5,
         "nphi": 0.49,
         "pef": 3.99,
         "u": 9.2,

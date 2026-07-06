@@ -461,18 +461,26 @@ class DLISReader:
 
             field_names = _channel_field_names(frame, frame_data)
             depth = None
+            converted_unit = None
             for ch, field_name in zip(frame.channels, field_names):
                 if ch.name.upper() in DEPTH_CHANNELS and field_name is not None:
                     raw_depth = np.asarray(frame_data[field_name], dtype=float)
                     if raw_depth.ndim > 1:
                         raw_depth = raw_depth[:, 0]
-                    depth, _ = _convert_depth(
+                    depth, converted_unit = _convert_depth(
                         raw_depth.flatten(),
                         ch.units or "",
                         depth_unit,
                     )
                     break
             if depth is None or _finite_depth_range(depth) is None:
+                continue
+            if converted_unit != depth_unit:
+                warnings.warn(
+                    f"Skipping DLIS frame {frame.name!r}: depth unit "
+                    f"{converted_unit!r} could not be converted to "
+                    f"{depth_unit!r}."
+                )
                 continue
 
             curves: List[Dict[str, Any]] = []

@@ -133,7 +133,8 @@ def add_zone_shading(
     for i, zone in enumerate(zones):
         top = zone.get("top", 0)
         bottom = zone.get("bottom", 0)
-        name = zone.get("name", f"Zone {i+1}")
+        # "label" is accepted as an alias of "name".
+        name = zone.get("name", zone.get("label", f"Zone {i+1}"))
         color = zone.get("color", default_colors[i % len(default_colors)])
 
         # Add horizontal span

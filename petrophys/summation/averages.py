@@ -46,7 +46,7 @@ def calculate_zone_averages(
     mask = (depth >= top_depth) & (depth <= bottom_depth)
 
     if curves is None:
-        curves = [c.name for c in well.curves]
+        curves = list(well.curves)  # Well.curves is a list of names
 
     if use_geometric is None:
         use_geometric = ["PERM", "K", "KLOG", "PERMEABILITY"]

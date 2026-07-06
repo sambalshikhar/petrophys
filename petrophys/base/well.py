@@ -273,6 +273,12 @@ class Well:
         """Set or add a curve."""
         mnemonic = mnemonic.upper()
         if isinstance(value, Curve):
+            n_samples = self.n_samples
+            if n_samples and len(value.data) != n_samples:
+                raise ValueError(
+                    f"Curve {mnemonic!r} has {len(value.data)} samples but "
+                    f"well has {n_samples}; lengths must match."
+                )
             value.mnemonic = mnemonic
             self._curves[mnemonic] = value
         else:

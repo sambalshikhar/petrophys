@@ -214,7 +214,20 @@ class NumericalStatisticalAnalysis:
         sh_min = np.full(n_samples, np.nan, dtype=float)
         if rhob is not None:
             valid = np.isfinite(rhob)
-            sv[valid] = np.cumsum((rhob[valid] * 1000.0) * 9.81 * dz_m[valid]) / 1e6
+            if np.any(valid):
+                # Overburden must be integrated from surface, not from the top
+                # of the log. Approximate the unlogged section above the
+                # shallowest density sample with the mean logged density; this
+                # is a first-order assumption, but omitting the term entirely
+                # gives S_V far below hydrostatic pore pressure.
+                rho_mean = float(np.nanmean(rhob[valid]))
+                top_depths = depth_m[valid]
+                top_depths = top_depths[np.isfinite(top_depths)]
+                top_m = float(np.abs(top_depths).min()) if top_depths.size else 0.0
+                surface_term = rho_mean * 1000.0 * 9.81 * top_m / 1e6
+                sv[valid] = surface_term + np.cumsum(
+                    (rhob[valid] * 1000.0) * 9.81 * dz_m[valid]
+                ) / 1e6
         finite_depth_m = depth_m[np.isfinite(depth_m)]
         if finite_depth_m.size:
             seawater = (1025.0 * 9.81 * 100.0 / 1e6) if np.nanmax(np.abs(finite_depth_m)) > 200.0 else 0.0

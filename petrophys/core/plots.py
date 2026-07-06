@@ -159,7 +159,7 @@ def plot_poro_perm(
         & ~np.isnan(core.permeability)
         & (core.permeability > 0)
     )
-    ax.scatter(
+    scatter = ax.scatter(
         core.porosity[valid],
         core.permeability[valid],
         c=core.depth[valid],
@@ -191,7 +191,9 @@ def plot_poro_perm(
     ax.set_title(title)
     ax.grid(True, alpha=0.3, which="both")
 
-    cbar = fig.colorbar(ax.collections[0], ax=ax)
+    # Use this call's own scatter handle: ax.collections[0] would grab a
+    # previous dataset's points when the caller reuses the axes.
+    cbar = fig.colorbar(scatter, ax=ax)
     cbar.set_label("Depth")
 
     return fig, ax

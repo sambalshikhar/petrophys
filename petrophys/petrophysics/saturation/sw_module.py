@@ -17,6 +17,7 @@ Lithology can be a single string (applied globally) or a per-depth
 numpy array for interval-based lithology control.
 """
 
+import warnings
 from typing import Dict, Optional, Union
 from dataclasses import dataclass
 from enum import Enum
@@ -479,7 +480,13 @@ class SaturationModule:
         """Estimate clay resistivity from shale intervals."""
         shale_mask = vcl > 0.9
         if np.any(shale_mask):
-            return float(np.nanmean(rt[shale_mask]))
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                val = float(np.nanmean(rt[shale_mask]))
+            # Shale samples may have no finite RT; a NaN Rcl would poison
+            # every shaly-routed Sw in the well, so fall through to the default.
+            if np.isfinite(val):
+                return val
         return 5.0  # Default
 
 
