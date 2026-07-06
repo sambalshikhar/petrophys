@@ -98,7 +98,24 @@ class UnitRegistry:
         "ohmm": 1.0,
         "ohm-m": 1.0,
         "ohm.ft": 0.3048,
+        "ohmft": 0.3048,
+        "ohm-ft": 0.3048,
     }
+
+
+def _lookup(registry: dict, unit: str, quantity: str) -> float:
+    """Return the conversion factor for ``unit`` or raise on unknown units.
+
+    A silent factor of 1.0 for an unrecognized unit string would return a
+    confidently wrong number, which is worse than failing loudly.
+    """
+    try:
+        return registry[unit]
+    except KeyError:
+        supported = ", ".join(sorted(registry))
+        raise ValueError(
+            f"Unrecognized {quantity} unit '{unit}'. Supported units: {supported}"
+        ) from None
 
 
 class UnitConverter:
@@ -150,8 +167,8 @@ class UnitConverter:
         to_unit = to_unit.lower()
 
         # Convert to meters first
-        to_m = UnitRegistry.DEPTH_TO_M.get(from_unit, 1.0)
-        from_m = UnitRegistry.DEPTH_TO_M.get(to_unit, 1.0)
+        to_m = _lookup(UnitRegistry.DEPTH_TO_M, from_unit, "depth")
+        from_m = _lookup(UnitRegistry.DEPTH_TO_M, to_unit, "depth")
 
         return value * to_m / from_m
 
@@ -180,6 +197,13 @@ class UnitConverter:
         """
         from_unit = from_unit.upper()
         to_unit = to_unit.upper()
+
+        for unit in (from_unit, to_unit):
+            if unit not in ("F", "C", "K"):
+                raise ValueError(
+                    f"Unrecognized temperature unit '{unit}'. "
+                    "Supported units: C, F, K"
+                )
 
         # First convert to Celsius
         if from_unit == "F":
@@ -224,8 +248,8 @@ class UnitConverter:
         to_unit = to_unit.lower().replace(" ", "")
 
         # Convert to g/cm³ first
-        to_gcc = UnitRegistry.DENSITY_TO_G_CM3.get(from_unit, 1.0)
-        from_gcc = UnitRegistry.DENSITY_TO_G_CM3.get(to_unit, 1.0)
+        to_gcc = _lookup(UnitRegistry.DENSITY_TO_G_CM3, from_unit, "density")
+        from_gcc = _lookup(UnitRegistry.DENSITY_TO_G_CM3, to_unit, "density")
 
         return value * to_gcc / from_gcc
 
@@ -256,8 +280,8 @@ class UnitConverter:
         to_unit = to_unit.lower()
 
         # Convert to fraction first
-        to_frac = UnitRegistry.POROSITY_TO_FRACTION.get(from_unit, 1.0)
-        from_frac = UnitRegistry.POROSITY_TO_FRACTION.get(to_unit, 1.0)
+        to_frac = _lookup(UnitRegistry.POROSITY_TO_FRACTION, from_unit, "porosity")
+        from_frac = _lookup(UnitRegistry.POROSITY_TO_FRACTION, to_unit, "porosity")
 
         return value * to_frac / from_frac
 
@@ -284,11 +308,13 @@ class UnitConverter:
         float or np.ndarray
             Converted slowness value(s)
         """
-        from_unit = from_unit.lower().replace("μ", "u")
-        to_unit = to_unit.lower().replace("μ", "u")
+        # Fold both micro glyphs: GREEK SMALL LETTER MU (U+03BC) and the
+        # MICRO SIGN (U+00B5) that most keyboards and LAS files produce.
+        from_unit = from_unit.lower().replace("μ", "u").replace("µ", "u")
+        to_unit = to_unit.lower().replace("μ", "u").replace("µ", "u")
 
-        to_usft = UnitRegistry.SLOWNESS_TO_US_FT.get(from_unit, 1.0)
-        from_usft = UnitRegistry.SLOWNESS_TO_US_FT.get(to_unit, 1.0)
+        to_usft = _lookup(UnitRegistry.SLOWNESS_TO_US_FT, from_unit, "slowness")
+        from_usft = _lookup(UnitRegistry.SLOWNESS_TO_US_FT, to_unit, "slowness")
 
         return value * to_usft / from_usft
 
@@ -318,8 +344,8 @@ class UnitConverter:
         from_unit = from_unit.lower().replace(" ", "")
         to_unit = to_unit.lower().replace(" ", "")
 
-        to_ohmm = UnitRegistry.RESISTIVITY_TO_OHM_M.get(from_unit, 1.0)
-        from_ohmm = UnitRegistry.RESISTIVITY_TO_OHM_M.get(to_unit, 1.0)
+        to_ohmm = _lookup(UnitRegistry.RESISTIVITY_TO_OHM_M, from_unit, "resistivity")
+        from_ohmm = _lookup(UnitRegistry.RESISTIVITY_TO_OHM_M, to_unit, "resistivity")
 
         return value * to_ohmm / from_ohmm
 

@@ -1173,7 +1173,14 @@ class DynamicWorkflow:
 
     def _can_vclay(self, well: "Well") -> bool:
         # Accept the GR family: a CGR/SGR-only well still supports GR-based VCL.
-        return self._has_curve(well, "GR", "CGR", "SGR", "HSGR", "HCGR")
+        # The step also supports SP-only and neutron-density-only wells, so a
+        # GR-less well must not be silently left without any clay volume
+        # (downstream Sw would otherwise treat every sample as clean sand).
+        return (
+            self._has_curve(well, "GR", "CGR", "SGR", "HSGR", "HCGR")
+            or self._has_curve(well, "SP")
+            or (self._has_curve(well, "NPHI", "PHIN") and self._has_curve(well, "RHOB"))
+        )
 
     def _can_rcl(self, well: "Well") -> bool:
         return self._has_curve(well, "RDEP", "RT") and self._has_curve(well, "VCL", "VCLAY")
@@ -1183,7 +1190,7 @@ class DynamicWorkflow:
         return (
             self._has_curve(well, "RHOB")
             and has_discriminator
-            and self._has_curve(well, "VCL")
+            and self._has_curve(well, "VCL", "VCLAY")
             and self._has_curve(well, "PHIE", "PHIT")
         )
 

@@ -89,6 +89,10 @@ Each calculation module can be used independently for maximum flexibility.
    if result.phi_sec is not None:
        print(f"Secondary porosity: {result.phi_sec.mean():.3f}")
 
+   # Add the results to the well for downstream modules (e.g. Sw)
+   well.add_curve("PHIT", result.phit, "v/v", "Total Porosity")
+   well.add_curve("PHIE", result.phie, "v/v", "Effective Porosity")
+
 **Water Saturation**
 
 .. code-block:: python
@@ -97,7 +101,8 @@ Each calculation module can be used independently for maximum flexibility.
        calculate_sw, archie, simandoux, indonesia, dual_water, waxman_smits
    )
 
-   # Auto-routed Sw (selects model based on VCL, lithology, salinity)
+   # Auto-routed Sw (selects model based on VCL, lithology, salinity).
+   # Uses the VCL and PHIE curves added to the well in the sections above.
    sw = calculate_sw(
        well, rw=0.05,
        lithology="clastic",
@@ -190,7 +195,8 @@ per-interval lithology CSV file:
    )
    result = run_dynamic_workflow(well, config)
 
-   # LITHO_CLASS curve is added to well automatically
+   # The lithology CSV routes the per-depth saturation model
+   # and the per-depth net pay cutoffs
 
 Lithology names are normalized automatically:
 ``sandstone/sand/sst`` → ``clastic``,
@@ -327,26 +333,24 @@ Visualization
 
 .. code-block:: python
 
-   from petrophys.visualization import create_triple_combo, TripleComboPlot
+   from petrophys.visualization import create_triple_combo
 
    plot = create_triple_combo(well, figsize=(14, 14))
    plot.show()
 
-   # Zoomed with custom ranges
-   tc = TripleComboPlot(well, figsize=(14, 10))
-   tc.create(depth_range=(2200, 2850), gr_range=(0, 120),
-             rt_range=(0.5, 500), rhob_range=(2.0, 2.85),
-             nphi_range=(0.40, -0.10))
-   tc.show()
+   # Zoomed to a depth range
+   tc = create_triple_combo(well, depth_range=(2200, 2850), figsize=(14, 10))
+   tc.save("triple_combo.png")
 
 **Interpretation Plot (8 Tracks)**
 
 .. code-block:: python
 
-   from petrophys.visualization import create_interpretation_plot
+   from petrophys.visualization import create_log_viewer
 
-   # GR | Resistivity | Density-Neutron | VCL | Porosity | Sw | Perm | Net Pay
-   interp = create_interpretation_plot(well, depth_range=(2200, 3200))
+   # Lithology | GR/VCL | Resistivity | N-D-Sonic | Porosity | Sw | Perm | Flags
+   interp = create_log_viewer(well, template_defaults="interpretation",
+                              depth_range=(2200, 3200))
    interp.show()
 
 **XML Template Log Viewer**
@@ -457,8 +461,9 @@ Load core plug measurements and calibrate log curves against lab data.
    from petrophys.core import calibrate_porosity, calibrate_permeability
 
    # Compare core vs log porosity (R², bias, RMSE)
+   # Returns a CalibrationResult dataclass; use attribute access
    cal_phi = calibrate_porosity(well, core, log_curve="PHIE")
-   print(f"R²={cal_phi['r_squared']:.3f}, Bias={cal_phi['bias']:.4f}")
+   print(f"R²={cal_phi.r_squared:.3f}, Bias={cal_phi.bias:.4f}")
 
    # Compare core vs log permeability
    cal_k = calibrate_permeability(well, core, log_curve="PERM")
@@ -470,8 +475,9 @@ Load core plug measurements and calibrate log curves against lab data.
    from petrophys.core import fit_poro_perm_transform, apply_poro_perm_transform
 
    # Fit log(K) = A * PHI + B from core data
+   # Returns a PoroPermTransform dataclass; use attribute access
    transform = fit_poro_perm_transform(core)
-   print(f"A={transform['A']:.2f}, B={transform['B']:.2f}, R²={transform['r_squared']:.3f}")
+   print(f"A={transform.A:.2f}, B={transform.B:.2f}, R²={transform.r_squared:.3f}")
 
    # Apply to log porosity to get core-calibrated permeability
    perm_calibrated = apply_poro_perm_transform(well, transform)
@@ -484,7 +490,7 @@ Load core plug measurements and calibrate log curves against lab data.
    from petrophys.core import correct_porosity_with_grain_density
 
    # Use core grain density instead of assumed matrix density
-   phie_corrected = correct_porosity_with_grain_density(well, core, rho_fl=1.0)
+   phie_corrected = correct_porosity_with_grain_density(well, core, rho_fluid=1.0)
    well.add_curve("PHIE_CORE", phie_corrected, "v/v", "Core-Corrected Porosity")
 
 **Archie m Estimation**
@@ -493,9 +499,18 @@ Load core plug measurements and calibrate log curves against lab data.
 
    from petrophys.core import estimate_archie_m
 
-   # Estimate cementation exponent from core Sw and Rt
-   m_result = estimate_archie_m(core, rw=0.04)
-   print(f"Estimated m = {m_result['m']:.2f}")
+   # Estimate cementation exponent from core Sw and the well's Rt curve.
+   # The CoreData must carry water saturation (sw).
+   core_sw = CoreData.from_dataframe(
+       pd.DataFrame({
+           "depth": [2500.0, 2510.0, 2520.0, 2530.0, 2540.0],
+           "porosity": [0.18, 0.22, 0.19, 0.25, 0.21],
+           "sw": [0.45, 0.35, 0.50, 0.30, 0.40],
+       }),
+       depth_col="depth", porosity_col="porosity", sw_col="sw",
+   )
+   m_result = estimate_archie_m(well, core_sw, rw=0.04)
+   print(f"Estimated m = {m_result['m_mean']:.2f}")
 
 **Visualization**
 
@@ -503,8 +518,8 @@ Load core plug measurements and calibrate log curves against lab data.
 
    from petrophys.core import plot_calibration, plot_poro_perm, plot_core_on_logs
 
-   # Core vs log comparison scatter plots
-   plot_calibration(well, core, curve="porosity")
+   # Core vs log comparison scatter plot (pass the CalibrationResult)
+   plot_calibration(cal_phi)
    plot_poro_perm(core, transform)
    plot_core_on_logs(well, core)
 
@@ -651,7 +666,7 @@ Validation and Querying
    print(len(tops))        # number of intervals
    print(tops.names)       # list of interval names
    print(tops[0])          # first interval (by index)
-   print(tops["Brent"])    # by name
+   print(tops["Brent Group"])    # by name (exact match, case-insensitive)
 
    # Add / remove
    tops.add(Formation("New Fm", 3000, 3200))

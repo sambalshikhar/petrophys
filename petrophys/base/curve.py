@@ -7,6 +7,7 @@ well log curve with associated metadata, units, and data quality flags.
 
 from typing import Optional, Union, Dict, Any, List
 from dataclasses import dataclass, field
+import copy
 import numpy as np
 import pandas as pd
 
@@ -216,7 +217,7 @@ class Curve:
             unit=self.unit,
             depth=self._depth.copy() if self._depth is not None else None,
             depth_unit=self.depth_unit,
-            metadata=self.metadata
+            metadata=copy.deepcopy(self.metadata)
         )
 
     def rename(self, new_mnemonic: str) -> "Curve":

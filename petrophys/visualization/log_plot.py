@@ -118,7 +118,15 @@ class LogPlot:
         if xlim:
             ax.set_xlim(xlim)
 
-        ax.set_xlabel(f"{curve_name} [{curve.unit}]")
+        # On a multi-curve track the legend names the curves; keep the axis
+        # label from silently becoming whichever curve was added last.
+        new_label = f"{curve_name} [{curve.unit}]"
+        existing = ax.get_xlabel()
+        if existing and existing != new_label:
+            unit_text = f"[{curve.unit}]"
+            ax.set_xlabel(unit_text if existing.endswith(unit_text) else "")
+        else:
+            ax.set_xlabel(new_label)
         ax.legend(loc='upper right', fontsize=8)
 
     def add_fill(

@@ -46,8 +46,8 @@ def vcl_from_nd(
     clip: bool = True
 ) -> Union[float, np.ndarray]:
     """
-    Clay volume from neutron-density crossplot using the
-    3-point (Cl1, Cl2, Clay) formulation.
+    Clay volume from the closed-form 3-point (Cl1, Cl2, Clay)
+    neutron-density formulation, evaluated deterministically per sample.
 
     VclND =
       ((DenCl2 - DenCl1)*(Neu - NeuCl1) - (Den - DenCl1)*(NeuCl2 - NeuCl1))

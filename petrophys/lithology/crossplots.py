@@ -166,44 +166,6 @@ def pef_crossplot_data(
         "u": u,
         "endpoints": endpoints
     }
-
-
-def calculate_apparent_matrix(
-    rhob: np.ndarray,
-    nphi: np.ndarray,
-    rhob_fluid: float = 1.0,
-    nphi_fluid: float = 1.0
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Calculate apparent matrix density and neutron response.
-
-    Parameters
-    ----------
-    rhob : np.ndarray
-        Bulk density
-    nphi : np.ndarray
-        Neutron porosity
-    rhob_fluid : float, optional
-        Fluid density
-    nphi_fluid : float, optional
-        Fluid neutron porosity
-
-    Returns
-    -------
-    tuple
-        (rhob_apparent, nphi_apparent) matrix values
-    """
-    # Calculate density porosity
-    phi_d = (2.65 - rhob) / (2.65 - rhob_fluid)
-    phi_d = np.clip(phi_d, 0.001, 0.999)
-
-    # Back-calculate apparent matrix
-    rhob_ma = (rhob - phi_d * rhob_fluid) / (1 - phi_d)
-    nphi_ma = (nphi - phi_d * nphi_fluid) / (1 - phi_d)
-
-    return rhob_ma, nphi_ma
-
-
 def identify_lithology_zone(
     nphi: float,
     rhob: float

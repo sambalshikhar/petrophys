@@ -130,6 +130,8 @@ print(f"Warnings: {result.warnings}")
 # All computed curves are added to the well automatically:
 # VCL, PHIE, PHIT, PHIS, PHI_SEC, SW, SXO, PERM, BVW, MHI,
 # RQI, FZI, PHI_Z, NET_ROCK, NET_RES, NET_PAY, etc.
+# (MHI needs invaded-zone resistivity, RXO/RSHA; it is not written
+# when Sxo rests on the quick-look fallback)
 ```
 
 ### Granular Module Usage (individual calculations)
@@ -166,7 +168,7 @@ VCL < cutoff (0.3)  →  CLEAN  →  Archie
 
 VCL >= cutoff        →  SHALY:
     Carbonate                    →  Dual Water
-    Clastic + CEC available      →  Waxman-Smits
+    Clastic + CEC + b_coeff      →  Waxman-Smits
     Clastic + salinity >= 20kppm →  Simandoux
     Clastic + salinity < 20kppm  →  Indonesia
 ```

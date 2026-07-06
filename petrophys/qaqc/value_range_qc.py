@@ -28,6 +28,7 @@ VALUE_RANGE_RULES: dict[str, ValueRangeRule] = {
     "RXO": ValueRangeRule(0.01, 2000.0, "nan", ("RXO", "RSHA", "RESS", "MSFL", "SFL")),
     "RDEP": ValueRangeRule(0.01, 2000.0, "nan", ("RDEP", "RT", "RMED", "RESM", "ILD")),
     "GR": ValueRangeRule(0.0, 400.0, "nan", ("GR", "GRC")),
+    "SP": ValueRangeRule(-500.0, 500.0, "nan", ("SP",)),
     "DTC": ValueRangeRule(20.0, 300.0, "nan", ("DTC", "DT")),
     "DTS": ValueRangeRule(20.0, 600.0, "nan", ("DTS", "DTE")),
     "RHOB": ValueRangeRule(1.0, 3.5, "nan", ("RHOB",)),

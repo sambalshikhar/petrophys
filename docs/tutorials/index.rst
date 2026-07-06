@@ -204,7 +204,7 @@ Complete Workflow Example
    from petrophys.io import read_las
    from petrophys.workflow import run_standard_workflow, WorkflowConfig
    from petrophys.summation import calculate_zone_summary
-   from petrophys.visualization import create_interpretation_plot
+   from petrophys.visualization import create_log_viewer
 
    # Load data
    well = read_las("well_data.las")
@@ -243,7 +243,8 @@ Complete Workflow Example
              f"PHIE={summary.avg_phie:.3f}, Sw={summary.avg_sw:.3f}")
 
    # Create plot
-   plot = create_interpretation_plot(result.well, depth_range=(8000, 8400))
+   plot = create_log_viewer(result.well, template_defaults="interpretation",
+                            depth_range=(8000, 8400))
    plot.save("interpretation.png")
 
 Workflow Trace & Transparency
@@ -337,14 +338,15 @@ measurements and calibrating log curves against laboratory data.
            "porosity": [0.18, 0.22, 0.19, 0.25, 0.21, 0.17, 0.23],
            "permeability": [50, 150, 75, 300, 120, 30, 180],
            "grain_density": [2.65, 2.64, 2.66, 2.63, 2.65, 2.67, 2.64],
+           "sw": [0.45, 0.35, 0.50, 0.30, 0.40, 0.55, 0.33],
        }),
        depth_col="depth", porosity_col="porosity",
-       perm_col="permeability", gd_col="grain_density",
+       perm_col="permeability", gd_col="grain_density", sw_col="sw",
    )
 
-   # Calibrate log porosity vs core
+   # Calibrate log porosity vs core (returns a CalibrationResult dataclass)
    cal = calibrate_porosity(well, core, log_curve="PHIE")
-   print(f"R² = {cal['r_squared']:.3f}, Bias = {cal['bias']:.4f}")
+   print(f"R² = {cal.r_squared:.3f}, Bias = {cal.bias:.4f}")
 
    # Fit poro-perm transform: log(K) = A * PHI + B
    transform = fit_poro_perm_transform(core)
@@ -353,12 +355,12 @@ measurements and calibrating log curves against laboratory data.
    # Correct porosity using core grain density
    phie_corr = correct_porosity_with_grain_density(well, core)
 
-   # Estimate cementation exponent m
-   m_est = estimate_archie_m(core, rw=0.04)
-   print(f"Estimated m = {m_est['m']:.2f}")
+   # Estimate cementation exponent m (uses core Sw and the well's Rt curve)
+   m_est = estimate_archie_m(well, core, rw=0.04)
+   print(f"Estimated m = {m_est['m_mean']:.2f}")
 
-   # Visualization
-   plot_calibration(well, core, curve="porosity")
+   # Visualization (plot_calibration takes the CalibrationResult)
+   plot_calibration(cal)
    plot_poro_perm(core, transform)
    plot_core_on_logs(well, core)
 
@@ -387,9 +389,10 @@ The library provides multiple visualization tools for well log analysis.
 
 .. code-block:: python
 
-   from petrophys.visualization import create_interpretation_plot
+   from petrophys.visualization import create_log_viewer
 
-   interp = create_interpretation_plot(well, depth_range=(2200, 3200))
+   interp = create_log_viewer(well, template_defaults="interpretation",
+                              depth_range=(2200, 3200))
    interp.show()
 
 **Density-Neutron crossplot with mineral endpoints:**

@@ -26,9 +26,11 @@ except ImportError:
     HAS_LASIO = False
 
 
-# Wentworth (1922) grain size scale — boundaries in µm, coarse to fine
+# Wentworth (1922) grain size scale, boundaries in µm, coarse to fine.
+# Silt spans 3.9-62.5 µm in four subclasses (4-8 phi); everything below
+# 3.9 µm (1/256 mm) is clay; boulder starts at 256 mm.
 _WENTWORTH = [
-    (2_000_000, "Boulder"),
+    (256_000,   "Boulder"),
     (64_000,    "Cobble"),
     (4_000,     "Pebble"),
     (2_000,     "Granule"),
@@ -37,11 +39,10 @@ _WENTWORTH = [
     (250,       "Medium Sand"),
     (125,       "Fine Sand"),
     (62.5,      "Very Fine Sand"),
-    (31.25,     "Very Coarse Silt"),
-    (15.6,      "Coarse Silt"),
-    (7.8,       "Medium Silt"),
-    (3.9,       "Fine Silt"),
-    (1.95,      "Very Fine Silt"),
+    (31.25,     "Coarse Silt"),
+    (15.6,      "Medium Silt"),
+    (7.8,       "Fine Silt"),
+    (3.9,       "Very Fine Silt"),
     (0.0,       "Clay"),
 ]
 
@@ -230,8 +231,9 @@ class GrainSizeData:
             return np.full(self.n_samples, np.nan)
         phi13 = np.array([um_to_phi(d) for d in self.d13])
         phi87 = np.array([um_to_phi(d) for d in self.d87])
-        # σ = (φ87 - φ13) / 2  (simplified inclusive graphic std dev)
-        return (phi87 - phi13) / 2.0
+        # σ = (φ13 - φ87) / 2  (simplified graphic std dev). d13 < d87 in
+        # diameter, so φ13 > φ87 and the spread is positive.
+        return (phi13 - phi87) / 2.0
 
     def skewness(self) -> np.ndarray:
         """
@@ -245,7 +247,9 @@ class GrainSizeData:
         phi13 = np.array([um_to_phi(d) for d in self.d13])
         phi50 = self.phi_scale()
         phi87 = np.array([um_to_phi(d) for d in self.d87])
-        spread = phi87 - phi13
+        # d13 < d87 in diameter, so the positive phi spread is φ13 - φ87.
+        # (φ87 + φ13 - 2φ50) > 0 when the fine tail (high phi) dominates.
+        spread = phi13 - phi87
         with np.errstate(divide="ignore", invalid="ignore"):
             return np.where(
                 spread > 0,

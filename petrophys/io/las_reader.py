@@ -205,14 +205,21 @@ class LASReader:
                 data_type=DataType.CURVE
             )
 
-            curve = Curve(
-                mnemonic=las_curve.mnemonic,
-                data=las_curve.data,
-                unit=las_curve.unit or "",
-                depth=well._depth,
-                depth_unit=well._depth_unit,
-                metadata=metadata
-            )
+            try:
+                curve = Curve(
+                    mnemonic=las_curve.mnemonic,
+                    data=las_curve.data,
+                    unit=las_curve.unit or "",
+                    depth=well._depth,
+                    depth_unit=well._depth_unit,
+                    metadata=metadata
+                )
+            except ValueError:
+                warnings.warn(
+                    f"Skipping non-numeric LAS curve {las_curve.mnemonic!r}: "
+                    "data could not be converted to float."
+                )
+                continue
 
             well._curves[las_curve.mnemonic.upper()] = curve
 

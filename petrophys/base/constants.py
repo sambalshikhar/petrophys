@@ -88,7 +88,7 @@ class MatrixProperties:
         "gypsum": MineralProperties(
             name="Gypsum",
             density=2.31,
-            slowness=83.0,
+            slowness=52.5,
             nphi=0.49,
             pef=3.99
         ),

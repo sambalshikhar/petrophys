@@ -5,6 +5,7 @@ This module provides the CurveStandardizer class for standardizing
 curve mnemonics and units across wells.
 """
 
+import warnings
 from typing import Optional, List, Dict, Any
 import numpy as np
 
@@ -216,6 +217,10 @@ class CurveStandardizer:
         # Track renamed curves to avoid conflicts
         new_curves = {}
         rename_map = {}
+        # Original mnemonic of the curve currently occupying each standard slot,
+        # so a collision loser can be parked under its own name (never dropped,
+        # never stored under another curve's mnemonic).
+        origin_of = {}
 
         for mnemonic, curve in well._curves.items():
             # Get standard name
@@ -245,18 +250,40 @@ class CurveStandardizer:
 
             _screen_standard_curve_values(new_curve, standard_name)
 
-            # Handle duplicate standard names (keep first or best quality)
+            # Handle duplicate standard names. Both curves always survive:
+            # the winner takes the standard slot, the loser keeps its own
+            # original mnemonic. A curve natively named like the standard
+            # (e.g. a real RDEP alongside an ILD alias) takes the slot.
             if standard_name in new_curves and self.rename_curves:
-                # Check which has more valid data
                 existing = new_curves[standard_name]
-                if new_curve.valid_count() > existing.valid_count():
-                    # Move existing to original name
-                    new_curves[mnemonic] = existing
+                existing_origin = origin_of.get(standard_name, standard_name)
+                incoming_is_native = mnemonic == standard_name
+                if incoming_is_native or new_curve.valid_count() > existing.valid_count():
+                    # Incoming takes the slot; park the previous occupant
+                    # back under its own original mnemonic.
+                    existing.mnemonic = existing_origin
+                    new_curves[existing_origin] = existing
+                    rename_map.pop(existing_origin, None)
                     new_curves[standard_name] = new_curve
-                # else keep existing
+                    origin_of[standard_name] = mnemonic
+                    slot_holder, parked = mnemonic, existing_origin
+                else:
+                    # Existing keeps the slot; park the incoming curve under
+                    # its own original mnemonic.
+                    new_curve.mnemonic = mnemonic
+                    new_curves[mnemonic] = new_curve
+                    rename_map.pop(mnemonic, None)
+                    slot_holder, parked = existing_origin, mnemonic
+                warnings.warn(
+                    f"Curves '{existing_origin}' and '{mnemonic}' both standardize "
+                    f"to '{standard_name}'; '{slot_holder}' takes the "
+                    f"'{standard_name}' slot and '{parked}' keeps its original name."
+                )
             else:
                 target_name = standard_name if self.rename_curves else mnemonic
                 new_curves[target_name] = new_curve
+                if self.rename_curves:
+                    origin_of[standard_name] = mnemonic
 
         # Update well curves
         well._curves = new_curves

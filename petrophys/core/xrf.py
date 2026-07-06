@@ -200,12 +200,24 @@ class XRFData:
     # ---- Core methods ----
 
     def get(self, element: str) -> Optional[np.ndarray]:
-        """Return concentration array for an element, or None if not present."""
+        """Return concentration array for an element, or None if not present.
+
+        Lookup is case-insensitive so both chemical-symbol keys ("Si") and
+        upper-cased LAS mnemonics ("SI") resolve to the same element.
+        """
         # NOTE: `a or b` on numpy arrays raises "truth value ambiguous"; pick
         # explicitly instead.
-        value = self.elements.get(element.upper())
+        value = self.elements.get(element)
         if value is None:
-            value = self.elements.get(element)
+            value = self.elements.get(element.upper())
+        if value is None:
+            value = self.elements.get(element.capitalize())
+        if value is None:
+            folded = element.casefold()
+            for key, data in self.elements.items():
+                if key.casefold() == folded:
+                    value = data
+                    break
         return value
 
     def _ratio(self, num: str, den: str) -> np.ndarray:
@@ -241,7 +253,7 @@ class XRFData:
         K_Al        Illite/feldspar proxy
         Mg_Ca       Dolomite vs calcite — high = dolomite
         Mg_Al       Chlorite proxy
-        S_Fe        Pyrite indicator — FeS₂ has S/Fe ≈ 0.57 by weight
+        S_Fe        Pyrite indicator — FeS₂ has S/Fe ≈ 1.15 by weight
         Ca_Ca_Mg    Calcite fraction in carbonate (Ca/(Ca+Mg))
         Al_Al_Si    Clay fraction (Al/(Al+Si))
         =========== =========================================================

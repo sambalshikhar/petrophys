@@ -54,7 +54,7 @@ well = read_las(petrophys.sample("30_6-5"))
 
 | # | Notebook | You will learn |
 |---|----------|----------------|
-| 10 | `10_dynamic_workflow_glass_box` | Auto method selection, 10-module pipeline, step traces, overrides, zoned-by-formation |
+| 10 | `10_dynamic_workflow_glass_box` | Auto method selection, 18-step pipeline, step traces, overrides, zoned-by-formation |
 | 11 | `11_formation_and_interval_analysis` | Tops CSV, zones/subzones, per-interval & formation-level summaries |
 | 12 | `12_core_calibration_and_digital_core` | Core→log calibration; digital-core facies (K-means), XRF, grain size, geomechanics |
 | 13 | `13_ml_curve_imputation` | Pretrained XGBoost geolink model; impute missing curves; confidence |

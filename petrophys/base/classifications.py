@@ -51,6 +51,8 @@ class VclClassification(Enum):
             result[vcl > 0.50] = cls.SHALY_FORMATION
             return result
 
+        if np.isnan(vcl):
+            return None  # match the array path, where NaN yields None
         if vcl < 0.25:
             return cls.CLEAN_FORMATION
         elif vcl <= 0.50:
@@ -99,6 +101,8 @@ class InvasionClassification(Enum):
             result[ratio > 1.2] = cls.RESISTIVE_INVASION
             return result
 
+        if np.isnan(ratio):
+            return None  # match the array path, where NaN yields None
         if ratio < 0.8:
             return cls.CONDUCTIVE_INVASION
         elif ratio <= 1.2:
@@ -154,6 +158,8 @@ class PorosityClassification(Enum):
             result[phi <= 0.06] = cls.POOR
             return result
 
+        if np.isnan(porosity):
+            return None  # match the array path, where NaN yields None
         phi = porosity / 100 if porosity > 1 else porosity
         if phi > 0.20:
             return cls.EXCELLENT
@@ -211,6 +217,8 @@ class HcSaturationClassification(Enum):
             result[sat >= 0.60] = cls.WATER_BEARING
             return result
 
+        if np.isnan(sw):
+            return None  # match the array path, where NaN yields None
         sat = sw / 100 if sw > 1 else sw
         if sat < 0.20:
             return cls.EXCELLENT_HC
@@ -274,6 +282,8 @@ class PermeabilityClassification(Enum):
             result[perm <= 0.1] = cls.VERY_POOR
             return result
 
+        if np.isnan(perm):
+            return None  # match the array path, where NaN yields None
         if perm > 1000:
             return cls.EXCELLENT
         elif perm > 100:
@@ -334,6 +344,8 @@ class MhiClassification(Enum):
             result[mhi >= 0.9] = cls.MINIMAL_MOVEABLE_HC
             return result
 
+        if np.isnan(mhi):
+            return None  # match the array path, where NaN yields None
         if mhi < 0.5:
             return cls.HIGH_MOVEABLE_HC
         elif mhi < 0.7:
