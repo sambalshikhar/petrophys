@@ -221,7 +221,7 @@ def _resolve_resflag(well: "Well", phi: np.ndarray) -> tuple[np.ndarray, str]:
         resflag = (
             np.isfinite(vcl)
             & np.isfinite(phi)
-            & (vcl < DefaultParameters.VCL_CUTOFF)
+            & (vcl < DefaultParameters.VCL_CUTOFF_CARBONATE)  # strict clean-sample mask (0.30)
             & (phi > DefaultParameters.PHIE_CUTOFF_CLASTIC)
         )
         return resflag, "derived_vcl_phie"

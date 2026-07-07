@@ -38,6 +38,10 @@ KV_CORE          .mD     : Vertical permeability  Klinkenberg-corrected
 SWC              .frac   : Core water saturation
 SOC              .frac   : Core oil saturation
 ~Params ----------------------------------------------------
+CLFL    .mg/l              20366 : Mud Filtrate Cl
+RW      .ohmm                0.7 : Rw
+RMF     .ohmm               0.08 : Rmf
+BHT     .degC                126 : Max Recorded Bottom Hole Temperature
 ~Other -----------------------------------------------------
 ~ASCII -----------------------------------------------------
   176.60999    -999.25   22.09400    -999.25    -999.25    1.00000    -999.25    9.56288  207.34309  206.22461 1999.98706  -11.64973    0.12500    0.44000   36.00000    -999.25    -999.25    -999.25    -999.25    -999.25    -999.25

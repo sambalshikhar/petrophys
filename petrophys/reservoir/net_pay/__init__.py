@@ -7,7 +7,9 @@ from petrophys.reservoir.net_pay.net_pay_module import (
     NetPayResult,
     calculate_net_pay,
 )
-from petrophys.reservoir.net_pay.cutoffs import Cutoffs, default_cutoffs
+from petrophys.reservoir.net_pay.cutoffs import (
+    Cutoffs, STANDARD_CUTOFFS, default_cutoffs, standard_cutoffs,
+)
 from petrophys.reservoir.net_pay.flags import generate_net_flags
 
 __all__ = [
@@ -16,5 +18,7 @@ __all__ = [
     "calculate_net_pay",
     "Cutoffs",
     "default_cutoffs",
+    "STANDARD_CUTOFFS",
+    "standard_cutoffs",
     "generate_net_flags",
 ]

@@ -29,39 +29,58 @@ class NetPayModule:
     """
     Net pay calculator with lithology-aware cutoffs.
 
-    Default cutoffs from design doc:
-        Net Rock:      VCL <= 0.3
-        Net Reservoir: PHIE >= 0.08 (clastics) / >= 0.045 (carbonates)
-        Net Pay:       Sw <= 0.7
+    Unset cutoffs resolve to the generic lithology standards
+    (``STANDARD_CUTOFFS`` in :mod:`petrophys.reservoir.net_pay.cutoffs`):
+        Net Rock:      VCL < 0.40 (clastics) / < 0.30 (carbonates)
+        Net Reservoir: PHIE > 0.08 (clastics) / > 0.045 (carbonates)
+        Net Pay:       Sw < 0.60 (clastics) / < 0.70 (carbonates)
 
     Lithology can be a single string or a per-depth numpy array.
-    When an array is provided, the PHIE cutoff varies by depth:
-    0.08 where lithology == "clastic", 0.045 where "carbonate".
+    When an array is provided, the VCL and PHIE cutoffs vary by depth
+    with the local lithology.
     """
 
     def __init__(
         self,
-        vcl_cutoff: float = DefaultParameters.VCL_CUTOFF,
+        vcl_cutoff: Optional[float] = None,
         phie_cutoff: Optional[float] = None,
-        sw_cutoff: float = DefaultParameters.SW_CUTOFF,
+        sw_cutoff: Optional[float] = None,
         lithology: Union[str, np.ndarray] = "clastic"
     ):
-        self.vcl_cutoff = vcl_cutoff
-        self.sw_cutoff = sw_cutoff
         self.lithology = lithology
         self._explicit_phie_cutoff = phie_cutoff
+        self._explicit_vcl_cutoff = vcl_cutoff
+        self._explicit_sw_cutoff = sw_cutoff
 
-        # For single-string lithology, resolve cutoff immediately
+        # For single-string lithology, resolve cutoffs immediately
         if isinstance(lithology, str):
+            carbonate = lithology.lower() == "carbonate"
             if phie_cutoff is not None:
                 self.phie_cutoff = phie_cutoff
-            elif lithology.lower() == "carbonate":
+            elif carbonate:
                 self.phie_cutoff = DefaultParameters.PHIE_CUTOFF_CARBONATE
             else:
                 self.phie_cutoff = DefaultParameters.PHIE_CUTOFF_CLASTIC
+            if vcl_cutoff is not None:
+                self.vcl_cutoff = vcl_cutoff
+            elif carbonate:
+                self.vcl_cutoff = DefaultParameters.VCL_CUTOFF_CARBONATE
+            else:
+                self.vcl_cutoff = DefaultParameters.VCL_CUTOFF_CLASTIC
+            if sw_cutoff is not None:
+                self.sw_cutoff = sw_cutoff
+            elif carbonate:
+                self.sw_cutoff = DefaultParameters.SW_CUTOFF_CARBONATE
+            else:
+                self.sw_cutoff = DefaultParameters.SW_CUTOFF_CLASTIC
         else:
-            # Per-depth lithology: cutoff built at calculate() time
+            # Per-depth lithology: cutoffs built at calculate() time
             self.phie_cutoff = phie_cutoff
+            self.vcl_cutoff = vcl_cutoff
+            self.sw_cutoff = sw_cutoff
+
+    def _carbonate_mask(self) -> np.ndarray:
+        return np.array([str(v).lower() == "carbonate" for v in self.lithology])
 
     def _build_phie_cutoff(self, n_samples: int) -> Union[float, np.ndarray]:
         """Build per-depth PHIE cutoff array from lithology."""
@@ -73,8 +92,31 @@ class NetPayModule:
 
         # Per-depth lithology array
         cutoff = np.full(n_samples, DefaultParameters.PHIE_CUTOFF_CLASTIC)
-        carb_mask = np.array([str(v).lower() == "carbonate" for v in self.lithology])
-        cutoff[carb_mask] = DefaultParameters.PHIE_CUTOFF_CARBONATE
+        cutoff[self._carbonate_mask()] = DefaultParameters.PHIE_CUTOFF_CARBONATE
+        return cutoff
+
+    def _build_vcl_cutoff(self, n_samples: int) -> Union[float, np.ndarray]:
+        """Build per-depth VCL cutoff array from lithology."""
+        if self._explicit_vcl_cutoff is not None:
+            return self._explicit_vcl_cutoff
+
+        if isinstance(self.lithology, str):
+            return self.vcl_cutoff
+
+        cutoff = np.full(n_samples, DefaultParameters.VCL_CUTOFF_CLASTIC)
+        cutoff[self._carbonate_mask()] = DefaultParameters.VCL_CUTOFF_CARBONATE
+        return cutoff
+
+    def _build_sw_cutoff(self, n_samples: int) -> Union[float, np.ndarray]:
+        """Build per-depth Sw cutoff array from lithology."""
+        if self._explicit_sw_cutoff is not None:
+            return self._explicit_sw_cutoff
+
+        if isinstance(self.lithology, str):
+            return self.sw_cutoff
+
+        cutoff = np.full(n_samples, DefaultParameters.SW_CUTOFF_CLASTIC)
+        cutoff[self._carbonate_mask()] = DefaultParameters.SW_CUTOFF_CARBONATE
         return cutoff
 
     def calculate(
@@ -115,10 +157,12 @@ class NetPayModule:
                 raise ValueError("SW with finite samples required")
 
         phie_cutoff = self._build_phie_cutoff(len(phie))
+        vcl_cutoff = self._build_vcl_cutoff(len(phie))
+        sw_cutoff = self._build_sw_cutoff(len(phie))
 
         flags = generate_net_flags(
             vcl, phie, sw,
-            self.vcl_cutoff, phie_cutoff, self.sw_cutoff
+            vcl_cutoff, phie_cutoff, sw_cutoff
         )
 
         if quality_mask is not None:
@@ -154,9 +198,9 @@ class NetPayModule:
 
 def calculate_net_pay(
     well: "Well",
-    vcl_cutoff: float = 0.3,
+    vcl_cutoff: Optional[float] = None,
     phie_cutoff: Optional[float] = None,
-    sw_cutoff: float = 0.7,
+    sw_cutoff: Optional[float] = None,
     lithology: Union[str, np.ndarray] = "clastic",
     **kwargs
 ) -> NetPayResult:

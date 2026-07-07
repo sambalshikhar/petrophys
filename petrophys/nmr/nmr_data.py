@@ -136,7 +136,8 @@ class NMRData:
 
     Examples
     --------
-    >>> nmr = NMRData.from_csv("nmr.csv")
+    >>> nmr = NMRData.from_las(petrophys.sample("daydream1_cmr"),
+    ...                        mphi_mnemonic="TCMR", mffi_mnemonic="CMFF")
     >>> t2lm  = nmr.t2_lm()
     >>> k_sdr = nmr.permeability_sdr()
     >>> k_tc  = nmr.permeability_coates()
@@ -208,7 +209,7 @@ class NMRData:
         """
         Load NMR data from a CSV file.
 
-        Default column layout matches the standard ``nmr.csv`` format::
+        Default column layout matches the standard MRIL-style CSV export::
 
             Depth, MPHI, P1, P2, P3, P4, P5, P6, P7, P8, MFFI, MBVI
 

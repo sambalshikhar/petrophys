@@ -54,6 +54,7 @@ class LogPlot:
             figsize=self.figsize,
             sharey=True
         )
+        self._track_units = {}
 
         if n_tracks == 1:
             self.axes = [self.axes]
@@ -119,14 +120,24 @@ class LogPlot:
             ax.set_xlim(xlim)
 
         # On a multi-curve track the legend names the curves; keep the axis
-        # label from silently becoming whichever curve was added last.
-        new_label = f"{curve_name} [{curve.unit}]"
-        existing = ax.get_xlabel()
-        if existing and existing != new_label:
-            unit_text = f"[{curve.unit}]"
-            ax.set_xlabel(unit_text if existing.endswith(unit_text) else "")
+        # label from silently becoming whichever curve was added last. Track
+        # the units seen per track: one curve -> "NAME [unit]"; several curves
+        # sharing a unit -> "[unit]"; genuinely mixed units -> blank.
+        # Fraction-porosity spellings count as the same unit.
+        equiv = {"v/v", "m3/m3", "frac", "fraction", "dec", "decimal"}
+        unit = (curve.unit or "").strip()
+        canonical = "v/v" if unit.lower() in equiv else unit
+        if not hasattr(self, "_track_units"):
+            self._track_units = {}
+        info = self._track_units.setdefault(track, {"n": 0, "units": set()})
+        info["n"] += 1
+        info["units"].add(canonical)
+        if info["n"] == 1:
+            ax.set_xlabel(f"{curve_name} [{unit}]")
+        elif len(info["units"]) == 1:
+            ax.set_xlabel(f"[{next(iter(info['units']))}]")
         else:
-            ax.set_xlabel(new_label)
+            ax.set_xlabel("")
         ax.legend(loc='upper right', fontsize=8)
 
     def add_fill(

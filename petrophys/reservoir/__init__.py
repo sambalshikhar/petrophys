@@ -11,6 +11,8 @@ This umbrella module contains tools for:
 from petrophys.reservoir.bvw import calculate_bvw, BvwModule
 from petrophys.reservoir.mhi import calculate_mhi, MhiModule
 from petrophys.reservoir.net_pay import (
+    STANDARD_CUTOFFS,
+    standard_cutoffs,
     calculate_net_pay,
     NetPayModule,
     NetPayResult,
@@ -37,6 +39,8 @@ __all__ = [
     "calculate_mhi",
     "MhiModule",
     "calculate_net_pay",
+    "STANDARD_CUTOFFS",
+    "standard_cutoffs",
     "NetPayModule",
     "NetPayResult",
     "RockQualityModule",
