@@ -87,6 +87,7 @@ petrophys = [
     "data/*.csv",
     "data/*.md",
     "data/costa/*.las",
+    "data/daydream/*.las",
     "data/geolink/*.las",
 ]
 

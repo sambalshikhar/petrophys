@@ -1139,6 +1139,7 @@ def test_porosity_phit_falls_back_to_phid_where_nphi_missing(record_route):
                 rmf_at_meas_temp=0.2,
                 salinity_ppm=35000.0,
                 sw_model="auto",
+                vcl_cutoff=0.3,  # pin the routing threshold; the standard default is 0.40
                 lithology="clastic",
                 skip_steps=["vclay", "lithology"],
             ),
@@ -1176,6 +1177,7 @@ def test_saturation_uses_vclay_when_vcl_alias_is_missing(record_route):
             rw=0.05,
             salinity_ppm=35000.0,
             sw_model="auto",
+            vcl_cutoff=0.3,  # pin the routing threshold; the standard default is 0.40
             skip_steps=["vclay", "lithology"],
         ),
         record_route,

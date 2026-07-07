@@ -87,9 +87,9 @@ class WorkflowConfig:
     mud_has_clay_or_kcl: bool = False
 
     # Cutoffs
-    vcl_cutoff: float = 0.3
+    vcl_cutoff: float = 0.40   # clastic standard (STANDARD_CUTOFFS)
     phie_cutoff: float = 0.08
-    sw_cutoff: float = 0.7
+    sw_cutoff: float = 0.60
 
     # VCL parameters
     gr_min: float = 20.0

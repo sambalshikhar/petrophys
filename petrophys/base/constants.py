@@ -595,11 +595,20 @@ class DefaultParameters:
     ARCHIE_N = 2.0
     ARCHIE_BY_LITHOLOGY = ArchieParameterDefaults.as_dict()
 
-    # Net pay cutoffs
-    VCL_CUTOFF = 0.30
+    # Net pay cutoffs - generic lithology standards, one source of truth
+    # (exposed as STANDARD_CUTOFFS in petrophys.reservoir.net_pay.cutoffs):
+    #   clastic   : VCL < 0.40, PHIE > 0.08,  Sw < 0.60
+    #   carbonate : VCL < 0.30, PHIE > 0.045, Sw < 0.70
+    # (carbonates produce from lower porosity and at higher Sw than clastics;
+    #  projects may override, e.g. the Costa case studies screen the high-phi
+    #  Kharaib with a tighter 0.10 / 0.60 set.)
+    VCL_CUTOFF_CLASTIC = 0.40
+    VCL_CUTOFF_CARBONATE = 0.30
     PHIE_CUTOFF_CLASTIC = 0.08
     PHIE_CUTOFF_CARBONATE = 0.045
-    SW_CUTOFF = 0.70
+    SW_CUTOFF_CLASTIC = 0.60
+    SW_CUTOFF_CARBONATE = 0.70
+    SW_CUTOFF = 0.60  # legacy alias (clastic value)
 
     # OBM default
     RXO_OBM_DEFAULT = 200.0  # ohm.m

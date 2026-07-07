@@ -9,7 +9,8 @@ Typical workflow::
 
     from petrophys.nmr import NMRData
 
-    nmr = NMRData.from_csv("nmr.csv")
+    nmr = NMRData.from_las(petrophys.sample("daydream1_cmr"),
+                       mphi_mnemonic="TCMR", mffi_mnemonic="CMFF")
     t2lm  = nmr.t2_lm()
     k_sdr = nmr.permeability_sdr()       # SDR model
     k_tc  = nmr.permeability_coates()    # Timur-Coates model

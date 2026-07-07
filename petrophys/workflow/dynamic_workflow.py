@@ -514,9 +514,10 @@ class DynamicWorkflowConfig:
     apply_hc_correction: bool = False
     hc_type: str = "oil"  # oil or gas
 
-    # Cutoffs
-    vcl_cutoff: float = 0.3
-    sw_cutoff: float = 0.7
+    # Cutoffs - leave None to resolve from the curriculum standards
+    # (STANDARD_CUTOFFS) using the well's lithology, per depth when mixed.
+    vcl_cutoff: Optional[float] = None
+    sw_cutoff: Optional[float] = None
     phie_cutoff: Optional[float] = None
 
     # GR parameters (auto-detected if None)
@@ -919,6 +920,14 @@ class DynamicWorkflow:
             self._step_lithology(well)
         if final_res is not None:
             self._apply_lithology_resolution(final_res, iterations=iterations)
+
+    def _resolved_cutoff(self, key: str):
+        """Config cutoff if set, else the lithology-family standard."""
+        value = getattr(self.config, key)
+        if value is not None:
+            return value
+        from petrophys.reservoir.net_pay.cutoffs import standard_cutoffs
+        return standard_cutoffs(self.config.lithology)[key]
 
     def _archie_coefficients_for_lithology(
         self,
@@ -2995,7 +3004,7 @@ class DynamicWorkflow:
 
         sw_module = SaturationModule(
             a=a_value, m=m_value, n=n_value,
-            model=self.config.sw_model, vcl_cutoff=self.config.vcl_cutoff
+            model=self.config.sw_model, vcl_cutoff=self._resolved_cutoff("vcl_cutoff")
         )
 
         result = sw_module.calculate(
@@ -3075,7 +3084,7 @@ class DynamicWorkflow:
             "rtsh": self.config.rtsh if self.config.rtsh is not None else self._result.rcl_computed,
             "vsh_exp": self.config.vsh_exp,
             "shale_exp": self.config.shale_exp,
-            "vcl_cutoff_for_routing": self.config.vcl_cutoff,
+            "vcl_cutoff_for_routing": self._resolved_cutoff("vcl_cutoff"),
             "lithology_type": self.config.lithology if isinstance(lithology, str) else "per-depth array",
             "sxo_method": result.sxo_method,
             "sxo_reason": result.sxo_reason,
@@ -3412,9 +3421,10 @@ class DynamicWorkflow:
             "vcl_curve": vcl_curve.mnemonic if vcl_curve is not None else "implicit_0",
             "phie_curve": phie_curve.mnemonic,
             "sw_curve": sw_curve.mnemonic,
-            "vcl_cutoff": self.config.vcl_cutoff,
-            "phie_cutoff": self.config.phie_cutoff,
-            "sw_cutoff": self.config.sw_cutoff,
+            "vcl_cutoff": self._resolved_cutoff("vcl_cutoff"),
+            "phie_cutoff": self._resolved_cutoff("phie_cutoff"),
+            "sw_cutoff": self._resolved_cutoff("sw_cutoff"),
+            "cutoff_source": "config" if self.config.vcl_cutoff is not None else "standard(" + str(self.config.lithology) + ")",
             "reservoir_samples": int(np.nansum(resflag > 0.5)),
         }
 
@@ -3533,9 +3543,10 @@ class DynamicWorkflow:
         if well.get("CROSSOVER_FLAG") is not None:
             trace.output_curves.append("CROSSOVER_FLAG")
         trace.parameters = {
-            "vcl_cutoff": self.config.vcl_cutoff,
-            "phie_cutoff": self.config.phie_cutoff,
-            "sw_cutoff": self.config.sw_cutoff,
+            "vcl_cutoff": self._resolved_cutoff("vcl_cutoff"),
+            "phie_cutoff": self._resolved_cutoff("phie_cutoff"),
+            "sw_cutoff": self._resolved_cutoff("sw_cutoff"),
+            "cutoff_source": "config" if self.config.vcl_cutoff is not None else "standard(" + str(self.config.lithology) + ")",
             "lithology": self.config.lithology if isinstance(lithology, str) else "per-depth",
             "seal_vcl_cutoff": 0.8,
         }
@@ -3544,9 +3555,9 @@ class DynamicWorkflow:
         n_pay = int(np.nansum(well.get("NET_PAY").data > 0.5)) if well.get("NET_PAY") else 0
         n_seal = int(np.nansum(seal_flag > 0.5))
         step_m = well.step or 0.15
-        trace.decisions.append(f"NET_ROCK: VCL < {self.config.vcl_cutoff} -> {n_rock} samples ({n_rock*step_m:.1f} m)")
-        trace.decisions.append(f"NET_RES:  + {phie_source} > {self.config.phie_cutoff} -> {n_res} samples ({n_res*step_m:.1f} m)")
-        trace.decisions.append(f"NET_PAY:  + {sw_source} < {self.config.sw_cutoff} -> {n_pay} samples ({n_pay*step_m:.1f} m)")
+        trace.decisions.append(f"NET_ROCK: VCL < {self._resolved_cutoff('vcl_cutoff')} -> {n_rock} samples ({n_rock*step_m:.1f} m)")
+        trace.decisions.append(f"NET_RES:  + {phie_source} > {self._resolved_cutoff('phie_cutoff')} -> {n_res} samples ({n_res*step_m:.1f} m)")
+        trace.decisions.append(f"NET_PAY:  + {sw_source} < {self._resolved_cutoff('sw_cutoff')} -> {n_pay} samples ({n_pay*step_m:.1f} m)")
         if n_excluded:
             trace.decisions.append(
                 f"Bad-hole exclusion: {n_excluded} washed-out samples removed from net reservoir/pay"

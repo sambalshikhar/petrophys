@@ -604,10 +604,21 @@ def run_dynamic_workflow_with_zones(
     zoned_default_overrides, zoned_default_injected, zoned_default_notes = _derive_default_values_from_zones(zones)
 
     base_config = _prepare_batch_config(config)
+    # Header-derived parameters only FILL fields the caller left unset: an
+    # explicitly configured value always wins over what the LAS header prints
+    # (e.g. an unreconciled RW basis must not silently override a documented
+    # config decision).
+    override_notes: List[str] = []
     for field_name, value in global_overrides.items():
-        _set_config_value(base_config, field_name, value)
+        if getattr(base_config, field_name, None) is None:
+            _set_config_value(base_config, field_name, value)
+        else:
+            override_notes.append(
+                f"Header parameter maps to {field_name}={value!r} but the "
+                "config sets it explicitly; config value kept."
+            )
     for field_name, value in zoned_default_overrides.items():
-        if field_name not in global_overrides:
+        if field_name not in global_overrides and getattr(base_config, field_name, None) is None:
             _set_config_value(base_config, field_name, value)
     _derive_sw_model(global_overrides, base_config)
     if "vsh_exp" not in global_overrides:
@@ -623,6 +634,7 @@ def run_dynamic_workflow_with_zones(
     base_result = run_dynamic_workflow(well, base_config)
     zone_results: List[DynamicWorkflowResult] = []
     warnings = list(zoned_default_notes)
+    warnings.extend(override_notes)
     if global_unmapped:
         warnings.append(f"Unmapped global LAS parameters: {', '.join(global_unmapped)}")
 

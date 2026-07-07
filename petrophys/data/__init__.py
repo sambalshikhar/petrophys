@@ -11,7 +11,9 @@ Datasets
 - ``geolink/`` : two North Sea clastic wells. ``30_6-5`` is the full tutorial
   well (rich curve set + a vendor LITHOLOGY_GEOLINK log); ``16_7-1`` has tight
   zones where deep resistivity goes off-scale (curve-wrap demo).
-- ``nmr.csv``  : NMR T2-bin sample data.
+- ``daydream/`` : real Schlumberger CMR summary sections from well Daydream 1
+  (Bowen Basin, public Queensland data): ``daydream1_cmr`` (3755-4145 m) and
+  ``daydream1_cmr_shallow`` (2860-3050 m).
 - ``formations_30_6-5.csv`` / ``lithology_30_6-5.csv`` : tops and per-interval
   lithology for 30/6-5.
 
