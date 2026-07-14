@@ -222,6 +222,18 @@ class CurveStandardizer:
         # never stored under another curve's mnemonic).
         origin_of = {}
 
+        def parking_name(origin: str, standard: str) -> str:
+            """Return a free non-standard slot for a collision loser."""
+            if origin != standard and origin not in new_curves:
+                return origin
+            base = f"{origin}_ALT"
+            candidate = base
+            suffix = 2
+            while candidate == standard or candidate in new_curves:
+                candidate = f"{base}_{suffix}"
+                suffix += 1
+            return candidate
+
         for mnemonic, curve in well._curves.items():
             # Get standard name
             standard_name = self.get_standard_name(mnemonic)
@@ -258,22 +270,38 @@ class CurveStandardizer:
                 existing = new_curves[standard_name]
                 existing_origin = origin_of.get(standard_name, standard_name)
                 incoming_is_native = mnemonic == standard_name
-                if incoming_is_native or new_curve.valid_count() > existing.valid_count():
+                existing_custom = getattr(existing.metadata, "custom", {}) or {}
+                incoming_custom = getattr(new_curve.metadata, "custom", {}) or {}
+                existing_priority = int(existing_custom.get("standardization_priority", 0))
+                incoming_priority = int(incoming_custom.get("standardization_priority", 0))
+                incoming_wins = (
+                    incoming_priority > existing_priority
+                    or (
+                        incoming_priority == existing_priority
+                        and (
+                            incoming_is_native
+                            or new_curve.valid_count() > existing.valid_count()
+                        )
+                    )
+                )
+                if incoming_wins:
                     # Incoming takes the slot; park the previous occupant
                     # back under its own original mnemonic.
-                    existing.mnemonic = existing_origin
-                    new_curves[existing_origin] = existing
+                    parked_name = parking_name(existing_origin, standard_name)
+                    existing.mnemonic = parked_name
+                    new_curves[parked_name] = existing
                     rename_map.pop(existing_origin, None)
                     new_curves[standard_name] = new_curve
                     origin_of[standard_name] = mnemonic
-                    slot_holder, parked = mnemonic, existing_origin
+                    slot_holder, parked = mnemonic, parked_name
                 else:
                     # Existing keeps the slot; park the incoming curve under
                     # its own original mnemonic.
-                    new_curve.mnemonic = mnemonic
-                    new_curves[mnemonic] = new_curve
+                    parked_name = parking_name(mnemonic, standard_name)
+                    new_curve.mnemonic = parked_name
+                    new_curves[parked_name] = new_curve
                     rename_map.pop(mnemonic, None)
-                    slot_holder, parked = existing_origin, mnemonic
+                    slot_holder, parked = existing_origin, parked_name
                 warnings.warn(
                     f"Curves '{existing_origin}' and '{mnemonic}' both standardize "
                     f"to '{standard_name}'; '{slot_holder}' takes the "

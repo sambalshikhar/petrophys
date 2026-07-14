@@ -46,8 +46,10 @@ def _constrain_mineral_fractions(
     constrained = np.asarray(fractions, dtype=float).copy()
     constrained = np.clip(constrained, 0.0, max(float(available_fraction), 0.0))
     total = float(np.nansum(constrained))
-    if total > available_fraction and total > 0.0:
-        constrained *= float(available_fraction) / total
+    if total > 0.0:
+        constrained *= float(max(available_fraction, 0.0)) / total
+    elif available_fraction <= 0.0:
+        constrained[:] = 0.0
     return constrained
 
 
@@ -141,7 +143,7 @@ class MultiMineralSolver:
         rhob: float,
         nphi: Optional[float],
         vcl: float,
-        phie: float,
+        phie: Optional[float],
         pef: Optional[float],
         dt: Optional[float],
         phi_fixed: Optional[float] = None,
@@ -186,7 +188,7 @@ class MultiMineralSolver:
         # Either way only Vcl (matrix-independent, GR-driven) is on the RHS.
         use_fixed_phi = phi_fixed is not None and np.isfinite(phi_fixed)
         if use_fixed_phi:
-            phi_fixed = float(np.clip(phi_fixed, 0.0, 1.0))
+            phi_fixed = float(np.clip(phi_fixed, 0.0, 1.0 - vcl))
 
         active_minerals = self._active_minerals(nphi, pef, dt, use_fixed_phi)
         if not active_minerals:
@@ -202,12 +204,20 @@ class MultiMineralSolver:
             mineral_x = x
             phi_solved = phi_fixed
         else:
-            # Last unknown is the solved porosity; the rest are mineral volumes.
+            # Scale the complete non-negative solution to the non-clay volume.
+            # This preserves all relative NNLS contributions while guaranteeing
+            # Vcl + porosity + minerals = 1 at every solved sample.
+            raw_total = float(np.sum(x))
+            closure_target = max(1.0 - vcl, 0.0)
+            closure_error = abs(raw_total - closure_target)
+            if raw_total > 0.0:
+                x = x * closure_target / raw_total
             mineral_x = x[:-1]
-            phi_solved = float(np.clip(x[-1], 0.0, 1.0))
+            phi_solved = float(x[-1])
 
         available_fraction = max(1.0 - vcl - phi_solved, 0.0)
-        closure_error = abs(mineral_x.sum() - available_fraction)
+        if use_fixed_phi:
+            closure_error = abs(float(np.sum(mineral_x)) - available_fraction)
         poor_fit = closure_error > self.closure_tolerance
 
         # Always normalize, never discard a solution just for closure error.
@@ -314,7 +324,7 @@ class MultiMineralSolver:
         rhob: Union[float, np.ndarray],
         nphi: Optional[Union[float, np.ndarray]],
         vcl:  Union[float, np.ndarray],
-        phie: Union[float, np.ndarray],
+        phie: Optional[Union[float, np.ndarray]] = None,
         pef:  Optional[Union[float, np.ndarray]] = None,
         dt:   Optional[Union[float, np.ndarray]] = None,
         core_phi: Optional[Union[float, np.ndarray]] = None,
@@ -330,8 +340,9 @@ class MultiMineralSolver:
             Neutron porosity (v/v). Pass None when unavailable.
         vcl : float or np.ndarray
             Pre-computed clay volume (0-1)
-        phie : float or np.ndarray
-            Pre-computed effective porosity (0-1)
+        phie : float or np.ndarray, optional
+            Accepted for backward compatibility. The solver derives porosity
+            jointly with mineral volumes and does not require this input.
         pef : float or np.ndarray, optional
             Photoelectric factor (b/e); omit if curve absent
         dt : float or np.ndarray, optional
@@ -348,8 +359,9 @@ class MultiMineralSolver:
         raw_arrays = {
             "rhob": np.atleast_1d(np.asarray(rhob, dtype=float)),
             "vcl": np.atleast_1d(np.asarray(vcl, dtype=float)),
-            "phie": np.atleast_1d(np.asarray(phie, dtype=float)),
         }
+        if phie is not None:
+            raw_arrays["phie"] = np.atleast_1d(np.asarray(phie, dtype=float))
         if nphi is not None:
             raw_arrays["nphi"] = np.atleast_1d(np.asarray(nphi, dtype=float))
         if pef is not None:
@@ -374,7 +386,7 @@ class MultiMineralSolver:
         rhob = _broadcast("rhob", raw_arrays["rhob"])
         nphi_arr = _broadcast("nphi", raw_arrays["nphi"]) if nphi is not None else None
         vcl = _broadcast("vcl", raw_arrays["vcl"])
-        phie = _broadcast("phie", raw_arrays["phie"])
+        phie_arr = _broadcast("phie", raw_arrays["phie"]) if phie is not None else None
         pef_arr = _broadcast("pef", raw_arrays["pef"]) if pef is not None else None
         dt_arr = _broadcast("dt", raw_arrays["dt"]) if dt is not None else None
         core_phi_arr = _broadcast("core_phi", raw_arrays["core_phi"]) if core_phi is not None else None
@@ -384,13 +396,13 @@ class MultiMineralSolver:
 
         result = {mineral: np.zeros(n) for mineral in all_minerals}
         result["vcl"]      = vcl.copy()
-        result["phie"]     = phie.copy()
+        result["phie"]     = np.full(n, np.nan, dtype=float)
         result["residual"] = np.zeros(n)
         result["qc_flag"]  = np.zeros(n, dtype=bool)
         result["solved"]   = np.zeros(n, dtype=bool)
 
         for i in range(n):
-            if any(np.isnan([rhob[i], vcl[i], phie[i]])):
+            if any(np.isnan([rhob[i], vcl[i]])):
                 for mineral in all_minerals:
                     result[mineral][i] = np.nan
                 result["residual"][i] = np.nan
@@ -412,7 +424,9 @@ class MultiMineralSolver:
                 core_phi_i = None
 
             active_minerals, fractions, residual, poor_fit, phi_solved = self._solve_sample(
-                rhob[i], nphi_i, vcl[i], phie[i], pef_i, dt_i, phi_fixed=core_phi_i
+                rhob[i], nphi_i, vcl[i],
+                float(phie_arr[i]) if phie_arr is not None else None,
+                pef_i, dt_i, phi_fixed=core_phi_i
             )
 
             if not active_minerals:
@@ -437,7 +451,7 @@ class MultiMineralSolver:
         """
         Add lithology curves to well.
 
-        Requires RHOB plus VCL and PHIE/PHIT on the well object. At least one
+        Requires RHOB plus VCL on the well object. At least one
         discriminator curve from NPHI/PHIN, PEF, or DTC/DT must be present.
         Neutron is helpful but not mandatory when PEF/DTC provide enough
         independent equations.
@@ -455,14 +469,13 @@ class MultiMineralSolver:
         rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
         nphi, _, _ = get_curve_data_depthwise(well, ["NPHI", "PHIN"])
         vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
-        phie, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
         pef, _, _ = get_curve_data_depthwise(well, ["PEF"])
         dt, _, _ = get_curve_data_depthwise(well, ["DTC", "DT"])
 
         missing = [
             name for name, data in zip(
-                ["RHOB", "VCL/VCLAY/VSH", "PHIE/PHIT"],
-                [rhob, vcl, phie],
+                ["RHOB", "VCL/VCLAY/VSH"],
+                [rhob, vcl],
             )
             if data is None
         ]
@@ -472,7 +485,7 @@ class MultiMineralSolver:
             raise ValueError(f"Missing required curves: {missing}")
 
         result = self.solve(
-            rhob, nphi, vcl, phie,
+            rhob, nphi, vcl,
             pef=pef,
             dt=dt,
         )

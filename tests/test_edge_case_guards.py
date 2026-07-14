@@ -87,7 +87,9 @@ def test_imputation_metrics_flag_in_sample_vs_held_out():
     import inspect
     from petrophys.imputation import training
     src = inspect.getsource(training)
-    assert '"evaluation"' in src and "in_sample_train" in src and "held_out_test" in src
+    assert '"evaluation"' in src
+    assert "in_sample_single_well" in src
+    assert "held_out_wells" in src
 
 
 def test_vcl_resolves_gr_family_when_only_spectral_gr():

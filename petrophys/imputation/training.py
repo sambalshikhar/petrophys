@@ -8,7 +8,10 @@ and xgboost only when training or loading pretrained ML models.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
+from importlib import metadata as importlib_metadata
 from pathlib import Path
+import platform
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -18,15 +21,16 @@ from petrophys.imputation.curve_imputer import (
     DEFAULT_FEATURE_CURVES,
     DEFAULT_TARGET_CURVES,
     _canonical_curve_name,
+    _values_in_model_units,
     default_pretrained_model_path,
 )
-from petrophys.qaqc.standardization.alias_map import get_standard_mnemonic
-from petrophys.qaqc.standardization.alias_map import get_standard_unit
 from petrophys.qaqc.standardization.curve_standardizer import (
     CURVE_PLAUSIBLE_RANGES,
-    POROSITY_FRACTION_CURVES,
 )
-from petrophys.qaqc.standardization.unit_converter import get_conversion_factor
+
+
+WELL_ID_COLUMN = "__WELL_ID__"
+DEPTH_COLUMN = "__DEPTH__"
 
 
 def _require_training_dependencies():
@@ -37,7 +41,7 @@ def _require_training_dependencies():
         from sklearn.compose import TransformedTargetRegressor
         from sklearn.impute import SimpleImputer
         from sklearn.metrics import mean_absolute_error, r2_score
-        from sklearn.model_selection import train_test_split
+        from sklearn.model_selection import GroupShuffleSplit
         from sklearn.neighbors import KNeighborsRegressor
         from sklearn.pipeline import Pipeline
         from sklearn.preprocessing import StandardScaler
@@ -56,7 +60,7 @@ def _require_training_dependencies():
         "SimpleImputer": SimpleImputer,
         "mean_absolute_error": mean_absolute_error,
         "r2_score": r2_score,
-        "train_test_split": train_test_split,
+        "GroupShuffleSplit": GroupShuffleSplit,
         "KNeighborsRegressor": KNeighborsRegressor,
         "Pipeline": Pipeline,
         "StandardScaler": StandardScaler,
@@ -107,7 +111,9 @@ class CurveFeatureTransformer:
     """Apply curve-specific transforms before model fitting."""
 
     def __init__(self, features: Sequence[str]):
-        self.features = list(features)
+        # Scikit-learn estimators must retain constructor parameters unchanged
+        # so clone() can reproduce them exactly.
+        self.features = features
 
     def fit(self, X, y=None):
         return self
@@ -144,29 +150,12 @@ def _standardize_training_values(
     standard_name: str,
     unit: str = "",
 ) -> np.ndarray:
-    data = _safe_numeric(values)
-    standard_name = _canonical_curve_name(standard_name)
-    data[np.isfinite(data) & (data <= -900.0)] = np.nan
-
-    standard_unit = get_standard_unit(standard_name)
-    if unit and standard_unit:
-        factor = get_conversion_factor(unit, standard_unit)
-        if factor is not None:
-            data = data * factor
-
-    if standard_name in POROSITY_FRACTION_CURVES:
-        unit_text = str(unit or "").lower().strip()
-        finite = data[np.isfinite(data)]
-        if finite.size:
-            median = float(np.nanmedian(finite))
-            if unit_text in {"%", "pu", "percent"} or median > 1.0:
-                data = data / 100.0
-
-    limits = TRAINING_PLAUSIBLE_RANGES.get(standard_name)
-    if limits is not None:
-        low, high = limits
-        invalid = np.isfinite(data) & ((data < low) | (data > high))
-        data[invalid] = np.nan
+    data, _, _ = _values_in_model_units(
+        values,
+        standard_name,
+        unit,
+        strict_units=True,
+    )
     return data
 
 
@@ -239,9 +228,17 @@ def build_training_table(
             for curve in curves
         }
         frame = pd.DataFrame(row)
-        frame = frame.dropna(how="all")
+        frame = frame.dropna(how="all", subset=curves)
         if frame.empty:
             continue
+
+        frame[WELL_ID_COLUMN] = las_path.stem
+        try:
+            depth = np.asarray(las.index, dtype=np.float64)
+            if len(depth) == n_rows:
+                frame[DEPTH_COLUMN] = depth[frame.index]
+        except (TypeError, ValueError):
+            pass
 
         if max_rows_per_well is not None and len(frame) > max_rows_per_well:
             selected = rng.choice(len(frame), size=max_rows_per_well, replace=False)
@@ -253,6 +250,27 @@ def build_training_table(
         raise ValueError(f"No usable LAS training rows found under {data_path}")
 
     return pd.concat(frames, axis=0, ignore_index=True)
+
+
+def _training_data_fingerprint(data_dir: Union[str, Path]) -> str:
+    """Hash LAS names and bytes without exposing an absolute local path."""
+    digest = hashlib.sha256()
+    for path in sorted(Path(data_dir).glob("*.las")):
+        digest.update(path.name.encode("utf-8", errors="replace"))
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _dependency_versions() -> Dict[str, str]:
+    versions = {"python": platform.python_version()}
+    for package in ("numpy", "pandas", "scikit-learn", "xgboost", "joblib"):
+        try:
+            versions[package] = importlib_metadata.version(package)
+        except importlib_metadata.PackageNotFoundError:
+            continue
+    return versions
 
 
 def _make_estimator(
@@ -288,7 +306,7 @@ def _make_estimator(
                 (
                     "regressor",
                     deps["RandomForestRegressor"](
-                        n_estimators=80,
+                        n_estimators=50,
                         min_samples_leaf=3,
                         max_features=0.8,
                         n_jobs=-1,
@@ -308,7 +326,7 @@ def _make_estimator(
                 (
                     "regressor",
                     XGBRegressor(
-                        n_estimators=160,
+                        n_estimators=100,
                         max_depth=4,
                         learning_rate=0.05,
                         subsample=0.85,
@@ -344,7 +362,7 @@ def train_pretrained_model_pack(
     feature_curves: Sequence[str] = DEFAULT_FEATURE_CURVES,
     target_curves: Sequence[str] = DEFAULT_TARGET_CURVES,
     max_rows_per_well: Optional[int] = 1500,
-    max_samples_per_target: int = 12000,
+    max_samples_per_target: int = 6000,
     min_samples_per_target: int = 500,
     min_available_features: int = 2,
     test_size: float = 0.2,
@@ -372,10 +390,12 @@ def train_pretrained_model_pack(
 
     rng = np.random.default_rng(random_state)
     pack: Dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": output.name,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "training_data": str(Path(data_dir).resolve()),
+        "training_data": Path(data_dir).name,
+        "training_data_sha256": _training_data_fingerprint(data_dir),
+        "unit_contract": "petrophys_standard_units_v1",
         "feature_curves": feature_curves,
         "target_curves": [],
         "models": {name: {} for name in model_names},
@@ -384,6 +404,8 @@ def train_pretrained_model_pack(
             "max_samples_per_target": max_samples_per_target,
             "min_samples_per_target": min_samples_per_target,
             "min_available_features": min_available_features,
+            "well_count": int(table[WELL_ID_COLUMN].nunique()),
+            "dependency_versions": _dependency_versions(),
             "targets": {},
         },
     }
@@ -394,7 +416,7 @@ def train_pretrained_model_pack(
         features = [curve for curve in feature_curves if curve != target]
         target_frame = table.loc[
             table[target].notna() & (table[features].notna().sum(axis=1) >= min_available_features),
-            [*features, target],
+            [*features, target, WELL_ID_COLUMN],
         ]
         target_frame = target_frame.replace([np.inf, -np.inf], np.nan)
         target_frame = target_frame.dropna(subset=[target])
@@ -411,30 +433,48 @@ def train_pretrained_model_pack(
 
         X = target_frame[features]
         y = target_frame[target].to_numpy(dtype=np.float64)
-        if len(target_frame) > 10 and 0 < test_size < 1:
-            X_train, X_test, y_train, y_test = deps["train_test_split"](
-                X,
-                y,
+        groups = target_frame[WELL_ID_COLUMN].astype(str).to_numpy()
+        unique_groups = np.unique(groups)
+        if len(unique_groups) >= 2 and len(target_frame) > 10 and 0 < test_size < 1:
+            splitter = deps["GroupShuffleSplit"](
+                n_splits=1,
                 test_size=test_size,
                 random_state=random_state,
             )
+            train_idx, test_idx = next(splitter.split(X, y, groups=groups))
+            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+            y_train, y_test = y[train_idx], y[test_idx]
+            train_wells = np.unique(groups[train_idx])
+            test_wells = np.unique(groups[test_idx])
             held_out = True
         else:
             # Too few samples to hold out a test set: metrics are in-sample
             # (train == test), so flag them rather than report them as test scores.
             X_train, X_test, y_train, y_test = X, X, y, y
+            train_wells = test_wells = unique_groups
             held_out = False
 
         target_metadata = {
             "samples": int(len(target_frame)),
+            "wells": int(len(unique_groups)),
             "features": features,
+            "feature_ranges": {
+                feature: {
+                    "p01": float(target_frame[feature].quantile(0.01)),
+                    "p99": float(target_frame[feature].quantile(0.99)),
+                }
+                for feature in features
+                if target_frame[feature].notna().any()
+            },
             "models": {},
         }
 
         for model_name in model_names:
-            estimator = _make_estimator(model_name, deps, random_state, features, target)
-            estimator.fit(X_train, y_train)
-            predictions = estimator.predict(X_test)
+            evaluation_estimator = _make_estimator(
+                model_name, deps, random_state, features, target
+            )
+            evaluation_estimator.fit(X_train, y_train)
+            predictions = evaluation_estimator.predict(X_test)
             metrics = {
                 "r2": float(deps["r2_score"](y_test, predictions))
                 if len(np.unique(y_test)) > 1
@@ -442,8 +482,12 @@ def train_pretrained_model_pack(
                 "mae": float(deps["mean_absolute_error"](y_test, predictions)),
                 "train_samples": int(len(X_train)),
                 "test_samples": int(len(X_test)),
-                "evaluation": "held_out_test" if held_out else "in_sample_train",
+                "evaluation": "held_out_wells" if held_out else "in_sample_single_well",
+                "train_wells": int(len(train_wells)),
+                "test_wells": int(len(test_wells)),
             }
+            estimator = _make_estimator(model_name, deps, random_state, features, target)
+            estimator.fit(X, y)
             pack["models"][model_name][target] = {
                 "estimator": estimator,
                 "features": features,

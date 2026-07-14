@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import math
 import csv
 import re
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
 
 import numpy as np
 

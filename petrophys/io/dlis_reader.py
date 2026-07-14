@@ -5,7 +5,7 @@ This module provides functionality to read DLIS (Digital Log Interchange Standar
 files and convert them to Well objects.
 """
 
-from typing import Optional, Union, Dict, Any, List, Iterable, Tuple
+from typing import Optional, Union, Dict, Any, List, Iterable, Mapping, Tuple
 from pathlib import Path
 import warnings
 import numpy as np
@@ -186,6 +186,68 @@ def _channel_requested(channel_name: str, requested: Optional[set[str]]) -> bool
     except Exception:
         return False
     return get_standard_mnemonic(name).upper() in requested
+
+
+def _channel_quality_score(
+    channel: Any,
+    preferred_mnemonic: Optional[str] = None,
+) -> Tuple[int, List[str]]:
+    """Rank processed scalar channels ahead of raw/QC alternatives."""
+    name = str(getattr(channel, "name", "") or "").strip().upper()
+    long_name = str(getattr(channel, "long_name", "") or "")
+    properties = getattr(channel, "properties", None)
+    if isinstance(properties, (list, tuple, set)):
+        property_text = " ".join(str(value) for value in properties)
+    else:
+        property_text = str(properties or "")
+    text = f"{name} {long_name} {property_text}".upper()
+
+    score = 0
+    reasons: List[str] = []
+    if preferred_mnemonic and name == str(preferred_mnemonic).upper():
+        score += 10_000
+        reasons.append("explicit user preference")
+
+    negative_markers = {
+        "UNCALIBRATED": -200,
+        "UN-CALIBRATED": -200,
+        "RAW": -40,
+        "QUALITY CONTROL": -80,
+        "QC FLAG": -80,
+        "QUALITY INDICATOR": -80,
+    }
+    positive_markers = {
+        "CALIBRATED": 80,
+        "BOREHOLE CORRECTED": 60,
+        "BOREHOLE-CORRECTED": 60,
+        "ENVIRONMENTALLY CORRECTED": 60,
+        "ENVIRONMENTAL CORRECTION": 50,
+        "FINAL": 30,
+        "PROCESSED": 20,
+    }
+    has_uncalibrated = "UNCALIBRATED" in text or "UN-CALIBRATED" in text
+    for marker, weight in negative_markers.items():
+        if marker in text:
+            score += weight
+            reasons.append(marker.lower())
+    for marker, weight in positive_markers.items():
+        if marker in text and not (marker == "CALIBRATED" and has_uncalibrated):
+            score += weight
+            reasons.append(marker.lower())
+    return score, reasons
+
+
+def _normalize_channel_preferences(
+    preferences: Optional[Mapping[str, str]],
+) -> Dict[str, str]:
+    if not preferences:
+        return {}
+    from petrophys.qaqc.standardization.alias_map import get_standard_mnemonic
+
+    return {
+        get_standard_mnemonic(str(standard).upper()).upper(): str(raw).upper()
+        for standard, raw in preferences.items()
+    }
 
 
 class DLISReader:
@@ -432,6 +494,9 @@ class DLISReader:
         step: Optional[float] = None,
         target_depth: Optional[np.ndarray] = None,
         standardize: bool = True,
+        step_strategy: str = "finest",
+        max_samples: int = 2_000_000,
+        channel_preference: Optional[Mapping[str, str]] = None,
     ) -> "Well":
         """
         Merge scalar channels from multiple DLIS frames onto one depth index.
@@ -443,9 +508,11 @@ class DLISReader:
         from petrophys.base.well import Well
         from petrophys.base.curve import Curve, CurveMetadata
         from petrophys.base.data_types import DataType
+        from petrophys.qaqc.standardization.alias_map import get_standard_mnemonic
 
         selected_frames = _name_set(frame_names)
         requested = _name_set(channels)
+        preferences = _normalize_channel_preferences(channel_preference)
         well_info = self.get_well_info()
 
         frame_payloads: List[Dict[str, Any]] = []
@@ -496,12 +563,20 @@ class DLISReader:
                 if values is None or not np.any(np.isfinite(values)):
                     continue
 
+                standard_name = get_standard_mnemonic(name).upper()
+                quality_score, quality_reasons = _channel_quality_score(
+                    ch,
+                    preferences.get(standard_name),
+                )
+
                 curves.append({
                     "name": ch.name,
                     "unit": ch.units or "",
                     "description": ch.long_name or "",
                     "values": values,
                     "frame": frame.name,
+                    "quality_score": quality_score,
+                    "quality_reasons": quality_reasons,
                 })
 
             if curves:
@@ -532,7 +607,26 @@ class DLISReader:
                     for payload in frame_payloads
                     if payload["step"] is not None and payload["step"] > 0
                 ]
-                step = max(steps) if steps else (bottom - top)
+                strategy = str(step_strategy).strip().lower()
+                if strategy == "finest":
+                    step = min(steps) if steps else (bottom - top)
+                elif strategy == "coarsest":
+                    step = max(steps) if steps else (bottom - top)
+                elif strategy == "median":
+                    step = float(np.median(steps)) if steps else (bottom - top)
+                else:
+                    raise ValueError(
+                        "step_strategy must be 'finest', 'median', or 'coarsest'"
+                    )
+            if not np.isfinite(step) or float(step) <= 0:
+                raise ValueError("DLIS merge step must be a positive finite value")
+            estimated_samples = int(np.floor((bottom - top) / float(step))) + 1
+            if estimated_samples > max_samples:
+                raise ValueError(
+                    f"DLIS merge would create {estimated_samples:,} samples at "
+                    f"step={step:g} {depth_unit}; provide an explicit coarser step "
+                    f"or raise max_samples (currently {max_samples:,})."
+                )
             target_depth = np.arange(top, bottom + float(step) * 0.5, float(step))
         else:
             target_depth = np.asarray(target_depth, dtype=float)
@@ -540,8 +634,9 @@ class DLISReader:
         well._depth = np.asarray(target_depth, dtype=float)
         well._depth_unit = depth_unit
 
-        best_counts: Dict[str, int] = {}
+        best_rank: Dict[str, Tuple[int, int]] = {}
         source_frames: Dict[str, str] = {}
+        source_quality: Dict[str, Dict[str, Any]] = {}
         for payload in frame_payloads:
             source_depth = payload["depth"]
             for curve_info in payload["curves"]:
@@ -554,14 +649,20 @@ class DLISReader:
                 valid_count = int(np.count_nonzero(np.isfinite(resampled)))
                 if valid_count == 0:
                     continue
-                if mnemonic in best_counts and valid_count <= best_counts[mnemonic]:
+                rank = (int(curve_info["quality_score"]), valid_count)
+                if mnemonic in best_rank and rank <= best_rank[mnemonic]:
                     continue
 
                 metadata = CurveMetadata(
                     description=curve_info["description"],
                     source="DLIS",
                     data_type=DataType.CURVE,
-                    custom={"frame": curve_info["frame"]},
+                    custom={
+                        "frame": curve_info["frame"],
+                        "original_channel": mnemonic,
+                        "standardization_priority": int(curve_info["quality_score"]),
+                        "channel_quality_reasons": list(curve_info["quality_reasons"]),
+                    },
                 )
                 well._curves[mnemonic] = Curve(
                     mnemonic=mnemonic,
@@ -571,14 +672,35 @@ class DLISReader:
                     depth_unit=well._depth_unit,
                     metadata=metadata,
                 )
-                best_counts[mnemonic] = valid_count
+                best_rank[mnemonic] = rank
                 source_frames[mnemonic] = curve_info["frame"]
+                source_quality[mnemonic] = {
+                    "score": int(curve_info["quality_score"]),
+                    "reasons": list(curve_info["quality_reasons"]),
+                }
+
+        lower_quality_sources = {
+            name: details
+            for name, details in source_quality.items()
+            if details["score"] < 0
+        }
+        if lower_quality_sources:
+            names = ", ".join(sorted(lower_quality_sources))
+            warnings.warn(
+                f"DLIS merge retained lower-quality/raw channels because no better "
+                f"candidate was available: {names}. Review dlis_merge source_quality "
+                "or pass channel_preference explicitly.",
+                stacklevel=2,
+            )
 
         well._parameters["dlis_merge"] = {
             "frames": [payload["name"] for payload in frame_payloads],
             "depth_unit": depth_unit,
             "step": float(step) if step is not None else None,
+            "step_strategy": step_strategy,
             "source_frames": source_frames,
+            "source_quality": source_quality,
+            "channel_preference": preferences,
         }
 
         if standardize:
@@ -609,6 +731,9 @@ def read_dlis(
     merge_frames: Optional[bool] = None,
     standardize: bool = True,
     step: Optional[float] = None,
+    step_strategy: str = "finest",
+    max_samples: int = 2_000_000,
+    channel_preference: Optional[Mapping[str, str]] = None,
     **kwargs,
 ) -> "Well":
     """
@@ -655,6 +780,9 @@ def read_dlis(
                 depth_unit=depth_unit or "m",
                 step=step,
                 standardize=standardize,
+                step_strategy=step_strategy,
+                max_samples=max_samples,
+                channel_preference=channel_preference,
             )
         return reader.to_well(
             frame_name=frame_name,
@@ -672,6 +800,9 @@ def read_dlis_merged(
     depth_unit: str = "m",
     step: Optional[float] = None,
     standardize: bool = True,
+    step_strategy: str = "finest",
+    max_samples: int = 2_000_000,
+    channel_preference: Optional[Mapping[str, str]] = None,
 ) -> "Well":
     """Read scalar DLIS log frames, merge them, and return one Well."""
     with DLISReader(filepath) as reader:
@@ -683,4 +814,7 @@ def read_dlis_merged(
             depth_unit=depth_unit,
             step=step,
             standardize=standardize,
+            step_strategy=step_strategy,
+            max_samples=max_samples,
+            channel_preference=channel_preference,
         )
