@@ -6887,7 +6887,6 @@ def export_reference_json_work_package_by_formation(
                 fallback_warnings.append(
                     "No formation tops matched this well in the Excel workbook. Falling back to WHOLE_WELL segmentation."
                 )
-                warnings.append(fallback_warnings[-1])
 
             for segment in formation_segments:
                 display_name = str(segment.get("display_name") or segment["name"])

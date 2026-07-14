@@ -355,13 +355,12 @@ def test_dynamic_workflow_skips_modules_when_inputs_are_missing(record_route):
         curves=["TEMP", "RW"],
     )
 
-    assert _step_by_name(result, "temperature").method == "fallback_geothermal_gradient"
-    assert _step_by_name(result, "rw").method == "default_fallback_profile"
-    assert {
-        "bad_hole", "vclay", "rcl", "lithology", "rmf", "invasion",
-        "hc_correction", "porosity", "saturation", "permeability",
-        "rock_quality", "bvw", "mhi", "net_pay",
-    }.issubset(set(result.steps_skipped))
+    assert result.success is False
+    assert result.status == "failed"
+    assert result.steps_executed == []
+    assert result.errors == ["Well has no finite log-curve samples"]
+    assert "TEMP" not in well
+    assert "RW" not in well
 
 
 @pytest.mark.parametrize(

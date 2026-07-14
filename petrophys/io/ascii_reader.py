@@ -7,6 +7,7 @@ data files including CSV, tab-delimited, and space-delimited formats.
 
 from typing import Optional, Union, List, Dict, Any
 from pathlib import Path
+import warnings
 import numpy as np
 import pandas as pd
 
@@ -18,6 +19,7 @@ def read_csv(
     well_name: str = "",
     skiprows: int = 0,
     null_values: Optional[List[str]] = None,
+    well_column: Optional[str] = None,
     **kwargs
 ) -> "Well":
     """
@@ -72,7 +74,17 @@ def read_csv(
     # Clean column names
     df.columns = [c.strip().upper() for c in df.columns]
 
-    # Create well
+    candidate_well_column = _resolve_well_column(df, well_column)
+    if candidate_well_column is not None:
+        identifiers = _well_identifiers(df[candidate_well_column])
+        if len(identifiers) > 1:
+            raise ValueError(
+                f"CSV contains {len(identifiers)} wells in "
+                f"{candidate_well_column!r}; use read_csv_wells() to keep them separate."
+            )
+        if not well_name and identifiers:
+            well_name = identifiers[0]
+
     if not well_name:
         well_name = filepath.stem
 
@@ -84,6 +96,86 @@ def read_csv(
     )
 
     return well
+
+
+def _resolve_well_column(
+    frame: pd.DataFrame,
+    requested: Optional[str],
+) -> Optional[str]:
+    if requested is not None:
+        column = str(requested).strip().upper()
+        if column not in frame.columns:
+            raise KeyError(f"Well identifier column not found: {requested}")
+        return column
+    return next(
+        (
+            candidate
+            for candidate in ("WELL", "WELLNAME", "WELL_NAME", "UWI", "API")
+            if candidate in frame.columns
+        ),
+        None,
+    )
+
+
+def _well_identifiers(series: pd.Series) -> List[str]:
+    values = series.dropna().astype(str).str.strip()
+    return sorted(value for value in values.unique().tolist() if value)
+
+
+def read_csv_wells(
+    filepath: Union[str, Path],
+    depth_column: str = "DEPTH",
+    depth_unit: str = "ft",
+    well_column: Optional[str] = None,
+    skiprows: int = 0,
+    null_values: Optional[List[str]] = None,
+    chunksize: int = 100_000,
+    **kwargs,
+) -> Dict[str, "Well"]:
+    """Read a long-form multi-well CSV without mixing well identities."""
+    from petrophys.base.well import Well
+
+    path = Path(filepath)
+    if not path.exists():
+        raise FileNotFoundError(f"CSV file not found: {path}")
+    if chunksize <= 0:
+        raise ValueError("chunksize must be positive")
+
+    na_values = ["-999", "-999.25", "-999.0", "null", "NULL", "NaN", "nan", ""]
+    if null_values:
+        na_values.extend(null_values)
+
+    grouped: Dict[str, List[pd.DataFrame]] = {}
+    identifier_column: Optional[str] = None
+    for chunk in pd.read_csv(
+        path,
+        skiprows=skiprows,
+        na_values=na_values,
+        chunksize=chunksize,
+        **kwargs,
+    ):
+        chunk.columns = [str(column).strip().upper() for column in chunk.columns]
+        if identifier_column is None:
+            identifier_column = _resolve_well_column(chunk, well_column)
+            if identifier_column is None:
+                raise ValueError(
+                    "No well identifier column found; pass well_column explicitly"
+                )
+        for identifier, rows in chunk.groupby(identifier_column, dropna=True, sort=False):
+            name = str(identifier).strip()
+            if name:
+                grouped.setdefault(name, []).append(rows)
+
+    wells: Dict[str, Well] = {}
+    for name, frames in grouped.items():
+        frame = pd.concat(frames, axis=0, ignore_index=True)
+        wells[name] = Well.from_dataframe(
+            frame,
+            depth_column=depth_column.upper(),
+            depth_unit=depth_unit,
+            name=name,
+        )
+    return wells
 
 
 def read_ascii(
@@ -134,8 +226,6 @@ def read_ascii(
         Well object with loaded data
     """
     from petrophys.base.well import Well
-    from petrophys.base.curve import Curve, CurveMetadata
-    from petrophys.base.data_types import DataType
 
     filepath = Path(filepath)
     if not filepath.exists():
@@ -146,9 +236,17 @@ def read_ascii(
     if null_values:
         na_values.extend(null_values)
 
-    # Read file to detect format if needed
-    with open(filepath, 'r') as f:
-        lines = f.readlines()
+    # Probe only the lines needed for delimiter/header/unit detection. Pandas
+    # performs the single full-file read below.
+    probe_end = max(header_line + skiprows + 1, units_line or 0) + 1
+    lines = []
+    with filepath.open("r", encoding=kwargs.get("encoding", "utf-8"), errors="replace") as stream:
+        for index, line in enumerate(stream):
+            lines.append(line)
+            if index >= probe_end:
+                break
+    if not lines:
+        raise ValueError(f"ASCII file is empty: {filepath}")
 
     # Auto-detect delimiter if not specified
     if delimiter is None:
@@ -203,39 +301,29 @@ def read_ascii(
         if len(unit_parts) == len(df.columns):
             units = dict(zip(df.columns, unit_parts))
 
-    # Create well
-    if not well_name:
-        well_name = filepath.stem
-
-    well = Well(name=well_name)
-
-    # Set depth
     depth_col = depth_column.upper()
-    if depth_col in df.columns:
-        well._depth = df[depth_col].values
-        well._depth_unit = units.get(depth_col, depth_unit)
+    requested_name = well_name
+    well = Well.from_dataframe(
+        df,
+        depth_column=depth_col,
+        depth_unit=units.get(depth_col, depth_unit),
+        name=requested_name,
+    )
+    if not well.name:
+        well.name = filepath.stem
 
-    # Add curves
-    for col in df.columns:
-        if col == depth_col:
-            continue
+    for mnemonic in well.curves:
+        curve = well[mnemonic]
+        curve.unit = units.get(mnemonic, "")
+        curve.metadata.description = mnemonic
+        curve.metadata.source = "ASCII"
 
-        unit = units.get(col, "")
-        metadata = CurveMetadata(
-            description=col,
-            source="ASCII",
-            data_type=DataType.CURVE
+    skipped = well.get_parameter("SKIPPED_NON_NUMERIC_COLUMNS", [])
+    if skipped:
+        warnings.warn(
+            "Skipped non-numeric ASCII metadata columns: " + ", ".join(skipped),
+            stacklevel=2,
         )
-
-        curve = Curve(
-            mnemonic=col,
-            data=df[col].values,
-            unit=unit,
-            depth=well._depth,
-            depth_unit=well._depth_unit,
-            metadata=metadata
-        )
-        well._curves[col] = curve
 
     return well
 

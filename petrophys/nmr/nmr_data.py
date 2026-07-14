@@ -158,6 +158,52 @@ class NMRData:
     extra_curves: Dict[str, np.ndarray] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        """Normalize arrays and reject internally inconsistent NMR products."""
+        self.depth = np.asarray(self.depth, dtype=float)
+        self.mphi = np.asarray(self.mphi, dtype=float)
+        if self.depth.ndim != 1 or self.mphi.ndim != 1:
+            raise ValueError("depth and mphi must be one-dimensional arrays")
+        if len(self.depth) != len(self.mphi):
+            raise ValueError("depth and mphi must contain the same number of samples")
+
+        self.t2_centers = np.asarray(self.t2_centers, dtype=float)
+        if self.t2_centers.ndim != 1:
+            raise ValueError("t2_centers must be one-dimensional")
+        if np.any(~np.isfinite(self.t2_centers)) or np.any(self.t2_centers <= 0):
+            raise ValueError("t2_centers must contain finite positive values")
+        if self.t2_centers.size > 1 and np.any(np.diff(self.t2_centers) <= 0):
+            raise ValueError("t2_centers must be strictly increasing")
+        if not np.isfinite(self.t2_cutoff) or self.t2_cutoff <= 0:
+            raise ValueError("t2_cutoff must be a finite positive value")
+
+        for name in ("mffi", "mbvi", "t2lm_stored", "t2_cutoff_curve"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            array = np.asarray(value, dtype=float)
+            if array.shape != self.depth.shape:
+                raise ValueError(f"{name} must match the depth shape")
+            setattr(self, name, array)
+
+        if self.bins is not None:
+            self.bins = np.asarray(self.bins, dtype=float)
+            expected = (len(self.depth), len(self.t2_centers))
+            if self.bins.shape != expected:
+                raise ValueError(f"bins must have shape {expected}, got {self.bins.shape}")
+
+        for mapping_name in ("stored_permeability", "extra_curves"):
+            mapping = getattr(self, mapping_name)
+            normalized = {}
+            for name, values in mapping.items():
+                array = np.asarray(values, dtype=float)
+                if array.shape != self.depth.shape:
+                    raise ValueError(
+                        f"{mapping_name}[{name!r}] must match the depth shape"
+                    )
+                normalized[str(name)] = array
+            setattr(self, mapping_name, normalized)
+
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
@@ -517,7 +563,7 @@ class NMRData:
     # T2 distribution analysis
     # ------------------------------------------------------------------
 
-    def t2_lm(self) -> np.ndarray:
+    def t2_lm(self, min_bin_coverage: float = 1.0) -> np.ndarray:
         """
         Logarithmic mean T2 (T2lm) in ms.
 
@@ -533,10 +579,13 @@ class NMRData:
         if self.has_bins:
             ln_t2 = np.log(self.t2_centers)
             phi = self.bins
+            if not 0.0 <= min_bin_coverage <= 1.0:
+                raise ValueError("min_bin_coverage must be between 0 and 1")
+            coverage = np.count_nonzero(np.isfinite(phi), axis=1) / self.n_bins
             total = np.nansum(phi, axis=1)
             with np.errstate(divide="ignore", invalid="ignore"):
                 return np.where(
-                    total > 0,
+                    (total > 0) & (coverage >= min_bin_coverage),
                     np.exp(np.nansum(phi * ln_t2, axis=1) / total),
                     np.nan,
                 )
@@ -549,7 +598,11 @@ class NMRData:
             "loaded from the LAS file (pass t2lm_mnemonic='T2LM' to from_las)."
         )
 
-    def bvi_from_bins(self, cutoff_ms: Optional[float] = None) -> np.ndarray:
+    def bvi_from_bins(
+        self,
+        cutoff_ms: Optional[float] = None,
+        min_bin_coverage: float = 1.0,
+    ) -> np.ndarray:
         """
         Bulk Volume Irreducible from T2 bins (bins with T2 < cutoff).
 
@@ -568,15 +621,21 @@ class NMRData:
                 else self.t2_cutoff
             )
         if np.isscalar(cutoff):
-            return np.nansum(self.bins[:, self.t2_centers < float(cutoff)], axis=1)
+            return self._sum_bin_mask(
+                self.t2_centers < float(cutoff), min_bin_coverage
+            )
 
         cutoff_arr = np.asarray(cutoff, dtype=float)
         if cutoff_arr.shape != (self.n_samples,):
             raise ValueError("Per-depth T2 cutoff must match the number of samples")
         mask = self.t2_centers[None, :] < cutoff_arr[:, None]
-        return np.nansum(np.where(mask, self.bins, 0.0), axis=1)
+        return self._sum_bin_mask(mask, min_bin_coverage)
 
-    def ffi_from_bins(self, cutoff_ms: Optional[float] = None) -> np.ndarray:
+    def ffi_from_bins(
+        self,
+        cutoff_ms: Optional[float] = None,
+        min_bin_coverage: float = 1.0,
+    ) -> np.ndarray:
         """
         Free Fluid Index from T2 bins (bins with T2 >= cutoff).
 
@@ -595,13 +654,44 @@ class NMRData:
                 else self.t2_cutoff
             )
         if np.isscalar(cutoff):
-            return np.nansum(self.bins[:, self.t2_centers >= float(cutoff)], axis=1)
+            return self._sum_bin_mask(
+                self.t2_centers >= float(cutoff), min_bin_coverage
+            )
 
         cutoff_arr = np.asarray(cutoff, dtype=float)
         if cutoff_arr.shape != (self.n_samples,):
             raise ValueError("Per-depth T2 cutoff must match the number of samples")
         mask = self.t2_centers[None, :] >= cutoff_arr[:, None]
-        return np.nansum(np.where(mask, self.bins, 0.0), axis=1)
+        return self._sum_bin_mask(mask, min_bin_coverage)
+
+    def _sum_bin_mask(
+        self,
+        mask: np.ndarray,
+        min_bin_coverage: float,
+    ) -> np.ndarray:
+        """Sum fixed or per-depth bin masks with explicit completeness rules."""
+        if not 0.0 <= min_bin_coverage <= 1.0:
+            raise ValueError("min_bin_coverage must be between 0 and 1")
+        selected = np.asarray(mask, dtype=bool)
+        if selected.ndim == 1:
+            if selected.shape != (self.n_bins,):
+                raise ValueError("T2 bin mask must match t2_centers")
+            selected = np.broadcast_to(selected, self.bins.shape)
+        elif selected.shape != self.bins.shape:
+            raise ValueError("Per-depth T2 bin mask must match bins shape")
+
+        selected_count = np.count_nonzero(selected, axis=1)
+        finite_count = np.count_nonzero(selected & np.isfinite(self.bins), axis=1)
+        coverage = np.divide(
+            finite_count,
+            selected_count,
+            out=np.ones(self.n_samples, dtype=float),
+            where=selected_count > 0,
+        )
+        result = np.nansum(np.where(selected, self.bins, np.nan), axis=1)
+        result[selected_count == 0] = 0.0
+        result[coverage < min_bin_coverage] = np.nan
+        return result
 
     def t2_distribution(self, depth_index: int) -> Tuple[np.ndarray, np.ndarray]:
         """Return (t2_centers, bin_porosities) at one depth index."""

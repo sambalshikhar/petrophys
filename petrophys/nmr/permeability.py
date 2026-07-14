@@ -91,6 +91,7 @@ def coates_permeability(
 def t2lm_from_bins(
     bins: np.ndarray,
     t2_centers: np.ndarray,
+    min_bin_coverage: float = 1.0,
 ) -> np.ndarray:
     """
     Logarithmic mean T2 from a T2 bin distribution array.
@@ -110,11 +111,17 @@ def t2lm_from_bins(
     bins     = np.atleast_2d(np.asarray(bins,       dtype=float))
     t2c      = np.asarray(t2_centers, dtype=float)
     ln_t2    = np.log(t2c)
-    total    = np.nansum(bins, axis=1)
+    if bins.shape[1] != t2c.size:
+        raise ValueError("bins column count must match t2_centers length")
+    if not 0.0 <= min_bin_coverage <= 1.0:
+        raise ValueError("min_bin_coverage must be between 0 and 1")
+    finite_count = np.count_nonzero(np.isfinite(bins), axis=1)
+    coverage = finite_count / max(t2c.size, 1)
+    total = np.nansum(bins, axis=1)
 
     with np.errstate(divide="ignore", invalid="ignore"):
         return np.where(
-            total > 0,
+            (total > 0) & (coverage >= min_bin_coverage),
             np.exp(np.nansum(bins * ln_t2, axis=1) / total),
             np.nan,
         )
@@ -124,6 +131,7 @@ def bvi_from_bins(
     bins: np.ndarray,
     t2_centers: np.ndarray,
     cutoff_ms: float = 32.0,
+    min_bin_coverage: float = 1.0,
 ) -> np.ndarray:
     """
     Bulk Volume Irreducible from T2 bins at a given cutoff.
@@ -146,13 +154,14 @@ def bvi_from_bins(
     """
     t2c  = np.asarray(t2_centers, dtype=float)
     mask = t2c < cutoff_ms
-    return np.nansum(np.atleast_2d(bins)[:, mask], axis=1)
+    return _sum_selected_bins(bins, mask, min_bin_coverage)
 
 
 def ffi_from_bins(
     bins: np.ndarray,
     t2_centers: np.ndarray,
     cutoff_ms: float = 32.0,
+    min_bin_coverage: float = 1.0,
 ) -> np.ndarray:
     """
     Free Fluid Index from T2 bins at a given cutoff.
@@ -161,4 +170,26 @@ def ffi_from_bins(
     """
     t2c  = np.asarray(t2_centers, dtype=float)
     mask = t2c >= cutoff_ms
-    return np.nansum(np.atleast_2d(bins)[:, mask], axis=1)
+    return _sum_selected_bins(bins, mask, min_bin_coverage)
+
+
+def _sum_selected_bins(
+    bins: np.ndarray,
+    mask: np.ndarray,
+    min_bin_coverage: float,
+) -> np.ndarray:
+    """Sum selected bins without interpreting missing distributions as zero."""
+    values = np.atleast_2d(np.asarray(bins, dtype=float))
+    selected = np.asarray(mask, dtype=bool)
+    if selected.ndim != 1 or values.shape[1] != selected.size:
+        raise ValueError("bin mask length must match the number of bin columns")
+    if not 0.0 <= min_bin_coverage <= 1.0:
+        raise ValueError("min_bin_coverage must be between 0 and 1")
+    selected_count = int(np.count_nonzero(selected))
+    if selected_count == 0:
+        return np.zeros(values.shape[0], dtype=float)
+    subset = values[:, selected]
+    coverage = np.count_nonzero(np.isfinite(subset), axis=1) / selected_count
+    result = np.nansum(subset, axis=1)
+    result[coverage < min_bin_coverage] = np.nan
+    return result

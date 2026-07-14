@@ -19,7 +19,13 @@ import pandas as pd
 from petrophys.qaqc.standardization.alias_map import (
     get_aliases,
     get_standard_mnemonic,
+    get_standard_unit,
 )
+from petrophys.qaqc.standardization.curve_standardizer import (
+    CURVE_PLAUSIBLE_RANGES,
+    POROSITY_FRACTION_CURVES,
+)
+from petrophys.qaqc.standardization.unit_converter import get_conversion_factor
 
 
 ML_IMPUTATION_NOTES_PARAMETER = "ML_IMPUTATION_NOTES"
@@ -131,6 +137,60 @@ def _safe_curve_values(values: Any, length: int) -> np.ndarray:
         return np.full(length, np.nan, dtype=np.float64)
     arr = np.where(np.isfinite(arr), arr, np.nan)
     return arr
+
+
+def _values_in_model_units(
+    values: Any,
+    standard_name: str,
+    unit: str = "",
+    *,
+    length: Optional[int] = None,
+    strict_units: bool = True,
+) -> Tuple[np.ndarray, float, str]:
+    """Convert a curve to the physical-unit contract used by model packs.
+
+    Returns standardized values, the multiplicative source-to-model factor,
+    and the model unit. The factor can be inverted when predictions must be
+    written back without changing the input curve's declared unit.
+    """
+    data = np.asarray(values, dtype=np.float64).reshape(-1).copy()
+    if length is not None and len(data) != length:
+        return np.full(length, np.nan, dtype=np.float64), 1.0, ""
+    data[~np.isfinite(data)] = np.nan
+    data[np.isfinite(data) & (data <= -900.0)] = np.nan
+
+    standard_name = _canonical_curve_name(standard_name)
+    standard_unit = str(get_standard_unit(standard_name) or "")
+    source_unit = str(unit or "").strip()
+    factor = 1.0
+    if source_unit and standard_unit:
+        conversion = get_conversion_factor(source_unit, standard_unit)
+        if conversion is None:
+            if strict_units:
+                raise ValueError(
+                    f"Cannot safely use {standard_name} in ML model: unit "
+                    f"{source_unit!r} cannot be converted to {standard_unit!r}"
+                )
+        else:
+            factor = float(conversion)
+            data *= factor
+
+    # Unitless vendor porosity curves are common. Apply the magnitude heuristic
+    # only after declared-unit conversion so percent units are never divided twice.
+    if standard_name in POROSITY_FRACTION_CURVES:
+        finite = data[np.isfinite(data)]
+        if finite.size and float(np.nanmedian(finite)) > 1.0:
+            data /= 100.0
+            factor *= 0.01
+
+    limits = CURVE_PLAUSIBLE_RANGES.get(standard_name)
+    if limits is None and standard_name == "SP":
+        limits = (-500.0, 500.0)
+    if limits is not None:
+        low, high = limits
+        invalid = np.isfinite(data) & ((data < low) | (data > high))
+        data[invalid] = np.nan
+    return data, factor, standard_unit
 
 
 def _format_interval(interval: Mapping[str, Any], depth_unit: str) -> str:
@@ -268,8 +328,9 @@ class PretrainedCurveImputer:
         self,
         well: "Well",
         target_curve: str,
-        model_name: str = "rf",
+        model_name: str = "auto",
         min_available_features: int = 2,
+        min_validation_r2: float = 0.0,
         inplace: bool = True,
     ) -> CurveImputationResult:
         """
@@ -287,11 +348,18 @@ class PretrainedCurveImputer:
                 "the pretrained imputer only fills null samples in existing curves."
             )
 
-        model_name = _normalize_model_name(model_name)
+        model_name = self._select_model(model_name, target, min_validation_r2)
         estimator, features = self._get_estimator(model_name, target)
-        target_values = _safe_curve_values(
-            working_well[actual_target].data,
-            working_well.n_samples,
+        target_curve_object = working_well[actual_target]
+        raw_target_values = _safe_curve_values(
+            target_curve_object.data, working_well.n_samples
+        )
+        target_values, target_scale, _ = _values_in_model_units(
+            raw_target_values,
+            target,
+            getattr(target_curve_object, "unit", ""),
+            length=working_well.n_samples,
+            strict_units=True,
         )
         missing_mask = np.isnan(target_values)
         missing_before = int(np.sum(missing_mask))
@@ -325,9 +393,33 @@ class PretrainedCurveImputer:
 
         if imputed_count:
             predictions = estimator.predict(feature_frame.loc[impute_mask, features])
-            updated = target_values.copy()
-            updated[impute_mask] = np.asarray(predictions, dtype=np.float64)
+            model_predictions = np.asarray(predictions, dtype=np.float64)
+            valid_predictions = np.isfinite(model_predictions)
+            if self.model_pack.get("unit_contract"):
+                limits = CURVE_PLAUSIBLE_RANGES.get(target)
+                if limits is not None:
+                    low, high = limits
+                    valid_predictions &= (
+                        (model_predictions >= low) & (model_predictions <= high)
+                    )
+            prediction_rows = np.where(impute_mask)[0]
+            accepted_rows = prediction_rows[valid_predictions]
+            rejected_count = int(len(prediction_rows) - len(accepted_rows))
+            impute_mask = np.zeros_like(impute_mask)
+            impute_mask[accepted_rows] = True
+            imputed_count = int(len(accepted_rows))
+            skipped_count = missing_before - imputed_count
+
+            updated = raw_target_values.copy()
+            if imputed_count:
+                updated[accepted_rows] = model_predictions[valid_predictions] / target_scale
             working_well[actual_target].data = updated
+            if rejected_count:
+                warnings.warn(
+                    f"Rejected {rejected_count} non-finite or physically implausible "
+                    f"{target} predictions from model {model_name}.",
+                    stacklevel=2,
+                )
             self._record_curve_metadata(
                 working_well,
                 actual_target,
@@ -336,7 +428,7 @@ class PretrainedCurveImputer:
                 imputed_count,
             )
         else:
-            updated = target_values
+            updated = raw_target_values
 
         missing_after = int(np.sum(np.isnan(updated)))
         intervals = _build_intervals(impute_mask, working_well.depth)
@@ -366,6 +458,47 @@ class PretrainedCurveImputer:
             note=note,
             well=working_well,
         )
+
+    def _select_model(
+        self,
+        requested: str,
+        target: str,
+        min_validation_r2: float,
+    ) -> str:
+        """Resolve an explicit model or choose the best well-held-out model."""
+        normalized = _normalize_model_name(requested)
+        if normalized != "auto":
+            return normalized
+
+        metadata = (
+            self.model_pack.get("metadata", {})
+            .get("targets", {})
+            .get(target, {})
+            .get("models", {})
+        )
+        candidates = []
+        for name in self.model_names:
+            if target not in self.model_pack.get("models", {}).get(name, {}):
+                continue
+            metrics = metadata.get(name, {})
+            evaluation = str(metrics.get("evaluation", ""))
+            r2 = metrics.get("r2")
+            if not evaluation.startswith("held_out_wells"):
+                continue
+            try:
+                score = float(r2)
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(score) and score >= min_validation_r2:
+                candidates.append((score, name))
+
+        if not candidates:
+            raise ValueError(
+                f"No grouped held-out model for {target} meets R2 >= "
+                f"{min_validation_r2:.3f}. Select a model explicitly only after "
+                "reviewing its validation metrics."
+            )
+        return max(candidates)[1]
 
     def _get_estimator(
         self,
@@ -418,6 +551,17 @@ class PretrainedCurveImputer:
                 data[feature] = np.full(n_samples, np.nan, dtype=np.float64)
                 continue
             values = _safe_curve_values(well[actual].data, n_samples)
+            try:
+                values, _, _ = _values_in_model_units(
+                    values,
+                    feature,
+                    getattr(well[actual], "unit", ""),
+                    length=n_samples,
+                    strict_units=True,
+                )
+            except ValueError as exc:
+                warnings.warn(str(exc), stacklevel=2)
+                values = np.full(n_samples, np.nan, dtype=np.float64)
             data[feature] = values
             if np.any(~np.isnan(values)):
                 features_used.append(feature)
@@ -517,9 +661,10 @@ def load_pretrained_imputer(
 def impute_missing_curve(
     well: "Well",
     target_curve: str,
-    model_name: str = "rf",
+    model_name: str = "auto",
     model_path: Optional[Union[str, Path]] = None,
     min_available_features: int = 2,
+    min_validation_r2: float = 0.0,
     inplace: bool = True,
 ) -> CurveImputationResult:
     """Convenience wrapper for pretrained curve imputation on a Well object."""
@@ -529,6 +674,7 @@ def impute_missing_curve(
         target_curve=target_curve,
         model_name=model_name,
         min_available_features=min_available_features,
+        min_validation_r2=min_validation_r2,
         inplace=inplace,
     )
 
@@ -537,9 +683,10 @@ def impute_las_file(
     input_las: Union[str, Path],
     output_las: Union[str, Path],
     target_curve: str,
-    model_name: str = "rf",
+    model_name: str = "auto",
     model_path: Optional[Union[str, Path]] = None,
     min_available_features: int = 2,
+    min_validation_r2: float = 0.0,
     **export_kwargs: Any,
 ) -> CurveImputationResult:
     """
@@ -558,6 +705,7 @@ def impute_las_file(
         model_name=model_name,
         model_path=model_path,
         min_available_features=min_available_features,
+        min_validation_r2=min_validation_r2,
         inplace=True,
     )
     export_las(well, output_las, **export_kwargs)

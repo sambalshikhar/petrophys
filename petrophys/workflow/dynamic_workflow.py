@@ -463,6 +463,11 @@ class DynamicWorkflowConfig:
     All parameters are optional. The workflow auto-detects what can
     be computed based on available curves and provided parameters.
     """
+    # Input handling and assumptions
+    standardize_input: bool = True
+    rename_input_curves: bool = False
+    allow_default_rw: bool = False
+
     # Temperature
     surface_temp_f: float = 68.0
     bht_f: Optional[float] = None
@@ -613,6 +618,29 @@ class DynamicWorkflowResult:
     temperature_gradient: Optional[float] = None
 
     @property
+    def has_usable_interpretation(self) -> bool:
+        """Return whether a successful interpretive step produced a curve."""
+        non_interpretive_steps = {
+            WorkflowStep.NORMALIZATION.value,
+            WorkflowStep.BAD_HOLE.value,
+            WorkflowStep.TEMPERATURE.value,
+        }
+        return any(
+            step.success and bool(step.output_curves)
+            for step in self.steps_executed
+            if step.step not in non_interpretive_steps
+        )
+
+    @property
+    def status(self) -> str:
+        """Return a compact execution status for API and trace consumers."""
+        if not self.success:
+            return "failed"
+        if self.has_usable_interpretation:
+            return "interpreted"
+        return "no_interpretation"
+
+    @property
     def success(self) -> bool:
         # Honest success: no hard errors AND no executed step reported failure.
         # Previously this only checked `errors`, which `run()` never populates,
@@ -724,6 +752,8 @@ class DynamicWorkflowResult:
             "schema_version": 1,
             "well": well_summary,
             "success": bool(self.success),
+            "status": self.status,
+            "has_usable_interpretation": self.has_usable_interpretation,
             "executed_steps": [step.step for step in self.steps_executed],
             "skipped_steps": list(self.steps_skipped),
             "specific_steps_skipped": _json_safe_trace_value(self.specific_steps_skipped),
@@ -982,6 +1012,7 @@ class DynamicWorkflow:
 
     def get_pipeline(self):
         return [
+            (WorkflowStep.NORMALIZATION, self._step_normalization, self._can_normalization),
             (WorkflowStep.TEMPERATURE, self._step_temperature, self._can_temperature),
             (WorkflowStep.BAD_HOLE, self._step_bad_hole, self._can_bad_hole),
             (WorkflowStep.VCLAY, self._step_vclay, self._can_vclay),
@@ -1025,7 +1056,6 @@ class DynamicWorkflow:
                 if step_trace is None:
                     step_trace = StepResult(step=step_name, success=True)
                 step_trace.step = step_name
-                step_trace.success = True
                 # Record a StepResult (same type as run()) for consistent consumers.
                 self._result.steps_executed.append(step_trace)
             except Exception as e:
@@ -1066,6 +1096,29 @@ class DynamicWorkflow:
         self._last_phit_nd_average_mask = None
         self._last_phi_cl_info = None
 
+        input_error = self._input_validation_error(well)
+        if input_error is not None:
+            self._result.errors.append(input_error)
+            return self._result
+
+        # Normalize before any auto-lithology routing examines the inputs. The
+        # pipeline still exposes this step for discovery and selected-step runs.
+        normalization_done = False
+        if (
+            self.config.standardize_input
+            and WorkflowStep.NORMALIZATION.value not in self.config.skip_steps
+        ):
+            try:
+                self._result.steps_executed.append(self._step_normalization(well))
+                normalization_done = True
+            except Exception as exc:
+                message = f"normalization: {exc}"
+                self._result.errors.append(message)
+                self._result.steps_executed.append(
+                    StepResult(step="normalization", success=False, message=str(exc))
+                )
+                return self._result
+
         # Tiers 0-1: resolve auto lithology from raw-input sources up front (a vendor
         # lithology log, else core-porosity apparent matrix density), so it drives the
         # whole pipeline (N-D VCL clean line, porosity matrix, Sw, cutoffs). Both are
@@ -1092,6 +1145,9 @@ class DynamicWorkflow:
         for step_enum, step_fn, can_fn in pipeline:
             step_name = step_enum.value
 
+            if step_enum is WorkflowStep.NORMALIZATION and normalization_done:
+                continue
+
             if step_name in self.config.skip_steps:
                 self._result.steps_skipped.append(step_name)
                 continue
@@ -1102,7 +1158,6 @@ class DynamicWorkflow:
                     if step_trace is None:
                         step_trace = StepResult(step=step_name, success=True)
                     step_trace.step = step_name
-                    step_trace.success = True
                     self._result.steps_executed.append(step_trace)
                     # Tier 1: once the multi-mineral solver has run, iterate the
                     # VCL <-> solver loop to a fixed point, resolving any still-pending
@@ -1127,6 +1182,37 @@ class DynamicWorkflow:
 
         return self._result
 
+    @staticmethod
+    def _input_validation_error(well: "Well") -> Optional[str]:
+        """Return a user-facing error when a well cannot support a workflow."""
+        if well is None:
+            return "A Well instance is required"
+        depth = getattr(well, "depth", None)
+        if depth is None:
+            return "Well has no depth samples"
+        try:
+            depth_values = np.asarray(depth, dtype=float).reshape(-1)
+        except (TypeError, ValueError):
+            return "Well depth must be numeric"
+        if depth_values.size == 0 or not np.any(np.isfinite(depth_values)):
+            return "Well has no finite depth samples"
+
+        for mnemonic in getattr(well, "curves", []):
+            if str(mnemonic).strip().upper() in {
+                "DEPTH", "DEPT", "MD", "TDEP", "TVD", "TVDSS",
+            }:
+                continue
+            curve = well.get(mnemonic)
+            if curve is None:
+                continue
+            try:
+                values = np.asarray(curve.data, dtype=float)
+            except (TypeError, ValueError):
+                continue
+            if values.size and np.any(np.isfinite(values)):
+                return None
+        return "Well has no finite log-curve samples"
+
     def _detect_available_curves(self, well: "Well") -> set:
         """Detect which curves are available in the well."""
         available = set()
@@ -1136,6 +1222,57 @@ class DynamicWorkflow:
             if get_curve(well, [name]) is not None:
                 available.add(name)
         return available
+
+    def _can_normalization(self, well: "Well") -> bool:
+        return bool(self.config.standardize_input)
+
+    def _step_normalization(self, well: "Well") -> StepResult:
+        """Standardize aliases and physical units before interpretation."""
+        from petrophys.qaqc.standardization import standardize_curves
+
+        before = {
+            name: {
+                "unit": str(getattr(well.get(name), "unit", "") or ""),
+                "valid_count": int(well.get(name).valid_count()),
+            }
+            for name in well.curves
+            if well.get(name) is not None
+        }
+        standardize_curves(
+            well,
+            rename_curves=self.config.rename_input_curves,
+            convert_units=True,
+        )
+        rename_map = dict(well.get_parameter("_rename_map") or {})
+        unit_changes = {}
+        for original, details in before.items():
+            target = rename_map.get(original, original)
+            curve = well.get(target) or well.get(original)
+            if curve is None:
+                continue
+            after_unit = str(getattr(curve, "unit", "") or "")
+            if after_unit != details["unit"]:
+                unit_changes[original] = {
+                    "from": details["unit"],
+                    "to": after_unit,
+                }
+
+        return StepResult(
+            step="normalization",
+            success=True,
+            method="curve_alias_and_unit_standardization",
+            input_curves=sorted(before),
+            output_curves=sorted(well.curves),
+            parameters={
+                "rename_curves": self.config.rename_input_curves,
+                "convert_units": True,
+                "rename_map": rename_map,
+                "unit_changes": unit_changes,
+            },
+            decisions=[
+                "Standardized curve units, nulls, and plausible ranges before routing"
+            ],
+        )
 
     def _has_curve(self, well: "Well", *names: str) -> bool:
         """Check if any named curve has finite usable numeric samples."""
@@ -1200,7 +1337,6 @@ class DynamicWorkflow:
             self._has_curve(well, "RHOB")
             and has_discriminator
             and self._has_curve(well, "VCL", "VCLAY")
-            and self._has_curve(well, "PHIE", "PHIT")
         )
 
     def _can_rmf(self, well: "Well") -> bool:
@@ -2203,9 +2339,23 @@ class DynamicWorkflow:
         else:
             decisions.append("Rwa clean-wet fallback skipped because RDEP/RT, effective porosity, or VCL is unavailable")
 
-        self._result.warnings.append("Rw could not be determined. Using default 0.05 ohm.m")
+        if not self.config.allow_default_rw:
+            message = (
+                "Rw could not be determined from configuration, metadata, salinity, "
+                "SP, Rxo/Rt, or clean-wet Rwa; saturation was not computed"
+            )
+            self._result.warnings.append(message)
+            decisions.append(message)
+            trace.method = "unavailable"
+            trace.message = message
+            trace.decisions = decisions
+            return trace
+
+        self._result.warnings.append(
+            "Rw could not be determined. Using explicitly enabled default 0.05 ohm.m"
+        )
         decisions.append(
-            "All Rw priority sources failed (config/LAS RW, salinity, SP, Rxo/Rt, Rwa clean-wet fallback) -> default 0.05"
+            "All Rw priority sources failed; allow_default_rw=True enabled the 0.05 ohm.m fallback"
         )
         assumed_temp_f = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
         rw_curve = correct_rw_temperature(0.05, assumed_temp_f, temp_profile, "F")

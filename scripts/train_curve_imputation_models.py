@@ -41,7 +41,7 @@ def main() -> None:
     parser.add_argument(
         "--max-samples-per-target",
         type=int,
-        default=12000,
+        default=6000,
         help="Maximum training rows per target curve.",
     )
     parser.add_argument(
