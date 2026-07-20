@@ -2,8 +2,8 @@ import numpy as np
 import warnings
 
 from petrophys import Well
-from petrophys.imaging import BoreholeImageData
-from petrophys.io import read_borehole_image_las
+from petrophys.interpretation.borehole_imaging import BoreholeImageData
+from petrophys.interpretation.borehole_imaging import read_borehole_image_las
 
 
 def test_borehole_image_from_arrays_filters_descending_depth_and_normalizes():

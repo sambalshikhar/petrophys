@@ -43,7 +43,7 @@ Features
 * **Clay Volume**: Multiple VCL calculation methods (GR, SP, N-D) with clay resistivity (Rcl)
 * **Porosity**: Density, neutron, sonic, total (weighted N-D), effective, and secondary porosity
 * **Hydrocarbon Correction**: Preliminary porosity-based NPHI and RHOB corrections
-* **Water Saturation**: 5 models — Archie, Simandoux, Indonesia, Waxman-Smits, Dual Water — with automatic routing based on VCL, lithology, CEC, and salinity
+* **Water Saturation**: 7 models — Archie, Simandoux, Indonesia, the regional North Sea and Nigeria-Schlumberger forms, Waxman-Smits, Dual Water — with automatic routing based on VCL, lithology, CEC, and salinity
 * **Permeability**: Timur, Coates-Denoo, Wyllie-Rose equations with impermeability detection
 * **Rock Quality**: RQI, FZI, and normalized porosity (phi_z)
 * **Net Pay**: Lithology-aware cutoff-based determination (clastic/carbonate)
@@ -112,13 +112,15 @@ Contents
    :maxdepth: 2
    :caption: User Guide
 
+   examples
+   architecture
    tutorials/index
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
    :caption: API Reference
 
-   api/modules
+   api/index
 
 
 Indices and Tables

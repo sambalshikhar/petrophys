@@ -2,18 +2,18 @@ import numpy as np
 import pytest
 import warnings
 
-from petrophys.base import Well
-from petrophys.base.curve import Curve
-from petrophys.base.log_data import DepthIndex
-from petrophys.core.calibration import CalibrationResult
-from petrophys.core.color_analysis import CoreImageData
-from petrophys.core.core_data import CoreData
-from petrophys.core.grain_size import GrainSizeData
-from petrophys.core.mechanical import CoreMechanical
-from petrophys.core.plots import plot_calibration
-from petrophys.core.xrf import XRFData
-from petrophys.formation import Formation, FormationTops
-from petrophys.nmr.nmr_data import NMRData
+from petrophys.model import Well
+from petrophys.model.curve import Curve
+from petrophys.model.log_data import DepthIndex
+from petrophys.interpretation.core_analysis.calibration import CalibrationResult
+from petrophys.interpretation.core_analysis.color_analysis import CoreImageData
+from petrophys.model.core import CoreData
+from petrophys.interpretation.core_analysis.grain_size import GrainSizeData
+from petrophys.interpretation.core_analysis.mechanical import CoreMechanical
+from petrophys.visualization.core import plot_calibration
+from petrophys.interpretation.geochemistry.xrf import XRFData
+from petrophys.evaluation.intervals import Formation, FormationTops
+from petrophys.interpretation.nmr.nmr_data import NMRData
 
 
 def test_curve_statistics_return_nan_for_empty_curve():

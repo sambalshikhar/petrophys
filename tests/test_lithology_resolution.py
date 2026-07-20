@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from petrophys.base import Well
-from petrophys.lithology.matrix_inference import (
+from petrophys.model import Well
+from petrophys.interpretation.lithology.matrix_inference import (
     LITHOLOGY_CODE_CLASS,
     resolve_from_lithology_log,
     resolve_from_minerals,
@@ -62,7 +62,7 @@ def test_vendor_log_dolomite_picks_dolomite_matrix():
 
 
 def test_vendor_log_detection_is_robust_to_curve_name():
-    from petrophys.lithology.matrix_inference import resolve_from_lithology_log
+    from petrophys.interpretation.lithology.matrix_inference import resolve_from_lithology_log
     codes = [8] * 60 + [11] * 20   # clastic-dominant code log
     for name in ("ROCK_TYPE", "FACIES", "LITHFAC", "Lithology_Interp", "GEOL_LITH"):
         w = Well("S")
@@ -74,7 +74,7 @@ def test_vendor_log_detection_is_robust_to_curve_name():
 
 
 def test_vendor_log_detection_rejects_non_code_curves():
-    from petrophys.lithology.matrix_inference import resolve_from_lithology_log
+    from petrophys.interpretation.lithology.matrix_inference import resolve_from_lithology_log
     # continuous "lithostatic" curve must NOT be treated as a lithology log
     w = Well("C")
     w.depth = np.arange(80, dtype=float)
@@ -83,7 +83,7 @@ def test_vendor_log_detection_rejects_non_code_curves():
 
 
 def test_vendor_log_detection_excludes_computed_litho():
-    from petrophys.lithology.matrix_inference import resolve_from_lithology_log
+    from petrophys.interpretation.lithology.matrix_inference import resolve_from_lithology_log
     # the workflow's own computed "LITHO" (different code scheme) must be ignored
     w = Well("K")
     w.depth = np.arange(80, dtype=float)
@@ -129,7 +129,7 @@ def _well_with_core_porosity(rho_matrix, phi=0.20, n=60):
 
 
 def test_core_matrix_density_identifies_carbonate_without_pef():
-    from petrophys.lithology.matrix_inference import resolve_from_core_matrix
+    from petrophys.interpretation.lithology.matrix_inference import resolve_from_core_matrix
     # apparent matrix density from core porosity should recover the matrix
     r_ls = resolve_from_core_matrix(_well_with_core_porosity(2.71), warn=False)
     assert r_ls.lithology == "carbonate" and r_ls.matrix == "limestone"
@@ -143,7 +143,7 @@ def test_core_matrix_hc_correction_recovers_carbonate():
     # A hydrocarbon-bearing limestone with no water leg: assuming water (Sw=1)
     # biases apparent matrix density low (reads quartz); the Sw-based HC fluid
     # correction recovers carbonate.
-    from petrophys.lithology.matrix_inference import resolve_from_core_matrix
+    from petrophys.interpretation.lithology.matrix_inference import resolve_from_core_matrix
     n, phi = 80, 0.20
     # Build RHOB for a limestone whose flushed zone retains residual oil:
     # rho_fl_eff at Sw=0.2 with oil 0.8 -> 0.2 + 0.8*0.8 = 0.84
@@ -165,7 +165,7 @@ def test_core_matrix_hc_correction_recovers_carbonate():
 
 
 def test_core_matrix_absent_returns_none():
-    from petrophys.lithology.matrix_inference import resolve_from_core_matrix
+    from petrophys.interpretation.lithology.matrix_inference import resolve_from_core_matrix
     w = Well("NOCORE")
     w.depth = np.arange(40, dtype=float)
     w.add_curve("RHOB", np.full(40, 2.4), "g/cm3", "d")  # no core porosity
@@ -175,7 +175,7 @@ def test_core_matrix_absent_returns_none():
 def test_resolver_prefers_core_matrix_over_solver():
     # core matrix says carbonate; resolve_well_lithology should use it (ranked
     # above the solver), method == core_matrix_density
-    from petrophys.lithology.matrix_inference import resolve_well_lithology
+    from petrophys.interpretation.lithology.matrix_inference import resolve_well_lithology
     res = resolve_well_lithology(_well_with_core_porosity(2.71), warn=False)
     assert res.method == "core_matrix_density"
     assert res.lithology == "carbonate"

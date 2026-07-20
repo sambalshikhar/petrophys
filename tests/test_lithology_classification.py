@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from petrophys import Well
-from petrophys.lithology.lithology_module import LithologyModule
+from petrophys.interpretation.lithology.lithology_module import LithologyModule
 
 
 @pytest.fixture

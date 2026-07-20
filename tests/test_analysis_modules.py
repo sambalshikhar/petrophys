@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from petrophys import Well
-from petrophys.analysis import (
+from petrophys.evaluation.diagnostics import (
     HydrocarbonAnalysis,
     LithologyAnalysis,
     NumericalStatisticalAnalysis,
@@ -14,7 +14,7 @@ from petrophys.analysis import (
     PorosityAnalysis,
     SaturationAnalysis,
 )
-from petrophys.io.example_format_export import (
+from petrophys.reporting.reference_export import (
     _build_lithology_group_segments,
     _build_reference_bad_hole_qc,
     _build_reference_derived_log_status,
@@ -27,7 +27,7 @@ from petrophys.io.example_format_export import (
     _load_excel_formation_segments,
     _missing_curve_reason,
 )
-from petrophys.utils.analysis_helpers import CategoryAnalysisResult, DerivedCurve, get_curve_data
+from petrophys._internal.analysis_helpers import CategoryAnalysisResult, DerivedCurve, get_curve_data
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 from petrophys.workflow import run_comprehensive_analysis
 
@@ -211,7 +211,7 @@ def test_saturation_and_numerical_analysis_document_core_corrected_sources():
 
 
 def test_rock_quality_module_prioritizes_core_corrected_inputs():
-    from petrophys.reservoir.rock_quality.rock_quality_module import RockQualityModule
+    from petrophys.evaluation.rock_quality.rock_quality_module import RockQualityModule
 
     well = _build_core_corrected_priority_well()
 
@@ -222,7 +222,7 @@ def test_rock_quality_module_prioritizes_core_corrected_inputs():
 
 
 def test_net_pay_module_prioritizes_core_corrected_porosity():
-    from petrophys.reservoir.net_pay.net_pay_module import NetPayModule
+    from petrophys.evaluation.net_pay.net_pay_module import NetPayModule
 
     well = Well("NET-PAY-CORE")
     well.depth = np.arange(3.0)
@@ -719,7 +719,7 @@ def test_hydrocarbon_crossover_is_nan_without_bad_hole_curve():
 
 
 def test_rock_quality_leaves_invalid_phi_and_perm_as_nan():
-    from petrophys.reservoir.rock_quality import calculate_rock_quality
+    from petrophys.evaluation.rock_quality import calculate_rock_quality
 
     result = calculate_rock_quality(
         perm_k=np.array([100.0, 0.0, 10.0, np.nan]),
@@ -734,7 +734,7 @@ def test_rock_quality_leaves_invalid_phi_and_perm_as_nan():
 
 
 def test_invasion_ratio_rejects_tiny_rt_spikes():
-    from petrophys.resistivity.invasion import InvasionModule, calculate_invasion_ratio
+    from petrophys.interpretation.electrical.invasion import InvasionModule, calculate_invasion_ratio
 
     ratio = calculate_invasion_ratio(
         rxo=np.array([1.0, 1.0, 50.0, 1.0, 500.0]),
@@ -760,7 +760,7 @@ def test_invasion_ratio_rejects_tiny_rt_spikes():
 
 
 def test_multi_mineral_fraction_constraint_enforces_available_volume():
-    from petrophys.lithology.multi_mineral_solver import _constrain_mineral_fractions
+    from petrophys.interpretation.lithology.multi_mineral_solver import _constrain_mineral_fractions
 
     constrained = _constrain_mineral_fractions(np.array([0.5, 0.4, 0.2]), 0.65)
 
@@ -769,7 +769,7 @@ def test_multi_mineral_fraction_constraint_enforces_available_volume():
 
 
 def test_multi_mineral_solver_broadcasts_scalar_inputs_across_rows():
-    from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
+    from petrophys.interpretation.lithology.multi_mineral_solver import MultiMineralSolver
 
     result = MultiMineralSolver().solve(
         rhob=np.array([2.30, 2.40, 2.50]),
@@ -786,7 +786,7 @@ def test_multi_mineral_solver_broadcasts_scalar_inputs_across_rows():
 
 
 def test_multi_mineral_solver_uses_pef_dtc_when_neutron_missing():
-    from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
+    from petrophys.interpretation.lithology.multi_mineral_solver import MultiMineralSolver
 
     result = MultiMineralSolver().solve(
         rhob=np.array([2.45, 2.58, 2.70]),
@@ -805,7 +805,7 @@ def test_multi_mineral_solver_uses_pef_dtc_when_neutron_missing():
 
 
 def test_multi_mineral_add_to_well_does_not_require_neutron_when_pef_dtc_present():
-    from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
+    from petrophys.interpretation.lithology.multi_mineral_solver import MultiMineralSolver
 
     depth = np.array([1000.0, 1000.5, 1001.0])
     well = Well("NO-NEUTRON-MINERALS")
@@ -827,7 +827,7 @@ def test_multi_mineral_add_to_well_does_not_require_neutron_when_pef_dtc_present
 
 
 def test_multi_mineral_add_to_well_requires_some_discriminator_curve():
-    from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
+    from petrophys.interpretation.lithology.multi_mineral_solver import MultiMineralSolver
 
     depth = np.array([1000.0, 1000.5])
     well = Well("NO-MINERAL-DISCRIMINATOR")
@@ -841,7 +841,7 @@ def test_multi_mineral_add_to_well_requires_some_discriminator_curve():
 
 
 def test_multi_mineral_solver_rejects_incompatible_lengths_cleanly():
-    from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
+    from petrophys.interpretation.lithology.multi_mineral_solver import MultiMineralSolver
 
     with pytest.raises(ValueError, match="nphi length"):
         MultiMineralSolver().solve(
@@ -931,9 +931,9 @@ def test_dynamic_workflow_computes_bvw_mhi_and_net_pay_from_canonical_saturation
 
 
 def test_saturation_auto_routes_by_vcl_into_one_mixed_sw_curve():
-    from petrophys.petrophysics.saturation.archie import archie
-    from petrophys.petrophysics.saturation.simandoux import simandoux
-    from petrophys.petrophysics.saturation.sw_module import SaturationModule
+    from petrophys.interpretation.saturation.archie import archie
+    from petrophys.interpretation.saturation.simandoux import simandoux
+    from petrophys.interpretation.saturation.sw_module import SaturationModule
 
     depth = np.array([1000.0, 1001.0, 1002.0, 1003.0])
     rt = np.array([80.0, 60.0, 12.0, 8.0])
@@ -967,7 +967,7 @@ def test_saturation_auto_routes_by_vcl_into_one_mixed_sw_curve():
 
 
 def test_temperature_profile_uses_bht_or_fallback_gradient():
-    from petrophys.environmental.temperature import calculate_temperature_profile
+    from petrophys.interpretation.temperature import calculate_temperature_profile
 
     well = Well("TEMP-1")
     depth = np.array([0.0, 500.0, 1000.0])
@@ -1053,9 +1053,9 @@ def test_dynamic_workflow_converts_celsius_bht_metadata_for_temperature_profile(
 
 
 def test_archie_coefficients_cover_lithology_nomenclature():
-    from petrophys.analysis.lithology_analysis import GROUND_TRUTH_GROUPS, GROUND_TRUTH_NAMES
-    from petrophys.base.constants import ArchieParameterDefaults, DefaultParameters
-    from petrophys.petrophysics.cementation import default_archie_params
+    from petrophys.evaluation.diagnostics.lithology_analysis import GROUND_TRUTH_GROUPS, GROUND_TRUTH_NAMES
+    from petrophys.model.constants import ArchieParameterDefaults, DefaultParameters
+    from petrophys.interpretation.electrical.cementation import default_archie_params
 
     labels = set(GROUND_TRUTH_GROUPS.keys()) | set(GROUND_TRUTH_NAMES.values())
     labels.update({

@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from petrophys import Well
-from petrophys.imputation import PretrainedCurveImputer
+from petrophys.preprocessing.imputation import PretrainedCurveImputer
 from petrophys.io.export import export_las
 
 

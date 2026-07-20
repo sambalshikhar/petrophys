@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from petrophys import Well
-from petrophys.petrophysics.saturation_height import (
+from petrophys.interpretation.saturation.height import (
     pc_from_height,
     height_from_pc,
     convert_pc_lab_to_reservoir,

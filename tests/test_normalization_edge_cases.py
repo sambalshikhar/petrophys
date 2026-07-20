@@ -1,7 +1,7 @@
 import numpy as np
 
-from petrophys.qaqc.normalization.histogram_matching import histogram_matching
-from petrophys.qaqc.normalization.normalization_module import (
+from petrophys.preprocessing.normalization.histogram_matching import histogram_matching
+from petrophys.preprocessing.normalization.normalization_module import (
     linear_normalization,
     normalize_log,
 )

@@ -41,7 +41,7 @@ def test_hingle_plot_rejects_zero_m():
 
 def test_digital_facies_statistics_empty_facies_is_nan_not_crash():
     pytest.importorskip("sklearn")
-    from petrophys.core.digital_facies import FaciesResult
+    from petrophys.interpretation.core_analysis.digital_facies import FaciesResult
     facies = np.array([1, 1, 1, 1])  # n_facies=2 but class 2 has zero members
     res = FaciesResult(depth=np.arange(4.0), facies=facies, n_facies=2,
                        feature_names=["x"], weights=np.array([1.0]),
@@ -54,7 +54,7 @@ def test_digital_facies_statistics_empty_facies_is_nan_not_crash():
 # --- silent-bias fixes ----------------------------------------------------------
 
 def test_dual_water_survives_zero_resistivities():
-    from petrophys.petrophysics.saturation.dual_water import dual_water
+    from petrophys.interpretation.saturation.dual_water import dual_water
     # scalar rt=0 / rw=0 must not raise ZeroDivisionError
     swe = dual_water(phi_t=0.2, rt=0.0, rw=0.0, rwb=0.0, vcl=0.3, phi_cl=0.4)
     assert np.isfinite(swe) or np.isnan(swe)  # finite/NaN, never a crash
@@ -64,10 +64,10 @@ def test_dual_water_survives_zero_resistivities():
 
 
 def test_matrix_properties_fallback_has_u_key():
-    from petrophys.lithology.matrix_properties import get_mineral_properties
+    from petrophys.interpretation.lithology.matrix_properties import get_mineral_properties
     # 'pyrite' is in MINERAL_PROPERTIES; check a base-constants-only mineral resolves
     # with a 'u' key if it falls through (use any mineral present in MatrixProperties).
-    from petrophys.lithology.matrix_properties import MINERAL_PROPERTIES
+    from petrophys.interpretation.lithology.matrix_properties import MINERAL_PROPERTIES
     props = get_mineral_properties("quartz")
     assert "u" in props
 
@@ -85,7 +85,7 @@ def test_imputation_metrics_flag_in_sample_vs_held_out():
     # the training metric dict must carry an 'evaluation' field distinguishing
     # held-out from in-sample, so a train==test fallback isn't read as a test score.
     import inspect
-    from petrophys.imputation import training
+    from petrophys.preprocessing.imputation import training
     src = inspect.getsource(training)
     assert '"evaluation"' in src
     assert "in_sample_single_well" in src
@@ -94,7 +94,7 @@ def test_imputation_metrics_flag_in_sample_vs_held_out():
 
 def test_vcl_resolves_gr_family_when_only_spectral_gr():
     # a well carrying only SGR (no plain GR) must still compute VCL from it
-    from petrophys.clay_volume import VclModule
+    from petrophys.interpretation.clay_volume import VclModule
     w = Well("SGR-ONLY")
     d = np.arange(1000.0, 1020.0, 0.5)
     w.depth = d

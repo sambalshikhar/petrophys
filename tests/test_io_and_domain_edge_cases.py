@@ -1,15 +1,15 @@
 import numpy as np
 import pytest
 
-from petrophys.base import Well
-from petrophys.core.core_data import CoreData
+from petrophys.model import Well
+from petrophys.model.core import CoreData
 from petrophys.io import read_ascii, read_csv, read_las
-from petrophys.lithology import build_lithology_log, load_lithology_csv
-from petrophys.nmr.permeability import t2lm_from_bins
-from petrophys.petrophysics.saturation.archie import archie
-from petrophys.summation.formation_analysis import load_formations_csv
-from petrophys.summation.hydrocarbon_pore_volume import calculate_hcpv_from_well
-from petrophys.utils.interpolation import fill_gaps
+from petrophys.interpretation.lithology import build_lithology_log, load_lithology_csv
+from petrophys.interpretation.nmr.permeability import t2lm_from_bins
+from petrophys.interpretation.saturation.archie import archie
+from petrophys.evaluation.summaries.formation_analysis import load_formations_csv
+from petrophys.evaluation.volumetrics.hydrocarbon_pore_volume import calculate_hcpv_from_well
+from petrophys._internal.interpolation import fill_gaps
 
 
 def test_read_csv_preserves_negative_log_values_and_custom_nulls(tmp_path):

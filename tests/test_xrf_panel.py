@@ -5,7 +5,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from petrophys.core import XRFData
+from petrophys.interpretation.geochemistry import XRFData
 from petrophys.visualization import create_xrf_panel
 
 

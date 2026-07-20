@@ -10,9 +10,9 @@ end-to-end well-by-well validation against core and NPD ground truth.
 import numpy as np
 import pytest
 
-from petrophys.base.well import Well
-from petrophys.clay_volume.vcl_module import VclModule
-from petrophys.reservoir.net_pay.net_pay_module import NetPayModule
+from petrophys.model.well import Well
+from petrophys.interpretation.clay_volume.vcl_module import VclModule
+from petrophys.evaluation.net_pay.net_pay_module import NetPayModule
 
 
 def _well(n, **curves):

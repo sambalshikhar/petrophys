@@ -2,9 +2,9 @@
 
 import numpy as np
 
-from petrophys.base.constants import DefaultParameters
-from petrophys.reservoir import STANDARD_CUTOFFS, standard_cutoffs
-from petrophys.reservoir.net_pay.net_pay_module import NetPayModule
+from petrophys.model.constants import DefaultParameters
+from petrophys.evaluation import STANDARD_CUTOFFS, standard_cutoffs
+from petrophys.evaluation.net_pay.net_pay_module import NetPayModule
 from petrophys.workflow import DynamicWorkflowConfig
 
 

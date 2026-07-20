@@ -6,7 +6,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from petrophys.base import Well
+from petrophys.model import Well
 from petrophys.visualization import (
     create_nd_crossplot, create_mn_plot, create_mid_plot,
     create_buckles_plot, create_hingle_plot,

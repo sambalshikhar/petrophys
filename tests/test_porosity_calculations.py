@@ -1,7 +1,7 @@
 import numpy as np
 
-from petrophys.petrophysics.porosity.effective_porosity import effective_porosity
-from petrophys.petrophysics.porosity.total_porosity import total_porosity
+from petrophys.interpretation.porosity.effective_porosity import effective_porosity
+from petrophys.interpretation.porosity.total_porosity import total_porosity
 
 
 def test_total_porosity_adaptive_falls_back_per_sample_when_neutron_missing():

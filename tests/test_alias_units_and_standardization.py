@@ -1,7 +1,7 @@
 import numpy as np
 
 from petrophys import Well
-from petrophys.qaqc.standardization import standardize_curves
+from petrophys.preprocessing.standardization import standardize_curves
 import petrophys.workflow.zoned_batch as zoned_batch
 
 

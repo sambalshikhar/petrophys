@@ -1,0 +1,57 @@
+"""
+Reservoir Umbrella Module - Reservoir evaluation.
+
+This umbrella module contains tools for:
+- Bulk Volume Water (BVW)
+- Moveable Hydrocarbon Index (MHI)
+- Net Pay determination
+- Rock Quality (RQI, FZI, phi_z)
+"""
+
+from petrophys.evaluation.bvw import calculate_bvw, BvwModule
+from petrophys.evaluation.mhi import calculate_mhi, MhiModule
+from petrophys.evaluation.net_pay import (
+    STANDARD_CUTOFFS,
+    standard_cutoffs,
+    calculate_net_pay,
+    NetPayModule,
+    NetPayResult,
+)
+from petrophys.evaluation.rock_quality import (
+    RockQualityModule,
+    RockQualityResult,
+    calculate_rock_quality,
+    calculate_rqi,
+    calculate_phi_z,
+    calculate_fzi,
+)
+from petrophys.evaluation.flow_units import (
+    FlowUnitModule,
+    FlowUnitResult,
+    calculate_flow_units,
+    assign_flow_units,
+    predict_perm_from_fzi,
+)
+
+__all__ = [
+    "calculate_bvw",
+    "BvwModule",
+    "calculate_mhi",
+    "MhiModule",
+    "calculate_net_pay",
+    "STANDARD_CUTOFFS",
+    "standard_cutoffs",
+    "NetPayModule",
+    "NetPayResult",
+    "RockQualityModule",
+    "RockQualityResult",
+    "calculate_rock_quality",
+    "calculate_rqi",
+    "calculate_phi_z",
+    "calculate_fzi",
+    "FlowUnitModule",
+    "FlowUnitResult",
+    "calculate_flow_units",
+    "assign_flow_units",
+    "predict_perm_from_fzi",
+]

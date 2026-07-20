@@ -1,8 +1,8 @@
 import numpy as np
 
-from petrophys.base.well import Well
-from petrophys.petrophysics.permeability import lith_vcl_permeability, timur
-import petrophys.petrophysics.permeability.perm_module as perm_module
+from petrophys.model.well import Well
+from petrophys.interpretation.permeability import lith_vcl_permeability, timur
+import petrophys.interpretation.permeability.perm_module as perm_module
 
 
 def _perm_well():

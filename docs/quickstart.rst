@@ -10,12 +10,17 @@ Petrophys supports multiple file formats for well log data.
 
 **LAS Files**
 
+The package bundles real sample wells (North Sea clastics, the 17-well COSTA
+carbonate benchmark, a CMR log), so you can start without any data of your own:
+
 .. code-block:: python
 
+   import petrophys
    from petrophys.io import read_las
 
-   # Load a LAS file
-   well = read_las("path/to/well.las")
+   # A bundled real well (or pass a path to your own LAS file)
+   well = read_las(petrophys.sample("30_6-5"))
+   print(petrophys.list_samples()[:8])
 
    # View well information
    print(f"Well name: {well.header.well_name}")
@@ -61,7 +66,7 @@ Each calculation module can be used independently for maximum flexibility.
 
 .. code-block:: python
 
-   from petrophys.clay_volume import calculate_vcl, vcl_from_gr, calculate_rcl
+   from petrophys.interpretation.clay_volume import calculate_vcl, vcl_from_gr, calculate_rcl
 
    # Multi-method VCL (minimum of GR, SP, N-D)
    result = calculate_vcl(well, gr_min=15, gr_max=110)
@@ -78,7 +83,7 @@ Each calculation module can be used independently for maximum flexibility.
 
 .. code-block:: python
 
-   from petrophys.petrophysics.porosity import calculate_porosity
+   from petrophys.interpretation.porosity import calculate_porosity
 
    # Calculate all porosity types (density, sonic, total, effective, secondary)
    result = calculate_porosity(well, matrix="sandstone")
@@ -97,7 +102,7 @@ Each calculation module can be used independently for maximum flexibility.
 
 .. code-block:: python
 
-   from petrophys.petrophysics.saturation import (
+   from petrophys.interpretation.saturation import (
        calculate_sw, archie, simandoux, indonesia, dual_water, waxman_smits
    )
 
@@ -120,7 +125,7 @@ Each calculation module can be used independently for maximum flexibility.
 
 .. code-block:: python
 
-   from petrophys.reservoir import calculate_rock_quality
+   from petrophys.evaluation import calculate_rock_quality
 
    rq = calculate_rock_quality(perm_k=100.0, phi_e=0.2)
    print(f"RQI: {rq['RQI']:.4f}")
@@ -131,7 +136,7 @@ Each calculation module can be used independently for maximum flexibility.
 
 .. code-block:: python
 
-   from petrophys.petrophysics.permeability import flag_impermeable
+   from petrophys.interpretation.permeability import flag_impermeable
 
    imperm = flag_impermeable(phi_s, phi_d, phi_n)
    # True where phi_S > 1.5*phi_D or phi_N > phi_D + 0.15
@@ -140,7 +145,7 @@ Each calculation module can be used independently for maximum flexibility.
 
 .. code-block:: python
 
-   from petrophys.reservoir import calculate_net_pay
+   from petrophys.evaluation import calculate_net_pay
 
    # Clastics: PHIE cutoff = 0.08
    result = calculate_net_pay(well, lithology="clastic")
@@ -165,7 +170,7 @@ per-interval lithology CSV file:
 
 .. code-block:: python
 
-   from petrophys.lithology.lithology_log import (
+   from petrophys.interpretation.lithology.lithology_log import (
        load_lithology_csv, build_lithology_log
    )
 
@@ -176,11 +181,11 @@ per-interval lithology CSV file:
    litho_log = build_lithology_log(well.depth, intervals)
 
    # Use with Sw module (per-depth model routing)
-   from petrophys.petrophysics.saturation import calculate_sw
+   from petrophys.interpretation.saturation import calculate_sw
    sw = calculate_sw(well, rw=0.05, lithology=litho_log, salinity=25000)
 
    # Use with Net Pay (per-depth PHIE cutoffs)
-   from petrophys.reservoir import calculate_net_pay
+   from petrophys.evaluation import calculate_net_pay
    result = calculate_net_pay(well, lithology=litho_log)
 
 **With dynamic workflow:**
@@ -425,7 +430,7 @@ Load core plug measurements and calibrate log curves against lab data.
 
 .. code-block:: python
 
-   from petrophys.core import CoreData
+   from petrophys.interpretation.core_analysis import CoreData
    import pandas as pd
 
    # From a CSV file
@@ -458,7 +463,7 @@ Load core plug measurements and calibrate log curves against lab data.
 
 .. code-block:: python
 
-   from petrophys.core import calibrate_porosity, calibrate_permeability
+   from petrophys.interpretation.core_analysis import calibrate_porosity, calibrate_permeability
 
    # Compare core vs log porosity (R², bias, RMSE)
    # Returns a CalibrationResult dataclass; use attribute access
@@ -472,7 +477,7 @@ Load core plug measurements and calibrate log curves against lab data.
 
 .. code-block:: python
 
-   from petrophys.core import fit_poro_perm_transform, apply_poro_perm_transform
+   from petrophys.interpretation.core_analysis import fit_poro_perm_transform, apply_poro_perm_transform
 
    # Fit log(K) = A * PHI + B from core data
    # Returns a PoroPermTransform dataclass; use attribute access
@@ -487,7 +492,7 @@ Load core plug measurements and calibrate log curves against lab data.
 
 .. code-block:: python
 
-   from petrophys.core import correct_porosity_with_grain_density
+   from petrophys.interpretation.core_analysis import correct_porosity_with_grain_density
 
    # Use core grain density instead of assumed matrix density
    phie_corrected = correct_porosity_with_grain_density(well, core, rho_fluid=1.0)
@@ -497,7 +502,7 @@ Load core plug measurements and calibrate log curves against lab data.
 
 .. code-block:: python
 
-   from petrophys.core import estimate_archie_m
+   from petrophys.interpretation.core_analysis import estimate_archie_m
 
    # Estimate cementation exponent from core Sw and the well's Rt curve.
    # The CoreData must carry water saturation (sw).
@@ -516,7 +521,11 @@ Load core plug measurements and calibrate log curves against lab data.
 
 .. code-block:: python
 
-   from petrophys.core import plot_calibration, plot_poro_perm, plot_core_on_logs
+   from petrophys.visualization.core import (
+       plot_calibration,
+       plot_core_on_logs,
+       plot_poro_perm,
+   )
 
    # Core vs log comparison scatter plot (pass the CalibrationResult)
    plot_calibration(cal_phi)
@@ -537,7 +546,7 @@ Four interval types share a common base class with ``name``, ``top_depth``,
 
 .. code-block:: python
 
-   from petrophys.formation import (
+   from petrophys.evaluation.intervals import (
        Formation, Zone, SubZone, ManualInterval, IntervalKind
    )
 
@@ -595,7 +604,7 @@ intervals from multiple CSV formats.
 
 .. code-block:: python
 
-   from petrophys.formation import FormationTops
+   from petrophys.evaluation.intervals import FormationTops
 
    # Auto-detect format from column headers
    tops = FormationTops.from_csv("formations.csv")
@@ -607,7 +616,7 @@ intervals from multiple CSV formats.
    tops = FormationTops.from_csv("danish.csv", well_name="Well-1", format="danish")
 
    # Load as Zone intervals instead of Formation
-   from petrophys.formation import IntervalKind
+   from petrophys.evaluation.intervals import IntervalKind
    zone_tops = FormationTops.from_csv(
        "zones.csv", interval_kind=IntervalKind.ZONE
    )
@@ -687,7 +696,7 @@ and data coverage.
 
 .. code-block:: python
 
-   from petrophys.formation import IntervalAnalyzer, Formation
+   from petrophys.evaluation.intervals import IntervalAnalyzer, Formation
 
    # Analyze a single formation (well must have computed curves)
    analyzer = IntervalAnalyzer(well)
@@ -713,7 +722,7 @@ and data coverage.
 
 .. code-block:: python
 
-   from petrophys.formation import analyze_interval, ManualInterval
+   from petrophys.evaluation.intervals import analyze_interval, ManualInterval
 
    summary = analyze_interval(
        well,
@@ -724,7 +733,7 @@ and data coverage.
 
 .. code-block:: python
 
-   from petrophys.formation import FormationTops, IntervalAnalyzer
+   from petrophys.evaluation.intervals import FormationTops, IntervalAnalyzer
 
    tops = FormationTops.from_csv("formations.csv")
    analyzer = IntervalAnalyzer(well)
@@ -745,7 +754,7 @@ and data coverage.
 
 .. code-block:: python
 
-   from petrophys.formation import (
+   from petrophys.evaluation.intervals import (
        FormationTops, Formation, Zone, SubZone, ManualInterval,
        IntervalAnalyzer,
    )
@@ -783,9 +792,9 @@ lithology CSV, and formation/zone/sub-zone hierarchy.
 .. code-block:: python
 
    from petrophys.io import read_las
-   from petrophys.qaqc.standardization import standardize_curves
+   from petrophys.preprocessing.standardization import standardize_curves
    from petrophys.workflow import run_dynamic_workflow, DynamicWorkflowConfig
-   from petrophys.formation import (
+   from petrophys.evaluation.intervals import (
        FormationTops, Formation, Zone, SubZone, ManualInterval,
        IntervalAnalyzer, IntervalKind,
    )
@@ -875,7 +884,7 @@ For quick zone summaries without the formation module, use the summation module:
 
 .. code-block:: python
 
-   from petrophys.summation import calculate_zone_summary
+   from petrophys.evaluation.summaries import calculate_zone_summary
 
    summary = calculate_zone_summary(
        well, top_depth=8000, bottom_depth=8100, zone_name="Zone A"
@@ -887,13 +896,13 @@ For quick zone summaries without the formation module, use the summation module:
 Legacy Formation Analysis
 -------------------------
 
-The ``petrophys.summation`` module still provides the original formation
+The ``petrophys.evaluation.summaries`` module still provides the original formation
 analysis functions for backward compatibility. For new code, prefer the
-``petrophys.formation`` module above.
+``petrophys.evaluation.intervals`` module above.
 
 .. code-block:: python
 
-   from petrophys.summation import run_formation_analysis
+   from petrophys.evaluation.summaries import run_formation_analysis
 
    result = run_formation_analysis(
        las_path="well.las",
@@ -928,5 +937,6 @@ Exporting Results
 Next Steps
 ----------
 
-* See :doc:`tutorials/index` for detailed tutorials
-* See :doc:`api/modules` for complete API reference
+* See :doc:`examples` for code-first recipes
+* See :doc:`tutorials/index` for the full notebook curriculum on real wells
+* See :doc:`api/index` for the complete API reference

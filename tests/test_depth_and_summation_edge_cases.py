@@ -1,12 +1,12 @@
 import numpy as np
 import pytest
 
-from petrophys.base import Well
-from petrophys.base.log_data import DepthIndex
-from petrophys.summation import calculate_net_gross, calculate_zone_summary
-from petrophys.summation.averages import calculate_statistics
-from petrophys.summation.formation_analysis import analyze_formations
-from petrophys.formation.intervals import Formation
+from petrophys.model import Well
+from petrophys.model.log_data import DepthIndex
+from petrophys.evaluation.summaries import calculate_net_gross, calculate_zone_summary
+from petrophys.evaluation.summaries.averages import calculate_statistics
+from petrophys.evaluation.summaries.formation_analysis import analyze_formations
+from petrophys.model.intervals import Formation
 from petrophys.workflow.quick_look import QuickLook
 
 

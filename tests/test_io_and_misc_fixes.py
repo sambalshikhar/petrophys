@@ -14,7 +14,7 @@ lasio = pytest.importorskip("lasio")
 
 
 def _make_simple_well(name="TEST-WELL", n=11):
-    from petrophys.base.well import Well
+    from petrophys.model.well import Well
 
     well = Well(name=name)
     well.depth = np.linspace(1000.0, 1010.0, n)
@@ -164,7 +164,7 @@ def test_quick_look_uses_well_name():
 # Fix 7: describe_model_pack's Mapping annotation must be importable/resolvable
 # ---------------------------------------------------------------------------
 def test_describe_model_pack_mapping_annotation_resolves():
-    from petrophys.imputation.training import describe_model_pack
+    from petrophys.preprocessing.imputation.training import describe_model_pack
 
     # Would raise NameError("Mapping") before the typing import was added.
     hints = typing.get_type_hints(describe_model_pack)
@@ -178,7 +178,7 @@ def test_describe_model_pack_mapping_annotation_resolves():
 # Fix 8a: pyrite S/Fe weight ratio in the docstring must be ~1.15, not 0.57
 # ---------------------------------------------------------------------------
 def test_xrf_pyrite_ratio_docstring():
-    from petrophys.core.xrf import XRFData
+    from petrophys.interpretation.geochemistry.xrf import XRFData
 
     doc = XRFData.elemental_ratios.__doc__
     assert "1.15" in doc
@@ -190,7 +190,7 @@ def test_xrf_pyrite_ratio_docstring():
 # ("Si") are found by upper-cased queries ("SI") and vice versa
 # ---------------------------------------------------------------------------
 def test_xrf_get_is_case_insensitive():
-    from petrophys.core.xrf import XRFData
+    from petrophys.interpretation.geochemistry.xrf import XRFData
 
     depth = np.array([1.0, 2.0, 3.0])
     si = np.array([30.0, 31.0, 32.0])
@@ -259,7 +259,7 @@ def test_curve_copy_deep_copies_metadata():
 # Fix 11: Well.__setitem__ must reject a Curve of the wrong length
 # ---------------------------------------------------------------------------
 def test_well_setitem_rejects_wrong_length_curve():
-    from petrophys.base.curve import Curve
+    from petrophys.model.curve import Curve
 
     well = _make_simple_well(n=11)
 
@@ -277,7 +277,7 @@ def test_well_setitem_rejects_wrong_length_curve():
 # Fix 12: DepthIndex.resample must not overshoot the bottom depth
 # ---------------------------------------------------------------------------
 def test_depth_index_resample_does_not_overshoot_bottom():
-    from petrophys.base.log_data import DepthIndex
+    from petrophys.model.log_data import DepthIndex
 
     index = DepthIndex(np.array([0.0, 5.0, 10.0]), unit="m")
 
