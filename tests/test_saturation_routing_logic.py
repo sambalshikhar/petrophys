@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from petrophys import Well
-from petrophys.petrophysics.saturation.sw_module import SaturationModule
+from petrophys.interpretation.saturation.sw_module import SaturationModule
 
 
 def _saturation_well(vcl=0.6):
@@ -75,7 +75,7 @@ def test_forced_saturation_models_produce_one_curve(forced_model, kwargs):
 
 
 def test_simandoux_broadcasts_scalar_vcl_for_non_quadratic_exponent():
-    from petrophys.petrophysics.saturation.simandoux import simandoux
+    from petrophys.interpretation.saturation.simandoux import simandoux
 
     sw = simandoux(
         rt=np.array([10.0, 20.0]),
@@ -91,7 +91,7 @@ def test_simandoux_broadcasts_scalar_vcl_for_non_quadratic_exponent():
 
 
 def test_waxman_smits_broadcasts_scalar_rt_and_phi_inputs():
-    from petrophys.petrophysics.saturation.waxman_smits import waxman_smits
+    from petrophys.interpretation.saturation.waxman_smits import waxman_smits
 
     sw_phi_array = waxman_smits(
         phi_t=np.array([0.20, 0.25]),

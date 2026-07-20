@@ -138,10 +138,10 @@ print(f"Warnings: {result.warnings}")
 
 ```python
 # Each module can be used independently
-from petrophys.petrophysics.saturation import dual_water, waxman_smits, archie
-from petrophys.reservoir import calculate_rock_quality, calculate_rqi, calculate_fzi
-from petrophys.clay_volume import calculate_rcl, vcl_from_gr
-from petrophys.petrophysics.permeability import flag_impermeable
+from petrophys.interpretation.saturation import dual_water, waxman_smits, archie
+from petrophys.evaluation import calculate_rock_quality, calculate_rqi, calculate_fzi
+from petrophys.interpretation.clay_volume import calculate_rcl, vcl_from_gr
+from petrophys.interpretation.permeability import flag_impermeable
 
 # Direct function calls for Sw
 sw = archie(rt=10.0, rw=0.05, phi=0.15)
@@ -209,20 +209,18 @@ Each step runs only if the required input curves are available. Steps can be exp
 
 | Module | Description |
 |--------|-------------|
-| `petrophys.base` | Core data structures (Well, Curve, Units, Classifications) |
-| `petrophys.core` | Core/SCAL lab data (poro-perm, XRF, mechanical, calibration) |
-| `petrophys.io` | File I/O (LAS, DLIS, ASCII) |
-| `petrophys.qaqc` | Quality control (bad hole, normalization, standardization) |
-| `petrophys.environmental` | Environmental parameters (temperature profiles) |
-| `petrophys.resistivity` | Resistivity calculations (Rmf, Rw, invasion) |
-| `petrophys.clay_volume` | Clay volume (GR, SP, N-D methods) and clay resistivity (Rcl) |
-| `petrophys.lithology` | Lithology determination (multi-mineral solver, crossplots, CSV intervals) |
-| `petrophys.formation` | Interval-based analysis (backward-compatible re-exports) |
-| `petrophys.petrophysics` | Core calculations (porosity, saturation, HC correction, permeability) |
-| `petrophys.reservoir` | Reservoir evaluation (BVW, MHI, net pay, rock quality) |
-| `petrophys.visualization` | Plotting and display |
-| `petrophys.summation` | Summary, reporting, and formation-level analysis |
-| `petrophys.workflow` | Workflow orchestration (standard, dynamic, batch) |
+| `petrophys.model` | Wells, curves, core data, intervals, units, and metadata |
+| `petrophys.io` | LAS, DLIS, ASCII, CSV, and basic file writers |
+| `petrophys.preprocessing` | Standardization, normalization, quality control, and imputation |
+| `petrophys.interpretation` | Scientific calculations organized by property and specialist domain |
+| `petrophys.evaluation` | Net pay, reservoir quality, flow units, volumetrics, and summaries |
+| `petrophys.workflow` | Standard, dynamic, zoned, and batch orchestration |
+| `petrophys.reporting` | Delivery LAS/JSON packages and audit reports |
+| `petrophys.visualization` | Log panels, crossplots, and specialist displays |
+| `petrophys.datasets` | Small packaged sample datasets |
+
+See the [architecture guide](docs/architecture.rst) for package ownership and
+dependency rules.
 
 ## Documentation
 
@@ -230,7 +228,7 @@ Full documentation is available at [https://petrophys.readthedocs.io](https://pe
 
 - [Installation Guide](https://petrophys.readthedocs.io/en/latest/installation.html)
 - [Quick Start Tutorial](https://petrophys.readthedocs.io/en/latest/quickstart.html)
-- [API Reference](https://petrophys.readthedocs.io/en/latest/api/modules.html)
+- [API Reference](https://petrophys.readthedocs.io/en/latest/api/index.html)
 - [Tutorials](https://petrophys.readthedocs.io/en/latest/tutorials/index.html)
 
 ## Contributing

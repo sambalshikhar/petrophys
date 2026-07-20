@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from petrophys import Well
-from petrophys.clay_volume.vcl_module import VclModule
+from petrophys.interpretation.clay_volume.vcl_module import VclModule
 from petrophys.io import read_las
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 

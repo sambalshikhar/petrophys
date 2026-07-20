@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from petrophys.imaging import (
+from petrophys.interpretation.borehole_imaging import (
     BoreholeImageData,
     azimuthal_coverage,
     equalize_dynamic,

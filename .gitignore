@@ -155,19 +155,29 @@ Thumbs.db
 *.DLIS
 
 # ...but DO ship the small curated sample data bundled inside the package
-!petrophys/data/
-!petrophys/data/**/
-!petrophys/data/**/*.csv
-!petrophys/data/**/*.las
-!petrophys/data/**/*.LAS
-!petrophys/data/**/*.md
-!petrophys/data/**/*.py
-petrophys/data/**/__pycache__/
-petrophys/data/**/*.py[cod]
+!src/petrophys/datasets/
+!src/petrophys/datasets/**/
+!src/petrophys/datasets/**/*.csv
+!src/petrophys/datasets/**/*.las
+!src/petrophys/datasets/**/*.LAS
+!src/petrophys/datasets/**/*.md
+!src/petrophys/datasets/**/*.py
+src/petrophys/datasets/**/__pycache__/
+src/petrophys/datasets/**/*.py[cod]
 
 # Local reference data / generated outputs
 EvalGen2/
+costa_data/
+geolink_data/
 reports/
 tmp_*/
 outputs/
 /*.xlsx
+
+# Docs build artifacts (notebooks are copied in from /notebooks at build time)
+docs/_build/
+docs/tutorials/part_a/
+docs/tutorials/part_b/
+docs/tutorials/case_studies/
+docs/api/generated/
+jupyter_execute/

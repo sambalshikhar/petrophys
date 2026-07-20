@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from petrophys import Well
-from petrophys.reservoir import (
+from petrophys.evaluation import (
     calculate_flow_units,
     assign_flow_units,
     predict_perm_from_fzi,

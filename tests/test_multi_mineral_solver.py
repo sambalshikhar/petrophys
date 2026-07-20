@@ -9,7 +9,7 @@ mineral solution is independent of any PHIE input.
 import numpy as np
 import pytest
 
-from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
+from petrophys.interpretation.lithology.multi_mineral_solver import MultiMineralSolver
 
 
 # clean (zero-porosity) matrix points with a full log set
@@ -67,7 +67,7 @@ def test_solver_porosity_is_solved_and_physical():
     # log readings agree on every channel (including U = PEF * rho, whose bulk
     # PEF here is ~1.70, not the 1.80 quartz-matrix value). The solver must then
     # invert it back to exactly quartz = 0.84, phi = 0.16.
-    from petrophys.lithology.multi_mineral_solver import _get_endpoints
+    from petrophys.interpretation.lithology.multi_mineral_solver import _get_endpoints
 
     s = MultiMineralSolver()
     q, fl = _get_endpoints("quartz"), _get_endpoints("water")

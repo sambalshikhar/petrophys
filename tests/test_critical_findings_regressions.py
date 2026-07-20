@@ -4,8 +4,8 @@ import pytest
 from defusedxml.common import DefusedXmlException
 
 from petrophys import Well
-from petrophys.imputation import PretrainedCurveImputer
-from petrophys.imputation.training import (
+from petrophys.preprocessing.imputation import PretrainedCurveImputer
+from petrophys.preprocessing.imputation.training import (
     CurveFeatureTransformer,
     WELL_ID_COLUMN,
     _standardize_training_values,
@@ -13,9 +13,9 @@ from petrophys.imputation.training import (
 )
 from petrophys.io import read_csv, read_csv_wells
 from petrophys.io.dlis_reader import _channel_quality_score
-from petrophys.lithology.multi_mineral_solver import MultiMineralSolver
-from petrophys.nmr import NMRData
-from petrophys.qaqc.standardization import standardize_curves
+from petrophys.interpretation.lithology.multi_mineral_solver import MultiMineralSolver
+from petrophys.interpretation.nmr import NMRData
+from petrophys.preprocessing.standardization import standardize_curves
 from petrophys.visualization.log_viewer import load_log_viewer_template
 from petrophys.workflow.dynamic_workflow import (
     DynamicWorkflow,
@@ -137,7 +137,7 @@ def test_training_metrics_are_grouped_by_well(monkeypatch, tmp_path):
         }
     )
     monkeypatch.setattr(
-        "petrophys.imputation.training.build_training_table",
+        "petrophys.preprocessing.imputation.training.build_training_table",
         lambda **_: table,
     )
 

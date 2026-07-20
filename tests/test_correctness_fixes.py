@@ -7,8 +7,8 @@ defect cannot silently return.
 import numpy as np
 import pytest
 
-from petrophys.base.curve import Curve
-from petrophys.base.well import Well
+from petrophys.model.curve import Curve
+from petrophys.model.well import Well
 
 
 def _make_well(curves, n=20, top=1000.0, step=0.5):
@@ -26,8 +26,8 @@ def _make_well(curves, n=20, top=1000.0, step=0.5):
 # value flipped the sign of Wyllie sonic porosity in gypsum intervals.
 # ---------------------------------------------------------------------------
 def test_gypsum_slowness_is_standard_in_both_tables():
-    from petrophys.base.constants import MatrixProperties
-    from petrophys.lithology.matrix_properties import MINERAL_PROPERTIES
+    from petrophys.model.constants import MatrixProperties
+    from petrophys.interpretation.lithology.matrix_properties import MINERAL_PROPERTIES
 
     assert MatrixProperties.get("gypsum").slowness == pytest.approx(52.5)
     assert MINERAL_PROPERTIES["gypsum"]["slowness"] == pytest.approx(52.5)
@@ -43,7 +43,7 @@ def test_gypsum_slowness_is_standard_in_both_tables():
 # diameter-percentile convention.
 # ---------------------------------------------------------------------------
 def test_wentworth_boundaries():
-    from petrophys.core.grain_size import wentworth_class
+    from petrophys.interpretation.core_analysis.grain_size import wentworth_class
 
     assert wentworth_class(3.0) == "Clay"
     assert wentworth_class(5.0) == "Very Fine Silt"
@@ -56,7 +56,7 @@ def test_wentworth_boundaries():
 
 
 def test_grain_sorting_and_skewness_conventions():
-    from petrophys.core.grain_size import GrainSizeData
+    from petrophys.interpretation.core_analysis.grain_size import GrainSizeData
 
     symmetric = GrainSizeData(
         depth=np.array([1.0]), d50=np.array([200.0]),
@@ -77,7 +77,7 @@ def test_grain_sorting_and_skewness_conventions():
 # (previously crashed: Well.curves is a list of names, not objects).
 # ---------------------------------------------------------------------------
 def test_zone_averages_default_arguments():
-    from petrophys.summation.averages import calculate_zone_averages
+    from petrophys.evaluation.summaries.averages import calculate_zone_averages
 
     well = _make_well([("GR", np.linspace(20, 120, 20), "API")])
     result = calculate_zone_averages(well, 1000.0, 1009.0)
@@ -89,7 +89,7 @@ def test_zone_averages_default_arguments():
 # 5.0 default instead of returning NaN (which poisoned all shaly Sw).
 # ---------------------------------------------------------------------------
 def test_estimate_rcl_nan_guard():
-    from petrophys.petrophysics.saturation.sw_module import SaturationModule
+    from petrophys.interpretation.saturation.sw_module import SaturationModule
 
     module = SaturationModule(model="simandoux")
     rt = np.array([5.0, 5.0, np.nan, np.nan])
@@ -103,7 +103,7 @@ def test_estimate_rcl_nan_guard():
 # not standardize to DEPTH.
 # ---------------------------------------------------------------------------
 def test_alias_map_shallow_and_depth_families():
-    from petrophys.qaqc.standardization.alias_map import get_standard_mnemonic
+    from petrophys.preprocessing.standardization.alias_map import get_standard_mnemonic
 
     assert get_standard_mnemonic("RESS") == "RSHA"
     assert get_standard_mnemonic("SFLU") == "RSHA"
@@ -127,7 +127,7 @@ def _res_well(pairs):
 
 
 def test_standardizer_collision_incoming_wins():
-    from petrophys.qaqc.standardization import standardize_curves
+    from petrophys.preprocessing.standardization import standardize_curves
 
     well = _res_well([("RT", 7), ("ILD", 10)])
     with pytest.warns(UserWarning):
@@ -139,7 +139,7 @@ def test_standardizer_collision_incoming_wins():
 
 
 def test_standardizer_collision_incoming_loses():
-    from petrophys.qaqc.standardization import standardize_curves
+    from petrophys.preprocessing.standardization import standardize_curves
 
     well = _res_well([("RT", 10), ("ILD", 5)])
     with pytest.warns(UserWarning):
@@ -150,7 +150,7 @@ def test_standardizer_collision_incoming_loses():
 
 
 def test_standardizer_collision_native_takes_slot():
-    from petrophys.qaqc.standardization import standardize_curves
+    from petrophys.preprocessing.standardization import standardize_curves
 
     well = _res_well([("RT", 10), ("RDEP", 5)])
     with pytest.warns(UserWarning):
@@ -160,7 +160,7 @@ def test_standardizer_collision_native_takes_slot():
 
 
 def test_standardizer_keeps_tvd_distinct():
-    from petrophys.qaqc.standardization import standardize_curves
+    from petrophys.preprocessing.standardization import standardize_curves
 
     well = _make_well([
         ("MD", np.arange(1000.0, 1010.0, 0.5), "m"),
@@ -175,7 +175,7 @@ def test_standardizer_keeps_tvd_distinct():
 # land in the last bin ("shaly", "water-bearing", "very poor", ...).
 # ---------------------------------------------------------------------------
 def test_scalar_nan_classifies_to_none():
-    from petrophys.base.classifications import (
+    from petrophys.model.classifications import (
         HcSaturationClassification,
         InvasionClassification,
         MhiClassification,
@@ -196,7 +196,7 @@ def test_scalar_nan_classifies_to_none():
 # converting with factor 1.0, and must accept common spellings.
 # ---------------------------------------------------------------------------
 def test_units_reject_unknown_and_accept_common_spellings():
-    from petrophys.base.units import UnitConverter
+    from petrophys.model.units import UnitConverter
 
     with pytest.raises(ValueError):
         UnitConverter.depth(100, "km", "m")
@@ -214,7 +214,7 @@ def test_units_reject_unknown_and_accept_common_spellings():
 # gross, not the geometric interval length.
 # ---------------------------------------------------------------------------
 def test_net_gross_outside_interval_reports_zero_gross():
-    from petrophys.summation.net_gross import calculate_net_gross
+    from petrophys.evaluation.summaries.net_gross import calculate_net_gross
 
     well = _make_well([("NET_PAY", np.ones(20), "")])
     result = calculate_net_gross(well, top_depth=2000.0, bottom_depth=2100.0)
@@ -289,7 +289,7 @@ def test_workflow_computes_vcl_without_gr_sp_only():
 # (previously S_V was integrated from the log top, not the surface).
 # ---------------------------------------------------------------------------
 def test_overburden_exceeds_hydrostatic():
-    from petrophys.analysis.numerical_statistical_analysis import (
+    from petrophys.evaluation.diagnostics.numerical_statistical_analysis import (
         NumericalStatisticalAnalysis,
     )
 

@@ -5,11 +5,11 @@ include pyproject.toml
 include requirements.txt
 include requirements-dev.txt
 
-recursive-include petrophys *.py
-recursive-include petrophys py.typed
-recursive-include petrophys *.joblib
-recursive-include petrophys *.xml
-recursive-include petrophys/data *.las *.csv *.md
+recursive-include src/petrophys *.py
+recursive-include src/petrophys py.typed
+recursive-include src/petrophys *.joblib
+recursive-include src/petrophys *.xml
+recursive-include src/petrophys/datasets *.las *.csv *.md
 
 recursive-include docs *.rst *.py Makefile make.bat
 recursive-include tests *.py

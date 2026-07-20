@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 
 from petrophys import Well
-from petrophys.imaging import BoreholeImageData
+from petrophys.interpretation.borehole_imaging import BoreholeImageData
 from petrophys.visualization import (
     create_fmi_panel,
     create_nmr_panel,

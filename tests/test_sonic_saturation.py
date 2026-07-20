@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from petrophys import Well
-from petrophys.petrophysics.sonic_saturation import (
+from petrophys.interpretation.saturation.sonic import (
     slowness_to_velocity, velocity_to_moduli, dry_rock_modulus,
     gassmann_ksat, gassmann_kfl, wood_fluid_modulus, sw_from_fluid_modulus,
     sonic_water_saturation, SonicSaturationModule,

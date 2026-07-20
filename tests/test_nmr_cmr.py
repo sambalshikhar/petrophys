@@ -3,13 +3,13 @@ from textwrap import dedent
 import numpy as np
 
 from petrophys.io import read_las
-from petrophys.nmr import NMRData
-from petrophys.qaqc.bad_hole import detect_washout
-from petrophys.qaqc.standardization.alias_map import (
+from petrophys.interpretation.nmr import NMRData
+from petrophys.preprocessing.quality.bad_hole import detect_washout
+from petrophys.preprocessing.standardization.alias_map import (
     find_curve_type,
     get_standard_mnemonic,
 )
-from petrophys.qaqc.value_range_qc import clean_curve_values
+from petrophys.preprocessing.quality.value_ranges import clean_curve_values
 
 
 def _write_cmr_las(tmp_path):

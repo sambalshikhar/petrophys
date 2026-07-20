@@ -1,8 +1,8 @@
 import numpy as np
 
-from petrophys.base import Well
-from petrophys.io.example_format_export import _synchronize_post_qc_dependent_curves
-from petrophys.qaqc.value_range_qc import (
+from petrophys.model import Well
+from petrophys.reporting.reference_export import _synchronize_post_qc_dependent_curves
+from petrophys.preprocessing.quality.value_ranges import (
     VALUE_RANGE_QC_PARAMETER,
     apply_value_range_qc,
     value_range_qc_note,

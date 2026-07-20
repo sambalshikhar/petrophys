@@ -9,7 +9,7 @@ not by calling the implementation, so they are non-circular.
 import numpy as np
 import pytest
 
-from petrophys.clay_volume.gr_method import (
+from petrophys.interpretation.clay_volume.gr_method import (
     vcl_linear,
     vcl_larionov_tertiary,
     vcl_larionov_older,
@@ -17,9 +17,9 @@ from petrophys.clay_volume.gr_method import (
     vcl_clavier,
     vcl_from_gr,
 )
-from petrophys.clay_volume.sp_method import vcl_from_sp
-from petrophys.clay_volume.nd_method import vcl_from_nd, nd_clean_line
-from petrophys.clay_volume import calculate_rcl
+from petrophys.interpretation.clay_volume.sp_method import vcl_from_sp
+from petrophys.interpretation.clay_volume.nd_method import vcl_from_nd, nd_clean_line
+from petrophys.interpretation.clay_volume import calculate_rcl
 
 
 # IGR = 0.5 at GR=60 for the [20, 100] baseline

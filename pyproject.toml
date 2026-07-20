@@ -63,10 +63,11 @@ dev = [
     "mypy>=0.950",
 ]
 docs = [
-    "sphinx>=4.5.0",
-    "sphinx-rtd-theme>=1.0.0",
-    "sphinx-autodoc-typehints>=1.18.0",
-    "numpydoc>=1.4.0",
+    "sphinx>=7.0",
+    "furo>=2024.1.29",
+    "myst-nb>=1.1.0",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx-design>=0.5.0",
 ]
 all = ["petrophys[dlis,dev,docs,ml]"]
 
@@ -77,19 +78,19 @@ Repository = "https://github.com/petrophys/petrophys"
 Issues = "https://github.com/petrophys/petrophys/issues"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["petrophys*"]
 
 [tool.setuptools.package-data]
 petrophys = [
     "py.typed",
-    "imputation/pretrained/*.joblib",
+    "preprocessing/imputation/pretrained/*.joblib",
     "visualization/templates/*.xml",
-    "data/*.csv",
-    "data/*.md",
-    "data/costa/*.las",
-    "data/daydream/*.las",
-    "data/geolink/*.las",
+    "datasets/*.csv",
+    "datasets/*.md",
+    "datasets/costa/*.las",
+    "datasets/daydream/*.las",
+    "datasets/geolink/*.las",
 ]
 
 [tool.black]
@@ -109,6 +110,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 # Keep default invocation (`pytest`) working without the optional pytest-cov.

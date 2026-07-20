@@ -1,14 +1,14 @@
 import numpy as np
 import pytest
 
-from petrophys.base import Well
-from petrophys.core.calibration import (
+from petrophys.model import Well
+from petrophys.interpretation.core_analysis.calibration import (
     correct_porosity_with_grain_density,
     fit_poro_perm_transform,
     interpolate_log_at_core,
 )
-from petrophys.core.core_data import CoreData
-from petrophys.petrophysics.permeability.perm_module import PermeabilityModule
+from petrophys.model.core import CoreData
+from petrophys.interpretation.permeability.perm_module import PermeabilityModule
 from petrophys.workflow.dynamic_workflow import DynamicWorkflow, DynamicWorkflowConfig, WorkflowStep
 
 
