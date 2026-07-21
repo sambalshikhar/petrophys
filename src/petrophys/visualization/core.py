@@ -39,7 +39,8 @@ def plot_calibration(
     Parameters
     ----------
     result : CalibrationResult
-        Output from ``calibrate_porosity`` or ``calibrate_permeability``.
+        Output from ``calibrate_porosity``, ``calibrate_permeability``, or
+        ``calibrate_saturation``.
     ax : Axes, optional
         Existing axes to plot on.
     title : str, optional

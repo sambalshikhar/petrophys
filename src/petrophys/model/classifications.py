@@ -298,6 +298,43 @@ class PermeabilityClassification(Enum):
             return cls.VERY_POOR
 
 
+class RQIClassification(Enum):
+    """Reservoir Quality Index classification for RQI values in microns."""
+
+    HIGH_RQI = "high"
+    MODERATE_RQI = "moderate"
+    LOW_RQI = "low"
+
+    @classmethod
+    def classify(
+        cls,
+        rqi: Union[float, np.ndarray],
+    ) -> Union["RQIClassification", np.ndarray, None]:
+        """
+        Classify Reservoir Quality Index value(s).
+
+        ``HIGH_RQI`` is greater than 1.0 micron, ``MODERATE_RQI`` is
+        0.5-1.0 microns inclusive, and ``LOW_RQI`` is below 0.5 micron.
+        Missing values remain unclassified.
+        """
+        if isinstance(rqi, np.ndarray):
+            values = np.asarray(rqi, dtype=float)
+            result = np.full(values.shape, None, dtype=object)
+            finite = np.isfinite(values)
+            result[finite & (values > 1.0)] = cls.HIGH_RQI
+            result[finite & (values >= 0.5) & (values <= 1.0)] = cls.MODERATE_RQI
+            result[finite & (values < 0.5)] = cls.LOW_RQI
+            return result
+
+        if rqi is None or not np.isfinite(rqi):
+            return None
+        if rqi > 1.0:
+            return cls.HIGH_RQI
+        if rqi >= 0.5:
+            return cls.MODERATE_RQI
+        return cls.LOW_RQI
+
+
 class MhiClassification(Enum):
     """
     Moveable Hydrocarbon Index (MHI) classification.

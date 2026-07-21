@@ -119,11 +119,21 @@ def interpolate_log_at_core(
 
 def core_data_from_well(
     well,
-    porosity_curves: Iterable[str] = ("PHIC", "CPOR"),
-    perm_curves: Iterable[str] = ("KH_CORE", "CPERM", "K_CORE", "PERM_CORE"),
+    porosity_curves: Iterable[str] = ("PHIC", "CPOR", "CPOR-AMB", "CPOR_AMB"),
+    perm_curves: Iterable[str] = (
+        "KH_CORE",
+        "CPERM",
+        "K_CORE",
+        "PERM_CORE",
+        "CPERM-AMB-KL",
+        "CPERM_AMB_KL",
+        "CPERM-AMB-AIR",
+        "CPERM_AMB_AIR",
+        "CPERM-AB-AIR",
+    ),
     gd_curves: Iterable[str] = ("GDEN", "CGD"),
-    sw_curves: Iterable[str] = ("SWC", "CSW"),
-    so_curves: Iterable[str] = ("SOC", "CSO"),
+    sw_curves: Iterable[str] = ("SWC", "CSW", "CSW-AMB", "CSW_AMB"),
+    so_curves: Iterable[str] = ("SOC", "CSO", "CSO-AMB", "CSO_AMB"),
     lithology_curves: Iterable[str] = ("LITHOLOGY_GEOLINK",),
     top: Optional[float] = None,
     bottom: Optional[float] = None,
@@ -132,9 +142,9 @@ def core_data_from_well(
     Build ``CoreData`` directly from well curves.
 
     This is intended for LAS files that already carry laboratory core
-    measurements such as ``PHIC``, ``KH_CORE``, ``GDEN``, ``SWC``, and ``SOC``.
-    The returned object keeps only depths where at least one requested core
-    property exists.
+    measurements such as ``PHIC``, ``CPOR-AMB``, ``KH_CORE``,
+    ``CPERM-AMB-KL``, ``GDEN``, ``SWC``, and ``CSW-AMB``. The returned object
+    keeps only depths where at least one requested core property exists.
     """
     if well.depth is None:
         raise ValueError("Well has no depth data")
@@ -357,6 +367,63 @@ def calibrate_permeability(
     return _compute_calibration(
         f"Permeability ({log_curve}, {'log10' if log_scale else 'linear'})",
         core_v, log_v,
+    )
+
+
+def calibrate_saturation(
+    well,
+    core: CoreData,
+    log_curve: str = "SW",
+    core_unit: Optional[str] = None,
+) -> CalibrationResult:
+    """
+    Compare core water saturation against a log-derived saturation curve.
+
+    This diagnostic does not replace the log saturation, alter workflow
+    routing, or treat core saturation as the preferred continuous
+    interpretation. Fraction and percentage inputs are normalized to
+    fractions before comparison.
+
+    Parameters
+    ----------
+    well : Well
+        Well object containing the log-derived saturation curve.
+    core : CoreData
+        Core data with water-saturation measurements.
+    log_curve : str
+        Name of the log water-saturation curve.
+    core_unit : str, optional
+        Unit for ``core.sw``. Use ``"%"`` for percentage data. When omitted,
+        consistently percentage-like values are detected conservatively.
+
+    Returns
+    -------
+    CalibrationResult
+        Statistics and matched fraction-valued core/log saturation arrays.
+    """
+    if core.sw is None:
+        raise ValueError("CoreData has no water-saturation measurements")
+
+    curve = well.get(log_curve)
+    if curve is None:
+        raise ValueError(f"Curve '{log_curve}' not found on well")
+
+    log_vals = interpolate_log_at_core(well, core, log_curve)
+    core_vals = _saturation_to_fraction(core.sw, unit=core_unit)
+    log_vals = _saturation_to_fraction(log_vals, unit=curve.unit)
+
+    valid = (
+        np.isfinite(core_vals)
+        & np.isfinite(log_vals)
+        & (core_vals >= 0.0)
+        & (core_vals <= 1.0)
+        & (log_vals >= 0.0)
+        & (log_vals <= 1.0)
+    )
+    return _compute_calibration(
+        f"Water saturation ({log_curve})",
+        core_vals[valid],
+        log_vals[valid],
     )
 
 
@@ -718,6 +785,26 @@ def _interp_curve_at_depth(
             right=np.nan,
         )
     return out
+
+
+def _saturation_to_fraction(
+    values: np.ndarray,
+    unit: Optional[str] = None,
+) -> np.ndarray:
+    """Normalize one consistently scaled saturation array to fraction units."""
+    saturation = np.asarray(values, dtype=float).copy()
+    finite = saturation[np.isfinite(saturation)]
+    normalized_unit = (unit or "").strip().lower().replace(" ", "")
+    is_percent_unit = normalized_unit in {"%", "percent", "percentage", "pu"}
+    is_fraction_unit = normalized_unit in {"v/v", "frac", "fraction", "decimal"}
+    appears_percent = (
+        not normalized_unit
+        and finite.size > 0
+        and np.nanmedian(np.abs(finite)) > 1.0
+    )
+    if is_percent_unit or (appears_percent and not is_fraction_unit):
+        saturation /= 100.0
+    return saturation
 
 
 def _compute_calibration(
