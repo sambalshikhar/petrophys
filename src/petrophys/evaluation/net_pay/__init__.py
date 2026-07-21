@@ -10,7 +10,13 @@ from petrophys.evaluation.net_pay.net_pay_module import (
 from petrophys.evaluation.net_pay.cutoffs import (
     Cutoffs, STANDARD_CUTOFFS, default_cutoffs, standard_cutoffs,
 )
-from petrophys.evaluation.net_pay.flags import generate_net_flags
+from petrophys.evaluation.net_pay.flags import (
+    DEFAULT_HYDROCARBON_FLUIDS,
+    DEFAULT_NON_PAY_FLUIDS,
+    add_volumetric_pay_flag,
+    generate_net_flags,
+    generate_volumetric_pay_flag,
+)
 
 __all__ = [
     "NetPayModule",
@@ -21,4 +27,8 @@ __all__ = [
     "STANDARD_CUTOFFS",
     "standard_cutoffs",
     "generate_net_flags",
+    "generate_volumetric_pay_flag",
+    "add_volumetric_pay_flag",
+    "DEFAULT_HYDROCARBON_FLUIDS",
+    "DEFAULT_NON_PAY_FLUIDS",
 ]

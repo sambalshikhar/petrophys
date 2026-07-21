@@ -29,6 +29,7 @@ from petrophys.model.classifications import (
     PorosityClassification,
     HcSaturationClassification,
     PermeabilityClassification,
+    RQIClassification,
     MhiClassification,
 )
 from petrophys.model.units import UnitConverter, UnitRegistry
@@ -48,6 +49,7 @@ __all__ = [
     "PorosityClassification",
     "HcSaturationClassification",
     "PermeabilityClassification",
+    "RQIClassification",
     "MhiClassification",
     "UnitConverter",
     "UnitRegistry",

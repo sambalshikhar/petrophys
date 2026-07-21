@@ -22,6 +22,7 @@ from petrophys.model.classifications import (
     PorosityClassification,
     HcSaturationClassification,
     PermeabilityClassification,
+    RQIClassification,
     MhiClassification,
 )
 from petrophys.evaluation.diagnostics import (
@@ -52,6 +53,7 @@ __all__ = [
     "PorosityClassification",
     "HcSaturationClassification",
     "PermeabilityClassification",
+    "RQIClassification",
     "MhiClassification",
     "HydrocarbonAnalysis",
     "LithologyAnalysis",
