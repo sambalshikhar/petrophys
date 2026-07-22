@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Sequence
 
 import numpy as np
-from scipy.cluster.vq import kmeans2
+from scipy.cluster.vq import ClusterError, kmeans2
 
 from petrophys.interpretation.rock_physics.elastic import calculate_elastic_properties
 from petrophys._internal.analysis_helpers import (
@@ -130,8 +130,11 @@ class NumericalStatisticalAnalysis:
         for name, values in curve_arrays.items():
             if name.endswith("FLAG") or name.endswith("_CODE"):
                 continue
-            mean = float(np.nanmean(values))
-            std = float(np.nanstd(values))
+            finite_values = values[np.isfinite(values)]
+            if finite_values.size == 0:
+                continue
+            mean = float(np.mean(finite_values))
+            std = float(np.std(finite_values))
             if not np.isfinite(std) or std <= 0.0:
                 continue
             z = np.abs((values - mean) / std)
@@ -410,11 +413,55 @@ class NumericalStatisticalAnalysis:
         std = np.nanstd(x, axis=0)
         std[std <= 0.0] = 1.0
         x_scaled = (x - mean) / std
-        n_clusters = min(5, x_scaled.shape[0])
-        if n_clusters < 2:
-            return np.full(n_samples, np.nan, dtype=float)
+        unique_count = np.unique(x_scaled, axis=0).shape[0]
+        n_clusters = min(5, x_scaled.shape[0], unique_count)
 
-        _, labels = kmeans2(x_scaled, n_clusters, minit="points")
+        if n_clusters == 1:
+            labels = np.zeros(x_scaled.shape[0], dtype=int)
+        else:
+            # Sort samples before seeded initialization so the result does not
+            # depend on LAS row order. Canonical centroid ordering also keeps
+            # cluster IDs stable if the solver returns permuted labels.
+            sort_keys = tuple(
+                x_scaled[:, column]
+                for column in range(x_scaled.shape[1] - 1, -1, -1)
+            )
+            sample_order = np.lexsort(sort_keys)
+            sorted_samples = x_scaled[sample_order]
+            centroids = None
+            sorted_labels = None
+            for candidate_count in range(n_clusters, 1, -1):
+                try:
+                    centroids, sorted_labels = kmeans2(
+                        sorted_samples,
+                        candidate_count,
+                        minit="points",
+                        missing="raise",
+                        seed=0,
+                    )
+                    n_clusters = candidate_count
+                    break
+                except ClusterError:
+                    continue
+
+            if centroids is None or sorted_labels is None:
+                labels = np.zeros(x_scaled.shape[0], dtype=int)
+                electrofacies = np.full(n_samples, np.nan, dtype=float)
+                electrofacies[valid] = labels.astype(float)
+                return electrofacies
+
+            labels = np.empty_like(sorted_labels)
+            labels[sample_order] = sorted_labels
+
+            centroid_keys = tuple(
+                centroids[:, column]
+                for column in range(centroids.shape[1] - 1, -1, -1)
+            )
+            centroid_order = np.lexsort(centroid_keys)
+            canonical_labels = np.empty(n_clusters, dtype=int)
+            canonical_labels[centroid_order] = np.arange(n_clusters)
+            labels = canonical_labels[labels]
+
         electrofacies = np.full(n_samples, np.nan, dtype=float)
         electrofacies[valid] = labels.astype(float)
         return electrofacies

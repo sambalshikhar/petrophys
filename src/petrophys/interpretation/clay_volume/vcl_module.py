@@ -96,14 +96,10 @@ class VclModule:
         self.sp_max = sp_max
         self.sp_min = sp_min
         # How to combine the per-method clay indicators:
-        #   "min"  -- minimum of all methods at each depth. Simple, but a low SP
-        #             or GR can pull the estimate below the true clay content in
-        #             non-radioactive / soft clay.
-        #   "auto" -- neutron-density is the primary clay indicator (it responds
-        #             to clay mineralogy, not radioactivity or SP suppression);
-        #             GR is used only where gas crossover invalidates N-D or N-D
-        #             is unavailable; SP is a reported cross-check that never
-        #             pulls the final value down. Recommended for clastics.
+        #   "min"  -- minimum valid method at each depth; this is the default
+        #             convention used by the dynamic workflow.
+        #   "auto" -- optional N-D-primary mode. GR is used where gas crossover
+        #             invalidates N-D or N-D is unavailable; SP is a fallback.
         self.combine = str(combine or "min").strip().lower()
         self.rho_fl = rho_fl
 
