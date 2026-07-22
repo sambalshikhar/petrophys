@@ -429,6 +429,14 @@ def test_vclay_routing_by_available_methods(
     assert step.parameters["use_sp"] is expected_sp
     assert step.parameters["use_nd"] is expected_nd
     assert "VCLAY" in step.output_curves
+    method_curves = [well.get(name) for name in ("VCLGR", "VCLSP", "VCLND")]
+    method_data = [curve.data for curve in method_curves if curve is not None]
+    stacked = np.vstack(method_data)
+    expected = np.full(well.n_samples, np.nan)
+    valid = np.any(np.isfinite(stacked), axis=0)
+    expected[valid] = np.nanmin(stacked[:, valid], axis=0)
+    np.testing.assert_allclose(well.get("VCL").data, expected, equal_nan=True)
+    assert any("min(available methods)" in decision for decision in step.decisions)
 
 
 def test_vclay_keeps_nan_where_all_methods_are_missing_without_runtime_warning():
@@ -447,6 +455,25 @@ def test_vclay_keeps_nan_where_all_methods_are_missing_without_runtime_warning()
         issubclass(item.category, RuntimeWarning) and "All-NaN slice" in str(item.message)
         for item in caught
     )
+
+
+def test_vclay_trace_reports_the_clean_line_used(record_route):
+    well = _routing_well("VCL-SANDSTONE-CLEAN-LINE")
+    result = _run(
+        "vclay_sandstone_clean_line",
+        well,
+        DynamicWorkflowConfig(matrix_type="sandstone", lithology="sandstone"),
+        record_route,
+        focus_steps=["vclay"],
+        curves=["VCL", "VCLND"],
+    )
+    parameters = _step_by_name(result, "vclay").parameters
+
+    assert parameters["nd_matrix"] == "sandstone"
+    assert parameters["nd_clean1_density"] == pytest.approx(2.65)
+    assert parameters["nd_clean1_neutron"] == pytest.approx(-0.02)
+    assert parameters["nd_clean2_density"] == pytest.approx(1.99)
+    assert parameters["nd_clean2_neutron"] == pytest.approx(0.38)
 
 
 @pytest.mark.parametrize("curve_to_keep", ["CALI", "CAL"])
@@ -1250,9 +1277,33 @@ def test_dual_water_uses_same_phi_cl_as_phie(record_route):
 
     assert por_step.parameters["phi_cl_source"] == "vcl_gt_0.9_average_phit_nd"
     assert sat_step.parameters["phi_cl_source"] == "vcl_gt_0.9_average_phit_nd"
+    assert np.isscalar(por_step.parameters["phi_cl"])
     assert por_step.parameters["phi_cl"] == pytest.approx(expected_phi_cl)
     assert sat_step.parameters["phi_cl"] == pytest.approx(por_step.parameters["phi_cl"])
     assert sat_step.parameters["sw_model_sample_counts"] == {"archie": 4, "dual_water": 8}
+
+
+def test_phi_cl_is_one_representative_scalar_across_depth():
+    n = 601
+    well = Well("PHICL-SCALAR")
+    well.depth = np.linspace(1000.0, 2000.0, n)
+    well.add_curve("DEPT", well.depth, "m", "Depth")
+    well.add_curve("VCL", np.full(n, 0.95), "v/v", "Clay volume")
+    phit = np.linspace(0.30, 0.10, n)
+
+    workflow = DynamicWorkflow(DynamicWorkflowConfig(phi_cl=0.15))
+    info = workflow._resolve_phi_cl(
+        well,
+        well.get("VCL"),
+        porosity_basis=phit,
+        porosity_basis_name="PHIT",
+        porosity_basis_valid_mask=np.ones(n, dtype=bool),
+    )
+
+    assert np.isscalar(info["phi_cl"])
+    assert info["phi_cl"] == pytest.approx(float(np.mean(phit)))
+    assert info["phi_cl_source"] == "vcl_gt_0.9_average_phit_nd"
+    assert "phi_cl_values" not in info
 
 
 def test_phi_cl_uses_config_fallback_when_shale_phit_is_not_nd_average(record_route):

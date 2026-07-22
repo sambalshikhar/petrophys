@@ -24,9 +24,9 @@ def _well(n, **curves):
     return w
 
 
-# --- Fix 1: neutron-density-primary VCL catches non-radioactive clay -----------
+# --- VCL method combination ---------------------------------------------------
 
-def test_vcl_auto_uses_nd_over_low_gr_in_nonradioactive_clay():
+def test_vcl_nd_primary_mode_uses_nd_over_low_gr():
     # Clean sand (sample 0) and a non-radioactive clay (sample 1): GR reads low
     # for BOTH, but the neutron-density crossplot sees the clay.
     w = _well(
@@ -38,9 +38,9 @@ def test_vcl_auto_uses_nd_over_low_gr_in_nonradioactive_clay():
     res_min = VclModule(matrix="sandstone", use_sp=False, combine="min").calculate(w)
     res_auto = VclModule(matrix="sandstone", use_sp=False, combine="auto").calculate(w)
 
-    # ND indicator sees substantial clay in sample 1
+    # The explicit N-D-primary mode follows the N-D indicator at sample 1.
     assert res_auto.vcl_nd[1] > 0.5
-    # Legacy min collapses to the low GR value; auto keeps the ND clay
+    # The default row-wise minimum retains the lower valid GR estimate.
     assert res_min.vcl[1] < 0.1
     assert res_auto.vcl[1] == pytest.approx(res_auto.vcl_nd[1], abs=1e-6)
     assert res_auto.vcl[1] > res_min.vcl[1] + 0.4
@@ -62,7 +62,7 @@ def test_vcl_auto_falls_back_to_gr_in_gas_crossover():
 
 
 def test_vcl_min_default_unchanged():
-    # Back-compat: default combine is still the legacy minimum.
+    # The default follows the row-wise minimum convention used by the workflow.
     assert VclModule().combine == "min"
 
 

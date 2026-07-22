@@ -210,6 +210,61 @@ def test_saturation_and_numerical_analysis_document_core_corrected_sources():
     assert "PERM_CC" in methodology
 
 
+def test_numerical_analysis_skips_all_nan_curves_without_runtime_warnings():
+    import warnings
+
+    well = _build_analysis_well()
+    well.add_curve("ALL_NAN", np.full(well.n_samples, np.nan), "", "Missing data")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        NumericalStatisticalAnalysis().analyze(well, add_curves=False)
+
+    assert not any(issubclass(item.category, RuntimeWarning) for item in caught)
+
+
+def test_electrofacies_is_reproducible_and_independent_of_row_order():
+    well = _build_analysis_well()
+
+    np.random.seed(17)
+    expected = NumericalStatisticalAnalysis._electrofacies(well, well.n_samples)
+    np.random.seed(938)
+    repeated = NumericalStatisticalAnalysis._electrofacies(well, well.n_samples)
+
+    order = np.array([7, 2, 9, 0, 5, 1, 8, 3, 6, 4])
+    reordered = Well("ANALYSIS-REORDERED")
+    reordered.depth = well.depth[order]
+    reordered.depth_unit = well.depth_unit
+    for mnemonic in ("RHOB", "NPHI", "GR", "RDEP"):
+        curve = well.get(mnemonic)
+        reordered.add_curve(
+            mnemonic,
+            curve.data[order],
+            curve.unit,
+            curve.metadata.description,
+        )
+    reordered_labels = NumericalStatisticalAnalysis._electrofacies(
+        reordered,
+        reordered.n_samples,
+    )
+    restored_labels = np.empty_like(reordered_labels)
+    restored_labels[order] = reordered_labels
+
+    np.testing.assert_array_equal(repeated, expected)
+    np.testing.assert_array_equal(restored_labels, expected)
+
+
+def test_electrofacies_handles_one_unique_log_response_as_one_class():
+    well = Well("ANALYSIS-CONSTANT")
+    well.depth = np.arange(4.0)
+    well.add_curve("GR", np.full(4, 50.0), "API", "Gamma Ray")
+    well.add_curve("RHOB", np.full(4, 2.4), "g/cc", "Bulk Density")
+
+    labels = NumericalStatisticalAnalysis._electrofacies(well, well.n_samples)
+
+    np.testing.assert_array_equal(labels, np.zeros(4))
+
+
 def test_rock_quality_module_prioritizes_core_corrected_inputs():
     from petrophys.evaluation.rock_quality.rock_quality_module import RockQualityModule
 
