@@ -1421,6 +1421,19 @@ def _all_step_results(workflow_result, step_name: Optional[str] = None) -> List[
     return step_results
 
 
+FINALIZED_BENCHMARK_STEPS = {
+    "permeability": "permeability_benchmark_finalize",
+    "rock_quality": "rock_quality_benchmark_finalize",
+}
+
+
+def _canonical_workflow_step_name(step_name: str) -> str:
+    for canonical, finalized in FINALIZED_BENCHMARK_STEPS.items():
+        if step_name == finalized:
+            return canonical
+    return step_name
+
+
 def _workflow_output_curves(workflow_result) -> List[str]:
     curves: List[str] = []
     for step in _all_step_results(workflow_result):
@@ -1519,6 +1532,10 @@ def _step_lookup(workflow_result) -> tuple[dict[str, Any], set[str]]:
         for step in run.steps_executed:
             if step.step not in step_results or step.success:
                 step_results[step.step] = step
+    for canonical, finalized in FINALIZED_BENCHMARK_STEPS.items():
+        finalized_step = step_results.get(finalized)
+        if finalized_step is not None and finalized_step.success:
+            step_results[canonical] = finalized_step
     return step_results, skipped_steps
 
 
@@ -2916,7 +2933,7 @@ def _curve_route_reason(curve: str, step: Any, well: "Well") -> str:
     if step is None:
         return ""
 
-    step_name = str(getattr(step, "step", "") or "")
+    step_name = _canonical_workflow_step_name(str(getattr(step, "step", "") or ""))
     method = str(getattr(step, "method", "") or "")
     params = getattr(step, "parameters", {}) or {}
     inputs = list(getattr(step, "input_curves", []) or [])
@@ -3190,6 +3207,15 @@ def _build_lithology_method_notes(
 
 
 def _first_step_result(workflow_result, step_name: str):
+    finalized_name = FINALIZED_BENCHMARK_STEPS.get(step_name)
+    if finalized_name is not None:
+        finalized_steps = _all_step_results(workflow_result, finalized_name)
+        successful_finalized = next(
+            (step for step in finalized_steps if getattr(step, "success", False)),
+            None,
+        )
+        if successful_finalized is not None:
+            return successful_finalized
     steps = _all_step_results(workflow_result, step_name)
     return steps[0] if steps else None
 
