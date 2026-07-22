@@ -1,8 +1,15 @@
 import json
+from types import SimpleNamespace
 
 import numpy as np
 
 from petrophys import Well
+from petrophys.reporting.reference_export import (
+    _compact_curve_note,
+    _curve_route_reason,
+    _first_step_result,
+    _step_lookup,
+)
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig, StepResult
 
 
@@ -41,6 +48,49 @@ def test_step_result_to_dict_is_json_safe():
     assert payload["parameters"]["arr"]["finite_count"] == 2
     assert payload["parameters"]["arr"]["nan_count"] == 1
     json.dumps(payload, allow_nan=False)
+
+
+def test_context_notes_prefer_finalized_benchmark_permeability_trace():
+    preliminary = StepResult(
+        step="permeability",
+        success=True,
+        method="timur",
+        parameters={
+            "swirr": 0.0908,
+            "swirr_source": "hc_mask_p5",
+            "swirr_metadata": {"hc_mask_samples": 1524},
+        },
+    )
+    finalized = StepResult(
+        step="permeability_benchmark_finalize",
+        success=True,
+        method="timur",
+        parameters={
+            "swirr": 0.0913,
+            "swirr_source": "hc_mask_p5",
+            "swirr_metadata": {"hc_mask_samples": 2149},
+        },
+    )
+    result = SimpleNamespace(
+        base_result=SimpleNamespace(
+            steps_executed=[preliminary, finalized],
+            steps_skipped=[],
+        ),
+        zone_results=[],
+    )
+
+    assert _first_step_result(result, "permeability") is finalized
+    step_lookup, _ = _step_lookup(result)
+    assert step_lookup["permeability"] is finalized
+    assert "SWIRR_APP=0.0913" in _compact_curve_note(
+        "PERM", "computed", "", finalized, _trace_well()
+    )
+    assert "hc_samples=2149" in _compact_curve_note(
+        "SWIRR_APP", "computed", "", finalized, _trace_well()
+    )
+    assert "hc_mask_samples=2149" in _curve_route_reason(
+        "SWIRR_APP", finalized, _trace_well()
+    )
 
 
 def test_dynamic_workflow_result_exports_trace_dict_json_and_markdown(tmp_path):
