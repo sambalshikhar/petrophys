@@ -91,6 +91,7 @@ petrophys = [
     "datasets/costa/*.las",
     "datasets/daydream/*.las",
     "datasets/geolink/*.las",
+    "data/legacy_context/*.json.gz",
 ]
 
 [tool.black]

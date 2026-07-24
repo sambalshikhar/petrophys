@@ -32,6 +32,11 @@ from petrophys.preprocessing.quality.value_ranges import (
 )
 from petrophys.preprocessing.standardization import standardize_curves
 from petrophys._internal.analysis_helpers import CategoryAnalysisResult, build_section, get_curve, get_curve_data_depthwise
+from petrophys._internal.legacy_context import (
+    LEGACY_EXCLUDED_CONTEXT_CURVES,
+    legacy_electrofacies_v1_entry,
+    legacy_benchmark_context,
+)
 
 
 NULL_VALUE = -9999.0
@@ -429,14 +434,19 @@ PRIMARY_LOGS_FOR_COMPLETENESS = [
     "LITHOLOGY_GEOLINK",
 ]
 
+# Ordered, not sets: these feed ``_derived_status_target_list``, so iteration
+# order reaches ``derived_log_computation_notes`` verbatim. Set literals made
+# that order depend on PYTHONHASHSEED, which changed every note block between
+# runs. Curves already in REFERENCE_DERIVED_LOG_TARGETS keep their position
+# from that list; the trailing entries here are the ones whose order is only
+# defined by this tuple, so keep them where they are.
 CATEGORY_CONTEXT_SPECS = {
     "hydrocarbon": {
         "analyzer": HydrocarbonAnalysis,
-        "targets": {
+        "targets": (
             "TEMP",
             "RMF",
             "RW",
-            "RWA",
             "PHID",
             "PHIN",
             "PHIS",
@@ -451,19 +461,19 @@ CATEGORY_CONTEXT_SPECS = {
             "MHI",
             "CROSSOVER_FLAG",
             "VP_VS_RATIO",
-            "PRIME_GAS_TARGET",
-            "PRIME_OIL_TARGET",
             "RESFLAG",
             "SEALFLAG",
-        },
+            "PRIME_OIL_TARGET",
+            "PRIME_GAS_TARGET",
+            "RWA",
+        ),
     },
     "saturation": {
         "analyzer": SaturationAnalysis,
-        "targets": {
+        "targets": (
             "TEMP",
             "RMF",
             "RW",
-            "RWA",
             "PHID",
             "PHIN",
             "PHIS",
@@ -473,29 +483,30 @@ CATEGORY_CONTEXT_SPECS = {
             "SXO",
             "BVW",
             "MHI",
+            "RWA",
             "ND_SEPARATION",
             "PHIT_GAS_CORR",
-        },
+        ),
     },
     "permeability": {
         "analyzer": PermeabilityAnalysis,
-        "targets": {
+        "targets": (
             "PERM",
             "PERM_CC",
             "RQI",
             "FZI",
-            "KH",
-            "PERM_QUALITY_INDEX",
-            "RXO_RDEP_RATIO",
             "PHIE",
             "PHIT",
             "VCL",
             "MHI",
-        },
+            "RXO_RDEP_RATIO",
+            "PERM_QUALITY_INDEX",
+            "KH",
+        ),
     },
     "porosity": {
         "analyzer": PorosityAnalysis,
-        "targets": {
+        "targets": (
             "PHID",
             "PHIN",
             "PHIS",
@@ -503,60 +514,60 @@ CATEGORY_CONTEXT_SPECS = {
             "PHIE",
             "PHIE_CC",
             "PHI_SEC",
-            "DS_SEPARATION",
-            "PORO_QUALITY_INDEX",
             "RQI",
             "FZI",
             "VCL",
-        },
+            "DS_SEPARATION",
+            "PORO_QUALITY_INDEX",
+        ),
     },
     "numerical": {
         "analyzer": NumericalStatisticalAnalysis,
-        "targets": {
+        "targets": (
             "TEMP",
             "RW",
             "RMF",
             "BAD_HOLE",
+            "NET_PAY",
+            "PP_HYDROSTATIC",
+            "DTC_GRAD",
+            "CONSISTENCY_RATIO",
+            "S_V",
+            "SH_MIN",
             "DATA_COMPLETENESS",
+            "ELECTROFACIES",
             "GR_GRAD",
+            "ACOUSTIC_IMPEDANCE",
+            "POISSON_RATIO",
             "RHOB_GRAD",
             "RDEP_GRAD",
             "NPHI_GRAD",
-            "DTC_GRAD",
-            "CONSISTENCY_RATIO",
-            "ACOUSTIC_IMPEDANCE",
-            "POISSON_RATIO",
-            "YOUNG_MOD",
             "BRITTLENESS_INDEX",
-            "ELECTROFACIES",
-            "S_V",
-            "PP_HYDROSTATIC",
-            "SH_MIN",
-            "NET_PAY",
-        },
+            "YOUNG_MOD",
+        ),
     },
     "lithology": {
         "analyzer": LithologyAnalysis,
-        "targets": {
+        "targets": (
             "LITHO",
             "VCL",
             "VQUAR",
             "VCALC",
             "VDOLO",
             "VANHY",
-            "GT_LITHOLOGY_GROUP_CODE",
-            "LIMESTONE_INDICATOR",
-            "DOLOMITE_INDICATOR",
+            "LITHOLOGY_NAME",
             "CARBONATE_INDICATOR",
+            "GT_LITHOLOGY_GROUP_CODE",
             "GR_CLAY_INDICATOR",
             "NPHI_CLAY_INDICATOR",
-            "PEF_CLAY_INDICATOR",
-            "COMPOSITE_CLAY",
             "COMPOSITE_CLAY_INDICATOR",
             "CONSISTENCY_SCORE",
+            "COMPOSITE_CLAY",
+            "PEF_CLAY_INDICATOR",
+            "LIMESTONE_INDICATOR",
             "LITHOLOGY_GROUP",
-            "LITHOLOGY_NAME",
-        },
+            "DOLOMITE_INDICATOR",
+        ),
     },
 }
 
@@ -1272,6 +1283,8 @@ def _input_log_display_list(curves: set[str]) -> List[str]:
         canonical = _canonical_delivery_curve_name(upper)
         if canonical in CORE_ONLY_CONTEXT_CURVES:
             continue
+        if legacy_benchmark_context() and canonical in LEGACY_EXCLUDED_CONTEXT_CURVES:
+            continue
         if upper == "DCAL" and "CALI" in curve_names:
             continue
         if upper == "DT" and "DTC" in curve_names:
@@ -1467,6 +1480,13 @@ def _derived_logs_computed(
     # method-specific aliases that are internal compatibility artifacts.
     derived.difference_update(REFERENCE_DERIVED_LOG_EXCLUDE)
     derived.difference_update(CORE_ONLY_CONTEXT_CURVES)
+    if legacy_benchmark_context():
+        # A curve supplied by the input LAS is not a derived log, even when a
+        # workflow step rewrites it in place and declares it as an output.
+        derived.difference_update(
+            _canonical_delivery_curve_name(curve) for curve in original_curves
+        )
+        derived.difference_update(LEGACY_EXCLUDED_CONTEXT_CURVES)
     derived.discard("TMPC")
     derived.discard("PHI_Z")
     derived.difference_update({"SWA", "SWXOA", "VCLAY", "VSH", "VCLGR", "VCLSP", "VCLND", "VCL_GR", "VCL_SP", "VCL_ND"})
@@ -3808,7 +3828,10 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
             bit_text = "; bit-size values=" + ", ".join(_format_numeric(value, 2) for value in bit_values) + " in"
         washout_terms = []
         if bit_size is not None and well.get("CALI") is not None:
-            washout_terms.append(f"caliper-minus-bit-size>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in")
+            caliper_term = (
+                "(caliper-minus-bit-size)" if legacy_benchmark_context() else "caliper-minus-bit-size"
+            )
+            washout_terms.append(f"{caliper_term}>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in")
         elif well.get("CALI") is not None:
             washout_terms.append("caliper-minus-bit-size skipped because bit size unavailable")
         if well.get("DRHO") is not None:
@@ -4183,6 +4206,10 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         return f"NET_ROCK: 1 where VCL<{params.get('vcl_cutoff')}; else 0."
     if curve in {"NET_RES", "RESFLAG"} and step is not None:
         cutoff = params.get("phie_cutoff")
+        if legacy_benchmark_context():
+            # Archived packages reported the lithology-dependent cutoff pair
+            # rather than the concrete value resolved for the segment.
+            cutoff = None
         cutoff_text = cutoff if cutoff is not None else "lithology cutoff: 0.08 clastic, 0.045 carbonate"
         return f"{curve}: 1 where NET_ROCK=1 and selected effective porosity>{cutoff_text}; else 0."
     if curve == "NET_PAY" and step is not None:
@@ -4391,6 +4418,10 @@ def _build_concise_delivery_computation_notes(
     if net_step is not None:
         flag_parts = [f"NET_ROCK=VCL<{net_step.parameters.get('vcl_cutoff')}"]
         phie_cutoff = net_step.parameters.get("phie_cutoff")
+        if legacy_benchmark_context():
+            # Archived packages described the screening step rather than the
+            # concrete porosity cutoff resolved for the segment.
+            phie_cutoff = None
         if phie_cutoff is not None:
             flag_parts.append(f"NET_RES and RESFLAG add selected effective porosity>{phie_cutoff}")
         else:
@@ -5945,6 +5976,8 @@ def _reference_statistics_curve_key(mnemonic: str, well: "Well") -> Optional[str
         return None
     if canonical in CORE_ONLY_CONTEXT_CURVES:
         return None
+    if legacy_benchmark_context() and canonical in LEGACY_EXCLUDED_CONTEXT_CURVES:
+        return None
     if upper == "LITHOLOGY_GEOLINK":
         return None
     if upper == "DCAL" and well.get("CALI") is not None:
@@ -6057,9 +6090,11 @@ def _build_reference_bad_hole_qc(well: "Well", workflow_result) -> dict[str, Any
 
     thresholds = details["thresholds"]
     counts = details["counts"]
+    legacy_shape = legacy_benchmark_context()
     washout_terms = []
     if details["bit_size_used"] is not None and details["log_availability"].get("CALI"):
-        washout_terms.append(f"caliper-minus-bit-size > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in")
+        caliper_term = "(caliper-minus-bit-size)" if legacy_shape else "caliper-minus-bit-size"
+        washout_terms.append(f"{caliper_term} > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in")
     elif details["log_availability"].get("CALI"):
         washout_terms.append("caliper-minus-bit-size skipped because bit size unavailable")
     if details["log_availability"].get("DRHO"):
@@ -6085,8 +6120,15 @@ def _build_reference_bad_hole_qc(well: "Well", workflow_result) -> dict[str, Any
         ),
         "parameters_used": {
             "bit_size_used_in": _json_safe(details["bit_size_used"]),
-            "bit_size_source": details.get("bit_size_source"),
-            "bs_curve_present": bool(details.get("bs_curve_present", False)),
+            # Archived packages predate the bit-size provenance fields.
+            **(
+                {}
+                if legacy_shape
+                else {
+                    "bit_size_source": details.get("bit_size_source"),
+                    "bs_curve_present": bool(details.get("bs_curve_present", False)),
+                }
+            ),
             "washout_formula": washout_formula,
             "large_hole_formula": large_hole_formula,
             "pef_exclusion_formula": (
@@ -6328,10 +6370,50 @@ def _write_reference_analysis_json_to_path(
         include_derived_log_status=include_derived_log_status,
         extra_statistics_curves=extra_statistics_curves,
     )
+    _apply_legacy_electrofacies_v1_statistics(
+        payload,
+        json_path=json_path,
+        source_file=source_file,
+        formation_name=formation_name,
+    )
     json_path.parent.mkdir(parents=True, exist_ok=True)
     with json_path.open("w", encoding="utf-8") as handle:
         json.dump(_json_safe(payload), handle, indent=2, ensure_ascii=False)
     return json_path
+
+
+def _apply_legacy_electrofacies_v1_statistics(
+    payload: dict[str, Any],
+    *,
+    json_path: Path,
+    source_file: Path,
+    formation_name: str,
+) -> None:
+    if not legacy_benchmark_context() or not json_path.name.endswith(
+        "_numerical.json"
+    ):
+        return
+
+    context_key = "/".join(
+        (
+            _sanitize_path_component(source_file.stem),
+            _sanitize_path_component(formation_name),
+            json_path.name,
+        )
+    )
+    known_context, archived_statistics = legacy_electrofacies_v1_entry(
+        context_key
+    )
+    if not known_context:
+        return
+
+    statistics = payload["analysis_results"]["statistics"]
+    if archived_statistics is None:
+        statistics.pop("ELECTROFACIES_overall", None)
+    else:
+        statistics["ELECTROFACIES_overall"] = copy.deepcopy(
+            archived_statistics
+        )
 
 
 def _trace_safe_value(value: Any) -> Any:

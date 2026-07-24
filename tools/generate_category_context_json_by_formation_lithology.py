@@ -19,6 +19,9 @@ from petrophys.reporting import (  # noqa: E402
     export_reference_json_work_package_by_category_formation_lithology,
     write_reference_curve_name_mapping,
 )
+from petrophys._internal.legacy_context import (  # noqa: E402
+    set_legacy_benchmark_context,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -85,6 +88,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--legacy-benchmark-compat",
+        action="store_true",
+        help=(
+            "Reproduce the archived benchmark context shape: S_V integrated from the "
+            "segment top rather than the surface, BS/SO omitted from context curves, "
+            "input curves kept out of derived_logs_computed, and the pre-provenance "
+            "bad-hole wording. Archived ELECTROFACIES statistics are replayed from the "
+            "checksummed v1 manifest because the original k-means state was not recorded."
+        ),
+    )
+    parser.add_argument(
         "--raw-input-dir",
         type=Path,
         default=None,
@@ -100,6 +114,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+
+    set_legacy_benchmark_context(args.legacy_benchmark_compat)
 
     results = export_reference_json_work_package_by_category_formation_lithology(
         input_dir=args.input_dir,
@@ -129,6 +145,7 @@ def main() -> int:
     print(f"Litho map:      {args.lithology_mapping_file}")
     print(f"Reference dir:  {args.reference_structure_dir}")
     print(f"Raw input LAS:  {args.raw_input_dir or 'auto'}")
+    print(f"Legacy compat:  {args.legacy_benchmark_compat}")
     if args.well_names:
         print(f"Wells filter:   {', '.join(args.well_names)}")
     print(f"Mapping:        {mapping_path}")
