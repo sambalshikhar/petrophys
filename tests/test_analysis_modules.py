@@ -223,6 +223,41 @@ def test_numerical_analysis_skips_all_nan_curves_without_runtime_warnings():
     assert not any(issubclass(item.category, RuntimeWarning) for item in caught)
 
 
+def test_numerical_deviation_threshold_ignores_floating_point_noise():
+    values = np.array([0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    z_score = abs((values[0] - np.mean(values)) / np.std(values))
+    assert z_score > 3.0
+    assert np.isclose(z_score, 3.0, rtol=0.0, atol=1e-12)
+
+    well = Well("NUMERICAL-THRESHOLD")
+    well.depth = np.arange(values.size, dtype=float)
+    well.add_curve("VANHY", values, "v/v", "Anhydrite volume")
+    well.add_curve("NET_PAY", np.zeros(values.size), "", "Net pay flag")
+
+    result = NumericalStatisticalAnalysis().analyze(well, add_curves=False)
+    labels = result.sections["statistical_deviation_detection"].raw_labels
+
+    assert labels[0] == "NORMAL_ZONE"
+
+
+def test_numerical_deviation_count_ignores_z2_floating_point_noise():
+    values = np.array([1e-12, 0.0, 0.0, 0.0, 0.0])
+    z_score = abs((values[0] - np.mean(values)) / np.std(values))
+    assert z_score > 2.0
+    assert np.isclose(z_score, 2.0, rtol=0.0, atol=1e-12)
+
+    well = Well("NUMERICAL-Z2-THRESHOLD")
+    well.depth = np.arange(values.size, dtype=float)
+    for mnemonic in ("TEST_A", "TEST_B", "TEST_C"):
+        well.add_curve(mnemonic, values, "", "Threshold test")
+    well.add_curve("NET_PAY", np.zeros(values.size), "", "Net pay flag")
+
+    result = NumericalStatisticalAnalysis().analyze(well, add_curves=False)
+    labels = result.sections["statistical_deviation_detection"].raw_labels
+
+    assert labels[0] == "NORMAL_ZONE"
+
+
 def test_electrofacies_is_reproducible_and_independent_of_row_order():
     well = _build_analysis_well()
 

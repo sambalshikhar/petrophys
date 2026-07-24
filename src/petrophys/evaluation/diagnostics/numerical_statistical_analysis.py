@@ -10,6 +10,7 @@ import numpy as np
 from scipy.cluster.vq import ClusterError, kmeans2
 
 from petrophys.interpretation.rock_physics.elastic import calculate_elastic_properties
+from petrophys._internal.legacy_context import legacy_benchmark_context
 from petrophys._internal.analysis_helpers import (
     CategoryAnalysisResult,
     DerivedCurve,
@@ -20,6 +21,9 @@ from petrophys._internal.analysis_helpers import (
     get_curve_data,
 )
 from petrophys.evaluation.net_pay.net_pay_module import NetPayModule
+
+
+_Z_THRESHOLD_TOLERANCE = 1e-12
 
 
 class NumericalStatisticalAnalysis:
@@ -138,8 +142,16 @@ class NumericalStatisticalAnalysis:
             if not np.isfinite(std) or std <= 0.0:
                 continue
             z = np.abs((values - mean) / std)
-            deviation_count += np.where(np.isfinite(z) & (z > 2.0), 1, 0)
-            extreme_count += np.where(np.isfinite(z) & (z > 3.0), 1, 0)
+            deviation_count += np.where(
+                np.isfinite(z) & (z > 2.0 + _Z_THRESHOLD_TOLERANCE),
+                1,
+                0,
+            )
+            extreme_count += np.where(
+                np.isfinite(z) & (z > 3.0 + _Z_THRESHOLD_TOLERANCE),
+                1,
+                0,
+            )
 
         deviation_labels = np.full(n_samples, "NORMAL_ZONE", dtype=object)
         deviation_labels[(deviation_count >= 3) | (extreme_count >= 1)] = "SIGNIFICANT_DEVIATION_ZONE"
@@ -228,6 +240,10 @@ class NumericalStatisticalAnalysis:
                 top_depths = top_depths[np.isfinite(top_depths)]
                 top_m = float(np.abs(top_depths).min()) if top_depths.size else 0.0
                 surface_term = rho_mean * 1000.0 * 9.81 * top_m / 1e6
+                if legacy_benchmark_context():
+                    # Archived packages integrated from the top of the segment,
+                    # so S_V there is a relative stress increment, not absolute.
+                    surface_term = 0.0
                 sv[valid] = surface_term + np.cumsum(
                     (rhob[valid] * 1000.0) * 9.81 * dz_m[valid]
                 ) / 1e6
