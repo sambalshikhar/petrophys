@@ -90,3 +90,19 @@ def test_category_exporter_threads_workflow_config(monkeypatch, tmp_path):
     assert captured["config"] is cfg
     # the capture-raise surfaces as a failed result, not a crash
     assert results and not results[0].success
+
+
+def test_pretrained_imputer_pack_loads_without_legacy_namespaces():
+    """The shipped joblib pack must unpickle against canonical module paths.
+
+    Regression guard: the pack was once pickled with references to the removed
+    ``petrophys.imputation`` namespace (via TransformedTargetRegressor
+    func/inverse_func), which broke loading after the compat shims were
+    deleted.
+    """
+    from petrophys.preprocessing.imputation import PretrainedCurveImputer
+
+    imputer = PretrainedCurveImputer.from_pretrained()
+    assert imputer.target_curves
+    rdep = imputer.model_pack["models"]["knn"]["RDEP"]["estimator"]
+    assert rdep.func.__module__.startswith("petrophys.preprocessing")
