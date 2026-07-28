@@ -80,7 +80,7 @@ Placement rules
 Compatibility
 -------------
 
-Imports from the pre-0.2 package layout remain available through thin
-compatibility namespaces, including ``petrophys.base``,
-``petrophys.petrophysics``, and ``petrophys.reservoir``. New code and
-documentation must use the canonical paths described above.
+The pre-0.2 namespaces (``petrophys.base``, ``petrophys.petrophysics``,
+``petrophys.reservoir``, and friends) have been removed; the canonical
+lifecycle paths above are the only import surface. A structure test guards
+against legacy names reappearing in the source tree.

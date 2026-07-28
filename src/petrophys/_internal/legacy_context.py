@@ -27,7 +27,7 @@ _TRUTHY = {"1", "true", "yes", "on"}
 # ``statistics`` or ``derived_logs_computed``.
 LEGACY_EXCLUDED_CONTEXT_CURVES = frozenset({"BS", "SO"})
 
-_ELECTROFACIES_V1_RESOURCE = "data/legacy_context/electrofacies_v1.json.gz"
+_ELECTROFACIES_V1_RESOURCE = "_internal/data/electrofacies_v1.json.gz"
 _ELECTROFACIES_V1_SHA256 = (
     "d91b0d1417fea8a5154e6b2ff9428c8d33e9a7513fa2697819a57222f08b2942"
 )

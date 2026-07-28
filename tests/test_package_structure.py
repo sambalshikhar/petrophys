@@ -1,9 +1,12 @@
-"""Import-contract tests for the lifecycle-based package layout."""
+"""Import-contract tests for the lifecycle-based package layout.
+
+LEGACY_PACKAGES lists the removed pre-0.2 namespaces; the guard test below
+keeps them from creeping back into canonical source.
+"""
 
 import ast
 import importlib
 from pathlib import Path
-import warnings
 
 LEGACY_PACKAGES = {
     "analysis",
@@ -78,30 +81,6 @@ def test_canonical_namespaces_import():
 
     for module in modules:
         assert importlib.import_module(module) is not None
-
-
-def test_common_legacy_deep_imports_resolve_to_canonical_modules():
-    aliases = {
-        "petrophys.base.well": "petrophys.model.well",
-        "petrophys.clay_volume.vcl_module": (
-            "petrophys.interpretation.clay_volume.vcl_module"
-        ),
-        "petrophys.petrophysics.porosity.total_porosity": (
-            "petrophys.interpretation.porosity.total_porosity"
-        ),
-        "petrophys.petrophysics.saturation.archie": (
-            "petrophys.interpretation.saturation.archie"
-        ),
-        "petrophys.reservoir.net_pay.net_pay_module": (
-            "petrophys.evaluation.net_pay.net_pay_module"
-        ),
-        "petrophys.imaging.fmi": "petrophys.interpretation.borehole_imaging.fmi",
-    }
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        for legacy, canonical in aliases.items():
-            assert importlib.import_module(legacy) is importlib.import_module(canonical)
 
 
 def test_canonical_source_does_not_import_legacy_namespaces():
