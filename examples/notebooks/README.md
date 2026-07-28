@@ -63,11 +63,10 @@ well = read_las(petrophys.sample("30_6-5"))
 | 16 | `16_borehole_image_fmi` | FMI pads → oriented image, equalization, azimuthal coverage |
 | 17 | `17_visualization_masterclass` | XML templates, adaptive viewer, all crossplots, specialist panels, batch export |
 | 18 | `18_multiwell_field_study` | Costa 17-well batch, normalization, cross-well comparison, portfolio summary |
+| 19 | `19_llm_context_generation` | Portable LAS-to-JSON context generation for LLM workflows; inspect and validate category-first outputs |
 
 ## Runtime
 
 Notebooks are authored and verified against the **`xtts_env`** conda environment
 (registered Jupyter kernel: **Python (xtts_env)**). Optional ML notebooks (12, 13) require
 `scikit-learn`, `xgboost`, `joblib`.
-
-> The previous notebook set is preserved unchanged under [`legacy/`](legacy/).
