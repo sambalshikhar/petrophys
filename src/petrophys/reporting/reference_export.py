@@ -7286,7 +7286,16 @@ def export_reference_json_work_package_by_category_formation_lithology(
     lithology_mapping_file: Optional[str | Path] = None,
     reference_structure_dir: Optional[str | Path] = None,
     raw_input_dir: Optional[str | Path] = None,
+    workflow_config: Optional["DynamicWorkflowConfig"] = None,
 ) -> List[ExampleFormatExportResult]:
+    """Category-first context export.
+
+    ``workflow_config`` (optional) seeds the per-well interpretation run.
+    Explicitly set fields always win over LAS-header parameters; fields left
+    ``None`` are still auto-filled from each well's header block. Use it to
+    carry documented parameter reconciliations (e.g. an Rw whose header basis
+    is ambiguous) without disabling header-driven behaviour for other wells.
+    """
     from petrophys.workflow.zoned_batch import (
         _finalize_export_curves,
         run_dynamic_workflow_with_zones,
@@ -7319,7 +7328,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 processed_original_curves,
                 raw_curves_by_stem,
             )
-            workflow_result = run_dynamic_workflow_with_zones(full_well)
+            workflow_result = run_dynamic_workflow_with_zones(full_well, workflow_config)
             warnings = list(workflow_result.warnings)
             warnings.extend(workflow_result.base_result.warnings)
             for zone_result in workflow_result.zone_results:

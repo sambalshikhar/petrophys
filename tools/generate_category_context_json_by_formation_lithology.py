@@ -24,7 +24,17 @@ from petrophys._internal.legacy_context import (  # noqa: E402
 )
 
 
+def _environment_path(name: str) -> Path | None:
+    value = os.environ.get(name)
+    return Path(value).expanduser() if value else None
+
+
 def build_parser() -> argparse.ArgumentParser:
+    input_default = _environment_path("PETROPHYS_DATA_DIR")
+    tops_default = _environment_path("PETROPHYS_TOPS_FILE")
+    output_default = _environment_path("PETROPHYS_OUTPUT_DIR")
+    lithology_default = _environment_path("PETROPHYS_LITHO_FILE")
+
     parser = argparse.ArgumentParser(
         description=(
             "Generate category-first JSON context packages from LAS files, formation tops, "
@@ -34,20 +44,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--input-dir",
         type=Path,
-        default=Path(os.environ.get("PETROPHYS_DATA_DIR", Path(__file__).resolve().parents[1] / "src" / "petrophys" / "datasets" / "geolink")),
-        help="Directory containing source LAS files.",
+        default=input_default,
+        required=input_default is None,
+        help="Directory containing source LAS files (or PETROPHYS_DATA_DIR).",
     )
     parser.add_argument(
         "--tops-file",
         type=Path,
-        default=Path(os.environ.get("PETROPHYS_TOPS_FILE", Path(__file__).resolve().parents[1] / "petrophys" / "data" / "NPD_stratigraphic_picks.xlsx")),
-        help="Excel workbook containing formation tops.",
+        default=tops_default,
+        required=tops_default is None,
+        help="Excel workbook containing formation tops (or PETROPHYS_TOPS_FILE).",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path(os.environ.get("PETROPHYS_OUTPUT_DIR", Path(__file__).resolve().parents[1] / "outputs" / "context_json_by_category")),
-        help="Output directory for the generated package.",
+        default=output_default or Path("outputs") / "context_json_by_category",
+        help=(
+            "Output directory for the generated package. Defaults to "
+            "./outputs/context_json_by_category (or PETROPHYS_OUTPUT_DIR)."
+        ),
     )
     parser.add_argument(
         "--well",
@@ -75,8 +90,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--lithology-mapping-file",
         type=Path,
-        default=Path(os.environ.get("PETROPHYS_LITHO_FILE", Path(__file__).resolve().parents[1] / "petrophys" / "data" / "Litho_Nomenclature_Kingdom.xlsx")),
-        help="Workbook used to map LITHOLOGY_GEOLINK codes to lithology-group labels.",
+        default=lithology_default,
+        help=(
+            "Optional workbook used to map lithology codes to group labels "
+            "(or PETROPHYS_LITHO_FILE). Built-in normalization is used when omitted."
+        ),
     )
     parser.add_argument(
         "--reference-structure-dir",

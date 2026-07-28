@@ -55,3 +55,38 @@ def test_constants_match_standards():
     assert DefaultParameters.PHIE_CUTOFF_CARBONATE == 0.045
     assert DefaultParameters.SW_CUTOFF_CLASTIC == 0.60
     assert DefaultParameters.SW_CUTOFF_CARBONATE == 0.70
+
+
+def test_category_exporter_threads_workflow_config(monkeypatch, tmp_path):
+    """The category context exporter forwards workflow_config to the zoned runner."""
+    import petrophys.workflow.zoned_batch as zb
+    from petrophys.reporting import (
+        export_reference_json_work_package_by_category_formation_lithology as export_fn,
+    )
+    from petrophys.workflow import DynamicWorkflowConfig
+
+    captured = {}
+
+    def fake_runner(well, config=None):
+        captured["config"] = config
+        raise RuntimeError("stop-after-capture")
+
+    monkeypatch.setattr(zb, "run_dynamic_workflow_with_zones", fake_runner)
+
+    las_dir = tmp_path / "las"
+    las_dir.mkdir()
+    import petrophys, shutil
+    shutil.copy2(petrophys.sample("16_7-1"), las_dir / "16_7-1.las")
+    tops = tmp_path / "tops.xlsx"
+    import pandas as pd
+    pd.DataFrame({"well": ["16_7-1"], "formation": ["A"], "md_top": [1000.0]}).to_excel(
+        tops, index=False)
+
+    cfg = DynamicWorkflowConfig(rw=0.123, rw_meas_temp_f=200.0)
+    results = export_fn(
+        input_dir=las_dir, output_dir=tmp_path / "out", tops_file=tops,
+        workflow_config=cfg,
+    )
+    assert captured["config"] is cfg
+    # the capture-raise surfaces as a failed result, not a crash
+    assert results and not results[0].success
