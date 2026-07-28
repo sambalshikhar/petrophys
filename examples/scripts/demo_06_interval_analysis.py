@@ -38,8 +38,8 @@ from petrophys.evaluation.intervals import (
 
 import petrophys
 LAS_PATH = petrophys.sample("30_6-5")
-LITHOLOGY_CSV = str(Path(__file__).resolve().parents[1] / "data" / "lithology_30_6-5.csv")
-FORMATIONS_CSV = str(Path(__file__).resolve().parents[1] / "data" / "formations_30_6-5.csv")
+LITHOLOGY_CSV = str(petrophys.sample("lithology_30_6-5"))
+FORMATIONS_CSV = str(petrophys.sample("formations_30_6-5"))
 
 # ═══════════════════════════════════════════════
 # PART 1: Load, standardize, run workflow

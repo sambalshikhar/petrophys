@@ -38,7 +38,7 @@ from petrophys.workflow import run_dynamic_workflow, DynamicWorkflowConfig
 # ─────────────────────────────────────────────
 import petrophys
 LAS_PATH = petrophys.sample("30_6-5")
-LITHOLOGY_CSV = str(Path(__file__).resolve().parents[1] / "data" / "lithology_30_6-5.csv")
+LITHOLOGY_CSV = str(petrophys.sample("lithology_30_6-5"))
 
 print("=" * 60)
 print("DEMO 05: Lithology CSV Integration - Well 30/6-5")

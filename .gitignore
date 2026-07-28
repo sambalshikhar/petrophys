@@ -173,6 +173,8 @@ reports/
 tmp_*/
 outputs/
 /*.xlsx
+.claude/settings.local.json
+examples/scripts/formation_results_*.csv
 
 # Docs build artifacts (notebooks are copied in from /notebooks at build time)
 docs/_build/
