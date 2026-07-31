@@ -29,7 +29,11 @@ from pathlib import Path
 import re
 from petrophys.model.well import Well
 from petrophys.model.data_types import DataType
-from petrophys._internal.analysis_helpers import get_curve, get_curve_data_depthwise
+from petrophys._internal.analysis_helpers import (
+    curve_source_mnemonic,
+    get_curve,
+    get_curve_data_depthwise,
+)
 import pandas as pd
 from petrophys.io import ascii_reader, las_reader
 
@@ -1359,7 +1363,10 @@ class DynamicWorkflow:
 
     def _step_normalization(self, well: "Well") -> StepResult:
         """Standardize aliases and physical units before interpretation."""
-        from petrophys.preprocessing.standardization import standardize_curves
+        from petrophys.preprocessing.standardization import (
+            add_standard_curve_aliases,
+            standardize_curves,
+        )
 
         before = {
             name: {
@@ -1375,6 +1382,9 @@ class DynamicWorkflow:
             convert_units=True,
         )
         rename_map = dict(well.get_parameter("_rename_map") or {})
+        working_aliases = {}
+        if not self.config.rename_input_curves:
+            working_aliases = add_standard_curve_aliases(well)
         unit_changes = {}
         for original, details in before.items():
             target = rename_map.get(original, original)
@@ -1398,10 +1408,16 @@ class DynamicWorkflow:
                 "rename_curves": self.config.rename_input_curves,
                 "convert_units": True,
                 "rename_map": rename_map,
+                "working_aliases": working_aliases,
                 "unit_changes": unit_changes,
             },
             decisions=[
-                "Standardized curve units, nulls, and plausible ranges before routing"
+                "Standardized curve units, nulls, and plausible ranges before routing",
+                (
+                    "Added canonical working aliases while retaining vendor mnemonics"
+                    if working_aliases
+                    else "No canonical working aliases were required"
+                ),
             ],
         )
 
@@ -1660,11 +1676,11 @@ class DynamicWorkflow:
             bit_size = representative_bit_size
             bit_size_source = "well_header" if header_bit_size is not None else None
             bit_size_unique_values = [float(representative_bit_size)] if representative_bit_size is not None else []
-        if cali is not None: inputs.append(cali.mnemonic)
-        if bs_curve is not None: inputs.append("BS")
-        if drho is not None: inputs.append("DRHO")
-        if rhob is not None: inputs.append("RHOB")
-        if pef is not None: inputs.append("PEF")
+        if cali is not None: inputs.append(curve_source_mnemonic(cali) or cali.mnemonic)
+        if bs_curve is not None: inputs.append(curve_source_mnemonic(bs_curve) or "BS")
+        if drho is not None: inputs.append(curve_source_mnemonic(drho) or "DRHO")
+        if rhob is not None: inputs.append(curve_source_mnemonic(rhob) or "RHOB")
+        if pef is not None: inputs.append(curve_source_mnemonic(pef) or "PEF")
         trace.input_curves = inputs
 
         flags = generate_bad_hole_flags(

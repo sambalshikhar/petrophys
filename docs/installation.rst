@@ -24,6 +24,23 @@ or clone for a development install:
    cd petrophys
    pip install -e .
 
+Real DLIS integration data
+--------------------------
+
+The repository includes full Daydream 1 scalar-log and processed-FMI DLIS
+fixtures, plus matching scalar LAS deliveries, through Git LFS. They are not
+installed into the Python package. To run the real LAS/DLIS integration tests
+and FMI notebook from a clone:
+
+.. code-block:: bash
+
+   git lfs install
+   git lfs pull
+   pip install -e ".[dlis,dev]"
+
+Environment variables such as ``PETROPHYS_FMI_DLIS`` can still point the tests
+and examples at another vendor file.
+
 Optional extras
 ---------------
 

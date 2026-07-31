@@ -163,6 +163,19 @@ def curve_has_finite_data(curve: Any) -> bool:
     return bool(np.any(np.isfinite(data)))
 
 
+def curve_source_mnemonic(curve: Any) -> Optional[str]:
+    """Return the original input mnemonic behind a canonical working alias."""
+    if curve is None:
+        return None
+    metadata = getattr(curve, "metadata", None)
+    custom = getattr(metadata, "custom", {}) or {}
+    source = custom.get("working_alias_source")
+    if source:
+        return str(source)
+    mnemonic = getattr(curve, "mnemonic", None)
+    return str(mnemonic) if mnemonic else None
+
+
 def get_curve(
     well: "Well",
     names: Sequence[str],
@@ -204,7 +217,8 @@ def get_curve_data_depthwise(
             continue
         if first_existing is None:
             first_existing = curve
-        existing_curves.append(curve.mnemonic)
+        source_name = curve_source_mnemonic(curve) or curve.mnemonic
+        existing_curves.append(source_name)
         try:
             data = np.asarray(curve.data, dtype=float)
         except (TypeError, ValueError):
@@ -223,8 +237,8 @@ def get_curve_data_depthwise(
         if not np.any(fill):
             continue
         result[fill] = data[fill]
-        source_per_sample[fill] = curve.mnemonic
-        used_curves.append(curve.mnemonic)
+        source_per_sample[fill] = source_name
+        used_curves.append(source_name)
 
     source_counts = {
         name: int(np.count_nonzero(source_per_sample == name))
@@ -237,7 +251,7 @@ def get_curve_data_depthwise(
         "source_per_sample": source_per_sample,
     }
     if not used_curves:
-        metadata["first_existing_curve"] = getattr(first_existing, "mnemonic", None)
+        metadata["first_existing_curve"] = curve_source_mnemonic(first_existing)
         return None, None, metadata
     return result, "+".join(used_curves), metadata
 

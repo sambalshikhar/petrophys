@@ -5,6 +5,7 @@ This module provides mapping of common curve name variations
 to standard mnemonics used throughout the library.
 """
 
+import re
 from typing import Dict, List, Optional
 
 # Standard mnemonic to aliases mapping
@@ -28,7 +29,6 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "M2RX",
         "RESDEP",
         "RVDR",
-        "RVDRU",
     ],
     # Medium Resistivity (RMED)
     # NOTE: AT10 (10in array induction) and RLLS (laterolog shallow) belong to RSHA,
@@ -61,7 +61,6 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RSHAL",
         "RSHALLOW",
         "RVSR",
-        "RVSRU",
     ],
     # Flushed zone Resistivity (RXO)
     "RXO": [
@@ -187,6 +186,14 @@ for standard, aliases in ALIAS_MAP.items():
     _REVERSE_MAP[standard.upper()] = standard
 
 
+_LAS_OCCURRENCE_SUFFIX = re.compile(r":\d+$")
+
+
+def base_curve_mnemonic(mnemonic: str) -> str:
+    """Return a LAS mnemonic without lasio's duplicate occurrence suffix."""
+    return _LAS_OCCURRENCE_SUFFIX.sub("", str(mnemonic).strip().upper())
+
+
 def get_standard_mnemonic(mnemonic: str) -> str:
     """
     Get the standard mnemonic for a curve alias.
@@ -210,7 +217,9 @@ def get_standard_mnemonic(mnemonic: str) -> str:
     >>> get_standard_mnemonic("UNKNOWN")
     'UNKNOWN'
     """
-    return _REVERSE_MAP.get(mnemonic.upper(), mnemonic.upper())
+    normalized = str(mnemonic).strip().upper()
+    base = base_curve_mnemonic(normalized)
+    return _REVERSE_MAP.get(normalized, _REVERSE_MAP.get(base, normalized))
 
 
 def get_aliases(standard_mnemonic: str) -> List[str]:

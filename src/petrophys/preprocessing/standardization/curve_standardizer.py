@@ -12,6 +12,7 @@ import numpy as np
 from petrophys.preprocessing.standardization.alias_map import (
     get_standard_mnemonic,
     get_standard_unit,
+    base_curve_mnemonic,
     ALIAS_MAP,
 )
 from petrophys.preprocessing.standardization.unit_converter import (
@@ -82,6 +83,73 @@ POROSITY_FRACTION_CURVES = {
     "PHIE_CC",
     "PHI_SEC",
 }
+
+
+def _curve_standardization_priority(curve: "Curve") -> int:
+    custom = getattr(getattr(curve, "metadata", None), "custom", {}) or {}
+    try:
+        return int(custom.get("standardization_priority", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def add_standard_curve_aliases(
+    well: "Well",
+    standards: Optional[List[str]] = None,
+) -> Dict[str, str]:
+    """Add canonical working aliases without removing vendor mnemonics.
+
+    Curves marked as lower-quality or uncalibrated by an input reader are not
+    promoted into canonical interpretation slots.
+    """
+    requested = [name.upper() for name in (standards or list(ALIAS_MAP))]
+    alias_map: Dict[str, str] = {}
+
+    for standard in requested:
+        direct = well.get(standard)
+        if (
+            direct is not None
+            and direct.valid_count() > 0
+            and _curve_standardization_priority(direct) >= 0
+        ):
+            continue
+
+        aliases = [standard, *ALIAS_MAP.get(standard, [])]
+        alias_rank = {name.upper(): index for index, name in enumerate(aliases)}
+        candidates = []
+        for order, mnemonic in enumerate(well.curves):
+            curve = well.get(mnemonic)
+            if curve is None or curve.valid_count() == 0:
+                continue
+            priority = _curve_standardization_priority(curve)
+            if priority < 0:
+                continue
+            base = base_curve_mnemonic(mnemonic)
+            if base not in alias_rank:
+                continue
+            score = (
+                priority,
+                int(base == standard),
+                curve.valid_count(),
+                -alias_rank[base],
+                -order,
+            )
+            candidates.append((score, mnemonic, curve))
+
+        if not candidates:
+            continue
+        _, source_name, source_curve = max(candidates, key=lambda item: item[0])
+        canonical = source_curve.copy()
+        canonical.mnemonic = standard
+        custom = dict(getattr(canonical.metadata, "custom", {}) or {})
+        custom["working_alias_source"] = source_name
+        canonical.metadata.custom = custom
+        well._curves[standard] = canonical
+        alias_map[source_name] = standard
+
+    if alias_map:
+        well._parameters["_working_alias_map"] = alias_map
+    return alias_map
 
 
 def _maybe_convert_percent_porosity(data: np.ndarray, standard_name: str) -> np.ndarray:
@@ -237,6 +305,8 @@ class CurveStandardizer:
         for mnemonic, curve in well._curves.items():
             # Get standard name
             standard_name = self.get_standard_name(mnemonic)
+            source_priority = _curve_standardization_priority(curve)
+            eligible_for_standard_slot = source_priority >= 0
 
             # Preserve original if requested
             if self.preserve_originals and standard_name != mnemonic:
@@ -246,7 +316,11 @@ class CurveStandardizer:
             new_curve = curve.copy()
 
             # Rename if needed
-            if self.rename_curves and standard_name != mnemonic:
+            if (
+                self.rename_curves
+                and eligible_for_standard_slot
+                and standard_name != mnemonic
+            ):
                 new_curve.mnemonic = standard_name
                 rename_map[mnemonic] = standard_name
 
@@ -266,7 +340,11 @@ class CurveStandardizer:
             # the winner takes the standard slot, the loser keeps its own
             # original mnemonic. A curve natively named like the standard
             # (e.g. a real RDEP alongside an ILD alias) takes the slot.
-            if standard_name in new_curves and self.rename_curves:
+            if (
+                standard_name in new_curves
+                and self.rename_curves
+                and eligible_for_standard_slot
+            ):
                 existing = new_curves[standard_name]
                 existing_origin = origin_of.get(standard_name, standard_name)
                 incoming_is_native = mnemonic == standard_name
@@ -308,9 +386,13 @@ class CurveStandardizer:
                     f"'{standard_name}' slot and '{parked}' keeps its original name."
                 )
             else:
-                target_name = standard_name if self.rename_curves else mnemonic
+                target_name = (
+                    standard_name
+                    if self.rename_curves and eligible_for_standard_slot
+                    else mnemonic
+                )
                 new_curves[target_name] = new_curve
-                if self.rename_curves:
+                if self.rename_curves and eligible_for_standard_slot:
                     origin_of[standard_name] = mnemonic
 
         # Update well curves

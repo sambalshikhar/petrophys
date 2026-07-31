@@ -1,0 +1,2 @@
+integration_data/daydream/*.dlis filter=lfs diff=lfs merge=lfs -text
+integration_data/daydream/*.las filter=lfs diff=lfs merge=lfs -text

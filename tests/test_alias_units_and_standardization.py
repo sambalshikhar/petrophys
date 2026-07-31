@@ -2,6 +2,8 @@ import numpy as np
 
 from petrophys import Well
 from petrophys.preprocessing.standardization import standardize_curves
+from petrophys.preprocessing.standardization.alias_map import get_standard_mnemonic
+from petrophys.workflow import DynamicWorkflowConfig, run_dynamic_workflow
 import petrophys.workflow.zoned_batch as zoned_batch
 
 
@@ -9,7 +11,9 @@ def _alias_override(base_name, value, unit=""):
     overrides = {}
     injected = {}
     unmapped = []
-    zoned_batch._apply_parameter_alias(base_name, value, unit, overrides, injected, unmapped)
+    zoned_batch._apply_parameter_alias(
+        base_name, value, unit, overrides, injected, unmapped
+    )
     return overrides, injected, unmapped
 
 
@@ -86,7 +90,9 @@ def test_curve_standardization_renames_aliases_and_corrects_units():
     well.add_curve("TNPH", np.array([20.0, 35.0]), "pu", "Neutron")
     well.add_curve("CAL", np.array([216.0, 254.0]), "mm", "Caliper")
     well.add_curve("RSHAL", np.array([1.5, 2.5]), "ohm.m", "Shallow resistivity")
-    well.add_curve("PHIE_CORECAL", np.array([0.12, 0.18]), "v/v", "Legacy core-calibrated porosity")
+    well.add_curve(
+        "PHIE_CORECAL", np.array([0.12, 0.18]), "v/v", "Legacy core-calibrated porosity"
+    )
     well.add_curve("PHIE_D", np.array([0.10, 0.20]), "m3/m3", "Effective porosity")
     well.add_curve("VSH", np.array([0.30, 0.40]), "m3/m3", "Shale volume")
 
@@ -104,13 +110,96 @@ def test_curve_standardization_renames_aliases_and_corrects_units():
     np.testing.assert_allclose(standardized["RDEP"].data, np.array([3.048, 6.096]))
     np.testing.assert_allclose(standardized["RHOB"].data, np.array([2.2, 2.4]))
     np.testing.assert_allclose(standardized["NPHI"].data, np.array([0.20, 0.35]))
-    np.testing.assert_allclose(standardized["CALI"].data, np.array([8.5039416, 10.0000054]))
+    np.testing.assert_allclose(
+        standardized["CALI"].data, np.array([8.5039416, 10.0000054])
+    )
     np.testing.assert_allclose(standardized["RSHA"].data, np.array([1.5, 2.5]))
     np.testing.assert_allclose(standardized["PHIE_CC"].data, np.array([0.12, 0.18]))
     np.testing.assert_allclose(standardized["PHIE"].data, np.array([0.10, 0.20]))
     np.testing.assert_allclose(standardized["VCL"].data, np.array([0.30, 0.40]))
     assert standardized["PHIE"].unit == "v/v"
     assert standardized["VCL"].unit == "v/v"
+
+
+def test_lasio_duplicate_suffixes_standardize_by_base_mnemonic():
+    assert get_standard_mnemonic("GR:1") == "GR"
+    assert get_standard_mnemonic("TNPH:2") == "NPHI"
+
+    well = Well("DUPLICATE-MNEMONICS")
+    well.depth = np.array([1000.0, 1000.5])
+    well.add_curve("GR:1", [40.0, 50.0], "gAPI")
+    well.add_curve("TNPH:1", [0.20, 0.25], "m3/m3")
+
+    standardized = standardize_curves(well, rename_curves=True)
+
+    assert "GR" in standardized
+    assert "NPHI" in standardized
+
+
+def test_dynamic_workflow_adds_working_aliases_without_losing_vendor_curves():
+    well = Well("VENDOR-ALIASES")
+    well.depth = np.arange(1000.0, 1003.0)
+    well.add_curve("GR:1", [40.0, 60.0, 80.0], "gAPI")
+    well.add_curve("TNPH:1", [0.18, 0.20, 0.22], "m3/m3")
+    well.add_curve("RHO8", [2.35, 2.30, 2.25], "g/cm3")
+    well.add_curve("PEFZ", [2.0, 2.2, 2.4], "")
+
+    result = run_dynamic_workflow(
+        well,
+        DynamicWorkflowConfig(rw=0.05, interpretation_profile="generic_inference"),
+    )
+
+    assert result.success
+    assert "GR:1" in well
+    assert "TNPH:1" in well
+    assert "RHO8" in well
+    assert "GR" in well
+    assert "NPHI" in well
+    assert "RHOB" in well
+    assert "PHIT" in well
+
+
+def test_low_quality_dlis_alias_is_not_promoted_to_canonical_curve():
+    well = Well("UNCALIBRATED")
+    well.depth = np.array([1000.0, 1001.0])
+    curve = well.add_curve(
+        "RVDRU",
+        [10.0, 20.0],
+        "ohm.m",
+        "Deep Resistivity Uncalibrated",
+    )
+    curve.metadata.custom["standardization_priority"] = -200
+
+    standardized = standardize_curves(well, rename_curves=True)
+
+    assert "RVDRU" in standardized
+    assert "RDEP" not in standardized
+
+
+def test_uncalibrated_resistivity_mnemonics_are_not_canonical_aliases():
+    well = Well("UNCALIBRATED-LAS")
+    well.depth = np.array([1000.0, 1001.0])
+    well.add_curve(
+        "RVDRU",
+        [10.0, 20.0],
+        "ohm.m",
+        "Deep Resistivity Uncalibrated",
+    )
+    well.add_curve(
+        "RVSRU",
+        [5.0, 8.0],
+        "ohm.m",
+        "Shallow Resistivity Uncalibrated",
+    )
+
+    standardized = standardize_curves(well, rename_curves=True)
+
+    assert get_standard_mnemonic("RVDRU") == "RVDRU"
+    assert get_standard_mnemonic("RVSRU") == "RVSRU"
+    assert "RVDRU" in standardized
+    assert "RVSRU" in standardized
+    assert "RDEP" not in standardized
+    assert "RSHA" not in standardized
 
 
 def test_dte_is_not_treated_as_shear_sonic():
@@ -139,19 +228,25 @@ def test_dcal_is_not_treated_as_absolute_caliper():
 def test_phin_is_not_treated_as_raw_nphi_alias():
     well = Well("STANDARDIZE-PHIN")
     well.depth = np.array([0.0, 1.0])
-    well.add_curve("PHIN", np.array([0.20, 0.65]), "v/v", "Lithology-corrected neutron porosity")
+    well.add_curve(
+        "PHIN", np.array([0.20, 0.65]), "v/v", "Lithology-corrected neutron porosity"
+    )
 
     standardized = standardize_curves(well, rename_curves=True, convert_units=True)
 
     assert standardized.get("NPHI") is None
     assert standardized.get("PHIN") is not None
-    np.testing.assert_allclose(standardized["PHIN"].data, np.array([0.20, np.nan]), equal_nan=True)
+    np.testing.assert_allclose(
+        standardized["PHIN"].data, np.array([0.20, np.nan]), equal_nan=True
+    )
 
 
 def test_sonic_standardization_masks_implausible_dtc_and_dts_values():
     well = Well("STANDARDIZE-SONIC-SCREEN")
     well.depth = np.array([0.0, 1.0, 2.0, 3.0])
-    well.add_curve("DTC", np.array([80.0, 10.0, 320.0, 120.0]), "us/ft", "Compressional sonic")
+    well.add_curve(
+        "DTC", np.array([80.0, 10.0, 320.0, 120.0]), "us/ft", "Compressional sonic"
+    )
     well.add_curve("DTS", np.array([150.0, 15.0, 4.0e7, 500.0]), "us/ft", "Shear sonic")
 
     standardized = standardize_curves(well, rename_curves=True, convert_units=True)
