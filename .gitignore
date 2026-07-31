@@ -154,6 +154,12 @@ Thumbs.db
 *.LAS
 *.DLIS
 
+# Full-size public integration fixtures are versioned through Git LFS.
+!integration_data/
+!integration_data/daydream/
+!integration_data/daydream/*.dlis
+!integration_data/daydream/*.las
+
 # ...but DO ship the small curated sample data bundled inside the package
 !src/petrophys/datasets/
 !src/petrophys/datasets/**/

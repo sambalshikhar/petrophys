@@ -13,10 +13,19 @@ from petrophys.io.dlis_reader import (
 )
 
 
-# Optional integration fixtures: point these env vars at local DLIS files to run
-# the reader integration tests; otherwise they skip (see _skip_without_dlisio_and_file).
-DEEP_DAYDREAM_DLIS = Path(os.environ.get("PETROPHYS_DLIS_DEEP", "_unset_deep_daydream.dlis"))
-SHALLOW_DAYDREAM_DLIS = Path(os.environ.get("PETROPHYS_DLIS_SHALLOW", "_unset_shallow_daydream.dlis"))
+FIXTURE_DIR = Path(__file__).resolve().parents[1] / "integration_data" / "daydream"
+DEEP_DAYDREAM_DLIS = Path(
+    os.environ.get(
+        "PETROPHYS_DLIS_DEEP",
+        FIXTURE_DIR / "daydream1_deep_pex_aps_ppc_ecs.dlis",
+    )
+)
+SHALLOW_DAYDREAM_DLIS = Path(
+    os.environ.get(
+        "PETROPHYS_DLIS_SHALLOW",
+        FIXTURE_DIR / "daydream1_shallow_aps_pex_hngs.dlis",
+    )
+)
 
 
 class _FakeChannel:
@@ -33,7 +42,9 @@ def _skip_without_dlisio_and_file(path):
     if not HAS_DLISIO:
         pytest.skip("dlisio is not installed")
     if not path.exists():
-        pytest.skip(f"DLIS test file is not available: {path}")
+        pytest.skip(f"DLIS test file is not available: {path}; run 'git lfs pull'")
+    if path.stat().st_size < 1024:
+        pytest.skip(f"DLIS test file is only a Git LFS pointer: {path}; run 'git lfs pull'")
 
 
 def test_dlis_tenth_inch_depth_is_converted_to_metres_by_default():
@@ -120,5 +131,6 @@ def test_daydream_shallow_dlis_merged_depth_range_when_available():
     assert well.top is not None and 800.0 < well.top < 900.0
     assert well.bottom is not None and 2800.0 < well.bottom < 2900.0
     assert "GR" in well
-    assert "RDEP" in well
+    assert "RVDRU" in well
+    assert "RDEP" not in well
     assert not np.any((well.depth >= 3000.0) & (well.depth <= 3010.0))

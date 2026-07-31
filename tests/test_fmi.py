@@ -17,6 +17,14 @@ from petrophys.interpretation.borehole_imaging import (
 )
 
 
+FMI_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "integration_data"
+    / "daydream"
+    / "daydream1_fmi_processed_dynamic_image.dlis"
+)
+
+
 def test_navigation_is_preserved_when_filtering_by_depth():
     image = BoreholeImageData.from_arrays(
         depth=[100.0, 101.0, 102.0],
@@ -132,11 +140,11 @@ def test_safe_per_depth_statistics_handles_all_nan_rows():
 
 
 def test_daydream_processed_fmi_dlis_can_be_read_and_oriented_when_available():
-    # Optional integration fixture: set PETROPHYS_FMI_DLIS to a processed FMI
-    # DLIS to run this; otherwise it skips.
-    path = Path(os.environ.get("PETROPHYS_FMI_DLIS", "_unset_fmi.dlis"))
+    path = Path(os.environ.get("PETROPHYS_FMI_DLIS", FMI_FIXTURE))
     if not path.exists():
-        pytest.skip("FMI DLIS not available; set PETROPHYS_FMI_DLIS to enable")
+        pytest.skip("FMI DLIS not available; run 'git lfs pull' or set PETROPHYS_FMI_DLIS")
+    if path.stat().st_size < 1024:
+        pytest.skip("FMI DLIS is only a Git LFS pointer; run 'git lfs pull'")
 
     data = read_fmi_dlis(path)
     navigation = get_navigation(data)
