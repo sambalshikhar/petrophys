@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from petrophys.datasets import integration_fixture
 from petrophys.io import read_dlis, read_dlis_merged
 from petrophys.io.dlis_reader import (
     HAS_DLISIO,
@@ -12,18 +13,16 @@ from petrophys.io.dlis_reader import (
     _convert_depth,
 )
 
-
-FIXTURE_DIR = Path(__file__).resolve().parents[1] / "integration_data" / "daydream"
 DEEP_DAYDREAM_DLIS = Path(
     os.environ.get(
         "PETROPHYS_DLIS_DEEP",
-        FIXTURE_DIR / "daydream1_deep_pex_aps_ppc_ecs.dlis",
+        integration_fixture("daydream1_deep_pex_aps_ppc_ecs.dlis"),
     )
 )
 SHALLOW_DAYDREAM_DLIS = Path(
     os.environ.get(
         "PETROPHYS_DLIS_SHALLOW",
-        FIXTURE_DIR / "daydream1_shallow_aps_pex_hngs.dlis",
+        integration_fixture("daydream1_shallow_aps_pex_hngs.dlis"),
     )
 )
 
@@ -44,7 +43,9 @@ def _skip_without_dlisio_and_file(path):
     if not path.exists():
         pytest.skip(f"DLIS test file is not available: {path}; run 'git lfs pull'")
     if path.stat().st_size < 1024:
-        pytest.skip(f"DLIS test file is only a Git LFS pointer: {path}; run 'git lfs pull'")
+        pytest.skip(
+            f"DLIS test file is only a Git LFS pointer: {path}; run 'git lfs pull'"
+        )
 
 
 def test_dlis_tenth_inch_depth_is_converted_to_metres_by_default():

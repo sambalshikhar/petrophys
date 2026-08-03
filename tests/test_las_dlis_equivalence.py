@@ -1,7 +1,11 @@
+import hashlib
 from pathlib import Path
 
+import lasio
+import numpy as np
 import pytest
 
+from petrophys.datasets import integration_fixture
 from petrophys.io.dlis_reader import HAS_DLISIO
 from validation.las_dlis_equivalence import (
     DEEP_MATCHED_WORKFLOW_INPUTS,
@@ -9,15 +13,14 @@ from validation.las_dlis_equivalence import (
     compare_deliveries,
 )
 
-FIXTURE_DIR = Path(__file__).resolve().parents[1] / "integration_data" / "daydream"
-MATCHED_LAS = FIXTURE_DIR / "daydream1_shallow_aps_pex_hngs.las"
-MATCHED_DLIS = FIXTURE_DIR / "daydream1_shallow_aps_pex_hngs.dlis"
-DEEP_MATCHED_LAS = FIXTURE_DIR / "daydream1_deep_pex_aps_ppc_hngs_ecs.las"
-DEEP_MATCHED_DLIS = FIXTURE_DIR / "daydream1_deep_pex_aps_ppc_ecs.dlis"
+MATCHED_LAS = integration_fixture("daydream1_shallow_aps_pex_hngs.las")
+MATCHED_DLIS = integration_fixture("daydream1_shallow_aps_pex_hngs.dlis")
+DEEP_MATCHED_LAS = integration_fixture("daydream1_deep_curated_scalar_logs.las")
+DEEP_MATCHED_DLIS = integration_fixture("daydream1_deep_pex_aps_ppc_ecs.dlis")
 
 
-def _skip_without_real_fixture(path: Path) -> None:
-    if not HAS_DLISIO:
+def _skip_without_real_fixture(path: Path, *, requires_dlisio: bool = True) -> None:
+    if requires_dlisio and not HAS_DLISIO:
         pytest.skip("dlisio is not installed")
     if not path.exists():
         pytest.skip(f"Integration fixture is unavailable: {path}; run 'git lfs pull'")
@@ -25,6 +28,36 @@ def _skip_without_real_fixture(path: Path) -> None:
         pytest.skip(
             f"Integration fixture is a Git LFS pointer: {path}; run 'git lfs pull'"
         )
+
+
+def test_daydream_deep_curated_las_preserves_the_complete_depth_vector():
+    _skip_without_real_fixture(DEEP_MATCHED_LAS, requires_dlisio=False)
+
+    las = lasio.read(DEEP_MATCHED_LAS)
+    depth = np.asarray(las.index, dtype="<f8")
+
+    assert len(las.curves) == 121
+    assert depth.size == 8548
+    assert depth[0] == pytest.approx(2844.8508)
+    assert depth[-1] == pytest.approx(4147.4136)
+    assert hashlib.sha256(depth.tobytes()).hexdigest() == (
+        "0dbeb678b977e1a584ec0b1721b7c5e18940d9f9b2f3bb063c806b3f33a32190"
+    )
+    assert not any("[" in mnemonic for mnemonic in las.keys())
+    assert {
+        "BS",
+        "SGR",
+        "NPHI",
+        "RHO8:1",
+        "PEF8:1",
+        "CALI:2",
+        "RVDRU:2",
+        "WCLA_WALK2",
+    } <= set(las.keys())
+    assert las.params["CURATED"].value == "YES"
+    assert las.params["CURSHA"].value == (
+        "cc63cc99bcdfa12af4580d7993a0f0e530b7395180bc29ec3b55ab1a07914a42"
+    )
 
 
 def test_daydream_shallow_las_and_dlis_workflows_are_format_equivalent():

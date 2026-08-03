@@ -4,6 +4,7 @@ Shared helpers for interval-based analysis outputs.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
 
@@ -11,6 +12,13 @@ import numpy as np
 
 from petrophys.model.data_types import DataType
 from petrophys._internal.statistics import finite_min_max
+
+_LAS_OCCURRENCE_SUFFIX = re.compile(r":\d+$")
+
+
+def base_curve_mnemonic(mnemonic: str) -> str:
+    """Return a LAS mnemonic without lasio's duplicate-occurrence suffix."""
+    return _LAS_OCCURRENCE_SUFFIX.sub("", str(mnemonic).strip().upper())
 
 
 @dataclass

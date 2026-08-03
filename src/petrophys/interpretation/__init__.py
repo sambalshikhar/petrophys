@@ -10,6 +10,12 @@ from petrophys.interpretation.electrical.cementation import (
     ArchieParameters,
     pickett_analysis,
 )
+from petrophys.interpretation.geochemistry import (
+    ElementalSpectroscopyResult,
+    SpectralGammaResult,
+    interpret_elemental_spectroscopy,
+    interpret_spectral_gamma,
+)
 from petrophys.interpretation.lithology import (
     MultiMineralSolver,
     calculate_lithology,
@@ -23,15 +29,19 @@ from petrophys.interpretation.saturation import SaturationModule, calculate_sw
 
 __all__ = [
     "ArchieParameters",
+    "ElementalSpectroscopyResult",
     "MultiMineralSolver",
     "PermeabilityModule",
     "PorosityModule",
     "SaturationModule",
+    "SpectralGammaResult",
     "VclModule",
     "calculate_lithology",
     "calculate_permeability",
     "calculate_porosity",
     "calculate_sw",
     "calculate_vcl",
+    "interpret_elemental_spectroscopy",
+    "interpret_spectral_gamma",
     "pickett_analysis",
 ]

@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from petrophys import Well
+from petrophys import Well, sample
 from petrophys.interpretation.clay_volume.vcl_module import VclModule
 from petrophys.io import read_las
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
@@ -1484,8 +1484,8 @@ def test_mhi_skips_when_sxo_is_only_fifth_root_fallback(record_route):
     "case_id,path,expected_methods,expected_skips,expected_curves",
     [
         (
-            "real_geolink_15_9_12",
-            Path("geolink_data/15_9-12.las"),
+            "bundled_geolink_15_9_14",
+            sample("15_9-14"),
             {
                 "temperature": "fallback_geothermal_gradient",
                 "rcl": "lithology_shale_median_rt",
@@ -1495,8 +1495,8 @@ def test_mhi_skips_when_sxo_is_only_fifth_root_fallback(record_route):
             {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "NET_PAY"},
         ),
         (
-            "real_geolink_15_9_23",
-            Path("geolink_data/15_9-23.las"),
+            "bundled_geolink_16_7_1",
+            sample("16_7-1"),
             {
                 "temperature": "fallback_geothermal_gradient",
                 "rcl": "lithology_shale_median_rt",
@@ -1510,9 +1510,6 @@ def test_mhi_skips_when_sxo_is_only_fifth_root_fallback(record_route):
 def test_real_las_wells_route_through_dynamic_workflow(
     case_id, path, expected_methods, expected_skips, expected_curves, record_route
 ):
-    if not path.exists():
-        pytest.skip(f"Real LAS test data not available: {path}")
-
     well = read_las(path)
     result = _run(
         case_id,
