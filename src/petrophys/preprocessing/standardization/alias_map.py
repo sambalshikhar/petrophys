@@ -5,8 +5,9 @@ This module provides mapping of common curve name variations
 to standard mnemonics used throughout the library.
 """
 
-import re
 from typing import Dict, List, Optional
+
+from petrophys._internal.analysis_helpers import base_curve_mnemonic
 
 # Standard mnemonic to aliases mapping
 ALIAS_MAP: Dict[str, List[str]] = {
@@ -184,14 +185,6 @@ for standard, aliases in ALIAS_MAP.items():
     for alias in aliases:
         _REVERSE_MAP[alias.upper()] = standard
     _REVERSE_MAP[standard.upper()] = standard
-
-
-_LAS_OCCURRENCE_SUFFIX = re.compile(r":\d+$")
-
-
-def base_curve_mnemonic(mnemonic: str) -> str:
-    """Return a LAS mnemonic without lasio's duplicate occurrence suffix."""
-    return _LAS_OCCURRENCE_SUFFIX.sub("", str(mnemonic).strip().upper())
 
 
 def get_standard_mnemonic(mnemonic: str) -> str:

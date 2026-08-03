@@ -16,15 +16,15 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from petrophys.datasets import integration_fixture  # noqa: E402
 from petrophys.io import read_dlis_merged, read_las  # noqa: E402
 from petrophys.model import Well  # noqa: E402
 from petrophys.workflow import DynamicWorkflowConfig, run_dynamic_workflow  # noqa: E402
 
-FIXTURE_ROOT = REPO_ROOT / "integration_data" / "daydream"
-DEFAULT_LAS = FIXTURE_ROOT / "daydream1_shallow_aps_pex_hngs.las"
-DEFAULT_DLIS = FIXTURE_ROOT / "daydream1_shallow_aps_pex_hngs.dlis"
-DEEP_LAS = FIXTURE_ROOT / "daydream1_deep_pex_aps_ppc_hngs_ecs.las"
-DEEP_DLIS = FIXTURE_ROOT / "daydream1_deep_pex_aps_ppc_ecs.dlis"
+DEFAULT_LAS = integration_fixture("daydream1_shallow_aps_pex_hngs.las")
+DEFAULT_DLIS = integration_fixture("daydream1_shallow_aps_pex_hngs.dlis")
+DEEP_LAS = integration_fixture("daydream1_deep_curated_scalar_logs.las")
+DEEP_DLIS = integration_fixture("daydream1_deep_pex_aps_ppc_ecs.dlis")
 
 RAW_CURVE_PAIRS = {
     "BS": ("BS", "BS"),
@@ -200,7 +200,7 @@ def _matched_input_well(
             canonical,
             np.asarray(curve.data, dtype=float).copy(),
             unit=curve.unit,
-            description=f"Matched {source_name}: {curve.metadata.description}",
+            description=f"Matched physical {canonical} channel",
         )
     return matched
 

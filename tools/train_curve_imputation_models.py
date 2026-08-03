@@ -1,4 +1,4 @@
-"""Train packaged pretrained curve-imputation models from geolink LAS data."""
+"""Train packaged pretrained curve-imputation models from a LAS directory."""
 
 from __future__ import annotations
 
@@ -10,7 +10,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from petrophys.preprocessing.imputation.training import describe_model_pack, train_pretrained_model_pack
+from petrophys.preprocessing.imputation.training import (
+    describe_model_pack,
+    train_pretrained_model_pack,
+)
 
 
 def main() -> None:
@@ -19,7 +22,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--data-dir",
-        default="geolink_data",
+        required=True,
         help="Directory containing LAS files used for training.",
     )
     parser.add_argument(

@@ -1,41 +1,57 @@
-# Bundled sample data
+# Repository datasets
 
-These datasets ship with `petrophys` so the tutorials, demos, and quick tries
-work out of the box — after both `git clone` and `pip install`.
+All repository-owned well data live below this directory.
 
-## How to use
+- Small sample datasets ship with `petrophys`, so tutorials and demos work
+  after both `git clone` and `pip install`.
+- Larger native deliveries and validation LAS files live beside related
+  samples in the same collection folder. They use Git LFS and are excluded
+  from wheels and source distributions.
+
+## Bundled samples
 
 ```python
 import petrophys
 from petrophys.io import read_las
 
-well = read_las(petrophys.sample("HW-3"))      # a carbonate well
-well = read_las(petrophys.sample("30_6-5"))    # a clastic well
+well = read_las(petrophys.sample("HW-3"))
+well = read_las(petrophys.sample("30_6-5"))
 
-petrophys.list_samples()            # every bundled sample
-petrophys.list_samples("costa")     # just the Costa wells
+petrophys.list_samples()
+petrophys.list_samples("costa")
 ```
 
-`petrophys.sample(name)` returns the file path (name is the file stem, extension
-optional). `petrophys.list_samples(kind)` lists what's available.
+`petrophys.sample(name)` returns a bundled file path. Application code can pass
+any user-owned path directly to `read_las()` or `read_dlis()`.
 
-## What's here
+| Folder or file | Purpose |
+|---|---|
+| `costa/` | The 17-well Costa carbonate field used by the multiwell field-study and screening notebooks. |
+| `geolink/30_6-5.las` | Main North Sea clastic tutorial well with a rich curve suite and vendor lithology. |
+| `geolink/16_7-1.las` | Tight-zone and industrial curve-wrapping example. |
+| `geolink/15_9-14.las` | Mineral-solver tutorial well with vendor lithology. |
+| `geolink/25_5-1.las` | Core-bearing North Sea example with PHIC, permeability, saturation, and grain-density curves. |
+| `daydream/daydream1_cmr.las` | Daydream 1 processed CMR summary, 3755-4145 m. |
+| `daydream/daydream1_cmr_shallow.las` | Daydream 1 processed CMR summary, 2860-3050 m. |
+| `formations_30_6-5.csv` | Formation tops for 30/6-5. |
+| `lithology_30_6-5.csv` | Per-interval lithology for 30/6-5. |
 
-| Folder / file | Description |
-|---------------|-------------|
-| `costa/` (HW-3 … HW-32) | 17 wells from the **Costa** field — **carbonate** reservoir. Curves: GR, RHOB, NPHI, DT, RT, plus core PHIE_CC / SW_INPUT / PERM_CC and Archie params (a, m, n) in the header. |
-| `geolink/30_6-5.las` | North Sea **clastic** well (NCS 30/6-5). Rich curve set (GR, RHOB, NPHI, PEF, DTC, multi-spacing resistivity, SP, CALI) **plus a vendor `LITHOLOGY_GEOLINK` log** and an operator `~Params` header block (RW, RMF, BHT, CLFL). The main tutorial well. |
-| `geolink/16_7-1.las` | North Sea well with tight zones where deep resistivity goes **off-scale** (~20% of samples > 2000 ohm·m) — used to demo industrial **curve wrapping**. Carries a `~Params` header block (CLFL). |
-| `geolink/15_9-14.las` | North Sea clastic well with a vendor lithology log — the mineral-solver tutorial well (notebook 05). Carries BS and a `~Params` block (CLFL). |
-| `geolink/25_5-1.las` | North Sea 25/5-1 (Froy) with **real core curves** (PHIC, KH_CORE, KV_CORE, SWC, SOC, GDEN) and a full `~Params` block (RW=0.047 at 200 degF, RMF, RM, CLFL). |
-| `daydream/daydream1_cmr.las` | Real Schlumberger **CMR** summary log, well **Daydream 1** (QGC, ATP 645, Bowen Basin - public Queensland well-completion data), 3755-4145 m. Curves: TCMR, CMFF, CMRP_3MS, KSDR, KTIM, T2CUTOFF, GR_EDTC, calipers. |
-| `daydream/daydream1_cmr_shallow.las` | Second CMR section of the same well, 2860-3050 m. |
-| `formations_30_6-5.csv` | Formation tops for 30/6-5 (formation_name, top, bottom, lithology). |
-| `lithology_30_6-5.csv` | Per-interval lithology for 30/6-5 (top, bottom, lithology). |
+## Repository fixtures
 
-## Notes
+Large LAS/DLIS regression files use the same domain folders as the bundled
+samples but are explicitly catalogued and resolved separately, so they are
+never confused with installed samples:
 
-- The Costa wells are **carbonate**; the dynamic workflow auto-detects this from
-  core porosity + apparent matrix density when `lithology="auto"` / `matrix_type="auto"`.
-- A much larger geolink LAS collection (200+ wells) is used in development but is
-  **not** bundled (too large); it lives outside the package and is gitignored.
+```python
+from petrophys.datasets import integration_fixture
+
+path = integration_fixture("daydream1_fmi_processed_dynamic_image.dlis")
+```
+
+Run `git lfs pull` in a source checkout before using these files. Tests skip
+cleanly when optional fixtures are unavailable. See `daydream/README.md` for
+provenance, checksums, and validation commands.
+
+The Costa wells are all retained intentionally: the public multiwell notebooks
+load and compare the complete 17-well set. The larger external GeoLink
+development collection is not a repository dependency.

@@ -89,7 +89,8 @@ petrophys = [
     "datasets/*.csv",
     "datasets/*.md",
     "datasets/costa/*.las",
-    "datasets/daydream/*.las",
+    "datasets/daydream/daydream1_cmr.las",
+    "datasets/daydream/daydream1_cmr_shallow.las",
     "datasets/geolink/*.las",
     "data/legacy_context/*.json.gz",
 ]

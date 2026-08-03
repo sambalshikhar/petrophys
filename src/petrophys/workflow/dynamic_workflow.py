@@ -8,15 +8,16 @@ execution modes.
 
 Pipeline execution order:
     Module 1: QC & Pre-Processing
-    Module 2: Volume of Clay, Clay Resistivity, Rmf, and HC preparation
-    Module 3: Provisional Porosity
-    Module 4: Lithology Determination
-    Module 5: Porosity Refinement and Core Correction
-    Module 6: Formation Water Resistivity
-    Module 7: Water Saturation
-    Module 8: Permeability
-    Module 9: Rock Quality (RQI, FZI)
-    Module 10: Net Pay
+    Module 2: Spectral Gamma and Elemental Spectroscopy
+    Module 3: Volume of Clay, Clay Resistivity, Rmf, and HC preparation
+    Module 4: Provisional Porosity
+    Module 5: Lithology Determination
+    Module 6: Porosity Refinement and Core Correction
+    Module 7: Formation Water Resistivity
+    Module 8: Water Saturation
+    Module 9: Permeability
+    Module 10: Rock Quality (RQI, FZI)
+    Module 11: Net Pay
 """
 
 from typing import Optional, List, Dict, Any, Union
@@ -75,6 +76,8 @@ class WorkflowStep(Enum):
     """Individual workflow steps."""
     NORMALIZATION = "normalization"
     BAD_HOLE = "bad_hole"
+    SPECTRAL_GAMMA = "spectral_gamma"
+    ELEMENTAL_SPECTROSCOPY = "elemental_spectroscopy"
     TEMPERATURE = "temperature"
     VCLAY = "vclay"
     RCL = "rcl"
@@ -1091,6 +1094,8 @@ class DynamicWorkflow:
             (WorkflowStep.NORMALIZATION, self._step_normalization, self._can_normalization),
             (WorkflowStep.TEMPERATURE, self._step_temperature, self._can_temperature),
             (WorkflowStep.BAD_HOLE, self._step_bad_hole, self._can_bad_hole),
+            (WorkflowStep.SPECTRAL_GAMMA, self._step_spectral_gamma, self._can_spectral_gamma),
+            (WorkflowStep.ELEMENTAL_SPECTROSCOPY, self._step_elemental_spectroscopy, self._can_elemental_spectroscopy),
             (WorkflowStep.VCLAY, self._step_vclay, self._can_vclay),
             (WorkflowStep.RCL, self._step_rcl, self._can_rcl),
             (WorkflowStep.RMF, self._step_rmf, self._can_rmf),
@@ -1470,7 +1475,10 @@ class DynamicWorkflow:
         # GR-less well must not be silently left without any clay volume
         # (downstream Sw would otherwise treat every sample as clean sand).
         return (
-            self._has_curve(well, "GR", "CGR", "SGR", "HSGR", "HCGR")
+            self._has_curve(
+                well, "GR", "CGR", "CGR_CALC", "SGR", "SGR_CALC",
+                "HSGR", "HCGR", "GRKT", "GRTO", "GRSL"
+            )
             or self._has_curve(well, "SP")
             or (self._has_curve(well, "NPHI", "PHIN") and self._has_curve(well, "RHOB"))
         )
@@ -1494,6 +1502,18 @@ class DynamicWorkflow:
             and has_discriminator
             and self._has_curve(well, "VCL", "VCLAY")
         )
+
+    def _can_spectral_gamma(self, well: "Well") -> bool:
+        if self._uses_vendor_benchmark:
+            return False
+        from petrophys.interpretation.geochemistry import has_spectral_gamma_inputs
+        return has_spectral_gamma_inputs(well)
+
+    def _can_elemental_spectroscopy(self, well: "Well") -> bool:
+        if self._uses_vendor_benchmark:
+            return False
+        from petrophys.interpretation.geochemistry import has_elemental_spectroscopy_inputs
+        return has_elemental_spectroscopy_inputs(well)
 
     def _can_rmf(self, well: "Well") -> bool:
         return (
@@ -1700,6 +1720,87 @@ class DynamicWorkflow:
         trace.decisions.append(f"{n_bad} bad-hole samples flagged out of {len(flags['bad_hole'])}")
         return trace
 
+    def _step_spectral_gamma(self, well: "Well") -> StepResult:
+        """Standardize processed K-Th-U logs and derive spectral diagnostics."""
+        from petrophys.interpretation.geochemistry import interpret_spectral_gamma
+
+        result = interpret_spectral_gamma(well)
+        if result.warnings:
+            self._result.warnings.extend(
+                f"spectral_gamma: {warning}" for warning in result.warnings
+            )
+
+        measurements = sorted(result.measurements)
+        decisions = [
+            "Used processed concentration/gamma curves; raw detector spectra were not inverted",
+        ]
+        if measurements:
+            decisions.insert(0, f"Resolved processed products: {', '.join(measurements)}")
+        if "CGR_CALC" in result.derived:
+            decisions.append("Reconstructed uranium-free gamma ray from potassium and thorium")
+        if result.warnings:
+            decisions.append(
+                f"Completed with {len(result.warnings)} unit/provenance warning(s)"
+            )
+
+        return StepResult(
+            step="spectral_gamma",
+            success=True,
+            method="processed_k_th_u_spectral_gamma",
+            input_curves=result.input_curves,
+            output_curves=result.output_curves,
+            parameters={
+                "sources": result.sources,
+                "conversions": result.conversions,
+                "measurements": measurements,
+                "derived": sorted(result.derived),
+            },
+            decisions=decisions,
+            message="; ".join(result.warnings),
+        )
+
+    def _step_elemental_spectroscopy(self, well: "Well") -> StepResult:
+        """Resolve processed elemental dry weights and relative yields."""
+        from petrophys.interpretation.geochemistry import interpret_elemental_spectroscopy
+
+        result = interpret_elemental_spectroscopy(well)
+        if result.warnings:
+            self._result.warnings.extend(
+                f"elemental_spectroscopy: {warning}" for warning in result.warnings
+            )
+
+        dry_elements = sorted(result.dry_weight_fractions)
+        yield_products = sorted(result.relative_yields)
+        decisions = [
+            "Kept relative yields separate from dry-weight fractions",
+            "Did not invert raw spectra or apply vendor sensitivities implicitly",
+        ]
+        if dry_elements:
+            decisions.insert(0, f"Resolved dry-weight elements: {', '.join(dry_elements)}")
+        if yield_products:
+            decisions.append(f"Resolved relative-yield products: {', '.join(yield_products)}")
+        if result.warnings:
+            decisions.append(
+                f"Completed with {len(result.warnings)} unit/provenance warning(s)"
+            )
+
+        return StepResult(
+            step="elemental_spectroscopy",
+            success=True,
+            method="processed_elemental_spectroscopy",
+            input_curves=result.input_curves,
+            output_curves=result.output_curves,
+            parameters={
+                "sources": result.sources,
+                "conversions": result.conversions,
+                "dry_weight_elements": dry_elements,
+                "relative_yields": yield_products,
+                "derived": sorted(result.derived),
+            },
+            decisions=decisions,
+            message="; ".join(result.warnings),
+        )
+
     def _get_temperature_profile(self, well: "Well") -> np.ndarray:
         """Return a formation-temperature array in Fahrenheit."""
         temp_curve = well.get("TEMP")
@@ -1758,8 +1859,19 @@ class DynamicWorkflow:
         gr_min_source = "user" if gr_min is not None else "auto"
         gr_max_source = "user" if gr_max is not None else "auto"
 
+        if self._uses_vendor_benchmark:
+            gr_candidates = ["GR", "CGR", "SGR", "HSGR", "HCGR"]
+        else:
+            # Uranium-free spectral gamma is preferred where U is decoupled
+            # from clay; the historical benchmark retains its GR-first route.
+            gr_candidates = [
+                "CGR", "CGR_CALC", "GRKT", "GR", "SGR", "SGR_CALC",
+                "GRTO", "GRSL", "HSGR", "HCGR",
+            ]
+        gr_curve = get_curve(well, gr_candidates)
+        gr_curve_name = gr_curve.mnemonic if gr_curve is not None else None
+
         if gr_min is None or gr_max is None:
-            gr_curve = get_curve(well, ["GR", "CGR", "SGR", "HSGR", "HCGR"])
             if gr_curve is not None:
                 valid_gr = gr_curve.data[~np.isnan(gr_curve.data)]
                 if len(valid_gr) > 0:
@@ -1794,6 +1906,14 @@ class DynamicWorkflow:
 
         decisions.append(f"GR_min = {gr_min:.1f} ({gr_min_source}, P5 of GR)")
         decisions.append(f"GR_max = {gr_max:.1f} ({gr_max_source}, P95 of GR)")
+        if gr_curve is not None:
+            decisions.append(f"Gamma-ray clay input: {gr_curve_name}")
+            if not self._uses_vendor_benchmark and gr_curve_name in {
+                "CGR", "CGR_CALC", "GRKT"
+            }:
+                decisions.append(
+                    "Preferred uranium-free spectral gamma over total gamma ray for VCL"
+                )
         decisions.append(f"GR method: {self.config.gr_method}")
         decisions.append(f"SP method: {'enabled' if use_sp else 'disabled'}"
                         + (f" (mud has clay/KCl)" if self.config.mud_has_clay_or_kcl else ""))
@@ -1818,9 +1938,12 @@ class DynamicWorkflow:
             combine=vcl_combine,
             rho_fl=self.config.rho_fl,
         )
-        result = vcl_module.calculate(well)
+        curve_mapping = {"gr": gr_curve_name} if gr_curve_name else None
+        result = vcl_module.calculate(well, curves=curve_mapping)
 
-        inputs = ["GR"]
+        inputs = []
+        if gr_curve is not None:
+            inputs.append(curve_source_mnemonic(gr_curve) or gr_curve_name)
         outputs = []
         if use_sp: inputs.append("SP")
         if use_nd: inputs.extend(["NPHI", "RHOB"])
@@ -1879,6 +2002,7 @@ class DynamicWorkflow:
         trace.output_curves = outputs
         trace.parameters = {
             "gr_min": gr_min, "gr_max": gr_max,
+            "gr_curve": gr_curve_name,
             "gr_method": self.config.gr_method,
             "use_sp": use_sp, "use_nd": use_nd,
             "sp_min": sp_min, "sp_max": sp_max,
