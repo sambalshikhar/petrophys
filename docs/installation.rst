@@ -5,7 +5,8 @@ Requirements
 ------------
 
 Petrophys requires **Python 3.9+**. Core dependencies (installed
-automatically): numpy, pandas, scipy, matplotlib, lasio, pint.
+automatically): numpy, pandas, scipy, matplotlib, lasio, openpyxl, and
+defusedxml.
 
 Install from source
 -------------------
@@ -55,14 +56,22 @@ Optional extras
      - DLIS file reading (``read_dlis``, ``read_fmi_dlis``)
      - ``pip install -e ".[dlis]"``
    * - ``ml``
-     - The pretrained curve-imputation model (scikit-learn, xgboost)
+     - The pretrained curve-imputation model (Python 3.11+, scikit-learn, xgboost)
      - ``pip install -e ".[ml]"``
+   * - ``all``
+     - All optional runtime features (Python 3.11+, DLIS and pretrained ML)
+     - ``pip install -e ".[all]"``
    * - ``dev``
      - Test and lint tooling
      - ``pip install -e ".[dev]"``
    * - ``docs``
      - Building this documentation
      - ``pip install -e ".[docs]"``
+
+Pretrained model packs use the scikit-learn, XGBoost, and joblib minor-version
+series recorded during training. The loader checks those versions before the
+pack is used. Install the ``ml`` extra to obtain the dependency versions for
+the bundled pack.
 
 Verify the install
 ------------------

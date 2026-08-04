@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath("../src"))
 # -- Project information -----------------------------------------------------
 project = "Petrophys"
 copyright = "2026, MBZUAI / Inception AI"
-author = "Petrophys Development Team"
+author = "Petrophys Contributors"
 release = "0.1.0"
 
 # -- Pull the executed tutorial notebooks into the doc tree -------------------

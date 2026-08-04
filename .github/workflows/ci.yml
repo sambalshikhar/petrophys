@@ -29,8 +29,8 @@ jobs:
 
       - name: Lint with flake8
         run: |
-          flake8 petrophys --count --select=E9,F63,F7,F82 --builtins=Well,Curve --show-source --statistics
-          flake8 petrophys --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+          flake8 src/petrophys tests --count --select=E9,F63,F7,F82 --builtins=Well,Curve --show-source --statistics
+          flake8 src/petrophys tests --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
 
       - name: Run tests with pytest
         run: |
@@ -41,6 +41,29 @@ jobs:
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
+
+  ml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[ml,dev]"
+
+      - name: Run pretrained-model tests
+        run: |
+          pytest tests/test_curve_imputation.py \
+            tests/test_critical_findings_regressions.py::test_curve_feature_transformer_follows_sklearn_clone_contract \
+            tests/test_critical_findings_regressions.py::test_model_pack_dependency_series_are_enforced \
+            tests/test_critical_findings_regressions.py::test_training_metrics_are_grouped_by_well \
+            tests/test_cutoff_standards.py::test_pretrained_imputer_pack_loads_without_legacy_namespaces
 
   docs:
     runs-on: ubuntu-latest
@@ -67,3 +90,35 @@ jobs:
         with:
           name: documentation
           path: docs/_build/html/
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build and check distributions
+        run: |
+          python -m build
+          twine check dist/*
+
+      - name: Verify required wheel resources
+        run: >-
+          python -c "import glob, zipfile; wheel = glob.glob('dist/*.whl')[0];
+          names = set(zipfile.ZipFile(wheel).namelist());
+          required = {'petrophys/_internal/data/electrofacies_v1.json.gz',
+          'petrophys/preprocessing/imputation/pretrained/geolink_curve_imputation.joblib'};
+          forbidden = {'petrophys/_internal/validators.py',
+          'petrophys/io/example_format_export.py', 'petrophys/workflow/workflow_api.py'};
+          missing = required - names; retired = forbidden & names;
+          assert not missing, f'Missing wheel resources: {sorted(missing)}';
+          assert not retired, f'Retired modules in wheel: {sorted(retired)}'"

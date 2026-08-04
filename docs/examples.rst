@@ -197,13 +197,13 @@ Net Pay Determination
    print(f"Net pay: {result.net_pay_thickness:.1f} ft")
    print(f"NTG: {result.net_pay_thickness/result.gross_thickness:.1%}")
 
-Complete Workflow Example
--------------------------
+Complete Dynamic Workflow Example
+---------------------------------
 
 .. code-block:: python
 
    from petrophys.io import read_las
-   from petrophys.workflow import run_standard_workflow, WorkflowConfig
+   from petrophys.workflow import run_dynamic_workflow, DynamicWorkflowConfig
    from petrophys.evaluation.summaries import calculate_zone_summary
    from petrophys.visualization import create_log_viewer
 
@@ -211,23 +211,23 @@ Complete Workflow Example
    well = read_las("well_data.las")
 
    # Configure workflow
-   config = WorkflowConfig(
+   config = DynamicWorkflowConfig(
        surface_temp_f=70,
        bht_f=180,
        td_ft=9000,
        rw=0.05,
-       matrix_density=2.65,
+       rho_ma=2.65,
        a=1.0,
        m=2.0,
        n=2.0,
-       saturation_model="archie",
+       sw_model="archie",
        vcl_cutoff=0.3,
        phie_cutoff=0.08,
        sw_cutoff=0.7
    )
 
    # Run interpretation
-   result = run_standard_workflow(well, config)
+   result = run_dynamic_workflow(well, config)
 
    # Full trace: see exactly what happened at each step
    result.print_trace()
@@ -251,25 +251,8 @@ Complete Workflow Example
 Workflow Trace & Transparency
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Both the Standard and Dynamic workflows provide full step-by-step trace
-metadata showing exactly what methods, parameters, thresholds, and decisions
-were used at each stage.
-
-**Standard Workflow trace:**
-
-.. code-block:: python
-
-   result = run_standard_workflow(well, config)
-   result.print_trace()
-
-   # Access individual step traces
-   for step in result.steps:
-       print(f"[{step.step}] method={step.method}")
-       print(f"  Inputs: {step.input_curves}")
-       print(f"  Outputs: {step.output_curves}")
-       print(f"  Parameters: {step.parameters}")
-       for d in step.decisions:
-           print(f"  -> {d}")
+The dynamic workflow provides full step-by-step trace metadata showing exactly
+what methods, parameters, thresholds, and decisions were used at each stage.
 
 **Dynamic Workflow trace with DataFrame export:**
 

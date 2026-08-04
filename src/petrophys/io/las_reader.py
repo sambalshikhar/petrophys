@@ -18,12 +18,7 @@ except ImportError:
 
 
 def _warn_on_depth_issues(depth: Optional[np.ndarray], source: object = "") -> None:
-    """Warn (do not raise) when the depth index is not strictly increasing.
-
-    Many downstream aggregations (thickness, net pay, zone summaries) assume a
-    monotonic depth axis. Reversed/duplicate/non-monotonic depth is accepted but
-    can silently bias results, so surface it to the caller.
-    """
+    """Warn when finite depth samples contain duplicates or change direction."""
     if depth is None:
         return
     arr = np.asarray(depth, dtype=float)
@@ -34,15 +29,13 @@ def _warn_on_depth_issues(depth: Optional[np.ndarray], source: object = "") -> N
     issues = []
     if np.any(diffs == 0):
         issues.append("duplicate depth values")
-    if np.any(diffs < 0):
-        if np.all(diffs <= 0):
-            issues.append("depth is decreasing (reversed)")
-        else:
-            issues.append("non-monotonic depth")
+    nonzero_diffs = diffs[diffs != 0]
+    if np.any(nonzero_diffs > 0) and np.any(nonzero_diffs < 0):
+        issues.append("depth changes direction")
     if issues:
         warnings.warn(
             f"Depth index issue in {source!s}: {', '.join(issues)}. "
-            "Downstream thickness/net-pay/zone calculations assume increasing depth.",
+            "Verify sample order before interpolation or interval operations.",
             stacklevel=3,
         )
 

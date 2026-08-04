@@ -26,6 +26,18 @@ jobs:
       - name: Check package
         run: twine check dist/*
 
+      - name: Verify required wheel resources
+        run: >-
+          python -c "import glob, zipfile; wheel = glob.glob('dist/*.whl')[0];
+          names = set(zipfile.ZipFile(wheel).namelist());
+          required = {'petrophys/_internal/data/electrofacies_v1.json.gz',
+          'petrophys/preprocessing/imputation/pretrained/geolink_curve_imputation.joblib'};
+          forbidden = {'petrophys/_internal/validators.py',
+          'petrophys/io/example_format_export.py', 'petrophys/workflow/workflow_api.py'};
+          missing = required - names; retired = forbidden & names;
+          assert not missing, f'Missing wheel resources: {sorted(missing)}';
+          assert not retired, f'Retired modules in wheel: {sorted(retired)}'"
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:

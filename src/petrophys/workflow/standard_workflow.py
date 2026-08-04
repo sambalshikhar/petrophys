@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 import numpy as np
 import re
+import warnings
 
 from petrophys._internal.analysis_helpers import get_curve
 
@@ -165,7 +166,11 @@ class WorkflowResult:
 
 class StandardWorkflow:
     """
-    Standard petrophysics interpretation workflow.
+    Legacy fixed-configuration petrophysics interpretation workflow.
+
+    .. deprecated:: 0.1.0
+       Use :class:`petrophys.workflow.DynamicWorkflow`, which checks available
+       inputs before routing each interpretation step.
 
     Workflow steps:
     1. Temperature profile
@@ -178,6 +183,11 @@ class StandardWorkflow:
     """
 
     def __init__(self, config: Optional[WorkflowConfig] = None):
+        warnings.warn(
+            "StandardWorkflow is deprecated; use DynamicWorkflow instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.config = config or WorkflowConfig()
         self.errors: List[str] = []
         self.warnings: List[str] = []
@@ -687,7 +697,9 @@ def run_standard_workflow(
     **kwargs
 ) -> WorkflowResult:
     """
-    Run standard workflow on a well.
+    Run the deprecated fixed-configuration workflow on a well.
+
+    Use :func:`petrophys.workflow.run_dynamic_workflow` for new code.
 
     Parameters
     ----------

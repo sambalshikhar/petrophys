@@ -42,21 +42,6 @@ Reservoir evaluation
    :recursive:
 
    petrophys.evaluation
-   petrophys.evaluation.intervals
-   petrophys.evaluation.summaries
-   petrophys.evaluation.diagnostics
-
-Core and special logs
----------------------
-
-.. autosummary::
-   :toctree: generated
-   :recursive:
-
-   petrophys.interpretation.core_analysis
-   petrophys.interpretation.nmr
-   petrophys.interpretation.borehole_imaging
-   petrophys.interpretation.geochemistry
 
 Machine learning
 ----------------

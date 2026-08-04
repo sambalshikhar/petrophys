@@ -1,9 +1,8 @@
 # Petrophys
 
-[![PyPI version](https://badge.fury.io/py/petrophys.svg)](https://badge.fury.io/py/petrophys)
-[![Python Version](https://img.shields.io/pypi/pyversions/petrophys.svg)](https://pypi.org/project/petrophys/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![Documentation Status](https://readthedocs.org/projects/petrophys/badge/?version=latest)](https://petrophys.readthedocs.io/en/latest/?badge=latest)
-[![CI](https://github.com/petrophys/petrophys/actions/workflows/ci.yml/badge.svg)](https://github.com/petrophys/petrophys/actions/workflows/ci.yml)
+[![CI](https://github.com/sambalshikhar/petrophys/actions/workflows/ci.yml/badge.svg)](https://github.com/sambalshikhar/petrophys/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A comprehensive petrophysics library for well log analysis and formation evaluation.
@@ -26,70 +25,36 @@ A comprehensive petrophysics library for well log analysis and formation evaluat
 
 ## Installation
 
-### From PyPI (recommended)
+### From GitHub
 
 ```bash
-pip install petrophys
+pip install "petrophys @ git+https://github.com/sambalshikhar/petrophys.git"
 ```
 
 ### With optional dependencies
 
+The pretrained ML extra requires Python 3.11 or newer and installs the model's
+supported scikit-learn, XGBoost, and joblib version series.
+
 ```bash
 # For DLIS file support
-pip install petrophys[dlis]
+pip install "petrophys[dlis] @ git+https://github.com/sambalshikhar/petrophys.git"
 
-# For development
-pip install petrophys[dev]
-
-# For documentation building
-pip install petrophys[docs]
-
-# All optional dependencies
-pip install petrophys[all]
+# For pretrained ML and DLIS runtime support
+pip install "petrophys[all] @ git+https://github.com/sambalshikhar/petrophys.git"
 ```
 
-### From Source
+### Development checkout
 
 ```bash
-git clone https://github.com/petrophys/petrophys.git
+git clone https://github.com/sambalshikhar/petrophys.git
 cd petrophys
-pip install -e ".[dev]"
+pip install -e ".[all,dev,docs]"
 ```
 
 ## Quick Start
 
-### Standard Workflow (fixed configuration)
-
-```python
-from petrophys.io import read_las
-from petrophys.workflow import run_standard_workflow, WorkflowConfig
-
-# Load well data
-well = read_las("well_data.las")
-
-# Configure parameters
-config = WorkflowConfig(
-    rw=0.05,              # Formation water resistivity
-    matrix_density=2.65,  # Sandstone matrix
-    a=1.0,                # Archie tortuosity
-    m=2.0,                # Cementation exponent
-    n=2.0,                # Saturation exponent
-    vcl_cutoff=0.3,       # VCL cutoff
-    phie_cutoff=0.08,     # Porosity cutoff
-    sw_cutoff=0.7,        # Water saturation cutoff
-)
-
-# Run interpretation
-result = run_standard_workflow(well, config)
-
-# Access computed curves
-vcl = result.well.get("VCL")       # Clay volume
-phie = result.well.get("PHIE")     # Effective porosity
-sw = result.well.get("SW")         # Water saturation
-net_pay = result.well.get("NET_PAY")  # Net pay flags
-```
-
-### Dynamic Workflow (auto-detects available inputs)
+### Dynamic Workflow (recommended)
 
 ```python
 from petrophys.io import read_las
@@ -133,6 +98,10 @@ print(f"Warnings: {result.warnings}")
 # (MHI needs invaded-zone resistivity, RXO/RSHA; it is not written
 # when Sxo rests on the quick-look fallback)
 ```
+
+`StandardWorkflow` remains available for compatibility with fixed legacy
+configurations, but it is deprecated. New applications and batch processing
+use `DynamicWorkflow`.
 
 ### Granular Module Usage (individual calculations)
 
@@ -252,8 +221,8 @@ If you use Petrophys in your research, please cite:
 ```bibtex
 @software{petrophys,
   title = {Petrophys: A Python Library for Petrophysical Analysis},
-  author = {Petrophys Development Team},
-  year = {2024},
-  url = {https://github.com/petrophys/petrophys}
+  author = {Petrophys Contributors},
+  year = {2026},
+  url = {https://github.com/sambalshikhar/petrophys}
 }
 ```
