@@ -208,10 +208,11 @@ Lithology names are normalized automatically:
 ``limestone/chalk/dolomite`` → ``carbonate``,
 ``shale/mudstone/marl`` → ``clastic``.
 
-Standard Workflow
------------------
+Legacy Standard Workflow
+------------------------
 
-For a complete interpretation with fixed configuration:
+The fixed-configuration workflow is retained for compatibility and is
+deprecated. Use the dynamic workflow for new interpretations and batch jobs.
 
 .. code-block:: python
 
@@ -237,8 +238,8 @@ For a complete interpretation with fixed configuration:
        for d in step.decisions:
            print(f"    -> {d}")
 
-Dynamic Workflow
-----------------
+Dynamic Workflow (Recommended)
+------------------------------
 
 The dynamic workflow auto-detects available curves and runs only applicable
 modules in the correct pipeline order:

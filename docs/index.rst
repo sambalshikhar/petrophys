@@ -29,7 +29,7 @@ structured inputs/outputs make it ideal for:
 * **Agentic RL environments** — The workflow engine provides a step-by-step MDP-like interface where actions are petrophysical computation steps, observations are well log curves, and rewards can be derived from interpretation quality metrics (NTG, HCPV, calibration error).
 * **Human-in-the-loop and fully autonomous modes** — The standard workflow supports fixed configurations while the dynamic workflow auto-detects inputs and routes models, enabling both supervised and autonomous agent operation.
 
-.. image:: https://img.shields.io/badge/python-3.8+-blue.svg
+.. image:: https://img.shields.io/badge/python-3.9+-blue.svg
    :target: https://www.python.org/downloads/
 
 .. image:: https://img.shields.io/badge/license-MIT-green.svg
@@ -55,28 +55,7 @@ Features
 Quick Example
 -------------
 
-**Standard Workflow:**
-
-.. code-block:: python
-
-   from petrophys import Well
-   from petrophys.io import read_las
-   from petrophys.workflow import run_standard_workflow, WorkflowConfig
-
-   well = read_las("well_data.las")
-
-   config = WorkflowConfig(
-       rw=0.05,
-       matrix_density=2.65,
-       saturation_model="archie"
-   )
-
-   result = run_standard_workflow(well, config)
-
-   # Full transparency: print every step's method, parameters, and decisions
-   result.print_trace()
-
-**Dynamic Workflow (auto-detects inputs):**
+**Dynamic Workflow (recommended):**
 
 .. code-block:: python
 
@@ -97,6 +76,10 @@ Quick Example
 
    # Or export the trace as a DataFrame for reporting
    trace_df = result.to_dataframe()
+
+The fixed-configuration ``StandardWorkflow`` remains available for legacy
+applications but is deprecated. Batch processing uses the input-aware dynamic
+workflow by default.
 
 Contents
 --------

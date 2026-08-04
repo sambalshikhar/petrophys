@@ -145,6 +145,42 @@ def test_batch_processor_uses_well_name():
     assert results[0].well_name == "well_0"
 
 
+def test_batch_processor_defaults_to_dynamic_workflow():
+    from petrophys.workflow.batch_processing import BatchProcessor
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowResult
+
+    processor = BatchProcessor(config={"vcl_cutoff": 0.25})
+    result = processor.process_wells([_make_simple_well()])[0]
+
+    assert isinstance(result.result, DynamicWorkflowResult)
+    assert result.result.config.vcl_cutoff == pytest.approx(0.25)
+
+
+def test_batch_processor_translates_legacy_standard_config_names():
+    from petrophys.workflow.batch_processing import BatchProcessor
+
+    processor = BatchProcessor(
+        config={
+            "matrix_density": 2.71,
+            "saturation_model": "simandoux",
+            "calculate_perm": False,
+        }
+    )
+    result = processor.process_wells([_make_simple_well()])[0].result
+
+    assert result.config.rho_ma == pytest.approx(2.71)
+    assert result.config.sw_model == "simandoux"
+    assert "permeability" in result.config.skip_steps
+    assert "rock_quality" in result.config.skip_steps
+
+
+def test_standard_workflow_emits_deprecation_warning():
+    from petrophys.workflow.standard_workflow import StandardWorkflow
+
+    with pytest.warns(DeprecationWarning, match="DynamicWorkflow"):
+        StandardWorkflow()
+
+
 # ---------------------------------------------------------------------------
 # Fix 6: QuickLookResult.well_name must use the actual well name
 # ---------------------------------------------------------------------------

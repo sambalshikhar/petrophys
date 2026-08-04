@@ -11,7 +11,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
 authors = [
-    {name = "Petrophysics Team", email = "petrophys@example.com"}
+    {name = "Petrophys Contributors"}
 ]
 keywords = [
     "petrophysics",
@@ -50,9 +50,9 @@ dependencies = [
 [project.optional-dependencies]
 dlis = ["dlisio>=0.3.0"]
 ml = [
-    "scikit-learn>=1.1.0",
-    "joblib>=1.2.0",
-    "xgboost>=1.7.0",
+    "scikit-learn>=1.8.0,<1.9.0",
+    "joblib>=1.5.0,<1.6.0",
+    "xgboost>=3.2.0,<3.3.0",
 ]
 dev = [
     "pytest>=7.0.0",
@@ -69,13 +69,18 @@ docs = [
     "sphinx-copybutton>=0.5.2",
     "sphinx-design>=0.5.0",
 ]
-all = ["petrophys[dlis,dev,docs,ml]"]
+all = [
+    "dlisio>=0.3.0",
+    "scikit-learn>=1.8.0,<1.9.0",
+    "joblib>=1.5.0,<1.6.0",
+    "xgboost>=3.2.0,<3.3.0",
+]
 
 [project.urls]
-Homepage = "https://github.com/petrophys/petrophys"
+Homepage = "https://github.com/sambalshikhar/petrophys"
 Documentation = "https://petrophys.readthedocs.io"
-Repository = "https://github.com/petrophys/petrophys"
-Issues = "https://github.com/petrophys/petrophys/issues"
+Repository = "https://github.com/sambalshikhar/petrophys"
+Issues = "https://github.com/sambalshikhar/petrophys/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -92,7 +97,7 @@ petrophys = [
     "datasets/daydream/daydream1_cmr.las",
     "datasets/daydream/daydream1_cmr_shallow.las",
     "datasets/geolink/*.las",
-    "data/legacy_context/*.json.gz",
+    "_internal/data/*.json.gz",
 ]
 
 [tool.black]

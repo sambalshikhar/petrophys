@@ -38,6 +38,7 @@ from petrophys.datasets import sample, list_samples
 from petrophys.workflow import run_comprehensive_analysis
 from petrophys.preprocessing.imputation import (
     CurveImputationResult,
+    ModelCompatibilityError,
     PretrainedCurveImputer,
     impute_las_file,
     impute_missing_curve,
@@ -66,6 +67,7 @@ __all__ = [
     "sample",
     "list_samples",
     "CurveImputationResult",
+    "ModelCompatibilityError",
     "PretrainedCurveImputer",
     "impute_las_file",
     "impute_missing_curve",

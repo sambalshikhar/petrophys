@@ -1,6 +1,7 @@
 """Curriculum-standard net-pay cutoffs: single source of truth and resolution."""
 
 import numpy as np
+import pytest
 
 from petrophys.model.constants import DefaultParameters
 from petrophys.evaluation import STANDARD_CUTOFFS, standard_cutoffs
@@ -100,6 +101,12 @@ def test_pretrained_imputer_pack_loads_without_legacy_namespaces():
     func/inverse_func), which broke loading after the compat shims were
     deleted.
     """
+    sklearn = pytest.importorskip("sklearn")
+    pytest.importorskip("joblib")
+    pytest.importorskip("xgboost")
+    if tuple(int(part) for part in sklearn.__version__.split(".")[:2]) != (1, 8):
+        pytest.skip("bundled model requires scikit-learn 1.8.x")
+
     from petrophys.preprocessing.imputation import PretrainedCurveImputer
 
     imputer = PretrainedCurveImputer.from_pretrained()

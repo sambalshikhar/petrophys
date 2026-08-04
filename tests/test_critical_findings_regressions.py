@@ -1,10 +1,16 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
 from defusedxml.common import DefusedXmlException
 
 from petrophys import Well
-from petrophys.preprocessing.imputation import PretrainedCurveImputer
+from petrophys.preprocessing.imputation import (
+    ModelCompatibilityError,
+    PretrainedCurveImputer,
+)
+from petrophys.preprocessing.imputation import curve_imputer
 from petrophys.preprocessing.imputation.training import (
     CurveFeatureTransformer,
     WELL_ID_COLUMN,
@@ -13,6 +19,7 @@ from petrophys.preprocessing.imputation.training import (
 )
 from petrophys.io import read_csv, read_csv_wells
 from petrophys.io.dlis_reader import _channel_quality_score
+from petrophys.io.las_reader import _warn_on_depth_issues
 from petrophys.interpretation.lithology.multi_mineral_solver import MultiMineralSolver
 from petrophys.interpretation.nmr import NMRData
 from petrophys.preprocessing.standardization import standardize_curves
@@ -122,11 +129,52 @@ def test_percent_training_units_are_converted_exactly_once():
 def test_curve_feature_transformer_follows_sklearn_clone_contract():
     sklearn = pytest.importorskip("sklearn.base")
     features = ("GR", "RDEP")
-    cloned = sklearn.clone(CurveFeatureTransformer(features))
+    transformer = CurveFeatureTransformer(features)
+    cloned = sklearn.clone(transformer)
     assert cloned.features == features
+    assert transformer.__sklearn_tags__().transformer_tags is not None
+
+
+def test_model_pack_dependency_series_are_enforced(monkeypatch):
+    pack = {
+        "name": "versioned.joblib",
+        "models": {"rf": {}},
+        "metadata": {
+            "dependency_versions": {
+                "scikit-learn": "1.8.0",
+            }
+        },
+    }
+    monkeypatch.setattr(
+        curve_imputer.importlib_metadata,
+        "version",
+        lambda package: "1.7.2",
+    )
+
+    with pytest.raises(ModelCompatibilityError, match=r"scikit-learn 1\.7\.2"):
+        PretrainedCurveImputer(model_pack=pack)
+
+
+def test_monotonic_depth_directions_are_accepted():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _warn_on_depth_issues(np.array([1.0, 2.0, 3.0]), "ascending")
+        _warn_on_depth_issues(np.array([3.0, 2.0, 1.0]), "descending")
+
+    assert caught == []
+
+
+def test_duplicate_and_direction_changing_depth_warn():
+    with pytest.warns(UserWarning, match="duplicate depth values"):
+        _warn_on_depth_issues(np.array([1.0, 2.0, 2.0, 3.0]), "duplicate")
+
+    with pytest.warns(UserWarning, match="depth changes direction"):
+        _warn_on_depth_issues(np.array([1.0, 3.0, 2.0]), "direction")
 
 
 def test_training_metrics_are_grouped_by_well(monkeypatch, tmp_path):
+    pytest.importorskip("sklearn")
+    pytest.importorskip("joblib")
     rows = 24
     table = pd.DataFrame(
         {

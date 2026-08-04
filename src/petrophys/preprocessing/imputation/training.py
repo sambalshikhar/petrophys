@@ -17,6 +17,18 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+try:
+    from sklearn.base import BaseEstimator as _BaseEstimator
+    from sklearn.base import TransformerMixin as _TransformerMixin
+except ImportError:
+
+    class _BaseEstimator:
+        pass
+
+    class _TransformerMixin:
+        pass
+
+
 from petrophys.preprocessing.imputation.curve_imputer import (
     DEFAULT_FEATURE_CURVES,
     DEFAULT_TARGET_CURVES,
@@ -37,7 +49,6 @@ def _require_training_dependencies():
     try:
         import joblib
         from sklearn.ensemble import RandomForestRegressor
-        from sklearn.base import BaseEstimator, TransformerMixin
         from sklearn.compose import TransformedTargetRegressor
         from sklearn.impute import SimpleImputer
         from sklearn.metrics import mean_absolute_error, r2_score
@@ -53,8 +64,6 @@ def _require_training_dependencies():
 
     return {
         "joblib": joblib,
-        "BaseEstimator": BaseEstimator,
-        "TransformerMixin": TransformerMixin,
         "TransformedTargetRegressor": TransformedTargetRegressor,
         "RandomForestRegressor": RandomForestRegressor,
         "SimpleImputer": SimpleImputer,
@@ -76,6 +85,8 @@ def _require_xgboost():
             "Install the ML extras with: pip install petrophys[ml]"
         ) from exc
     return XGBRegressor
+
+
 def _normalize_model_names(model_names: Sequence[str]) -> List[str]:
     aliases = {
         "random_forest": "rf",
@@ -107,23 +118,13 @@ def _inverse_log_resistivity_target(values: np.ndarray) -> np.ndarray:
     return np.power(10.0, values)
 
 
-class CurveFeatureTransformer:
+class CurveFeatureTransformer(_TransformerMixin, _BaseEstimator):
     """Apply curve-specific transforms before model fitting."""
 
     def __init__(self, features: Sequence[str]):
-        # Scikit-learn estimators must retain constructor parameters unchanged
-        # so clone() can reproduce them exactly.
         self.features = features
 
     def fit(self, X, y=None):
-        return self
-
-    def get_params(self, deep: bool = True) -> Dict[str, Any]:
-        return {"features": self.features}
-
-    def set_params(self, **params: Any):
-        if "features" in params:
-            self.features = list(params["features"])
         return self
 
     def transform(self, X):

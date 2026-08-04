@@ -8,6 +8,8 @@ It does not create a new target curve when the target is absent from the well.
 from __future__ import annotations
 
 import copy
+from importlib import metadata as importlib_metadata
+import re
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -62,6 +64,10 @@ DEFAULT_TARGET_CURVES = [
 ]
 
 
+class ModelCompatibilityError(RuntimeError):
+    """Raised when a serialized model pack and runtime dependencies differ."""
+
+
 @dataclass
 class CurveImputationResult:
     """Summary of a curve-imputation operation."""
@@ -112,6 +118,85 @@ def _load_joblib():
             "Install the ML extras with: pip install petrophys[ml]"
         ) from exc
     return joblib
+
+
+def _version_series(version: str) -> Optional[Tuple[int, int]]:
+    match = re.match(r"\s*(\d+)\.(\d+)", str(version))
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def _validate_model_pack_dependencies(
+    model_pack: Mapping[str, Any],
+    *,
+    include_joblib: bool,
+) -> None:
+    recorded = model_pack.get("metadata", {}).get("dependency_versions", {})
+    if not isinstance(recorded, Mapping) or not recorded:
+        return
+
+    packages = ["scikit-learn"]
+    if include_joblib:
+        packages.append("joblib")
+    if "xgboost" in model_pack.get("models", {}):
+        packages.append("xgboost")
+
+    issues = []
+    for package in packages:
+        trained_version = recorded.get(package)
+        if not trained_version:
+            continue
+        try:
+            runtime_version = importlib_metadata.version(package)
+        except importlib_metadata.PackageNotFoundError:
+            issues.append(f"{package} is not installed")
+            continue
+
+        trained_series = _version_series(str(trained_version))
+        runtime_series = _version_series(runtime_version)
+        if trained_series is None or runtime_series != trained_series:
+            required = (
+                f"{trained_series[0]}.{trained_series[1]}.x"
+                if trained_series is not None
+                else str(trained_version)
+            )
+            issues.append(
+                f"{package} {runtime_version} is installed; {required} is required"
+            )
+
+    if issues:
+        pack_name = str(model_pack.get("name", "model pack"))
+        details = "; ".join(issues)
+        raise ModelCompatibilityError(
+            f"Incompatible dependencies for {pack_name}: {details}. "
+            "Install petrophys[ml] in Python 3.11+ or train a model pack "
+            "with the active environment."
+        )
+
+
+def _load_serialized_model_pack(path: Path) -> Mapping[str, Any]:
+    joblib = _load_joblib()
+    try:
+        from sklearn.exceptions import InconsistentVersionWarning
+    except ImportError:
+        InconsistentVersionWarning = None
+
+    try:
+        with warnings.catch_warnings():
+            if InconsistentVersionWarning is not None:
+                warnings.simplefilter("ignore", InconsistentVersionWarning)
+            model_pack = joblib.load(path)
+    except ModuleNotFoundError as exc:
+        raise ImportError(
+            "Loading pretrained curve-imputation models requires the ML extras. "
+            "Install with: pip install petrophys[ml]"
+        ) from exc
+
+    if not isinstance(model_pack, Mapping):
+        raise ValueError(f"Model pack {path} does not contain a mapping.")
+    _validate_model_pack_dependencies(model_pack, include_joblib=True)
+    return model_pack
 
 
 def _canonical_curve_name(mnemonic: str) -> str:
@@ -269,6 +354,7 @@ class PretrainedCurveImputer:
         model_pack: Optional[Mapping[str, Any]] = None,
         model_path: Optional[Union[str, Path]] = None,
     ):
+        loaded_from_file = model_pack is None
         if model_pack is None:
             default_path = default_pretrained_model_path()
             path = Path(model_path) if model_path is not None else default_path
@@ -284,14 +370,18 @@ class PretrainedCurveImputer:
                     "file — only load packs you trust.",
                     stacklevel=2,
                 )
-            joblib = _load_joblib()
-            model_pack = joblib.load(path)
+            model_pack = _load_serialized_model_pack(path)
             self.model_path = str(path)
         else:
             self.model_path = str(model_path or "<in-memory>")
 
         self.model_pack: Dict[str, Any] = dict(model_pack)
         self.model_pack.setdefault("name", Path(self.model_path).name)
+        if not loaded_from_file:
+            _validate_model_pack_dependencies(
+                self.model_pack,
+                include_joblib=False,
+            )
 
     @classmethod
     def from_pretrained(
