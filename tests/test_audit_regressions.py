@@ -182,6 +182,7 @@ def test_depth_step_array_caps_data_gaps():
     assert dz.max() <= 3.0 * 0.5 + 1e-9
     # uniform spacing is unchanged
     np.testing.assert_allclose(depth_step_array(np.arange(0.0, 5.0, 0.5)), 0.5)
+    np.testing.assert_allclose(depth_step_array(np.arange(5.0, 0.0, -0.5)), 0.5)
 
 
 # ---------------------------------------------------------------------------

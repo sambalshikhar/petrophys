@@ -1,7 +1,6 @@
-"""Regression guards for defects found in the whole-library validation.
+"""Regression tests for cross-module correctness.
 
-Each test pins corrected behavior with hand-computed expectations so the
-defect cannot silently return.
+Each test uses hand-computed expectations for deterministic behavior.
 """
 
 import numpy as np

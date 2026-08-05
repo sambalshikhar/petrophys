@@ -46,18 +46,13 @@ The source LAS SHA-256 is
 The derivative was verified against that source for retained values,
 missing-value masks, curve order, and the exact depth vector before inclusion.
 
-## LAS/DLIS equivalence validation
+## LAS/DLIS equivalence
 
 The shallow LAS/DLIS pair and the deep DLIS plus its full-depth curated LAS
-derivative represent the same logging runs. Run the paired reader and
-dynamic-workflow validations with:
+derivative represent the same logging runs. Paired reader and dynamic-workflow
+coverage is maintained in `tests/test_las_dlis_equivalence.py`.
 
-```powershell
-python validation/las_dlis_equivalence.py --preset shallow --output build/daydream_las_dlis_equivalence.json
-python validation/las_dlis_equivalence.py --preset deep --output build/daydream_deep_las_dlis_equivalence.json
-```
-
-The report separates two questions:
+The equivalence checks separate two questions:
 
 - `native_delivery` runs every applicable workflow step on each file as
   delivered. The DLIS may contain additional vendor-processed curves that are

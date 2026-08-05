@@ -9,7 +9,7 @@ Both figures are driven entirely by the library's lithology styling
 so they always reflect the official GeoLink / Kingdom palette defined in
 ``petrophys/visualization/log_viewer.py``.
 
-Run:  python tools/generate_lithology_pattern_key.py
+Run:  python scripts/generate_lithology_pattern_key.py
 """
 
 from __future__ import annotations

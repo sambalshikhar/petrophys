@@ -12,9 +12,7 @@ from petrophys.io import read_las
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 
 
-REPORT_DIR = Path(os.environ.get("WORKFLOW_ROUTING_LOG_DIR", "reports/workflow_routing_tests"))
-JSONL_REPORT = REPORT_DIR / "routing_cases.jsonl"
-MARKDOWN_REPORT = REPORT_DIR / "routing_summary.md"
+REPORT_ENV_VAR = "WORKFLOW_ROUTING_LOG_DIR"
 
 
 def _json_safe(value):
@@ -77,22 +75,33 @@ def _step_or_none(result, step_name):
     return None
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _reset_workflow_routing_report():
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    JSONL_REPORT.unlink(missing_ok=True)
-    MARKDOWN_REPORT.write_text(
+@pytest.fixture(scope="session")
+def workflow_routing_report_paths(tmp_path_factory):
+    configured_dir = os.environ.get(REPORT_ENV_VAR)
+    report_dir = (
+        Path(configured_dir)
+        if configured_dir
+        else tmp_path_factory.mktemp("workflow_routing_reports")
+    )
+    report_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_report = report_dir / "routing_cases.jsonl"
+    markdown_report = report_dir / "routing_summary.md"
+    jsonl_report.unlink(missing_ok=True)
+    markdown_report.write_text(
         "# Dynamic Workflow Routing Test Log\n\n"
         "Each section records the workflow route, method, parameters, decisions, "
         "and output curve summaries for one pytest case.\n",
         encoding="utf-8",
     )
-    yield
-    print(f"\nDynamic workflow routing report: {MARKDOWN_REPORT}")
+    yield jsonl_report, markdown_report
+    if configured_dir:
+        print(f"\nDynamic workflow routing report: {markdown_report}")
 
 
 @pytest.fixture
-def record_route():
+def record_route(workflow_routing_report_paths):
+    jsonl_report, markdown_report = workflow_routing_report_paths
+
     def _record(case_id, result, well, focus_steps=None, curves=None, notes=None):
         focus_steps_local = list(focus_steps or [])
         curves_local = list(curves or [])
@@ -123,7 +132,7 @@ def record_route():
             "curves": _curve_summary(well, curves_local),
             "notes": notes or "",
         }
-        with JSONL_REPORT.open("a", encoding="utf-8") as handle:
+        with jsonl_report.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(_json_safe(payload), sort_keys=True) + "\n")
 
         lines = [
@@ -158,8 +167,8 @@ def record_route():
             lines.extend(["", "### Curve Summaries"])
             for name, summary in payload["curves"].items():
                 lines.append(f"- {name}: `{json.dumps(summary, sort_keys=True)}`")
-        MARKDOWN_REPORT.write_text(
-            MARKDOWN_REPORT.read_text(encoding="utf-8") + "\n".join(lines) + "\n",
+        markdown_report.write_text(
+            markdown_report.read_text(encoding="utf-8") + "\n".join(lines) + "\n",
             encoding="utf-8",
         )
 
