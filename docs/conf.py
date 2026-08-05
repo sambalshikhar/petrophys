@@ -19,25 +19,23 @@ author = "Petrophys Contributors"
 release = "0.1.0"
 
 # -- Pull the executed tutorial notebooks into the doc tree -------------------
-# The notebooks live in <repo>/examples/notebooks and ship with executed outputs, so the
-# docs build renders them as-is (nb_execution_mode = "off") and needs neither
-# the sample data nor any environment variables.
 DOCS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = DOCS_DIR.parent
 NOTEBOOK_GROUPS = {
+    ".": "tutorials",
     "part_a_foundations": "tutorials/part_a",
     "part_b_advanced": "tutorials/part_b",
     "case_studies": "tutorials/case_studies",
 }
 
-for src_name, dst_rel in NOTEBOOK_GROUPS.items():
-    src = REPO_ROOT / "examples" / "notebooks" / src_name
-    dst = DOCS_DIR / dst_rel
-    dst.mkdir(parents=True, exist_ok=True)
-    for nb in sorted(src.glob("*.ipynb")):
-        target = dst / nb.name
-        if not target.exists() or nb.stat().st_mtime > target.stat().st_mtime:
-            shutil.copy2(nb, target)
+for source_relative, destination_relative in NOTEBOOK_GROUPS.items():
+    source = REPO_ROOT / "examples" / source_relative
+    destination = DOCS_DIR / destination_relative
+    destination.mkdir(parents=True, exist_ok=True)
+    for notebook in sorted(source.glob("*.ipynb")):
+        target = destination / notebook.name
+        if not target.exists() or notebook.stat().st_mtime > target.stat().st_mtime:
+            shutil.copy2(notebook, target)
 
 # -- General configuration ---------------------------------------------------
 extensions = [

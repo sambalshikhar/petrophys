@@ -177,10 +177,10 @@ tmp_*/
 outputs/
 /*.xlsx
 .claude/settings.local.json
-examples/scripts/formation_results_*.csv
 
-# Docs build artifacts (notebooks are copied in from /notebooks at build time)
+# Docs build artifacts
 docs/_build/
+docs/tutorials/*.ipynb
 docs/tutorials/part_a/
 docs/tutorials/part_b/
 docs/tutorials/case_studies/

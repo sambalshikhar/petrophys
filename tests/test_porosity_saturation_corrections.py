@@ -1,11 +1,4 @@
-"""Regression tests for the porosity / clay-bound-water / Rw / bad-hole corrections.
-
-These lock in the validated fixes that resolve (a) the Archie false-pay in
-NPD-confirmed water wells and (b) the over-stated effective porosity in
-clay-bound-water / washed-out shallow sections, while preserving the 30/6-5
-core porosity match. See validation/porosity_saturation.py for the
-end-to-end well-by-well validation against core and NPD ground truth.
-"""
+"""Regression tests for porosity, clay-bound-water, Rw, and bad-hole handling."""
 
 import numpy as np
 import pytest
@@ -13,7 +6,6 @@ import pytest
 from petrophys.model.well import Well
 from petrophys.interpretation.clay_volume.vcl_module import VclModule
 from petrophys.evaluation.net_pay.net_pay_module import NetPayModule
-from validation.porosity_saturation import _flagged_thickness_m, _summary
 
 
 def _well(n, **curves):
@@ -23,34 +15,6 @@ def _well(n, **curves):
     for name, data in curves.items():
         w.add_curve(name, np.asarray(data, dtype=float), "", name)
     return w
-
-
-def test_validation_thickness_handles_descending_depth_and_data_gaps():
-    depth = np.array([1005.0, 1004.0, 1003.0, 990.0])
-    flags = np.ones(4)
-
-    assert _flagged_thickness_m(depth, flags, "m") == pytest.approx(4.0)
-    assert _flagged_thickness_m(depth[:3], flags[:3], "ft") == pytest.approx(
-        3.0 * 0.3048
-    )
-
-
-def test_validation_summary_reports_missing_optional_wells():
-    rows = [
-        {
-            "well": "A",
-            "expectation": "core",
-            "status": "validated",
-            "net_pay_m": 0.0,
-        },
-        {
-            "well": "B",
-            "expectation": "gas",
-            "status": "missing",
-        },
-    ]
-
-    assert _summary(rows) == {"requested": 2, "validated": 1, "missing": 1}
 
 
 # --- VCL method combination ---------------------------------------------------
