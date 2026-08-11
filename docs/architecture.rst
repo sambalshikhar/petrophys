@@ -2,85 +2,149 @@ Architecture
 ============
 
 Petrophys is organized by processing lifecycle at the top level and by
-scientific domain below that. A feature has one implementation owner even when
-it is re-exported from a convenience API.
+scientific domain within interpretation and evaluation. A feature has one
+implementation owner even when it is re-exported through a convenience API.
 
-Package responsibilities
-------------------------
+Package map
+-----------
 
-``petrophys.model``
-   Dependency-light data structures such as wells, curves, core data,
-   intervals, units, and metadata.
+.. list-table::
+   :header-rows: 1
+   :widths: 22 53 25
 
-``petrophys.io``
-   Reading and writing interchange formats. This layer does not perform an
-   interpretation or run a workflow.
-
-``petrophys.preprocessing``
-   Standardization, normalization, input quality checks, and curve imputation.
-
-``petrophys.interpretation``
-   Scientific calculations that turn measurements into petrophysical
-   properties. Domains include clay volume, lithology, porosity, saturation,
-   permeability, electrical properties, NMR, borehole images, core analysis,
-   geochemistry, temperature, and rock physics.
-
-``petrophys.evaluation``
-   Reservoir decisions and aggregations built from interpreted properties,
-   including net pay, rock quality, flow units, fluid volumes, volumetrics,
-   interval summaries, and diagnostics.
-
-``petrophys.workflow``
-   Orchestration of preprocessing, interpretation, and evaluation steps.
-
-``petrophys.reporting``
-   Delivery packages, interpretation reports, reference JSON, and audit
-   outputs.
-
-``petrophys.visualization``
-   Log panels, crossplots, specialist displays, and other presentation logic.
-
-``petrophys.datasets``
-   Small datasets bundled for tests, examples, and tutorials.
+   * - Package
+     - Responsibility
+     - Typical objects
+   * - ``petrophys.model``
+     - Dependency-light data structures and shared domain metadata
+     - ``Well``, ``Curve``, ``CoreData``, ``FormationTops``
+   * - ``petrophys.io``
+     - Reading and writing interchange formats without running an
+       interpretation
+     - LAS, DLIS, CSV, ASCII, Excel
+   * - ``petrophys.preprocessing``
+     - Input preparation before scientific interpretation
+     - Standardization, normalization, QC, imputation
+   * - ``petrophys.interpretation``
+     - Deterministic calculations that transform measurements into
+       petrophysical properties
+     - VCL, lithology, porosity, Sw, permeability, NMR
+   * - ``petrophys.evaluation``
+     - Reservoir decisions, classifications, diagnostics, and aggregations
+     - Net pay, RQI/FZI, flow units, summaries
+   * - ``petrophys.workflow``
+     - Dependency-aware sequencing and method routing
+     - Dynamic, zoned, batch, quick-look workflows
+   * - ``petrophys.reporting``
+     - Complete delivery products and audit artifacts
+     - LAS/JSON work packages, reports, mappings
+   * - ``petrophys.visualization``
+     - Presentation of wells, interpretations, and specialist data
+     - Log panels, crossplots, image and NMR displays
+   * - ``petrophys.datasets``
+     - Small public samples and optional repository integration fixtures
+     - ``sample()``, ``list_samples()``
 
 Dependency direction
 --------------------
 
-Dependencies flow from foundational packages toward orchestration and
-presentation::
+Foundational packages do not depend on orchestration or plotting. Scientific
+modules operate on arrays or model objects; workflows compose them; reporting
+and visualization consume the resulting well and trace.
+
+.. code-block:: text
 
    model
-     ^
-   io / preprocessing / interpretation
-     ^
-   evaluation
-     ^
-   workflow
-     ^
-   reporting / visualization
+     |
+     +-- io
+     +-- preprocessing
+     +-- interpretation
+            |
+            +-- evaluation
+                    |
+                    +-- workflow
+                           |
+                           +-- reporting
+                           +-- visualization
 
-Foundational and scientific modules must not import workflows, reports, or
-plots. Shared private numerical helpers live in ``petrophys._internal`` and are
-not part of the public API.
+Visualization can also consume a raw or partially interpreted ``Well``
+directly. Shared private numerical helpers live in ``petrophys._internal`` and
+are not part of the supported public API.
+
+Interpretation domains
+----------------------
+
+``petrophys.interpretation`` is divided by physical problem rather than by
+file format:
+
+.. code-block:: text
+
+   interpretation/
+   |-- borehole_imaging/
+   |-- clay_volume/
+   |-- core_analysis/
+   |-- electrical/
+   |   |-- cementation/
+   |   |-- invasion/
+   |   |-- rmf/
+   |   `-- rw/
+   |-- geochemistry/
+   |-- lithology/
+   |-- nmr/
+   |-- permeability/
+   |-- porosity/
+   |   `-- hydrocarbon_correction/
+   |-- rock_physics/
+   |-- saturation/
+   |   |-- height/
+   |   `-- sonic/
+   `-- temperature/
+
+Evaluation domains
+------------------
+
+``petrophys.evaluation`` owns products that depend on interpreted properties:
+
+.. code-block:: text
+
+   evaluation/
+   |-- bvw/
+   |-- diagnostics/
+   |-- flow_units/
+   |-- intervals/
+   |-- mhi/
+   |-- net_pay/
+   |-- rock_quality/
+   |-- summaries/
+   `-- volumetrics/
+
+Core execution model
+--------------------
+
+1. A reader creates a ``Well`` and source ``Curve`` objects.
+2. Preprocessing establishes canonical working aliases, supported units, and
+   quality evidence.
+3. Interpretation functions calculate physical properties.
+4. Evaluation functions derive reservoir indicators and interval products.
+5. A workflow records the dependency-aware execution path.
+6. Plotters and exporters consume the final ``Well`` and workflow trace.
+
+The dynamic workflow mutates the supplied ``Well`` by attaching calculated
+curves, then returns that same object in ``DynamicWorkflowResult.well``. This
+keeps granular and orchestrated use consistent: downstream APIs operate on one
+well model rather than a separate opaque workflow format.
 
 Placement rules
 ---------------
 
-* Put a new curve calculation under its scientific domain in
+* Put a measurement-to-property calculation in its scientific domain under
   ``interpretation``.
-* Put a reservoir cutoff, aggregation, or decision product in ``evaluation``.
+* Put a cutoff, classification, aggregation, or reservoir decision under
+  ``evaluation``.
 * Put file parsing and basic serialization in ``io``; put complete delivery
   products in ``reporting``.
-* Put data cleaning before interpretation in ``preprocessing``.
+* Put cleaning, standardization, and quality operations in ``preprocessing``.
 * Put sequencing and automatic method selection in ``workflow``.
 * Keep plotting out of scientific calculation modules.
-* Prefer descriptive filenames such as ``calibration.py``, ``routing.py``, or
-  ``calculator.py`` over new ``*_module.py`` filenames.
-
-Compatibility
--------------
-
-The pre-0.2 namespaces (``petrophys.base``, ``petrophys.petrophysics``,
-``petrophys.reservoir``, and friends) have been removed; the canonical
-lifecycle paths above are the only import surface. A structure test guards
-against legacy names reappearing in the source tree.
+* Keep shared data structures dependency-light and place them in ``model``.
+* Expose supported user APIs from the relevant package ``__init__.py``.

@@ -1,90 +1,220 @@
-Petrophys Documentation
-=======================
+.. title:: Petrophys documentation
 
 .. raw:: html
 
-   <div style="display: flex; align-items: center; gap: 30px; margin-bottom: 20px; flex-wrap: wrap;">
-     <a href="https://mbzuai.ac.ae" target="_blank">
-       <img src="_static/mbzuai-logo.svg" alt="MBZUAI" style="height: 60px;">
-     </a>
-     <a href="https://www.inceptionai.ai" target="_blank">
-       <img src="_static/inception-logo.png" alt="Inception AI" style="height: 50px; background: #222; padding: 8px 12px; border-radius: 6px;">
-     </a>
+   <section class="ph-hero">
+     <p class="ph-kicker">Open-source formation evaluation</p>
+     <h1>Petrophys</h1>
+     <p class="ph-lead">
+       A modular Python library for turning well logs, core measurements, and
+       specialist data into traceable petrophysical interpretations.
+     </p>
+     <div class="ph-actions">
+       <a href="quickstart.html">Run the quickstart</a>
+       <a href="workflows.html">Explore workflows</a>
+       <a href="api/index.html">Open the API</a>
+     </div>
+     <div class="ph-meta">
+       <span>Python 3.9+</span>
+       <span>MIT licensed</span>
+       <span>LAS, DLIS, CSV and ASCII</span>
+       <span>Input-aware execution</span>
+     </div>
+   </section>
+
+From measurements to decisions
+==============================
+
+Petrophys keeps the scientific calculations accessible as independent Python
+functions while also providing an input-aware workflow for complete wells.
+Recognized curve aliases and units are standardized before interpretation;
+every executed, skipped, or warning-producing step is recorded in the result.
+
+.. figure:: _static/petrophys-interpretation.png
+   :alt: Multi-track Petrophys interpretation of the bundled 30/6-5 well
+   :width: 100%
+   :class: ph-log-figure
+
+   A library-generated interpretation of the bundled 30/6-5 LAS sample,
+   showing lithology, conventional logs, computed porosity and saturation,
+   permeability, and reservoir flags.
+
+What is in the library
+======================
+
+.. grid:: 1 2 2 3
+   :gutter: 2
+
+   .. grid-item-card:: Real-world inputs
+      :class-card: ph-card-teal
+
+      Read LAS, tabular logs, and optional DLIS data. Work with core
+      measurements, formation intervals, NMR, borehole images, and
+      geochemical channels through domain-specific APIs.
+
+      +++
+      :doc:`Data and depth <data_model>`
+
+   .. grid-item-card:: Preparation and QC
+      :class-card: ph-card-blue
+
+      Resolve recognized mnemonic aliases, convert supported units, screen
+      implausible values, identify washout and bad-hole intervals, normalize
+      curves, and impute only missing samples when a compatible model exists.
+
+      +++
+      :doc:`Capability map <capabilities>`
+
+   .. grid-item-card:: Formation evaluation
+      :class-card: ph-card-amber
+
+      Calculate clay volume, matrix and mineral volumes, porosity, electrical
+      properties, saturation, permeability, temperature, and invasion using
+      explicit methods or automatic routing.
+
+      +++
+      :doc:`Interpretation workflows <workflows>`
+
+   .. grid-item-card:: Specialist interpretation
+      :class-card: ph-card-coral
+
+      Analyze processed NMR distributions, borehole-image arrays, spectral
+      gamma and elemental spectroscopy, core measurements, saturation height,
+      sonic saturation, and elastic properties.
+
+      +++
+      :doc:`Specialist data <specialist_data>`
+
+   .. grid-item-card:: Reservoir evaluation
+      :class-card: ph-card-green
+
+      Derive BVW, moveable-hydrocarbon indicators, RQI and FZI, hydraulic flow
+      units, net rock, net reservoir, net pay, volumetrics, diagnostics, and
+      interval summaries.
+
+      +++
+      :doc:`Capability map <capabilities>`
+
+   .. grid-item-card:: Plots and delivery
+      :class-card: ph-card-blue
+
+      Build adaptive log panels, triple combos, crossplots, Pickett plots,
+      specialist displays, and multiwell charts. Export curves and auditable
+      LAS, CSV, Excel, JSON, and report packages.
+
+      +++
+      :doc:`Visualization and reporting <visualization_reporting>`
+
+How data moves through Petrophys
+================================
+
+.. raw:: html
+
+   <div class="ph-flow" role="list" aria-label="Petrophys processing flow">
+     <div class="ph-flow-node" role="listitem">
+       <span class="ph-flow-step">01 / Inputs</span>
+       <strong>Read</strong>
+       <small>LAS, DLIS, CSV, ASCII, core, tops and specialist channels</small>
+     </div>
+     <div class="ph-flow-node" role="listitem">
+       <span class="ph-flow-step">02 / Preparation</span>
+       <strong>Standardize</strong>
+       <small>Aliases, units, nulls, ranges, wellbore quality and provenance</small>
+     </div>
+     <div class="ph-flow-node" role="listitem">
+       <span class="ph-flow-step">03 / Science</span>
+       <strong>Interpret</strong>
+       <small>VCL, lithology, porosity, electrical properties, Sw and perm</small>
+     </div>
+     <div class="ph-flow-node" role="listitem">
+       <span class="ph-flow-step">04 / Decisions</span>
+       <strong>Evaluate</strong>
+       <small>Rock quality, flow units, flags, intervals and volumetrics</small>
+     </div>
+     <div class="ph-flow-node" role="listitem">
+       <span class="ph-flow-step">05 / Delivery</span>
+       <strong>Explain</strong>
+       <small>Computed curves, traces, plots, summaries and export packages</small>
+     </div>
    </div>
 
-*Developed by* `Mohamed bin Zayed University of Artificial Intelligence (MBZUAI) <https://mbzuai.ac.ae>`_
-*in collaboration with* `Inception AI <https://www.inceptionai.ai>`_.
+Input-aware, not all-or-nothing
+===============================
 
-**Petrophys** is a comprehensive Python library for petrophysical well log analysis.
-It provides tools for loading, processing, and interpreting wireline and LWD log data.
+Incomplete log suites produce a reduced interpretation with an explicit trace.
+Prerequisites are evaluated before each workflow step, so the result explains
+what ran, what could not run, and where assumptions or data-quality warnings
+need review.
 
-This library is designed to serve as a **tool-calling environment for Agentic AI workflows**
-and **Agentic Reinforcement Learning (RL)** research. Each module exposes deterministic,
-composable functions that an LLM agent can invoke as tools — enabling autonomous
-petrophysical interpretation pipelines where the agent selects methods, tunes parameters,
-and iterates on results. The modular architecture, full execution traces, and
-structured inputs/outputs make it ideal for:
+.. raw:: html
 
-* **Agentic tool-calling** — LLM agents can call individual modules (VCL, porosity, Sw, net pay, etc.) as discrete tools with typed parameters and structured returns.
-* **Agentic RL environments** — The workflow engine provides a step-by-step MDP-like interface where actions are petrophysical computation steps, observations are well log curves, and rewards can be derived from interpretation quality metrics (NTG, HCPV, calibration error).
-* **Human-in-the-loop and fully autonomous modes** — The standard workflow supports fixed configurations while the dynamic workflow auto-detects inputs and routes models, enabling both supervised and autonomous agent operation.
+   <div class="ph-trace" aria-label="Example workflow trace states">
+     <div>
+       <strong>Execution record</strong>
+       <span>Method, inputs, outputs, parameters and decisions</span>
+     </div>
+     <div>
+       <span class="ph-status ph-status-run">Executed</span>
+       <strong>Porosity</strong>
+       <span>RHOB and NPHI available</span>
+     </div>
+     <div>
+       <span class="ph-status ph-status-skip">Skipped</span>
+       <strong>NMR</strong>
+       <span>No compatible NMR channels</span>
+     </div>
+     <div>
+       <span class="ph-status ph-status-warn">Review</span>
+       <strong>Water saturation</strong>
+       <span>Inspect assumptions and quality flags</span>
+     </div>
+   </div>
 
-.. image:: https://img.shields.io/badge/python-3.9+-blue.svg
-   :target: https://www.python.org/downloads/
+Start with a bundled well
+=========================
 
-.. image:: https://img.shields.io/badge/license-MIT-green.svg
-   :target: https://opensource.org/licenses/MIT
-
-Features
---------
-
-* **Data I/O**: Read LAS, DLIS, and ASCII log files
-* **Quality Control**: Bad hole detection, normalization, curve standardization
-* **Clay Volume**: Multiple VCL calculation methods (GR, SP, N-D) with clay resistivity (Rcl)
-* **Porosity**: Density, neutron, sonic, total (weighted N-D), effective, and secondary porosity
-* **Hydrocarbon Correction**: Preliminary porosity-based NPHI and RHOB corrections
-* **Water Saturation**: 7 models — Archie, Simandoux, Indonesia, the regional North Sea and Nigeria-Schlumberger forms, Waxman-Smits, Dual Water — with automatic routing based on VCL, lithology, CEC, and salinity
-* **Permeability**: Timur, Coates-Denoo, Wyllie-Rose equations with impermeability detection
-* **Rock Quality**: RQI, FZI, and normalized porosity (phi_z)
-* **Net Pay**: Lithology-aware cutoff-based determination (clastic/carbonate)
-* **Formation Analysis**: Interval-based summaries for formations, zones, sub-zones, and manual intervals with CSV loading (simple, NPD, Danish)
-* **Core Data**: Load core plug measurements, calibrate log porosity/permeability, fit poro-perm transforms, estimate Archie m
-* **Dynamic Workflow**: Auto-detects available curves and runs only applicable modules with full step-by-step trace
-* **Visualization**: Log plots, triple combos, interpretation plots, crossplots, Pickett plots, zone flags, formation shading
-
-Quick Example
--------------
-
-**Dynamic Workflow (recommended):**
+The package includes small public datasets for reproducible examples. The
+following run reads a LAS file, applies recognized input standardization, and
+returns the same in-memory well with computed curves attached.
 
 .. code-block:: python
 
-   from petrophys.workflow import run_dynamic_workflow, DynamicWorkflowConfig
+   import petrophys
+   from petrophys.io import read_las
+   from petrophys.workflow import DynamicWorkflowConfig, run_dynamic_workflow
 
-   well = read_las("well_data.las")
-
+   well = read_las(petrophys.sample("30_6-5"))
    config = DynamicWorkflowConfig(
-       bht_f=220, td_ft=8500,
-       rw=0.05, salinity_ppm=25000,
-       lithology="clastic",
+       matrix_type="auto",
+       lithology="auto",
+       rw=0.07,  # example study assumption, ohm.m
    )
 
    result = run_dynamic_workflow(well, config)
 
-   # Full trace: every step's method, inputs, outputs, parameters, decisions
-   result.print_trace()
+   print(result.status)
+   print([step.step for step in result.steps_executed])
+   print(result.steps_skipped)
+   print(result.well.get("PHIE"))
 
-   # Or export the trace as a DataFrame for reporting
-   trace_df = result.to_dataframe()
+Continue with the :doc:`installation guide <installation>`, the
+:doc:`quickstart <quickstart>`, or the fully executed :doc:`tutorials
+<tutorials/index>`.
 
-The fixed-configuration ``StandardWorkflow`` remains available for legacy
-applications but is deprecated. Batch processing uses the input-aware dynamic
-workflow by default.
+.. raw:: html
 
-Contents
---------
+   <div class="ph-institution-row">
+     <a href="https://mbzuai.ac.ae" target="_blank" rel="noreferrer">
+       <img src="_static/mbzuai-logo.svg" alt="MBZUAI">
+     </a>
+     <a href="https://www.inceptionai.ai" target="_blank" rel="noreferrer">
+       <img class="ph-inception" src="_static/inception-logo.png" alt="Inception AI">
+     </a>
+     <p>Developed by MBZUAI in collaboration with Inception AI.</p>
+   </div>
 
 .. toctree::
+   :hidden:
    :maxdepth: 2
    :caption: Getting Started
 
@@ -92,23 +222,28 @@ Contents
    quickstart
 
 .. toctree::
+   :hidden:
+   :maxdepth: 2
+   :caption: Fundamentals
+
+   data_model
+   architecture
+
+.. toctree::
+   :hidden:
    :maxdepth: 2
    :caption: User Guide
 
+   workflows
+   capabilities
+   specialist_data
+   visualization_reporting
    examples
-   architecture
    tutorials/index
 
 .. toctree::
+   :hidden:
    :maxdepth: 2
    :caption: API Reference
 
    api/index
-
-
-Indices and Tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
