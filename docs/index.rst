@@ -2,25 +2,18 @@
 
 .. raw:: html
 
-   <section class="ph-hero">
+   <header class="ph-intro">
      <p class="ph-kicker">Open-source formation evaluation</p>
      <h1>Petrophys</h1>
      <p class="ph-lead">
-       A modular Python library for turning well logs, core measurements, and
-       specialist data into traceable petrophysical interpretations.
+       A modular Python library for turning well logs, core measurements,
+       and specialist data into traceable petrophysical interpretations.
      </p>
      <div class="ph-actions">
        <a href="quickstart.html">Run the quickstart</a>
-       <a href="workflows.html">Explore workflows</a>
-       <a href="api/index.html">Open the API</a>
+       <a href="api/index.html">Browse the API</a>
      </div>
-     <div class="ph-meta">
-       <span>Python 3.9+</span>
-       <span>MIT licensed</span>
-       <span>LAS, DLIS, CSV and ASCII</span>
-       <span>Input-aware execution</span>
-     </div>
-   </section>
+   </header>
 
 From measurements to decisions
 ==============================
@@ -30,14 +23,14 @@ functions while also providing an input-aware workflow for complete wells.
 Recognized curve aliases and units are standardized before interpretation;
 every executed, skipped, or warning-producing step is recorded in the result.
 
-.. figure:: _static/petrophys-interpretation.png
-   :alt: Multi-track Petrophys interpretation of the bundled 30/6-5 well
+.. figure:: _static/petrophys-heimdal-formation.png
+   :alt: Multi-track Petrophys interpretation of the 15/9-17 Heimdal Formation
    :width: 100%
    :class: ph-log-figure
 
-   A library-generated interpretation of the bundled 30/6-5 LAS sample,
-   showing lithology, conventional logs, computed porosity and saturation,
-   permeability, and reservoir flags.
+   Formation-scale interpretation of 15/9-17 in the Heimdal Formation,
+   showing lithology, conventional logs, porosity, saturation, permeability,
+   mineral volumes, core points, and reservoir flags.
 
 What is in the library
 ======================
