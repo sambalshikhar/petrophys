@@ -262,7 +262,7 @@ def process_las_directory(
     directory : str
         Directory path
     pattern : str
-        File pattern (default: *.las)
+        File pattern (default: ``*.las``)
     config : dict, optional
         Workflow configuration
     recursive : bool

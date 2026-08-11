@@ -1,83 +1,20 @@
 Installation
 ============
 
-Requirements
-------------
+Petrophys supports Python 3.9 through 3.13. The core installation includes
+NumPy, pandas, SciPy, Matplotlib, lasio, openpyxl, and defusedxml.
 
-Petrophys requires **Python 3.9+**. Core dependencies (installed
-automatically): numpy, pandas, scipy, matplotlib, lasio, openpyxl, and
-defusedxml.
-
-Install from source
+Install from GitHub
 -------------------
 
-Petrophys is not yet on PyPI; install straight from GitHub:
+Petrophys is not yet published on PyPI. Install the current public package
+directly from GitHub:
 
 .. code-block:: bash
 
-   pip install "petrophys @ git+https://github.com/sambalshikhar/petrophys.git"
+   python -m pip install "petrophys @ git+https://github.com/sambalshikhar/petrophys.git"
 
-or clone for a development install:
-
-.. code-block:: bash
-
-   git clone https://github.com/sambalshikhar/petrophys.git
-   cd petrophys
-   pip install -e .
-
-Real DLIS integration data
---------------------------
-
-The repository includes full Daydream 1 scalar-log and processed-FMI DLIS
-fixtures, plus matching scalar LAS deliveries, through Git LFS. They are not
-installed into the Python package. To run the real LAS/DLIS integration tests
-and FMI notebook from a clone:
-
-.. code-block:: bash
-
-   git lfs install
-   git lfs pull
-   pip install -e ".[dlis,dev]"
-
-Environment variables such as ``PETROPHYS_FMI_DLIS`` can still point the tests
-and examples at another vendor file.
-
-Optional extras
----------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 18 42 40
-
-   * - Extra
-     - Enables
-     - Install
-   * - ``dlis``
-     - DLIS file reading (``read_dlis``, ``read_fmi_dlis``)
-     - ``pip install -e ".[dlis]"``
-   * - ``ml``
-     - The pretrained curve-imputation model (Python 3.11+, scikit-learn, xgboost)
-     - ``pip install -e ".[ml]"``
-   * - ``all``
-     - All optional runtime features (Python 3.11+, DLIS and pretrained ML)
-     - ``pip install -e ".[all]"``
-   * - ``dev``
-     - Test and lint tooling
-     - ``pip install -e ".[dev]"``
-   * - ``docs``
-     - Building this documentation
-     - ``pip install -e ".[docs]"``
-
-Pretrained model packs use the scikit-learn, XGBoost, and joblib minor-version
-series recorded during training. The loader checks those versions before the
-pack is used. Install the ``ml`` extra to obtain the dependency versions for
-the bundled pack.
-
-Verify the install
-------------------
-
-The package bundles real sample wells, so a full round trip needs no external
-data:
+Verify the installation with a bundled LAS sample:
 
 .. code-block:: python
 
@@ -88,16 +25,104 @@ data:
    well = read_las(petrophys.sample("30_6-5"))
    print(well.name, well.n_samples, "samples")
 
+Optional features
+-----------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 17 44 39
+
+   * - Extra
+     - Enables
+     - Install from a checkout
+   * - ``dlis``
+     - DLIS scalar-frame and borehole-image reading through ``dlisio``
+     - ``python -m pip install -e ".[dlis]"``
+   * - ``ml``
+     - Compatible pretrained imputation packs and KNN/RF/XGBoost training
+       utilities; requires Python 3.11+
+     - ``python -m pip install -e ".[ml]"``
+   * - ``all``
+     - All optional runtime capabilities
+     - ``python -m pip install -e ".[all]"``
+   * - ``docs``
+     - Sphinx, Furo, notebook rendering, copy buttons, and design components
+     - ``python -m pip install -e ".[docs]"``
+   * - ``dev``
+     - Tests, coverage, formatting, linting, and type checking
+     - ``python -m pip install -e ".[dev]"``
+
+Install an optional feature directly from GitHub by including the extra in the
+package requirement:
+
+.. code-block:: bash
+
+   python -m pip install "petrophys[dlis] @ git+https://github.com/sambalshikhar/petrophys.git"
+   python -m pip install "petrophys[all] @ git+https://github.com/sambalshikhar/petrophys.git"
+
+Development checkout
+--------------------
+
+.. code-block:: bash
+
+   git clone https://github.com/sambalshikhar/petrophys.git
+   cd petrophys
+   python -m pip install -e ".[all,dev,docs]"
+
+Native Daydream fixtures
+------------------------
+
+The repository includes full Daydream scalar-log and processed-image DLIS
+fixtures, plus matching curated scalar LAS deliveries, through Git LFS. These
+large native files support integration work and the borehole-image tutorial;
+they are not installed into the Python package.
+
+.. code-block:: bash
+
+   git lfs install
+   git lfs pull
+   python -m pip install -e ".[dlis]"
+
+Small LAS samples used by the quickstart and most tutorials are installed with
+the package and do not require Git LFS.
+
+Build the documentation
+-----------------------
+
+.. code-block:: bash
+
+   python -m sphinx -b html docs docs/_build/html
+
+Open ``docs/_build/html/index.html`` after the build completes.
+
 Troubleshooting
 ---------------
 
-**matplotlib backend issues** - for headless use set the backend before
-importing pyplot:
+Matplotlib in headless environments
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Set a non-interactive backend before importing ``matplotlib.pyplot``:
 
 .. code-block:: python
 
    import matplotlib
+
    matplotlib.use("Agg")
 
-**dlisio installation** - dlisio ships manylinux/macOS/Windows wheels; if pip
-tries to build from source, upgrade pip first (``pip install -U pip``).
+DLIS installation
+^^^^^^^^^^^^^^^^^
+
+``dlisio`` publishes platform wheels. If pip attempts a source build, upgrade
+pip first:
+
+.. code-block:: bash
+
+   python -m pip install --upgrade pip
+
+Pretrained-model compatibility
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Imputation packs record the scikit-learn, XGBoost, joblib, NumPy, and pandas
+versions used during training. The loader checks compatibility before applying
+a model. Install the ``ml`` extra rather than mixing an arbitrary dependency
+stack with a bundled pack.

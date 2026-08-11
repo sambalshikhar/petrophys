@@ -1,80 +1,85 @@
 API Reference
 =============
 
-The public API, grouped by domain. Every page below is generated from the
-source docstrings; use the search box for anything not obvious from the
-grouping.
+The supported API is grouped by lifecycle and scientific domain. These pages
+are generated from the source docstrings. Internal helpers under
+``petrophys._internal`` are intentionally excluded.
 
 Data model and I/O
 ------------------
 
 .. autosummary::
    :toctree: generated
-   :recursive:
 
    petrophys.model
+   petrophys.model.log_data
    petrophys.io
    petrophys.datasets
 
-Preprocessing and quality
+Preprocessing
+-------------
+
+.. autosummary::
+   :toctree: generated
+
+   petrophys.preprocessing.standardization
+   petrophys.preprocessing.normalization
+   petrophys.preprocessing.quality
+   petrophys.preprocessing.imputation
+
+Conventional interpretation
+---------------------------
+
+.. autosummary::
+   :toctree: generated
+
+   petrophys.interpretation.temperature
+   petrophys.interpretation.clay_volume
+   petrophys.interpretation.lithology
+   petrophys.interpretation.porosity
+   petrophys.interpretation.electrical.rw
+   petrophys.interpretation.electrical.rmf
+   petrophys.interpretation.electrical.invasion
+   petrophys.interpretation.electrical.cementation
+   petrophys.interpretation.saturation
+   petrophys.interpretation.permeability
+   petrophys.interpretation.rock_physics
+
+Specialist interpretation
 -------------------------
 
 .. autosummary::
    :toctree: generated
-   :recursive:
 
-   petrophys.preprocessing
-
-Interpretation
---------------
-
-.. autosummary::
-   :toctree: generated
-   :recursive:
-
-   petrophys.interpretation
+   petrophys.interpretation.nmr
+   petrophys.interpretation.borehole_imaging
+   petrophys.interpretation.geochemistry
+   petrophys.interpretation.core_analysis
+   petrophys.interpretation.saturation.height
+   petrophys.interpretation.saturation.sonic
 
 Reservoir evaluation
 --------------------
 
 .. autosummary::
    :toctree: generated
-   :recursive:
 
-   petrophys.evaluation
+   petrophys.evaluation.bvw
+   petrophys.evaluation.mhi
+   petrophys.evaluation.net_pay
+   petrophys.evaluation.rock_quality
+   petrophys.evaluation.flow_units
+   petrophys.evaluation.intervals
+   petrophys.evaluation.summaries
+   petrophys.evaluation.volumetrics
+   petrophys.evaluation.diagnostics
 
-Machine learning
-----------------
-
-.. autosummary::
-   :toctree: generated
-   :recursive:
-
-   petrophys.preprocessing.imputation
-
-Reporting
----------
+Workflows, reporting, and visualization
+---------------------------------------
 
 .. autosummary::
    :toctree: generated
-   :recursive:
-
-   petrophys.reporting
-
-Workflows
----------
-
-.. autosummary::
-   :toctree: generated
-   :recursive:
 
    petrophys.workflow
-
-Visualization
--------------
-
-.. autosummary::
-   :toctree: generated
-   :recursive:
-
+   petrophys.reporting
    petrophys.visualization

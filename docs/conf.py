@@ -64,7 +64,6 @@ autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 autodoc_default_options = {
     "members": True,
-    "undoc-members": True,
     "show-inheritance": True,
 }
 
@@ -88,13 +87,43 @@ suppress_warnings = ["myst.header"]
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "furo"
-html_title = "Petrophys"
+html_title = "Petrophys documentation"
+html_logo = "_static/petrophys-logo.png"
 html_static_path = ["_static"]
+html_css_files = ["petrophys.css"]
 html_theme_options = {
-    "sidebar_hide_name": False,
+    "sidebar_hide_name": True,
+    "navigation_with_keys": True,
+    "top_of_page_button": "edit",
     "source_repository": "https://github.com/sambalshikhar/petrophys",
     "source_branch": "main",
     "source_directory": "docs/",
+    "light_css_variables": {
+        "color-brand-primary": "#087f73",
+        "color-brand-content": "#087f73",
+        "color-api-name": "#0f4c5c",
+        "color-api-pre-name": "#5d6874",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#5fd1c4",
+        "color-brand-content": "#7dd9cf",
+        "color-api-name": "#8edbd3",
+        "color-api-pre-name": "#aeb8c2",
+    },
+    "footer_icons": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/sambalshikhar/petrophys",
+            "html": """
+                <svg stroke=\"currentColor\" fill=\"currentColor\" stroke-width=\"0\"
+                     viewBox=\"0 0 16 16\" height=\"1em\" width=\"1em\"
+                     xmlns=\"http://www.w3.org/2000/svg\">
+                  <path d=\"M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.01.38-2.53-.5-2.69-.96-.09-.23-.48-.96-.82-1.15-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.21-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.5 7.5 0 0 1 8 3.91c.68 0 1.36.09 2 .27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.95.08 2.16.51.57.82 1.29.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.5 0 1.08-.01 1.95-.01 2.22 0 .22.15.47.55.39A8.14 8.14 0 0 0 16 8.13C16 3.64 12.42 0 8 0z\"></path>
+                </svg>
+            """,
+            "class": "",
+        }
+    ],
 }
 
 copybutton_prompt_text = ">>> "
