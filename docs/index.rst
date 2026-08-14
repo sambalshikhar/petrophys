@@ -191,7 +191,7 @@ returns the same in-memory well with computed curves attached.
    print(result.well.get("PHIE"))
 
 Continue with the :doc:`installation guide <installation>`, the
-:doc:`quickstart <quickstart>`, or the fully executed :doc:`tutorials
+:doc:`quickstart <quickstart>`, or the browser-rendered :doc:`tutorials
 <tutorials/index>`.
 
 .. raw:: html
@@ -231,8 +231,14 @@ Continue with the :doc:`installation guide <installation>`, the
    capabilities
    specialist_data
    visualization_reporting
-   examples
+
+.. toctree::
+   :hidden:
+   :maxdepth: 3
+   :caption: Learn
+
    tutorials/index
+   examples
 
 .. toctree::
    :hidden:
