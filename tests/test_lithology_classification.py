@@ -107,3 +107,32 @@ def test_calculate_clay_cut_and_xcheck_plumbing():
     # RHOmaa-Umaa ran on the clean (PEF-bearing, low-clay) samples
     assert result.rhomaa is not None and np.any(np.isfinite(result.rhomaa[4:]))
     assert result.litho_disagree is not None and result.litho_disagree.shape == vcl.shape
+
+
+def test_density_neutron_fixed_phie_recovers_quartz_calcite_without_pef_or_sonic():
+    """The reduced model fills Q/C volumes without inventing D/A volumes."""
+    from petrophys.interpretation.lithology.multi_mineral_solver import _get_endpoints
+
+    q = _get_endpoints("quartz")
+    c = _get_endpoints("calcite")
+    clay = _get_endpoints("clay")
+    fluid = _get_endpoints("water")
+    vq, vc, vcl, phi = 0.45, 0.25, 0.10, 0.20
+    rhob = vq * q["density"] + vc * c["density"] + vcl * clay["density"] + phi * fluid["density"]
+    nphi = vq * q["nphi"] + vc * c["nphi"] + vcl * clay["nphi"] + phi * fluid["nphi"]
+    well = _well_with({"RHOB": rhob, "NPHI": nphi, "PHIE": phi})
+
+    result = LithologyModule().calculate(well, vcl=np.full(well.n_samples, vcl))
+
+    assert result.solved.all()
+    assert result.reduced_qc_fallback is not None and result.reduced_qc_fallback.all()
+    np.testing.assert_allclose(result.v_quartz, vq, atol=1e-6)
+    np.testing.assert_allclose(result.v_calcite, vc, atol=1e-6)
+    assert np.isnan(result.v_dolomite).all()
+    assert np.isnan(result.v_anhydrite).all()
+    assert not result.qc_flag.any()
+    np.testing.assert_allclose(
+        result.v_quartz + result.v_calcite + result.v_clay + phi,
+        np.ones(well.n_samples),
+        atol=1e-9,
+    )

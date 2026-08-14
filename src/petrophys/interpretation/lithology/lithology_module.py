@@ -46,6 +46,9 @@ class LithologyResult:
     lithology_name: np.ndarray
     qc_flag: np.ndarray
     solved: np.ndarray
+    # Samples recovered with the constrained quartz-calcite fallback.  This is
+    # separate from ``solved`` so callers can audit the modelling assumption.
+    reduced_qc_fallback: Optional[np.ndarray] = None
     # RHOmaa-Umaa automated cross-check (None when PEF is unavailable).
     rhomaa: Optional[np.ndarray] = None
     umaa: Optional[np.ndarray] = None
@@ -398,6 +401,43 @@ class LithologyModule:
             core_phi=core_phi,
         )
 
+        # A density-neutron suite cannot independently resolve quartz, calcite,
+        # dolomite, anhydrite *and* porosity.  Where the full inversion is
+        # underdetermined but an accepted workflow PHIE exists, use that PHIE as
+        # a fixed constraint and solve the identifiable two-mineral
+        # quartz-calcite system.  Keep dolomite/anhydrite unavailable rather than
+        # manufacturing zero-valued curves.  Core porosity remains the preferred
+        # constraint in the primary solve above.
+        primary_solved = np.asarray(
+            result.get("solved", np.zeros(n_samples, dtype=bool)), dtype=bool
+        )
+        reduced_qc_fallback = np.zeros(n_samples, dtype=bool)
+        if (
+            type(self.solver) is MultiMineralSolver
+            and phie is not None
+            and np.any(~primary_solved & np.isfinite(phie_data))
+        ):
+            reduced_solver = MultiMineralSolver(
+                minerals=["quartz", "calcite"],
+                minerals_no_pef=["quartz", "calcite"],
+            )
+            reduced = reduced_solver.solve(
+                vcl=vcl,
+                rhob=rhob,
+                nphi=nphi,
+                core_phi=phie_data,
+            )
+            reduced_solved = np.asarray(reduced["solved"], dtype=bool)
+            reduced_qc_fallback = ~primary_solved & reduced_solved
+            for mineral in ("quartz", "calcite"):
+                target = np.asarray(result[mineral], dtype=float).copy()
+                target[reduced_qc_fallback] = reduced[mineral][reduced_qc_fallback]
+                result[mineral] = target
+            for key in ("phie", "residual", "qc_flag", "solved"):
+                target = np.asarray(result[key]).copy()
+                target[reduced_qc_fallback] = reduced[key][reduced_qc_fallback]
+                result[key] = target
+
         v_quartz = result.get("quartz", np.zeros(n_samples))
         v_calcite = result.get("calcite", np.zeros(n_samples))
         v_dolomite = result.get("dolomite", np.zeros(n_samples))
@@ -465,6 +505,7 @@ class LithologyModule:
             lithology_name=lithology_name,
             qc_flag=np.asarray(result.get("qc_flag", np.zeros(n_samples, dtype=bool)), dtype=bool),
             solved=solved,
+            reduced_qc_fallback=reduced_qc_fallback,
             rhomaa=rhomaa,
             umaa=umaa,
             litho_disagree=litho_disagree,

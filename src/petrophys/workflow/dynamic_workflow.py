@@ -2149,6 +2149,10 @@ class DynamicWorkflow:
             "multi_mineral_fallback" if write_lithology_code else "input_lithology"
         )
         trace.parameters["multi_mineral_solved_samples"] = int(np.count_nonzero(result.solved))
+        trace.parameters["reduced_quartz_calcite_samples"] = int(
+            np.count_nonzero(result.reduced_qc_fallback)
+            if result.reduced_qc_fallback is not None else 0
+        )
         trace.parameters["multi_mineral_qc_flagged_samples"] = int(np.count_nonzero(result.qc_flag))
         trace.parameters["multi_mineral_total_samples"] = int(well.n_samples)
         trace.parameters["interpretation_profile"] = self._interpretation_profile
@@ -2162,6 +2166,10 @@ class DynamicWorkflow:
             )
         trace.decisions.append("Raw-log multi-mineral solve with VCL/PHIE clay-porosity terms")
         trace.decisions.append("PEF screened for plausibility; DTC used when PEF is absent or invalid")
+        if result.reduced_qc_fallback is not None and np.any(result.reduced_qc_fallback):
+            trace.decisions.append(
+                "Underdetermined samples used fixed PHIE with a reduced quartz-calcite inversion"
+            )
         if self._uses_vendor_benchmark:
             trace.decisions.append(
                 "Vendor benchmark profile retained the May 2026 equation set and closure gate"
