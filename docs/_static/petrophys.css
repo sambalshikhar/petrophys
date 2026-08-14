@@ -283,6 +283,86 @@
   font-size: 0.76rem;
 }
 
+.ph-course-map {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin: 1.25rem 0 2rem;
+  border-top: 1px solid var(--ph-line);
+  border-bottom: 1px solid var(--ph-line);
+}
+
+.ph-course-stage {
+  min-width: 0;
+  padding: 1.05rem 1.1rem 1.15rem;
+  border-right: 1px solid var(--ph-line);
+}
+
+.ph-course-stage:last-child {
+  border-right: 0;
+}
+
+.ph-course-stage span,
+.ph-course-stage strong,
+.ph-course-stage small {
+  display: block;
+}
+
+.ph-course-stage span {
+  margin-bottom: 0.35rem;
+  color: var(--ph-teal);
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
+.ph-course-stage strong {
+  margin-bottom: 0.22rem;
+  color: var(--ph-ink);
+  font-size: 0.98rem;
+}
+
+.ph-course-stage small {
+  color: var(--ph-muted);
+  font-size: 0.78rem;
+  line-height: 1.48;
+}
+
+article .cell {
+  min-width: 0;
+  margin: 1.25rem 0 1.8rem;
+}
+
+article .cell_input {
+  overflow: hidden;
+  border: 1px solid var(--ph-line);
+  border-radius: 6px;
+}
+
+article .cell_input > div,
+article .cell_input .highlight {
+  margin: 0;
+}
+
+article .cell_output {
+  min-width: 0;
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--ph-line);
+}
+
+article .cell_output img,
+article .cell_output svg,
+article .cell_output table {
+  max-width: 100%;
+}
+
+article .cell_output pre,
+article .cell_output .output,
+article .cell_output .text_html {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .ph-status {
   display: inline-block !important;
   width: fit-content;
@@ -413,6 +493,18 @@ body[data-theme="dark"] .sd-card-title {
     grid-template-columns: 1fr 1fr;
   }
 
+  .ph-course-map {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ph-course-stage:nth-child(2) {
+    border-right: 0;
+  }
+
+  .ph-course-stage:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--ph-line);
+  }
+
   .ph-trace > div:nth-child(2) {
     border-right: 0;
   }
@@ -446,8 +538,18 @@ body[data-theme="dark"] .sd-card-title {
   }
 
   .ph-flow,
-  .ph-trace {
+  .ph-trace,
+  .ph-course-map {
     grid-template-columns: 1fr;
+  }
+
+  .ph-course-stage {
+    border-right: 0;
+    border-bottom: 1px solid var(--ph-line);
+  }
+
+  .ph-course-stage:last-child {
+    border-bottom: 0;
   }
 
   .ph-trace > div {

@@ -1,65 +1,109 @@
 Tutorials
 =========
 
-The tutorial curriculum runs entirely on **real, publicly released well data**:
-North Sea wells 30/6-5 and 16/7-1 (with the operator's parameter block in the
-LAS headers), the 17-well COSTA carbonate benchmark, and the Daydream 1 CMR
-log. Every notebook ships fully executed, so the figures and numbers below are
-real outputs - and each notebook re-runs locally against the sample data
-bundled with the package.
+Learn Petrophys through complete, browser-based lessons. Every tutorial is
+rendered directly into this documentation with its explanations, equations,
+Python code, tables, and saved figures. Jupyter is only needed when you want to
+rerun or modify a lesson locally.
 
-Part A - Foundations
---------------------
+The curriculum uses public well data bundled with the package: North Sea wells
+30/6-5 and 16/7-1, the 17-well COSTA carbonate benchmark, and Daydream 1
+specialist logs.
 
-The single-well interpretation chain, one physical quantity at a time.
+Choose a path
+-------------
+
+.. grid:: 1 2 2 2
+   :gutter: 2
+
+   .. grid-item-card:: Quickstart
+      :class-card: ph-card-teal
+      :link: quickstart
+      :link-type: doc
+
+      Load a bundled LAS file, run the input-aware workflow, inspect its trace,
+      plot the interpretation, and export computed curves.
+
+      +++
+      One complete well in a single lesson
+
+   .. grid-item-card:: Foundations
+      :class-card: ph-card-amber
+      :link: foundations
+      :link-type: doc
+
+      Build the conventional formation-evaluation chain one physical quantity
+      at a time, from input inspection and QC through net pay.
+
+      +++
+      10 sequential lessons
+
+   .. grid-item-card:: Advanced workflows
+      :class-card: ph-card-blue
+      :link: advanced
+      :link-type: doc
+
+      Work with orchestration, core calibration, imputation, NMR, saturation
+      height, borehole images, multiwell analysis, and context export.
+
+      +++
+      10 focused lessons
+
+   .. grid-item-card:: Case studies
+      :class-card: ph-card-green
+      :link: case_studies
+      :link-type: doc
+
+      Answer realistic asset questions using end-to-end interpretations,
+      public ground truth, incomplete inputs, and sensitivity analysis.
+
+      +++
+      5 project-style studies
+
+How the curriculum works
+------------------------
+
+.. raw:: html
+
+   <div class="ph-course-map" role="list" aria-label="Tutorial learning path">
+     <div class="ph-course-stage" role="listitem">
+       <span>01</span>
+       <strong>Observe</strong>
+       <small>Inspect curves, units, metadata, depth coverage, and quality.</small>
+     </div>
+     <div class="ph-course-stage" role="listitem">
+       <span>02</span>
+       <strong>Calculate</strong>
+       <small>Apply explicit petrophysical methods and inspect intermediate curves.</small>
+     </div>
+     <div class="ph-course-stage" role="listitem">
+       <span>03</span>
+       <strong>Route</strong>
+       <small>Use available inputs to build a traceable interpretation path.</small>
+     </div>
+     <div class="ph-course-stage" role="listitem">
+       <span>04</span>
+       <strong>Evaluate</strong>
+       <small>Interpret intervals, compare evidence, and deliver reproducible results.</small>
+     </div>
+   </div>
+
+Each page can be read without running code. To experiment, install Petrophys
+with the relevant optional extras and open the source lesson from the page
+toolbar. Saved outputs let the online lesson retain its plots and numerical
+results without executing code during the documentation build.
+
+.. note::
+
+   Tutorial parameters are study assumptions for the supplied public data.
+   They are visible in the lesson and should be reviewed before applying the
+   workflow to another field or formation.
 
 .. toctree::
-   :maxdepth: 1
+   :hidden:
+   :maxdepth: 2
 
-   quickstart
-   part_a/00_orientation_and_setup
-   part_a/01_loading_and_inspecting_data
-   part_a/02_qaqc_and_standardization
-   part_a/03_clay_volume
-   part_a/04_porosity
-   part_a/05_lithology_and_mineral_solver
-   part_a/06_formation_water_and_environment
-   part_a/07_water_saturation
-   part_a/08_permeability
-   part_a/09_reservoir_quality_and_net_pay
-
-Part B - Advanced
------------------
-
-Workflow orchestration, formation analysis, core calibration, special logs
-(NMR, borehole image), machine-learning imputation, and multi-well studies.
-
-.. toctree::
-   :maxdepth: 1
-
-   part_b/10_dynamic_workflow_glass_box
-   part_b/11_formation_and_interval_analysis
-   part_b/12_core_calibration_and_digital_core
-   part_b/13_ml_curve_imputation
-   part_b/14_nmr_petrophysics
-   part_b/15_capillary_pressure_saturation_height
-   part_b/16_borehole_image_fmi
-   part_b/17_visualization_masterclass
-   part_b/18_multiwell_field_study
-   part_b/19_llm_context_generation
-
-Case Studies
-------------
-
-End-to-end briefs answered the way an asset team would ask them, each
-validated against public ground truth (operator completion reports, NPD fact
-pages).
-
-.. toctree::
-   :maxdepth: 1
-
-   case_studies/cs1_full_formation_evaluation_30_6-5
-   case_studies/cs2_carbonate_rock_typing_costa
-   case_studies/cs3_field_screening_costa_17wells
-   case_studies/cs4_imperfect_well_recovery_16_7-1
-   case_studies/cs5_saturation_model_sensitivity_30_6-5
+   Quickstart <quickstart>
+   Foundations <foundations>
+   Advanced workflows <advanced>
+   Case studies <case_studies>

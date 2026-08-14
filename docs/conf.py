@@ -37,6 +37,33 @@ for source_relative, destination_relative in NOTEBOOK_GROUPS.items():
         if not target.exists() or notebook.stat().st_mtime > target.stat().st_mtime:
             shutil.copy2(notebook, target)
 
+TUTORIAL_SOURCE_PATHS = {
+    "tutorials/quickstart": "examples/quickstart.ipynb",
+    "tutorials/part_a/": "examples/part_a_foundations/",
+    "tutorials/part_b/": "examples/part_b_advanced/",
+    "tutorials/case_studies/": "examples/case_studies/",
+}
+
+
+def tutorial_source_link(app, pagename, templatename, context, doctree):
+    source_path = TUTORIAL_SOURCE_PATHS.get(pagename)
+    if source_path is None:
+        for page_prefix, repository_prefix in TUTORIAL_SOURCE_PATHS.items():
+            if page_prefix.endswith("/") and pagename.startswith(page_prefix):
+                lesson_name = pagename.removeprefix(page_prefix)
+                source_path = f"{repository_prefix}{lesson_name}.ipynb"
+                break
+    if source_path:
+        repository = html_theme_options["source_repository"].rstrip("/")
+        branch = html_theme_options["source_branch"]
+        context["theme_source_view_link"] = (
+            f"{repository}/blob/{branch}/{source_path}?plain=true"
+        )
+
+
+def setup(app):
+    app.connect("html-page-context", tutorial_source_link)
+
 # -- General configuration ---------------------------------------------------
 extensions = [
     "sphinx.ext.autodoc",

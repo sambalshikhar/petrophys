@@ -1,10 +1,10 @@
 Examples
 ========
 
-The executable notebooks under :doc:`Tutorials <tutorials/index>` form the
-main example collection. They use public datasets exposed by
-:func:`petrophys.sample`, keep their saved outputs for Read the Docs, and can be
-rerun from a source checkout.
+The :doc:`tutorial curriculum <tutorials/index>` is the main example
+collection. Every lesson is readable as a normal documentation page with its
+code and saved outputs in place. The same material remains runnable from a
+source checkout and uses public datasets exposed by :func:`petrophys.sample`.
 
 Choose a learning path
 ----------------------
@@ -59,7 +59,7 @@ Choose a learning path
       Observe how the input-aware workflow reduces its route when a well has an
       incomplete log suite.
 
-Foundation notebooks
+Foundation tutorials
 --------------------
 
 .. list-table::
@@ -67,7 +67,7 @@ Foundation notebooks
    :widths: 10 38 52
 
    * - No.
-     - Notebook
+     - Tutorial
      - Focus
    * - 00
      - :doc:`Orientation and setup <tutorials/part_a/00_orientation_and_setup>`
@@ -100,7 +100,7 @@ Foundation notebooks
      - :doc:`Reservoir quality and net pay <tutorials/part_a/09_reservoir_quality_and_net_pay>`
      - RQI, FZI, flow units, cutoffs, and thickness summaries
 
-Advanced notebooks
+Advanced tutorials
 ------------------
 
 .. list-table::
@@ -108,7 +108,7 @@ Advanced notebooks
    :widths: 10 38 52
 
    * - No.
-     - Notebook
+     - Tutorial
      - Focus
    * - 10
      - :doc:`Dynamic workflow glass box <tutorials/part_b/10_dynamic_workflow_glass_box>`
