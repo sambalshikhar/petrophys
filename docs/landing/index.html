@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Petrophys — open-source formation evaluation</title>
+<meta name="description" content="Petrophys turns logs, core, and specialist data into traceable petrophysical results — every executed step recorded, every skip explained.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Poppins:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+html, body { margin: 0; padding: 0; background: #f6f8f9; }
+body { font-family: 'IBM Plex Sans', sans-serif; color: #17263f; }
+a { color: #147a64; }
+a:hover { color: #17263f; }
+.nav-a { color: #17263f; text-decoration: none; }
+.nav-a:hover { color: #197e6f; }
+.btn-primary { background: #197e6f; color: #ffffff; text-decoration: none; font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 14.5px; padding: 12px 22px; border-radius: 8px; }
+.btn-primary:hover { background: #146557; color: #ffffff; }
+.btn-ghost { border: 1px solid #c6d0d8; color: #17263f; text-decoration: none; font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 14.5px; padding: 12px 22px; border-radius: 8px; }
+.btn-ghost:hover { border-color: #197e6f; color: #197e6f; }
+.f-a { color: #67748c; text-decoration: none; }
+.f-a:hover { color: #197e6f; }
+.hero-grid { max-width: 1160px; margin: 0 auto; padding: 64px 32px 72px; display: grid; grid-template-columns: 1.02fr 0.98fr; gap: 56px; align-items: center; }
+.trace-grid { max-width: 1160px; margin: 0 auto; padding: 88px 32px 0; display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 60px; align-items: center; }
+.stages-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; }
+.caps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.quick-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 52px; align-items: center; }
+@media (max-width: 980px) {
+  .hero-grid, .trace-grid, .quick-grid { grid-template-columns: 1fr; gap: 36px; }
+  .stages-grid { grid-template-columns: repeat(2, 1fr); }
+  .caps-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 620px) {
+  .stages-grid, .caps-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div style="background: #ffffff; border-bottom: 1px solid #e2e7eb;">
+  <div style="max-width: 1160px; margin: 0 auto; padding: 12px 32px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+    <a href="./" style="display: block;"><img src="assets/petrophys-logo-cropped.png" alt="Petrophys" style="height: 80px; width: auto; display: block;"></a>
+    <div style="display: flex; align-items: center; gap: 28px; font-family: 'Poppins', sans-serif; font-size: 14px; font-weight: 500;">
+      <a href="installation" class="nav-a">Docs</a>
+      <a href="tutorials/" class="nav-a">Tutorials</a>
+      <a href="api/" class="nav-a">API</a>
+      <a href="https://github.com/sambalshikhar/petrophys" class="nav-a">GitHub &#8599;</a>
+    </div>
+  </div>
+</div>
+<div style="background: #ffffff; border-bottom: 1px solid #e2e7eb;">
+  <div class="hero-grid">
+    <div style="display: flex; flex-direction: column; gap: 22px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #1a8a74;">Open-source formation evaluation</div>
+      <h1 style="margin: 0; font-family: 'Poppins', sans-serif; font-size: 46px; line-height: 1.12; font-weight: 600; letter-spacing: -0.015em; color: #17263f; text-wrap: pretty;">From well logs to defensible interpretations.</h1>
+      <p style="margin: 0; font-size: 17px; line-height: 1.6; color: #55627c; max-width: 46ch; text-wrap: pretty;">Petrophys turns logs, core, and specialist data into traceable petrophysical results &#8212; every executed step recorded, every skip explained.</p>
+      <div style="display: flex; align-items: center; gap: 14px; background: #eef6f3; border: 1px solid #cbe4db; border-radius: 10px; padding: 13px 18px; font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; color: #17263f;">
+        <span style="color: #197e6f; font-weight: 600;">$</span>
+        <span>pip install petrophys</span>
+      </div>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <a href="quickstart" class="btn-primary">Run the quickstart</a>
+        <a href="api/" class="btn-ghost">Browse the API</a>
+      </div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: #67748c; letter-spacing: 0.02em;">Python 3.9&#8211;3.13 &#160;&#183;&#160; LAS &#183; DLIS &#183; CSV &#160;&#183;&#160; core &#183; NMR &#183; images &#160;&#183;&#160; open source</div>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; box-shadow: 0 18px 44px -18px rgba(21, 36, 61, 0.16); overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 11px 16px; border-bottom: 1px solid #e9edf0;">
+        <div style="width: 9px; height: 9px; border-radius: 50%; background: #dde3e8;"></div>
+        <div style="width: 9px; height: 9px; border-radius: 50%; background: #dde3e8;"></div>
+        <div style="width: 9px; height: 9px; border-radius: 50%; background: #dde3e8;"></div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #67748c; margin-left: 8px;">15/9-17 &#183; Heimdal Fm &#8212; multi-track interpretation</div>
+      </div>
+      <img src="_images/petrophys-heimdal-formation.png" alt="Multi-track Petrophys interpretation of the Heimdal Formation" style="display: block; width: 100%; height: auto;">
+      <div style="display: flex; gap: 18px; padding: 11px 16px; border-top: 1px solid #e9edf0; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px;">
+        <span style="color: #197e6f; font-weight: 600;">12 executed</span>
+        <span style="color: #7d8798; font-weight: 600;">3 skipped</span>
+        <span style="color: #b07b2a; font-weight: 600;">1 review</span>
+        <span style="color: #98a2b3; margin-left: auto;">result.print_trace()</span>
+      </div>
+    </div>
+  </div>
+</div>
+<div style="background: #ffffff; border-bottom: 1px solid #e2e7eb;">
+  <div style="max-width: 1160px; margin: 0 auto; padding: 22px 32px; display: flex; align-items: center; justify-content: center; gap: 22px; flex-wrap: wrap;">
+    <div style="font-size: 13px; color: #67748c;">Developed by</div>
+    <a href="https://mbzuai.ac.ae" style="display: block;"><img src="assets/mbzuai-logo.png" alt="Mohamed bin Zayed University of Artificial Intelligence" style="height: 38px; width: auto; display: block;"></a>
+    <div style="width: 1px; height: 30px; background: #e2e7eb; margin: 0 8px;"></div>
+    <div style="font-size: 13px; color: #67748c;">In collaboration with</div>
+    <a href="https://www.inceptionai.ai" style="display: block;"><img src="assets/inception-logo-navy.png" alt="Inception AI" style="height: 30px; width: auto; display: block;"></a>
+  </div>
+</div>
+<div class="trace-grid">
+  <div style="display: flex; flex-direction: column; gap: 18px;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #1a8a74;">Input-aware, not all-or-nothing</div>
+    <h2 style="margin: 0; font-family: 'Poppins', sans-serif; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; color: #17263f; text-wrap: pretty;">Every decision on the record.</h2>
+    <p style="margin: 0; font-size: 16px; line-height: 1.65; color: #55627c; text-wrap: pretty;">Incomplete log suites don&#8217;t fail &#8212; they produce a reduced interpretation with an explicit trace. Prerequisites are checked before each step, so the result explains what ran, what couldn&#8217;t, and what needs review.</p>
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 4px;">
+      <div style="display: flex; gap: 12px; align-items: baseline;"><div style="width: 7px; height: 7px; background: #197e6f; flex-shrink: 0;"></div><div style="font-size: 15px; color: #3c4b63;">Method, inputs, outputs, and parameters recorded per step</div></div>
+      <div style="display: flex; gap: 12px; align-items: baseline;"><div style="width: 7px; height: 7px; background: #197e6f; flex-shrink: 0;"></div><div style="font-size: 15px; color: #3c4b63;">Skips carry reasons &#8212; never silent gaps or invented defaults</div></div>
+      <div style="display: flex; gap: 12px; align-items: baseline;"><div style="width: 7px; height: 7px; background: #197e6f; flex-shrink: 0;"></div><div style="font-size: 15px; color: #3c4b63;">Warnings route your attention to assumptions worth checking</div></div>
+    </div>
+  </div>
+  <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; box-shadow: 0 12px 32px -18px rgba(21, 36, 61, 0.12); overflow: hidden;">
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #e9edf0;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: #67748c;">DynamicWorkflowResult &#183; 30_6-5</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #197e6f; border: 1px solid #bfdfd4; background: #eef6f3; border-radius: 99px; padding: 3px 10px;">status: success</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 92px 138px 1fr; gap: 14px; padding: 12px 18px; align-items: baseline;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #197e6f;">executed</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #17263f;">clay_volume</div>
+      <div style="font-size: 13.5px; color: #55627c;">vcl_from_gr &#183; GR &#8594; VCL</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 92px 138px 1fr; gap: 14px; padding: 12px 18px; align-items: baseline; border-top: 1px solid #eef1f4;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #197e6f;">executed</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #17263f;">porosity</div>
+      <div style="font-size: 13.5px; color: #55627c;">RHOB + NPHI &#8594; PHIT, PHIE</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 92px 138px 1fr; gap: 14px; padding: 12px 18px; align-items: baseline; border-top: 1px solid #eef1f4;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #7d8798;">skipped</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #17263f;">nmr</div>
+      <div style="font-size: 13.5px; color: #55627c;">no compatible NMR channels in this suite</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 92px 138px 1fr; gap: 14px; padding: 12px 18px; align-items: baseline; border-top: 1px solid #eef1f4;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #b07b2a;">review</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #17263f;">saturation</div>
+      <div style="font-size: 13.5px; color: #55627c;">simandoux &#183; rw = 0.07 assumed &#8212; check quality flags</div>
+    </div>
+    <div style="padding: 12px 18px; border-top: 1px solid #e9edf0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #98a2b3;">result.print_trace() &#183; result.to_dataframe() &#183; result.to_trace_dict()</div>
+  </div>
+</div>
+<div style="max-width: 1160px; margin: 0 auto; padding: 88px 32px 0;">
+  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #1a8a74;">How data moves</div>
+  <h2 style="margin: 12px 0 36px; font-family: 'Poppins', sans-serif; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; color: #17263f;">One lifecycle, five stages.</h2>
+  <div class="stages-grid">
+    <div style="border-top: 2px solid #197e6f; padding-top: 16px; display: flex; flex-direction: column; gap: 6px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #1a8a74;">01</div>
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16.5px; font-weight: 600; color: #17263f;">Read</div>
+      <div style="font-size: 13.5px; line-height: 1.55; color: #67748c;">LAS, DLIS, CSV, ASCII, core, tops, and specialist channels</div>
+    </div>
+    <div style="border-top: 2px solid #197e6f; padding-top: 16px; display: flex; flex-direction: column; gap: 6px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #1a8a74;">02</div>
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16.5px; font-weight: 600; color: #17263f;">Standardize</div>
+      <div style="font-size: 13.5px; line-height: 1.55; color: #67748c;">Aliases, units, nulls, ranges, wellbore quality, provenance</div>
+    </div>
+    <div style="border-top: 2px solid #197e6f; padding-top: 16px; display: flex; flex-direction: column; gap: 6px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #1a8a74;">03</div>
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16.5px; font-weight: 600; color: #17263f;">Interpret</div>
+      <div style="font-size: 13.5px; line-height: 1.55; color: #67748c;">VCL, lithology, porosity, electrical properties, Sw, permeability</div>
+    </div>
+    <div style="border-top: 2px solid #197e6f; padding-top: 16px; display: flex; flex-direction: column; gap: 6px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #1a8a74;">04</div>
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16.5px; font-weight: 600; color: #17263f;">Evaluate</div>
+      <div style="font-size: 13.5px; line-height: 1.55; color: #67748c;">Rock quality, flow units, flags, intervals, volumetrics</div>
+    </div>
+    <div style="border-top: 2px solid #197e6f; padding-top: 16px; display: flex; flex-direction: column; gap: 6px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #1a8a74;">05</div>
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16.5px; font-weight: 600; color: #17263f;">Explain</div>
+      <div style="font-size: 13.5px; line-height: 1.55; color: #67748c;">Computed curves, traces, plots, summaries, export packages</div>
+    </div>
+  </div>
+</div>
+<div style="max-width: 1160px; margin: 0 auto; padding: 88px 32px 0;">
+  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #1a8a74;">Capabilities</div>
+  <h2 style="margin: 12px 0 36px; font-family: 'Poppins', sans-serif; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; color: #17263f;">What&#8217;s in the library.</h2>
+  <div class="caps-grid">
+    <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16px; font-weight: 600; color: #17263f;">Real-world inputs</div>
+      <div style="font-size: 13.5px; line-height: 1.6; color: #67748c;">LAS, tabular logs, optional DLIS &#8212; plus core measurements, formation tops, NMR, borehole images, and geochemistry.</div>
+      <a href="data_model" style="font-size: 13.5px; font-weight: 600; text-decoration: none; margin-top: auto; padding-top: 8px;">Data and depth &#8594;</a>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16px; font-weight: 600; color: #17263f;">Preparation &amp; QC</div>
+      <div style="font-size: 13.5px; line-height: 1.6; color: #67748c;">Mnemonic aliases, unit conversion, null and range screening, washout detection, normalization, and gated imputation.</div>
+      <a href="capabilities" style="font-size: 13.5px; font-weight: 600; text-decoration: none; margin-top: auto; padding-top: 8px;">Capability map &#8594;</a>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16px; font-weight: 600; color: #17263f;">Formation evaluation</div>
+      <div style="font-size: 13.5px; line-height: 1.6; color: #67748c;">Clay volume, lithology and mineral volumes, porosity, electrical properties, saturation, permeability, temperature.</div>
+      <a href="workflows" style="font-size: 13.5px; font-weight: 600; text-decoration: none; margin-top: auto; padding-top: 8px;">Workflows &#8594;</a>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16px; font-weight: 600; color: #17263f;">Specialist interpretation</div>
+      <div style="font-size: 13.5px; line-height: 1.6; color: #67748c;">NMR distributions, borehole-image arrays, spectral gamma, elemental spectroscopy, saturation height, sonic saturation.</div>
+      <a href="specialist_data" style="font-size: 13.5px; font-weight: 600; text-decoration: none; margin-top: auto; padding-top: 8px;">Specialist data &#8594;</a>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16px; font-weight: 600; color: #17263f;">Reservoir evaluation</div>
+      <div style="font-size: 13.5px; line-height: 1.6; color: #67748c;">BVW, moveable-hydrocarbon indicators, RQI and FZI, flow units, net rock to net pay, volumetrics, interval summaries.</div>
+      <a href="examples" style="font-size: 13.5px; font-weight: 600; text-decoration: none; margin-top: auto; padding-top: 8px;">Examples &#8594;</a>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16px; font-weight: 600; color: #17263f;">Plots &amp; delivery</div>
+      <div style="font-size: 13.5px; line-height: 1.6; color: #67748c;">Adaptive log panels, triple combos, crossplots, Pickett plots, multiwell charts &#8212; and auditable LAS, CSV, Excel, JSON exports.</div>
+      <a href="visualization_reporting" style="font-size: 13.5px; font-weight: 600; text-decoration: none; margin-top: auto; padding-top: 8px;">Visualization &amp; reporting &#8594;</a>
+    </div>
+  </div>
+</div>
+<div style="max-width: 1160px; margin: 0 auto; padding: 88px 32px 96px;">
+  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #1a8a74;">Quickstart</div>
+  <h2 style="margin: 12px 0 36px; font-family: 'Poppins', sans-serif; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; color: #17263f;">Start with a bundled well.</h2>
+  <div class="quick-grid">
+    <pre style="margin: 0; background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; padding: 26px 28px; font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; line-height: 1.75; color: #24334e; overflow-x: auto;"><span style="color: #147a64; font-weight: 600;">import</span> petrophys
+<span style="color: #147a64; font-weight: 600;">from</span> petrophys.io <span style="color: #147a64; font-weight: 600;">import</span> read_las
+<span style="color: #147a64; font-weight: 600;">from</span> petrophys.workflow <span style="color: #147a64; font-weight: 600;">import</span> DynamicWorkflowConfig, run_dynamic_workflow
+
+well = read_las(petrophys.sample(<span style="color: #8a5f18;">"30_6-5"</span>))
+result = run_dynamic_workflow(well, DynamicWorkflowConfig(rw=<span style="color: #8a5f18;">0.07</span>))
+
+<span style="color: #147a64; font-weight: 600;">print</span>(result.status)                      <span style="color: #93a0b4;"># what ran, what didn't, and why</span>
+<span style="color: #147a64; font-weight: 600;">print</span>(result.well.get(<span style="color: #8a5f18;">"PHIE"</span>).describe())</pre>
+    <div style="display: flex; flex-direction: column; gap: 22px;">
+      <div style="display: flex; gap: 14px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #1a8a74; font-weight: 600;">01</div>
+        <div><div style="font-family: 'Poppins', sans-serif; font-size: 15px; font-weight: 600; color: #17263f;">A status and a step-by-step trace</div><div style="font-size: 13.5px; line-height: 1.55; color: #67748c;">Executed, skipped, and review-flagged steps with methods and parameters.</div></div>
+      </div>
+      <div style="display: flex; gap: 14px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #1a8a74; font-weight: 600;">02</div>
+        <div><div style="font-family: 'Poppins', sans-serif; font-size: 15px; font-weight: 600; color: #17263f;">Computed curves on the same well</div><div style="font-size: 13.5px; line-height: 1.55; color: #67748c;">VCL, PHIE, SW, PERM, and flags attached to the well&#8217;s own depth index.</div></div>
+      </div>
+      <div style="display: flex; gap: 14px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #1a8a74; font-weight: 600;">03</div>
+        <div><div style="font-family: 'Poppins', sans-serif; font-size: 15px; font-weight: 600; color: #17263f;">Export-ready delivery packages</div><div style="font-size: 13.5px; line-height: 1.55; color: #67748c;">LAS, CSV, Excel, and JSON with calculation provenance included.</div></div>
+      </div>
+      <a href="quickstart" style="font-size: 14.5px; font-weight: 600; text-decoration: none;">Full quickstart &#8594;</a>
+    </div>
+  </div>
+</div>
+<div style="background: #ffffff; border-top: 1px solid #e2e7eb;">
+  <div style="max-width: 1160px; margin: 0 auto; padding: 26px 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;">
+    <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+      <img src="assets/petrophys-logo-cropped.png" alt="Petrophys" style="height: 52px; width: auto; display: block;">
+      <div style="width: 1px; height: 34px; background: #e2e7eb;"></div>
+      <a href="https://mbzuai.ac.ae" style="display: block;"><img src="assets/mbzuai-logo.png" alt="Mohamed bin Zayed University of Artificial Intelligence" style="height: 30px; width: auto; display: block;"></a>
+      <a href="https://www.inceptionai.ai" style="display: block;"><img src="assets/inception-logo-navy.png" alt="Inception AI" style="height: 24px; width: auto; display: block;"></a>
+    </div>
+    <div style="display: flex; gap: 24px; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; flex-wrap: wrap;">
+      <a href="https://github.com/sambalshikhar/petrophys" class="f-a">GitHub</a>
+      <a href="installation" class="f-a">Documentation</a>
+      <span style="color: #98a2b3;">&#169; 2026 MBZUAI &#183; Inception AI</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>
