@@ -1434,6 +1434,9 @@ def _all_step_results(workflow_result, step_name: Optional[str] = None) -> List[
     return step_results
 
 
+PROVENANCE_PASSTHROUGH_STEPS = {"normalization"}
+
+
 FINALIZED_BENCHMARK_STEPS = {
     "permeability": "permeability_benchmark_finalize",
     "rock_quality": "rock_quality_benchmark_finalize",
@@ -1450,8 +1453,19 @@ def _canonical_workflow_step_name(step_name: str) -> str:
 def _workflow_output_curves(workflow_result) -> List[str]:
     curves: List[str] = []
     for step in _all_step_results(workflow_result):
+        if step.step in PROVENANCE_PASSTHROUGH_STEPS:
+            continue
         curves.extend(step.output_curves or [])
     return curves
+
+
+def _workflow_passthrough_curves(workflow_result) -> set[str]:
+    return {
+        _canonical_delivery_curve_name(curve)
+        for step in _all_step_results(workflow_result)
+        if step.step in PROVENANCE_PASSTHROUGH_STEPS
+        for curve in (step.output_curves or [])
+    }
 
 
 def _workflow_output_curve_written(workflow_result, curve_name: str) -> bool:
@@ -1471,10 +1485,12 @@ def _derived_logs_computed(
         _canonical_delivery_curve_name(curve)
         for curve in _workflow_output_curves(workflow_result)
     }
-    derived.update(
+    undeclared_new_curves = {
         _canonical_delivery_curve_name(curve)
         for curve in (set(well.curves) - set(original_curves))
-    )
+    }
+    undeclared_new_curves.difference_update(_workflow_passthrough_curves(workflow_result))
+    derived.update(undeclared_new_curves)
 
     # Keep the reference-style list on canonical mnemonics rather than
     # method-specific aliases that are internal compatibility artifacts.
@@ -5614,6 +5630,11 @@ def _build_lithology_group_segments(
 
     depth = np.asarray(well.depth, dtype=float)
     lithology_curve = well.get("LITHOLOGY_GEOLINK")
+    computed_lithology = False
+    if lithology_curve is None:
+        lithology_curve = well.get("LITHO")
+        computed_lithology = lithology_curve is not None
+
     if lithology_curve is None:
         labels = np.asarray([MISSING_LITHOLOGY_LABEL] * well.n_samples, dtype=object)
     else:
@@ -5622,9 +5643,14 @@ def _build_lithology_group_segments(
             if _is_null_like_lithology(value) or _is_sentinel_lithology(value):
                 labels_list.append(MISSING_LITHOLOGY_LABEL)
             else:
-                labels_list.append(
-                    _normalize_lithology_label(value, lithology_mapping=lithology_mapping) or MISSING_LITHOLOGY_LABEL
-                )
+                if computed_lithology:
+                    label = _normalize_computed_lithology_label(value)
+                else:
+                    label = _normalize_lithology_label(
+                        value,
+                        lithology_mapping=lithology_mapping,
+                    )
+                labels_list.append(label or MISSING_LITHOLOGY_LABEL)
         labels = np.asarray(labels_list, dtype=object)
 
     group_changes = np.ones(labels.shape[0], dtype=bool)
@@ -5818,6 +5844,28 @@ def _normalize_lithology_label(
     if numeric in COMPUTED_LITHO_GROUPS:
         return _display_lithology_text(str(COMPUTED_LITHO_GROUPS[numeric]).replace("_", " "))
     return _display_lithology_text(text)
+
+
+def _normalize_computed_lithology_label(value: Any) -> Optional[str]:
+    if _is_null_like_lithology(value) or _is_sentinel_lithology(value):
+        return None
+
+    try:
+        numeric = int(round(float(str(value).strip())))
+    except (TypeError, ValueError):
+        return None
+
+    try:
+        from petrophys.workflow.dynamic_workflow import COMPUTED_LITHO_CODE_TO_GROUP
+    except Exception:
+        COMPUTED_LITHO_CODE_TO_GROUP = {}
+
+    group = COMPUTED_LITHO_CODE_TO_GROUP.get(numeric)
+    if group is None:
+        group = {0: "unknown", 8: "mixed"}.get(numeric)
+    if group is None:
+        return None
+    return _display_lithology_text(str(group).replace("_", " "))
 
 
 def _valid_lithology_labels(
@@ -7203,7 +7251,11 @@ def export_reference_json_work_package_by_formation_lithology(
                 for zone_result in workflow_result.zone_results:
                     errors.extend(zone_result.errors)
 
-                _finalize_export_curves(workflow_result.well, formation_original_curves)
+                _finalize_export_curves(
+                    workflow_result.well,
+                    formation_original_curves,
+                    retain_computed_lithology=True,
+                )
                 formation_depth_info = _depth_summary(formation_input_well)
                 lithology_segments = _build_lithology_group_segments(
                     workflow_result.well,
@@ -7341,7 +7393,11 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 warnings.append(
                     f"Raw LAS not found in {raw_context_dir}; input_logs_present fell back to processed LAS curves."
                 )
-            _finalize_export_curves(workflow_result.well, processed_original_curves)
+            _finalize_export_curves(
+                workflow_result.well,
+                processed_original_curves,
+                retain_computed_lithology=True,
+            )
 
             well_top = float(full_well.top) if full_well.top is not None else None
             well_bottom = float(full_well.bottom) if full_well.bottom is not None else None

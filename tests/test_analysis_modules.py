@@ -30,6 +30,7 @@ from petrophys.reporting.reference_export import (
 from petrophys._internal.analysis_helpers import CategoryAnalysisResult, DerivedCurve, get_curve_data
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 from petrophys.workflow import run_comprehensive_analysis
+from petrophys.workflow.zoned_batch import _finalize_export_curves
 
 
 def _build_analysis_well() -> Well:
@@ -461,6 +462,7 @@ def test_category_derived_logs_include_full_workflow_outputs_not_raw_inputs():
     well.depth = np.arange(3.0)
     well.add_curve("DEPT", well.depth, "ft", "Depth")
     well.add_curve("GR", np.array([40.0, 45.0, 50.0]), "API", "Gamma Ray")
+    well.add_curve("VCL", np.array([0.10, 0.15, 0.20]), "v/v", "Clay Volume")
     original_curves = set(well.curves)
     well.add_curve("PHIE", np.array([0.12, 0.14, 0.16]), "v/v", "Effective Porosity")
     well.add_curve("PERM", np.array([10.0, 20.0, 30.0]), "mD", "Permeability")
@@ -469,6 +471,8 @@ def test_category_derived_logs_include_full_workflow_outputs_not_raw_inputs():
     workflow_result = SimpleNamespace(
         base_result=SimpleNamespace(
             steps_executed=[
+                SimpleNamespace(step="normalization", output_curves=sorted(original_curves)),
+                SimpleNamespace(step="vclay", output_curves=["VCL"]),
                 SimpleNamespace(step="porosity", output_curves=["PHIE"]),
                 SimpleNamespace(step="permeability", output_curves=["PERM"]),
                 SimpleNamespace(step="bad_hole", output_curves=["BAD_HOLE"]),
@@ -496,6 +500,7 @@ def test_category_derived_logs_include_full_workflow_outputs_not_raw_inputs():
 
     assert "PHIE" in computed
     assert "PERM" in computed
+    assert "VCL" in computed
     assert "BVW_EFFICIENCY" in computed
     assert "BAD_HOLE" in computed
     assert "BADHOLEFLAG" not in computed
@@ -716,6 +721,77 @@ def test_missing_lithology_group_uses_readable_group_name():
     assert len(segments) == 1
     assert segments[0]["lithology"] == "NO_LITHOLOGY_DATA"
     assert segments[0]["group_name"] == "NO_LITHOLOGY_DATA_GROUP_1"
+
+
+def test_computed_lithology_is_used_when_geolink_lithology_is_absent():
+    well = Well("COMPUTED-LITHO")
+    well.depth = np.arange(1000.0, 1008.0)
+    well.add_curve("DEPT", well.depth, "ft", "Depth")
+    well.add_curve(
+        "LITHO",
+        np.array([1.0, 1.0, 2.0, 2.0, 8.0, 8.0, 0.0, 0.0]),
+        "",
+        "Computed lithology",
+    )
+
+    segments = _build_lithology_group_segments(well, minimum_group_thickness=0.0)
+
+    assert [segment["lithology"] for segment in segments] == [
+        "SANDSTONE",
+        "LIMESTONE",
+        "MIXED",
+        "UNKNOWN",
+    ]
+
+
+def test_geolink_lithology_remains_authoritative_when_computed_lithology_exists():
+    well = Well("GEOLINK-LITHO")
+    well.depth = np.arange(1000.0, 1006.0)
+    well.add_curve("DEPT", well.depth, "ft", "Depth")
+    well.add_curve(
+        "LITHOLOGY_GEOLINK",
+        np.array([1.0, 1.0, np.nan, np.nan, 15.0, 15.0]),
+        "",
+        "GeoLink lithology",
+    )
+    well.add_curve("LITHO", np.full(well.n_samples, 2.0), "", "Computed lithology")
+
+    segments = _build_lithology_group_segments(well, minimum_group_thickness=0.0)
+
+    assert [segment["lithology"] for segment in segments] == [
+        "SAND",
+        "NO_LITHOLOGY_DATA",
+        "DOLOMITE",
+    ]
+
+
+def test_export_retains_computed_lithology_only_for_fallback_grouping():
+    fallback_well = Well("COMPUTED-LITHO")
+    fallback_well.depth = np.arange(1000.0, 1002.0)
+    fallback_well.add_curve("DEPT", fallback_well.depth, "ft", "Depth")
+    fallback_well.add_curve("LITHO", np.array([1.0, 2.0]), "", "Computed lithology")
+
+    _finalize_export_curves(
+        fallback_well,
+        {"DEPT"},
+        retain_computed_lithology=True,
+    )
+
+    assert fallback_well.get("LITHO") is not None
+
+    geolink_well = Well("GEOLINK-LITHO")
+    geolink_well.depth = np.arange(1000.0, 1002.0)
+    geolink_well.add_curve("DEPT", geolink_well.depth, "ft", "Depth")
+    geolink_well.add_curve("LITHOLOGY_GEOLINK", np.array([1.0, 15.0]), "", "GeoLink lithology")
+    geolink_well.add_curve("LITHO", np.array([2.0, 2.0]), "", "Computed lithology")
+
+    _finalize_export_curves(
+        geolink_well,
+        {"DEPT", "LITHOLOGY_GEOLINK"},
+        retain_computed_lithology=True,
+    )
+
+    assert geolink_well.get("LITHO") is None
 
 
 def test_vpvs_status_skips_when_dts_is_unavailable():

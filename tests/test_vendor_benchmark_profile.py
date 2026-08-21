@@ -58,6 +58,27 @@ def test_auto_profile_uses_versioned_benchmark_for_vendor_lithology():
     assert result.to_trace_dict()["interpretation_profile"] == "vendor_benchmark"
 
 
+def test_benchmark_retains_solver_lithology_when_geolink_curve_is_absent():
+    well = _profile_well(with_vendor_lithology=False)
+    well.add_curve(
+        "LITHO_PATT",
+        np.array([1.0] * 28 + [8.0] * 12),
+        "",
+        "Vendor lithology pattern",
+    )
+
+    result = _run(well)
+    lithology_step = _step(result, "lithology")
+
+    assert result.success
+    assert result.interpretation_profile == "vendor_benchmark"
+    assert lithology_step.parameters["lithology_curve_written"] is True
+    assert "LITHO" in lithology_step.output_curves
+    assert well.get("LITHO") is not None
+    assert well.get("MMQC") is None
+    assert "porosity_refinement" in result.steps_skipped
+
+
 def test_generic_override_keeps_current_solver_with_vendor_lithology():
     well = _profile_well(with_vendor_lithology=True)
     result = _run(well, profile="generic_inference")
