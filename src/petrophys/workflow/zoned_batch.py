@@ -386,7 +386,12 @@ def _derive_sw_model(overrides: Dict[str, Any], config: DynamicWorkflowConfig) -
         config.sw_model = "north_sea"
 
 
-def _finalize_export_curves(well: "Well", original_curves: set[str]) -> None:
+def _finalize_export_curves(
+    well: "Well",
+    original_curves: set[str],
+    *,
+    retain_computed_lithology: bool = False,
+) -> None:
     if well.get("SW") is None:
         for alias in ("SWA", "SWT-LOG"):
             curve = well.get(alias)
@@ -455,7 +460,13 @@ def _finalize_export_curves(well: "Well", original_curves: set[str]) -> None:
         if name not in original_curves:
             well.remove_curve(name)
 
-    if "LITHO" not in original_curves:
+    if (
+        "LITHO" not in original_curves
+        and (
+            not retain_computed_lithology
+            or well.get("LITHOLOGY_GEOLINK") is not None
+        )
+    ):
         well.remove_curve("LITHO")
 
     for name in ("PRIME_GAS_TARGET", "PRIME_OIL_TARGET"):

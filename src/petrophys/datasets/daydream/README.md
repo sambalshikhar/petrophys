@@ -45,31 +45,3 @@ The source LAS SHA-256 is
 `cc63cc99bcdfa12af4580d7993a0f0e530b7395180bc29ec3b55ab1a07914a42`.
 The derivative was verified against that source for retained values,
 missing-value masks, curve order, and the exact depth vector before inclusion.
-
-## LAS/DLIS equivalence
-
-The shallow LAS/DLIS pair and the deep DLIS plus its full-depth curated LAS
-derivative represent the same logging runs. Paired reader and dynamic-workflow
-coverage is maintained in `tests/test_las_dlis_equivalence.py`.
-
-The equivalence checks separate two questions:
-
-- `native_delivery` runs every applicable workflow step on each file as
-  delivered. The DLIS may contain additional vendor-processed curves that are
-  intentionally preserved and can therefore change the active interpretation.
-- `matched_common_channels` uses the exact standard-resolution physical curves
-  present in both files. This isolates file-format handling from differences in
-  delivery content and sampling.
-
-The paired acquisition has invaded-zone resistivity but no calibrated deep
-resistivity. Saturation-dependent steps are therefore expected to be skipped in
-both workflows. The raw uncalibrated DLIS resistivity channel remains available
-under its vendor mnemonic and is not promoted to `RDEP`.
-
-The deep DLIS includes calibrated deep resistivity (`RVDR`), while its matching
-LAS contains only the uncalibrated `RVDRU` delivery. Consequently, the native
-DLIS workflow can run saturation and net pay while the native LAS workflow
-correctly skips them. The matched-common-channel comparison excludes both
-calibrated and uncalibrated deep resistivity so that it tests only equivalent
-inputs. Uncalibrated resistivity is still compared as a raw transport check but
-is never promoted to an interpretation curve.

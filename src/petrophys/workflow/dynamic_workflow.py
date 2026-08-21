@@ -1552,6 +1552,7 @@ class DynamicWorkflow:
     def _can_porosity_refinement(self, well: "Well") -> bool:
         return (
             WorkflowStep.POROSITY.value not in self.config.skip_steps
+            and not self._uses_vendor_benchmark
             and self._computed_lithology_written
             and self._can_porosity(well)
             and self._has_curve(well, "LITHO")
@@ -2121,13 +2122,17 @@ class DynamicWorkflow:
         )
         write_lithology_code = not input_lithology_available
         if self._uses_vendor_benchmark:
-            # The historical benchmark did not emit MMQC and never replaced
-            # the authoritative vendor lithology curve.
             well.add_curve("VQUAR", result.v_quartz, "v/v", "Quartz Volume")
             well.add_curve("VCALC", result.v_calcite, "v/v", "Calcite Volume")
             well.add_curve("VDOLO", result.v_dolomite, "v/v", "Dolomite Volume")
             well.add_curve("VANHY", result.v_anhydrite, "v/v", "Anhydrite Volume")
-            write_lithology_code = False
+            if write_lithology_code:
+                well.add_curve(
+                    "LITHO",
+                    result.lithology_code.astype(float),
+                    "",
+                    "Lithology Code",
+                )
         else:
             litho_module.add_to_well(
                 well,
@@ -2158,7 +2163,7 @@ class DynamicWorkflow:
         trace.parameters["interpretation_profile"] = self._interpretation_profile
         if write_lithology_code:
             trace.decisions.append(
-                "No input lithology curve was available -> inferred LITHO from mineral volumes"
+                "No GeoLink or CSV lithology was available -> inferred LITHO from mineral volumes"
             )
         else:
             trace.decisions.append(
@@ -4074,7 +4079,7 @@ class DynamicWorkflow:
             return self._lithology_log
 
         computed_curve = get_curve(well, ["LITHO"])
-        if computed_curve is not None:
+        if computed_curve is not None and not self._uses_vendor_benchmark:
             try:
                 computed_data = np.asarray(computed_curve.data, dtype=float)
                 self._lithology_log = _group_array_from_numeric_codes(computed_data, COMPUTED_LITHO_CODE_TO_GROUP)
