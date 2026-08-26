@@ -5489,21 +5489,29 @@ def _load_excel_formation_segments(
 
     tops_path = Path(tops_file)
     if not tops_path.exists():
-        raise FileNotFoundError(f"Formation tops workbook not found: {tops_path}")
+        raise FileNotFoundError(f"Formation tops table not found: {tops_path}")
 
-    dataframe = pd.read_excel(tops_path)
+    if tops_path.suffix.lower() == ".csv":
+        dataframe = pd.read_csv(tops_path)
+    else:
+        dataframe = pd.read_excel(tops_path)
     normalized_columns = {str(column).strip().lower(): column for column in dataframe.columns}
-    required = {"well", "formation", "md_top"}
-    missing = required.difference(normalized_columns)
+    top_col = normalized_columns.get("md_top") or normalized_columns.get("top")
+    missing = {name for name in ("formation",) if name not in normalized_columns}
+    if top_col is None:
+        missing.add("md_top (or top)")
     if missing:
         raise ValueError(
-            "Formation tops workbook is missing required columns: "
+            "Formation tops table is missing required columns: "
             + ", ".join(sorted(missing))
         )
 
-    well_col = normalized_columns["well"]
+    well_col = normalized_columns.get("well")
     formation_col = normalized_columns["formation"]
-    top_col = normalized_columns["md_top"]
+    single_well_key = "__SINGLE_WELL_TOPS__"
+    if well_col is None:
+        well_col = "__petrophys_well__"
+        dataframe[well_col] = single_well_key
 
     def _is_formation_unit(name: str) -> bool:
         text = str(name).upper()
@@ -5517,7 +5525,9 @@ def _load_excel_formation_segments(
         group["_formation_display_name"] = group[formation_col].map(lambda value: str(value).strip().upper())
         group["_md_top"] = group[top_col].astype(float)
         group = group.sort_values(["_md_top", "_formation_display_name"], kind="stable")
-        group = group[group["_formation_display_name"].map(_is_formation_unit)]
+        explicit_units = group["_formation_display_name"].map(_is_formation_unit)
+        if explicit_units.any():
+            group = group[explicit_units]
 
         unique_tops = sorted(float(value) for value in group["_md_top"].dropna().unique())
         next_top_by_top = {
@@ -5554,6 +5564,12 @@ def _formation_segments_for_well(
     well: "Well",
     tops_by_well: dict[str, list[dict[str, Any]]],
 ) -> list[dict[str, Any]]:
+    single_well_segments = tops_by_well.get(
+        _normalize_tops_well_name("__SINGLE_WELL_TOPS__")
+    )
+    if single_well_segments is not None:
+        return single_well_segments
+
     candidates = [
         _normalize_tops_well_name(source_file.stem),
         _normalize_tops_well_name(well.name),
@@ -5578,6 +5594,18 @@ def _formation_segments_for_well(
     if len(unique_prefix_candidates) == 1:
         return tops_by_well[unique_prefix_candidates[0]]
     return []
+
+
+def _validate_single_well_tops_scope(
+    tops_by_well: dict[str, list[dict[str, Any]]],
+    source_files: Sequence[Path],
+) -> None:
+    single_well_key = _normalize_tops_well_name("__SINGLE_WELL_TOPS__")
+    if single_well_key in tops_by_well and len(source_files) > 1:
+        raise ValueError(
+            "Formation tops table has no 'well' column; select one LAS file "
+            "or add a well column before running a multiwell export."
+        )
 
 
 def _filter_input_files_by_well_names(
@@ -6996,6 +7024,7 @@ def export_reference_json_work_package_by_formation(
     output_path.mkdir(parents=True, exist_ok=True)
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
     tops_by_well = _load_excel_formation_segments(tops_file)
+    _validate_single_well_tops_scope(tops_by_well, files)
 
     results: List[ExampleFormatExportResult] = []
     for file_path in files:
@@ -7041,7 +7070,7 @@ def export_reference_json_work_package_by_formation(
                     }
                 ]
                 fallback_warnings.append(
-                    "No formation tops matched this well in the Excel workbook. Falling back to WHOLE_WELL segmentation."
+                    "No formation tops matched this well in the tops table. Falling back to WHOLE_WELL segmentation."
                 )
 
             for segment in formation_segments:
@@ -7161,6 +7190,7 @@ def export_reference_json_work_package_by_formation_lithology(
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
     files = _filter_input_files_by_well_names(files, well_names)
     tops_by_well = _load_excel_formation_segments(tops_file)
+    _validate_single_well_tops_scope(tops_by_well, files)
     lithology_mapping = (
         _load_lithology_mapping_workbook(lithology_mapping_file)
         if lithology_mapping_file
@@ -7211,7 +7241,7 @@ def export_reference_json_work_package_by_formation_lithology(
                     }
                 ]
                 fallback_warnings.append(
-                    "No formation tops matched this well in the Excel workbook. Falling back to WHOLE_WELL segmentation."
+                    "No formation tops matched this well in the tops table. Falling back to WHOLE_WELL segmentation."
                 )
 
             for segment in formation_segments:
@@ -7361,6 +7391,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
     raw_context_dir = Path(raw_input_dir) if raw_input_dir is not None else _raw_input_dir_for_processed(input_path)
     raw_curves_by_stem = _raw_curve_lookup(raw_context_dir, pattern, recursive)
     tops_by_well = _load_excel_formation_segments(tops_file)
+    _validate_single_well_tops_scope(tops_by_well, files)
     lithology_mapping = (
         _load_lithology_mapping_workbook(lithology_mapping_file)
         if lithology_mapping_file
@@ -7505,7 +7536,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     }
                 ]
                 fallback_warnings.append(
-                    "No formation tops matched this well in the Excel workbook. Falling back to WHOLE_WELL segmentation."
+                    "No formation tops matched this well in the tops table. Falling back to WHOLE_WELL segmentation."
                 )
 
             formation_name_counts: dict[str, int] = {}

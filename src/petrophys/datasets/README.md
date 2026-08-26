@@ -31,6 +31,7 @@ any user-owned path directly to `read_las()` or `read_dlis()`.
 | `geolink/16_7-1.las` | Tight-zone and industrial curve-wrapping example. |
 | `geolink/15_9-14.las` | Mineral-solver tutorial well with vendor lithology. |
 | `geolink/25_5-1.las` | Core-bearing North Sea example with PHIC, permeability, saturation, and grain-density curves. |
+| `kgs/1046123714.las` | Morgan No. 1-17 legacy LAS example with generic CSV formation tops. |
 | `daydream/daydream1_cmr.las` | Daydream 1 processed CMR summary, 3755-4145 m. |
 | `daydream/daydream1_cmr_shallow.las` | Daydream 1 processed CMR summary, 2860-3050 m. |
 | `formations_30_6-5.csv` | Formation tops for 30/6-5. |

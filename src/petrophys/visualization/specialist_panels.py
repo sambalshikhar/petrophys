@@ -61,14 +61,44 @@ def create_nmr_panel(
     _format_axes(axes, top, bottom, well)
 
     _plot_first(axes[0], well, ("GR_EDTC", "GR"), depth, "forestgreen", "GR", xlim=(0, 150))
-    _plot_first(axes[0], well, ("CDF",), depth, "magenta", "CDF")
-    _plot_first(axes[0], well, ("TENS",), depth, "black", "TENS")
-    axes[0].set_title("GR / CMR QC")
+    qc_axes = [axes[0]]
+    cdf_axis = _plot_qc_twin(
+        axes[0], well, ("CDF",), depth, "magenta", "CDF", offset=0.0
+    )
+    tension_axis = _plot_qc_twin(
+        axes[0], well, ("TENS",), depth, "black", "TENS", offset=0.09
+    )
+    qc_axes.extend(ax for ax in (cdf_axis, tension_axis) if ax is not None)
+    axes[0].set_title("GR / NMR QC", pad=38 if len(qc_axes) > 1 else 6)
 
-    _plot_first(axes[1], well, ("BS",), depth, "dimgray", "BS", linestyle="--")
-    _plot_first(axes[1], well, ("HD1_PPC1", "HD1"), depth, "dodgerblue", "HD1")
-    _plot_first(axes[1], well, ("HD2_PPC1", "HD2"), depth, "darkorange", "HD2")
-    _plot_first(axes[1], well, ("CALI", "CAL"), depth, "black", "CALI")
+    _plot_first(
+        axes[1],
+        well,
+        ("HD1_PPC1", "HD1", "CALI"),
+        depth,
+        "firebrick",
+        "HD1",
+        xlim=(6, 16),
+    )
+    _plot_first(
+        axes[1],
+        well,
+        ("HD2_PPC1", "HD2"),
+        depth,
+        "royalblue",
+        "HD2",
+        xlim=(6, 16),
+    )
+    _plot_first(
+        axes[1],
+        well,
+        ("BS",),
+        depth,
+        "black",
+        "BS",
+        xlim=(6, 16),
+        linestyle="--",
+    )
     axes[1].set_title("Borehole")
 
     total, total_name = _curve_data(well, NMR_TOTAL_ALIASES)
@@ -86,7 +116,7 @@ def create_nmr_panel(
     if bvi is not None:
         axes[2].plot(bvi, depth, color="saddlebrown", linewidth=0.7, label=bvi_name)
     axes[2].set_xlim(poro_xlim)
-    axes[2].set_title("CMR Porosity")
+    axes[2].set_title("NMR Porosity")
 
     _plot_first(axes[3], well, ("KSDR", "NMR_KSDR"), depth, "royalblue", "KSDR", log=True)
     _plot_first(axes[3], well, ("KTIM", "NMR_KTIM", "K_COATES"), depth, "red", "KTIM", log=True)
@@ -106,6 +136,14 @@ def create_nmr_panel(
         _set_data_xlim(ax_t2, cutoff)
 
     _finalize_log_figure(fig, axes, well, "NMR Panel")
+    qc_handles = []
+    qc_labels = []
+    for ax in qc_axes:
+        handles, labels = ax.get_legend_handles_labels()
+        qc_handles.extend(handles)
+        qc_labels.extend(labels)
+    if qc_handles:
+        axes[0].legend(qc_handles, qc_labels, loc="upper right", fontsize=7)
     return fig
 
 
@@ -230,6 +268,38 @@ def _plot_first(
     else:
         _set_data_xlim(ax, data)
     return True
+
+
+def _plot_qc_twin(
+    parent: "plt.Axes",
+    well: "Well",
+    aliases: Sequence[str],
+    depth: np.ndarray,
+    color: str,
+    label: str,
+    offset: float,
+) -> Optional["plt.Axes"]:
+    curve = _curve(well, aliases)
+    if curve is None:
+        return None
+    try:
+        data = np.asarray(curve.data, dtype=float)
+    except (TypeError, ValueError):
+        return None
+    finite = np.isfinite(data) & np.isfinite(depth)
+    if not np.any(finite):
+        return None
+
+    ax = parent.twiny()
+    ax.spines["top"].set_position(("axes", 1.0 + offset))
+    ax.plot(data[finite], depth[finite], color=color, linewidth=0.65, label=label)
+    _set_data_xlim(ax, data)
+    unit = str(getattr(curve, "unit", "") or "").strip()
+    axis_label = f"{label} [{unit}]" if unit else label
+    ax.set_xlabel(axis_label, color=color, fontsize=7, labelpad=1)
+    ax.tick_params(axis="x", colors=color, labelsize=7, pad=1)
+    ax.grid(False)
+    return ax
 
 
 def _set_data_xlim(ax: "plt.Axes", data: np.ndarray) -> None:
