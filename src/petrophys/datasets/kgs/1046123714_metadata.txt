@@ -1,0 +1,26 @@
+Well metadata
+========================================
+
+Well name: 1046123714
+Original well name: Morgan No. 1-17
+Display name: Morgan No. 1-17
+KGS ID: 1046123714
+Field: Abor
+Country: United States
+Basin: Illinois Basin
+Reservoir: Unknown
+Depth top (m): -2.0
+Depth base (m): 4695.5
+Completeness tier: high
+Key log roles: density, gamma_ray, neutron, resistivity, sonic
+QC status: warning
+Data sources: EDX
+Subcategories: Illinois State Geological Survey (ISGS)
+Well log file count: 1
+Key well log file count (green): 1
+Geology document count: 0
+Formation tops count: 11
+Formation tops status: ok
+EDX/ISGS well: yes
+
+Generated: 2026-07-28T13:51:24

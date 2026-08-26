@@ -18,6 +18,10 @@ def _nmr_well():
     well.depth_unit = "m"
     well.add_curve("GR", np.linspace(40.0, 120.0, 5), "API", "Gamma Ray")
     well.add_curve("BS", np.full(5, 8.5), "in", "Bit Size")
+    well.add_curve("HD1_PPC1", np.linspace(8.6, 9.0, 5), "in", "Caliper 1")
+    well.add_curve("HD2_PPC1", np.linspace(8.7, 9.1, 5), "in", "Caliper 2")
+    well.add_curve("CDF", np.linspace(1000.0, 5000.0, 5), "N", "Downhole Force")
+    well.add_curve("TENS", np.linspace(3000.0, 6000.0, 5), "lbf", "Cable Tension")
     well.add_curve("TCMR", np.full(5, 0.30), "v/v", "Total CMR Porosity")
     well.add_curve("CMFF", np.full(5, 0.21), "v/v", "CMR Free Fluid")
     well.add_curve("KSDR", np.geomspace(100.0, 1.0, 5), "mD", "SDR Permeability")
@@ -35,6 +39,15 @@ def test_nmr_specialist_panel_saves(tmp_path):
     fig.savefig(output, dpi=40)
 
     assert output.exists()
+    np.testing.assert_allclose(fig.axes[0].get_xlim(), (0.0, 150.0))
+    assert fig.axes[1].get_title() == "Borehole"
+    assert {line.get_label() for line in fig.axes[1].lines} == {"HD1", "HD2", "BS"}
+    all_labels = {
+        line.get_label()
+        for axis in fig.axes
+        for line in axis.lines
+    }
+    assert {"GR", "CDF", "TENS"}.issubset(all_labels)
 
 
 def test_fmi_specialist_panel_saves_without_orientation(tmp_path):

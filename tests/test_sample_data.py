@@ -40,6 +40,19 @@ def test_list_samples_kinds():
         "daydream1_cmr",
         "daydream1_cmr_shallow",
     }
+    assert set(petrophys.list_samples("kgs")) == {
+        "1046123714",
+        "1046123714_formation_tops",
+    }
+
+
+def test_kgs_legacy_sample_loads_with_feet_depth():
+    well = read_las(petrophys.sample("1046123714"))
+
+    assert well.name == "Morgan No. 1-17"
+    assert well.depth_unit == "ft"
+    assert well.n_samples == 9396
+    assert {"GR", "RHOB", "CNLS", "DT", "RILD"}.issubset(well.curves)
 
 
 def test_sample_unknown_raises_helpful_error():

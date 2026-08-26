@@ -23,9 +23,11 @@ from petrophys.reporting.reference_export import (
     _category_derived_logs_computed,
     _compact_curve_note,
     _curve_value_summary,
+    _formation_segments_for_well,
     _input_log_display_list,
     _load_excel_formation_segments,
     _missing_curve_reason,
+    _validate_single_well_tops_scope,
 )
 from petrophys._internal.analysis_helpers import CategoryAnalysisResult, DerivedCurve, get_curve_data
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
@@ -691,6 +693,42 @@ def test_excel_tops_loader_includes_member_tops(tmp_path):
     assert "HERMOD MB. TOP" in names
     assert "BALDER FM. TOP" in names
     assert "IGNORE UNIT TOP" not in names
+
+
+def test_tops_loader_accepts_generic_single_well_csv(tmp_path):
+    tops_file = tmp_path / "formation_tops.csv"
+    pd.DataFrame(
+        {
+            "formation": ["Topeka", "Lecompton", "Oread"],
+            "top": [3782.0, 3884.0, 3926.0],
+            "depth_unit": ["ft", "ft", "ft"],
+        }
+    ).to_csv(tops_file, index=False)
+
+    tops = _load_excel_formation_segments(tops_file)
+    segments = _formation_segments_for_well(
+        Path("1046123714.las"),
+        Well("Morgan No. 1-17"),
+        tops,
+    )
+
+    assert [segment["display_name"] for segment in segments] == [
+        "TOPEKA",
+        "LECOMPTON",
+        "OREAD",
+    ]
+    assert [segment["bottom_depth"] for segment in segments] == [
+        3884.0,
+        3926.0,
+        None,
+    ]
+
+    _validate_single_well_tops_scope(tops, [Path("1046123714.las")])
+    with pytest.raises(ValueError, match="no 'well' column"):
+        _validate_single_well_tops_scope(
+            tops,
+            [Path("1046123714.las"), Path("another-well.las")],
+        )
 
 
 def test_missing_curve_reason_names_category_input_requirements():

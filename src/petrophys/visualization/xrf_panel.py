@@ -61,14 +61,16 @@ def create_xrf_panel(
 
     for ax, (title, elems) in zip(axes, _ELEMENT_GROUPS):
         plotted = False
+        plotted_elements = []
         for el, color in elems:
             v = xrf.get(el)
             if v is None:
                 continue
             ax.plot(_sel(v), depth, color=color, lw=0.6, label=el)
             plotted = True
+            plotted_elements.append(el)
         ax.set_title(title, fontsize=9)
-        ax.set_xlabel("conc (%)", fontsize=8)
+        ax.set_xlabel(_concentration_label(xrf, plotted_elements), fontsize=8)
         ax.grid(alpha=0.3)
         if plotted:
             ax.legend(fontsize=7, loc="upper right")
@@ -91,3 +93,16 @@ def create_xrf_panel(
     fig.suptitle(f"XRF geochemistry{(' — ' + name) if name else ''}", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     return fig
+
+
+def _concentration_label(xrf, elements) -> str:
+    units = getattr(xrf, "units", {}) or {}
+    resolved = {
+        str(value).strip()
+        for element in elements
+        for key, value in units.items()
+        if str(key).casefold() == str(element).casefold() and str(value).strip()
+    }
+    if len(resolved) == 1:
+        return f"Concentration [{resolved.pop()}]"
+    return "Concentration"
