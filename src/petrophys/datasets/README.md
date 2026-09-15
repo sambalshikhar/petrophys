@@ -2,6 +2,9 @@
 
 All repository-owned well data live below this directory.
 
+Third-party data retain their suppliers' rights. See `THIRD_PARTY_DATA.md` in
+the distribution and each collection's README for sources and terms.
+
 - Small sample datasets ship with `petrophys`, so tutorials and demos work
   after both `git clone` and `pip install`.
 - Larger native deliveries and validation LAS files live beside related

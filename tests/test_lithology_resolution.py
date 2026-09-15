@@ -220,3 +220,68 @@ def test_workflow_auto_resolves_and_does_not_mutate_caller_config():
     assert result.config.matrix_type in {"sandstone", "limestone", "dolomite"}
     assert result.config.lithology in {"clastic", "carbonate"}
     assert any("Auto lithology resolved" in w for w in result.warnings)
+
+
+def test_zero_and_flagged_minerals_do_not_vote_for_a_matrix():
+    well = _well_with_minerals([0.0] * 30, [0.0] * 30, [0.0] * 30)
+    assert resolve_from_minerals(well, warn=False) is None
+    well['VCALC'].data[:] = 0.8
+    well.add_curve('MMQC', np.ones(30), '', 'Poor fit')
+    assert resolve_from_minerals(well, warn=False) is None
+
+
+def test_module_selects_carbonate_from_core_without_well_name_rules():
+    from petrophys.interpretation.lithology import LithologyModule
+
+    well = _well_with_core_porosity(2.71)
+    well.name = 'arbitrary-user-well'
+    well.add_curve('NPHI', np.full(60, 0.2), 'v/v')
+    well.add_curve('VCL', np.zeros(60), 'v/v')
+    result = LithologyModule().calculate(well)
+    assert result.mineral_selection['source'] == 'core_matrix_density'
+    assert result.mineral_selection['reduced_minerals'] == ['calcite', 'dolomite']
+    assert np.all(result.solved)
+    np.testing.assert_allclose(result.v_calcite, 0.8, atol=1e-7)
+
+
+def test_explicit_carbonate_setting_passes_through_workflow():
+    from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
+
+    well = _well_with_core_porosity(2.71)
+    well.remove_curve('PHIE_CC')
+    well.add_curve('NPHI', np.full(60, 0.2), 'v/v')
+    result = DynamicWorkflow(DynamicWorkflowConfig(
+        lithology='carbonate', matrix_type='limestone',
+        interpretation_profile='generic_inference',
+    )).run(well)
+    step = next(step for step in result.steps_executed if step.step == 'lithology')
+    assert step.parameters['mineral_selection']['source'] == 'configured'
+    assert step.parameters['mineral_selection']['reduced_minerals'] == ['calcite', 'dolomite']
+    assert step.parameters['multi_mineral_solved_samples'] == 60
+
+
+def test_custom_mineral_set_is_preserved_for_a_carbonate_well():
+    from petrophys.interpretation.lithology import LithologyModule
+
+    well = _well_with_core_porosity(2.71)
+    well.add_curve('NPHI', np.full(60, 0.2), 'v/v')
+    result = LithologyModule(minerals=['quartz', 'calcite']).calculate(well)
+    assert result.mineral_selection['source'] == 'custom_solver'
+    assert result.mineral_selection['reduced_minerals'] == ['quartz', 'calcite']
+
+
+def test_weak_auto_resolution_is_not_an_explicit_carbonate_constraint():
+    from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
+
+    well = _well_with_core_porosity(2.71)
+    well['RHOB'].data[-20:] = 2.65 * 0.8 + 0.2
+    well.add_curve('NPHI', np.full(60, 0.2), 'v/v')
+    result = DynamicWorkflow(DynamicWorkflowConfig(
+        lithology='auto', matrix_type='auto',
+        interpretation_profile='generic_inference',
+    )).run(well)
+    step = next(step for step in result.steps_executed if step.step == 'lithology')
+    selection = step.parameters['mineral_selection']
+    assert selection['source'] == 'core_matrix_density'
+    assert selection['agreement'] < 0.8
+    assert selection['reduced_minerals'] == ['quartz', 'calcite', 'dolomite']

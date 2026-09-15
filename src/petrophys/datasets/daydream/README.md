@@ -1,5 +1,10 @@
 # Daydream 1 datasets
 
+Source: QGC Pty Limited, Daydream 1 well completion report CR078710, distributed
+by the State of Queensland. The official catalogue identifies Creative Commons
+Attribution. See `THIRD_PARTY_DATA.md` in the distribution for the source record
+and licence details.
+
 All retained Daydream 1 files live in this collection folder. The two processed
 CMR summary LAS files are small package samples. The native DLIS files and
 paired scalar LAS validation files use Git LFS and are intentionally excluded

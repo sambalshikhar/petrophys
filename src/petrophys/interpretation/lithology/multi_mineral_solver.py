@@ -50,6 +50,8 @@ def _constrain_mineral_fractions(
         constrained *= float(max(available_fraction, 0.0)) / total
     elif available_fraction <= 0.0:
         constrained[:] = 0.0
+    else:
+        constrained[:] = np.nan
     return constrained
 
 
@@ -198,6 +200,8 @@ class MultiMineralSolver:
             active_minerals, rhob, nphi, vcl, pef, dt,
             phi_fixed if use_fixed_phi else None,
         )
+        if np.linalg.matrix_rank(A_arr) < A_arr.shape[1]:
+            return [], tuple(), np.nan, True, np.nan
         x, residual = nnls(A_arr, b_arr)
 
         if use_fixed_phi:
@@ -212,6 +216,8 @@ class MultiMineralSolver:
             closure_error = abs(raw_total - closure_target)
             if raw_total > 0.0:
                 x = x * closure_target / raw_total
+            elif closure_target > 0.0:
+                return [], tuple(), float(residual), True, np.nan
             mineral_x = x[:-1]
             phi_solved = float(x[-1])
 
@@ -223,6 +229,8 @@ class MultiMineralSolver:
         # Always normalize, never discard a solution just for closure error.
         # The poor_fit flag and residual give the caller full quality info.
         mineral_x = _constrain_mineral_fractions(mineral_x, available_fraction)
+        if not np.all(np.isfinite(mineral_x)):
+            return [], tuple(), float(residual), True, np.nan
 
         return (active_minerals, tuple(float(v) for v in mineral_x),
                 float(residual), poor_fit, phi_solved)
@@ -347,11 +355,17 @@ class MultiMineralSolver:
             Photoelectric factor (b/e); omit if curve absent
         dt : float or np.ndarray, optional
             Sonic slowness (μs/ft); omit if curve absent
+        core_phi : float or np.ndarray, optional
+            Independently constrained porosity (fraction). Finite samples fix
+            porosity; missing samples leave it as an unknown.
 
         Returns
         -------
         dict
-            Dictionary with mineral fractions, vcl, phie, and qc_flag.
+            Dictionary with mineral fractions, vcl, phie, residual, qc_flag,
+            solved, and underdetermined. Unsolved mineral fractions are NaN.
+            Underdetermined marks samples with too few response equations;
+            it does not mark every failed fit.
             All minerals from both self.minerals and self.minerals_no_pef
             are present as keys; depths where a mineral was not in the
             active set are filled with 0.
@@ -400,9 +414,10 @@ class MultiMineralSolver:
         result["residual"] = np.zeros(n)
         result["qc_flag"]  = np.zeros(n, dtype=bool)
         result["solved"]   = np.zeros(n, dtype=bool)
+        result["underdetermined"] = np.zeros(n, dtype=bool)
 
         for i in range(n):
-            if any(np.isnan([rhob[i], vcl[i]])):
+            if not np.all(np.isfinite([rhob[i], vcl[i]])) or rhob[i] <= 0.0:
                 for mineral in all_minerals:
                     result[mineral][i] = np.nan
                 result["residual"][i] = np.nan
@@ -414,14 +429,18 @@ class MultiMineralSolver:
             dt_i  = float(dt_arr[i])  if dt_arr  is not None else None
             core_phi_i = float(core_phi_arr[i]) if core_phi_arr is not None else None
 
-            if nphi_i is not None and np.isnan(nphi_i):
+            if nphi_i is not None and not np.isfinite(nphi_i):
                 nphi_i = None
-            if pef_i is not None and np.isnan(pef_i):
+            if pef_i is not None and (not np.isfinite(pef_i) or pef_i < 0.0):
                 pef_i = None
-            if dt_i  is not None and np.isnan(dt_i):
+            if dt_i is not None and (not np.isfinite(dt_i) or dt_i <= 0.0):
                 dt_i  = None
-            if core_phi_i is not None and np.isnan(core_phi_i):
+            if core_phi_i is not None and not np.isfinite(core_phi_i):
                 core_phi_i = None
+
+            result["underdetermined"][i] = not self._active_minerals(
+                nphi_i, pef_i, dt_i, core_phi_i is not None
+            )
 
             active_minerals, fractions, residual, poor_fit, phi_solved = self._solve_sample(
                 rhob[i], nphi_i, vcl[i],
@@ -432,7 +451,7 @@ class MultiMineralSolver:
             if not active_minerals:
                 for mineral in all_minerals:
                     result[mineral][i] = np.nan
-                result["residual"][i] = np.nan
+                result["residual"][i] = residual
                 result["qc_flag"][i] = True
                 continue
 
@@ -497,7 +516,7 @@ class MultiMineralSolver:
             "anhydrite": "VANH",
         }
         for mineral, values in result.items():
-            if mineral in ("vcl", "phie", "residual", "qc_flag", "solved"):
+            if mineral in ("vcl", "phie", "residual", "qc_flag", "solved", "underdetermined"):
                 continue
             curve_name = curve_names.get(mineral, f"V{mineral.upper()[:4]}")
             well.add_curve(

@@ -94,13 +94,7 @@ def test_category_exporter_threads_workflow_config(monkeypatch, tmp_path):
 
 
 def test_pretrained_imputer_pack_loads_without_legacy_namespaces():
-    """The shipped joblib pack must unpickle against canonical module paths.
-
-    Regression guard: the pack was once pickled with references to the removed
-    ``petrophys.imputation`` namespace (via TransformedTargetRegressor
-    func/inverse_func), which broke loading after the compat shims were
-    deleted.
-    """
+    """The bundled pack exposes only validated targets and canonical classes."""
     sklearn = pytest.importorskip("sklearn")
     pytest.importorskip("joblib")
     pytest.importorskip("xgboost")
@@ -108,8 +102,28 @@ def test_pretrained_imputer_pack_loads_without_legacy_namespaces():
         pytest.skip("bundled model requires scikit-learn 1.8.x")
 
     from petrophys.preprocessing.imputation import PretrainedCurveImputer
+    from petrophys.preprocessing.imputation.curve_imputer import DEFAULT_TARGET_CURVES
+    from petrophys.model.well import Well
 
     imputer = PretrainedCurveImputer.from_pretrained()
-    assert imputer.target_curves
-    rdep = imputer.model_pack["models"]["knn"]["RDEP"]["estimator"]
-    assert rdep.func.__module__.startswith("petrophys.preprocessing")
+    assert imputer.target_curves == DEFAULT_TARGET_CURVES == ["DTC", "NPHI", "RHOB"]
+    assert {"BS", "CALI"} <= set(imputer.model_pack["feature_curves"])
+    for name, models in imputer.model_pack["models"].items():
+        assert sorted(models) == imputer.target_curves
+        for target, model in models.items():
+            transformer = model["estimator"].named_steps["curve_transform"]
+            assert type(transformer).__module__.startswith("petrophys.preprocessing")
+            metrics = imputer.model_pack["metadata"]["targets"][target]["models"][name]
+            assert metrics["evaluation"] == "held_out_wells"
+            assert metrics["r2"] >= 0.5
+
+    well = Well("TARGET-SCOPE")
+    well.depth = np.array([1000.0, 1001.0])
+    for target in ("BS", "CALI"):
+        well.add_curve(target, np.array([8.5, np.nan]), "in")
+        for name in imputer.model_names:
+            with pytest.raises(KeyError, match="not available"):
+                imputer.impute_missing(well, target, model_name=name)
+        with pytest.raises(ValueError, match="No grouped held-out model"):
+            imputer.impute_missing(well, target)
+        np.testing.assert_array_equal(well[target].data, [8.5, np.nan])
