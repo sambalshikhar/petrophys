@@ -2101,7 +2101,16 @@ class DynamicWorkflow:
         if self._has_curve(well, "DTC"):
             trace.input_curves.append("DTC")
 
-        litho_module = LithologyModule()
+        mineral_family = (
+            "carbonate" if (
+                not self._auto_lith and str(self.config.lithology).lower() == "carbonate"
+            ) or (
+                not self._auto_matrix
+                and str(self.config.matrix_type).lower() in {"limestone", "dolomite"}
+            )
+            else "auto"
+        )
+        litho_module = LithologyModule(lithology=mineral_family)
         if self._uses_vendor_benchmark:
             if nphi_curve is None:
                 raise ValueError(
@@ -2160,6 +2169,8 @@ class DynamicWorkflow:
         )
         trace.parameters["multi_mineral_qc_flagged_samples"] = int(np.count_nonzero(result.qc_flag))
         trace.parameters["multi_mineral_total_samples"] = int(well.n_samples)
+        if not self._uses_vendor_benchmark:
+            trace.parameters["mineral_selection"] = result.mineral_selection
         trace.parameters["interpretation_profile"] = self._interpretation_profile
         if write_lithology_code:
             trace.decisions.append(
@@ -2169,7 +2180,11 @@ class DynamicWorkflow:
             trace.decisions.append(
                 "Input lithology was available -> mineral volumes computed, LITHO not inferred or overwritten"
             )
-        trace.decisions.append("Raw-log multi-mineral solve with VCL/PHIE clay-porosity terms")
+        if not self._uses_vendor_benchmark:
+            trace.decisions.append(
+                "Mineral volumes use measured responses and VCL; porosity is solved "
+                "jointly or constrained by available core porosity"
+            )
         trace.decisions.append("PEF screened for plausibility; DTC used when PEF is absent or invalid")
         if result.reduced_qc_fallback is not None and np.any(result.reduced_qc_fallback):
             trace.decisions.append(

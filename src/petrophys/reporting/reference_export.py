@@ -11,7 +11,7 @@ from pathlib import Path
 import csv
 import json
 import re
-from typing import Any, Iterable, List, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, Optional, Sequence
 
 import numpy as np
 
@@ -37,6 +37,9 @@ from petrophys._internal.legacy_context import (
     legacy_electrofacies_v1_entry,
     legacy_benchmark_context,
 )
+
+if TYPE_CHECKING:
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
 
 
 NULL_VALUE = -9999.0

@@ -8,6 +8,7 @@ and xgboost only when training or loading pretrained ML models.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import copy
 import hashlib
 from importlib import metadata as importlib_metadata
 from pathlib import Path
@@ -32,6 +33,7 @@ except ImportError:
 from petrophys.preprocessing.imputation.curve_imputer import (
     DEFAULT_FEATURE_CURVES,
     DEFAULT_TARGET_CURVES,
+    DEFAULT_MIN_VALIDATION_R2,
     _canonical_curve_name,
     _values_in_model_units,
     default_pretrained_model_path,
@@ -369,6 +371,7 @@ def train_pretrained_model_pack(
     test_size: float = 0.2,
     random_state: int = 42,
     compress: int = 3,
+    min_validation_r2: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Train KNN, random forest, and XGBoost regressors for target curves.
@@ -498,8 +501,60 @@ def train_pretrained_model_pack(
         pack["target_curves"].append(target)
         pack["metadata"]["targets"][target] = target_metadata
 
+    if min_validation_r2 is not None:
+        pack = filter_model_pack(pack, min_validation_r2)
     deps["joblib"].dump(pack, output, compress=compress)
     return pack
+
+
+def filter_model_pack(
+    pack: Mapping[str, Any],
+    min_validation_r2: float = DEFAULT_MIN_VALIDATION_R2,
+) -> Dict[str, Any]:
+    """Retain estimators meeting the held-out-well R2 threshold.
+
+    Input features are preserved: excluding a prediction target does not remove
+    measured companion logs used by the retained estimators. This is a model
+    validation filter, not an estimate of confidence for individual predictions.
+    """
+    if not np.isfinite(min_validation_r2) or min_validation_r2 > 1.0:
+        raise ValueError("min_validation_r2 must be finite and no greater than 1")
+    filtered = dict(pack)
+    metadata = copy.deepcopy(pack.get("metadata", {}))
+    target_meta = metadata.get("targets", {})
+    retained = {}
+    excluded = {}
+    for name, models in pack.get("models", {}).items():
+        retained[name] = {}
+        for target, model in models.items():
+            metrics = target_meta.get(target, {}).get("models", {}).get(name, {})
+            try:
+                score = float(metrics.get("r2", np.nan))
+            except (TypeError, ValueError):
+                score = np.nan
+            held_out = metrics.get("evaluation") == "held_out_wells"
+            if held_out and np.isfinite(score) and score >= min_validation_r2:
+                retained[name][target] = model
+            else:
+                excluded.setdefault(target, {})[name] = metrics
+    filtered["models"] = {name: models for name, models in retained.items() if models}
+    targets = sorted({target for models in retained.values() for target in models})
+    filtered["target_curves"] = targets
+    metadata["targets"] = {
+        target: {
+            **target_meta[target],
+            "models": {
+                name: target_meta[target]["models"][name]
+                for name, models in retained.items() if target in models
+            },
+        } for target in targets
+    }
+    metadata["validation_filter"] = {
+        "evaluation": "held_out_wells", "min_r2": float(min_validation_r2),
+        "excluded_models": excluded,
+    }
+    filtered["metadata"] = metadata
+    return filtered
 
 
 def describe_model_pack(pack: Mapping[str, Any]) -> pd.DataFrame:

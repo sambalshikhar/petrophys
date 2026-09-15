@@ -1,5 +1,8 @@
 # KGS well sample
 
+Source and redistribution terms are recorded in `THIRD_PARTY_DATA.md` in the
+distribution, including the KGS attribution and companion-data provenance caveat.
+
 This folder contains the Morgan No. 1-17 public well package used to exercise
 legacy LAS metadata, generic formation tops, and input-aware interpretation.
 

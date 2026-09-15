@@ -285,6 +285,10 @@ def resolve_from_minerals(well, warn: bool = True) -> Optional[LithologyResoluti
     vc = np.asarray(vc, dtype=float)
     vd = np.asarray(vd, dtype=float)
     mask = np.isfinite(vq) & np.isfinite(vc) & np.isfinite(vd)
+    mask &= (vq >= 0.0) & (vc >= 0.0) & (vd >= 0.0) & ((vq + vc + vd) > 0.0)
+    qc = well.get("MMQC")
+    if qc is not None:
+        mask &= np.isfinite(qc.data) & (np.asarray(qc.data) == 0.0)
     if int(np.count_nonzero(mask)) < _MIN_SAMPLES:
         return None
     dom = np.argmax(np.vstack([vq[mask], vc[mask], vd[mask]]), axis=0)

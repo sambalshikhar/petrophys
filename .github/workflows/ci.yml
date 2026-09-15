@@ -65,6 +65,33 @@ jobs:
             tests/test_critical_findings_regressions.py::test_training_metrics_are_grouped_by_well \
             tests/test_cutoff_standards.py::test_pretrained_imputer_pack_loads_without_legacy_namespaces
 
+  dlis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Retrieve native DLIS fixtures
+        run: git lfs pull --include="src/petrophys/datasets/daydream/*.dlis"
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev,dlis]"
+
+      - name: Verify fixture availability
+        run: >-
+          python -c "from petrophys.datasets import integration_fixture;
+          names = ('daydream1_deep_pex_aps_ppc_ecs.dlis',
+          'daydream1_shallow_aps_pex_hngs.dlis',
+          'daydream1_fmi_processed_dynamic_image.dlis');
+          assert all(integration_fixture(n).stat().st_size > 1024 for n in names)"
+
+      - name: Run native reader and image tests
+        run: pytest tests/test_dlis_reader.py tests/test_fmi.py
+
   docs:
     runs-on: ubuntu-latest
     steps:
@@ -81,9 +108,7 @@ jobs:
           pip install -e ".[docs]"
 
       - name: Build documentation
-        run: |
-          cd docs
-          make html
+        run: sphinx-build -W --keep-going -b html docs docs/_build/html
 
       - name: Upload documentation artifact
         uses: actions/upload-artifact@v4
@@ -111,12 +136,18 @@ jobs:
           python -m build
           twine check dist/*
 
+      - name: Install and smoke-test wheel
+        run: |
+          python -m pip install dist/*.whl
+          python -c "import petrophys; from petrophys.io import read_las; from petrophys.workflow import run_dynamic_workflow; well = read_las(petrophys.sample('1046123714')); result = run_dynamic_workflow(well); assert not result.errors, result.errors; assert result.steps_executed"
+
       - name: Verify required wheel resources
         run: >-
           python -c "import glob, zipfile; wheel = glob.glob('dist/*.whl')[0];
           names = set(zipfile.ZipFile(wheel).namelist());
           required = {'petrophys/_internal/data/electrofacies_v1.json.gz',
-          'petrophys/preprocessing/imputation/pretrained/geolink_curve_imputation.joblib'};
+          'petrophys/preprocessing/imputation/pretrained/geolink_curve_imputation.joblib',
+          'petrophys/preprocessing/imputation/pretrained/validation.json'};
           forbidden = {'petrophys/_internal/validators.py',
           'petrophys/io/example_format_export.py', 'petrophys/workflow/workflow_api.py'};
           missing = required - names; retired = forbidden & names;

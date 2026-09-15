@@ -54,6 +54,12 @@ def main() -> None:
         help="Skip targets with fewer usable rows than this.",
     )
     parser.add_argument(
+        "--min-validation-r2",
+        type=float,
+        default=0.5,
+        help="Minimum held-out-well R2 for retaining a trained estimator.",
+    )
+    parser.add_argument(
         "--random-state",
         type=int,
         default=42,
@@ -71,6 +77,7 @@ def main() -> None:
         max_samples_per_target=args.max_samples_per_target,
         min_samples_per_target=args.min_samples_per_target,
         random_state=args.random_state,
+        min_validation_r2=args.min_validation_r2,
     )
 
     summary = describe_model_pack(pack)

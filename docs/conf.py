@@ -16,7 +16,9 @@ sys.path.insert(0, os.path.abspath("../src"))
 project = "Petrophys"
 copyright = "2026, MBZUAI / Inception AI"
 author = "Petrophys Contributors"
-release = "0.1.0"
+from petrophys.version import __version__
+
+release = __version__
 
 # -- Pull the executed tutorial notebooks into the doc tree -------------------
 DOCS_DIR = Path(__file__).resolve().parent

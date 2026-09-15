@@ -53,6 +53,15 @@ Preprocessing
   provenance. KNN, random forest, and XGBoost training utilities are available
   for building project-specific packs.
 
+The bundled predictors support **DTC, NPHI, and RHOB**. Each retained
+model/target pair has held-out-well R-squared of at least 0.5. Their best recorded
+scores are 0.642, 0.699, and 0.692, respectively; these are validation
+scores, not per-sample confidence estimates. Inspect the packaged
+``pretrained/validation.json`` for all model metrics and exclusions. Observed
+BS, CALI, GR, PEF, resistivity, SP, and DRHO can still serve as companion inputs, but the
+bundled pack does not predict those targets. Out-of-distribution intervals and
+missing companion measurements can remain unfilled.
+
 Formation interpretation
 ------------------------
 

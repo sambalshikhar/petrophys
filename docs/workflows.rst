@@ -129,6 +129,46 @@ steps are reduced or skipped.
        sw_cutoff=0.60,
    )
 
+Minerals with limited logs
+--------------------------
+
+The generic solver uses density and unity plus each available neutron, PEF, or
+sonic response. Clay volume is a supplied constraint. Porosity is either solved
+jointly or fixed by a supplied core-related porosity curve. A solution requires
+enough independent equations for the selected unknowns.
+
+For reduced mineral selection, ``LithologyModule(lithology="auto")`` accepts a
+recognized interpreted-lithology log or core-constrained matrix-density evidence
+when at least 80% of its classified samples agree on the rock family. This is a
+well-level modelling constraint, not a calibrated confidence probability or a
+replacement for zonation. The selected source, agreement, and mineral set appear
+in the workflow trace. There are no well-name or dataset-name selection rules.
+
+For an independently established carbonate interval, the workflow can be run as:
+
+.. code-block:: python
+
+   config = DynamicWorkflowConfig(
+       interpretation_profile="generic_inference",
+       lithology="carbonate",
+       matrix_type="auto",
+   )
+   result = run_dynamic_workflow(well, config)
+
+With limited responses the carbonate constraint uses calcite and dolomite;
+quartz and anhydrite remain in the full system when enough equations are
+available. Without sufficient geological evidence, automatic mineral selection
+does not assert that a sparse log suite is carbonate. Custom mineral lists are
+respected. Check matrix endpoints, fluid assumptions, and applicability over
+mixed-lithology intervals before accepting the result.
+
+Rank-deficient systems and zero solutions with unallocated rock volume are
+unsolved: mineral values are NaN and QC is flagged. A finite solution may still
+carry a poor-closure flag. Normalized closure alone does not demonstrate that
+the minerals or their calculated log responses are geologically correct. The
+historical vendor-benchmark profile uses its separate solver and is not altered
+by generic mineral-set selection.
+
 Zoned and batch execution
 -------------------------
 

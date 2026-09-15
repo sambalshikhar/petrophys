@@ -119,6 +119,7 @@ def test_canonical_packages_follow_dependency_direction():
 
     for owner, forbidden in FORBIDDEN_TOP_LEVEL_DEPENDENCIES.items():
         for path in (package_root / owner).rglob("*.py"):
+            relative = path.relative_to(package_root)
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in tree.body:
                 modules = []

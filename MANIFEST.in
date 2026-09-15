@@ -1,4 +1,6 @@
 include LICENSE
+include THIRD_PARTY_DATA.md
+include CHANGELOG.md
 include README.md
 include CONTRIBUTING.md
 include MANIFEST.in
@@ -7,6 +9,7 @@ include pyproject.toml
 recursive-include src/petrophys *.py
 recursive-include src/petrophys py.typed
 recursive-include src/petrophys *.joblib
+recursive-include src/petrophys/preprocessing/imputation/pretrained *.json
 recursive-include src/petrophys *.xml
 recursive-include src/petrophys/_internal/data *.json.gz
 recursive-include src/petrophys/datasets *.las *.csv *.md *.txt
