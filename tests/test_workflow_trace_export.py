@@ -149,3 +149,12 @@ def test_assumed_reference_temperature_method_is_labelled_per_resistivity():
 
     assert rmf_detail.startswith("LAS header RMF")
     assert rw_detail.startswith("LAS header RW")
+
+
+def test_legacy_exporters_keep_their_sandstone_clastic_default():
+    from petrophys.reporting.reference_export import _legacy_workflow_config
+
+    default = _legacy_workflow_config()
+    assert (default.matrix_type, default.lithology) == ("sandstone", "clastic")
+    explicit = DynamicWorkflowConfig(rw=0.07)
+    assert _legacy_workflow_config(explicit) is explicit

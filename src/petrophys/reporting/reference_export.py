@@ -2467,6 +2467,20 @@ _STEP_SPECIFIC_METHOD_LABELS: dict[tuple[str, str], str] = {
 }
 
 
+def _legacy_workflow_config(config: Optional["DynamicWorkflowConfig"] = None) -> "DynamicWorkflowConfig":
+    """Return ``config``, or the sandstone/clastic default these exporters always used.
+
+    The library default for matrix and lithology is ``"auto"``; the reference
+    JSON exporters keep their historical explicit default so existing
+    benchmark packages are reproduced unchanged.
+    """
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
+
+    if config is not None:
+        return config
+    return DynamicWorkflowConfig(matrix_type="sandstone", lithology="clastic")
+
+
 def _method_label(name: str, subject: Optional[str] = None) -> str:
     """Return the report label for a workflow method name.
 
@@ -6909,7 +6923,7 @@ def export_example_work_package_directory(
             well = standardize_curves(well, rename_curves=True, convert_units=True)
             original_curves = set(well.curves)
 
-            workflow_result = run_dynamic_workflow_with_zones(well)
+            workflow_result = run_dynamic_workflow_with_zones(well, _legacy_workflow_config())
             _finalize_export_curves(workflow_result.well, original_curves)
 
             warnings = list(workflow_result.warnings)
@@ -6986,7 +7000,7 @@ def export_reference_json_work_package_directory(
             well = standardize_curves(well, rename_curves=True, convert_units=True)
             original_curves = set(well.curves)
 
-            workflow_result = run_dynamic_workflow_with_zones(well)
+            workflow_result = run_dynamic_workflow_with_zones(well, _legacy_workflow_config())
             json_well = copy.deepcopy(workflow_result.well)
 
             warnings = list(workflow_result.warnings)
@@ -7065,7 +7079,7 @@ def export_reference_json_work_package_by_formation(
             well_folder = output_path / _sanitize_path_component(file_path.stem)
             well_folder.mkdir(parents=True, exist_ok=True)
             whole_well_original_curves = set(full_well.curves)
-            whole_well_result = run_dynamic_workflow_with_zones(copy.deepcopy(full_well))
+            whole_well_result = run_dynamic_workflow_with_zones(copy.deepcopy(full_well), _legacy_workflow_config())
             _finalize_export_curves(whole_well_result.well, whole_well_original_curves)
             whole_well_las_path = well_folder / f"{_sanitize_path_component(file_path.stem)}.las"
             export_example_format_las(
@@ -7128,7 +7142,7 @@ def export_reference_json_work_package_by_formation(
                     continue
 
                 original_curves = set(sliced_well.curves)
-                workflow_result = run_dynamic_workflow_with_zones(sliced_well)
+                workflow_result = run_dynamic_workflow_with_zones(sliced_well, _legacy_workflow_config())
                 json_well = copy.deepcopy(workflow_result.well)
 
                 warnings = list(fallback_warnings)
@@ -7236,7 +7250,7 @@ def export_reference_json_work_package_by_formation_lithology(
             well_folder = output_path / _sanitize_path_component(file_path.stem)
             well_folder.mkdir(parents=True, exist_ok=True)
             whole_well_original_curves = set(full_well.curves)
-            whole_well_result = run_dynamic_workflow_with_zones(copy.deepcopy(full_well))
+            whole_well_result = run_dynamic_workflow_with_zones(copy.deepcopy(full_well), _legacy_workflow_config())
             _finalize_export_curves(whole_well_result.well, whole_well_original_curves)
             whole_well_las_path = well_folder / f"{_sanitize_path_component(file_path.stem)}.las"
             export_example_format_las(
@@ -7299,7 +7313,7 @@ def export_reference_json_work_package_by_formation_lithology(
                     continue
 
                 formation_original_curves = set(formation_input_well.curves)
-                workflow_result = run_dynamic_workflow_with_zones(formation_input_well)
+                workflow_result = run_dynamic_workflow_with_zones(formation_input_well, _legacy_workflow_config())
                 warnings = list(fallback_warnings)
                 warnings.extend(workflow_result.warnings)
                 warnings.extend(workflow_result.base_result.warnings)
@@ -7440,7 +7454,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 processed_original_curves,
                 raw_curves_by_stem,
             )
-            workflow_result = run_dynamic_workflow_with_zones(full_well, workflow_config)
+            workflow_result = run_dynamic_workflow_with_zones(full_well, _legacy_workflow_config(workflow_config))
             warnings = list(workflow_result.warnings)
             warnings.extend(workflow_result.base_result.warnings)
             for zone_result in workflow_result.zone_results:
