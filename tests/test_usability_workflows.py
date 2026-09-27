@@ -354,3 +354,12 @@ def test_interpreted_las_records_the_settings_used(tmp_path):
     assert params["TEMPERATURE_REFERENCE_DEPTH"].unit == "ft"
     assert "Skipped hc_correction: apply_hc_correction=False" in las.other
     assert result.to_trace_dict()["petrophys_version"] == pp.__version__
+
+
+def test_batch_processing_reports_missing_or_empty_folders(tmp_path):
+    from petrophys.workflow import process_las_directory_with_workflow
+
+    with pytest.raises(FileNotFoundError, match="LAS input folder not found"):
+        process_las_directory_with_workflow(tmp_path / "missing", tmp_path / "out")
+    with pytest.warns(UserWarning, match="No files matching"):
+        assert process_las_directory_with_workflow(tmp_path, tmp_path / "out") == []
