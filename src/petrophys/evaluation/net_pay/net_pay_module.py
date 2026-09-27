@@ -2,7 +2,7 @@
 Main Net Pay calculation module.
 """
 
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 from dataclasses import dataclass
 import warnings
 import numpy as np
@@ -11,6 +11,9 @@ from petrophys.model.constants import DefaultParameters
 from petrophys.evaluation.net_pay.flags import generate_net_flags
 from petrophys.evaluation.net_pay.cutoffs import Cutoffs
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 @dataclass

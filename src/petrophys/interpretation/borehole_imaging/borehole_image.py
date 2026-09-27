@@ -11,9 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
-from typing import Any, Iterable, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence, Union
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 try:
     from dlisio import dlis

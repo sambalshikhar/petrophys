@@ -2,7 +2,7 @@
 Main permeability estimation module.
 """
 
-from typing import Optional, Union, List, Dict, Any
+from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any
 from dataclasses import dataclass, field
 import numpy as np
 
@@ -22,6 +22,9 @@ from petrophys.interpretation.permeability.lith_vcl import (
     lith_vcl_permeability,
 )
 from petrophys._internal.analysis_helpers import get_curve, get_curve_data_depthwise
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 PERMEABILITY_MAX_MD = DEFAULT_MAX_PERM_MD
 

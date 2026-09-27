@@ -2,11 +2,14 @@
 Zone summary calculations.
 """
 
-from typing import Optional, List, Dict, Union
+from typing import TYPE_CHECKING, Optional, List, Dict, Union
 from dataclasses import dataclass, field
 import numpy as np
 
 from petrophys._internal.analysis_helpers import depth_step_array, well_depth_array
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 @dataclass

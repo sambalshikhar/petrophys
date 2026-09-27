@@ -2,10 +2,13 @@
 Average calculations for zones and intervals.
 """
 
-from typing import Optional, List, Dict, Union
+from typing import TYPE_CHECKING, Optional, List, Dict, Union
 import numpy as np
 
 from petrophys._internal.analysis_helpers import resolve_well_depth_range, well_depth_array
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 def calculate_zone_averages(

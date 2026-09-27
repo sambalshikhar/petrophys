@@ -2,7 +2,10 @@
 Crossplot visualization.
 """
 
-from typing import Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Tuple, Union
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 try:
     import matplotlib.pyplot as plt

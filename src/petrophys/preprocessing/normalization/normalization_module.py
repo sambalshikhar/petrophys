@@ -5,9 +5,12 @@ This module provides the NormalizationModule class for normalizing
 well logs to standard ranges or reference wells.
 """
 
-from typing import Optional, Union, Tuple, List
+from typing import TYPE_CHECKING, Optional, Union, Tuple, List
 from dataclasses import dataclass
 import numpy as np
+
+if TYPE_CHECKING:
+    from petrophys.model.curve import Curve
 
 
 @dataclass

@@ -17,7 +17,7 @@ log10 FZI, or explicit cutoffs) and predicts permeability from each sample's
 unit-mean FZI.
 """
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Union
+from typing import TYPE_CHECKING, List, Optional, Sequence, Union
 
 import numpy as np
 
@@ -27,6 +27,9 @@ from petrophys.evaluation.rock_quality.rock_quality_module import (
     calculate_fzi,
 )
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 _RQI_CONST = 0.0314
 

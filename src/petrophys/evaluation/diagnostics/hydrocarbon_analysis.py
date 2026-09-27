@@ -15,6 +15,10 @@ from petrophys._internal.analysis_helpers import (
 )
 from petrophys.model.classifications import MhiClassification
 from petrophys.evaluation.net_pay.net_pay_module import NetPayModule
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 class HydrocarbonAnalysis:

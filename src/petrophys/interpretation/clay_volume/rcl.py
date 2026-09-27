@@ -5,10 +5,13 @@ Computes clay resistivity from deep resistivity readings in
 zones where clay volume exceeds 0.9 (nearly pure clay).
 """
 
-from typing import Union, Optional
+from typing import TYPE_CHECKING, Union, Optional
 import numpy as np
 
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 def calculate_rcl(

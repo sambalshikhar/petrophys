@@ -5,7 +5,7 @@ This module provides functions to convert curve data between
 different unit systems and standardize units.
 """
 
-from typing import Union, Optional, Tuple
+from typing import TYPE_CHECKING, Union, Optional, Tuple
 import warnings
 import numpy as np
 
@@ -14,6 +14,9 @@ from petrophys.preprocessing.standardization.alias_map import (
     get_standard_mnemonic,
     get_standard_unit,
 )
+
+if TYPE_CHECKING:
+    from petrophys.model.curve import Curve
 
 
 CORE_SATURATION_CURVES = frozenset({"SWC", "SOC", "SGC"})

@@ -2,11 +2,14 @@
 Quick look analysis for rapid well evaluation.
 """
 
-from typing import Optional, Dict, Any, List
+from typing import TYPE_CHECKING, Optional, Dict, Any, List
 from dataclasses import dataclass, field
 import numpy as np
 
 from petrophys._internal.analysis_helpers import resolve_well_depth_range, well_depth_array
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 def _nanmean_or_nan(values: np.ndarray) -> float:

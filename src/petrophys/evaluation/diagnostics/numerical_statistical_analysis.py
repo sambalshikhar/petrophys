@@ -4,7 +4,7 @@ Numerical and statistical analysis classifications.
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import numpy as np
 from scipy.cluster.vq import ClusterError, kmeans2
@@ -21,6 +21,9 @@ from petrophys._internal.analysis_helpers import (
     get_curve_data,
 )
 from petrophys.evaluation.net_pay.net_pay_module import NetPayModule
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 _Z_THRESHOLD_TOLERANCE = 1e-12

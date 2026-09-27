@@ -14,6 +14,10 @@ from petrophys._internal.analysis_helpers import (
     get_curve_data,
 )
 from petrophys.evaluation.rock_quality.rock_quality_module import RockQualityModule
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 class PorosityAnalysis:

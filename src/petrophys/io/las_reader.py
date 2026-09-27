@@ -5,12 +5,15 @@ This module provides functionality to read LAS (Log ASCII Standard)
 files and convert them to Well objects.
 """
 
-from typing import Optional, Union, Dict, Any, List
+from typing import TYPE_CHECKING, Optional, Union, Dict, Any, List
 from pathlib import Path
 import warnings
 import numpy as np
 
 from petrophys.model.units import normalize_depth_unit
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 try:
     import lasio

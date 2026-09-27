@@ -2,7 +2,7 @@
 Hydrocarbon pore volume and reserves calculations.
 """
 
-from typing import Optional, Dict
+from typing import TYPE_CHECKING, Optional, Dict
 from dataclasses import dataclass
 import numpy as np
 
@@ -11,6 +11,9 @@ from petrophys._internal.analysis_helpers import (
     resolve_well_depth_range,
     well_depth_array,
 )
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 @dataclass

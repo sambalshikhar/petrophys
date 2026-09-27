@@ -5,8 +5,11 @@ This module provides functions to mask or remove unreliable
 curve data in bad hole intervals.
 """
 
-from typing import Optional, List
+from typing import TYPE_CHECKING, Optional, List
 import numpy as np
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 # Curves affected by bad hole conditions (shallow measurements)

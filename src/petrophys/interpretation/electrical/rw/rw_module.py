@@ -5,7 +5,7 @@ This module provides the RwModule class for calculating formation
 water resistivity using multiple methods.
 """
 
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 from dataclasses import dataclass, field
 from enum import Enum
 import numpy as np
@@ -14,6 +14,9 @@ from petrophys.interpretation.electrical.rw.sp_rw import estimate_sp_lines, rw_f
 from petrophys.interpretation.electrical.rw.salinity_rw import rw_from_salinity
 from petrophys.interpretation.electrical.rw.temp_correction import correct_rw_temperature
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 class RwMethod(Enum):

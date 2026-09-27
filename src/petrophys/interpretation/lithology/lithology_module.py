@@ -4,7 +4,7 @@ Main lithology determination module.
 This module provides the LithologyModule class for comprehensive
 lithology analysis from well logs.
 """
-from typing import Optional, List
+from typing import TYPE_CHECKING, Optional, List
 from dataclasses import dataclass
 import numpy as np
 
@@ -12,6 +12,9 @@ from petrophys.interpretation.lithology.multi_mineral_solver import (
     MultiMineralSolver,
 )
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 @dataclass

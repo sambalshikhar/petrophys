@@ -14,6 +14,10 @@ from petrophys._internal.analysis_helpers import (
     format_curve_source,
     get_curve_data,
 )
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 GROUND_TRUTH_NAMES = {

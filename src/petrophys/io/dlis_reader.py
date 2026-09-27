@@ -5,10 +5,13 @@ This module provides functionality to read DLIS (Digital Log Interchange Standar
 files and convert them to Well objects.
 """
 
-from typing import Optional, Union, Dict, Any, List, Iterable, Mapping, Tuple
+from typing import TYPE_CHECKING, Optional, Union, Dict, Any, List, Iterable, Mapping, Tuple
 from pathlib import Path
 import warnings
 import numpy as np
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 try:
     from dlisio import dlis
