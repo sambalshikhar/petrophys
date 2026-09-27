@@ -41,3 +41,31 @@ def test_own_data_tutorial_exercises_import_and_diagnostic_contracts():
                    "depth_reference", "terminal_depth", "core_saturation_normalization",
                    "show_expected_error", "specific_steps_skipped", "to_trace_dict"):
         assert marker in code
+
+
+def test_saved_output_paths_are_portable_without_changing_code_or_images():
+    normalize = runpy.run_path(str(ROOT / "scripts" / "execute_tutorials.py"))["normalize_output_paths"]
+    notebook = {"cells": [{
+        "source": "print('/home/example/project')",
+        "outputs": [
+            {"text": ["/home/example/project/data.csv", "/home/example/.venv/bin/python"]},
+            {"data": {
+                "text/plain": "C:\\Users\\example\\project\\data.csv",
+                "text/html": "<p>C:/Users/example/project/data.csv</p>",
+                "image/png": "untouched-image-data",
+            }},
+        ],
+    }]}
+    normalize(notebook, (
+        ("/home/example", "[home]"),
+        ("/home/example/project", "[repository]"),
+        ("C:\\Users\\example\\project", "[repository]"),
+    ))
+    cell = notebook["cells"][0]
+    assert cell["source"] == "print('/home/example/project')"
+    assert cell["outputs"][0]["text"] == ["[repository]/data.csv", "[home]/.venv/bin/python"]
+    assert cell["outputs"][1]["data"] == {
+        "text/plain": "[repository]\\data.csv",
+        "text/html": "<p>[repository]/data.csv</p>",
+        "image/png": "untouched-image-data",
+    }

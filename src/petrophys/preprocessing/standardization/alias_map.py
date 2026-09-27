@@ -98,12 +98,13 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RHOI",
     ],
     # Density Correction (DRHO)
-    "DRHO": ["DRHO", "DCOR", "HDRA", "DENC"],
+    "DRHO": ["DRHO", "DCOR", "HDRA", "DENC", "RHOC"],
     # Neutron Porosity (NPHI)
     "NPHI": [
         "NPHI",
         "TNPH",
         "CNL",
+        "CNLS",
         "NPLS",
         "NEUT",
         "NPOR",

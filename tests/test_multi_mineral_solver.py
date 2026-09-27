@@ -80,3 +80,49 @@ def test_solver_porosity_is_solved_and_physical():
     r = s.solve(rhob, nphi, np.zeros(1), np.zeros(1), pef=pef, dt=dt)
     assert r["phie"][0] == pytest.approx(0.16, abs=1e-3)
     assert r["quartz"][0] == pytest.approx(0.84, abs=1e-3)
+
+
+def test_zero_nnls_result_with_remaining_rock_is_unsolved():
+    result = MultiMineralSolver().solve(
+        rhob=[0.5], nphi=[-0.1], vcl=[0.7], dt=[35.0], core_phi=[0.2],
+    )
+    assert not result["solved"][0]
+    assert result["qc_flag"][0]
+    assert not result["underdetermined"][0]
+    for mineral in ("quartz", "calcite", "dolomite", "anhydrite"):
+        assert np.isnan(result[mineral][0])
+
+
+@pytest.mark.parametrize('invalid', [np.nan, np.inf, -np.inf, 0.0, -1.0])
+def test_invalid_density_is_unsolved_without_aborting_other_rows(invalid):
+    result = MultiMineralSolver().solve(
+        rhob=[invalid, 2.71], nphi=[0.0, 0.0], vcl=0.0,
+        pef=5.1, dt=47.6,
+    )
+    assert not result["solved"][0]
+    assert result["solved"][1]
+    assert result["calcite"][1] == pytest.approx(1.0, abs=0.01)
+
+
+def test_duplicate_mineral_responses_are_not_independent_equations():
+    result = MultiMineralSolver(minerals=["calcite", "calcite"]).solve(
+        rhob=[2.71], nphi=[0.0], vcl=[0.0],
+    )
+    assert not result["solved"][0]
+    assert result["qc_flag"][0]
+
+
+@pytest.mark.parametrize('neutron,sonic', [(0.206, None), (None, 74.65)])
+def test_reduced_carbonate_recovers_mixture_and_porosity(neutron, sonic):
+    result = MultiMineralSolver(
+        minerals_no_pef=["calcite", "dolomite"],
+    ).solve(rhob=2.416, nphi=neutron, vcl=0.0, dt=sonic)
+    assert result["solved"][0]
+    assert result["calcite"][0] == pytest.approx(0.5, abs=1e-7)
+    assert result["dolomite"][0] == pytest.approx(0.3, abs=1e-7)
+    assert result["phie"][0] == pytest.approx(0.2, abs=1e-7)
+
+
+def test_empty_solver_input_returns_empty_arrays():
+    result = MultiMineralSolver().solve([], None, [])
+    assert all(values.size == 0 for values in result.values())

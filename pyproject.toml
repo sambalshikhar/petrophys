@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "petrophys"
-version = "0.1.0"
+version = "3.0.0"
 description = "A comprehensive petrophysics library for well log analysis and formation evaluation"
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_DATA.md"]
 requires-python = ">=3.9"
 authors = [
     {name = "Petrophys Contributors"}
@@ -95,13 +95,21 @@ include = ["petrophys*"]
 petrophys = [
     "py.typed",
     "preprocessing/imputation/pretrained/*.joblib",
+    "preprocessing/imputation/pretrained/*.json",
     "visualization/templates/*.xml",
     "datasets/*.csv",
     "datasets/*.md",
     "datasets/costa/*.las",
+    "datasets/costa/*.md",
+    "datasets/daydream/*.md",
     "datasets/daydream/daydream1_cmr.las",
     "datasets/daydream/daydream1_cmr_shallow.las",
     "datasets/geolink/*.las",
+    "datasets/geolink/*.md",
+    "datasets/kgs/*.las",
+    "datasets/kgs/*.csv",
+    "datasets/kgs/*.md",
+    "datasets/kgs/*.txt",
     "_internal/data/*.json.gz",
 ]
 

@@ -32,6 +32,7 @@ from petrophys.preprocessing.standardization.unit_converter import get_conversio
 
 ML_IMPUTATION_NOTES_PARAMETER = "ML_IMPUTATION_NOTES"
 DEFAULT_MODEL_PACK_NAME = "geolink_curve_imputation.joblib"
+DEFAULT_MIN_VALIDATION_R2 = 0.5
 DEFAULT_FEATURE_CURVES = [
     "BS",
     "CALI",
@@ -49,18 +50,9 @@ DEFAULT_FEATURE_CURVES = [
     "SP",
 ]
 DEFAULT_TARGET_CURVES = [
-    "BS",
-    "CALI",
-    "DRHO",
     "DTC",
-    "GR",
     "NPHI",
-    "PEF",
-    "RDEP",
     "RHOB",
-    "RMED",
-    "RSHA",
-    "SP",
 ]
 
 
@@ -420,7 +412,7 @@ class PretrainedCurveImputer:
         target_curve: str,
         model_name: str = "auto",
         min_available_features: int = 2,
-        min_validation_r2: float = 0.0,
+        min_validation_r2: float = DEFAULT_MIN_VALIDATION_R2,
         inplace: bool = True,
     ) -> CurveImputationResult:
         """
@@ -754,7 +746,7 @@ def impute_missing_curve(
     model_name: str = "auto",
     model_path: Optional[Union[str, Path]] = None,
     min_available_features: int = 2,
-    min_validation_r2: float = 0.0,
+    min_validation_r2: float = DEFAULT_MIN_VALIDATION_R2,
     inplace: bool = True,
 ) -> CurveImputationResult:
     """Convenience wrapper for pretrained curve imputation on a Well object."""
@@ -776,7 +768,7 @@ def impute_las_file(
     model_name: str = "auto",
     model_path: Optional[Union[str, Path]] = None,
     min_available_features: int = 2,
-    min_validation_r2: float = 0.0,
+    min_validation_r2: float = DEFAULT_MIN_VALIDATION_R2,
     **export_kwargs: Any,
 ) -> CurveImputationResult:
     """

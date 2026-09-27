@@ -53,7 +53,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=tops_default,
         required=tops_default is None,
-        help="Excel workbook containing formation tops (or PETROPHYS_TOPS_FILE).",
+        help=(
+            "CSV or Excel table containing formation tops "
+            "(or PETROPHYS_TOPS_FILE)."
+        ),
     )
     parser.add_argument(
         "--output-dir",

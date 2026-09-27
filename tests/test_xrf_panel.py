@@ -43,3 +43,14 @@ def test_create_xrf_panel_renders():
     assert any("Carbonate" in t for t in titles)
     assert any("Mineral proxies" in t for t in titles)
     plt.close(fig)
+
+
+def test_xrf_panel_uses_declared_concentration_units():
+    xrf = _xrf()
+    xrf.units = {name: "wt_frac" for name in xrf.elements}
+
+    fig = create_xrf_panel(xrf)
+
+    assert fig.axes[0].get_xlabel() == "Concentration [wt_frac]"
+    assert fig.axes[1].get_xlabel() == "Concentration [wt_frac]"
+    plt.close(fig)
