@@ -137,9 +137,13 @@ class Curve:
         return self.__repr__()
 
     def __getitem__(self, index) -> Union[float, "Curve"]:
-        """Index into curve data."""
+        """Return one value for an integer index, or a sub-curve for a slice or mask."""
         if isinstance(index, (int, np.integer)):
-            return self._data[index]
+            return float(self._data[index])
+        return self.select(index)
+
+    def select(self, index: Any) -> "Curve":
+        """Return a new curve with the samples selected by a slice, mask or index array."""
 
         # Return new Curve for slices
         new_data = self._data[index]
@@ -356,4 +360,4 @@ class Curve:
         if bottom is not None:
             mask &= self._depth <= bottom
 
-        return self[mask]
+        return self.select(mask)

@@ -18,7 +18,7 @@ import dataclasses
 import difflib
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence, Tuple, Union, cast
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -213,7 +213,7 @@ def plot(
     from petrophys.visualization import create_log_viewer
 
     return create_log_viewer(
-        getattr(well, "well", well),
+        cast("Well", getattr(well, "well", well)),
         template_xml_path=template_xml_path,
         template_defaults=template,
         depth_range=depth_range,

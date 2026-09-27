@@ -31,7 +31,7 @@ def _export_well_other_comments(las, well: "Well") -> None:
     if existing_other:
         lines.extend(str(existing_other).splitlines())
 
-    notes = []
+    notes: List[Any] = []
     if hasattr(well, "get_parameter"):
         notes = well.get_parameter(ML_IMPUTATION_NOTES_PARAMETER, []) or []
     if isinstance(notes, str):

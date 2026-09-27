@@ -153,7 +153,7 @@ class LASReader:
     def get_curve_data(self, mnemonic: str) -> Optional[np.ndarray]:
         """Get data for a specific curve."""
         if mnemonic in self.curves:
-            return self._las[mnemonic]
+            return np.asarray(self._las[mnemonic], dtype=float)
         return None
 
     def get_curve_unit(self, mnemonic: str) -> str:
