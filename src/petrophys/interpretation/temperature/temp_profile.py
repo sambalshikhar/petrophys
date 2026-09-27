@@ -5,7 +5,7 @@ This module provides the TemperatureProfile class for computing
 formation temperature at any depth.
 """
 
-from typing import Optional, Union
+from typing import Any, Optional, Union
 from dataclasses import dataclass
 import numpy as np
 
@@ -17,6 +17,25 @@ from petrophys.interpretation.temperature.temp_gradient import (
     estimate_gradient_from_bht,
     gradient_c_per_km_to_fahrenheit_per_100ft,
 )
+
+
+def store_temperature_parameters(well: "Well", result: Any) -> None:
+    """Record a temperature profile's parameters, with units, on ``well``."""
+    values = (
+        ("temperature_gradient", result.gradient, "degF/100ft", "Temperature gradient"),
+        ("surface_temperature", result.surface_temp, "degF", "Surface temperature"),
+        ("temperature_profile_source", result.source, "", "Temperature profile method"),
+        ("temperature_reference_temperature", result.reference_temperature, "degF",
+         "Reference (e.g. bottom-hole) temperature"),
+        ("temperature_reference_depth", result.reference_depth, "ft", "Depth of the reference temperature"),
+    )
+    for name, value, unit, description in values:
+        if value is None:
+            continue
+        well.set_parameter(name, value)
+        if unit:
+            well.set_parameter(f"{name}__UNIT", unit)
+        well.set_parameter(f"{name}__DESCR", description)
 
 
 def _parameter_float(well: "Well", name: str) -> Optional[float]:
@@ -378,14 +397,7 @@ class TemperatureProfile:
             description="Formation Temperature"
         )
 
-        # Store gradient
-        well.set_parameter("temperature_gradient", result.gradient)
-        well.set_parameter("surface_temperature", result.surface_temp)
-        well.set_parameter("temperature_profile_source", result.source)
-        if result.reference_temperature is not None:
-            well.set_parameter("temperature_reference_temperature", result.reference_temperature)
-        if result.reference_depth is not None:
-            well.set_parameter("temperature_reference_depth", result.reference_depth)
+        store_temperature_parameters(well, result)
 
         return well
 

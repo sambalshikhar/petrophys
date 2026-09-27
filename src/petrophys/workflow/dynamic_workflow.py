@@ -910,7 +910,10 @@ class DynamicWorkflowResult:
         print(f"{'=' * 90}")
 
     def to_dataframe(self):
-        """Export step trace to a pandas DataFrame."""
+        """Return the step trace as a DataFrame, one row per executed step.
+
+        For the interpreted log curves use ``result.well.to_dataframe()``.
+        """
         import pandas as pd
         rows = []
         for sr in self.steps_executed:
@@ -956,9 +959,12 @@ class DynamicWorkflowResult:
             "available_curves": sorted(str(curve) for curve in getattr(self.well, "curves", [])),
         }
 
+        from petrophys.version import __version__
+
         return {
             "schema": "dynamic_workflow_trace",
             "schema_version": 1,
+            "petrophys_version": __version__,
             "well": well_summary,
             "success": bool(self.success),
             "status": self.status,
@@ -1005,6 +1011,91 @@ class DynamicWorkflowResult:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(text + "\n", encoding="utf-8")
         return output_path
+
+    def provenance_parameters(self) -> List[Dict[str, Any]]:
+        """Summarize the settings this interpretation used, as LAS parameters.
+
+        Returns
+        -------
+        list of dict
+            ``PP_*`` entries (``mnemonic``, ``value``, ``unit``, ``descr``):
+            package version, status, profile, resolved matrix and lithology,
+            Rw input and its temperature-corrected range, Sw model and Archie
+            exponents.
+        """
+        from petrophys.version import __version__
+
+        steps = {step.step: step for step in self.steps_executed if step.success}
+        items: List[Dict[str, Any]] = [
+            {"mnemonic": "PP_VERSION", "value": __version__, "descr": "petrophys version"},
+            {"mnemonic": "PP_STATUS", "value": self.status, "descr": "Interpretation status"},
+            {"mnemonic": "PP_PROFILE", "value": self.interpretation_profile,
+             "descr": "Interpretation profile"},
+            {"mnemonic": "PP_MATRIX", "value": self.config.matrix_type, "descr": "Matrix used"},
+            {"mnemonic": "PP_LITH", "value": self.config.lithology, "descr": "Lithology family used"},
+        ]
+        rw_step = steps.get(WorkflowStep.RW.value)
+        if rw_step is not None:
+            parameters = rw_step.parameters
+            if parameters.get("rw") is not None:
+                reference = parameters.get("reference_temp_f")
+                descr = f"Rw input ({rw_step.method})"
+                if reference is not None:
+                    descr = f"Rw input at {reference:g} degF ({rw_step.method})"
+                items.append({"mnemonic": "PP_RW", "value": parameters["rw"], "unit": "ohm.m", "descr": descr})
+            for key, mnemonic, descr in (
+                ("rw_min", "PP_RWTMIN", "Minimum Rw at formation temperature"),
+                ("rw_max", "PP_RWTMAX", "Maximum Rw at formation temperature"),
+            ):
+                if parameters.get(key) is not None:
+                    items.append({"mnemonic": mnemonic, "value": parameters[key], "unit": "ohm.m", "descr": descr})
+        sw_step = steps.get(WorkflowStep.SATURATION.value)
+        if sw_step is not None:
+            parameters = sw_step.parameters
+            items.append({"mnemonic": "PP_SWMODEL", "value": sw_step.method, "descr": "Water saturation model(s)"})
+            for key in ("a", "m", "n"):
+                if parameters.get(key) is not None:
+                    items.append({"mnemonic": f"PP_{key.upper()}", "value": parameters[key],
+                                  "descr": f"Archie {key}"})
+        return items
+
+    def to_las(self, path: Union[str, Path], **options: Any) -> Path:
+        """Write the interpreted well to LAS with the settings used.
+
+        The ``~Params`` section keeps the source file's header values and adds
+        :meth:`provenance_parameters` (``PP_*``); ``~Other`` lists executed and
+        skipped steps. Use :meth:`to_json` for the complete trace.
+
+        Parameters
+        ----------
+        path : str or Path
+            Output LAS file.
+        **options
+            Passed to :func:`petrophys.io.export_las` (e.g. ``curves=[...]``).
+
+        Returns
+        -------
+        Path
+            The written file.
+        """
+        from petrophys.io.export import export_las
+        from petrophys.version import __version__
+
+        lines = [f"Interpreted with petrophys {__version__}; status {self.status}."]
+        lines.append("Executed steps: " + ", ".join(step.step for step in self.steps_executed))
+        for name in self.steps_skipped:
+            reason = self.specific_steps_skipped.get(name)
+            lines.append(f"Skipped {name}" + (f": {reason}" if reason else ""))
+        output = Path(path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        export_las(
+            self.well,
+            output,
+            extra_parameters=self.provenance_parameters(),
+            other="\n".join(lines),
+            **options,
+        )
+        return output
 
     def to_markdown(
         self,
@@ -2097,6 +2188,9 @@ class DynamicWorkflow:
             calculate_temperature_profile,
             gradient_to_celsius_per_km,
         )
+        from petrophys.interpretation.temperature.temp_profile import (
+            store_temperature_parameters,
+        )
 
         trace = StepResult(step="temperature", success=True, method="temperature_profile")
         surface_temp_f = (
@@ -2143,13 +2237,7 @@ class DynamicWorkflow:
             return trace
 
         well.add_curve("TEMP", result.temperature, "degF", "Formation Temperature")
-        well.set_parameter("temperature_gradient", result.gradient)
-        well.set_parameter("surface_temperature", result.surface_temp)
-        well.set_parameter("temperature_profile_source", result.source)
-        if result.reference_temperature is not None:
-            well.set_parameter("temperature_reference_temperature", result.reference_temperature)
-        if result.reference_depth is not None:
-            well.set_parameter("temperature_reference_depth", result.reference_depth)
+        store_temperature_parameters(well, result)
 
         self._result.temperature_gradient = result.gradient
         trace.method = result.source
