@@ -93,5 +93,8 @@ Workflows, reporting, and visualization
    :toctree: generated
 
    petrophys.workflow
+   petrophys.workflow.schema
    petrophys.reporting
    petrophys.visualization
+   petrophys.mcp
+   petrophys.mcp.server

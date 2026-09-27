@@ -64,6 +64,7 @@ Other specialist notebooks retain their own optional data/dependency requirement
 | 17 | [`17_visualization_masterclass.ipynb`](part_b_advanced/17_visualization_masterclass.ipynb) | Log panels, crossplots, and batch visualization |
 | 18 | [`18_multiwell_field_study.ipynb`](part_b_advanced/18_multiwell_field_study.ipynb) | Multiwell analysis and field screening |
 | 19 | [`19_llm_context_generation.ipynb`](part_b_advanced/19_llm_context_generation.ipynb) | Portable LAS-to-JSON context generation |
+| 20 | [`20_mcp_server.ipynb`](part_b_advanced/20_mcp_server.ipynb) | Petrophys for LLM agents through the MCP server |
 
 ## Case Studies
 

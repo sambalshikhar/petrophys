@@ -22,6 +22,12 @@ All notable changes to Petrophys are documented here.
 
 ### Added
 
+- An MCP server (`petrophys-mcp`, `pip install "petrophys[mcp]"`) that lets
+  LLM clients load wells, interpret them, inspect traces, summarize zones,
+  plot and export results, with file access limited to chosen folders; a
+  guide and tutorial 20 cover setup and a full session.
+- `petrophys.workflow.config_schema()` and `workflow_steps()` describe every
+  setting and step as data, and the documentation site serves `llms.txt`.
 - Short public API: `petrophys.read`, `petrophys.plot` and the
   copy-by-default `petrophys.interpret`, with full docstrings;
   `DynamicWorkflowConfig`, `DynamicWorkflowResult` and `run_dynamic_workflow`

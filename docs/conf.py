@@ -146,6 +146,8 @@ html_title = "Petrophys documentation"
 html_logo = "_static/petrophys-logo.png"
 html_show_sphinx = False
 html_static_path = ["_static"]
+# Files copied as-is to the site root (e.g. llms.txt for LLM tools).
+html_extra_path = ["_extra"]
 html_css_files = ["petrophys.css"]
 html_theme_options = {
     "sidebar_hide_name": True,
