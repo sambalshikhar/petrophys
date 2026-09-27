@@ -89,7 +89,7 @@ def test_read_ascii_headerless_keeps_all_rows(tmp_path):
         "1002.0,55.0\n"
     )
 
-    well = read_ascii(path, column_names=["DEPTH", "GR"])
+    well = read_ascii(path, column_names=["DEPTH", "GR"], depth_unit="m")
 
     assert well.n_samples == 3
     np.testing.assert_allclose(well.depth, [1000.0, 1001.0, 1002.0])

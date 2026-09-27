@@ -69,3 +69,22 @@ def test_depth_to_meters_accepts_aliases():
 
     np.testing.assert_allclose(depth_to_meters(np.array([10.0]), "Feet"), [3.048])
     np.testing.assert_allclose(depth_to_meters(np.array([10.0]), "M"), [10.0])
+
+
+def test_tabular_readers_require_a_depth_unit(tmp_path):
+    from petrophys.io import read_csv
+    from petrophys.io.ascii_reader import read_ascii
+
+    path = tmp_path / "logs.csv"
+    path.write_text("DEPTH,GR\n1000,50\n1001,55\n")
+    with pytest.raises(ValueError, match="does not record its depth unit"):
+        read_csv(path)
+    assert read_csv(path, depth_unit="M").depth_unit == "m"
+
+    frame = pd.DataFrame({"DEPTH": [1.0, 2.0], "GR": [50.0, 60.0]})
+    with pytest.raises(ValueError, match="needs depth_unit"):
+        Well.from_dataframe(frame)
+
+    ascii_path = tmp_path / "logs.txt"
+    ascii_path.write_text("DEPTH GR\nft API\n1000 50\n1001 55\n")
+    assert read_ascii(ascii_path, units_line=1).depth_unit == "ft"
