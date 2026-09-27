@@ -5,11 +5,14 @@ This module provides functions to generate individual quality flags
 for various bad hole conditions.
 """
 
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 import numpy as np
 
 from petrophys.model.constants import DefaultParameters
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 def generate_washout_flag(

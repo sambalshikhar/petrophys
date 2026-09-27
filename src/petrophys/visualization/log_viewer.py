@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import math
 import os
 import warnings
@@ -32,6 +32,9 @@ from petrophys.preprocessing.standardization.unit_converter import (
     standardize_core_saturation,
 )
 from petrophys.visualization.curve_labels import porosity_display_label
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 try:
     import matplotlib.pyplot as plt

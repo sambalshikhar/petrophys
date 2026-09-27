@@ -2,9 +2,12 @@
 Batch processing for multiple wells.
 """
 
-from typing import Optional, List, Dict, Any, Callable
+from typing import TYPE_CHECKING, Optional, List, Dict, Any, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 _LEGACY_CONFIG_NAMES = {

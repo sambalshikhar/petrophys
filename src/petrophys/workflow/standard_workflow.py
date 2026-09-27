@@ -2,13 +2,16 @@
 Standard petrophysics workflow.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import TYPE_CHECKING, Optional, List, Dict, Any
 from dataclasses import dataclass, field
 import numpy as np
 import re
 import warnings
 
 from petrophys._internal.analysis_helpers import get_curve
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 def _parameter_float(well: "Well", name: str) -> Optional[float]:

@@ -2,7 +2,7 @@
 Net-to-gross calculations.
 """
 
-from typing import Optional, List, Dict, Union
+from typing import TYPE_CHECKING, Optional, List, Dict, Union
 from dataclasses import dataclass
 import numpy as np
 
@@ -11,6 +11,9 @@ from petrophys._internal.analysis_helpers import (
     resolve_well_depth_range,
     well_depth_array,
 )
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 @dataclass

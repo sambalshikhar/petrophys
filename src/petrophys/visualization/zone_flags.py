@@ -2,7 +2,10 @@
 Zone flag plotting utilities.
 """
 
-from typing import Optional, Tuple, List, Dict
+from typing import TYPE_CHECKING, Optional, Tuple, List, Dict
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 try:
     import matplotlib.pyplot as plt

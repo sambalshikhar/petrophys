@@ -14,6 +14,10 @@ from petrophys._internal.analysis_helpers import (
     get_curve_data_depthwise,
     rolling_std,
 )
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 class WellboreQC:

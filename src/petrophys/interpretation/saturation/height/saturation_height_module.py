@@ -14,7 +14,7 @@ depth's permeability and porosity.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 
@@ -23,6 +23,9 @@ from petrophys.interpretation.saturation.height.capillary import (
     pc_from_height,
 )
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 ArrayLike = Union[float, np.ndarray]
 

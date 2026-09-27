@@ -5,12 +5,15 @@ This module provides the WashoutDetection class for comprehensive
 bad hole analysis and quality control.
 """
 
-from typing import Optional, Dict, List, Any
+from typing import TYPE_CHECKING, Optional, Dict, List, Any
 from dataclasses import dataclass
 import numpy as np
 
 from petrophys.model.constants import DefaultParameters
 from petrophys.preprocessing.quality.bad_hole.flag_generator import generate_bad_hole_flags
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 @dataclass

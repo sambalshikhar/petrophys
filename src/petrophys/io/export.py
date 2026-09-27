@@ -5,9 +5,12 @@ This module provides functions to export Well data to various
 file formats including LAS, CSV, and Excel.
 """
 
-from typing import Optional, Union, List, Dict, Any
+from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any
 from pathlib import Path
 import numpy as np
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 try:
     import lasio

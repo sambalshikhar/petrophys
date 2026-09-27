@@ -14,6 +14,10 @@ from petrophys.evaluation.diagnostics import (
 )
 from petrophys.preprocessing.quality.wellbore import WellboreQC
 from petrophys._internal.analysis_helpers import ComprehensiveAnalysisResult
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 def run_comprehensive_analysis(

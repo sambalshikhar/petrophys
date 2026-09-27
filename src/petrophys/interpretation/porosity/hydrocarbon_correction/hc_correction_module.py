@@ -5,13 +5,16 @@ Applies hydrocarbon corrections to NPHI and RHOB logs using
 the design doc's preliminary porosity approach when VCL is available.
 """
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from dataclasses import dataclass
 import numpy as np
 
 from petrophys.interpretation.porosity.hydrocarbon_correction.neutron_correction import correct_neutron_hc
 from petrophys.interpretation.porosity.hydrocarbon_correction.density_correction import correct_density_hc
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 @dataclass

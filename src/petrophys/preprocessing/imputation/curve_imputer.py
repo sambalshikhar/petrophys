@@ -13,7 +13,7 @@ import re
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -28,6 +28,9 @@ from petrophys.preprocessing.standardization.curve_standardizer import (
     POROSITY_FRACTION_CURVES,
 )
 from petrophys.preprocessing.standardization.unit_converter import get_conversion_factor
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 ML_IMPUTATION_NOTES_PARAMETER = "ML_IMPUTATION_NOTES"

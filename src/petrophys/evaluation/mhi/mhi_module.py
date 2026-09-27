@@ -2,10 +2,13 @@
 Moveable Hydrocarbon Index calculation module.
 """
 
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 import numpy as np
 
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 class MhiModule:

@@ -6,13 +6,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 import numpy as np
 
 from petrophys.model.data_types import DataType
 from petrophys.model.units import normalize_depth_unit
 from petrophys._internal.statistics import finite_min_max
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 _LAS_OCCURRENCE_SUFFIX = re.compile(r":\d+$")
 

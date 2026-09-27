@@ -12,7 +12,7 @@ import copy
 import csv
 import re
 from warnings import warn as _warn
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 
@@ -24,6 +24,9 @@ from petrophys.workflow.dynamic_workflow import (
     DynamicWorkflowResult,
     run_dynamic_workflow,
 )
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 ZONE_VALUE_RE = re.compile(r"^(?P<base>.+)_Z(?P<index>\d+)$", re.IGNORECASE)

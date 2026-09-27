@@ -5,9 +5,12 @@ Central value-range quality control for exported petrophysical curves.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 VALUE_RANGE_QC_PARAMETER = "VALUE_RANGE_QC_REPORT"
 

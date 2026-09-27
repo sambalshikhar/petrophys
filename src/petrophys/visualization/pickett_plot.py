@@ -2,7 +2,10 @@
 Pickett plot for Archie parameter determination.
 """
 
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 try:
     import matplotlib.pyplot as plt

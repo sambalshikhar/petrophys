@@ -16,6 +16,10 @@ from petrophys._internal.analysis_helpers import (
 from petrophys._internal.legacy_context import legacy_benchmark_context
 from petrophys.model.classifications import MhiClassification
 from petrophys.evaluation.mhi.mhi_module import calculate_mhi
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 class SaturationAnalysis:

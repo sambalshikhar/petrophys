@@ -5,12 +5,15 @@ This module provides functionality to read ASCII-formatted well log
 data files including CSV, tab-delimited, and space-delimited formats.
 """
 
-from typing import Optional, Union, List, Dict, Any
+from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any
 from pathlib import Path
 import warnings
 import numpy as np
 import pandas as pd
 from petrophys.model.units import normalize_depth_unit
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 

@@ -9,9 +9,12 @@ viewer pages. This module only adds specialist panels for NMR and FMI data.
 from __future__ import annotations
 
 import warnings
-from typing import Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Optional, Sequence, Tuple
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 try:
     import matplotlib.pyplot as plt

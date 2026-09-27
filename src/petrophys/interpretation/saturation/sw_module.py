@@ -19,7 +19,7 @@ numpy array for interval-based lithology control.
 """
 
 import warnings
-from typing import Dict, Optional, Union
+from typing import TYPE_CHECKING, Dict, Optional, Union
 from dataclasses import dataclass
 from enum import Enum
 import numpy as np
@@ -38,6 +38,9 @@ from petrophys._internal.analysis_helpers import (
     get_curve,
     get_curve_data_depthwise,
 )
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
 class SwModel(Enum):

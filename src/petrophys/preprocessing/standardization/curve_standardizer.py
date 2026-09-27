@@ -6,7 +6,7 @@ curve mnemonics and units across wells.
 """
 
 import warnings
-from typing import Optional, List, Dict, Any
+from typing import TYPE_CHECKING, Optional, List, Dict, Any
 import numpy as np
 
 from petrophys.exceptions import DataQualityWarning
@@ -24,6 +24,10 @@ from petrophys.preprocessing.standardization.unit_converter import (
     standardize_units,
     get_conversion_factor,
 )
+
+if TYPE_CHECKING:
+    from petrophys.model.curve import Curve
+    from petrophys.model.well import Well
 
 
 CURVE_PLAUSIBLE_RANGES = {

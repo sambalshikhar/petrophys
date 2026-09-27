@@ -2,8 +2,11 @@
 Basic log plot functionality.
 """
 
-from typing import Optional, List, Dict, Tuple, Union
+from typing import TYPE_CHECKING, Optional, List, Dict, Tuple, Union
 import numpy as np
+
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 try:
     import matplotlib.pyplot as plt
