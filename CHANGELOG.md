@@ -40,6 +40,9 @@ All notable changes to Petrophys are documented here.
   settings used (`PP_*` parameters) and step reasons; traces record the
   package version.
 - Every skipped step records a specific reason, and `print_trace()` shows it.
+- NPD/GeoLink-style tops without a rank column get their stratigraphic rank
+  from the name suffix (GP./Fm./Mb.), so mixed group/formation picks can be
+  analyzed one level at a time with `run_formation_analysis(..., rank=...)`.
 - Formations attached with `petrophys.read(..., formations=...)` calibrate
   core permeability per formation when they form a single level.
 - Shared formation import for the model, viewer, and formation analysis, with

@@ -102,7 +102,11 @@ class FormationTops:
             if table["top_depth"].duplicated().any() or (
                 "rank" in table and table["rank"].nunique() > 1
             ):
-                raise ValueError("Hierarchical/coincident picks require a single rank or explicit bottoms.")
+                message = "Hierarchical/coincident picks require a single rank or explicit bottoms."
+                if "rank" in table:
+                    ranks = ", ".join(repr(str(value)) for value in table["rank"].dropna().unique())
+                    message += f" Select one level with rank=..., e.g. one of: {ranks}."
+                raise ValueError(message)
             table = table.copy()
             table["bottom_depth"] = table["top_depth"].shift(-1).fillna(terminal_depth)
         klass = _KIND_CLASS.get(interval_kind, ManualInterval)

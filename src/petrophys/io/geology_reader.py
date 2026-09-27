@@ -278,4 +278,34 @@ def read_formations(source, *, columns=None, well_name=None, well=None, depth_un
         if "bottom_depth" in table and row["top_depth"] >= row["bottom_depth"]:
             raise ValueError(f"Geology row {index + 2}: top_depth must be less than bottom_depth.")
         table.at[index, "formation_name"] = re.sub(r"\s+top\.?$", "", name.strip(), flags=re.IGNORECASE)
+    _infer_rank_from_names(table)
     return table.sort_values("top_depth", kind="stable").reset_index(drop=True)
+
+
+_RANK_SUFFIXES = (
+    ("group", re.compile(r"(?:\bGP\.?|\bGROUP)$", re.IGNORECASE)),
+    ("formation", re.compile(r"(?:\bFM\.?|\bFORMATION)$", re.IGNORECASE)),
+    ("member", re.compile(r"(?:\bMB\.?|\bMBR\.?|\bMEMBER)$", re.IGNORECASE)),
+)
+
+
+def _infer_rank_from_names(table):
+    """Add a ``rank`` column from NPD-style names ("Brent Gp.", "Etive Fm.", ...).
+
+    Only applied when the table has no rank column and every name carries a
+    group, formation or member suffix, as in NPD and GeoLink picks.
+    """
+    if "rank" in table or table.empty:
+        return
+    ranks = []
+    for name in table["formation_name"]:
+        rank = next((label for label, pattern in _RANK_SUFFIXES if pattern.search(str(name).strip())), None)
+        if rank is None:
+            return
+        ranks.append(rank)
+    table["rank"] = ranks
+    found = sorted(set(ranks), key=[label for label, _ in _RANK_SUFFIXES].index)
+    table.attrs["import_report"]["diagnostics"].append(
+        "Stratigraphic rank inferred from name suffixes (GP./Fm./Mb.): " + ", ".join(found) + "."
+    )
+
