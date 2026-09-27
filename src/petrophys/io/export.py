@@ -80,6 +80,9 @@ def export_las(
     version: float = 2.0,
     wrap: bool = False,
     curves: Optional[List[str]] = None,
+    *,
+    extra_parameters: Optional[List[Dict[str, Any]]] = None,
+    other: Optional[str] = None,
     **kwargs
 ):
     """
@@ -97,6 +100,12 @@ def export_las(
         Whether to wrap long lines (default: False)
     curves : list of str, optional
         Specific curves to export (default: all)
+    extra_parameters : list of dict, optional
+        Additional ``~Params`` entries, each a mapping with ``mnemonic``,
+        ``value`` and optional ``unit`` and ``descr`` keys (e.g. the settings
+        an interpretation used).
+    other : str, optional
+        Text appended to the ``~Other`` section.
     **kwargs
         Additional arguments passed to lasio's LASFile.write
         (e.g. ``fmt="%.8f"`` to control numeric precision)
@@ -198,7 +207,18 @@ def export_las(
     )
 
     _export_well_parameters(las, well)
+    for item in extra_parameters or []:
+        las.params.append(
+            lasio.HeaderItem(
+                mnemonic=str(item["mnemonic"]),
+                unit=str(item.get("unit", "") or ""),
+                value=item.get("value", ""),
+                descr=str(item.get("descr", "") or ""),
+            )
+        )
     _export_well_other_comments(las, well)
+    if other:
+        las.other = "\n".join(part for part in (las.other, other) if part)
 
     # Add depth curve
     if well.depth is not None:

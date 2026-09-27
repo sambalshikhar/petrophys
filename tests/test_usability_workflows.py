@@ -339,3 +339,18 @@ def test_read_reports_missing_and_unsupported_files(tmp_path):
         path = tmp_path / "well.csv"
         _well().to_csv(path)
         pp.read(path, depth_unit="furlong")
+
+
+def test_interpreted_las_records_the_settings_used(tmp_path):
+    lasio = pytest.importorskip("lasio")
+    result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07)
+
+    las = lasio.read(result.to_las(tmp_path / "interpreted.las"))
+    params = {item.mnemonic: item for item in las.params}
+
+    assert params["PP_RW"].value == pytest.approx(0.07)
+    assert params["PP_VERSION"].value == pp.__version__
+    assert params["PP_STATUS"].value == "interpreted"
+    assert params["TEMPERATURE_REFERENCE_DEPTH"].unit == "ft"
+    assert "Skipped hc_correction: apply_hc_correction=False" in las.other
+    assert result.to_trace_dict()["petrophys_version"] == pp.__version__
