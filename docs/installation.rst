@@ -45,6 +45,10 @@ Optional features
        The ML stack requires Python 3.11+; on older Pythons the extra
        installs nothing.
      - ``pip install "petrophys[ml]"``
+   * - ``mcp``
+     - MCP server so LLM clients can use Petrophys (Python 3.10+); see
+       :doc:`mcp`
+     - ``pip install "petrophys[mcp]"``
    * - ``all``
      - All optional runtime capabilities
      - ``pip install "petrophys[all]"``

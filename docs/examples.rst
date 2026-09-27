@@ -140,6 +140,9 @@ Advanced tutorials
    * - 19
      - :doc:`LLM context generation <tutorials/part_b/19_llm_context_generation>`
      - Portable, structured context export from interpreted LAS data
+   * - 20
+     - :doc:`Petrophys for LLM agents (MCP) <tutorials/part_b/20_mcp_server>`
+     - Loading, interpretation, zone summaries and plots from an MCP client
 
 Data and optional dependencies
 ------------------------------

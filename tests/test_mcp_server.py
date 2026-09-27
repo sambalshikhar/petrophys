@@ -189,3 +189,12 @@ def test_resources_and_prompt(tmp_path):
     assert "interpret_well" in guide.contents[0].text
     assert '"name": "rw"' in settings.contents[0].text
     assert "do not assume one" in prompt.messages[0].content.text
+
+
+def test_documentation_lists_every_tool():
+    import re
+    from pathlib import Path
+
+    page = Path(__file__).resolve().parents[1] / "docs" / "mcp.rst"
+    documented = set(re.findall(r"^   \* - ``(\w+)``$", page.read_text(), re.M))
+    assert documented == EXPECTED_TOOLS

@@ -37,6 +37,7 @@ Optional extras:
 |-------|------|---------|
 | `dlis` | DLIS reading (logs and borehole images) | `pip install "petrophys[dlis]"` |
 | `ml` | Pretrained curve imputation (Python 3.11+) | `pip install "petrophys[ml]"` |
+| `mcp` | MCP server for LLM clients (Python 3.10+) | `pip install "petrophys[mcp]"` |
 | `all` | Everything above | `pip install "petrophys[all]"` |
 
 Development checkout:
@@ -119,6 +120,25 @@ result.to_trace_dict()         # every step's method, inputs, outputs, parameter
 Data problems also raise `petrophys.DataQualityWarning`, for example when a
 density curve labelled g/cc is really in kg/m3. Turn them into errors with
 `warnings.simplefilter("error", pp.DataQualityWarning)`.
+
+## Use with LLM agents (MCP)
+
+Petrophys includes a [Model Context Protocol](https://modelcontextprotocol.io)
+server, so Claude Desktop, Claude Code, Cursor, VS Code and other MCP clients
+can load wells, interpret them, read the trace, summarize zones, plot, and
+export results on your machine:
+
+```bash
+pip install "petrophys[mcp]"                       # Python 3.10+
+claude mcp add petrophys -- petrophys-mcp --root /path/to/wells
+```
+
+The model calls the same validated workflow as `pp.interpret`; invalid settings
+come back with the accepted values, and file access is limited to the `--root`
+folders. See the [LLM agents guide](https://petrophys.netlify.app/mcp). For
+code-generating assistants, the docs also serve
+[llms.txt](https://petrophys.netlify.app/llms.txt), and
+`petrophys.workflow.config_schema()` describes every setting as data.
 
 ## Workflow steps
 

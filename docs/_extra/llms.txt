@@ -1,0 +1,36 @@
+# Petrophys
+
+> Python library for petrophysical well-log interpretation: reads LAS, DLIS and CSV logs and computes clay volume, porosity, water saturation, permeability, rock quality and net pay with a traceable, input-aware workflow. Every step records its method, inputs, outputs and parameters; every skipped step records why.
+
+Key facts for code generation:
+
+- Front door: `import petrophys as pp`; `well = pp.read(path)`; `result = pp.interpret(well, rw=0.07)`; `pp.plot(result, depth_range=(top, base))`.
+- `pp.read(path, *, formations=None, lithology=None, **reader_options)` reads LAS/DLIS/CSV/TSV; CSV/TSV need `depth_unit="m"` or `"ft"` among the reader options.
+- `pp.interpret(well, config=None, *, inplace=False, **settings)` returns `DynamicWorkflowResult`; it works on a copy. Settings are `pp.DynamicWorkflowConfig` fields (units in names: `bht_f` degF, `td_ft` feet; resistivities ohm.m). Invalid values raise `ValueError` listing accepted values.
+- Formation water resistivity `rw` usually cannot be derived from logs: ask for it instead of assuming.
+- Result: `result.status`, `result.well` (interpreted curves: VCL, PHIT, PHIE, SW, SXO, PERM, RQI, NET_ROCK, NET_RES, NET_PAY), `result.config` (settings used), `result.specific_steps_skipped` (reasons), `result.warnings`, `result.to_trace_dict()`, `result.to_json(path)`, `result.to_las(path)`, `result.raise_for_errors()`.
+- `petrophys.workflow.config_schema()` lists every setting with type, default, description and accepted values; `petrophys.workflow.workflow_steps()` lists the steps.
+- Data problems raise `pp.DataQualityWarning` (e.g. a curve in the wrong unit).
+- Sample data: `pp.list_samples()`, `pp.sample("30_6-5")`.
+- MCP server for LLM clients: `pip install "petrophys[mcp]"`, run `petrophys-mcp --root <folder>`.
+
+## Docs
+
+- [Installation](https://petrophys.netlify.app/installation): pip install, optional extras
+- [Quickstart](https://petrophys.netlify.app/quickstart): read, interpret, inspect the trace, plot, export
+- [Own data](https://petrophys.netlify.app/own_data): CSV/Excel logs, formations, lithology, units and datums
+- [Input templates](https://petrophys.netlify.app/input_templates): formation and lithology file formats
+- [Workflows](https://petrophys.netlify.app/workflows): workflow steps, routing, zoned and batch runs
+- [LLM agents (MCP)](https://petrophys.netlify.app/mcp): MCP server setup, tools, resources and prompts
+- [Visualization and reporting](https://petrophys.netlify.app/visualization_reporting): plots, exports, delivery packages
+
+## API
+
+- [API reference](https://petrophys.netlify.app/api/): all public modules
+- [Front door (read, plot, interpret)](https://petrophys.netlify.app/api/generated/petrophys.api)
+- [Workflow and DynamicWorkflowConfig](https://petrophys.netlify.app/api/generated/petrophys.workflow)
+
+## Optional
+
+- [Tutorials](https://petrophys.netlify.app/tutorials/): executed notebooks from basics to field studies
+- [Release notes](https://petrophys.netlify.app/changelog)

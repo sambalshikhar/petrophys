@@ -143,6 +143,7 @@ def create_server(
         instructions=SERVER_INSTRUCTIONS,
         version=__version__,
         website_url="https://petrophys.netlify.app",
+        log_level="WARNING",
     )
 
     # -- discovery -----------------------------------------------------------

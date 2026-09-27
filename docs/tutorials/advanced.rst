@@ -71,6 +71,9 @@ Course outline
    * - 19
      - :doc:`LLM context generation <part_b/19_llm_context_generation>`
      - Export portable, structured context from interpreted LAS data.
+   * - 20
+     - :doc:`Petrophys for LLM agents (MCP) <part_b/20_mcp_server>`
+     - Drive loading, interpretation, zone summaries and plots from an MCP client.
 
 .. toctree::
    :hidden:
@@ -86,3 +89,4 @@ Course outline
    Visualization masterclass <part_b/17_visualization_masterclass>
    Multiwell field study <part_b/18_multiwell_field_study>
    LLM context generation <part_b/19_llm_context_generation>
+   Petrophys for LLM agents (MCP) <part_b/20_mcp_server>

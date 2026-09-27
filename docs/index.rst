@@ -233,6 +233,7 @@ Continue with the :doc:`installation guide <installation>`, the
    capabilities
    specialist_data
    visualization_reporting
+   mcp
 
 .. toctree::
    :hidden:
