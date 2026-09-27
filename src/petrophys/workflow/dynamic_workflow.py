@@ -20,7 +20,7 @@ Pipeline execution order:
     Module 11: Net Pay
 """
 
-from typing import Optional, List, Dict, Any, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 import dataclasses
 from dataclasses import dataclass, field
 from enum import Enum
@@ -548,6 +548,175 @@ class DynamicWorkflowConfig:
 
     # Control which steps to skip
     skip_steps: List[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        _validate_workflow_config(self)
+
+# --- DynamicWorkflowConfig validation ---------------------------------------
+
+_INTERPRETATION_PROFILES = ("auto", "vendor_benchmark", "generic_inference")
+_MUD_TYPES = ("WBM", "OBM")
+_MUD_WATERS = ("fresh", "salt")
+_LITHOLOGY_FAMILIES = ("auto", "clastic", "carbonate", "evaporite")
+_LITHOLOGY_SOURCES = ("auto", "external", "vendor", "computed", "config")
+_HC_TYPES = ("oil", "gas")
+_BOOL_FIELDS = (
+    "standardize_input", "rename_input_curves", "allow_default_rw",
+    "mud_has_clay_or_kcl", "raise_on_error", "apply_hc_correction", "use_peer_core",
+)
+_POSITIVE_FIELDS = (
+    "rw", "rmf_at_meas_temp", "rm", "rmf_salinity_ppm", "salinity_ppm", "td_ft",
+    "rho_ma", "rho_fl", "rho_cl", "dt_ma", "dt_fl", "a", "m", "n", "m_star",
+    "rwb", "rtsh", "vsh_exp", "shale_exp", "b_coeff",
+)
+_FRACTION_FIELDS = ("vcl_cutoff", "sw_cutoff", "phie_cutoff", "swirr", "phi_cl")
+_FINITE_FIELDS = (
+    "surface_temp_f", "bht_f", "rmf_meas_temp_f", "rm_meas_temp_f",
+    "rw_meas_temp_f", "nphi_ma", "gr_min", "gr_max", "sp_min", "sp_max", "cec",
+)
+
+
+def _choice_error(name: str, value: Any, choices: Sequence[str]) -> str:
+    import difflib
+
+    message = f"{name}={value!r} is not valid; use one of: {', '.join(choices)}"
+    close = difflib.get_close_matches(
+        str(value).strip().lower(), [c.lower() for c in choices], n=1, cutoff=0.75
+    )
+    if close:
+        match = next(c for c in choices if c.lower() == close[0])
+        message += f" (did you mean {match!r}?)"
+    return message
+
+
+def _normalized_choice(
+    config: "DynamicWorkflowConfig",
+    name: str,
+    choices: Sequence[str],
+    errors: List[str],
+    *,
+    aliases: Sequence[str] = (),
+) -> None:
+    value = getattr(config, name)
+    if not isinstance(value, str):
+        errors.append(f"{name} must be a string; got {type(value).__name__}")
+        return
+    key = value.strip().lower()
+    canonical = {choice.lower(): choice for choice in choices}
+    if key in canonical:
+        setattr(config, name, canonical[key])
+    elif key in {alias.lower() for alias in aliases}:
+        setattr(config, name, key)
+    else:
+        errors.append(_choice_error(name, value, choices))
+
+
+def _validate_lithology(config: "DynamicWorkflowConfig", errors: List[str]) -> None:
+    """Accept a cutoff family or any lithology with tabulated Archie coefficients."""
+    from petrophys.model.constants import ArchieParameterDefaults
+
+    value = config.lithology
+    if not isinstance(value, str):
+        errors.append(f"lithology must be a string; got {type(value).__name__}")
+        return
+    key = value.strip().lower()
+    if key in _LITHOLOGY_FAMILIES:
+        config.lithology = key
+        return
+    if ArchieParameterDefaults.normalize(value) in ArchieParameterDefaults.names():
+        return
+    message = _choice_error("lithology", value, _LITHOLOGY_FAMILIES + tuple(ArchieParameterDefaults.names()))
+    errors.append(message)
+
+
+def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
+    """Validate and normalize a :class:`DynamicWorkflowConfig` in place.
+
+    Raises
+    ------
+    ValueError
+        Listing every invalid field, with the accepted values.
+    """
+    from petrophys.interpretation.clay_volume.gr_method import GR_VCL_METHODS
+    from petrophys.interpretation.permeability.perm_module import (
+        PERMEABILITY_METHOD_ALIASES,
+        PERMEABILITY_METHODS,
+    )
+    from petrophys.interpretation.saturation.sw_module import SwModel
+    from petrophys.model.constants import MatrixProperties
+
+    errors: List[str] = []
+    _normalized_choice(config, "interpretation_profile", _INTERPRETATION_PROFILES, errors)
+    _normalized_choice(config, "mud_type", _MUD_TYPES, errors)
+    _normalized_choice(config, "mud_water", _MUD_WATERS, errors)
+    _normalized_choice(config, "matrix_type", ("auto", *MatrixProperties.names()), errors)
+    _validate_lithology(config, errors)
+    _normalized_choice(config, "lithology_source", _LITHOLOGY_SOURCES, errors)
+    _normalized_choice(config, "hc_type", _HC_TYPES, errors)
+    _normalized_choice(config, "gr_method", GR_VCL_METHODS, errors)
+    _normalized_choice(
+        config, "perm_method", PERMEABILITY_METHODS, errors,
+        aliases=tuple(PERMEABILITY_METHOD_ALIASES),
+    )
+    _normalized_choice(
+        config, "perm_fallback_method",
+        tuple(method for method in PERMEABILITY_METHODS if method != "auto"), errors,
+        aliases=tuple(PERMEABILITY_METHOD_ALIASES),
+    )
+    _normalized_choice(config, "sw_model", ("auto", *(model.value for model in SwModel)), errors)
+
+    step_names = tuple(step.value for step in WorkflowStep)
+    if isinstance(config.skip_steps, str) or not isinstance(config.skip_steps, (list, tuple, set)):
+        errors.append(
+            f"skip_steps must be a list of step names; got {config.skip_steps!r}"
+        )
+    else:
+        steps: List[str] = []
+        for step in config.skip_steps:
+            name = step.value if isinstance(step, WorkflowStep) else str(step).strip().lower()
+            if name in step_names:
+                steps.append(name)
+            else:
+                errors.append(_choice_error("skip_steps entry", step, step_names))
+        config.skip_steps = steps
+
+    for name in _BOOL_FIELDS:
+        value = getattr(config, name)
+        if not isinstance(value, (bool, np.bool_)):
+            errors.append(f"{name} must be True or False; got {value!r}")
+
+    def _number(name: str) -> Optional[float]:
+        value = getattr(config, name)
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)):
+            errors.append(f"{name} must be a number; got {value!r}")
+            return None
+        if not np.isfinite(value):
+            errors.append(f"{name} must be finite; got {value!r}")
+            return None
+        return float(value)
+
+    for name in _FINITE_FIELDS:
+        _number(name)
+    for name in _POSITIVE_FIELDS:
+        value = _number(name)
+        if value is not None and value <= 0:
+            errors.append(f"{name} must be greater than 0; got {value!r}")
+    for name in _FRACTION_FIELDS:
+        value = _number(name)
+        if value is not None and not 0.0 <= value <= 1.0:
+            errors.append(f"{name} must be a fraction between 0 and 1; got {value!r}")
+    if config.gr_min is not None and config.gr_max is not None and config.gr_min >= config.gr_max:
+        errors.append(f"gr_min ({config.gr_min}) must be less than gr_max ({config.gr_max})")
+    if config.lithology_csv is not None and config.lithology_intervals is not None:
+        errors.append("Supply lithology_csv or lithology_intervals, not both.")
+
+    if errors:
+        raise ValueError(
+            "Invalid DynamicWorkflowConfig:\n  - " + "\n  - ".join(errors)
+        )
+
 
 @dataclass
 class StepResult:

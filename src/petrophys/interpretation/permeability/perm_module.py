@@ -378,20 +378,26 @@ def _normalize_key(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+#: Permeability methods accepted by :class:`PermeabilityModule`.
+PERMEABILITY_METHODS = ("auto", "timur", "coates", "wyllie_rose", "lith_vcl")
+
+#: Accepted alternative spellings and their canonical permeability method.
+PERMEABILITY_METHOD_ALIASES = {
+    "coates_denoo": "coates",
+    "coates-denoo": "coates",
+    "wyllie-rose": "wyllie_rose",
+    "lithology_vcl": "lith_vcl",
+    "lith-vcl": "lith_vcl",
+    "lith_vcl_perm": "lith_vcl",
+    "dunite": "lith_vcl",
+    "dunite_basic": "lith_vcl",
+}
+
+
 def _normalize_perm_method(value: str) -> str:
     """Normalize permeability method aliases."""
     method = str(value or "").strip().lower()
-    aliases = {
-        "coates_denoo": "coates",
-        "coates-denoo": "coates",
-        "wyllie-rose": "wyllie_rose",
-        "lithology_vcl": "lith_vcl",
-        "lith-vcl": "lith_vcl",
-        "lith_vcl_perm": "lith_vcl",
-        "dunite": "lith_vcl",
-        "dunite_basic": "lith_vcl",
-    }
-    return aliases.get(method, method)
+    return PERMEABILITY_METHOD_ALIASES.get(method, method)
 
 
 def _resolve_porosity_curve_name(well: "Well") -> str:
