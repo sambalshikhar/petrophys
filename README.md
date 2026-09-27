@@ -140,9 +140,13 @@ lithology for display only. Core saturation percentages are normalized to
 fractions for plotting; inferred conversions are reported in `viewer.warnings`.
 The viewer displays existing measurements, not a newly calculated `SW` curve.
 
-To use external geology for both plotting and interpretation, attach it with
-`pp.read("my_well.las", formations="formations.csv", lithology="lithology.csv")`.
-Then use `pp.plot(well)` or `pp.interpret(well)`. See the
+To use external geology, attach it once with
+`pp.read("my_well.las", formations="formations.csv", lithology="lithology.csv")`,
+then call `pp.plot(well)` or `pp.interpret(well)`. Both calls annotate formations
+and use the attached lithology. `pp.interpret` also calibrates core permeability
+per formation when the formations form a single, non-overlapping level; for
+hierarchical tops (groups and formations) it records why they were not used, and
+you can pass one level as `DynamicWorkflowConfig(formation_tops=...)`. See the
 [own-data guide](docs/own_data.rst) for mappings, units, source selection, and diagnostics.
 
 ### Granular Module Usage (individual calculations)
