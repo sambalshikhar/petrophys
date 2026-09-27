@@ -639,3 +639,25 @@ def test_log_viewer_warns_when_configured_mapping_table_is_missing(tmp_path: Pat
         viewer = create_log_viewer(_geolink_code_well(), template_defaults="auto")
 
     assert viewer._lithology_label(1.0, "LITHOLOGY_GEOLINK") == "Sandstone"
+
+
+def test_plot_standardizes_vendor_curves_without_changing_the_input():
+    depth = np.arange(3000.0, 3050.0, 0.5)
+    well = Well("VENDOR")
+    well.depth = depth
+    well.depth_unit = "ft"
+    well.add_curve("DEPT", depth, "ft", "Depth")
+    well.add_curve("GR_EDTC", np.full(depth.size, 75.0), "gAPI", "Gamma ray")
+    well.add_curve("RHOZ", np.full(depth.size, 2350.0), "kg/m3", "Bulk density")
+    well.add_curve("TNPH", np.full(depth.size, 25.0), "%", "Neutron porosity")
+
+    viewer = create_log_viewer(well, template_defaults="auto")
+    try:
+        assert {"GR": "GR_EDTC", "RHOB": "RHOZ", "NPHI": "TNPH"}.items() <= viewer.curve_lookup.items()
+        np.testing.assert_allclose(np.nanmedian(viewer.well.get("RHOZ").data), 2.35)
+        np.testing.assert_allclose(np.nanmedian(viewer.well.get("TNPH").data), 0.25)
+    finally:
+        viewer.close()
+
+    assert well.get("RHOZ").unit == "kg/m3"
+    assert well.get("GR") is None
