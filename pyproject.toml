@@ -64,6 +64,8 @@ dev = [
     "flake8>=4.0.0",
     "mypy>=0.950",
 ]
+# MCP server for LLM clients (Claude Desktop, Claude Code, Cursor, ...).
+mcp = ["mcp>=2.2,<3; python_version >= '3.10'"]
 tutorials = [
     "nbformat>=5.7",
     "nbclient>=0.8",
@@ -78,6 +80,7 @@ docs = [
 ]
 all = [
     "dlisio>=0.3.0",
+    "mcp>=2.2,<3; python_version >= '3.10'",
     "scikit-learn>=1.8.0,<1.9.0; python_version >= '3.11'",
     "joblib>=1.5.0,<1.6.0; python_version >= '3.11'",
     "xgboost>=3.2.0,<3.3.0; python_version >= '3.11'",
@@ -88,6 +91,9 @@ Homepage = "https://github.com/sambalshikhar/petrophys"
 Documentation = "https://petrophys.netlify.app"
 Repository = "https://github.com/sambalshikhar/petrophys"
 Issues = "https://github.com/sambalshikhar/petrophys/issues"
+
+[project.scripts]
+petrophys-mcp = "petrophys.mcp:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
