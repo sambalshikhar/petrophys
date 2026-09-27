@@ -12,7 +12,11 @@ from typing import Optional, List, Union
 from dataclasses import dataclass
 from pathlib import Path
 import csv
+import warnings
+
 import numpy as np
+
+from petrophys.exceptions import DataQualityWarning
 
 
 @dataclass
@@ -86,6 +90,7 @@ def load_lithology_csv(
         )
 
     intervals = []
+    unrecognized = set()
     for row in rows:
         top_val = _safe_float(row.get(top_col) or row.get(headers.get(top_col.lower(), "")))
         bot_val = _safe_float(row.get(bottom_col) or row.get(headers.get(bottom_col.lower(), "")))
@@ -101,7 +106,8 @@ def load_lithology_csv(
             elif lith_lower in ("shale", "mudstone", "claystone", "siltstone", "marl"):
                 lith_normalized = "clastic"  # Shale uses clastic cutoffs
             else:
-                lith_normalized = "clastic"  # Default
+                lith_normalized = "clastic"
+                unrecognized.add(lith)
 
             intervals.append(LithologyInterval(
                 top=top_val,
@@ -109,6 +115,14 @@ def load_lithology_csv(
                 lithology=lith_normalized,
             ))
 
+    if unrecognized:
+        warnings.warn(
+            f"Unrecognized lithology labels {sorted(unrecognized)} in {filepath} were "
+            "treated as clastic; use clastic/sandstone/shale or carbonate/limestone/"
+            "dolomite labels to control the cutoff family.",
+            DataQualityWarning,
+            stacklevel=2,
+        )
     intervals.sort(key=lambda x: x.top)
     return intervals
 
