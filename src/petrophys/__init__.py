@@ -37,7 +37,12 @@ from petrophys.evaluation.diagnostics import (
 )
 from petrophys.preprocessing.quality.wellbore import WellboreQC
 from petrophys.datasets import sample, list_samples
-from petrophys.workflow import run_comprehensive_analysis
+from petrophys.workflow import (
+    DynamicWorkflowConfig,
+    DynamicWorkflowResult,
+    run_comprehensive_analysis,
+    run_dynamic_workflow,
+)
 from petrophys.preprocessing.imputation import (
     CurveImputationResult,
     ModelCompatibilityError,
@@ -50,6 +55,9 @@ __all__ = [
     "read",
     "plot",
     "interpret",
+    "DynamicWorkflowConfig",
+    "DynamicWorkflowResult",
+    "run_dynamic_workflow",
     "read_formations",
     "read_lithology_intervals",
     "__version__",

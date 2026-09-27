@@ -8,9 +8,9 @@ from petrophys.workflow import DynamicWorkflowConfig
 from petrophys.workflow.dynamic_workflow import WorkflowStep
 
 
-def test_defaults_are_valid():
+def test_defaults_resolve_matrix_and_lithology_from_data():
     config = DynamicWorkflowConfig()
-    assert config.matrix_type == "sandstone"
+    assert (config.matrix_type, config.lithology) == ("auto", "auto")
     assert config.skip_steps == []
 
 

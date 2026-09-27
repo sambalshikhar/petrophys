@@ -1,4 +1,6 @@
 """Own-data journeys shared by plotting and interpretation."""
+from copy import deepcopy
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -92,7 +94,7 @@ def test_workflow_errors_are_actionable_and_options_are_not_ignored():
     config = DynamicWorkflowConfig()
     with pytest.raises(TypeError):
         pp.interpret(_well(), config, imaginary_setting=True)
-    assert config.matrix_type == "sandstone"
+    assert config.matrix_type == "auto"
 
 
 @pytest.mark.parametrize("headers", [
@@ -293,3 +295,47 @@ def test_interpret_explains_why_hierarchical_formations_are_not_used():
     assert "overlapping" in step.parameters["formations"]["reason"]
     assert any("formation_tops=" in decision for decision in step.decisions)
     assert result.config.formation_tops is None
+
+
+def test_interpret_and_run_dynamic_workflow_share_defaults():
+    well = pp.read(pp.sample("15_9-14"))
+    front_door = pp.interpret(well, rw=0.05)
+    low_level = pp.run_dynamic_workflow(deepcopy(well), rw=0.05)
+    assert (front_door.config.matrix_type, front_door.config.lithology) == (
+        low_level.config.matrix_type,
+        low_level.config.lithology,
+    )
+
+
+def test_interpret_suggests_misspelled_settings():
+    with pytest.raises(TypeError, match="did you mean 'sw_model'"):
+        pp.interpret(_well(), sw_modle="archie")
+
+
+def test_interpret_overrides_do_not_modify_the_callers_config():
+    config = pp.DynamicWorkflowConfig(rw=0.1)
+    result = pp.interpret(_well(), config, rw=0.07)
+    assert result.config.rw == 0.07
+    assert config.rw == 0.1
+
+
+def test_interpret_reads_tabular_files_with_a_depth_unit(tmp_path):
+    path = tmp_path / "well.csv"
+    _well().to_csv(path)
+    result = pp.interpret(path, depth_unit="m")
+    assert result.well.depth_unit == "m"
+    with pytest.raises(ValueError, match="depth_unit"):
+        pp.interpret(path)
+    with pytest.raises(ValueError, match="only applies when interpret"):
+        pp.interpret(_well(), depth_unit="m")
+
+
+def test_read_reports_missing_and_unsupported_files(tmp_path):
+    with pytest.raises(FileNotFoundError, match="Well file not found"):
+        pp.read(tmp_path / "missing.las")
+    with pytest.raises(ValueError, match="Unsupported well format '.xyz'"):
+        pp.read(tmp_path / "well.xyz")
+    with pytest.raises(ValueError, match="Unsupported depth unit"):
+        path = tmp_path / "well.csv"
+        _well().to_csv(path)
+        pp.read(path, depth_unit="furlong")

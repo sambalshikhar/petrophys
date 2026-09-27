@@ -484,7 +484,7 @@ class DynamicWorkflowConfig:
     salinity_ppm: Optional[float] = None
 
     # Matrix properties
-    matrix_type: str = "sandstone"
+    matrix_type: str = "auto"
     rho_ma: Optional[float] = None
     nphi_ma: Optional[float] = None
     rho_fl: float = 1.0
@@ -493,7 +493,7 @@ class DynamicWorkflowConfig:
     dt_fl: float = 189.0
 
     # Lithology
-    lithology: str = "clastic"  # clastic or carbonate
+    lithology: str = "auto"
     lithology_csv: Optional[str] = None  # Path to lithology CSV (top, bottom, lithology)
     lithology_intervals: Optional[Any] = None  # Validated table or CSV/Excel path
     lithology_source: str = "auto"  # auto, external, vendor, computed, config
