@@ -899,7 +899,10 @@ class DynamicWorkflowResult:
             print()
 
         if self.steps_skipped:
-            print(f"Skipped: {', '.join(self.steps_skipped)}")
+            print("Skipped:")
+            for name in self.steps_skipped:
+                reason = self.specific_steps_skipped.get(name)
+                print(f"  - {name}: {reason}" if reason else f"  - {name}")
         if self.warnings:
             print(f"\nWarnings:")
             for w in self.warnings:
@@ -1643,7 +1646,7 @@ class DynamicWorkflow:
                     )
             else:
                 self._result.steps_skipped.append(step_name)
-                self._result.specific_steps_skipped[step_name] = "Required usable curves or parameters are unavailable"
+                self._result.specific_steps_skipped[step_name] = self._skip_reason(step_enum, well)
 
         # The May context benchmark finalized apparent Swirr after NET_RES had
         # been written, then recalculated permeability from that final reservoir
@@ -1747,6 +1750,91 @@ class DynamicWorkflow:
             if get_curve(well, [name]) is not None:
                 available.add(name)
         return available
+
+    def _missing(self, well: "Well", *requirements: tuple) -> List[str]:
+        """Return the labels of unmet ``(label, curve names...)`` requirements."""
+        return [label for label, *names in requirements if not self._has_curve(well, *names)]
+
+    def _skip_reason(self, step: "WorkflowStep", well: "Well") -> str:
+        """Explain, in user terms, why a pipeline step cannot run on ``well``."""
+        porosity = ("porosity (PHIE/PHIT)", "PHIE_CC", "PHIE", "PHIT")
+        saturation = ("water saturation (SW)", "SW", "SWA", "SWT-LOG")
+        deep_res = ("deep resistivity (RDEP/RT)", "RDEP", "RT")
+        vendor_only = "Not part of the vendor_benchmark interpretation profile"
+        missing: List[str] = []
+        if step is WorkflowStep.NORMALIZATION:
+            return "standardize_input=False"
+        if step is WorkflowStep.TEMPERATURE:
+            return "The well has no depth index"
+        if step is WorkflowStep.BAD_HOLE:
+            return "Needs a caliper (CALI) or density-correction (DRHO) curve"
+        if step is WorkflowStep.VCLAY:
+            return "Needs a gamma-ray curve, an SP curve, or neutron and density curves"
+        if step is WorkflowStep.RCL:
+            missing = self._missing(well, deep_res, ("clay volume (VCL)", "VCL", "VCLAY"))
+        elif step is WorkflowStep.LITHOLOGY:
+            discriminator = (
+                ("neutron porosity (NPHI)", "NPHI", "PHIN") if self._uses_vendor_benchmark
+                else ("a neutron, PEF or sonic curve", "NPHI", "PHIN", "PEF", "DTC", "DT")
+            )
+            missing = self._missing(
+                well, ("bulk density (RHOB)", "RHOB"), discriminator, ("clay volume (VCL)", "VCL", "VCLAY")
+            )
+        elif step in (WorkflowStep.SPECTRAL_GAMMA, WorkflowStep.ELEMENTAL_SPECTROSCOPY):
+            if self._uses_vendor_benchmark:
+                return vendor_only
+            if step is WorkflowStep.SPECTRAL_GAMMA:
+                return "Needs processed spectral gamma curves (potassium, thorium or uranium)"
+            return "Needs processed elemental concentration or yield curves"
+        elif step is WorkflowStep.RMF:
+            return (
+                "No mud-filtrate resistivity source: set mud_type='OBM', rmf_at_meas_temp, "
+                "rmf_salinity_ppm or rm, or provide RMF/RM in the LAS header"
+            )
+        elif step is WorkflowStep.INVASION:
+            missing = self._missing(
+                well,
+                ("shallow or medium resistivity (RXO/RSHA/RMED)", "RSHA", "RESS", "RXO", "RMED", "RESM"),
+                deep_res,
+            )
+        elif step is WorkflowStep.HC_CORRECTION:
+            if not self.config.apply_hc_correction:
+                return "apply_hc_correction=False (hydrocarbon correction is opt-in)"
+            missing = self._missing(well, ("neutron porosity (NPHI)", "NPHI"), ("bulk density (RHOB)", "RHOB"))
+        elif step is WorkflowStep.POROSITY:
+            return "Needs a density, neutron or sonic curve, or an input porosity curve"
+        elif step is WorkflowStep.POROSITY_REFINEMENT:
+            if WorkflowStep.POROSITY.value in self.config.skip_steps:
+                return "The porosity step is disabled in skip_steps"
+            if self._uses_vendor_benchmark:
+                return vendor_only
+            if not self._computed_lithology_written:
+                return "No computed lithology log (LITHO) was produced to refine porosity by rock type"
+            missing = self._missing(well, ("computed lithology (LITHO)", "LITHO"))
+        elif step is WorkflowStep.CORE_CORRECTION:
+            missing = self._missing(
+                well,
+                porosity,
+                ("core porosity (PHIC/CPOR)", "PHIC", "CPOR"),
+                ("core permeability (KH_CORE/CPERM)", "KH_CORE", "CPERM", "K_CORE", "PERM_CORE"),
+            )
+        elif step is WorkflowStep.SATURATION:
+            missing = self._missing(well, ("effective porosity (PHIE)", "PHIE_CC", "PHIE"), deep_res)
+            if self._result is not None and self._result.rw_computed is None:
+                missing.append("formation water resistivity (Rw)")
+        elif step is WorkflowStep.PERMEABILITY:
+            missing = self._missing(well, porosity)
+        elif step is WorkflowStep.ROCK_QUALITY:
+            missing = self._missing(well, ("permeability (PERM)", "PERM_CC", "PERM"), porosity)
+        elif step in (WorkflowStep.BVW, WorkflowStep.NET_PAY):
+            missing = self._missing(well, porosity, saturation)
+        elif step is WorkflowStep.MHI:
+            missing = self._missing(well, saturation)
+            if not self._has_sxo_curve(well):
+                missing.append("flushed-zone saturation (SXO)")
+        if missing:
+            return "Missing " + ", ".join(missing)
+        return "Required usable curves or parameters are unavailable"
 
     def _can_normalization(self, well: "Well") -> bool:
         return bool(self.config.standardize_input)

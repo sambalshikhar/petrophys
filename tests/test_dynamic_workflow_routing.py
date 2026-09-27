@@ -1560,3 +1560,21 @@ def test_reused_workflow_resolves_auto_matrix_per_well():
         fresh.config.lithology,
     )
     assert (workflow.config.matrix_type, workflow.config.lithology) == ("auto", "auto")
+
+
+def test_skipped_steps_explain_what_is_missing(capsys):
+    import petrophys as pp
+
+    result = pp.interpret(pp.read(pp.sample("HW-3")), rw=0.07)
+    reasons = result.specific_steps_skipped
+
+    assert reasons["hc_correction"] == "apply_hc_correction=False (hydrocarbon correction is opt-in)"
+    assert reasons["core_correction"].startswith("Missing core porosity")
+    assert "mud_type='OBM'" in reasons["rmf"]
+    assert all("Required usable curves" not in reason for reason in reasons.values())
+
+    disabled = pp.interpret(pp.read(pp.sample("HW-3")), rw=0.07, skip_steps=["bvw"])
+    assert disabled.specific_steps_skipped["bvw"] == "Disabled in skip_steps"
+
+    result.print_trace()
+    assert "hc_correction: apply_hc_correction=False" in capsys.readouterr().out
