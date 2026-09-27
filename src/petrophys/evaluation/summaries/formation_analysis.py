@@ -49,6 +49,9 @@ class FormationAnalysisResult:
     depth_unit: str = "m"
     union_gross: Optional[float] = None
     union_net_pay: Optional[float] = None
+    #: Workflow result the summaries were computed from, when produced by
+    #: :func:`run_formation_analysis` (inspect its trace for provenance).
+    workflow_result: Optional[Any] = None
 
     @property
     def total_gross(self) -> float:
@@ -359,7 +362,16 @@ def run_formation_analysis(
     Returns
     -------
     FormationAnalysisResult
-        Formation-level analysis results
+        Formation-level analysis results. ``workflow_result`` holds the
+        interpretation the summaries were computed from.
+
+    Raises
+    ------
+    RuntimeError
+        If the interpretation workflow fails; summaries are never computed
+        from a failed interpretation.
+    ValueError
+        If no formations are found for the well.
 
     Examples
     --------
@@ -383,8 +395,9 @@ def run_formation_analysis(
     if standardize:
         well = standardize_curves(well, rename_curves=True, convert_units=True)
 
-    # 3. Run dynamic workflow
+    # 3. Run dynamic workflow; never summarize a failed interpretation.
     wf_result = run_dynamic_workflow(well, config=workflow_config, **workflow_kwargs)
+    wf_result.raise_for_errors()
 
     # 4. Load formations
     formations = load_formations_csv(
@@ -403,5 +416,6 @@ def run_formation_analysis(
 
     # 5. Analyze by formation
     result = analyze_formations(well, formations)
+    result.workflow_result = wf_result
 
     return result
