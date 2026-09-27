@@ -6,6 +6,7 @@ import numpy as np
 from petrophys import Well
 from petrophys.reporting.reference_export import (
     _compact_curve_note,
+    _computed_curve_detail,
     _curve_route_reason,
     _first_step_result,
     _step_lookup,
@@ -134,3 +135,17 @@ def test_dynamic_workflow_result_exports_trace_dict_json_and_markdown(tmp_path):
     assert "# Dynamic Workflow Trace" in markdown
     assert "## temperature" in markdown
     assert "## Curve Summaries" in markdown
+
+
+def test_assumed_reference_temperature_method_is_labelled_per_resistivity():
+    method = "las_metadata_assumed_reference_temperature"
+    steps = {
+        "rmf": StepResult(step="rmf", success=True, method=method),
+        "rw": StepResult(step="rw", success=True, method=method),
+    }
+
+    rmf_detail = _computed_curve_detail("RMF", steps)
+    rw_detail = _computed_curve_detail("RW", steps)
+
+    assert rmf_detail.startswith("LAS header RMF")
+    assert rw_detail.startswith("LAS header RW")
