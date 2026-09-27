@@ -274,7 +274,7 @@ def test_multiwell_csv_requires_explicit_separation(tmp_path):
 
     with pytest.raises(ValueError, match="read_csv_wells"):
         read_csv(path)
-    wells = read_csv_wells(path, chunksize=2)
+    wells = read_csv_wells(path, chunksize=2, depth_unit="m")
     assert set(wells) == {"A", "B"}
     np.testing.assert_allclose(wells["B"]["GR"].data, [70.0, 75.0])
 

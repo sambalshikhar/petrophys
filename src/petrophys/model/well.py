@@ -414,7 +414,7 @@ class Well:
         cls,
         df: pd.DataFrame,
         depth_column: str = "DEPTH",
-        depth_unit: str = "ft",
+        depth_unit: Optional[str] = None,
         name: str = ""
     ) -> "Well":
         """
@@ -426,8 +426,9 @@ class Well:
             DataFrame with curve data
         depth_column : str, optional
             Name of depth column
-        depth_unit : str, optional
-            Unit for depth
+        depth_unit : {"m", "ft"}
+            Unit of ``depth_column``. Required when the frame has a depth
+            column; tabular data does not record it.
         name : str, optional
             Well name
 
@@ -439,6 +440,11 @@ class Well:
         well = cls(name=name)
 
         if depth_column in df.columns:
+            if depth_unit is None:
+                raise ValueError(
+                    "Well.from_dataframe needs depth_unit='m' or depth_unit='ft' "
+                    f"for depth column {depth_column!r}."
+                )
             well._depth = pd.to_numeric(
                 df[depth_column],
                 errors="coerce",

@@ -10,12 +10,22 @@ from pathlib import Path
 import warnings
 import numpy as np
 import pandas as pd
+from petrophys.model.units import normalize_depth_unit
 
+
+
+def _require_depth_unit(depth_unit: Optional[str], source: str) -> str:
+    """Return the validated depth unit, or explain that one is required."""
+    if depth_unit is None or not str(depth_unit).strip():
+        raise ValueError(
+            f"{source} does not record its depth unit; pass depth_unit='m' or depth_unit='ft'."
+        )
+    return normalize_depth_unit(depth_unit)
 
 def read_csv(
     filepath: Union[str, Path],
     depth_column: str = "DEPTH",
-    depth_unit: str = "ft",
+    depth_unit: Optional[str] = None,
     well_name: str = "",
     skiprows: int = 0,
     null_values: Optional[List[str]] = None,
@@ -31,8 +41,8 @@ def read_csv(
         Path to CSV file
     depth_column : str, optional
         Name of depth column (default: "DEPTH")
-    depth_unit : str, optional
-        Unit for depth values (default: "ft")
+    depth_unit : {"m", "ft"}
+        Unit of the depth column. Required: CSV files do not record it.
     well_name : str, optional
         Name for the well
     skiprows : int, optional
@@ -97,7 +107,7 @@ def read_csv(
     well = Well.from_dataframe(
         df,
         depth_column=depth_column.upper(),
-        depth_unit=depth_unit,
+        depth_unit=_require_depth_unit(depth_unit, f"CSV file {filepath.name!r}"),
         name=well_name
     )
 
@@ -131,7 +141,7 @@ def _well_identifiers(series: pd.Series) -> List[str]:
 def read_csv_wells(
     filepath: Union[str, Path],
     depth_column: str = "DEPTH",
-    depth_unit: str = "ft",
+    depth_unit: Optional[str] = None,
     well_column: Optional[str] = None,
     skiprows: int = 0,
     null_values: Optional[List[str]] = None,
@@ -178,7 +188,7 @@ def read_csv_wells(
         wells[name] = Well.from_dataframe(
             frame,
             depth_column=depth_column.upper(),
-            depth_unit=depth_unit,
+            depth_unit=_require_depth_unit(depth_unit, f"CSV file {Path(filepath).name!r}"),
             name=name,
         )
     return wells
@@ -187,7 +197,7 @@ def read_csv_wells(
 def read_ascii(
     filepath: Union[str, Path],
     depth_column: str = "DEPTH",
-    depth_unit: str = "ft",
+    depth_unit: Optional[str] = None,
     well_name: str = "",
     delimiter: Optional[str] = None,
     header_line: int = 0,
@@ -209,8 +219,8 @@ def read_ascii(
         Path to ASCII file
     depth_column : str, optional
         Name of depth column (default: "DEPTH")
-    depth_unit : str, optional
-        Unit for depth values (default: "ft")
+    depth_unit : {"m", "ft"}
+        Unit of the depth column. Required: CSV files do not record it.
     well_name : str, optional
         Name for the well
     delimiter : str, optional
@@ -312,7 +322,9 @@ def read_ascii(
     well = Well.from_dataframe(
         df,
         depth_column=depth_col,
-        depth_unit=units.get(depth_col, depth_unit),
+        depth_unit=_require_depth_unit(
+            units.get(depth_col) or depth_unit, f"ASCII file {Path(filepath).name!r}"
+        ),
         name=requested_name,
     )
     if not well.name:
