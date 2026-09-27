@@ -445,12 +445,15 @@ class BoreholeImageData:
         original image stays in ``BoreholeImageData.image``.
         """
         from petrophys.model.data_types import DataType
+        from petrophys.model.units import normalize_depth_unit
         from petrophys.model.well import Well
 
         if well is None:
             well = Well(self.metadata.get("well", ""))
             well.depth = self.depth
-            well.depth_unit = self.depth_unit
+            # Image depth labels come straight from DLIS/LAS channels (e.g.
+            # "0.1 in"), so keep unrecognized labels rather than failing here.
+            well._depth_unit = normalize_depth_unit(self.depth_unit, strict=False, default="m")
 
         stats = self.per_depth_statistics()
         descriptions = {

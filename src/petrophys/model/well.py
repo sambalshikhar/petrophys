@@ -13,6 +13,7 @@ import pandas as pd
 
 from petrophys.model.curve import Curve, CurveMetadata
 from petrophys.model.data_types import DataType
+from petrophys.model.units import normalize_depth_unit
 
 
 class WellHeader:
@@ -180,8 +181,8 @@ class Well:
 
     @depth_unit.setter
     def depth_unit(self, value: str):
-        """Set depth unit."""
-        self._depth_unit = value
+        """Set depth unit (``"m"`` or ``"ft"``; aliases such as ``"M"`` or ``"feet"`` are normalized)."""
+        self._depth_unit = normalize_depth_unit(value)
 
     @property
     def curves(self) -> List[str]:
@@ -442,7 +443,7 @@ class Well:
                 df[depth_column],
                 errors="coerce",
             ).to_numpy(dtype=float)
-            well._depth_unit = depth_unit
+            well._depth_unit = normalize_depth_unit(depth_unit)
 
         skipped_non_numeric: Dict[str, List[str]] = {}
         for col in df.columns:

@@ -11,6 +11,7 @@ from typing import Any, Optional, Sequence
 import numpy as np
 
 from petrophys.model.data_types import DataType
+from petrophys.model.units import normalize_depth_unit
 from petrophys._internal.statistics import finite_min_max
 
 _LAS_OCCURRENCE_SUFFIX = re.compile(r":\d+$")
@@ -372,8 +373,7 @@ def depth_step_array(depth: np.ndarray, max_gap_factor: float = 3.0) -> np.ndarr
 
 def depth_to_meters(depth: np.ndarray, depth_unit: str) -> np.ndarray:
     """Convert depth values to meters."""
-    unit = (depth_unit or "").strip().lower()
-    factor = 0.3048 if unit in {"ft", "feet"} else 1.0
+    factor = 0.3048 if normalize_depth_unit(depth_unit, strict=False) == "ft" else 1.0
     return np.asarray(depth, dtype=float) * factor
 
 

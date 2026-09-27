@@ -24,6 +24,7 @@ from petrophys.evaluation.diagnostics import (
     SaturationAnalysis,
 )
 from petrophys.io.las_reader import read_las
+from petrophys.model.units import temperature_unit
 from petrophys.preprocessing.quality.value_ranges import (
     VALUE_RANGE_QC_PARAMETER,
     apply_value_range_qc,
@@ -718,18 +719,24 @@ def _export_curve_unit(mnemonic: str, unit: str) -> str:
 
 
 def _convert_temperature_to_celsius(data: np.ndarray, unit: str) -> np.ndarray:
-    text = (unit or "").strip().lower()
+    """Convert a temperature array to Celsius; unlabelled data is assumed Celsius."""
     numeric = _normalize_numeric_array(data)
-    if "f" in text and "c" not in text:
+    scale = temperature_unit(unit)
+    if scale == "F":
         return (numeric - 32.0) * 5.0 / 9.0
+    if scale == "K":
+        return numeric - 273.15
     return numeric
 
 
 def _convert_temperature_to_fahrenheit(data: np.ndarray, unit: str) -> np.ndarray:
-    text = (unit or "").strip().lower()
+    """Convert a temperature array to Fahrenheit; unlabelled data is assumed Fahrenheit."""
     numeric = _normalize_numeric_array(data)
-    if "c" in text and "f" not in text:
+    scale = temperature_unit(unit)
+    if scale == "C":
         return (numeric * 9.0 / 5.0) + 32.0
+    if scale == "K":
+        return (numeric - 273.15) * 9.0 / 5.0 + 32.0
     return numeric
 
 

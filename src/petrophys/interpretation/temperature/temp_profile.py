@@ -11,20 +11,12 @@ import numpy as np
 
 from petrophys.model.well import Well
 from petrophys.model.constants import DefaultParameters
-from petrophys.model.units import UnitConverter
+from petrophys.model.units import UnitConverter, temperature_to_fahrenheit
 from petrophys.interpretation.temperature.temp_gradient import (
     calculate_temperature_gradient,
     estimate_gradient_from_bht,
     gradient_c_per_km_to_fahrenheit_per_100ft,
 )
-
-
-def _temperature_to_f(value: float, unit: str) -> float:
-    """Convert a scalar temperature to Fahrenheit when the unit says Celsius."""
-    text = (unit or "").strip().lower()
-    if "c" in text and "f" not in text:
-        return float(UnitConverter.celsius_to_fahrenheit(value))
-    return float(value)
 
 
 def _parameter_float(well: "Well", name: str) -> Optional[float]:
@@ -67,11 +59,11 @@ def _metadata_temperature_f(well: "Well", name: str) -> Optional[float]:
     """Read scalar or single-valued zoned temperature metadata in Fahrenheit."""
     value = _parameter_float(well, name)
     if value is not None:
-        return _temperature_to_f(value, _parameter_text(well, f"{name}__UNIT"))
+        return temperature_to_fahrenheit(value, _parameter_text(well, f"{name}__UNIT"))
 
     value = _constant_zoned_parameter(well, name)
     if value is not None:
-        return _temperature_to_f(value, _parameter_text(well, f"{name}_Z1__UNIT"))
+        return temperature_to_fahrenheit(value, _parameter_text(well, f"{name}_Z1__UNIT"))
 
     return None
 
@@ -200,7 +192,7 @@ class TemperatureProfile:
                 if surface_temp == DefaultParameters.SURFACE_TEMPERATURE_F
                 else bht_unit
             )
-        surface_temp = _temperature_to_f(surface_temp, surface_temp_unit)
+        surface_temp = temperature_to_fahrenheit(surface_temp, surface_temp_unit)
 
         if depth_unit.lower() == "m":
             td = UnitConverter.meters_to_feet(td)
@@ -227,7 +219,7 @@ class TemperatureProfile:
         gradient = gradient_c_per_km_to_fahrenheit_per_100ft(gradient_c_per_km)
         return cls(
             gradient=gradient,
-            surface_temp=_temperature_to_f(surface_temp, surface_temp_unit),
+            surface_temp=temperature_to_fahrenheit(surface_temp, surface_temp_unit),
             source="fallback_geothermal_gradient",
         )
 

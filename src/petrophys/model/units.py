@@ -6,6 +6,7 @@ petrophysical measurements including depth, porosity, resistivity,
 temperature, and sonic measurements.
 """
 
+import re
 from typing import Union, Optional
 from enum import Enum
 import numpy as np
@@ -368,3 +369,124 @@ class UnitConverter:
     def celsius_to_fahrenheit(value: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         """Convert Celsius to Fahrenheit."""
         return value * 9 / 5 + 32
+
+
+_FEET_ALIASES = frozenset({"f", "ft", "fts", "feet", "foot"})
+_METRE_ALIASES = frozenset({"m", "mtr", "meter", "meters", "metre", "metres"})
+
+
+def normalize_depth_unit(
+    unit: Optional[str],
+    *,
+    strict: bool = True,
+    default: Optional[str] = None,
+) -> str:
+    """Return the canonical depth unit, ``"m"`` or ``"ft"``.
+
+    Parameters
+    ----------
+    unit : str or None
+        Depth unit as written in a file or supplied by a user, e.g. ``"M"``,
+        ``"metres"``, ``"F"``, ``"ft."`` or ``"Feet"``. Case, surrounding
+        whitespace and dots are ignored.
+    strict : bool, default True
+        If True, an unrecognized unit raises ``ValueError``. If False, it is
+        returned unchanged (stripped) so callers reading third-party files can
+        keep the original label and report it.
+    default : str, optional
+        Value returned when ``unit`` is empty or None. When omitted, an empty
+        unit is treated like an unrecognized one.
+
+    Returns
+    -------
+    str
+        ``"m"`` or ``"ft"`` (or the stripped original text when
+        ``strict=False`` and the unit is not recognized).
+
+    Raises
+    ------
+    ValueError
+        If ``strict`` is True and the unit is not a recognized depth unit.
+
+    Examples
+    --------
+    >>> normalize_depth_unit("Metres")
+    'm'
+    >>> normalize_depth_unit("F")
+    'ft'
+    """
+    text = "" if unit is None else str(unit).strip()
+    if not text and default is not None:
+        return normalize_depth_unit(default, strict=strict)
+    key = text.lower().replace(".", "").replace(" ", "")
+    if key in _FEET_ALIASES:
+        return "ft"
+    if key in _METRE_ALIASES:
+        return "m"
+    if strict:
+        raise ValueError(
+            f"Unsupported depth unit {unit!r}; use 'm' (metres) or 'ft' (feet)."
+        )
+    return text
+
+
+def temperature_unit(unit: Optional[str]) -> Optional[str]:
+    """Classify a temperature unit label as ``"F"``, ``"C"``, ``"K"`` or None.
+
+    Units are matched on whole words, so labels such as ``"deg C (from log)"``
+    or ``"Celsius (ref)"`` are read as Celsius even though they contain the
+    letter ``f``. Labels naming more than one scale, or none, return None.
+
+    Examples
+    --------
+    >>> temperature_unit("deg C (from log)")
+    'C'
+    >>> temperature_unit("°F")
+    'F'
+    >>> temperature_unit("") is None
+    True
+    """
+    text = "" if unit is None else str(unit).lower().replace("°", " ").replace("º", " ")
+    tokens = re.findall(r"[a-z]+", text)
+    joined = ["".join(tokens[i:i + 2]) for i in range(len(tokens))]
+    words = set(tokens) | set(joined)
+    scales = set()
+    if words & {"f", "degf", "fahrenheit"}:
+        scales.add("F")
+    if words & {"c", "degc", "celsius", "centigrade"}:
+        scales.add("C")
+    if words & {"k", "degk", "kelvin"}:
+        scales.add("K")
+    return scales.pop() if len(scales) == 1 else None
+
+
+def temperature_to_fahrenheit(value: float, unit: Optional[str]) -> float:
+    """Convert a scalar temperature to degrees Fahrenheit.
+
+    Parameters
+    ----------
+    value : float
+        Temperature value.
+    unit : str or None
+        Unit label of ``value`` (see :func:`temperature_unit`). Unrecognized
+        or empty labels are assumed to be Fahrenheit, the convention of LAS
+        header temperatures such as BHT.
+
+    Returns
+    -------
+    float
+        Temperature in degrees Fahrenheit.
+
+    Examples
+    --------
+    >>> temperature_to_fahrenheit(100.0, "degC")
+    212.0
+    >>> temperature_to_fahrenheit(150.0, "DEGF")
+    150.0
+    """
+    scale = temperature_unit(unit)
+    if scale == "C":
+        return float(value) * 9.0 / 5.0 + 32.0
+    if scale == "K":
+        return (float(value) - 273.15) * 9.0 / 5.0 + 32.0
+    return float(value)

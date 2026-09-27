@@ -30,6 +30,7 @@ from pathlib import Path
 import re
 from petrophys.model.well import Well
 from petrophys.model.data_types import DataType
+from petrophys.model.units import temperature_to_fahrenheit
 from petrophys._internal.analysis_helpers import (
     curve_source_mnemonic,
     get_curve,
@@ -156,22 +157,6 @@ def _prioritized_curve_label(curve: Any) -> str:
     return f"{getattr(curve, 'mnemonic', '')} from {source}"
 
 
-def _temperature_to_f(value: float, unit: str) -> float:
-    """Convert a temperature value to Fahrenheit when units indicate Celsius.
-
-    Matches explicit Celsius/Fahrenheit tokens rather than testing for a stray
-    'c'/'f' character, so a unit like 'deg C (from log)' is not misread because
-    'from' contains an 'f'.
-    """
-    text = (unit or "").strip().lower().replace("°", "")
-    compact = text.replace(" ", "").replace(".", "")
-    is_f = text == "f" or "degf" in compact or "fahrenheit" in text
-    is_c = text == "c" or "degc" in compact or "celsius" in text or "centigrade" in text
-    if is_c and not is_f:
-        return (float(value) * 9.0 / 5.0) + 32.0
-    return float(value)
-
-
 def _constant_zoned_parameter(well: "Well", prefix: str) -> Optional[float]:
     """
     Return a unique zoned LAS parameter value, e.g. RW_Z1/RW_Z2 -> RW.
@@ -202,12 +187,12 @@ def _parameter_temperature_f(well: "Well", name: str) -> Optional[float]:
     value = _parameter_float(well, name)
     unit = _parameter_text(well, f"{name}__UNIT")
     if value is not None:
-        return _temperature_to_f(value, unit)
+        return temperature_to_fahrenheit(value, unit)
 
     value = _constant_zoned_parameter(well, name)
     unit = _parameter_text(well, f"{name}_Z1__UNIT")
     if value is not None:
-        return _temperature_to_f(value, unit)
+        return temperature_to_fahrenheit(value, unit)
 
     return None
 
@@ -216,17 +201,17 @@ def _metadata_bht_f(well: "Well") -> Optional[float]:
     """Return BHT metadata in Fahrenheit."""
     if well.header.bht is not None:
         unit = _parameter_text(well, "BHT__UNIT") or getattr(well.header, "bht_unit", "F")
-        return _temperature_to_f(float(well.header.bht), unit)
+        return temperature_to_fahrenheit(float(well.header.bht), unit)
 
     value = _parameter_float(well, "BHT")
     unit = _parameter_text(well, "BHT__UNIT").lower()
     if value is not None:
-        return _temperature_to_f(value, unit)
+        return temperature_to_fahrenheit(value, unit)
 
     value = _constant_zoned_parameter(well, "BHT")
     unit = _parameter_text(well, "BHT_Z1__UNIT").lower()
     if value is not None:
-        return _temperature_to_f(value, unit)
+        return temperature_to_fahrenheit(value, unit)
 
     return None
 
