@@ -127,6 +127,8 @@ def test_percent_training_units_are_converted_exactly_once():
 
 
 def test_curve_feature_transformer_follows_sklearn_clone_contract():
+    # __sklearn_tags__ exists from scikit-learn 1.6; the ML extra pins 1.8.
+    pytest.importorskip("sklearn", minversion="1.6")
     sklearn = pytest.importorskip("sklearn.base")
     features = ("GR", "RDEP")
     transformer = CurveFeatureTransformer(features)
