@@ -450,103 +450,189 @@ def _curve_summaries_for_trace(
 @dataclass
 class DynamicWorkflowConfig:
     """
-    Configuration for the dynamic workflow.
+    Settings for :func:`petrophys.interpret` and the dynamic workflow.
 
-    All parameters are optional. The workflow auto-detects what can
-    be computed based on available curves and provided parameters.
+    Every setting is optional. The workflow inspects the available curves
+    and runs each step it can; settings supply values that logs cannot
+    (formation water resistivity, temperatures, mud properties) or override
+    automatic choices. Values are validated when the config is created: an
+    invalid choice raises ``ValueError`` listing the accepted values.
+
+    Temperatures are in degrees Fahrenheit, resistivities in ohm.m, densities
+    in g/cm3 and slownesses in us/ft, whatever the depth unit of the well.
+    Fields left as ``None`` are read from the LAS header where available or
+    derived from the data, and the trace records where each value came from.
+
+    Examples
+    --------
+    >>> from petrophys import DynamicWorkflowConfig
+    >>> config = DynamicWorkflowConfig(rw=0.05, bht_f=220, sw_model="indonesia")
+    >>> config.matrix_type
+    'auto'
     """
-    # Input handling and assumptions
+
+    # -- Input handling ------------------------------------------------------
+    #: Standardize curve aliases and units before interpretation.
     standardize_input: bool = True
+    #: Rename vendor mnemonics to canonical names instead of adding aliases.
     rename_input_curves: bool = False
+    #: Allow a 0.05 ohm.m default Rw when no Rw source is found. When False,
+    #: saturation is not computed without an Rw source.
     allow_default_rw: bool = False
-    # auto: historical benchmark route when a validated vendor lithology-code
-    # curve is present; otherwise use the current generic inference workflow.
+    #: ``"auto"``, ``"vendor_benchmark"`` or ``"generic_inference"``. Auto
+    #: uses the vendor-benchmark route when a validated vendor lithology
+    #: curve is present.
     interpretation_profile: str = "auto"
 
-    # Temperature
+    # -- Temperature ---------------------------------------------------------
+    #: Surface (mean annual) temperature, degF.
     surface_temp_f: float = 68.0
+    #: Bottom-hole temperature, degF. Defaults to the LAS header BHT.
     bht_f: Optional[float] = None
+    #: Total depth for the BHT, in feet. Defaults to the deepest sample.
     td_ft: Optional[float] = None
 
-    # Mud properties
-    mud_type: str = "WBM"  # WBM or OBM
+    # -- Mud properties ------------------------------------------------------
+    #: ``"WBM"`` (water-based) or ``"OBM"`` (oil-based) mud.
+    mud_type: str = "WBM"
+    #: The mud contains clay or KCl, which disables SP-based Rw estimation.
     mud_has_clay_or_kcl: bool = False
+    #: Mud-filtrate resistivity Rmf at ``rmf_meas_temp_f``, ohm.m.
     rmf_at_meas_temp: Optional[float] = None
+    #: Temperature at which ``rmf_at_meas_temp`` was measured, degF.
     rmf_meas_temp_f: float = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
+    #: Mud-filtrate salinity, ppm NaCl equivalent (alternative to Rmf).
     rmf_salinity_ppm: Optional[float] = None
+    #: Mud resistivity Rm at ``rm_meas_temp_f``, ohm.m (Rmf is derived from it).
     rm: Optional[float] = None
+    #: Temperature at which ``rm`` was measured, degF.
     rm_meas_temp_f: float = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
-    mud_water: str = "fresh"  # fresh or salt
+    #: ``"fresh"`` or ``"salt"`` mud, which sets the Rm-to-Rmf factor.
+    mud_water: str = "fresh"
 
-    # Formation water
+    # -- Formation water -----------------------------------------------------
+    #: Formation water resistivity Rw, ohm.m, at ``rw_meas_temp_f``.
     rw: Optional[float] = None
+    #: Temperature of ``rw``, degF. When omitted, 75 degF is assumed and
+    #: recorded in the trace.
     rw_meas_temp_f: Optional[float] = None
+    #: Formation water salinity, ppm NaCl equivalent (used when Rw is absent).
     salinity_ppm: Optional[float] = None
 
-    # Matrix properties
+    # -- Matrix properties ---------------------------------------------------
+    #: ``"auto"`` (resolved from lithology evidence) or a mineral name such as
+    #: ``"sandstone"``, ``"limestone"`` or ``"dolomite"``; see
+    #: :meth:`petrophys.model.constants.MatrixProperties.names`.
     matrix_type: str = "auto"
+    #: Matrix density, g/cm3. Defaults to the value for ``matrix_type``.
     rho_ma: Optional[float] = None
+    #: Matrix neutron porosity, v/v. Defaults to the value for ``matrix_type``.
     nphi_ma: Optional[float] = None
+    #: Pore-fluid density, g/cm3.
     rho_fl: float = 1.0
+    #: Clay density, g/cm3.
     rho_cl: float = 2.45
+    #: Matrix sonic slowness, us/ft. Defaults to the value for ``matrix_type``.
     dt_ma: Optional[float] = None
+    #: Pore-fluid sonic slowness, us/ft.
     dt_fl: float = 189.0
 
-    # Lithology
+    # -- Lithology -----------------------------------------------------------
+    #: Cutoff family ``"auto"``, ``"clastic"``, ``"carbonate"`` or
+    #: ``"evaporite"``, or a rock name with tabulated Archie coefficients
+    #: (e.g. ``"sandstone"``, ``"shaly sand"``).
     lithology: str = "auto"
-    lithology_csv: Optional[str] = None  # Path to lithology CSV (top, bottom, lithology)
-    lithology_intervals: Optional[Any] = None  # Validated table or CSV/Excel path
-    lithology_source: str = "auto"  # auto, external, vendor, computed, config
+    #: Lithology intervals CSV (``top,bottom,lithology``).
+    lithology_csv: Optional[str] = None
+    #: Lithology intervals as a table or CSV/Excel path.
+    lithology_intervals: Optional[Any] = None
+    #: Lithology source: ``"auto"``, ``"external"`` (intervals),
+    #: ``"vendor"`` (lithology curve), ``"computed"`` or ``"config"``.
+    lithology_source: str = "auto"
+    #: Raise on the first failed step instead of recording it and continuing.
     raise_on_error: bool = False
 
-    # Archie parameters
+    # -- Archie parameters (None: lithology-dependent defaults) ---------------
+    #: Tortuosity factor a.
     a: Optional[float] = None
+    #: Cementation exponent m.
     m: Optional[float] = None
+    #: Saturation exponent n.
     n: Optional[float] = None
 
-    # Waxman-Smits parameters
+    # -- Waxman-Smits parameters ---------------------------------------------
+    #: Cation exchange capacity, meq/100 g.
     cec: Optional[float] = None
+    #: Equivalent counter-ion conductance B.
     b_coeff: Optional[float] = None
+    #: Waxman-Smits cementation exponent m*.
     m_star: float = 2.0
 
-    # Dual Water parameters
+    # -- Dual-water parameters -----------------------------------------------
+    #: Bound-water resistivity, ohm.m.
     rwb: Optional[float] = None
+    #: Clay (shale) porosity, v/v.
     phi_cl: float = 0.15
 
-    # HC correction
+    # -- Hydrocarbon correction ----------------------------------------------
+    #: Apply the neutron-density hydrocarbon correction (opt-in).
     apply_hc_correction: bool = False
-    hc_type: str = "oil"  # oil or gas
+    #: Hydrocarbon type for the correction: ``"oil"`` or ``"gas"``.
+    hc_type: str = "oil"
 
-    # Cutoffs - leave None to resolve from the curriculum standards
-    # (STANDARD_CUTOFFS) using the well's lithology, per depth when mixed.
+    # -- Net-pay cutoffs (None: lithology-family standards) --------------------
+    #: Maximum clay volume for net rock, v/v.
     vcl_cutoff: Optional[float] = None
+    #: Maximum water saturation for net pay, v/v.
     sw_cutoff: Optional[float] = None
+    #: Minimum effective porosity for net reservoir, v/v.
     phie_cutoff: Optional[float] = None
 
-    # GR parameters (auto-detected if None)
+    # -- Gamma-ray clay volume (None: picked from the log) -------------------
+    #: Clean-sand gamma-ray value, API.
     gr_min: Optional[float] = None
+    #: Shale gamma-ray value, API.
     gr_max: Optional[float] = None
+    #: Transform: ``"linear"``, ``"larionov_tertiary"``, ``"larionov_older"``,
+    #: ``"steiber"`` or ``"clavier"``.
     gr_method: str = "linear"
 
-    # SP parameters (auto-detected if None)
+    # -- SP clay volume (None: picked from the log) --------------------------
+    #: Clean (static) SP baseline, mV.
     sp_min: Optional[float] = None
+    #: Shale SP baseline, mV.
     sp_max: Optional[float] = None
 
-    # Permeability
+    # -- Permeability --------------------------------------------------------
+    #: ``"auto"``, ``"timur"``, ``"coates"``, ``"wyllie_rose"`` or ``"lith_vcl"``.
     perm_method: str = "auto"
+    #: Empirical method tried when core calibration is unavailable.
     perm_fallback_method: str = "coates"
+    #: Irreducible water saturation, v/v. Defaults to curves or NMR data.
     swirr: Optional[float] = None
+    #: Offset wells (``Well`` objects) whose core data calibrate permeability.
     peer_wells: Optional[List[Any]] = None
+    #: Formation intervals (``FormationTops``) for per-formation core
+    #: calibration. Defaults to formations attached by ``petrophys.read``.
     formation_tops: Optional[Any] = None
+    #: Calibrate permeability with core data from ``peer_wells``.
     use_peer_core: bool = False
 
-    # Saturation model (auto = use routing logic)
+    # -- Water saturation ----------------------------------------------------
+    #: ``"auto"`` (routed per sample by clay content) or one of
+    #: ``"archie"``, ``"simandoux"``, ``"indonesia"``, ``"dual_water"``,
+    #: ``"waxman_smits"``, ``"north_sea"``, ``"nigeria_schlumberger"``.
     sw_model: str = "auto"
+    #: Shale resistivity, ohm.m. Defaults to the computed clay resistivity.
     rtsh: Optional[float] = None
+    #: Shale exponent of the North Sea model.
     vsh_exp: float = 1.6
+    #: Shale exponent of the Nigeria-Schlumberger model.
     shale_exp: float = 1.6
 
-    # Control which steps to skip
+    # -- Step selection ------------------------------------------------------
+    #: Workflow steps to skip, e.g. ``["permeability"]``; see
+    #: :class:`WorkflowStep` for the names.
     skip_steps: List[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
