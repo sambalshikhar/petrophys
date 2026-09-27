@@ -16,6 +16,10 @@ from petrophys.model.data_types import DataType
 from petrophys.model.units import normalize_depth_unit
 
 
+#: Header parameters reported by :meth:`Well.describe` when present.
+_DESCRIBED_PARAMETERS = ("BHT", "RW", "RWT", "RMF", "RMFT", "RM", "RMT", "MUD", "DFD", "BS", "TD")
+
+
 class WellHeader:
     """
     Container for well header information.
@@ -604,6 +608,60 @@ class Well:
     def get_result(self, name: str, default: Any = None) -> Any:
         """Get a computed result."""
         return self._results.get(name, default)
+
+    def describe(self) -> Dict[str, Any]:
+        """Summarize the well as JSON-serializable data.
+
+        Returns
+        -------
+        dict
+            ``name``, header identifiers, ``depth_unit``, ``top``,
+            ``bottom``, ``step``, ``n_samples``, ``curves`` (mnemonic, unit,
+            description and share of valid samples), selected header
+            parameters (BHT, RW, RMF, ...) and attached geology. Missing
+            values are ``None``.
+
+        Examples
+        --------
+        >>> import petrophys as pp
+        >>> summary = pp.read(pp.sample("30_6-5")).describe()
+        >>> summary["depth_unit"], len(summary["curves"]) > 10
+        ('m', True)
+        """
+        from petrophys._internal.serialization import json_object
+
+        curves = []
+        for mnemonic, curve in self._curves.items():
+            size = int(np.asarray(curve.data).size)
+            curves.append({
+                "mnemonic": mnemonic,
+                "unit": curve.unit,
+                "description": curve.metadata.description,
+                "valid_fraction": round(curve.valid_count() / size, 3) if size else 0.0,
+            })
+        header = {
+            key: getattr(self.header, key, None)
+            for key in ("uwi", "api", "field", "company", "location", "country")
+            if getattr(self.header, key, None)
+        }
+        geology = self.get_parameter("_geology_context") or {}
+        return json_object({
+            "name": self.name,
+            "header": header,
+            "depth_unit": self._depth_unit,
+            "top": self.top,
+            "bottom": self.bottom,
+            "step": self.step,
+            "n_samples": self.n_samples,
+            "curves": curves,
+            "header_parameters": {
+                name: self.get_parameter(name)
+                for name in _DESCRIBED_PARAMETERS
+                if self.get_parameter(name) is not None
+            },
+            "formations": [row.get("formation_name") for row in geology.get("formations", [])],
+            "lithology_intervals": len(geology.get("lithology", [])),
+        })
 
     def info(self) -> str:
         """Return summary information about the well."""

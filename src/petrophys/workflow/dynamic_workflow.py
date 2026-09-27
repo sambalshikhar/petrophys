@@ -1098,6 +1098,40 @@ class DynamicWorkflowResult:
         output_path.write_text(text + "\n", encoding="utf-8")
         return output_path
 
+    def summary(
+        self, top: Optional[float] = None, bottom: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Summarize the interpretation as compact, JSON-serializable data.
+
+        Designed for reports and LLM agents: everything needed to judge the
+        result without walking the full trace.
+
+        Parameters
+        ----------
+        top, bottom : float, optional
+            Depth window (well depth unit) for ``key_results`` and
+            ``net_thickness``; defaults to the whole well.
+
+        Returns
+        -------
+        dict
+            ``status``, ``resolved`` matrix and lithology, ``settings_used``
+            (non-default settings), ``key_results`` (statistics of VCL, PHIT,
+            PHIE, SW, PERM), ``net_thickness``, ``executed_steps``,
+            ``skipped_steps`` with reasons, ``warnings`` and ``errors``.
+            Use :meth:`to_trace_dict` for every step's full record.
+
+        Examples
+        --------
+        >>> import petrophys as pp
+        >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07)
+        >>> result.summary(top=2841, bottom=2958)["status"]
+        'interpreted'
+        """
+        from petrophys.workflow.summary import summarize_result
+
+        return summarize_result(self, top, bottom)
+
     def provenance_parameters(self) -> List[Dict[str, Any]]:
         """Summarize the settings this interpretation used, as LAS parameters.
 

@@ -32,3 +32,22 @@ def test_workflow_steps_are_ordered_and_described():
     assert steps[0]["name"] == "normalization" and steps[-1]["name"] == "net_pay"
     assert all(step["description"] for step in steps)
     assert describe_setting("bht_f")["type"] == "Optional[float]"
+
+
+def test_well_and_result_summaries_are_json_ready():
+    import petrophys as pp
+
+    well = pp.read(pp.sample("30_6-5"))
+    described = well.describe()
+    json.dumps(described)
+    assert described["depth_unit"] == "m"
+    assert {"mnemonic", "unit", "description", "valid_fraction"} <= set(described["curves"][0])
+
+    result = pp.interpret(well, rw=0.07)
+    summary = result.summary(top=2841, bottom=2958)
+    json.dumps(summary)
+    assert summary["status"] == "interpreted"
+    assert summary["settings_used"]["rw"] == 0.07
+    assert summary["net_thickness"]["net_pay"] > 0
+    assert 0.1 < summary["key_results"]["PHIE"]["median"] < 0.3
+    assert summary["skipped_steps"]["hc_correction"].startswith("apply_hc_correction=False")
