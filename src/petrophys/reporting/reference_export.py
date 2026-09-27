@@ -2072,9 +2072,9 @@ def _computed_curve_detail(curve: str, step_results: dict[str, Any], well: Optio
                 return f"computed with fifth-root quick-look fallback because {sxo_reason}"
             return "computed with fifth-root quick-look fallback SXO = SW^(1/5)"
     if curve == "RMF":
-        return _method_label(step.method) if step.method else "computed"
+        return _method_label(step.method, subject="RMF") if step.method else "computed"
     if curve == "RW":
-        return _method_label(step.method) if step.method else "computed"
+        return _method_label(step.method, subject="RW") if step.method else "computed"
     if curve in {"RWA", "SAL", "SALAPP", "SALMUDAPP"}:
         return "computed by resistivity/salinity category analysis"
     if curve == "INVASION_RATIO":
@@ -2449,13 +2449,32 @@ def _step_parameter_values(step_results: Sequence[Any], key: str) -> List[Any]:
     return values
 
 
-def _method_label(name: str) -> str:
+# Method names the workflow emits for more than one step, labelled per step.
+_STEP_SPECIFIC_METHOD_LABELS: dict[tuple[str, str], str] = {
+    ("RMF", "las_metadata_assumed_reference_temperature"): (
+        "LAS header RMF with assumed-reference depth-wise temperature correction"
+    ),
+    ("RW", "las_metadata_assumed_reference_temperature"): (
+        "LAS header RW with assumed-reference depth-wise temperature correction"
+    ),
+}
+
+
+def _method_label(name: str, subject: Optional[str] = None) -> str:
+    """Return the report label for a workflow method name.
+
+    ``subject`` names the resistivity being described (``"RMF"`` or ``"RW"``)
+    for method names that both workflow steps emit.
+    """
+    if subject is not None:
+        specific = _STEP_SPECIFIC_METHOD_LABELS.get((subject, name))
+        if specific is not None:
+            return specific
     mapping = {
         "mud_filtrate_salinity_conversion": "CLFL-to-RMF salinity conversion",
         "las_metadata": "direct LAS header value",
         "las_metadata_arps_temperature_correction": "LAS header RMF with RMFT temperature correction",
         "las_metadata_profile_temperature_correction": "LAS header RMF with RMFT depth-wise temperature correction",
-        "las_metadata_assumed_reference_temperature": "LAS header RMF with assumed-reference depth-wise temperature correction",
         "arps_temperature_correction": "explicit RMF temperature correction",
         "arps_temperature_profile_correction": "explicit RMF depth-wise temperature correction",
         "rm_to_rmf_conversion_factor_0.75": "RM-to-RMF conversion (fresh mud factor 0.75)",
@@ -4772,7 +4791,7 @@ def _build_delivery_computation_notes(
                 + (f" RMF = {rmf_value}." if rmf_value else "")
             )
         else:
-            labels = _ordered_unique(_method_label(name) for name in methods)
+            labels = _ordered_unique(_method_label(name, subject="RMF") for name in methods)
             note = f"RMF: Multiple RMF methods were used across this well: {_friendly_join(labels)}."
             if rmf_profile:
                 note += f" Final RMF(T) range: {rmf_profile}."
@@ -4949,7 +4968,7 @@ def _build_delivery_computation_notes(
                 + (f" Route reasons: {rw_route_reasons}." if rw_route_reasons else "")
             )
         else:
-            labels = _ordered_unique(_method_label(name) for name in methods)
+            labels = _ordered_unique(_method_label(name, subject="RW") for name in methods)
             note = f"RW: Multiple RW methods were used across this well: {_friendly_join(labels)}."
             if rw_values:
                 note += f" Final RW(T) values span {rw_values}."
