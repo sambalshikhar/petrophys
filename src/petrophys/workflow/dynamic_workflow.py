@@ -4726,20 +4726,26 @@ def run_dynamic_workflow(
     **kwargs
 ) -> DynamicWorkflowResult:
     """
-    Run the dynamic workflow on a well.
+    Run the dynamic workflow on a well, adding calculated curves to it.
+
+    This is the lower-level form of :func:`petrophys.interpret`. It works on
+    ``well`` itself: calculated curves are added to the object you pass in.
+    Use ``petrophys.interpret(well)`` to leave the input unchanged.
 
     Parameters
     ----------
     well : Well
-        Well object with raw log data
+        Well object with raw log data. Modified in place.
     config : DynamicWorkflowConfig, optional
-        Workflow configuration
+        Workflow configuration. When omitted, one is built from ``kwargs``.
     **kwargs
-        Override config parameters
+        DynamicWorkflowConfig settings; with ``config`` they override its
+        fields on a copy.
 
     Returns
     -------
     DynamicWorkflowResult
+        ``result.well`` is ``well``.
 
     Examples
     --------

@@ -88,3 +88,13 @@ def test_tabular_readers_require_a_depth_unit(tmp_path):
     ascii_path = tmp_path / "logs.txt"
     ascii_path.write_text("DEPTH GR\nft API\n1000 50\n1001 55\n")
     assert read_ascii(ascii_path, units_line=1).depth_unit == "ft"
+
+
+def test_las_reader_prefers_utf8_and_reports_unreadable_files(tmp_path):
+    import petrophys as pp
+
+    assert pp.read(pp.sample("30_6-5")).header.field == "OSEBERG ØST"
+    empty = tmp_path / "empty.las"
+    empty.write_text("")
+    with pytest.raises(ValueError, match="empty.las is not a readable LAS file"):
+        pp.read(empty)

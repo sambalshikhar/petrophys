@@ -54,6 +54,21 @@ def _normalize_depth_unit(unit: str) -> str:
     return normalized
 
 
+def _read_lasio(path: Path, encoding: Optional[str]):
+    """Parse ``path`` with lasio, preferring UTF-8, with readable errors."""
+    try:
+        if encoding is not None:
+            return lasio.read(str(path), encoding=encoding)
+        try:
+            return lasio.read(str(path), encoding="utf-8")
+        except UnicodeDecodeError:
+            return lasio.read(str(path))
+    except (KeyError, IndexError, ValueError, lasio.exceptions.LASHeaderError,
+            lasio.exceptions.LASDataError) as exc:
+        detail = str(exc).strip("'\"") or type(exc).__name__
+        raise ValueError(f"{path.name} is not a readable LAS file: {detail}") from exc
+
+
 class LASReader:
     """
     Reader for LAS (Log ASCII Standard) files.
@@ -64,7 +79,7 @@ class LASReader:
     >>> well = reader.to_well()
     """
 
-    def __init__(self, filepath: Union[str, Path]):
+    def __init__(self, filepath: Union[str, Path], encoding: Optional[str] = None):
         """
         Initialize LAS reader.
 
@@ -72,6 +87,16 @@ class LASReader:
         ----------
         filepath : str or Path
             Path to LAS file
+        encoding : str, optional
+            Text encoding of the file. By default UTF-8 is tried first and
+            lasio's encoding detection is used if the file is not UTF-8.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the file does not exist.
+        ValueError
+            If the file cannot be parsed as LAS.
         """
         if not HAS_LASIO:
             raise ImportError(
@@ -83,7 +108,7 @@ class LASReader:
         if not self.filepath.exists():
             raise FileNotFoundError(f"LAS file not found: {filepath}")
 
-        self._las = lasio.read(str(self.filepath))
+        self._las = _read_lasio(self.filepath, encoding)
 
     @property
     def las(self):
@@ -350,6 +375,8 @@ class LASReader:
 
 def read_las(
     filepath: Union[str, Path],
+    *,
+    encoding: Optional[str] = None,
     **kwargs
 ) -> "Well":
     """
@@ -359,6 +386,9 @@ def read_las(
     ----------
     filepath : str or Path
         Path to LAS file
+    encoding : str, optional
+        Text encoding of the file (e.g. ``"latin-1"``). By default UTF-8 is
+        tried first, then lasio's encoding detection.
     **kwargs
         Reserved for future use; unsupported arguments raise TypeError.
 
@@ -376,5 +406,5 @@ def read_las(
     """
     if kwargs:
         raise TypeError(f"Unsupported LAS reader options: {', '.join(sorted(kwargs))}")
-    reader = LASReader(filepath)
+    reader = LASReader(filepath, encoding=encoding)
     return reader.to_well()
