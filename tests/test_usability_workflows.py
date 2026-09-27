@@ -267,3 +267,29 @@ def test_public_api_keeps_depth_metadata_after_attaching_context(tmp_path):
         assert viewer.lithology_intervals.attrs["datum"] == "RKB"
     finally:
         viewer.close()
+
+
+def test_interpret_uses_attached_single_level_formations():
+    import petrophys as pp
+
+    well = pp.read(pp.sample("30_6-5"), formations={"UPPER": 2000.0, "BRENT": 2841.0})
+    result = pp.interpret(well, rw=0.07)
+
+    step = next(s for s in result.steps_executed if s.step == "input_context")
+    assert step.parameters["formations"] == {
+        "source": "attached", "used": True, "intervals": ["UPPER", "BRENT"],
+    }
+    assert [i.name for i in result.config.formation_tops.intervals] == ["UPPER", "BRENT"]
+
+
+def test_interpret_explains_why_hierarchical_formations_are_not_used():
+    import petrophys as pp
+
+    well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
+    result = pp.interpret(well, rw=0.07)
+
+    step = next(s for s in result.steps_executed if s.step == "input_context")
+    assert step.parameters["formations"]["used"] is False
+    assert "overlapping" in step.parameters["formations"]["reason"]
+    assert any("formation_tops=" in decision for decision in step.decisions)
+    assert result.config.formation_tops is None

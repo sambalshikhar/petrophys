@@ -26,7 +26,10 @@ Attach either or both optional files for use by plotting and interpretation:
    pp.plot(well).show()
 
 Attached external lithology takes precedence over embedded lithology in
-``pp.interpret(well)`` as well. Source overrides and advanced imports are in
+``pp.interpret(well)`` as well. Attached formations are used by
+``pp.interpret`` for formation-specific core permeability calibration when they
+form a single, non-overlapping level; otherwise the ``input_context`` step of the
+trace explains why they were not used. Source overrides and advanced imports are in
 :doc:`own_data`. To override geology only for a single plot:
 
 .. code-block:: python

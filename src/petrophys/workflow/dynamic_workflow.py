@@ -552,6 +552,27 @@ class DynamicWorkflowConfig:
     def __post_init__(self) -> None:
         _validate_workflow_config(self)
 
+def _attached_formation_tops(records: List[Dict[str, Any]], terminal_depth: float) -> Any:
+    """Build validated, non-overlapping FormationTops from attached records.
+
+    Raises
+    ------
+    ValueError
+        If the records cannot form bounded, non-overlapping intervals.
+    """
+    import pandas as pd
+    from petrophys.model.formation_tops import FormationTops
+
+    table = pd.DataFrame(records)
+    if "bottom_depth" in table and table["bottom_depth"].isna().all():
+        table = table.drop(columns="bottom_depth")
+    tops = FormationTops.from_dataframe(
+        table, name_col="formation_name", terminal_depth=terminal_depth
+    )
+    tops.validate()
+    return tops
+
+
 # --- DynamicWorkflowConfig validation ---------------------------------------
 
 _INTERPRETATION_PROFILES = ("auto", "vendor_benchmark", "generic_inference")
@@ -1169,14 +1190,54 @@ class DynamicWorkflow:
                     f"{np.isnan(codes).sum()} uncovered samples. Labels/gaps are preserved; "
                     "unclassified samples use configured calculation fallbacks, not inferred rock labels."
                 )
+        decisions = [f"Selected {selected} lithology; alternate sources were retained"]
+        decisions.extend(self._select_formation_tops(well, context, report))
         context["selected_lithology_source"] = selected
         context["lithology_selection"] = report
         well.set_parameter("_geology_context", context)
         self._result.steps_executed.append(StepResult(
             step="input_context", success=True, method="validated_geology_selection",
             output_curves=output_curves, parameters=report,
-            decisions=[f"Selected {selected} lithology; alternate sources were retained"],
+            decisions=decisions,
         ))
+
+    def _select_formation_tops(
+        self, well: "Well", context: Dict[str, Any], report: Dict[str, Any]
+    ) -> List[str]:
+        """Use formations attached by :func:`petrophys.read` when unambiguous.
+
+        Formation tops drive formation-specific core permeability calibration.
+        An explicit ``DynamicWorkflowConfig.formation_tops`` always wins;
+        otherwise attached formations are used when they form a single,
+        non-overlapping level.
+        """
+        if self.config.formation_tops is not None:
+            report["formations"] = {"source": "config", "used": True}
+            return []
+        records = context.get("formations")
+        if not records:
+            return []
+        try:
+            tops = _attached_formation_tops(records, float(np.nanmax(well.depth)))
+        except ValueError as exc:
+            lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
+            reason = " ".join(lines[:2])
+            if not reason.endswith("."):
+                reason += "."
+            report["formations"] = {"source": "attached", "used": False, "reason": reason}
+            return [
+                "Attached formations are used for plotting and reporting only: "
+                f"{reason} Pass one stratigraphic level as "
+                "DynamicWorkflowConfig(formation_tops=...) to calibrate core "
+                "permeability per formation."
+            ]
+        self.config.formation_tops = tops
+        names = [interval.name for interval in tops.intervals]
+        report["formations"] = {"source": "attached", "used": True, "intervals": names}
+        return [
+            f"Using {len(names)} attached formation intervals for formation-specific "
+            "core permeability calibration"
+        ]
 
     @property
     def _uses_vendor_benchmark(self) -> bool:
