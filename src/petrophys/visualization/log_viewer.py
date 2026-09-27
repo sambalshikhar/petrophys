@@ -23,6 +23,12 @@ from defusedxml import ElementTree as ET
 import numpy as np
 
 from petrophys._internal.statistics import finite_min_max
+from petrophys.io.lithology_reader import read_lithology_intervals
+from petrophys.preprocessing.standardization.alias_map import get_standard_mnemonic
+from petrophys.preprocessing.standardization.unit_converter import (
+    CORE_SATURATION_CURVES,
+    standardize_core_saturation,
+)
 from petrophys.visualization.curve_labels import porosity_display_label
 
 try:
@@ -1544,6 +1550,10 @@ class LogViewer:
         ``(name, depth)`` pairs, CSV/Excel paths, or tabular objects.
     formation_name : str, optional
         Formation or interval name to show in the top title beside the well name.
+    lithology_intervals : path or DataFrame, optional
+        Single-well CSV/XLSX/table with ``top,bottom,lithology`` columns, in the
+        same depth units and datum as the well. Overrides embedded lithology
+        for display only, preserving interval boundaries and unfilled gaps.
     """
 
     def __init__(
@@ -1558,10 +1568,29 @@ class LogViewer:
         formation_tops: Optional[Any] = None,
         formation_tops_df: Optional[Any] = None,
         formation_name: Optional[str] = None,
+        lithology_intervals: Optional[Any] = None,
+        tracks: Optional[Sequence[str]] = None,
     ):
         if not HAS_MATPLOTLIB:
             raise ImportError("matplotlib is required for visualization")
         self.well = well
+        self.formation_import_report = {}
+        self.suppressed_formation_labels = []
+        self.omitted_tracks = []
+        context = well.get_parameter("_geology_context") or {}
+        if lithology_intervals is None:
+            if context.get("selected_lithology_source") in {None, "external"}:
+                lithology_intervals = context.get("lithology")
+        if formation_tops is None and formation_tops_df is None:
+            formation_tops = context.get("formations")
+        self.lithology_source = (
+            "external" if lithology_intervals is not None
+            else context.get("selected_lithology_source", "embedded_or_computed")
+        )
+        self.lithology_intervals = (
+            read_lithology_intervals(lithology_intervals, well=well)
+            if lithology_intervals is not None else None
+        )
         self._adaptive_template = False
         template_key = str(template_defaults or "auto").lower()
         if template_xml_path is None and template_key in ADAPTIVE_LOG_VIEWER_TEMPLATE_NAMES:
@@ -1569,6 +1598,21 @@ class LogViewer:
             self._adaptive_template = True
         else:
             self.template = load_log_viewer_template(template_xml_path, template_defaults)
+        if self.lithology_intervals is not None and not any(
+            track.track_type == "lithology" for track in self.template.tracks
+        ):
+            self.template.tracks.insert(
+                0, LogTrackSpec(display_name="LITHOLOGY", width=0.9, track_type="lithology")
+            )
+        if tracks is not None:
+            requested = [str(name).strip().upper() for name in tracks]
+            available = {track.display_name.upper(): track for track in self.template.tracks}
+            unknown = set(requested) - set(available)
+            if unknown or not requested or len(requested) != len(set(requested)):
+                raise ValueError(
+                    f"Select unique track names from {list(available)}; requested {requested}."
+                )
+            self.template.tracks = [available[name] for name in requested]
         self.strict = strict
         self.figsize = figsize
         self.lithology_mapping = self._coerce_lithology_mapping(
@@ -1583,6 +1627,9 @@ class LogViewer:
         self.axes: List[Axes] = []
         self.header_axes: List[Axes] = []
         self.warnings: List[str] = []
+        self.warnings.extend(self.formation_import_report.get("diagnostics", []))
+        if self.lithology_intervals is not None:
+            self.warnings.extend(self.lithology_intervals.attrs.get("import_report", {}).get("diagnostics", []))
         self.curve_lookup: Dict[str, str] = {}
         self._header_axis_by_data_axis: Dict[int, Axes] = {}
         self._header_row_counts: Dict[int, int] = {}
@@ -1755,6 +1802,7 @@ class LogViewer:
     ) -> List[LogTrackSpec]:
         visible = np.isfinite(depth) & (depth >= min(top, bottom)) & (depth <= max(top, bottom))
         filtered = []
+        self.omitted_tracks = []
         for track in tracks:
             if (
                 track.depth_track
@@ -1762,6 +1810,8 @@ class LogViewer:
                 or self._track_has_visible_data(track, visible)
             ):
                 filtered.append(track)
+            else:
+                self.omitted_tracks.append({"track": track.display_name, "reason": "no finite data in depth window"})
         if len(filtered) == 0:
             return list(tracks[:1])
         return filtered
@@ -1884,6 +1934,12 @@ class LogViewer:
             if curve is None:
                 self._warn_missing(spec.curve_name)
                 continue
+            if get_standard_mnemonic(curve.mnemonic) in CORE_SATURATION_CURVES:
+                curve = standardize_core_saturation(curve, warn=False)
+                evidence = curve.metadata.custom["core_saturation_normalization"]
+                for message in evidence["warnings"]:
+                    if message not in self.warnings:
+                        self.warnings.append(message)
             data = np.asarray(curve.data, dtype=float)
             left = spec.left if spec.left is not None else track.left
             right = spec.right if spec.right is not None else track.right
@@ -2265,28 +2321,47 @@ class LogViewer:
     ) -> None:
         specs = track.curves or [LogCurveSpec("LITHOLOGY_GEOLINK", display_name="Lithology")]
         spec = specs[0]
-        curve = self._get_curve(spec)
-        if curve is None:
+        beds = []
+        if self.lithology_intervals is not None:
+            low, high = sorted((top, bottom))
+            labels = list(dict.fromkeys(self.lithology_intervals["lithology"]))
+            for index, label in enumerate(labels):
+                rows = self.lithology_intervals[self.lithology_intervals["lithology"] == label]
+                segments = [
+                    (max(row.top, low), min(row.bottom, high))
+                    for row in rows.itertuples()
+                    if row.bottom > low and row.top < high
+                ]
+                if segments:
+                    beds.append((label, index, segments))
+        else:
+            curve = self._get_curve(spec)
+            if self.lithology_source == "computed":
+                curve = self.well.get("LITHO")
+            elif self.lithology_source == "config":
+                curve = None
+            if curve is not None:
+                data = np.asarray(curve.data, dtype=float)
+                visible = np.isfinite(data) & np.isfinite(depth)
+                visible &= (depth >= min(top, bottom)) & (depth <= max(top, bottom))
+                for code in np.unique(data[visible]):
+                    mask = visible & np.isclose(data, code)
+                    segments = [
+                        self._lithology_segment_bounds(depth, indices, top, bottom)
+                        for indices in self._lithology_segments(mask)
+                    ]
+                    beds.append((self._lithology_label(code, curve.mnemonic), code, segments))
+        if not beds:
             self._plot_no_lithology(ax)
             return
 
-        data = np.asarray(curve.data, dtype=float)
-        finite = np.isfinite(data) & np.isfinite(depth)
-        visible = finite & (depth >= min(top, bottom)) & (depth <= max(top, bottom))
-        if not np.any(visible):
-            self._plot_no_lithology(ax)
-            return
-
-        unique_codes = [code for code in np.unique(data[visible]) if np.isfinite(code)]
         legend_handles_by_label: Dict[str, Patch] = {}
         cmap = plt.get_cmap(spec.fill_color_map or "tab20")
-        for index, code in enumerate(unique_codes):
-            label = self._lithology_label(code, curve.mnemonic)
-            color = self._lithology_color(code, label, cmap, index, len(unique_codes))
+        for index, (label, code, segments) in enumerate(beds):
+            color = self._lithology_color(code, label, cmap, index, len(beds))
             pattern = self._lithology_pattern(label)
             hatch = "" if pattern else self._lithology_hatch(label)
             legend_hatch = self._lithology_hatch(label)
-            mask = visible & np.isclose(data, code)
             fill_alpha = spec.fill_alpha if spec.fill_alpha > 0.5 else 0.85
             # Fill each contiguous bed edge-to-edge (segment bounds reach the sample
             # midpoints) so adjacent beds abut. fill_betweenx(where=mask) instead
@@ -2294,8 +2369,7 @@ class LogViewer:
             # stacks into visible gaps in finely interbedded sections. Genuine data
             # gaps (missing samples) remain unfilled because the segment split keeps
             # them apart.
-            for segment_indices in self._lithology_segments(mask):
-                y0, y1 = self._lithology_segment_bounds(depth, segment_indices, top, bottom)
+            for y0, y1 in segments:
                 if not (np.isfinite(y0) and np.isfinite(y1)) or y1 <= y0:
                     continue
                 ax.fill_betweenx(
@@ -3234,42 +3308,49 @@ class LogViewer:
         )
 
     def _draw_formation_tops(self, top: float, bottom: float) -> None:
+        self.suppressed_formation_labels = []
         if not self.formation_tops or not self.axes:
             return
         lo, hi = sorted((top, bottom))
-        visible = [formation for formation in self.formation_tops if lo <= formation.depth <= hi]
-        if not visible:
-            return
-
+        grouped: Dict[float, List[str]] = {}
+        for formation in self.formation_tops:
+            if lo <= formation.depth <= hi:
+                grouped.setdefault(formation.depth, []).append(formation.name)
         span = max(abs(hi - lo), 1.0)
-        min_label_gap = span * 0.035
-        last_label_depth: Optional[float] = None
+        next_label_depth = -np.inf
         label_ax = self.axes[0]
-        for formation in visible:
+        for depth, names in grouped.items():
             for ax in self.axes:
-                ax.axhline(formation.depth, linewidth=0.7, color="black", alpha=0.85, zorder=7)
-            if last_label_depth is not None and abs(formation.depth - last_label_depth) < min_label_gap:
+                ax.axhline(depth, linewidth=0.7, color="black", alpha=0.85, zorder=7)
+            if depth < next_label_depth:
+                self.suppressed_formation_labels.extend(
+                    {"name": name, "depth": depth, "reason": "label spacing"} for name in names
+                )
                 continue
             label_ax.annotate(
-                formation.name,
-                xy=(0.02, formation.depth),
-                xycoords=("axes fraction", "data"),
-                xytext=(2, -2),
-                textcoords="offset points",
-                fontsize=8.0,
-                fontweight="bold",
-                color="black",
-                ha="left",
-                va="top",
-                bbox={
-                    "boxstyle": "square,pad=0.12",
-                    "facecolor": "white",
-                    "edgecolor": "none",
-                    "alpha": 0.72,
-                },
-                zorder=8,
+                "\n".join(names), xy=(0.02, depth), xycoords=("axes fraction", "data"),
+                xytext=(2, -2), textcoords="offset points", fontsize=8.0,
+                fontweight="bold", color="black", ha="left", va="top",
+                bbox={"boxstyle": "square,pad=0.12", "facecolor": "white",
+                      "edgecolor": "none", "alpha": 0.72}, zorder=8,
             )
-            last_label_depth = formation.depth
+            next_label_depth = depth + span * 0.035 * len(names)
+
+    @property
+    def diagnostics(self) -> Dict[str, Any]:
+        """Structured import/plot diagnostics for notebooks and automation."""
+        return {
+            "warnings": list(self.warnings),
+            "formations": self.formation_import_report,
+            "lithology_source": self.lithology_source,
+            "lithology": (
+                self.lithology_intervals.attrs.get("import_report", {})
+                if self.lithology_intervals is not None else {}
+            ),
+            "suppressed_formation_labels": list(self.suppressed_formation_labels),
+            "omitted_tracks": list(self.omitted_tracks),
+            "curve_lookup": dict(self.curve_lookup),
+        }
 
     def _first_available_curve(self, curve_names: Sequence[str]):
         for curve_name in curve_names:
@@ -3369,6 +3450,11 @@ class LogViewer:
 
     def _lithology_label(self, code: float, curve_name: Optional[str] = None) -> str:
         numeric = int(code) if float(code).is_integer() else code
+        curve = self.well.get(curve_name) if curve_name else None
+        if curve is not None:
+            labels = curve.metadata.custom.get("category_labels", {})
+            if numeric in labels or str(numeric) in labels:
+                return labels.get(numeric, labels.get(str(numeric)))
         for key in (numeric, code, float(code)):
             if key in self.lithology_mapping:
                 return self.lithology_mapping[key]
@@ -3406,154 +3492,16 @@ class LogViewer:
     def _coerce_formation_tops(self, source: Optional[Any]) -> List[FormationTopSpec]:
         if source is None:
             return []
+        from petrophys.io.geology_reader import read_formations
 
-        rows: List[Tuple[str, float]] = []
-        if isinstance(source, (str, Path)):
-            rows.extend(self._load_formation_tops_path(Path(source)))
-        elif isinstance(source, Mapping):
-            for key, value in source.items():
-                if self._is_number_like(key) and not self._is_number_like(value):
-                    rows.append((str(value), float(key)))
-                else:
-                    try:
-                        rows.append((str(key), float(value)))
-                    except (TypeError, ValueError):
-                        continue
-        elif hasattr(source, "columns") and hasattr(source, "iterrows"):
-            rows.extend(self._formation_rows_from_table(source))
-        else:
-            for item in source:
-                if isinstance(item, Mapping):
-                    rows.extend(self._formation_rows_from_table([item]))
-                else:
-                    try:
-                        name, depth = item[0], item[1]
-                    except (TypeError, IndexError):
-                        continue
-                    try:
-                        rows.append((str(name), float(depth)))
-                    except (TypeError, ValueError):
-                        continue
-
-        deduped: Dict[float, FormationTopSpec] = {}
-        for name, depth in rows:
-            if not np.isfinite(depth):
-                continue
-            cleaned = self._clean_formation_name(name)
-            if not cleaned:
-                continue
-            deduped[round(float(depth), 3)] = FormationTopSpec(cleaned, float(depth))
-        return sorted(deduped.values(), key=lambda item: item.depth)
-
-    def _load_formation_tops_path(self, path: Path) -> List[Tuple[str, float]]:
-        if not path.exists():
-            return []
-        suffix = path.suffix.lower()
-        if suffix == ".csv":
-            with path.open(newline="", encoding="utf-8-sig") as handle:
-                return self._formation_rows_from_table(list(csv.DictReader(handle)))
-        if suffix in {".xlsx", ".xls"}:
-            try:
-                import pandas as pd  # type: ignore
-            except ImportError:
-                return []
-            return self._formation_rows_from_table(pd.read_excel(path))
-        return []
-
-    def _formation_rows_from_table(self, table: Any) -> List[Tuple[str, float]]:
-        if hasattr(table, "columns") and hasattr(table, "iterrows"):
-            columns = list(table.columns)
-            iterator = (row for _, row in table.iterrows())
-            getter = lambda row, col: row[col]
-        else:
-            table = list(table)
-            columns = list(table[0].keys()) if table else []
-            iterator = iter(table)
-            getter = lambda row, col: row.get(col)
-
-        normalized = {self._normalize_column_name(column): column for column in columns}
-        name_col = self._first_existing_column(
-            normalized,
-            ("form", "formation", "formationname", "formationgroup", "surface", "name", "zone", "zonename"),
-        )
-        depth_col = self._first_existing_column(
-            normalized,
-            ("top", "topdepth", "topmd", "md", "depth", "measureddepth"),
-        )
-        well_col = self._first_existing_column(
-            normalized,
-            ("uwi", "well", "wellname", "wellidentifier", "wellid"),
-        )
-        if name_col is None or depth_col is None:
-            return []
-
-        well_ids = self._well_identifier_keys()
-        rows: List[Tuple[str, float]] = []
-        for row in iterator:
-            if well_col is not None:
-                well_value = getter(row, well_col)
-                normalized_well = self._normalize_well_id(well_value)
-                if normalized_well and normalized_well not in well_ids:
-                    continue
-            try:
-                depth = float(getter(row, depth_col))
-            except (TypeError, ValueError):
-                continue
-            rows.append((str(getter(row, name_col)), depth))
-        return rows
-
-    def _well_identifier_keys(self) -> set:
-        header = getattr(self.well, "header", None)
-        values = [
-            getattr(self.well, "name", None),
-            getattr(header, "well_name", None),
-            getattr(header, "uwi", None),
-            getattr(header, "api", None),
+        table = read_formations(source, well=self.well)
+        self.formation_import_report = dict(table.attrs.get("import_report", {}))
+        # Only exact repeated picks are redundant; coincident named horizons survive.
+        table = table.drop_duplicates(["formation_name", "top_depth"])
+        return [
+            FormationTopSpec(row.formation_name, float(row.top_depth))
+            for row in table.itertuples()
         ]
-        keys = set()
-        for value in values:
-            normalized = self._normalize_well_id(value)
-            if not normalized:
-                continue
-            keys.add(normalized)
-            keys.add(normalized.replace("_", "/"))
-            keys.add(normalized.replace("/", "_"))
-        return keys
-
-    def _normalize_well_id(self, value: Any) -> str:
-        if value is None:
-            return ""
-        text = str(value).strip().upper()
-        if text in {"", "NAN", "NONE"}:
-            return ""
-        return re.sub(r"\s+", "", text)
-
-    def _normalize_column_name(self, value: Any) -> str:
-        return re.sub(r"[^a-z0-9]", "", str(value).lower())
-
-    def _first_existing_column(
-        self,
-        normalized_columns: Mapping[str, Any],
-        candidates: Sequence[str],
-    ) -> Optional[Any]:
-        for candidate in candidates:
-            key = self._normalize_column_name(candidate)
-            if key in normalized_columns:
-                return normalized_columns[key]
-        return None
-
-    def _clean_formation_name(self, name: Any) -> str:
-        text = str(name).strip()
-        if not text or text.lower() == "nan":
-            return ""
-        return re.sub(r"\s+top\.?$", "", text, flags=re.IGNORECASE).strip()
-
-    def _is_number_like(self, value: Any) -> bool:
-        try:
-            float(value)
-        except (TypeError, ValueError):
-            return False
-        return True
 
 
 def create_log_viewer(
@@ -3570,6 +3518,8 @@ def create_log_viewer(
     formation_tops: Optional[Any] = None,
     formation_tops_df: Optional[Any] = None,
     formation_name: Optional[str] = None,
+    lithology_intervals: Optional[Any] = None,
+    tracks: Optional[Sequence[str]] = None,
 ) -> LogViewer:
     """Create a template-driven well log viewer and immediately build it."""
     viewer = LogViewer(
@@ -3583,6 +3533,8 @@ def create_log_viewer(
         formation_tops=formation_tops,
         formation_tops_df=formation_tops_df,
         formation_name=formation_name,
+        lithology_intervals=lithology_intervals,
+        tracks=tracks,
     )
     viewer.create(depth_range=depth_range, top=top, height=height)
     return viewer

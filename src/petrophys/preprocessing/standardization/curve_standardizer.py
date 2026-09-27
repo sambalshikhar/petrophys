@@ -16,6 +16,8 @@ from petrophys.preprocessing.standardization.alias_map import (
     ALIAS_MAP,
 )
 from petrophys.preprocessing.standardization.unit_converter import (
+    CORE_SATURATION_CURVES,
+    standardize_core_saturation,
     convert_curve_units,
     standardize_units,
     get_conversion_factor,
@@ -325,7 +327,9 @@ class CurveStandardizer:
                 rename_map[mnemonic] = standard_name
 
             # Convert units if needed
-            if self.convert_units:
+            if self.convert_units and standard_name in CORE_SATURATION_CURVES:
+                standardize_core_saturation(new_curve, inplace=True)
+            elif self.convert_units:
                 standard_unit = get_standard_unit(standard_name)
                 if standard_unit and curve.unit:
                     factor = get_conversion_factor(curve.unit, standard_unit)
@@ -437,7 +441,9 @@ class CurveStandardizer:
         else:
             standard_name = curve.mnemonic
 
-        if convert:
+        if convert and self.get_standard_name(curve.mnemonic) in CORE_SATURATION_CURVES:
+            standardize_core_saturation(new_curve, inplace=True)
+        elif convert:
             standard_unit = get_standard_unit(standard_name)
             if standard_unit and curve.unit:
                 factor = get_conversion_factor(curve.unit, standard_unit)

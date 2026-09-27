@@ -7,6 +7,34 @@ use the installable sample wells in `src/petrophys/datasets/`, available through
 Start with [`quickstart.ipynb`](quickstart.ipynb), then work through the numbered
 notebooks in order.
 
+For your own LAS and optional formations/lithology, continue directly to
+[`own_data.ipynb`](own_data.ipynb). It covers templates, CSV/TSV/Excel,
+column and sheet mapping, well selection, depth metadata, source selection,
+core saturation units, and actionable import errors.
+
+The quickstart now plots before interpreting. Lessons 00, 01, 02, 05, 07,
+10, 11, 17 and CS1 connect the short API to the detailed scientific workflows.
+Geology files remain optional; calculated results require appropriate inputs
+and assumptions. Advanced equation-level APIs remain part of the curriculum.
+
+## Run and Verify
+
+Install `python -m pip install -e ".[tutorials]"` in the environment used by
+your notebook editor. The extra includes the kernel and execution tools, not
+a separate notebook editor. Open a notebook in VS Code/Jupyter, select that
+environment, and restart/run all cells.
+
+From the repository root, verify the eleven primary user-journey notebooks:
+
+```bash
+python scripts/execute_tutorials.py --output-dir tutorial-results --report tutorial-results/report.json
+```
+
+Each notebook runs in a fresh kernel with a temporary working directory.
+Use `--inplace` instead of `--output-dir` to refresh saved source outputs
+only after successful execution. Failed runs return a nonzero exit status.
+Other specialist notebooks retain their own optional data/dependency requirements.
+
 ## Foundations
 
 | # | Notebook | Topic |

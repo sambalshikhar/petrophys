@@ -49,6 +49,8 @@ class Interval:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
+        if not np.isfinite(self.top_depth) or not np.isfinite(self.bottom_depth):
+            raise ValueError("Interval depths must be finite numbers.")
         if self.top_depth > self.bottom_depth:
             raise ValueError(
                 f"Top depth ({self.top_depth}) must be <= "

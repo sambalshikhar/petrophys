@@ -54,7 +54,25 @@ pip install -e ".[all,dev,docs]"
 
 ## Quick Start
 
-### Dynamic Workflow (recommended)
+### First Plot
+
+```python
+import petrophys as pp
+well = pp.read(pp.sample("30_6-5"))  # or your own LAS path
+pp.plot(well, depth_range=(2800, 3000)).show()
+```
+
+Formations and lithology are optional. Plotting displays existing measurements;
+it does not invent missing saturation or require interpretation parameters.
+
+To interpret, use `result = pp.interpret(well, rw=0.07)`, then
+`result.raise_for_errors().plot().show()`. The Rw here is an illustrative
+assumption, not a value to reuse blindly. This API works on a copy; the
+lower-level `run_dynamic_workflow` below modifies its input.
+Inspect `result.warnings`, `result.specific_steps_skipped`, and
+`result.to_trace_dict()` before using calculated results.
+
+### Detailed Interpretation Configuration
 
 ```python
 from petrophys.io import read_las
@@ -75,7 +93,7 @@ config = DynamicWorkflowConfig(
 
     # Lithology controls Sw model routing and net pay cutoffs
     lithology="clastic",              # or "carbonate"
-    lithology_csv="lithology.csv",    # per-interval lithology (optional)
+    # lithology_csv="lithology.csv",  # optional; enable only with a real file
     matrix_type="sandstone",
 
     # HC correction
@@ -102,6 +120,30 @@ print(f"Warnings: {result.warnings}")
 `StandardWorkflow` remains available for compatibility with fixed legacy
 configurations, but it is deprecated. New applications and batch processing
 use `DynamicWorkflow`.
+
+### Plot LAS With Formations and Lithology
+
+```python
+from petrophys.io import read_las
+from petrophys.visualization import create_log_viewer
+
+well = read_las("my_well.las")
+viewer = create_log_viewer(well, formation_tops="formations.csv",
+                          lithology_intervals="lithology.csv")
+viewer.show()
+```
+
+When supplying optional geology, use the [input templates and format guide](docs/input_templates.rst).
+Templates ship with the package, for example `petrophys.sample("lithology_intervals_template")`.
+Depth units and datum must match the LAS. External lithology overrides embedded
+lithology for display only. Core saturation percentages are normalized to
+fractions for plotting; inferred conversions are reported in `viewer.warnings`.
+The viewer displays existing measurements, not a newly calculated `SW` curve.
+
+To use external geology for both plotting and interpretation, attach it with
+`pp.read("my_well.las", formations="formations.csv", lithology="lithology.csv")`.
+Then use `pp.plot(well)` or `pp.interpret(well)`. See the
+[own-data guide](docs/own_data.rst) for mappings, units, source selection, and diagnostics.
 
 ### Granular Module Usage (individual calculations)
 

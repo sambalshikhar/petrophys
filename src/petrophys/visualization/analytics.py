@@ -66,7 +66,7 @@ def create_multiwell_overlay(
         Wells to overlay. Each must contain ``curve``.
     curve : str
         Curve mnemonic to plot (resolved via ``well.get``).
-    depth_range : (top, bottom), optional
+    depth_range : tuple of float, optional
         Depth window (in each well's depth units).
     normalize : bool
         Robustly min-max scale each curve to 0-1 before plotting.

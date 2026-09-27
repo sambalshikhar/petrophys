@@ -47,7 +47,8 @@ def calculate_zone_summary(
     zone_name: str = "Zone",
     net_pay_curve: str = "NET_PAY",
     net_reservoir_curve: str = "NET_RES",
-    net_rock_curve: str = "NET_ROCK"
+    net_rock_curve: str = "NET_ROCK",
+    include_bottom: bool = True,
 ) -> ZoneSummary:
     """
     Calculate summary for a depth interval.
@@ -77,6 +78,8 @@ def calculate_zone_summary(
     depth = well_depth_array(well)
     # Get depth mask
     mask = (depth >= top_depth) & (depth <= bottom_depth)
+    if not include_bottom:
+        mask &= depth < bottom_depth
     n_samples = np.sum(mask)
 
     if n_samples == 0:

@@ -175,6 +175,7 @@ geolink_data/
 reports/
 tmp_*/
 outputs/
+/tutorial-results/
 /*.xlsx
 .claude/settings.local.json
 

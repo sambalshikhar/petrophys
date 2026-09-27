@@ -356,7 +356,7 @@ def read_las(
     filepath : str or Path
         Path to LAS file
     **kwargs
-        Additional arguments (reserved for future use)
+        Reserved for future use; unsupported arguments raise TypeError.
 
     Returns
     -------
@@ -370,5 +370,7 @@ def read_las(
     >>> print(well.curves)
     ['GR', 'RHOB', 'NPHI', 'RT']
     """
+    if kwargs:
+        raise TypeError(f"Unsupported LAS reader options: {', '.join(sorted(kwargs))}")
     reader = LASReader(filepath)
     return reader.to_well()

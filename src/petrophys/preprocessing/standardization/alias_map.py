@@ -11,6 +11,10 @@ from petrophys._internal.analysis_helpers import base_curve_mnemonic
 
 # Standard mnemonic to aliases mapping
 ALIAS_MAP: Dict[str, List[str]] = {
+    # Core measurements are distinct from calculated fluid saturations.
+    "SWC": ["SW_CORE", "CORE_SW"],
+    "SOC": ["SO_CORE", "CORE_SO"],
+    "SGC": ["SG_CORE", "CORE_SG"],
     # Deep Resistivity (RDEP)
     "RDEP": [
         "RT",
@@ -286,6 +290,9 @@ def find_curve_type(mnemonic: str) -> Optional[str]:
 
 # Standard units for each curve type
 STANDARD_UNITS: Dict[str, str] = {
+    "SWC": "v/v",
+    "SOC": "v/v",
+    "SGC": "v/v",
     "RDEP": "ohm.m",
     "RMED": "ohm.m",
     "RSHA": "ohm.m",
