@@ -107,7 +107,7 @@ def _load_joblib():
     except ImportError as exc:
         raise ImportError(
             "joblib is required to load pretrained curve-imputation models. "
-            "Install the ML extras with: pip install petrophys[ml]"
+            "Install the ML extras (Python 3.11+) with: pip install 'petrophys[ml]'"
         ) from exc
     return joblib
 
@@ -181,8 +181,23 @@ def _load_serialized_model_pack(path: Path) -> Mapping[str, Any]:
             model_pack = joblib.load(path)
     except ModuleNotFoundError as exc:
         raise ImportError(
-            "Loading pretrained curve-imputation models requires the ML extras. "
-            "Install with: pip install petrophys[ml]"
+            "Loading pretrained curve-imputation models requires the ML extras "
+            "(Python 3.11+). Install with: pip install 'petrophys[ml]'"
+        ) from exc
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        from importlib.metadata import PackageNotFoundError, version
+
+        installed = []
+        for package in ("scikit-learn", "joblib", "xgboost"):
+            try:
+                installed.append(f"{package} {version(package)}")
+            except PackageNotFoundError:
+                installed.append(f"{package} (not installed)")
+        raise ModelCompatibilityError(
+            f"The pretrained models in {path.name} cannot be loaded with "
+            f"{', '.join(installed)}. They require scikit-learn 1.8.x, joblib 1.5.x "
+            "and xgboost 3.2.x (Python 3.11+): pip install 'petrophys[ml]'. "
+            f"Original error: {type(exc).__name__}: {exc}"
         ) from exc
 
     if not isinstance(model_pack, Mapping):

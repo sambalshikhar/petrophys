@@ -122,3 +122,16 @@ def test_auto_selection_rejects_weak_held_out_score_by_default():
     with pytest.raises(ValueError, match='R2 >= 0.500'):
         PretrainedCurveImputer(model_pack=pack).impute_missing(well, 'RHOB')
     assert np.isnan(well['RHOB'].data[0])
+
+
+def test_incompatible_model_pack_raises_model_compatibility_error(monkeypatch, tmp_path):
+    import joblib
+
+    from petrophys.preprocessing.imputation import curve_imputer
+
+    def broken_load(path):
+        raise KeyError(121)
+
+    monkeypatch.setattr(joblib, "load", broken_load)
+    with pytest.raises(curve_imputer.ModelCompatibilityError, match="require scikit-learn 1.8.x"):
+        curve_imputer._load_serialized_model_pack(tmp_path / "pack.joblib")
