@@ -9,6 +9,8 @@ import warnings
 from typing import Optional, List, Dict, Any
 import numpy as np
 
+from petrophys.exceptions import DataQualityWarning
+
 from petrophys.preprocessing.standardization.alias_map import (
     get_standard_mnemonic,
     get_standard_unit,
@@ -166,8 +168,36 @@ def _maybe_convert_percent_porosity(data: np.ndarray, standard_name: str) -> np.
     return data
 
 
-def _screen_standard_curve_values(curve: "Curve", standard_name: str) -> "Curve":
-    """Mask physically implausible standardized curve values."""
+#: Share of a curve's samples that must be implausible before a
+#: DataQualityWarning is raised; smaller shares are routine spike removal.
+RANGE_SCREENING_WARNING_FRACTION = 0.5
+
+_UNIT_SCALE_HINTS = (
+    (1000.0, "1000x too large"),
+    (100.0, "100x too large"),
+    (0.001, "1000x too small"),
+    (0.01, "100x too small"),
+)
+
+
+def _unit_scale_hint(values: np.ndarray, low: float, high: float) -> str:
+    """Describe a scale error that would bring ``values`` into range, if any."""
+    median = float(np.median(values))
+    for factor, description in _UNIT_SCALE_HINTS:
+        if low <= median / factor <= high:
+            return f"values look {description}"
+    return ""
+
+
+def _screen_standard_curve_values(
+    curve: "Curve", standard_name: str, source_unit: Optional[str] = None
+) -> "Curve":
+    """Mask physically implausible standardized curve values.
+
+    Masked samples are recorded in ``curve.metadata.custom["range_screening"]``.
+    When most samples are implausible, which usually means a wrong unit
+    label, a :class:`~petrophys.exceptions.DataQualityWarning` is raised.
+    """
     name = standard_name.upper()
     limits = CURVE_PLAUSIBLE_RANGES.get(name)
     if limits is None:
@@ -178,8 +208,33 @@ def _screen_standard_curve_values(curve: "Curve", standard_name: str) -> "Curve"
     data = _maybe_convert_percent_porosity(data, name)
 
     low, high = limits
-    invalid = np.isfinite(data) & ((data < low) | (data > high))
+    finite = np.isfinite(data)
+    invalid = finite & ((data < low) | (data > high))
     if np.any(invalid):
+        masked = int(np.count_nonzero(invalid))
+        total = int(np.count_nonzero(finite))
+        hint = _unit_scale_hint(data[invalid], low, high)
+        report = {
+            "standard_curve": name,
+            "low": low,
+            "high": high,
+            "unit": curve.unit,
+            "source_unit": source_unit if source_unit is not None else curve.unit,
+            "masked": masked,
+            "finite": total,
+            "fraction": masked / total,
+            "hint": hint,
+        }
+        curve.metadata.custom["range_screening"] = report
+        if masked / total >= RANGE_SCREENING_WARNING_FRACTION:
+            message = (
+                f"{curve.mnemonic}: {masked} of {total} samples are outside the "
+                f"plausible {name} range {low:g} to {high:g} {curve.unit or ''}".rstrip()
+                + " and were removed"
+            )
+            if hint:
+                message += f"; {hint}, check the unit label {report['source_unit']!r}"
+            warnings.warn(message + ".", DataQualityWarning, stacklevel=4)
         data[invalid] = np.nan
         curve._data = data
     elif not np.array_equal(curve.data, data):
@@ -338,7 +393,7 @@ class CurveStandardizer:
                             new_curve._data = new_curve._data * factor
                         new_curve.unit = standard_unit
 
-            _screen_standard_curve_values(new_curve, standard_name)
+            _screen_standard_curve_values(new_curve, standard_name, curve.unit)
 
             # Handle duplicate standard names. Both curves always survive:
             # the winner takes the standard slot, the loser keeps its own
@@ -452,7 +507,7 @@ class CurveStandardizer:
                         new_curve._data = new_curve._data * factor
                     new_curve.unit = standard_unit
 
-        _screen_standard_curve_values(new_curve, standard_name)
+        _screen_standard_curve_values(new_curve, standard_name, curve.unit)
 
         return new_curve
 

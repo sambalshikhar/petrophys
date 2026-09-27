@@ -14,6 +14,7 @@ This library provides tools for:
 
 from petrophys.version import __version__
 from petrophys.api import read, plot, interpret
+from petrophys.exceptions import DataQualityWarning
 from petrophys.io import read_formations, read_lithology_intervals
 from petrophys.model.well import Well
 from petrophys.model.curve import Curve
@@ -58,6 +59,7 @@ __all__ = [
     "DynamicWorkflowConfig",
     "DynamicWorkflowResult",
     "run_dynamic_workflow",
+    "DataQualityWarning",
     "read_formations",
     "read_lithology_intervals",
     "__version__",
