@@ -11,6 +11,7 @@ from pathlib import Path
 import copy
 import csv
 import re
+from warnings import warn as _warn
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
@@ -135,6 +136,13 @@ CURVE_TO_STEP = {
 
 @dataclass
 class ZonedParameterInterval:
+    """One depth zone defined by ``*_Z<n>`` LAS header parameters.
+
+    ``config_overrides`` are the DynamicWorkflowConfig fields the zone sets,
+    ``injected_parameters`` the well parameters it provides, and
+    ``unmapped_parameters`` the zone parameters that were not recognized.
+    """
+
     index: int
     top: float
     bottom: float
@@ -148,6 +156,12 @@ class ZonedParameterInterval:
 
 @dataclass
 class ZonedWorkflowRunResult:
+    """Result of :func:`run_dynamic_workflow_with_zones`.
+
+    ``base_result`` is the whole-well run; ``zone_results`` holds one run per
+    zone whose parameters differ, merged into ``well`` over the zone depths.
+    """
+
     well: "Well"
     base_result: DynamicWorkflowResult
     zone_results: List[DynamicWorkflowResult] = field(default_factory=list)
@@ -161,6 +175,8 @@ class ZonedWorkflowRunResult:
 
 @dataclass
 class BatchLasResult:
+    """Outcome for one file of :func:`process_las_directory_with_workflow`."""
+
     source_file: str
     output_file: str
     success: bool
@@ -533,6 +549,22 @@ def _extract_global_parameter_overrides(well: "Well") -> tuple[Dict[str, Any], L
 
 
 def extract_zoned_parameters(well: "Well") -> List[ZonedParameterInterval]:
+    """Read depth zones from ``<NAME>_Z<n>`` LAS header parameters.
+
+    A zone needs a top (``TOP_Z1``, ``ZTOP_Z1`` or ``TOP_DEPTH_Z1``) and a
+    bottom (``BOT_Z1``, ``BASE_Z1``, ...); its other ``*_Z<n>`` parameters,
+    such as ``RW_Z1`` or ``BHT_Z1``, become zone-specific settings.
+
+    Parameters
+    ----------
+    well : Well
+        Well whose LAS header parameters define the zones.
+
+    Returns
+    -------
+    list of ZonedParameterInterval
+        Zones in index order; zones without both depths are ignored.
+    """
     grouped: Dict[int, Dict[str, Any]] = {}
 
     for key, value in getattr(well, "_parameters", {}).items():
@@ -604,6 +636,26 @@ def run_dynamic_workflow_with_zones(
     well: "Well",
     config: Optional[DynamicWorkflowConfig] = None,
 ) -> ZonedWorkflowRunResult:
+    """Run the dynamic workflow with depth-varying LAS header parameters.
+
+    Whole-well header parameters (e.g. ``RW``, ``BHT``) fill settings the
+    config leaves unset; an explicit config value always wins and the
+    conflict is noted in ``warnings``. Zones from
+    :func:`extract_zoned_parameters` are then re-run with their own settings
+    and merged over their depth ranges.
+
+    Parameters
+    ----------
+    well : Well
+        Well to interpret. Calculated curves are added to it.
+    config : DynamicWorkflowConfig, optional
+        Base settings for every zone.
+
+    Returns
+    -------
+    ZonedWorkflowRunResult
+        Whole-well and per-zone results, zones, and parameter mapping notes.
+    """
     zones = extract_zoned_parameters(well)
     global_overrides, global_unmapped = _extract_global_parameter_overrides(well)
     zoned_default_overrides, zoned_default_injected, zoned_default_notes = _derive_default_values_from_zones(zones)
@@ -1122,9 +1174,48 @@ def process_las_directory_with_workflow(
     recursive: bool = False,
     config: Optional[DynamicWorkflowConfig] = None,
 ) -> List[BatchLasResult]:
+    """Interpret every LAS file in a folder with zone-aware settings.
+
+    Each file is run through :func:`run_dynamic_workflow_with_zones`; the
+    interpreted LAS and a JSON log are written under ``output_dir`` with the
+    input folder structure. Files that fail are reported, not raised.
+
+    Parameters
+    ----------
+    input_dir : str or Path
+        Folder containing the LAS files.
+    output_dir : str or Path
+        Folder for interpreted LAS files and JSON logs (created if needed).
+    pattern : str, optional
+        Glob pattern selecting input files (default ``"*.las"``).
+    recursive : bool, default False
+        Also search subfolders.
+    config : DynamicWorkflowConfig, optional
+        Base settings for every well.
+
+    Returns
+    -------
+    list of BatchLasResult
+        One entry per input file. Summarize with :func:`write_batch_report`
+        and :func:`write_curve_audit_report`.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``input_dir`` is not an existing folder.
+    """
     input_path = Path(input_dir)
     output_path = Path(output_dir)
+    if not input_path.is_dir():
+        raise FileNotFoundError(f"LAS input folder not found: {input_path}")
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
+    if not files:
+        _warn(
+            f"No files matching {pattern!r} in {input_path}"
+            + ("" if recursive else "; pass recursive=True to search subfolders"),
+            UserWarning,
+            stacklevel=2,
+        )
 
     results: List[BatchLasResult] = []
     for file_path in files:
@@ -1285,6 +1376,20 @@ def _resolve_report_path(report_path: str | Path) -> Path:
 
 
 def write_batch_report(results: Iterable[BatchLasResult], report_path: str | Path) -> Path:
+    """Write one CSV row per batch file: status, zones, Rw/Rmf, curves, messages.
+
+    Parameters
+    ----------
+    results : iterable of BatchLasResult
+        Output of :func:`process_las_directory_with_workflow`.
+    report_path : str or Path
+        CSV file to write (a folder gets a default file name).
+
+    Returns
+    -------
+    Path
+        The written report.
+    """
     report_file = _resolve_report_path(report_path)
 
     with report_file.open("w", newline="", encoding="utf-8") as handle:
@@ -1337,6 +1442,22 @@ def write_curve_audit_report(
     report_path: str | Path,
     target_curves: Optional[List[str]] = None,
 ) -> Path:
+    """Write a CSV stating, per file and curve, whether it was computed and why not.
+
+    Parameters
+    ----------
+    results : iterable of BatchLasResult
+        Output of :func:`process_las_directory_with_workflow`.
+    report_path : str or Path
+        CSV file to write (a folder gets a default file name).
+    target_curves : list of str, optional
+        Curves to audit. Defaults to the standard interpretation products.
+
+    Returns
+    -------
+    Path
+        The written report.
+    """
     report_file = _resolve_report_path(report_path)
     curves = target_curves or AUDIT_TARGET_CURVES
 
