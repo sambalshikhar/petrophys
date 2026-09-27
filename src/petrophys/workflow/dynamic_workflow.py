@@ -1876,6 +1876,27 @@ class DynamicWorkflow:
                     "to": after_unit,
                 }
 
+        from petrophys.preprocessing.standardization.curve_standardizer import (
+            RANGE_SCREENING_WARNING_FRACTION,
+        )
+
+        range_screening = {
+            name: dict(curve.metadata.custom["range_screening"])
+            for name in well.curves
+            for curve in [well.get(name)]
+            if "range_screening" in curve.metadata.custom
+        }
+        for name, item in range_screening.items():
+            if item["fraction"] >= RANGE_SCREENING_WARNING_FRACTION:
+                message = (
+                    f"{name}: {item['masked']} of {item['finite']} samples were outside the "
+                    f"plausible {item['standard_curve']} range {item['low']:g}-{item['high']:g} "
+                    "and were removed"
+                )
+                if item["hint"]:
+                    message += f"; {item['hint']}, check the unit label {item['source_unit']!r}"
+                self._result.warnings.append(message + ".")
+
         return StepResult(
             step="normalization",
             success=True,
@@ -1894,6 +1915,7 @@ class DynamicWorkflow:
                     for curve in [well.get(name)]
                     if "core_saturation_normalization" in curve.metadata.custom
                 },
+                "range_screening": range_screening,
             },
             decisions=[
                 "Standardized curve units, nulls, and plausible ranges before routing",
