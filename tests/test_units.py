@@ -98,3 +98,11 @@ def test_las_reader_prefers_utf8_and_reports_unreadable_files(tmp_path):
     empty.write_text("")
     with pytest.raises(ValueError, match="empty.las is not a readable LAS file"):
         pp.read(empty)
+
+
+def test_las_reader_falls_back_for_non_utf8_files(tmp_path):
+    import petrophys as pp
+
+    latin1 = tmp_path / "latin1.las"
+    latin1.write_text(open(pp.sample("30_6-5"), encoding="utf-8").read(), encoding="latin-1")
+    assert pp.read(latin1).header.field == "OSEBERG ØST"
