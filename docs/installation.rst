@@ -7,8 +7,9 @@ NumPy, pandas, SciPy, Matplotlib, lasio, openpyxl, and defusedxml.
 Install from GitHub
 -------------------
 
-Petrophys is not yet published on PyPI. Install the current public package
-directly from GitHub:
+Install this checkout's package directly from GitHub. Access to a private
+repository requires a GitHub account with repository permission and Git
+authentication on your machine:
 
 .. code-block:: bash
 
@@ -45,6 +46,9 @@ Optional features
    * - ``all``
      - All optional runtime capabilities
      - ``python -m pip install -e ".[all]"``
+   * - ``tutorials``
+     - Notebook kernel, validation and fresh-kernel execution tools
+     - ``python -m pip install -e ".[tutorials]"``
    * - ``docs``
      - Sphinx, Furo, notebook rendering, copy buttons, and design components
      - ``python -m pip install -e ".[docs]"``
@@ -97,6 +101,23 @@ Open ``docs/_build/html/index.html`` after the build completes.
 
 Troubleshooting
 ---------------
+
+Windows and private repository access
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If PowerShell says Git is not recognized, install Git for Windows and restart
+the terminal/IDE so it receives the updated PATH. Verify with ``git --version``.
+Authenticate through your Git credential manager or SSH; do not paste access
+tokens into installation commands. An already cloned checkout can be installed
+without another download using ``python -m pip install -e .`` from its root.
+
+Use a project environment without changing PowerShell execution policy:
+
+.. code-block:: powershell
+
+   py -m venv .venv
+   .\.venv\Scripts\python.exe -m pip install -e .
+   .\.venv\Scripts\python.exe -c "import petrophys; print(petrophys.__version__)"
 
 Matplotlib in headless environments
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

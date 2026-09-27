@@ -62,6 +62,11 @@ dev = [
     "flake8>=4.0.0",
     "mypy>=0.950",
 ]
+tutorials = [
+    "nbformat>=5.7",
+    "nbclient>=0.8",
+    "ipykernel>=6.0",
+]
 docs = [
     "sphinx>=7.0",
     "furo>=2024.1.29",

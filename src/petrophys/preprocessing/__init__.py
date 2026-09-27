@@ -18,6 +18,7 @@ from petrophys.preprocessing.quality import (
 from petrophys.preprocessing.standardization import (
     ALIAS_MAP,
     CurveStandardizer,
+    standardize_core_saturation,
     standardize_curves,
 )
 
@@ -35,5 +36,6 @@ __all__ = [
     "histogram_matching",
     "normalize_log",
     "standardize_curves",
+    "standardize_core_saturation",
     "value_range_qc_note",
 ]

@@ -1,0 +1,5 @@
+top,bottom,lithology
+1000.0,1025.0,Shale
+1025.0,1050.0,Sandstone
+1050.0,1120.0,Limestone
+1120.0,1200.0,Shale

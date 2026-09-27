@@ -21,11 +21,22 @@ Choose a path
       :link: quickstart
       :link-type: doc
 
-      Load a bundled LAS file, run the input-aware workflow, inspect its trace,
-      plot the interpretation, and export computed curves.
+      Plot a bundled LAS first, optionally attach geology, then interpret on a
+      copy and inspect the calculation trace.
 
       +++
       One complete well in a single lesson
+
+   .. grid-item-card:: Your own data
+      :class-card: ph-card-teal
+      :link: own_data
+      :link-type: doc
+
+      Map CSV/TSV/Excel inputs, select wells and sheets, check depth metadata,
+      and diagnose optional geology and core saturation units.
+
+      +++
+      Beginner examples followed by advanced import controls
 
    .. grid-item-card:: Foundations
       :class-card: ph-card-amber
@@ -104,6 +115,7 @@ results without executing code during the documentation build.
    :maxdepth: 2
 
    Quickstart <quickstart>
+   Your own data <own_data>
    Foundations <foundations>
    Advanced workflows <advanced>
    Case studies <case_studies>

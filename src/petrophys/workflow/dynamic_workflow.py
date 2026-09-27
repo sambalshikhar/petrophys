@@ -510,6 +510,9 @@ class DynamicWorkflowConfig:
     # Lithology
     lithology: str = "clastic"  # clastic or carbonate
     lithology_csv: Optional[str] = None  # Path to lithology CSV (top, bottom, lithology)
+    lithology_intervals: Optional[Any] = None  # Validated table or CSV/Excel path
+    lithology_source: str = "auto"  # auto, external, vendor, computed, config
+    raise_on_error: bool = False
 
     # Archie parameters
     a: Optional[float] = None
@@ -635,6 +638,7 @@ class DynamicWorkflowResult:
             WorkflowStep.NORMALIZATION.value,
             WorkflowStep.BAD_HOLE.value,
             WorkflowStep.TEMPERATURE.value,
+            "input_context",
         }
         return any(
             step.success and bool(step.output_curves)
@@ -661,6 +665,21 @@ class DynamicWorkflowResult:
             for step in self.steps_executed
         )
         return len(self.errors) == 0 and not step_failed
+
+    def raise_for_errors(self) -> "DynamicWorkflowResult":
+        """Raise when execution failed; return this result for chaining."""
+        if not self.success:
+            details = self.errors or [
+                step.message or step.step
+                for step in self.steps_executed if not step.success
+            ]
+            raise RuntimeError("Workflow failed: " + "; ".join(details))
+        return self
+
+    def plot(self, **options):
+        """Plot the interpreted well using the standard log viewer."""
+        from petrophys.visualization import create_log_viewer
+        return create_log_viewer(self.well, **options)
 
     def print_trace(self) -> None:
         """Print a comprehensive human-readable trace of all steps."""
@@ -914,6 +933,96 @@ class DynamicWorkflow:
         self._lithology_pending = False
         self._interpretation_profile = "generic_inference"
         self._vendor_lithology_resolution = None
+        self._selected_lithology_source = "auto"
+        self._external_lithology = None
+
+    def _prepare_input_context(self, well: "Well") -> None:
+        from petrophys.io import read_lithology_intervals
+        from petrophys.interpretation.lithology.matrix_inference import (
+            resolve_from_lithology_log,
+        )
+
+        policy = str(self.config.lithology_source).strip().lower()
+        if policy not in {"auto", "external", "vendor", "computed", "config"}:
+            raise ValueError("lithology_source must be auto, external, vendor, computed, or config")
+        if self.config.lithology_csv is not None and self.config.lithology_intervals is not None:
+            raise ValueError("Supply lithology_csv or lithology_intervals, not both.")
+        context = dict(well.get_parameter("_geology_context") or {})
+        source = self.config.lithology_intervals
+        if source is None:
+            source = self.config.lithology_csv
+        if source is None:
+            source = context.get("lithology")
+        vendor_available = self._has_curve(well, "LITHOLOGY_GEOLINK") or resolve_from_lithology_log(well, warn=False) is not None
+        selected = policy
+        if policy == "auto":
+            selected = "external" if source is not None else ("vendor" if vendor_available else "computed")
+        if selected == "external" and source is None:
+            raise ValueError("lithology_source='external' requires lithology_intervals or lithology_csv.")
+        if selected == "vendor" and not vendor_available:
+            raise ValueError("lithology_source='vendor' requires a recognized vendor lithology curve.")
+        if selected == "config" and (
+            self.config.matrix_type == "auto" or self.config.lithology == "auto"
+        ):
+            raise ValueError("lithology_source='config' requires explicit matrix_type and lithology.")
+        self._selected_lithology_source = selected
+        self._external_lithology = None
+        report = {"requested_source": policy, "selected_source": selected,
+                  "external_available": source is not None, "vendor_available": vendor_available}
+        output_curves = []
+        if selected == "external":
+            table = read_lithology_intervals(source, well=well)
+            self._external_lithology = table
+            labels = list(dict.fromkeys(table["lithology"]))
+            codes = np.full(well.depth.shape, np.nan)
+            groups = np.full(well.depth.shape, None, dtype=object)
+            aliases = {
+                "sand": "sandstone", "sst": "sandstone", "ss": "sandstone",
+                "clastic": "sandstone", "clastics": "sandstone",
+                "siltstone": "silt", "mudstone": "shale", "claystone": "shale",
+                "chalk": "limestone", "carbonate": "limestone", "carb": "limestone",
+                "marl": "limestone", "lime": "limestone", "ls": "limestone",
+                "dolo": "dolomite", "salt": "halite",
+            }
+            unknown = set()
+            for row in table.itertuples():
+                key = str(row.lithology).strip().lower()
+                group = aliases.get(key, key)
+                if group not in LITHOLOGY_GROUP_TO_MATRIX:
+                    unknown.add(row.lithology)
+                    group = None
+                mask = (well.depth >= row.top) & (well.depth < row.bottom)
+                if row.bottom == table["bottom"].max():
+                    mask |= well.depth == row.bottom
+                codes[mask] = labels.index(row.lithology) + 1
+                groups[mask] = group
+            well.add_curve("LITHO_CLASS", codes, "", "External lithology categories")
+            well["LITHO_CLASS"].metadata.custom.update({
+                "category_labels": {index + 1: label for index, label in enumerate(labels)},
+                "source": "external", "code_scheme": "local_categories",
+            })
+            self._lithology_log = groups
+            self._lithology_source = "external_lithology"
+            context["lithology"] = table.to_dict("records")
+            report.update({"import_report": table.attrs.get("import_report", {}),
+                           "unmapped_labels": sorted(unknown),
+                           "covered_samples": int(np.isfinite(codes).sum()),
+                           "uncovered_samples": int(np.isnan(codes).sum())})
+            output_curves = ["LITHO_CLASS"]
+            if unknown or np.isnan(codes).any():
+                self._result.warnings.append(
+                    f"External lithology: unmapped labels {sorted(unknown)}, "
+                    f"{np.isnan(codes).sum()} uncovered samples. Labels/gaps are preserved; "
+                    "unclassified samples use configured calculation fallbacks, not inferred rock labels."
+                )
+        context["selected_lithology_source"] = selected
+        context["lithology_selection"] = report
+        well.set_parameter("_geology_context", context)
+        self._result.steps_executed.append(StepResult(
+            step="input_context", success=True, method="validated_geology_selection",
+            output_curves=output_curves, parameters=report,
+            decisions=[f"Selected {selected} lithology; alternate sources were retained"],
+        ))
 
     @property
     def _uses_vendor_benchmark(self) -> bool:
@@ -942,13 +1051,16 @@ class DynamicWorkflow:
             )
 
         requested = aliases[requested]
-        self._vendor_lithology_resolution = resolve_from_lithology_log(well, warn=False)
+        self._vendor_lithology_resolution = (
+            resolve_from_lithology_log(well, warn=False)
+            if self._selected_lithology_source in {"auto", "vendor"} else None
+        )
         has_vendor_lithology = self._vendor_lithology_resolution is not None
 
         if requested == "auto":
             resolved = "vendor_benchmark" if has_vendor_lithology else "generic_inference"
         elif requested == "vendor_benchmark" and not (
-            has_vendor_lithology or self.config.lithology_csv
+            has_vendor_lithology or self._selected_lithology_source == "external"
         ):
             resolved = "generic_inference"
             if self._result is not None:
@@ -1126,7 +1238,14 @@ class DynamicWorkflow:
         self._last_phi_cl_info = None
         self._interpretation_profile = "generic_inference"
         self._vendor_lithology_resolution = None
-        self._resolve_interpretation_profile(well)
+        try:
+            self._prepare_input_context(well)
+            self._resolve_interpretation_profile(well)
+        except (ValueError, FileNotFoundError) as exc:
+            if self.config.raise_on_error:
+                raise
+            self._result.errors.append(f"input_context: {exc}")
+            return self._result
 
         allowed = set(steps)
 
@@ -1142,7 +1261,12 @@ class DynamicWorkflow:
                 step_trace.step = step_name
                 # Record a StepResult (same type as run()) for consistent consumers.
                 self._result.steps_executed.append(step_trace)
+                if not step_trace.success:
+                    self._result.errors.append(f"{step_name}: {step_trace.message}")
             except Exception as e:
+                if self.config.raise_on_error:
+                    raise
+                self._result.errors.append(f"{step_name}: {e}")
                 self._result.specific_steps_skipped[step_enum.name] = str(e)
                 self._result.steps_executed.append(
                     StepResult(step=step_name, success=False, message=str(e))
@@ -1198,6 +1322,8 @@ class DynamicWorkflow:
                 self._result.steps_executed.append(self._step_normalization(well))
                 normalization_done = True
             except Exception as exc:
+                if self.config.raise_on_error:
+                    raise
                 message = f"normalization: {exc}"
                 self._result.errors.append(message)
                 self._result.steps_executed.append(
@@ -1206,8 +1332,11 @@ class DynamicWorkflow:
                 return self._result
 
         try:
+            self._prepare_input_context(well)
             self._resolve_interpretation_profile(well)
-        except ValueError as exc:
+        except (ValueError, FileNotFoundError) as exc:
+            if self.config.raise_on_error:
+                raise
             self._result.errors.append(str(exc))
             return self._result
 
@@ -1223,10 +1352,22 @@ class DynamicWorkflow:
             rho_hc = {"oil": 0.8, "gas": 0.25, "condensate": 0.5}.get(
                 str(self.config.hc_type).lower(), 0.8
             )
-            res = (resolve_from_lithology_log(well, warn=False)
-                   or resolve_from_core_matrix(well, rho_hc=rho_hc, warn=False))
+            res = None
+            if self._selected_lithology_source == "external":
+                from petrophys.interpretation.lithology.matrix_inference import _finalize
+                groups = self._lithology_log
+                clastic = int(sum(value in {"sandstone", "shale", "silt", "clastic_coarse", "calcareous_shale"} for value in groups))
+                carbonate = int(sum(value == "limestone" for value in groups))
+                dolomite = int(sum(value == "dolomite" for value in groups))
+                res = _finalize(clastic, carbonate, dolomite, "external_lithology", clastic + carbonate + dolomite, False)
+            elif self._selected_lithology_source == "vendor":
+                res = resolve_from_lithology_log(well, warn=False)
+            elif self._selected_lithology_source != "config":
+                res = resolve_from_core_matrix(well, rho_hc=rho_hc, warn=False)
             if res is not None:
                 self._apply_lithology_resolution(res)
+            elif self._selected_lithology_source == "config":
+                raise ValueError("lithology_source='config' requires explicit lithology and matrix_type, not 'auto'.")
 
         # Detect available curves
         available = self._detect_available_curves(well)
@@ -1242,6 +1383,7 @@ class DynamicWorkflow:
 
             if step_name in self.config.skip_steps:
                 self._result.steps_skipped.append(step_name)
+                self._result.specific_steps_skipped[step_name] = "Disabled in skip_steps"
                 continue
 
             if can_fn(well):
@@ -1251,6 +1393,10 @@ class DynamicWorkflow:
                         step_trace = StepResult(step=step_name, success=True)
                     step_trace.step = step_name
                     self._result.steps_executed.append(step_trace)
+                    if not step_trace.success:
+                        self._result.errors.append(f"{step_name}: {step_trace.message}")
+                        if self.config.raise_on_error:
+                            raise RuntimeError(step_trace.message)
                     # Tier 1: once the multi-mineral solver has run, iterate the
                     # VCL <-> solver loop to a fixed point, resolving any still-pending
                     # auto lithology before the later saturation / net-pay steps.
@@ -1259,13 +1405,17 @@ class DynamicWorkflow:
                             and not self._uses_vendor_benchmark):
                         self._converge_auto_matrix(well)
                 except Exception as e:
+                    if self.config.raise_on_error:
+                        raise
                     msg = f"{step_name}: {str(e)}"
                     self._result.warnings.append(msg)
+                    self._result.errors.append(msg)
                     self._result.steps_executed.append(
                         StepResult(step=step_name, success=False, message=str(e))
                     )
             else:
                 self._result.steps_skipped.append(step_name)
+                self._result.specific_steps_skipped[step_name] = "Required usable curves or parameters are unavailable"
 
         # The May context benchmark finalized apparent Swirr after NET_RES had
         # been written, then recalculated permeability from that final reservoir
@@ -1305,6 +1455,9 @@ class DynamicWorkflow:
                     )
                     self._result.steps_executed.append(final_quality_trace)
             except Exception as exc:
+                if self.config.raise_on_error:
+                    raise
+                self._result.errors.append(f"permeability_benchmark_finalize: {exc}")
                 self._result.warnings.append(f"permeability_benchmark_finalize: {exc}")
                 self._result.steps_executed.append(
                     StepResult(
@@ -1317,8 +1470,12 @@ class DynamicWorkflow:
         # Fallback: if auto lithology is still unresolved (no vendor log, solver
         # skipped), apply the default (sandstone/clastic) with a warning.
         if self._lithology_pending:
-            from petrophys.interpretation.lithology.matrix_inference import resolve_well_lithology
-            self._apply_lithology_resolution(resolve_well_lithology(well, warn=False))
+            from petrophys.interpretation.lithology.matrix_inference import (
+                _default, resolve_from_minerals,
+            )
+            self._apply_lithology_resolution(
+                resolve_from_minerals(well, warn=False) or _default(warn=False)
+            )
 
         return self._result
 
@@ -1415,6 +1572,12 @@ class DynamicWorkflow:
                 "rename_map": rename_map,
                 "working_aliases": working_aliases,
                 "unit_changes": unit_changes,
+                "core_saturation_normalization": {
+                    name: curve.metadata.custom["core_saturation_normalization"]
+                    for name in well.curves
+                    for curve in [well.get(name)]
+                    if "core_saturation_normalization" in curve.metadata.custom
+                },
             },
             decisions=[
                 "Standardized curve units, nulls, and plausible ranges before routing",
@@ -2116,10 +2279,12 @@ class DynamicWorkflow:
             trace.method = "may_2026_multi_mineral_solver"
             trace.parameters["benchmark_version"] = BENCHMARK_PROFILE_VERSION
         result = litho_module.calculate(well)
-        input_lithology_available = (
-            self._has_curve(well, "LITHOLOGY_GEOLINK")
-            or self.config.lithology_csv is not None
+        input_lithology_available = self._selected_lithology_source == "external" or (
+            self._selected_lithology_source == "vendor"
+            and self._has_curve(well, "LITHOLOGY_GEOLINK")
         )
+        if self._selected_lithology_source == "auto":
+            input_lithology_available = self._has_curve(well, "LITHOLOGY_GEOLINK") or self.config.lithology_csv is not None
         write_lithology_code = not input_lithology_available
         if self._uses_vendor_benchmark:
             well.add_curve("VQUAR", result.v_quartz, "v/v", "Quartz Volume")
@@ -4052,7 +4217,12 @@ class DynamicWorkflow:
         if self._lithology_log is not None:
             return self._lithology_log
 
+        if self._selected_lithology_source == "config":
+            self._lithology_source = "config"
+            return self.config.lithology
         gt_curve = get_curve(well, ["LITHOLOGY_GEOLINK"])
+        if self._selected_lithology_source not in {"auto", "vendor"}:
+            gt_curve = None
         if gt_curve is not None:
             try:
                 gt_data = np.asarray(gt_curve.data, dtype=float)
@@ -4061,22 +4231,6 @@ class DynamicWorkflow:
                 return self._lithology_log
             except (TypeError, ValueError):
                 pass
-
-        if self.config.lithology_csv is not None:
-            from petrophys.interpretation.lithology.lithology_log import (
-                load_lithology_csv, build_lithology_log
-            )
-            intervals = load_lithology_csv(self.config.lithology_csv)
-            depth = well.depth
-            self._lithology_log = build_lithology_log(
-                depth, intervals, default_lithology=self.config.lithology
-            )
-            # Add LITHO_CLASS curve to well
-            well.add_curve(
-                "LITHO_CLASS", self._lithology_log, "", "Lithology Classification"
-            )
-            self._lithology_source = "lithology_csv"
-            return self._lithology_log
 
         computed_curve = get_curve(well, ["LITHO"])
         if computed_curve is not None and not self._uses_vendor_benchmark:
@@ -4155,9 +4309,7 @@ def run_dynamic_workflow(
     if config is None:
         config = DynamicWorkflowConfig(**kwargs)
     else:
-        for key, value in kwargs.items():
-            if hasattr(config, key):
-                setattr(config, key, value)
+        config = dataclasses.replace(config, **kwargs)
 
     workflow = DynamicWorkflow(config)
     return workflow.run(well)

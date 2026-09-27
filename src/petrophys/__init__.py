@@ -13,6 +13,8 @@ This library provides tools for:
 """
 
 from petrophys.version import __version__
+from petrophys.api import read, plot, interpret
+from petrophys.io import read_formations, read_lithology_intervals
 from petrophys.model.well import Well
 from petrophys.model.curve import Curve
 from petrophys.model.data_types import DataType
@@ -45,6 +47,11 @@ from petrophys.preprocessing.imputation import (
 )
 
 __all__ = [
+    "read",
+    "plot",
+    "interpret",
+    "read_formations",
+    "read_lithology_intervals",
     "__version__",
     "Well",
     "Curve",

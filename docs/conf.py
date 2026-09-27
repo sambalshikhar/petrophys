@@ -3,7 +3,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 import os
-import shutil
+import json
 import sys
 from pathlib import Path
 
@@ -28,17 +28,43 @@ NOTEBOOK_GROUPS = {
     "case_studies": "tutorials/case_studies",
 }
 
+def copy_tutorial(source, target):
+    """Keep local notebook links valid after copying into the docs layout."""
+    notebook = json.loads(source.read_text(encoding="utf-8"))
+    locations = [
+        (REPO_ROOT / "examples" / original, DOCS_DIR / rendered)
+        for original, rendered in NOTEBOOK_GROUPS.items()
+    ] + [(DOCS_DIR, DOCS_DIR)]
+    prefixes = [
+        (
+            os.path.relpath(original, source.parent).replace(os.sep, "/"),
+            os.path.relpath(rendered, target.parent).replace(os.sep, "/"),
+        )
+        for original, rendered in locations
+    ]
+    for cell in notebook["cells"]:
+        if cell["cell_type"] != "markdown":
+            continue
+        content = "".join(cell["source"])
+        for original, rendered in prefixes:
+            content = content.replace(f"]({original}/", f"]({rendered}/")
+        cell["source"] = content.splitlines(keepends=True)
+    content = json.dumps(notebook, ensure_ascii=False, indent=1) + "\n"
+    if not target.exists() or target.read_text(encoding="utf-8") != content:
+        target.write_text(content, encoding="utf-8")
+
+
 for source_relative, destination_relative in NOTEBOOK_GROUPS.items():
     source = REPO_ROOT / "examples" / source_relative
     destination = DOCS_DIR / destination_relative
     destination.mkdir(parents=True, exist_ok=True)
     for notebook in sorted(source.glob("*.ipynb")):
         target = destination / notebook.name
-        if not target.exists() or notebook.stat().st_mtime > target.stat().st_mtime:
-            shutil.copy2(notebook, target)
+        copy_tutorial(notebook, target)
 
 TUTORIAL_SOURCE_PATHS = {
     "tutorials/quickstart": "examples/quickstart.ipynb",
+    "tutorials/own_data": "examples/own_data.ipynb",
     "tutorials/part_a/": "examples/part_a_foundations/",
     "tutorials/part_b/": "examples/part_b_advanced/",
     "tutorials/case_studies/": "examples/case_studies/",

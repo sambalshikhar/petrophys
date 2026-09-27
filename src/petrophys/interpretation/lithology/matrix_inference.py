@@ -78,7 +78,7 @@ _VENDOR_LITHOLOGY_ALIASES = (
 
 # Curves the workflow itself produces (different code scheme) — never treat
 # these as a vendor log.
-_COMPUTED_LITHOLOGY_CURVES = {"LITHO", "MMQC", "LITHO_COMPUTED", "LITHOLOGY_COMPUTED"}
+_COMPUTED_LITHOLOGY_CURVES = {"LITHO", "MMQC", "LITHO_COMPUTED", "LITHOLOGY_COMPUTED", "LITHO_CLASS"}
 
 # Substrings that look lithology-ish but are not a lithology-code log.
 _LITHOLOGY_NAME_DENY = ("LITHOSTAT", "LITHOSTATIC", "FLAG", "PRESS")

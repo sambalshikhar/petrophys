@@ -12,6 +12,7 @@ from petrophys.preprocessing.standardization.curve_standardizer import (
 )
 from petrophys.preprocessing.standardization.alias_map import ALIAS_MAP, get_standard_mnemonic
 from petrophys.preprocessing.standardization.unit_converter import (
+    standardize_core_saturation,
     standardize_units,
     convert_curve_units,
 )
@@ -23,5 +24,6 @@ __all__ = [
     "ALIAS_MAP",
     "get_standard_mnemonic",
     "standardize_units",
+    "standardize_core_saturation",
     "convert_curve_units",
 ]

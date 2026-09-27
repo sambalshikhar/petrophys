@@ -73,6 +73,12 @@ def read_csv(
 
     # Clean column names
     df.columns = [c.strip().upper() for c in df.columns]
+    depth_column = depth_column.strip().upper()
+    if depth_column not in df.columns:
+        raise ValueError(
+            f"Depth column {depth_column!r} not found. Available columns: "
+            f"{list(df.columns)}. Set depth_column explicitly."
+        )
 
     candidate_well_column = _resolve_well_column(df, well_column)
     if candidate_well_column is not None:

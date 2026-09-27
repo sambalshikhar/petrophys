@@ -18,8 +18,9 @@ import numpy as np
 import csv
 
 from petrophys.evaluation.summaries.zone_summary import ZoneSummary, calculate_zone_summary
-from petrophys.model.intervals import Formation
+from petrophys.model.intervals import Formation, IntervalKind
 from petrophys._internal.statistics import finite_min_max
+from petrophys._internal.analysis_helpers import depth_step_array
 
 
 @dataclass
@@ -46,13 +47,19 @@ class FormationAnalysisResult:
     formations: List[Formation]
     summaries: List[FormationSummary]
     depth_unit: str = "m"
+    union_gross: Optional[float] = None
+    union_net_pay: Optional[float] = None
 
     @property
     def total_gross(self) -> float:
+        if self.union_gross is not None:
+            return self.union_gross
         return sum(s.zone_summary.gross_thickness for s in self.summaries)
 
     @property
     def total_net_pay(self) -> float:
+        if self.union_net_pay is not None:
+            return self.union_net_pay
         return sum(s.zone_summary.net_pay for s in self.summaries)
 
     def to_dataframe(self):
@@ -127,188 +134,22 @@ class FormationAnalysisResult:
 
 
 def load_formations_csv(
-    filepath: Union[str, Path],
-    well_name: Optional[str] = None,
-    format: str = "auto"
+    filepath: Union[str, Path], well_name: Optional[str] = None,
+    format: str = "auto", *, terminal_depth: Optional[float] = None,
+    rank: Optional[str] = None, **read_options,
 ) -> List[Formation]:
+    """Load bounded formations using the shared validated importer.
+
+    Top-only inputs require terminal_depth; CSV/Excel/DataFrame options are
+    forwarded to read_formations. Existing simple/NPD/Danish format names remain
+    supported. rank selects one stratigraphic level when explicitly supplied.
     """
-    Load formation definitions from a CSV file.
+    from petrophys.model.formation_tops import FormationTops
 
-    Supported formats:
-        - "simple": Columns: formation_name, top_depth, bottom_depth [, lithology]
-        - "npd": NPD stratigraphic picks with Well identifier, Surface, MD columns
-        - "danish": wellName, formationName, topDepth, bottomDepth [, majorityLithology]
-        - "auto": Detect format from column headers
-
-    Parameters
-    ----------
-    filepath : str or Path
-        Path to CSV file
-    well_name : str, optional
-        Well name to filter (required for NPD format with multiple wells)
-    format : str
-        CSV format: "auto", "simple", "npd", or "danish"
-
-    Returns
-    -------
-    list of Formation
-        Formation definitions sorted by top depth
-    """
-    filepath = Path(filepath)
-    if not filepath.exists():
-        raise FileNotFoundError(f"Formation CSV not found: {filepath}")
-
-    with open(filepath, "r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        headers = [h.strip() for h in reader.fieldnames] if reader.fieldnames else []
-
-        if format == "auto":
-            format = _detect_csv_format(headers)
-
-        rows = list(reader)
-
-    if format == "npd":
-        return _parse_npd_format(rows, well_name)
-    elif format == "danish":
-        return _parse_danish_format(rows, well_name)
-    else:
-        return _parse_simple_format(rows)
-
-
-def _detect_csv_format(headers: List[str]) -> str:
-    """Auto-detect CSV format from column headers."""
-    headers_lower = [h.lower().strip() for h in headers]
-
-    if "well identifier" in headers_lower or "surface" in headers_lower:
-        return "npd"
-    elif "wellname" in headers_lower and "formationname" in headers_lower:
-        return "danish"
-    else:
-        return "simple"
-
-
-def _parse_simple_format(rows: List[Dict]) -> List[Formation]:
-    """Parse simple CSV: formation_name, top_depth, bottom_depth [, lithology]."""
-    formations = []
-    for row in rows:
-        # Normalize keys
-        keys = {k.strip().lower(): v for k, v in row.items()}
-
-        name = (keys.get("formation_name") or keys.get("formation") or
-                keys.get("name") or keys.get("zone") or "Unknown")
-        top = _safe_float(keys.get("top_depth") or keys.get("top") or
-                          keys.get("topdepth"))
-        bottom = _safe_float(keys.get("bottom_depth") or keys.get("bottom") or
-                             keys.get("bottomdepth"))
-        lithology = (keys.get("lithology") or keys.get("majoritylithology") or "")
-
-        if top is not None and bottom is not None:
-            formations.append(Formation(
-                name=name.strip(),
-                top_depth=top,
-                bottom_depth=bottom,
-                lithology=lithology.strip()
-            ))
-
-    formations.sort(key=lambda f: f.top_depth)
-    return formations
-
-
-def _parse_npd_format(
-    rows: List[Dict],
-    well_name: Optional[str] = None
-) -> List[Formation]:
-    """
-    Parse NPD stratigraphic picks format.
-
-    NPD provides formation tops (not intervals), so we construct intervals
-    by sorting tops and using the next top as the bottom of each formation.
-    """
-    # Filter by well
-    filtered = []
-    for row in rows:
-        keys = {k.strip(): v for k, v in row.items()}
-        well_id = keys.get("Well identifier", "").strip()
-
-        if well_name and well_id != well_name:
-            continue
-
-        surface = keys.get("Surface", "").strip()
-        md = _safe_float(keys.get("MD"))
-        age = keys.get("Geological age", "")
-
-        if md is not None and surface:
-            filtered.append({
-                "name": surface.replace(" Top", ""),
-                "md": md,
-                "age": str(age) if age else ""
-            })
-
-    if not filtered:
-        return []
-
-    # Sort by depth
-    filtered.sort(key=lambda x: x["md"])
-
-    # Convert tops to intervals
-    formations = []
-    for i in range(len(filtered)):
-        top = filtered[i]["md"]
-        if i + 1 < len(filtered):
-            bottom = filtered[i + 1]["md"]
-        else:
-            bottom = top + 100.0  # Default 100m thickness for last formation
-
-        if bottom > top:
-            formations.append(Formation(
-                name=filtered[i]["name"],
-                top_depth=top,
-                bottom_depth=bottom,
-                age=filtered[i]["age"]
-            ))
-
-    return formations
-
-
-def _parse_danish_format(
-    rows: List[Dict],
-    well_name: Optional[str] = None
-) -> List[Formation]:
-    """Parse Danish format: wellName, formationName, topDepth, bottomDepth."""
-    formations = []
-    for row in rows:
-        keys = {k.strip().lower(): v for k, v in row.items()}
-
-        wn = keys.get("wellname", "").strip()
-        if well_name and wn != well_name:
-            continue
-
-        name = keys.get("formationname", "Unknown").strip()
-        top = _safe_float(keys.get("topdepth"))
-        bottom = _safe_float(keys.get("bottomdepth"))
-        lithology = keys.get("majoritylithology", "").strip()
-
-        if top is not None and bottom is not None:
-            formations.append(Formation(
-                name=name,
-                top_depth=top,
-                bottom_depth=bottom,
-                lithology=lithology
-            ))
-
-    formations.sort(key=lambda f: f.top_depth)
-    return formations
-
-
-def _safe_float(value: Any) -> Optional[float]:
-    """Safely convert to float, return None on failure."""
-    if value is None:
-        return None
-    try:
-        v = float(str(value).strip())
-        return v if np.isfinite(v) else None
-    except (ValueError, TypeError):
-        return None
+    return FormationTops.from_csv(
+        filepath, well_name=well_name, format=format,
+        terminal_depth=terminal_depth, rank=rank, **read_options,
+    ).intervals
 
 
 def _get_formation_average(well, curve_name: str, mask: np.ndarray) -> float:
@@ -326,7 +167,8 @@ def analyze_formations(
     formations: List[Formation],
     net_pay_curve: str = "NET_PAY",
     net_reservoir_curve: str = "NET_RES",
-    net_rock_curve: str = "NET_ROCK"
+    net_rock_curve: str = "NET_ROCK",
+    *, terminal_depth: Optional[float] = None, rank: Optional[str] = None,
 ) -> FormationAnalysisResult:
     """
     Run formation-level analysis on a well with computed curves.
@@ -381,6 +223,14 @@ def analyze_formations(
             depth_unit=depth_unit,
         )
 
+    from petrophys.io.geology_reader import read_formations
+    from petrophys.model.formation_tops import FormationTops
+    if formations is not None and not (isinstance(formations, (list, tuple)) and len(formations) == 0):
+        table = read_formations(formations, well=well)
+        formations = FormationTops._from_table(table, IntervalKind.FORMATION, terminal_depth, rank).intervals
+    else:
+        formations = []
+
     valid_formations = []
     for fm in formations:
         if fm.bottom_depth > well_top and fm.top_depth < well_bottom:
@@ -390,7 +240,8 @@ def analyze_formations(
                 top_depth=max(fm.top_depth, well_top),
                 bottom_depth=min(fm.bottom_depth, well_bottom),
                 lithology=fm.lithology,
-                age=fm.age
+                age=fm.age,
+                metadata=dict(fm.metadata),
             )
             valid_formations.append(clipped)
 
@@ -409,6 +260,7 @@ def analyze_formations(
         )
 
     summaries = []
+    union_mask = np.zeros(depth.shape, dtype=bool)
     for fm in valid_formations:
         # Zone summary (net pay, NTG, averages over pay)
         zs = calculate_zone_summary(
@@ -418,11 +270,15 @@ def analyze_formations(
             zone_name=fm.name,
             net_pay_curve=net_pay_curve,
             net_reservoir_curve=net_reservoir_curve,
-            net_rock_curve=net_rock_curve
+            net_rock_curve=net_rock_curve,
+            include_bottom=fm.bottom_depth == well_bottom,
         )
 
         # Formation-wide curve averages (over entire formation, not just pay)
-        mask = (depth >= fm.top_depth) & (depth <= fm.bottom_depth)
+        mask = (depth >= fm.top_depth) & (
+            (depth <= fm.bottom_depth) if fm.bottom_depth == well_bottom else (depth < fm.bottom_depth)
+        )
+        union_mask |= mask
 
         avg_gr = _get_formation_average(well, "GR", mask)
         avg_rhob = _get_formation_average(well, "RHOB", mask)
@@ -451,11 +307,16 @@ def analyze_formations(
             data_coverage_pct=coverage,
         ))
 
+    thickness = depth_step_array(depth)
+    net_pay = well.get(net_pay_curve)
+    pay_mask = union_mask & (net_pay.data > 0.5) if net_pay is not None else np.zeros_like(union_mask)
     return FormationAnalysisResult(
         well_name=well.header.well_name or "Unknown",
         formations=valid_formations,
         summaries=summaries,
         depth_unit=depth_unit,
+        union_gross=float(np.sum(thickness[union_mask])),
+        union_net_pay=float(np.sum(thickness[pay_mask])),
     )
 
 
@@ -529,7 +390,9 @@ def run_formation_analysis(
     formations = load_formations_csv(
         formations_csv_path,
         well_name=well_name,
-        format=csv_format
+        format=csv_format,
+        terminal_depth=well.bottom,
+        well=well,
     )
 
     if not formations:

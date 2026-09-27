@@ -213,6 +213,9 @@ Continue with the :doc:`installation guide <installation>`, the
 
    installation
    quickstart
+   input_templates
+   own_data
+   usability_fixes
 
 .. toctree::
    :hidden:

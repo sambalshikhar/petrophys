@@ -42,6 +42,38 @@ jobs:
           file: ./coverage.xml
           fail_ci_if_error: false
 
+  user-journeys:
+    runs-on: windows-latest
+    env:
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e ".[dev]"
+      - name: Exercise optional geology and public API journeys
+        run: python -m pytest tests/test_usability_workflows.py tests/test_input_templates.py tests/test_core_saturation_units.py
+
+  tutorials:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install tutorial runtime
+        run: python -m pip install -e ".[tutorials]"
+      - name: Execute user-journey notebooks in fresh kernels
+        run: python scripts/execute_tutorials.py --output-dir tutorial-results --report tutorial-results/report.json
+      - name: Upload executed notebooks and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: executed-tutorials
+          path: tutorial-results/
+
   ml:
     runs-on: ubuntu-latest
     steps:

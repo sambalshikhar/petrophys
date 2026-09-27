@@ -183,7 +183,7 @@ def test_dynamic_workflow_records_elemental_sources_and_outputs():
         [WorkflowStep.ELEMENTAL_SPECTROSCOPY],
     )
 
-    trace = result.steps_executed[0]
+    trace = next(step for step in result.steps_executed if step.step == "elemental_spectroscopy")
     assert trace.success
     assert trace.input_curves == ["WFSI"]
     assert "ELEM_SI" in trace.output_curves

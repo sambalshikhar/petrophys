@@ -1,9 +1,18 @@
 Quickstart
 ==========
 
-This guide runs a traceable interpretation on a bundled public LAS well,
-inspects the computed curves, creates a multi-track plot, and exports the
-result.
+Start by plotting existing measurements. Interpretation is a separate,
+optional step. No formation or lithology file is required.
+
+.. code-block:: python
+
+   import petrophys as pp
+   well = pp.read(pp.sample("30_6-5"))
+   viewer = pp.plot(well, depth_range=(2800, 3000))
+   viewer.show()
+
+Replace the sample path with your LAS path. See :doc:`own_data` for optional
+geology, format controls, and troubleshooting.
 
 Load a well
 -----------
@@ -62,7 +71,8 @@ route is available.
        sw_model="auto",
    )
 
-   result = run_dynamic_workflow(well, config)
+   result = pp.interpret(well, config)
+   result.raise_for_errors()
 
    print("status:", result.status)
    print("executed:", [step.step for step in result.steps_executed])
@@ -72,6 +82,9 @@ route is available.
 Normalization is enabled by default. The workflow adds canonical working
 aliases while retaining vendor mnemonics, converts supported physical units,
 and screens recognized null and range problems before routing calculations.
+``pp.interpret`` works on a copy unless ``inplace=True``. The lower-level
+``run_dynamic_workflow`` modifies the supplied well. Without external geology,
+available logs can still drive mineral inversion and other applicable steps.
 
 Inspect the trace
 -----------------

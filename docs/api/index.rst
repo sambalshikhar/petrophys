@@ -5,6 +5,17 @@ The supported API is grouped by lifecycle and scientific domain. These pages
 are generated from the source docstrings. Internal helpers under
 ``petrophys._internal`` are intentionally excluded.
 
+Common tasks
+------------
+
+These functions are also available as ``petrophys.read``,
+``petrophys.plot``, and ``petrophys.interpret``.
+
+.. autosummary::
+   :toctree: generated
+
+   petrophys.api
+
 Data model and I/O
 ------------------
 

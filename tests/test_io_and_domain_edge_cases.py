@@ -149,7 +149,9 @@ def test_formation_csv_auto_detects_tops_table_filters_well_and_builds_intervals
         "A-1,Beta Top,1050,Triassic\n"
     )
 
-    formations = load_formations_csv(path, well_name="A-1")
+    with pytest.raises(ValueError, match="terminal_depth"):
+        load_formations_csv(path, well_name="A-1")
+    formations = load_formations_csv(path, well_name="A-1", terminal_depth=1150)
 
     assert [formation.name for formation in formations] == ["Alpha", "Beta"]
     assert formations[0].top_depth == 1000.0
