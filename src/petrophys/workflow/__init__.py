@@ -38,6 +38,7 @@ from petrophys.workflow.zoned_batch import (
     write_curve_audit_report,
 )
 from petrophys.workflow.comprehensive_analysis import run_comprehensive_analysis
+from petrophys.workflow.schema import config_schema, workflow_steps
 
 __all__ = [
     # Standard workflow
@@ -70,4 +71,6 @@ __all__ = [
     "write_batch_report",
     "write_curve_audit_report",
     "run_comprehensive_analysis",
+    "config_schema",
+    "workflow_steps",
 ]
