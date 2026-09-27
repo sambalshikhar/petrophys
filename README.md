@@ -112,6 +112,7 @@ e.g. `hc_type='gass' is not valid; use one of: oil, gas (did you mean 'gas'?)`.
 
 ```python
 result.status                  # "interpreted", "no_interpretation" or "failed"
+result.summary(top=2841, bottom=2958)   # compact JSON-ready overview of a depth window
 result.warnings                # data problems found on the way
 result.specific_steps_skipped  # e.g. {"core_correction": "Missing core porosity (PHIC/CPOR), ..."}
 result.to_trace_dict()         # every step's method, inputs, outputs, parameters
