@@ -111,7 +111,7 @@ def _lookup(registry: dict, unit: str, quantity: str) -> float:
     confidently wrong number, which is worse than failing loudly.
     """
     try:
-        return registry[unit]
+        return float(registry[unit])
     except KeyError:
         supported = ", ".join(sorted(registry))
         raise ValueError(

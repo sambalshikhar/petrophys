@@ -94,7 +94,7 @@ def sample(name: str) -> Path:
         if path in fixture_paths:
             continue
         if path.stem.lower() == key.lower():
-            return path
+            return Path(path)
     raise FileNotFoundError(
         f"No bundled sample named {name!r}. Available: {', '.join(list_samples())}"
     )
