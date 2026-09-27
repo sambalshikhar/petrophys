@@ -49,10 +49,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dlis = ["dlisio>=0.3.0"]
+# The pretrained imputation models need scikit-learn 1.8, which requires
+# Python 3.11+; on older Pythons these extras install nothing.
 ml = [
-    "scikit-learn>=1.8.0,<1.9.0",
-    "joblib>=1.5.0,<1.6.0",
-    "xgboost>=3.2.0,<3.3.0",
+    "scikit-learn>=1.8.0,<1.9.0; python_version >= '3.11'",
+    "joblib>=1.5.0,<1.6.0; python_version >= '3.11'",
+    "xgboost>=3.2.0,<3.3.0; python_version >= '3.11'",
 ]
 dev = [
     "pytest>=7.0.0",
@@ -76,14 +78,14 @@ docs = [
 ]
 all = [
     "dlisio>=0.3.0",
-    "scikit-learn>=1.8.0,<1.9.0",
-    "joblib>=1.5.0,<1.6.0",
-    "xgboost>=3.2.0,<3.3.0",
+    "scikit-learn>=1.8.0,<1.9.0; python_version >= '3.11'",
+    "joblib>=1.5.0,<1.6.0; python_version >= '3.11'",
+    "xgboost>=3.2.0,<3.3.0; python_version >= '3.11'",
 ]
 
 [project.urls]
 Homepage = "https://github.com/sambalshikhar/petrophys"
-Documentation = "https://petrophys.readthedocs.io"
+Documentation = "https://petrophys.netlify.app"
 Repository = "https://github.com/sambalshikhar/petrophys"
 Issues = "https://github.com/sambalshikhar/petrophys/issues"
 
