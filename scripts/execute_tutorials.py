@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, gettempdir
 import time
 
 
@@ -23,6 +23,32 @@ USER_JOURNEY_NOTEBOOKS = (
     "examples/part_a_foundations/07_water_saturation.ipynb",
     "examples/own_data.ipynb",
 )
+
+
+def normalize_output_paths(notebook, paths):
+    """Keep saved text outputs portable without changing code or image data."""
+    replacements = {}
+    for path, label in paths:
+        value = str(path)
+        replacements[value] = label
+        replacements[value.replace("\\", "/")] = label
+    replacements = sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True)
+
+    def clean(value):
+        if isinstance(value, list):
+            return [clean(item) for item in value]
+        if isinstance(value, str):
+            for path, label in replacements:
+                value = value.replace(path, label)
+        return value
+
+    for cell in notebook["cells"]:
+        for output in cell.get("outputs", []):
+            if "text" in output:
+                output["text"] = clean(output["text"])
+            for mime, value in output.get("data", {}).items():
+                if mime.startswith("text/"):
+                    output["data"][mime] = clean(value)
 
 
 def execute_notebook(source, destination, timeout=300):
@@ -66,6 +92,13 @@ def execute_notebook(source, destination, timeout=300):
     notebook.metadata["kernelspec"] = {
         "display_name": "Python 3 (ipykernel)", "language": "python", "name": "python3",
     }
+    normalize_output_paths(notebook, (
+        (REPO_ROOT, "[repository]"),
+        (Path(sys.prefix), "[python environment]"),
+        (Path(directory), "[working directory]"),
+        (Path(gettempdir()), "[temporary directory]"),
+        (Path.home(), "[home]"),
+    ))
     destination.parent.mkdir(parents=True, exist_ok=True)
     nbformat.write(notebook, destination)
     return sum(cell.cell_type == "code" for cell in notebook.cells)

@@ -85,3 +85,40 @@ def test_export_las_writes_ml_imputation_note_to_other_section(tmp_path):
     assert "~Other" in text
     assert note in text
     assert "ML_IMPUTATION_NOTES" not in text
+
+
+def test_validation_filter_removes_estimators_but_preserves_companions():
+    from petrophys.preprocessing.imputation.training import filter_model_pack
+
+    pack = _test_pack()
+    pack['models']['knn'] = {'RHOB': pack['models']['rf']['RHOB']}
+    pack['models']['rf']['GR'] = pack['models']['rf']['RHOB']
+    pack['models']['rf']['SP'] = pack['models']['rf']['RHOB']
+    pack['metadata'] = {'targets': {
+        'RHOB': {'models': {
+            'rf': {'r2': 0.7, 'evaluation': 'held_out_wells'},
+            'knn': {'r2': 0.1, 'evaluation': 'held_out_wells'},
+        }},
+        'GR': {'models': {'rf': {'r2': 0.14, 'evaluation': 'held_out_wells'}}},
+        'SP': {'models': {'rf': {'r2': 0.99, 'evaluation': 'in_sample_single_well'}}},
+    }}
+    filtered = filter_model_pack(pack)
+    assert filtered['target_curves'] == ['RHOB']
+    assert list(filtered['models']) == ['rf']
+    assert list(filtered['models']['rf']) == ['RHOB']
+    assert 'GR' in filtered['models']['rf']['RHOB']['features']
+    assert 'GR' in pack['models']['rf']
+    assert 'knn' in pack['metadata']['targets']['RHOB']['models']
+
+
+def test_auto_selection_rejects_weak_held_out_score_by_default():
+    well = Well('WEAK-MODEL')
+    well.depth = np.array([1.0, 2.0])
+    well.add_curve('RHOB', [np.nan, 2.4], 'g/cc')
+    pack = _test_pack()
+    pack['metadata'] = {'targets': {'RHOB': {'models': {
+        'rf': {'r2': 0.14, 'evaluation': 'held_out_wells'},
+    }}}}
+    with pytest.raises(ValueError, match='R2 >= 0.500'):
+        PretrainedCurveImputer(model_pack=pack).impute_missing(well, 'RHOB')
+    assert np.isnan(well['RHOB'].data[0])

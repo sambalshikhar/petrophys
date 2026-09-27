@@ -121,6 +121,20 @@ def test_curve_standardization_renames_aliases_and_corrects_units():
     assert standardized["VCL"].unit == "v/v"
 
 
+def test_legacy_compensated_neutron_and_density_correction_aliases():
+    well = Well("LEGACY-CDL-CNL")
+    well.depth = np.array([4000.0, 4000.5, 4001.0])
+    well.add_curve("CNLS", np.array([12.0, 18.0, 24.0]), "", "CN Limestone Porosity")
+    well.add_curve("RHOC", np.array([0.02, 0.04, 0.06]), "", "CDL Density Correction")
+
+    standardized = standardize_curves(well, rename_curves=True, convert_units=True)
+
+    np.testing.assert_allclose(standardized["NPHI"].data, [0.12, 0.18, 0.24])
+    np.testing.assert_allclose(standardized["DRHO"].data, [0.02, 0.04, 0.06])
+    assert "CNLS" not in standardized
+    assert "RHOC" not in standardized
+
+
 def test_lasio_duplicate_suffixes_standardize_by_base_mnemonic():
     assert get_standard_mnemonic("GR:1") == "GR"
     assert get_standard_mnemonic("TNPH:2") == "NPHI"

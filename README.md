@@ -14,12 +14,12 @@ A comprehensive petrophysics library for well log analysis and formation evaluat
 - **Formation Evaluation**: Clay volume (GR, SP, N-D methods), clay resistivity (Rcl), lithology determination (multi-mineral solver)
 - **Porosity Calculation**: Density, neutron, sonic, total (weighted N-D), effective (clay-corrected), and secondary porosity
 - **Hydrocarbon Correction**: Preliminary porosity-based NPHI and RHOB corrections for oil/gas zones
-- **Water Saturation**: 5 models with automatic routing — Archie, Simandoux, Indonesia, Waxman-Smits, Dual Water
+- **Water Saturation**: 5 models with configurable, input-aware heuristic routing — Archie, Simandoux, Indonesia, Waxman-Smits, Dual Water
 - **Permeability Estimation**: Coates-Denoo, Timur, Wyllie-Rose equations with impermeability detection
 - **Rock Quality**: Reservoir Quality Index (RQI), Flow Zone Indicator (FZI), normalized porosity (phi_z)
 - **Reservoir Characterization**: Net pay (lithology-aware cutoffs), BVW, MHI calculations
 - **Dynamic Workflow**: Input-aware pipeline that auto-detects available curves and runs applicable modules
-- **Formation Analysis**: Per-formation summaries from CSV tops (simple, NPD, Danish formats) with report export
+- **Formation Analysis**: Per-formation summaries from common wide or long CSV top tables with report export
 - **Per-Interval Lithology**: CSV-driven per-depth lithology for Sw model routing and net pay cutoffs
 - **Visualization**: Log plots, crossplots, interpretation displays
 
@@ -172,7 +172,7 @@ imperm_flags = flag_impermeable(phi_s, phi_d, phi_n)
 
 ## Water Saturation Model Selection
 
-The library automatically routes Sw calculations based on formation properties:
+The library can route Sw calculations using this configurable quick-look heuristic:
 
 ```
 VCL < cutoff (0.3)  →  CLEAN  →  Archie
@@ -199,7 +199,7 @@ The dynamic workflow follows this sequence:
 | 5 | Rmf | Mud filtrate resistivity (temp-corrected) |
 | 6 | HC Correction | NPHI and RHOB hydrocarbon corrections |
 | 7 | Porosity | Total, effective, density, sonic, secondary |
-| 8 | Lithology | Multi-mineral solver (RHOB, NPHI, PEF) |
+| 8 | Lithology | Adaptive multi-mineral solver using RHOB and available NPHI, PEF, or DTC responses |
 | 9 | Porosity Refinement | Re-run porosity with computed-lithology matrices |
 | 10 | Core Correction | Calibrate porosity/perm to core (if core curves present) |
 | 11 | Rw | Formation water resistivity (given / salinity / SP) |
@@ -254,7 +254,11 @@ Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+The Petrophys source code is available under the MIT License; see
+[LICENSE](LICENSE). Bundled third-party data and trained artifacts retain their
+source terms and attribution requirements; see
+[THIRD_PARTY_DATA.md](THIRD_PARTY_DATA.md) and
+[`petrophys.datasets`](src/petrophys/datasets/README.md).
 
 ## Citation
 

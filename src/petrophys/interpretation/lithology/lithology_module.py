@@ -53,6 +53,7 @@ class LithologyResult:
     rhomaa: Optional[np.ndarray] = None
     umaa: Optional[np.ndarray] = None
     litho_disagree: Optional[np.ndarray] = None
+    mineral_selection: Optional[dict] = None
 
 
 class LithologyModule:
@@ -68,6 +69,11 @@ class LithologyModule:
         Primary minerals to solve for
     include_clay : bool, optional
         Include clay from VCL (default: True)
+    lithology : {"auto", "clastic", "carbonate"}, optional
+        Geological constraint for a reduced mineral set. Auto uses an input
+        lithology log or core-constrained matrix density with at least 80%
+        agreement. Carbonate samples with limited logs use calcite and dolomite;
+        the full mineral set remains available when there are enough equations.
 
     Examples
     --------
@@ -92,14 +98,52 @@ class LithologyModule:
     def __init__(
         self,
         minerals: List[str] = None,
-        include_clay: bool = True
+        include_clay: bool = True,
+        lithology: str = "auto",
     ):
+        self._custom_minerals = minerals is not None
+        if lithology not in {"auto", "clastic", "carbonate"}:
+            raise ValueError("lithology must be auto, clastic, or carbonate")
+        self.lithology = lithology
         if minerals is None:
             minerals = ["quartz", "calcite", "dolomite", "anhydrite"]
 
         self.minerals = minerals
         self.include_clay = include_clay
         self.solver = MultiMineralSolver(minerals=minerals)
+
+    def _select_solver(self, well):
+        """Choose a reduced mineral set from independent geological evidence."""
+        selection = {
+            "lithology": self.lithology,
+            "source": "configured" if self.lithology != "auto" else "unconstrained",
+            "full_minerals": list(self.solver.minerals),
+            "reduced_minerals": list(self.solver.minerals_no_pef),
+        }
+        if type(self.solver) is not MultiMineralSolver or self._custom_minerals:
+            selection["source"] = "custom_solver"
+            return self.solver, selection
+        family = self.lithology
+        if family == "auto":
+            from .matrix_inference import resolve_from_core_matrix, resolve_from_lithology_log
+
+            resolution = (resolve_from_lithology_log(well, warn=False)
+                          or resolve_from_core_matrix(well, warn=False))
+            if resolution is not None:
+                selection.update(
+                    source=resolution.method, agreement=resolution.confidence,
+                    supporting_samples=resolution.n,
+                )
+                if resolution.confidence >= 0.8:
+                    family = resolution.lithology
+        selection["lithology"] = family
+        if family == "carbonate":
+            selection["reduced_minerals"] = ["calcite", "dolomite"]
+            return MultiMineralSolver(
+                minerals=self.minerals,
+                minerals_no_pef=selection["reduced_minerals"],
+            ), selection
+        return self.solver, selection
 
     @staticmethod
     def _screen_pef(pef: Optional[np.ndarray]) -> Optional[np.ndarray]:
@@ -391,7 +435,8 @@ class LithologyModule:
 
         # Solve for minerals. The solver already removes clay and porosity
         # internally, so raw curves are passed here.
-        result = self.solver.solve(
+        solver, mineral_selection = self._select_solver(well)
+        result = solver.solve(
             vcl=vcl,
             rhob=rhob,
             nphi=nphi,
@@ -408,14 +453,16 @@ class LithologyModule:
         # quartz-calcite system.  Keep dolomite/anhydrite unavailable rather than
         # manufacturing zero-valued curves.  Core porosity remains the preferred
         # constraint in the primary solve above.
-        primary_solved = np.asarray(
-            result.get("solved", np.zeros(n_samples, dtype=bool)), dtype=bool
+        underdetermined = np.asarray(
+            result.get("underdetermined", np.zeros(n_samples, dtype=bool)), dtype=bool
         )
         reduced_qc_fallback = np.zeros(n_samples, dtype=bool)
         if (
             type(self.solver) is MultiMineralSolver
+            and not self._custom_minerals
+            and mineral_selection["lithology"] != "carbonate"
             and phie is not None
-            and np.any(~primary_solved & np.isfinite(phie_data))
+            and np.any(underdetermined & np.isfinite(phie_data))
         ):
             reduced_solver = MultiMineralSolver(
                 minerals=["quartz", "calcite"],
@@ -428,7 +475,7 @@ class LithologyModule:
                 core_phi=phie_data,
             )
             reduced_solved = np.asarray(reduced["solved"], dtype=bool)
-            reduced_qc_fallback = ~primary_solved & reduced_solved
+            reduced_qc_fallback = underdetermined & reduced_solved
             for mineral in ("quartz", "calcite"):
                 target = np.asarray(result[mineral], dtype=float).copy()
                 target[reduced_qc_fallback] = reduced[mineral][reduced_qc_fallback]
@@ -509,6 +556,7 @@ class LithologyModule:
             rhomaa=rhomaa,
             umaa=umaa,
             litho_disagree=litho_disagree,
+            mineral_selection=mineral_selection,
         )
 
     def add_to_well(
