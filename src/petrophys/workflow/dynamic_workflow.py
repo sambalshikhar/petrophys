@@ -1274,13 +1274,26 @@ class DynamicWorkflow:
         Returns
         -------
         DynamicWorkflowResult
+            ``result.config`` is the configuration used for this run, with any
+            ``"auto"`` matrix/lithology replaced by the resolved values.
+
+        Notes
+        -----
+        Each run works on its own copy of :attr:`config`, so a workflow can be
+        reused across wells: values resolved for one well (e.g. an ``"auto"``
+        matrix) never carry over to the next, and :attr:`config` itself is
+        left unchanged.
         """
-        # Resolve "auto" lithology/matrix on a per-run copy so we never mutate the
-        # caller's config (it may be reused across wells).
+        requested_config = self.config
+        self.config = dataclasses.replace(requested_config)
+        try:
+            return self._run(well)
+        finally:
+            self.config = requested_config
+
+    def _run(self, well: "Well") -> DynamicWorkflowResult:
         self._auto_matrix = str(self.config.matrix_type).strip().lower() == "auto"
         self._auto_lith = str(self.config.lithology).strip().lower() == "auto"
-        if self._auto_matrix or self._auto_lith:
-            self.config = dataclasses.replace(self.config)
 
         self._result = DynamicWorkflowResult(well=well, config=self.config)
         self._lithology_log = None

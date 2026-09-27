@@ -1540,3 +1540,23 @@ def test_real_las_wells_route_through_dynamic_workflow(
         assert _step_by_name(result, step_name).method == method
     for curve_name in expected_curves:
         assert well.get(curve_name) is not None, f"{case_id} missing {curve_name}"
+
+
+def test_reused_workflow_resolves_auto_matrix_per_well():
+    import petrophys as pp
+
+    def config():
+        return DynamicWorkflowConfig(matrix_type="auto", lithology="auto")
+
+    fresh = DynamicWorkflow(config()).run(pp.read(pp.sample("15_9-14")))
+
+    workflow = DynamicWorkflow(config())
+    carbonate = workflow.run(pp.read(pp.sample("HW-3")))
+    reused = workflow.run(pp.read(pp.sample("15_9-14")))
+
+    assert carbonate.config.matrix_type != fresh.config.matrix_type
+    assert (reused.config.matrix_type, reused.config.lithology) == (
+        fresh.config.matrix_type,
+        fresh.config.lithology,
+    )
+    assert (workflow.config.matrix_type, workflow.config.lithology) == ("auto", "auto")
