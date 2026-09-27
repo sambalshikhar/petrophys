@@ -52,3 +52,31 @@ def test_interpretation_reports_removed_curves():
     assert any("RHOZ" in warning and "unit label" in warning for warning in result.warnings)
     normalization = next(s for s in result.steps_executed if s.step == "normalization")
     assert normalization.parameters["range_screening"]["RHOZ"]["fraction"] == 1.0
+
+
+def _logged_well(top=2000.0, base=3000.0, unit="m"):
+    depth = np.arange(top, base + 1.0, 1.0)
+    well = Well("LOGGED")
+    well.depth = depth
+    well.depth_unit = unit
+    well.add_curve("GR", np.full(depth.size, 60.0), "API", "Gamma ray")
+    return well
+
+
+def test_geology_outside_the_logged_interval_warns():
+    with pytest.warns(pp.DataQualityWarning, match="None of the 2 geology rows overlaps"):
+        table = pp.read_formations({"A": 100.0, "B": 50000.0}, well=_logged_well(), depth_unit="m")
+    assert table.attrs["import_report"]["outside_logged_interval"] == 2
+
+
+def test_geology_in_the_wrong_unit_gets_a_unit_hint():
+    feet_well = _logged_well(6562.0, 9843.0, unit="ft")
+    with pytest.warns(pp.DataQualityWarning, match="depths fit if they are in m"):
+        pp.read_formations({"A": 2100.0, "B": 2800.0}, well=feet_well)
+
+
+def test_partially_covered_geology_is_recorded_without_warning():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", pp.DataQualityWarning)
+        table = pp.read_formations({"Above": 500.0, "Inside": 2500.0}, well=_logged_well(), depth_unit="m")
+    assert table.attrs["import_report"]["outside_logged_interval"] == 1
