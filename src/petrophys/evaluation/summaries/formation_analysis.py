@@ -330,6 +330,8 @@ def run_formation_analysis(
     csv_format: str = "auto",
     workflow_config: Optional[Any] = None,
     standardize: bool = True,
+    *,
+    rank: Optional[str] = None,
     **workflow_kwargs
 ) -> FormationAnalysisResult:
     """
@@ -356,6 +358,10 @@ def run_formation_analysis(
         Workflow configuration (if None, uses workflow_kwargs)
     standardize : bool
         Whether to standardize curves before workflow
+    rank : str, optional
+        Stratigraphic level to analyze when the tops mix levels, e.g.
+        ``"group"`` or ``"formation"``. For NPD/GeoLink picks without a rank
+        column, the level is read from the name suffix (GP./Fm./Mb.).
     **workflow_kwargs
         Additional workflow configuration parameters
 
@@ -405,6 +411,7 @@ def run_formation_analysis(
         well_name=well_name,
         format=csv_format,
         terminal_depth=well.bottom,
+        rank=rank,
         well=well,
     )
 
