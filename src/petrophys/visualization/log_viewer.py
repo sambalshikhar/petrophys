@@ -16,6 +16,8 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import math
+import os
+import warnings
 import csv
 import re
 from defusedxml import ElementTree as ET
@@ -410,9 +412,15 @@ def _lookup_lithology_style(label: Any, styles: Mapping[str, Any], default: Any 
     return default
 
 
-GEOLINK_LITHOLOGY_MAPPING_FILENAMES: Tuple[str, ...] = (
-    "meta_files/Litho_Nomenclature_Kingdom.xlsx",
-)
+#: Environment variable naming a lithology code table (CSV or Excel) that
+#: overrides the built-in GeoLink code labels for every plot in the process.
+LITHOLOGY_MAPPING_ENV_VAR = "PETROPHYS_LITHOLOGY_MAPPING"
+
+#: Additional lithology code tables to consult, as absolute paths. Empty by
+#: default: the built-in GeoLink labels are used unless a table is supplied
+#: explicitly (``lithology_mapping``/``lithology_mapping_df`` arguments or
+#: :data:`LITHOLOGY_MAPPING_ENV_VAR`). Files are never discovered implicitly.
+GEOLINK_LITHOLOGY_MAPPING_FILENAMES: Tuple[str, ...] = ()
 
 
 def _add_lithology_mapping_label(out: Dict[Any, str], code: Any, label: Any) -> None:
@@ -477,52 +485,66 @@ def _lithology_mapping_from_records(records: Sequence[Mapping[str, Any]]) -> Dic
     return out
 
 
-def _path_search_roots() -> List[Path]:
-    roots: List[Path] = []
-    for start in (Path.cwd(), Path(__file__).resolve()):
-        root = start if start.is_dir() else start.parent
-        for candidate in (root, *root.parents):
-            if candidate not in roots:
-                roots.append(candidate)
-    return roots
+def _candidate_geolink_lithology_mapping_paths() -> Tuple[Path, ...]:
+    """Return explicitly configured lithology code tables, in priority order."""
+    configured: List[str] = []
+    env_value = os.environ.get(LITHOLOGY_MAPPING_ENV_VAR, "").strip()
+    if env_value:
+        configured.append(env_value)
+    configured.extend(GEOLINK_LITHOLOGY_MAPPING_FILENAMES)
 
-
-def _candidate_geolink_lithology_mapping_paths() -> Iterable[Path]:
-    seen = set()
-    for filename in GEOLINK_LITHOLOGY_MAPPING_FILENAMES:
-        path = Path(filename).expanduser()
-        if path.is_absolute():
-            resolved = path.resolve()
-            if resolved not in seen:
-                seen.add(resolved)
-                yield resolved
-            continue
-        for root in _path_search_roots():
-            candidate = (root / path).resolve()
-            if candidate in seen:
-                continue
-            seen.add(candidate)
-            yield candidate
+    paths: List[Path] = []
+    for entry in configured:
+        path = Path(entry).expanduser().resolve()
+        if path not in paths:
+            paths.append(path)
+    return tuple(paths)
 
 
 def _read_lithology_mapping_records(path: Path) -> List[Dict[str, Any]]:
     import pandas as pd
 
+    if path.suffix.lower() in {".csv", ".txt"}:
+        return pd.read_csv(path).to_dict("records")
     return pd.read_excel(path).to_dict("records")
 
 
-@lru_cache(maxsize=1)
-def _default_geolink_lithology_mapping() -> Dict[Any, str]:
-    for path in _candidate_geolink_lithology_mapping_paths():
+@lru_cache(maxsize=8)
+def _load_lithology_mapping_tables(paths: Tuple[Path, ...]) -> Dict[Any, str]:
+    for path in paths:
         if not path.exists():
+            warnings.warn(
+                f"Lithology code table {str(path)!r} does not exist; "
+                "using the built-in GeoLink lithology labels.",
+                UserWarning,
+                stacklevel=4,
+            )
             continue
         try:
             mapping = _lithology_mapping_from_records(_read_lithology_mapping_records(path))
-        except (ImportError, OSError, KeyError, ValueError):
+        except (ImportError, OSError, KeyError, ValueError) as exc:
+            warnings.warn(
+                f"Could not read lithology code table {str(path)!r} ({exc}); "
+                "using the built-in GeoLink lithology labels.",
+                UserWarning,
+                stacklevel=4,
+            )
             continue
         if mapping:
             return mapping
+        warnings.warn(
+            f"Lithology code table {str(path)!r} has no recognizable code and "
+            "label columns (e.g. 'Abbreviation' and 'Lithology Attribute'); "
+            "using the built-in GeoLink lithology labels.",
+            UserWarning,
+            stacklevel=4,
+        )
     return {}
+
+
+def _default_geolink_lithology_mapping() -> Dict[Any, str]:
+    """Return the lithology code table configured for this process, if any."""
+    return _load_lithology_mapping_tables(_candidate_geolink_lithology_mapping_paths())
 
 
 # Industry-standard lithology fill colours, keyed by normalized label.
@@ -1545,6 +1567,9 @@ class LogViewer:
     lithology_mapping_df : DataFrame, optional
         PetroPy-script-compatible mapping table. Columns named
         ``Abbreviation`` and ``Lithology Attribute`` are recognized.
+        When neither mapping is given, GeoLink codes use the built-in labels,
+        or the CSV/Excel table named by the ``PETROPHYS_LITHOLOGY_MAPPING``
+        environment variable when it is set.
     formation_tops : mapping, sequence, DataFrame, or path, optional
         Formation tops to annotate. Accepts mappings of name to depth,
         ``(name, depth)`` pairs, CSV/Excel paths, or tabular objects.

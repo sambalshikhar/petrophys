@@ -18,6 +18,15 @@ from petrophys.visualization import (
 import petrophys.visualization.log_viewer as log_viewer_module
 
 
+@pytest.fixture(autouse=True)
+def _isolated_lithology_mapping(monkeypatch):
+    """Keep every test independent of the caller's environment and cache."""
+    monkeypatch.delenv(log_viewer_module.LITHOLOGY_MAPPING_ENV_VAR, raising=False)
+    log_viewer_module._load_lithology_mapping_tables.cache_clear()
+    yield
+    log_viewer_module._load_lithology_mapping_tables.cache_clear()
+
+
 def _plot_well() -> Well:
     depth = np.arange(1000.0, 1010.0, 0.5)
     well = Well("PLOT-1")
@@ -103,7 +112,7 @@ def test_log_viewer_builtin_template_creates_and_saves_plot(tmp_path: Path):
 
 def test_log_viewer_lithology_track_uses_names_not_codes(monkeypatch):
     monkeypatch.setattr(log_viewer_module, "GEOLINK_LITHOLOGY_MAPPING_FILENAMES", ())
-    log_viewer_module._default_geolink_lithology_mapping.cache_clear()
+    log_viewer_module._load_lithology_mapping_tables.cache_clear()
     try:
         viewer = create_log_viewer(
             _plot_well(),
@@ -112,7 +121,7 @@ def test_log_viewer_lithology_track_uses_names_not_codes(monkeypatch):
         )
         texts = _viewer_texts(viewer)
     finally:
-        log_viewer_module._default_geolink_lithology_mapping.cache_clear()
+        log_viewer_module._load_lithology_mapping_tables.cache_clear()
 
     assert "Sandstone" in texts
     assert "Shale/Claystone" in texts
@@ -136,7 +145,7 @@ def test_log_viewer_geolink_lithology_defaults_use_attribute_table(
         "GEOLINK_LITHOLOGY_MAPPING_FILENAMES",
         (str(mapping_path),),
     )
-    log_viewer_module._default_geolink_lithology_mapping.cache_clear()
+    log_viewer_module._load_lithology_mapping_tables.cache_clear()
     try:
         viewer = create_log_viewer(
             _plot_well(),
@@ -145,7 +154,7 @@ def test_log_viewer_geolink_lithology_defaults_use_attribute_table(
         )
         texts = _viewer_texts(viewer)
     finally:
-        log_viewer_module._default_geolink_lithology_mapping.cache_clear()
+        log_viewer_module._load_lithology_mapping_tables.cache_clear()
 
     assert "Workbook Sand" in texts
     assert "Workbook Shale" in texts
@@ -300,7 +309,7 @@ def test_log_viewer_all_geolink_codes_plot_common_lithology_legend():
 
 def test_log_viewer_lithology_defaults_keep_labels_and_use_pattern_styles(monkeypatch):
     monkeypatch.setattr(log_viewer_module, "GEOLINK_LITHOLOGY_MAPPING_FILENAMES", ())
-    log_viewer_module._default_geolink_lithology_mapping.cache_clear()
+    log_viewer_module._load_lithology_mapping_tables.cache_clear()
     try:
         viewer = create_log_viewer(_plot_well(), template_defaults="auto", depth_range=(1000.0, 1009.5))
         assert viewer._lithology_label(1.0, "LITHOLOGY_GEOLINK") == "Sandstone"
@@ -313,7 +322,7 @@ def test_log_viewer_lithology_defaults_keep_labels_and_use_pattern_styles(monkey
         assert viewer._lithology_hatch("Halite") == "++"
         assert viewer._lithology_hatch("Polyhalite") == "xx"
     finally:
-        log_viewer_module._default_geolink_lithology_mapping.cache_clear()
+        log_viewer_module._load_lithology_mapping_tables.cache_clear()
 
 
 def test_log_viewer_adds_units_and_formation_tops():
@@ -588,3 +597,45 @@ def test_log_viewer_strict_mode_raises_for_missing_curves(tmp_path: Path):
 
     with pytest.raises(ValueError, match="NOT_A_CURVE"):
         create_log_viewer(_plot_well(), template_xml_path=xml_path, strict=True)
+
+
+def _geolink_code_well() -> Well:
+    depth = np.arange(1000.0, 1004.0, 1.0)
+    well = Well("GEOLINK-CODES")
+    well.depth = depth
+    well.add_curve("DEPT", depth, "ft", "Depth")
+    well.add_curve("LITHOLOGY_GEOLINK", np.array([1.0, 1.0, 7.0, 7.0]), "", "Lithology")
+    return well
+
+
+def test_log_viewer_ignores_mapping_tables_in_working_directory(tmp_path: Path, monkeypatch):
+    pd = pytest.importorskip("pandas")
+    (tmp_path / "meta_files").mkdir()
+    pd.DataFrame({"Abbreviation": [1], "Lithology Attribute": ["Stray Label"]}).to_excel(
+        tmp_path / "meta_files" / "Litho_Nomenclature_Kingdom.xlsx", index=False
+    )
+    monkeypatch.chdir(tmp_path)
+
+    viewer = create_log_viewer(_geolink_code_well(), template_defaults="auto")
+
+    assert viewer._lithology_label(1.0, "LITHOLOGY_GEOLINK") == "Sandstone"
+
+
+def test_log_viewer_uses_mapping_table_from_environment(tmp_path: Path, monkeypatch):
+    table = tmp_path / "codes.csv"
+    table.write_text("Abbreviation,Lithology Attribute\n1,Env Sand\n")
+    monkeypatch.setenv(log_viewer_module.LITHOLOGY_MAPPING_ENV_VAR, str(table))
+
+    viewer = create_log_viewer(_geolink_code_well(), template_defaults="auto")
+
+    assert viewer._lithology_label(1.0, "LITHOLOGY_GEOLINK") == "Env Sand"
+    assert viewer._lithology_label(7.0, "LITHOLOGY_GEOLINK") == "Silty Shale"
+
+
+def test_log_viewer_warns_when_configured_mapping_table_is_missing(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv(log_viewer_module.LITHOLOGY_MAPPING_ENV_VAR, str(tmp_path / "missing.xlsx"))
+
+    with pytest.warns(UserWarning, match="does not exist"):
+        viewer = create_log_viewer(_geolink_code_well(), template_defaults="auto")
+
+    assert viewer._lithology_label(1.0, "LITHOLOGY_GEOLINK") == "Sandstone"
