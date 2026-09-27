@@ -63,7 +63,7 @@ def _read_lasio(path: Path, encoding: Optional[str]):
         if encoding is not None:
             return lasio.read(str(path), encoding=encoding)
         try:
-            return lasio.read(str(path), encoding="utf-8")
+            return lasio.read(str(path), encoding="utf-8", encoding_errors="strict")
         except UnicodeDecodeError:
             return lasio.read(str(path))
     except (KeyError, IndexError, ValueError, lasio.exceptions.LASHeaderError,
