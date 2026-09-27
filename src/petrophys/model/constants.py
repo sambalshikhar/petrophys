@@ -180,6 +180,11 @@ class MatrixProperties:
         return list(cls._MINERALS.keys())
 
     @classmethod
+    def names(cls) -> list:
+        """Return every accepted mineral name and alias, sorted."""
+        return sorted(set(cls._MINERALS) | set(cls._ALIASES))
+
+    @classmethod
     def get_density(cls, mineral: str) -> float:
         """Get matrix density for a mineral in g/cm³."""
         return cls.get(mineral).density
@@ -411,6 +416,11 @@ class ArchieParameterDefaults:
         "mixed": "generic_clean",
         "clastic": "sandstone",
     }
+
+    @classmethod
+    def names(cls) -> list:
+        """Return every lithology name and alias with tabulated coefficients."""
+        return sorted(set(cls._LITHOLOGIES) | set(cls._ALIASES))
 
     @classmethod
     def normalize(cls, lithology: Optional[str]) -> str:

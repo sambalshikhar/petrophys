@@ -9,6 +9,10 @@ from typing import Union
 import numpy as np
 
 
+#: Gamma-ray clay-volume transforms accepted by :func:`vcl_from_gr`.
+GR_VCL_METHODS = ("linear", "larionov_tertiary", "larionov_older", "steiber", "clavier")
+
+
 def vcl_linear(
     gr: Union[float, np.ndarray],
     gr_min: float,
@@ -192,6 +196,5 @@ def vcl_from_gr(
         return vcl_clavier(igr)
     else:
         raise ValueError(
-            f"Unknown method: {method}. Use: linear, larionov_tertiary, "
-            "larionov_older, steiber, clavier"
+            f"Unknown method: {method}. Use one of: {', '.join(GR_VCL_METHODS)}"
         )
