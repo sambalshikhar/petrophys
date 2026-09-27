@@ -215,7 +215,6 @@ Continue with the :doc:`installation guide <installation>`, the
    quickstart
    input_templates
    own_data
-   usability_fixes
 
 .. toctree::
    :hidden:
@@ -249,3 +248,10 @@ Continue with the :doc:`installation guide <installation>`, the
    :caption: API Reference
 
    api/index
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Project
+
+   changelog

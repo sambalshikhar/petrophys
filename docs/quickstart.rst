@@ -19,22 +19,21 @@ Load a well
 
 .. code-block:: python
 
-   import petrophys
-   from petrophys.io import read_las
+   import petrophys as pp
 
-   path = petrophys.sample("30_6-5")
-   well = read_las(path)
+   well = pp.read(pp.sample("30_6-5"))
 
    print(well.name)
    print(well.top, well.bottom, well.depth_unit)
    print(well.curves[:12])
 
-The package also includes COSTA carbonate wells and processed NMR samples:
+``pp.read`` handles LAS, DLIS, CSV and TSV. The package also includes COSTA
+carbonate wells and processed NMR samples:
 
 .. code-block:: python
 
-   print(petrophys.list_samples())
-   print(petrophys.list_samples("costa"))
+   print(pp.list_samples())
+   print(pp.list_samples("costa"))
 
 Inspect curves
 --------------
@@ -53,38 +52,36 @@ Every scalar curve in this LAS is associated with the file's supplied depth
 index. See :doc:`data and depth <data_model>` for DLIS resampling behavior and
 the distinction between grid alignment and physical log-depth matching.
 
-Run the dynamic workflow
-------------------------
+Interpret the well
+------------------
 
-The example supplies ``Rw`` as a study assumption. Petrophys does not silently
-invent formation-water resistivity when no supported measured or calculated
-route is available.
+The example supplies ``Rw`` (formation water resistivity, ohm.m) as a study
+assumption. Petrophys does not invent formation-water resistivity when no
+supported measured or calculated route is available.
 
 .. code-block:: python
 
-   from petrophys.workflow import DynamicWorkflowConfig, run_dynamic_workflow
-
-   config = DynamicWorkflowConfig(
-       matrix_type="auto",
-       lithology="auto",
-       rw=0.07,
-       sw_model="auto",
-   )
-
-   result = pp.interpret(well, config)
+   result = pp.interpret(well, rw=0.07)
    result.raise_for_errors()
 
    print("status:", result.status)
+   print("matrix:", result.config.matrix_type, "| lithology:", result.config.lithology)
    print("executed:", [step.step for step in result.steps_executed])
-   print("skipped:", result.steps_skipped)
+   for step, reason in result.specific_steps_skipped.items():
+       print("skipped", step, "->", reason)
    print("warnings:", result.warnings)
 
-Normalization is enabled by default. The workflow adds canonical working
-aliases while retaining vendor mnemonics, converts supported physical units,
-and screens recognized null and range problems before routing calculations.
-``pp.interpret`` works on a copy unless ``inplace=True``. The lower-level
-``run_dynamic_workflow`` modifies the supplied well. Without external geology,
-available logs can still drive mineral inversion and other applicable steps.
+``pp.interpret`` accepts any :class:`~petrophys.workflow.DynamicWorkflowConfig`
+setting as a keyword (``sw_model="indonesia"``, ``bht_f=220``, ...) or a whole
+config object. Matrix and lithology default to ``"auto"`` and are resolved from
+the data; ``result.config`` shows the values used.
+
+Normalization runs first: canonical working aliases are added while vendor
+mnemonics are kept, supported units are converted, and implausible values are
+screened. When most of a curve is implausible, which usually means a wrong
+unit label, :class:`petrophys.DataQualityWarning` is raised and the problem is
+listed in ``result.warnings``. ``pp.interpret`` works on a copy unless
+``inplace=True``.
 
 Inspect the trace
 -----------------
@@ -120,6 +117,18 @@ Only products supported by the available inputs and assumptions are present.
        if curve is not None:
            print(name, curve.unit, curve.valid_count())
 
+Whole-well statistics mix reservoir and overburden. Summarize the reservoir
+interval instead, here the Brent and Dunlin groups (2841-3223 m):
+
+.. code-block:: python
+
+   import numpy as np
+
+   reservoir = (interpreted.depth >= 2841) & (interpreted.depth <= 3223)
+   for name in ["VCL", "PHIE", "SW"]:
+       values = interpreted.get(name).data[reservoir]
+       print(name, round(float(np.nanmedian(values)), 3))
+
 Create an interpretation plot
 -----------------------------
 
@@ -128,12 +137,10 @@ template gives a stable layout for reports.
 
 .. code-block:: python
 
-   from petrophys.visualization import create_log_viewer
-
-   viewer = create_log_viewer(
-       interpreted,
-       template_defaults="petrophysics",
-       depth_range=(2200, 2750),
+   viewer = pp.plot(
+       result,
+       template="petrophysics",
+       depth_range=(2800, 3000),
        figsize=(15, 8),
    )
    viewer.save("30_6-5_interpretation.png", dpi=180)
@@ -144,10 +151,9 @@ Export the well
 
 .. code-block:: python
 
-   from petrophys.io import export_csv, export_las
-
-   export_las(interpreted, "30_6-5_interpreted.las")
-   export_csv(interpreted, "30_6-5_interpreted.csv")
+   result.to_las("30_6-5_interpreted.las")    # curves plus the settings used (PP_* parameters)
+   result.to_json("30_6-5_trace.json")        # complete machine-readable trace
+   interpreted.to_csv("30_6-5_interpreted.csv")
 
 For delivery packages that include calculation provenance, category mappings,
 and structured JSON, continue to :doc:`visualization and reporting

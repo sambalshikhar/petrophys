@@ -2,37 +2,35 @@ Workflows
 =========
 
 Petrophys can be used one calculation at a time, but most complete-well work
-starts with :func:`petrophys.workflow.run_dynamic_workflow`. The dynamic
-workflow examines the available curves and parameters before each stage,
-executes applicable calculations in dependency order, and records the outcome
-in a :class:`petrophys.workflow.DynamicWorkflowResult`.
+starts with :func:`~petrophys.api.interpret`. It runs the dynamic workflow, which
+examines the available curves and parameters before each stage, executes
+applicable calculations in dependency order, and records the outcome in a
+:class:`petrophys.workflow.DynamicWorkflowResult`.
 
 Dynamic workflow
 ----------------
 
 .. code-block:: python
 
-   import petrophys
-   from petrophys.io import read_las
-   from petrophys.workflow import DynamicWorkflowConfig, run_dynamic_workflow
+   import petrophys as pp
 
-   well = read_las(petrophys.sample("30_6-5"))
-   result = run_dynamic_workflow(
-       well,
-       DynamicWorkflowConfig(
-           matrix_type="auto",
-           lithology="auto",
-           rw=0.07,
-           sw_model="auto",
-       ),
-   )
+   well = pp.read(pp.sample("30_6-5"))
+   result = pp.interpret(well, rw=0.07, sw_model="auto")
 
    print(result.status)
    print([step.step for step in result.steps_executed])
-   print(result.steps_skipped)
+   print(result.specific_steps_skipped)
+
+Settings are :class:`~petrophys.workflow.DynamicWorkflowConfig` fields, passed
+as keywords or as a config object; invalid values raise ``ValueError`` before
+anything runs. ``pp.interpret`` works on a copy of the well. The lower-level
+:func:`petrophys.workflow.run_dynamic_workflow` takes the same settings but adds
+curves to the well it is given, and :class:`petrophys.workflow.DynamicWorkflow`
+can be reused across wells: each run resolves ``"auto"`` settings afresh.
 
 The workflow does not require every possible input. A missing prerequisite
-normally causes the dependent step to be listed in ``steps_skipped``. A hard
+causes the dependent step to be listed in ``steps_skipped``, with the missing
+curves or settings in ``specific_steps_skipped``. A hard
 input error or a failed executed step makes ``result.success`` false. Warnings
 remain separate so a usable but reviewable interpretation can be distinguished
 from a failed run.

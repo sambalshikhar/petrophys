@@ -27,9 +27,13 @@ permeability, and Timur-Coates permeability.
        mffi_mnemonic="CMFF",
    )
 
-   t2lm = nmr.t2_lm()
-   k_sdr = nmr.permeability_sdr()
-   k_coates = nmr.permeability_coates()
+   swirr = nmr.swirr_nmr()                  # irreducible water saturation, v/v
+   k_coates = nmr.permeability_coates()     # mD
+   k_sdr = nmr.permeability_sdr()           # mD
+   vendor = nmr.stored_permeability         # vendor KSDR/KTIM curves from the file
+
+``nmr.t2_lm()`` needs T2 distribution bins or a stored T2 log-mean curve
+(``t2lm_mnemonic``); this sample carries neither, so ``nmr.has_t2lm`` is False.
 
 Use :func:`petrophys.visualization.create_nmr_panel` for an industry-style
 depth panel that combines scalar NMR products and T2 distributions when those
