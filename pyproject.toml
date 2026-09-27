@@ -146,6 +146,8 @@ files = [
     "src/petrophys/io/export.py",
     "src/petrophys/datasets/__init__.py",
     "src/petrophys/workflow/schema.py",
+    "src/petrophys/workflow/summary.py",
+    "src/petrophys/_internal/serialization.py",
     "src/petrophys/mcp",
 ]
 follow_imports = "silent"
