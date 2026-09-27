@@ -1126,6 +1126,12 @@ def _resolve_curve_name_for_well(
         curve = well.get(key)
         if curve is not None:
             return curve.mnemonic
+    # Fall back to the library alias map so vendor mnemonics such as GR_EDTC
+    # or RHOZ fill their tracks while keeping their own names as labels.
+    target = str(curve_name).upper()
+    for mnemonic in well.curves:
+        if get_standard_mnemonic(mnemonic) == target:
+            return well.get(mnemonic).mnemonic
     return None
 
 
@@ -1545,6 +1551,24 @@ def load_log_viewer_template(
     return template
 
 
+def _display_well(well: "Well") -> "Well":
+    """Return a copy of ``well`` with curves converted to standard units.
+
+    Plots must not depend on whether the well has been interpreted yet:
+    units such as kg/m3 density or percent porosity are converted exactly as
+    the interpretation workflow does, so every curve is drawn at the right
+    scale. Curve names are kept; vendor mnemonics (``GR_EDTC``, ``RHOZ``) are
+    matched to tracks through the alias map when the tracks are resolved.
+    """
+    from copy import deepcopy
+
+    from petrophys.preprocessing.standardization import standardize_curves
+
+    display = deepcopy(well)
+    standardize_curves(display, rename_curves=False, convert_units=True)
+    return display
+
+
 class LogViewer:
     """
     PetroPy-style template-driven well log plotter.
@@ -1598,11 +1622,13 @@ class LogViewer:
     ):
         if not HAS_MATPLOTLIB:
             raise ImportError("matplotlib is required for visualization")
-        self.well = well
+        #: Plotted copy of the input well, with standard units and canonical
+        #: curve aliases (e.g. GR for GR_EDTC); the caller's well is unchanged.
+        self.well = _display_well(well)
         self.formation_import_report = {}
         self.suppressed_formation_labels = []
         self.omitted_tracks = []
-        context = well.get_parameter("_geology_context") or {}
+        context = self.well.get_parameter("_geology_context") or {}
         if lithology_intervals is None:
             if context.get("selected_lithology_source") in {None, "external"}:
                 lithology_intervals = context.get("lithology")
@@ -1613,13 +1639,13 @@ class LogViewer:
             else context.get("selected_lithology_source", "embedded_or_computed")
         )
         self.lithology_intervals = (
-            read_lithology_intervals(lithology_intervals, well=well)
+            read_lithology_intervals(lithology_intervals, well=self.well)
             if lithology_intervals is not None else None
         )
         self._adaptive_template = False
         template_key = str(template_defaults or "auto").lower()
         if template_xml_path is None and template_key in ADAPTIVE_LOG_VIEWER_TEMPLATE_NAMES:
-            self.template = create_adaptive_log_viewer_template(well)
+            self.template = create_adaptive_log_viewer_template(self.well)
             self._adaptive_template = True
         else:
             self.template = load_log_viewer_template(template_xml_path, template_defaults)
