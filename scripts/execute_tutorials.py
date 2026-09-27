@@ -22,6 +22,7 @@ USER_JOURNEY_NOTEBOOKS = (
     "examples/part_a_foundations/05_lithology_and_mineral_solver.ipynb",
     "examples/part_a_foundations/07_water_saturation.ipynb",
     "examples/own_data.ipynb",
+    "examples/part_b_advanced/20_mcp_server.ipynb",
 )
 
 

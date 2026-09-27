@@ -131,6 +131,24 @@ profile = "black"
 line_length = 88
 
 [tool.mypy]
+# Modules held to a clean type check in CI; extend the list as modules are
+# annotated.
+files = [
+    "src/petrophys/api.py",
+    "src/petrophys/exceptions.py",
+    "src/petrophys/version.py",
+    "src/petrophys/model/units.py",
+    "src/petrophys/model/curve.py",
+    "src/petrophys/model/well.py",
+    "src/petrophys/io/geology_reader.py",
+    "src/petrophys/io/lithology_reader.py",
+    "src/petrophys/io/las_reader.py",
+    "src/petrophys/io/export.py",
+    "src/petrophys/datasets/__init__.py",
+    "src/petrophys/workflow/schema.py",
+    "src/petrophys/mcp",
+]
+follow_imports = "silent"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
