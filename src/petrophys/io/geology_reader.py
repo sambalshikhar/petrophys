@@ -7,6 +7,8 @@ import re
 import numpy as np
 import pandas as pd
 
+from petrophys.model.units import normalize_depth_unit
+
 
 CONTEXT_COLUMNS = {
     "well": ("well", "wellname", "wellidentifier", "wellid", "uwi", "api"),
@@ -25,13 +27,7 @@ def _well_key(value):
 
 
 def _unit(value):
-    text = str(value).strip().lower()
-    aliases = {"metres": "m", "meters": "m", "metre": "m", "meter": "m",
-               "feet": "ft", "foot": "ft"}
-    text = aliases.get(text, text)
-    if text not in {"m", "ft"}:
-        raise ValueError(f"Unsupported depth unit {value!r}; use 'm' or 'ft'.")
-    return text
+    return normalize_depth_unit(value)
 
 
 def _read_table(source, *, sheet_name=None, sep=None, encoding="utf-8-sig"):

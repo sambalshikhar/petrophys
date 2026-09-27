@@ -16,6 +16,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 import numpy as np
 
 from petrophys.io import export_las, read_las
+from petrophys.model.units import temperature_to_fahrenheit
 from petrophys.preprocessing.standardization import standardize_curves
 from petrophys.workflow.dynamic_workflow import (
     DynamicWorkflowConfig,
@@ -221,13 +222,6 @@ def _convert_depth_between_units(value: float, from_unit: str, to_unit: str) -> 
         return float(value) * 3.28084
     if not from_is_metric and to_is_metric:
         return float(value) / 3.28084
-    return float(value)
-
-
-def _temperature_to_f(value: float, unit: str) -> float:
-    text = (unit or "").strip().lower()
-    if "c" in text and "f" not in text:
-        return (float(value) * 9.0 / 5.0) + 32.0
     return float(value)
 
 
@@ -512,7 +506,7 @@ def _apply_parameter_alias(
         return
 
     if target in {"bht_f", "rmf_meas_temp_f", "rm_meas_temp_f", "rw_meas_temp_f"}:
-        overrides[target] = _temperature_to_f(numeric_value, unit)
+        overrides[target] = temperature_to_fahrenheit(numeric_value, unit)
     elif target in {"td_ft"}:
         overrides[target] = _depth_to_ft(numeric_value, unit)
     elif target in {"salinity_ppm", "rmf_salinity_ppm"}:

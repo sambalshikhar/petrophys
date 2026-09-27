@@ -72,13 +72,48 @@ def test_matrix_properties_fallback_has_u_key():
     assert "u" in props
 
 
-def test_temperature_celsius_detection_not_fooled_by_stray_f():
-    from petrophys.workflow.dynamic_workflow import _temperature_to_f
-    assert _temperature_to_f(100.0, "deg F") == pytest.approx(100.0)
-    assert _temperature_to_f(100.0, "deg C") == pytest.approx(212.0)
-    # 'from' contains an 'f' but the unit is Celsius
-    assert _temperature_to_f(0.0, "deg C (from log)") == pytest.approx(32.0)
-    assert _temperature_to_f(50.0, "C") == pytest.approx(122.0)
+@pytest.mark.parametrize(
+    ("value", "unit", "expected"),
+    [
+        (100.0, "deg F", 100.0),
+        (100.0, "DEGF", 100.0),
+        (100.0, "deg C", 212.0),
+        # 'from' contains an 'f' but the unit is Celsius
+        (0.0, "deg C (from log)", 32.0),
+        (100.0, "Celsius (ref)", 212.0),
+        (100.0, "C (ref)", 212.0),
+        (100.0, "deg_c", 212.0),
+        (50.0, "C", 122.0),
+        (373.15, "K", 212.0),
+        # unlabelled header temperatures follow the LAS Fahrenheit convention
+        (150.0, "", 150.0),
+    ],
+)
+def test_temperature_celsius_detection_not_fooled_by_stray_f(value, unit, expected):
+    from petrophys.model.units import temperature_to_fahrenheit
+    assert temperature_to_fahrenheit(value, unit) == pytest.approx(expected)
+
+
+def test_temperature_conversion_has_a_single_implementation():
+    from petrophys.interpretation.temperature import temp_profile
+    from petrophys.model.units import temperature_to_fahrenheit
+    from petrophys.workflow import dynamic_workflow, zoned_batch
+
+    for module in (dynamic_workflow, zoned_batch, temp_profile):
+        assert not hasattr(module, "_temperature_to_f")
+        assert module.temperature_to_fahrenheit is temperature_to_fahrenheit
+
+
+def test_reference_temperature_arrays_respect_worded_units():
+    import numpy as np
+    from petrophys.reporting.reference_export import (
+        _convert_temperature_to_celsius,
+        _convert_temperature_to_fahrenheit,
+    )
+    data = np.array([100.0])
+    assert _convert_temperature_to_fahrenheit(data, "deg C (from log)")[0] == pytest.approx(212.0)
+    assert _convert_temperature_to_celsius(data, "degF")[0] == pytest.approx(37.7777778)
+    assert _convert_temperature_to_celsius(data, "deg C (from log)")[0] == pytest.approx(100.0)
 
 
 def test_imputation_metrics_flag_in_sample_vs_held_out():

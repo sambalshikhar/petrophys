@@ -10,6 +10,8 @@ from pathlib import Path
 import warnings
 import numpy as np
 
+from petrophys.model.units import normalize_depth_unit
+
 try:
     import lasio
     HAS_LASIO = True
@@ -41,13 +43,15 @@ def _warn_on_depth_issues(depth: Optional[np.ndarray], source: object = "") -> N
 
 
 def _normalize_depth_unit(unit: str) -> str:
-    text = str(unit or "").strip()
-    normalized = text.lower().replace(".", "")
-    if normalized in {"f", "ft", "feet", "foot"}:
-        return "ft"
-    if normalized in {"m", "meter", "meters", "metre", "metres"}:
-        return "m"
-    return text or "ft"
+    normalized = normalize_depth_unit(unit, strict=False, default="ft")
+    if normalized not in {"m", "ft"}:
+        warnings.warn(
+            f"Unrecognized LAS depth unit {normalized!r}; depths are kept as read. "
+            "Set well.depth_unit to 'm' or 'ft' if the index is a depth.",
+            UserWarning,
+            stacklevel=3,
+        )
+    return normalized
 
 
 class LASReader:
