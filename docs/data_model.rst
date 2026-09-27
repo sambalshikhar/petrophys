@@ -111,7 +111,7 @@ well, so callers can inspect, plot, or export it after execution.
 Bundled samples
 ---------------
 
-Small public examples are available through :func:`petrophys.sample` and
+Small public examples are available through :func:`petrophys.datasets.sample` and
 :func:`petrophys.list_samples`. Larger native Daydream LAS/DLIS fixtures are
 repository integration data and are not installed in normal Python packages.
 

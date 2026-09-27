@@ -48,6 +48,7 @@ Conventional interpretation
    petrophys.interpretation.clay_volume
    petrophys.interpretation.lithology
    petrophys.interpretation.porosity
+   petrophys.interpretation.porosity.hydrocarbon_correction
    petrophys.interpretation.electrical.rw
    petrophys.interpretation.electrical.rmf
    petrophys.interpretation.electrical.invasion

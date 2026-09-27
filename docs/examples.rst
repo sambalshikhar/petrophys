@@ -4,7 +4,7 @@ Examples
 The :doc:`tutorial curriculum <tutorials/index>` is the main example
 collection. Every lesson is readable as a normal documentation page with its
 code and saved outputs in place. The same material remains runnable from a
-source checkout and uses public datasets exposed by :func:`petrophys.sample`.
+source checkout and uses public datasets exposed by :func:`petrophys.datasets.sample`.
 
 Choose a learning path
 ----------------------

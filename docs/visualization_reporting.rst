@@ -16,12 +16,15 @@ and ``geolink_full``.
 
 .. code-block:: python
 
+   import petrophys as pp
    from petrophys.visualization import create_log_viewer
+
+   result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07)
 
    viewer = create_log_viewer(
        result.well,
        template_defaults="petrophysics",
-       depth_range=(2200, 2750),
+       depth_range=(2800, 3000),
        figsize=(15, 8),
    )
    viewer.save("interpretation.png", dpi=180)
