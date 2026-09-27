@@ -80,3 +80,15 @@ def test_partially_covered_geology_is_recorded_without_warning():
         warnings.simplefilter("error", pp.DataQualityWarning)
         table = pp.read_formations({"Above": 500.0, "Inside": 2500.0}, well=_logged_well(), depth_unit="m")
     assert table.attrs["import_report"]["outside_logged_interval"] == 1
+
+
+def test_unrecognized_lithology_labels_are_reported(tmp_path):
+    from petrophys.interpretation.lithology import load_lithology_csv
+
+    path = tmp_path / "lithology.csv"
+    path.write_text("top,bottom,lithology\n100,200,Sandstone\n200,300,Granite\n")
+
+    with pytest.warns(pp.DataQualityWarning, match=r"\['Granite'\].*treated as clastic"):
+        intervals = load_lithology_csv(path)
+
+    assert [interval.lithology for interval in intervals] == ["clastic", "clastic"]
