@@ -3,10 +3,12 @@
 from collections.abc import Mapping
 from pathlib import Path
 import re
+import warnings
 
 import numpy as np
 import pandas as pd
 
+from petrophys.exceptions import DataQualityWarning
 from petrophys.model.units import normalize_depth_unit
 
 
@@ -179,7 +181,49 @@ def _validate_depths(table, fields, *, well=None):
         table.attrs["depth_unit"] = target_unit
         if "depth_unit" in table:
             table["depth_unit"] = target_unit
+        _check_depth_coverage(table, fields, well, target_unit, unit_assumed=not unit)
     return table
+
+
+def _check_depth_coverage(table, fields, well, unit, *, unit_assumed):
+    """Report geology outside the logged interval; warn when none overlaps it."""
+    depth = np.asarray(well.depth if well.depth is not None else [], dtype=float)
+    depth = depth[np.isfinite(depth)]
+    if depth.size == 0 or table.empty:
+        return
+    log_top, log_base = float(depth.min()), float(depth.max())
+    tops = table[fields[0]].to_numpy(dtype=float)
+    bases = table[fields[1]].to_numpy(dtype=float) if len(fields) > 1 and fields[1] in table else tops
+    bases = np.where(np.isfinite(bases), bases, tops)
+    outside = (bases < log_top) | (tops > log_base)
+    if not outside.any():
+        return
+    report = table.attrs["import_report"]
+    report["outside_logged_interval"] = int(outside.sum())
+    report["diagnostics"].append(
+        f"{int(outside.sum())} of {len(table)} geology rows lie outside the logged interval "
+        f"{log_top:g}-{log_base:g} {unit}."
+    )
+    if not outside.all():
+        return
+    message = (
+        f"None of the {len(table)} geology rows overlaps the logged interval "
+        f"{log_top:g}-{log_base:g} {unit}"
+    )
+    if unit_assumed:
+        other = "m" if unit == "ft" else "ft"
+        factor = 0.3048 if other == "m" else 1.0 / 0.3048
+        converted_tops, converted_bases = tops / factor, bases / factor
+        if (~((converted_bases < log_top) | (converted_tops > log_base))).any():
+            message += (
+                f"; the depths fit if they are in {other}. "
+                f"Pass depth_unit={other!r} for the geology file"
+            )
+        else:
+            message += "; check the geology depth unit, reference and datum"
+    else:
+        message += "; check the geology depth reference and datum"
+    warnings.warn(message + ".", DataQualityWarning, stacklevel=4)
 
 
 def read_formations(source, *, columns=None, well_name=None, well=None, depth_unit=None,
