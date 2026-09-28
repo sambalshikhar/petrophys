@@ -24,7 +24,7 @@ your notebook editor. The extra includes the kernel and execution tools, not
 a separate notebook editor. Open a notebook in VS Code/Jupyter, select that
 environment, and restart/run all cells.
 
-From the repository root, verify the eleven primary user-journey notebooks:
+From the repository root, verify the thirteen primary user-journey notebooks:
 
 ```bash
 python scripts/execute_tutorials.py --output-dir tutorial-results --report tutorial-results/report.json
@@ -34,6 +34,10 @@ Each notebook runs in a fresh kernel with a temporary working directory.
 Use `--inplace` instead of `--output-dir` to refresh saved source outputs
 only after successful execution. Failed runs return a nonzero exit status.
 Other specialist notebooks retain their own optional data/dependency requirements.
+
+Tutorial 19 uses `build_context`/`export_context`, schema versions and byte
+budgets, and reads the ranked formation table directly. Tutorial 14 separates
+vendor permeability from T2 calculations; tutorial 16 needs real Git LFS data.
 
 ## Foundations
 

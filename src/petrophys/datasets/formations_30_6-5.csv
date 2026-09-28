@@ -1,21 +1,21 @@
-formation_name,top_depth,bottom_depth,lithology
-NORDLAND GP.,181.0,726.0,Shale
-Utsira Fm.,726.0,879.0,Sandstone
-HORDALAND GP.,879.0,1908.0,Shale
-ROGALAND GP.,1908.0,2203.0,Shale
-Balder Fm.,1908.0,2023.0,Sandstone
-Sele Fm.,2023.0,2123.0,Shale
-Lista Fm.,2123.0,2203.0,Shale
-SHETLAND GP.,2203.0,2408.0,Chalk
-CROMER KNOLL GP.,2408.0,2452.0,Marl
-VIKING GP.,2452.0,2841.0,Shale
-Draupne Fm.,2452.0,2593.0,Shale
-Heather Fm.,2593.0,2841.0,Shale
-BAAT GP.,2841.0,2958.0,Sandstone
-Ness Fm.,2841.0,2865.0,Sandstone
-Etive Fm.,2865.0,2958.0,Sandstone
-DUNLIN GP.,2958.0,3223.0,Shale
-Drake Fm.,2958.0,3071.0,Shale
-Cook Fm.,3071.0,3123.0,Sandstone
-Amundsen Fm.,3123.0,3223.0,Shale
-Statfjord Fm.,3223.0,3556.0,Sandstone
+formation_name,top_depth,bottom_depth,lithology,depth_unit,rank,parent
+NORDLAND GP.,181.0,726.0,Shale,m,group,
+Utsira Fm.,726.0,879.0,Sandstone,m,formation,
+HORDALAND GP.,879.0,1908.0,Shale,m,group,
+ROGALAND GP.,1908.0,2203.0,Shale,m,group,
+Balder Fm.,1908.0,2023.0,Sandstone,m,formation,ROGALAND GP.
+Sele Fm.,2023.0,2123.0,Shale,m,formation,ROGALAND GP.
+Lista Fm.,2123.0,2203.0,Shale,m,formation,ROGALAND GP.
+SHETLAND GP.,2203.0,2408.0,Chalk,m,group,
+CROMER KNOLL GP.,2408.0,2452.0,Marl,m,group,
+VIKING GP.,2452.0,2841.0,Shale,m,group,
+Draupne Fm.,2452.0,2593.0,Shale,m,formation,VIKING GP.
+Heather Fm.,2593.0,2841.0,Shale,m,formation,VIKING GP.
+BAAT GP.,2841.0,2958.0,Sandstone,m,group,
+Ness Fm.,2841.0,2865.0,Sandstone,m,formation,BAAT GP.
+Etive Fm.,2865.0,2958.0,Sandstone,m,formation,BAAT GP.
+DUNLIN GP.,2958.0,3223.0,Shale,m,group,
+Drake Fm.,2958.0,3071.0,Shale,m,formation,DUNLIN GP.
+Cook Fm.,3071.0,3123.0,Sandstone,m,formation,DUNLIN GP.
+Amundsen Fm.,3123.0,3223.0,Shale,m,formation,DUNLIN GP.
+Statfjord Fm.,3223.0,3556.0,Sandstone,m,formation,

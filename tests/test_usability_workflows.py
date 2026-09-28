@@ -287,7 +287,8 @@ def test_interpret_uses_attached_single_level_formations():
 def test_interpret_explains_why_hierarchical_formations_are_not_used():
     import petrophys as pp
 
-    well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
+    formations = pp.read_formations(pp.sample("formations_30_6-5")).drop(columns=["rank", "parent"])
+    well = pp.read(pp.sample("30_6-5"), formations=formations)
     result = pp.interpret(well, rw=0.07)
 
     step = next(s for s in result.steps_executed if s.step == "input_context")
@@ -295,6 +296,14 @@ def test_interpret_explains_why_hierarchical_formations_are_not_used():
     assert "overlapping" in step.parameters["formations"]["reason"]
     assert any("formation_tops=" in decision for decision in step.decisions)
     assert result.config.formation_tops is None
+
+
+def test_interpret_uses_ranked_bundled_formations():
+    well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
+    result = pp.interpret(well, rw=0.07).raise_for_errors()
+    step = next(s for s in result.steps_executed if s.step == "input_context")
+    assert step.parameters["formations"]["used"] is True
+    assert result.config.formation_tops is not None
 
 
 def test_interpret_and_run_dynamic_workflow_share_defaults():

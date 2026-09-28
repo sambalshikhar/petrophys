@@ -94,6 +94,7 @@ Issues = "https://github.com/sambalshikhar/petrophys/issues"
 
 [project.scripts]
 petrophys-mcp = "petrophys.mcp:main"
+petrophys-context = "petrophys.reporting.context_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

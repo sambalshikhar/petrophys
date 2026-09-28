@@ -21,29 +21,26 @@ permeability, rock quality, and net pay.
 
 ## Installation
 
-```bash
-pip install petrophys
-```
-
-Until the first PyPI release, install from GitHub:
+Until the first PyPI release, install the development branch from GitHub
+(private repositories require your GitHub access):
 
 ```bash
-pip install "petrophys @ git+https://github.com/sambalshikhar/petrophys.git"
+python -m pip install "petrophys @ git+https://github.com/sambalshikhar/petrophys.git@dev"
 ```
 
-Optional extras:
+Optional extras, from a local checkout:
 
 | Extra | Adds | Install |
 |-------|------|---------|
-| `dlis` | DLIS reading (logs and borehole images) | `pip install "petrophys[dlis]"` |
-| `ml` | Pretrained curve imputation (Python 3.11+) | `pip install "petrophys[ml]"` |
-| `mcp` | MCP server for LLM clients (Python 3.10+) | `pip install "petrophys[mcp]"` |
-| `all` | Everything above | `pip install "petrophys[all]"` |
+| `dlis` | DLIS reading (logs and borehole images) | `python -m pip install -e ".[dlis]"` |
+| `ml` | Pretrained curve imputation (Python 3.11+) | `python -m pip install -e ".[ml]"` |
+| `mcp` | MCP server for LLM clients (Python 3.10+) | `python -m pip install -e ".[mcp]"` |
+| `all` | Everything above | `python -m pip install -e ".[all]"` |
 
 Development checkout:
 
 ```bash
-git clone https://github.com/sambalshikhar/petrophys.git
+git clone --branch dev https://github.com/sambalshikhar/petrophys.git
 cd petrophys
 pip install -e ".[all,dev,docs]"
 ```
@@ -122,6 +119,18 @@ Data problems also raise `petrophys.DataQualityWarning`, for example when a
 density curve labelled g/cc is really in kg/m3. Turn them into errors with
 `warnings.simplefilter("error", pp.DataQualityWarning)`.
 
+## Context JSON
+
+```python
+context = pp.build_context(result)
+pp.export_context(result, "well_context.json")
+```
+
+The versioned API enforces byte budgets and preserves existing files by default.
+It supports formation/lithology packages and the `petrophys-context` command.
+See the [context guide](docs/context.rst) and [data-quality notes](docs/data_quality.rst).
+Net-pay output is cutoff screening, not confirmed pay; review warnings and calibration.
+
 ## Use with LLM agents (MCP)
 
 Petrophys includes a [Model Context Protocol](https://modelcontextprotocol.io)
@@ -130,7 +139,7 @@ can load wells, interpret them, read the trace, summarize zones, plot, and
 export results on your machine:
 
 ```bash
-pip install "petrophys[mcp]"                       # Python 3.10+
+python -m pip install -e ".[mcp]"                 # From the checkout; Python 3.10+
 claude mcp add petrophys -- petrophys-mcp --root /path/to/wells
 ```
 

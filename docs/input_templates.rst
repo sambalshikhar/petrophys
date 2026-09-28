@@ -149,11 +149,18 @@ interval file and should not be passed as ``lithology_intervals``.
 
 .. code-block:: python
 
-   import pandas as pd
+   import petrophys as pp
 
-   viewer = create_log_viewer(
-       well, lithology_mapping_df=pd.read_csv("lithology_codes.csv")
-   )
+   labels = pp.read_lithology_codes("lithology_codes.csv")
+   viewer = create_log_viewer(well, lithology_mapping=labels)
+
+CSV, TSV and Excel codebooks accept ``code,lithology`` or Kingdom
+``Abbreviation,Attribute``. When both ``Attribute`` and
+``Lithology Attribute`` exist, the reader prefers ``Attribute`` and warns
+if they disagree. Select a deliberate grouping with
+``label_column="Lithology Attribute"``; do not assume it is the rock name.
+Duplicate codes and empty labels are errors. Multiple Excel sheets require
+``sheet_name``. Context exports use this same reader; see :doc:`context`.
 
 The files also ship with the installed package. Locate them with
 ``petrophys.sample("lithology_intervals_template")`` or

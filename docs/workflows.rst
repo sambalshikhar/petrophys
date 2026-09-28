@@ -92,12 +92,23 @@ dictionary.
        include_curves=["VCL", "PHIE", "SW", "PERM", "NET_PAY"]
    )
 
-``interpretation_profile="auto"`` uses a validated vendor lithology route
+New interpretations default to ``interpretation_profile="generic_inference"``.
+The presence of vendor lithology no longer silently enables archived benchmark
+physics or disables bad-hole pay exclusions. For historical reproduction,
+explicit ``interpretation_profile="auto"`` uses a validated vendor lithology route
 when an authoritative lithology-code curve is available and otherwise uses
 the generic inference route. Callers can request ``"generic_inference"``
 explicitly when testing the log-derived matrix workflow. Imported interpreted
 curves remain available on the well; the trace identifies the curves selected
-for each calculation.
+for each calculation. Legacy reference exporters explicitly retain ``"auto"``.
+
+Net-pay curves are cutoff-screening results, not confirmation of hydrocarbons.
+``NET_PAY_REVIEW`` flags candidate pay that conflicts with supplied shale or
+non-reservoir lithology, without rewriting the measurements or imposing a
+formation-name blacklist. Review Rw and its reference temperature, clay-volume
+endpoints, porosity calibration, borehole quality, and project-specific cutoffs.
+Marl uses the limestone matrix and carbonate cutoff family consistently; this
+routing convention is not a substitute for a calibrated clay-carbonate model.
 
 Assumptions remain explicit
 ---------------------------

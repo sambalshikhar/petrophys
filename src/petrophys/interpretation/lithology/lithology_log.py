@@ -101,9 +101,9 @@ def load_lithology_csv(
             lith_lower = lith.lower()
             if lith_lower in ("sandstone", "sand", "clastic", "clastics", "sst"):
                 lith_normalized = "clastic"
-            elif lith_lower in ("limestone", "carbonate", "chalk", "dolomite", "carb"):
+            elif lith_lower in ("limestone", "carbonate", "chalk", "dolomite", "carb", "marl", "marlstone"):
                 lith_normalized = "carbonate"
-            elif lith_lower in ("shale", "mudstone", "claystone", "siltstone", "marl"):
+            elif lith_lower in ("shale", "mudstone", "claystone", "siltstone"):
                 lith_normalized = "clastic"  # Shale uses clastic cutoffs
             else:
                 lith_normalized = "clastic"
@@ -151,9 +151,11 @@ def build_lithology_log(
         Values are "clastic" or "carbonate".
     """
     lithology = np.full(len(depth), default_lithology, dtype=object)
-
+    terminal = max((interval.bottom for interval in intervals), default=None)
     for interval in intervals:
-        mask = (depth >= interval.top) & (depth <= interval.bottom)
+        mask = (depth >= interval.top) & (depth < interval.bottom)
+        if interval.bottom == terminal:
+            mask |= depth == interval.bottom
         lithology[mask] = interval.lithology
 
     return lithology

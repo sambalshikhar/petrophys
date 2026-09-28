@@ -1,5 +1,7 @@
 """Delivery packages, audit reports, and interpretation exports."""
 
+from petrophys.reporting.context import ContextSizeError, build_context, export_context
+
 from petrophys.reporting.reference_export import (
     ExampleFormatExportResult,
     export_example_format_directory,
@@ -14,6 +16,9 @@ from petrophys.reporting.reference_export import (
 )
 
 __all__ = [
+    "build_context",
+    "export_context",
+    "ContextSizeError",
     "ExampleFormatExportResult",
     "export_example_format_directory",
     "export_example_format_las",

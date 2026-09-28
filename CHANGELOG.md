@@ -6,6 +6,13 @@ All notable changes to Petrophys are documented here.
 
 ### Breaking changes
 
+- New interpretations default to `generic_inference`; vendor lithology no
+  longer silently selects the archived benchmark profile. Explicit `auto`
+  and `vendor_benchmark` modes remain available, and legacy context packages
+  retain their prior automatic profile.
+- Generic net-pay screening requires clay volume and rejects unknown
+  bad-hole quality. Forced selected-step runs also reject missing clay.
+
 - `DynamicWorkflowConfig` validates every setting when it is created and
   raises `ValueError` listing all invalid fields with the accepted values
   (previously, typos such as `hc_type="gass"` silently used defaults).
@@ -21,6 +28,18 @@ All notable changes to Petrophys are documented here.
   set `PETROPHYS_LITHOLOGY_MAPPING`.
 
 ### Added
+
+- Public `build_context` / `export_context` and `petrophys-context` CLI with
+  schema version 1.0, UTF-8 byte budgets, explicit legacy mode, staged package
+  publication and overwrite protection. Historical scripts share this API.
+- Context-package tops accept CSV/TSV/Excel, direct NPD/SODIR headers, explicit
+  bottoms, depth units and rank selection without private default workbooks.
+- `read_lithology_codes` validates codebooks and prefers Kingdom `Attribute`
+  rock labels over a conflicting `Lithology Attribute` grouping, with a warning.
+- `NET_PAY_REVIEW` flags candidate pay that conflicts with supplied
+  shale/non-reservoir lithology; warnings request scientific calibration.
+- A context API guide, data-quality notes and refreshed tutorial 19. CI now
+  executes context generation and the real-file FMI tutorial.
 
 - An MCP server (`petrophys-mcp`, `pip install "petrophys[mcp]"`) that lets
   LLM clients load wells, interpret them, inspect traces, summarize zones,
@@ -53,6 +72,13 @@ All notable changes to Petrophys are documented here.
   of the user-journey tutorials in CI.
 
 ### Fixed
+
+- Named carbonate and marl cutoffs now agree with matrix routing. Marl remains
+  an explicitly warned routing convention, not a calibrated mixed-rock model.
+- The bundled 30/6-5 formation CSV declares metre depths and group/formation
+  hierarchy. Direct DataFrame and file codebooks use the same validation.
+- Installation instructions no longer lead with an unpublished PyPI package;
+  Netlify uses the strict documentation build and its required dependencies.
 
 - A workflow reused across wells no longer carries one well's resolved
   matrix into the next.
