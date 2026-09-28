@@ -480,9 +480,10 @@ class DynamicWorkflowConfig:
     #: saturation is not computed without an Rw source.
     allow_default_rw: bool = False
     #: ``"auto"``, ``"vendor_benchmark"`` or ``"generic_inference"``. Auto
-    #: uses the vendor-benchmark route when a validated vendor lithology
-    #: curve is present.
-    interpretation_profile: str = "auto"
+    #: uses the historical vendor-benchmark route when a validated vendor
+    #: lithology curve is present. New interpretations use generic inference;
+    #: benchmark replay must be requested explicitly.
+    interpretation_profile: str = "generic_inference"
 
     # -- Temperature ---------------------------------------------------------
     #: Surface (mean annual) temperature, degF.
@@ -1370,7 +1371,7 @@ class DynamicWorkflow:
                 "clastic": "sandstone", "clastics": "sandstone",
                 "siltstone": "silt", "mudstone": "shale", "claystone": "shale",
                 "chalk": "limestone", "carbonate": "limestone", "carb": "limestone",
-                "marl": "limestone", "lime": "limestone", "ls": "limestone",
+                "marl": "limestone", "marlstone": "limestone", "lime": "limestone", "ls": "limestone",
                 "dolo": "dolomite", "salt": "halite",
             }
             unknown = set()
@@ -1398,6 +1399,12 @@ class DynamicWorkflow:
                            "covered_samples": int(np.isfinite(codes).sum()),
                            "uncovered_samples": int(np.isnan(codes).sum())})
             output_curves = ["LITHO_CLASS"]
+            if any(str(label).strip().lower() in {"marl", "marlstone"} for label in labels):
+                self._result.warnings.append(
+                    "Marl uses the limestone matrix and carbonate cutoff family. "
+                    "This is a routing convention, not a calibrated marl model; "
+                    "check clay correction and supply project-specific cutoffs."
+                )
             if unknown or np.isnan(codes).any():
                 self._result.warnings.append(
                     f"External lithology: unmapped labels {sorted(unknown)}, "
@@ -2039,6 +2046,8 @@ class DynamicWorkflow:
             missing = self._missing(well, ("permeability (PERM)", "PERM_CC", "PERM"), porosity)
         elif step in (WorkflowStep.BVW, WorkflowStep.NET_PAY):
             missing = self._missing(well, porosity, saturation)
+            if step is WorkflowStep.NET_PAY and not self._uses_vendor_benchmark:
+                missing += self._missing(well, ("clay volume (VCL/VCLAY/VSH)", "VCL", "VCLAY", "VSH"))
         elif step is WorkflowStep.MHI:
             missing = self._missing(well, saturation)
             if not self._has_sxo_curve(well):
@@ -2299,7 +2308,11 @@ class DynamicWorkflow:
         return self._has_curve(well, "SW", "SWA", "SWT-LOG") and self._has_sxo_curve(well)
 
     def _can_net_pay(self, well: "Well") -> bool:
-        return self._has_curve(well, "PHIE_CC", "PHIE", "PHIT") and self._has_curve(well, "SW", "SWA", "SWT-LOG")
+        return (
+            self._has_curve(well, "PHIE_CC", "PHIE", "PHIT")
+            and self._has_curve(well, "SW", "SWA", "SWT-LOG")
+            and (self._uses_vendor_benchmark or self._has_curve(well, "VCL", "VCLAY", "VSH"))
+        )
 
     # ---- STEP implementations ----
 
@@ -4676,13 +4689,15 @@ class DynamicWorkflow:
         vcl, vcl_source, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
         phie, phie_source, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE", "PHIT"])
         sw, sw_source, _ = get_curve_data_depthwise(well, ["SW", "SWA", "SWT-LOG"])
+        if vcl is None and not self._uses_vendor_benchmark:
+            raise ValueError("Net-pay screening requires clay volume (VCL/VCLAY/VSH); missing clay is not zero clay")
         # Exclude washed-out (bad-hole) intervals from net reservoir / pay: there
         # RHOB and NPHI are unreliable, so PHIE and Sw cannot certify pay.
         bad_hole, _, _ = get_curve_data_depthwise(well, ["BAD_HOLE"])
         quality_mask = None
         n_excluded = 0
         if bad_hole is not None and not self._uses_vendor_benchmark:
-            quality_mask = ~(np.asarray(bad_hole, dtype=float) > 0.5)
+            quality_mask = np.isfinite(bad_hole) & (np.asarray(bad_hole, dtype=float) <= 0.5)
             n_excluded = int(np.count_nonzero(~quality_mask))
         result = np_module.calculate(well, vcl=vcl, phie=phie, sw=sw, quality_mask=quality_mask)
         np_module.add_to_well(well, result)
@@ -4720,6 +4735,30 @@ class DynamicWorkflow:
             "seal_vcl_cutoff": 0.8,
             "interpretation_profile": self._interpretation_profile,
         }
+        if not self._uses_vendor_benchmark:
+            review = np.zeros(well.n_samples, dtype=bool)
+            review |= np.isin(lithology, ["shale", "calcareous_shale", "coal", "halite", "anhydrite"])
+            context = well.get_parameter("_geology_context") or {}
+            for interval in context.get("formations", []):
+                label = str(interval.get("lithology", "")).strip().lower()
+                bottom = interval.get("bottom_depth")
+                if label in {"shale", "claystone", "mudstone"} and bottom is not None:
+                    review |= (well.depth >= interval["top_depth"]) & (well.depth < bottom)
+            review &= result.net_pay
+            well.add_curve("NET_PAY_REVIEW", review.astype(float), "", "Candidate pay conflicting with supplied lithology")
+            trace.output_curves.append("NET_PAY_REVIEW")
+            trace.parameters.update({
+                "assessment": "cutoff_screening_not_confirmed_pay",
+                "bad_hole_excluded_samples": n_excluded,
+                "lithology_conflict_samples": int(review.sum()),
+            })
+            if np.any(review):
+                self._result.warnings.append(
+                    f"Net-pay screening conflicts with supplied shale/non-reservoir lithology "
+                    f"at {int(review.sum())} samples (NET_PAY_REVIEW=1). "
+                    "Verify Rw at its reference temperature, clay-volume endpoints, "
+                    "porosity and cutoffs; these flags are not confirmed hydrocarbon pay."
+                )
         n_rock = int(np.nansum(well.get("NET_ROCK").data > 0.5)) if well.get("NET_ROCK") else 0
         n_res = int(np.nansum(well.get("NET_RES").data > 0.5)) if well.get("NET_RES") else 0
         n_pay = int(np.nansum(well.get("NET_PAY").data > 0.5)) if well.get("NET_PAY") else 0

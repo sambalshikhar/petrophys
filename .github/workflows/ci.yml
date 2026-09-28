@@ -117,7 +117,7 @@ jobs:
         run: git lfs pull --include="src/petrophys/datasets/daydream/*.dlis"
 
       - name: Install dependencies
-        run: python -m pip install -e ".[dev,dlis]"
+        run: python -m pip install -e ".[dev,dlis,tutorials]"
 
       - name: Verify fixture availability
         run: >-
@@ -129,6 +129,11 @@ jobs:
 
       - name: Run native reader and image tests
         run: pytest tests/test_dlis_reader.py tests/test_fmi.py
+
+      - name: Execute native borehole-image tutorial
+        env:
+          MPLBACKEND: Agg
+        run: python scripts/execute_tutorials.py examples/part_b_advanced/16_borehole_image_fmi.ipynb --output-dir tutorial-results
 
   docs:
     runs-on: ubuntu-latest

@@ -9,7 +9,7 @@ import numpy as np
 
 from petrophys.model.constants import DefaultParameters
 from petrophys.evaluation.net_pay.flags import generate_net_flags
-from petrophys.evaluation.net_pay.cutoffs import Cutoffs
+from petrophys.evaluation.net_pay.cutoffs import cutoff_family
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 
 if TYPE_CHECKING:
@@ -58,7 +58,7 @@ class NetPayModule:
 
         # For single-string lithology, resolve cutoffs immediately
         if isinstance(lithology, str):
-            carbonate = lithology.lower() == "carbonate"
+            carbonate = cutoff_family(lithology) == "carbonate"
             if phie_cutoff is not None:
                 self.phie_cutoff = phie_cutoff
             elif carbonate:
@@ -84,7 +84,7 @@ class NetPayModule:
             self.sw_cutoff = sw_cutoff
 
     def _carbonate_mask(self) -> np.ndarray:
-        return np.array([str(v).lower() == "carbonate" for v in self.lithology])
+        return np.array([cutoff_family(v) == "carbonate" for v in self.lithology])
 
     def _build_phie_cutoff(self, n_samples: int) -> Union[float, np.ndarray]:
         """Build per-depth PHIE cutoff array from lithology."""
@@ -170,10 +170,12 @@ class NetPayModule:
         )
 
         if quality_mask is not None:
-            usable = np.asarray(quality_mask, dtype=bool)
-            if usable.shape == flags["net_reservoir"].shape:
-                flags["net_reservoir"] = flags["net_reservoir"] & usable
-                flags["net_pay"] = flags["net_pay"] & usable
+            quality = np.asarray(quality_mask, dtype=float)
+            if quality.shape != flags["net_reservoir"].shape:
+                raise ValueError("quality_mask must match the well sample shape")
+            usable = np.isfinite(quality) & (quality == 1)
+            flags["net_reservoir"] = flags["net_reservoir"] & usable
+            flags["net_pay"] = flags["net_pay"] & usable
 
         step = well.step or 0.5
         gross = well.n_samples * step

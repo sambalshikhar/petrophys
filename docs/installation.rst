@@ -7,15 +7,14 @@ NumPy, pandas, SciPy, Matplotlib, lasio, openpyxl, and defusedxml.
 Install
 -------
 
-.. code-block:: bash
-
-   python -m pip install petrophys
-
-Until the first release is published on PyPI, install from GitHub instead:
+Until the first release is published on PyPI, install the development branch
+from GitHub. Private repositories require your GitHub access:
 
 .. code-block:: bash
 
-   python -m pip install "petrophys @ git+https://github.com/sambalshikhar/petrophys.git"
+   python -m pip install "petrophys @ git+https://github.com/sambalshikhar/petrophys.git@dev"
+
+From an existing checkout, use ``python -m pip install -e .`` instead.
 
 Verify the installation with a bundled sample well:
 
@@ -30,6 +29,8 @@ Verify the installation with a bundled sample well:
 Optional features
 -----------------
 
+The commands below run from a local checkout.
+
 .. list-table::
    :header-rows: 1
    :widths: 17 50 33
@@ -39,38 +40,38 @@ Optional features
      - Install
    * - ``dlis``
      - DLIS scalar-frame and borehole-image reading through ``dlisio``
-     - ``pip install "petrophys[dlis]"``
+     - ``python -m pip install -e ".[dlis]"``
    * - ``ml``
      - Pretrained curve imputation and KNN/RF/XGBoost training utilities.
        The ML stack requires Python 3.11+; on older Pythons the extra
        installs nothing.
-     - ``pip install "petrophys[ml]"``
+     - ``python -m pip install -e ".[ml]"``
    * - ``mcp``
      - MCP server so LLM clients can use Petrophys (Python 3.10+); see
        :doc:`mcp`
-     - ``pip install "petrophys[mcp]"``
+     - ``python -m pip install -e ".[mcp]"``
    * - ``all``
      - All optional runtime capabilities
-     - ``pip install "petrophys[all]"``
+     - ``python -m pip install -e ".[all]"``
    * - ``tutorials``
      - Notebook kernel, validation and fresh-kernel execution tools
-     - ``pip install "petrophys[tutorials]"``
+     - ``python -m pip install -e ".[tutorials]"``
    * - ``docs``
      - Sphinx, Furo, notebook rendering, copy buttons, and design components
-     - ``pip install "petrophys[docs]"``
+     - ``python -m pip install -e ".[docs]"``
    * - ``dev``
      - Tests, coverage, formatting, linting, and type checking
-     - ``pip install "petrophys[dev]"``
+     - ``python -m pip install -e ".[dev]"``
 
 From a GitHub install, add the extra to the requirement, e.g.
-``pip install "petrophys[all] @ git+https://github.com/sambalshikhar/petrophys.git"``.
+``pip install "petrophys[all] @ git+https://github.com/sambalshikhar/petrophys.git@dev"``.
 
 Development checkout
 --------------------
 
 .. code-block:: bash
 
-   git clone https://github.com/sambalshikhar/petrophys.git
+   git clone --branch dev https://github.com/sambalshikhar/petrophys.git
    cd petrophys
    python -m pip install -e ".[all,dev,docs]"
 

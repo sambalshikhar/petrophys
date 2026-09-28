@@ -464,27 +464,10 @@ def _find_lithology_mapping_column(
 def _lithology_mapping_from_records(records: Sequence[Mapping[str, Any]]) -> Dict[Any, str]:
     if not records:
         return {}
-
-    code_col = _find_lithology_mapping_column(
-        records,
-        ("abbreviation", "code", "lithology code", "lithology_code"),
-    )
-    label_col = _find_lithology_mapping_column(
-        records,
-        (
-            "lithology attribute",
-            "attribute",
-            "lithology",
-            "name",
-            "description",
-        ),
-    )
-    if code_col is None or label_col is None:
-        return {}
-
+    from petrophys.io.lithology_reader import read_lithology_codes
     out: Dict[Any, str] = {}
-    for record in records:
-        _add_lithology_mapping_label(out, record.get(code_col), record.get(label_col))
+    for code, label in read_lithology_codes(records).items():
+        _add_lithology_mapping_label(out, code, label)
     return out
 
 
@@ -505,11 +488,8 @@ def _candidate_geolink_lithology_mapping_paths() -> Tuple[Path, ...]:
 
 
 def _read_lithology_mapping_records(path: Path) -> List[Dict[str, Any]]:
-    import pandas as pd
-
-    if path.suffix.lower() in {".csv", ".txt"}:
-        return pd.read_csv(path).to_dict("records")
-    return pd.read_excel(path).to_dict("records")
+    from petrophys.io.geology_reader import _read_table
+    return _read_table(path).to_dict("records")
 
 
 @lru_cache(maxsize=8)
@@ -537,7 +517,7 @@ def _load_lithology_mapping_tables(paths: Tuple[Path, ...]) -> Dict[Any, str]:
             return mapping
         warnings.warn(
             f"Lithology code table {str(path)!r} has no recognizable code and "
-            "label columns (e.g. 'Abbreviation' and 'Lithology Attribute'); "
+            "label columns (e.g. 'code' and 'lithology', or 'Abbreviation' and 'Attribute'); "
             "using the built-in GeoLink lithology labels.",
             UserWarning,
             stacklevel=4,
@@ -1593,7 +1573,8 @@ class LogViewer:
         Mapping from lithology code to label for lithology tracks.
     lithology_mapping_df : DataFrame, optional
         PetroPy-script-compatible mapping table. Columns named
-        ``Abbreviation`` and ``Lithology Attribute`` are recognized.
+        ``Abbreviation`` and ``Attribute`` are recognized. If both label
+        columns exist, ``Attribute`` takes precedence over ``Lithology Attribute``.
         When neither mapping is given, GeoLink codes use the built-in labels,
         or the CSV/Excel table named by the ``PETROPHYS_LITHOLOGY_MAPPING``
         environment variable when it is set.
@@ -3486,18 +3467,9 @@ class LogViewer:
         out: Dict[Any, str] = {}
 
         if mapping_df is not None:
-            columns = {str(column).lower(): column for column in getattr(mapping_df, "columns", [])}
-            code_col = columns.get("abbreviation") or columns.get("code") or columns.get("lithology code")
-            label_col = (
-                columns.get("attribute")
-                or columns.get("lithology attribute")
-                or columns.get("lithology")
-                or columns.get("name")
-                or columns.get("description")
-            )
-            if code_col is not None and label_col is not None:
-                for _, row in mapping_df.iterrows():
-                    _add_lithology_mapping_label(out, row[code_col], row[label_col])
+            from petrophys.io.lithology_reader import read_lithology_codes
+            for code, label in read_lithology_codes(mapping_df).items():
+                _add_lithology_mapping_label(out, code, label)
         for code, label in (mapping or {}).items():
             _add_lithology_mapping_label(out, code, label)
         return out

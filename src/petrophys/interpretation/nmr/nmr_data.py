@@ -138,11 +138,12 @@ class NMRData:
     --------
     >>> nmr = NMRData.from_las(petrophys.sample("daydream1_cmr"),
     ...                        mphi_mnemonic="TCMR", mffi_mnemonic="CMFF")
-    >>> t2lm  = nmr.t2_lm()
-    >>> k_sdr = nmr.permeability_sdr()
     >>> k_tc  = nmr.permeability_coates()
-    >>> cal   = nmr.calibrate_sdr(core_depth, core_perm)
-    >>> k_cal = nmr.permeability_sdr(calibration=cal)
+
+    This scalar CMR sample has no T2 bins or T2LM curve. Coates permeability
+    can use its free/bound-fluid volumes, but T2 log mean and SDR cannot be
+    reconstructed from them. With a different file containing T2 data, check
+    ``nmr.has_t2lm`` before calling ``t2_lm()`` or ``permeability_sdr()``.
     """
 
     depth: np.ndarray

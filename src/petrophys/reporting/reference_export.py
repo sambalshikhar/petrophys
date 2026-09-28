@@ -2478,7 +2478,9 @@ def _legacy_workflow_config(config: Optional["DynamicWorkflowConfig"] = None) ->
 
     if config is not None:
         return config
-    return DynamicWorkflowConfig(matrix_type="sandstone", lithology="clastic")
+    return DynamicWorkflowConfig(
+        matrix_type="sandstone", lithology="clastic", interpretation_profile="auto"
+    )
 
 
 def _method_label(name: str, subject: Optional[str] = None) -> str:
@@ -5485,37 +5487,13 @@ def _display_lithology_text(value: str) -> str:
 def _load_lithology_mapping_workbook(
     mapping_file: str | Path,
 ) -> dict[int, dict[str, str]]:
-    import pandas as pd
+    from petrophys.io.lithology_reader import read_lithology_codes
 
-    mapping_path = Path(mapping_file)
-    if not mapping_path.exists():
-        raise FileNotFoundError(f"Lithology mapping workbook not found: {mapping_path}")
-
-    dataframe = pd.read_excel(mapping_path)
-    normalized_columns = {str(column).strip().lower(): column for column in dataframe.columns}
-    required = {"attribute", "lithology attribute", "abbreviation"}
-    missing = required.difference(normalized_columns)
-    if missing:
-        raise ValueError(
-            "Lithology mapping workbook is missing required columns: "
-            + ", ".join(sorted(missing))
-        )
-
-    attribute_col = normalized_columns["attribute"]
-    lithology_attr_col = normalized_columns["lithology attribute"]
-    abbreviation_col = normalized_columns["abbreviation"]
-
-    mapping: dict[int, dict[str, str]] = {}
-    for _, row in dataframe.iterrows():
-        try:
-            code = int(round(float(row[abbreviation_col])))
-        except (TypeError, ValueError):
-            continue
-        mapping[code] = {
-            "attribute": str(row[attribute_col]).strip(),
-            "lithology_attribute": str(row[lithology_attr_col]).strip(),
-        }
-    return mapping
+    labels = read_lithology_codes(mapping_file)
+    if any(not isinstance(code, int) for code in labels):
+        raise ValueError("Reference exports require numeric lithology codes")
+    return {code: {"attribute": label, "lithology_attribute": label}
+            for code, label in labels.items()}
 
 
 def _strip_top_suffix(name: str) -> str:
@@ -5527,30 +5505,16 @@ def _strip_top_suffix(name: str) -> str:
 
 def _load_excel_formation_segments(
     tops_file: str | Path,
+    *, rank: Optional[str] = None, sheet_name=None, columns=None, sep=None,
 ) -> dict[str, list[dict[str, Any]]]:
-    import pandas as pd
+    from petrophys.io.geology_reader import CONTEXT_COLUMNS, _key, _read_table, read_formations
 
-    tops_path = Path(tops_file)
-    if not tops_path.exists():
-        raise FileNotFoundError(f"Formation tops table not found: {tops_path}")
-
-    if tops_path.suffix.lower() == ".csv":
-        dataframe = pd.read_csv(tops_path)
-    else:
-        dataframe = pd.read_excel(tops_path)
-    normalized_columns = {str(column).strip().lower(): column for column in dataframe.columns}
-    top_col = normalized_columns.get("md_top") or normalized_columns.get("top")
-    missing = {name for name in ("formation",) if name not in normalized_columns}
-    if top_col is None:
-        missing.add("md_top (or top)")
-    if missing:
-        raise ValueError(
-            "Formation tops table is missing required columns: "
-            + ", ".join(sorted(missing))
-        )
-
-    well_col = normalized_columns.get("well")
-    formation_col = normalized_columns["formation"]
+    dataframe = _read_table(tops_file, sheet_name=sheet_name, sep=sep)
+    normalized_columns = {_key(column): column for column in dataframe.columns}
+    if len(normalized_columns) != len(dataframe.columns):
+        raise ValueError("Duplicate formation column names")
+    well_col = (columns or {}).get("well") or next(
+        (normalized_columns[name] for name in CONTEXT_COLUMNS["well"] if name in normalized_columns), None)
     single_well_key = "__SINGLE_WELL_TOPS__"
     if well_col is None:
         well_col = "__petrophys_well__"
@@ -5561,12 +5525,27 @@ def _load_excel_formation_segments(
         return " FM." in text or " GP." in text or " MB." in text
 
     segments_by_well: dict[str, list[dict[str, Any]]] = {}
-    valid_rows = dataframe[[well_col, formation_col, top_col]].dropna()
-    for well_name, group in valid_rows.groupby(well_col):
-        group = group.copy()
-        group["_formation_name"] = group[formation_col].map(_strip_top_suffix)
-        group["_formation_display_name"] = group[formation_col].map(lambda value: str(value).strip().upper())
-        group["_md_top"] = group[top_col].astype(float)
+    if dataframe[well_col].isna().any() or dataframe[well_col].astype(str).str.strip().eq("").any():
+        raise ValueError("Formation table contains missing well identifiers")
+    for well_name, raw_group in dataframe.groupby(well_col, sort=False):
+        read_columns = dict(columns or {})
+        read_columns["well"] = well_col
+        group = read_formations(raw_group, columns=read_columns, well_name=str(well_name))
+        report = group.attrs["import_report"]
+        formation_col = next(key for key, value in report["column_mapping"].items() if value == "formation_name")
+        top_col = next(key for key, value in report["column_mapping"].items() if value == "top_depth")
+        display_names = {(_strip_top_suffix(str(row[formation_col])), float(row[top_col])): str(row[formation_col]).strip().upper()
+                         for row in raw_group.to_dict("records")}
+        if rank is not None:
+            if "rank" not in group:
+                raise ValueError("Supply stratigraphic rank metadata before selecting a tops rank")
+            group = group.loc[group["rank"].astype(str).str.lower() == rank.lower()].copy()
+            if group.empty:
+                raise ValueError(f"No formation picks for rank={rank!r} in well {well_name!r}")
+        group["_formation_name"] = group["formation_name"]
+        group["_formation_display_name"] = [display_names.get((row.formation_name, row.top_depth), row.formation_name.upper())
+                                            for row in group.itertuples()]
+        group["_md_top"] = group["top_depth"]
         group = group.sort_values(["_md_top", "_formation_display_name"], kind="stable")
         explicit_units = group["_formation_display_name"].map(_is_formation_unit)
         if explicit_units.any():
@@ -5580,7 +5559,7 @@ def _load_excel_formation_segments(
 
         segments: list[dict[str, Any]] = []
         seen: set[tuple[str, float]] = set()
-        for row in group[["_formation_name", "_formation_display_name", "_md_top"]].to_dict("records"):
+        for row in group.to_dict("records"):
             formation_name = str(row["_formation_name"]).strip()
             formation_display_name = str(row["_formation_display_name"]).strip()
             top_depth = float(row["_md_top"])
@@ -5593,7 +5572,9 @@ def _load_excel_formation_segments(
                     "name": formation_name,
                     "display_name": formation_display_name,
                     "top_depth": top_depth,
-                    "bottom_depth": next_top_by_top.get(top_depth),
+                    "bottom_depth": row.get("bottom_depth", next_top_by_top.get(top_depth)),
+                    **{key: group.attrs[key] for key in ("depth_unit", "depth_reference", "datum") if group.attrs.get(key)},
+                    **{key: row[key] for key in ("rank", "parent") if row.get(key)},
                 }
             )
 
@@ -5607,11 +5588,31 @@ def _formation_segments_for_well(
     well: "Well",
     tops_by_well: dict[str, list[dict[str, Any]]],
 ) -> list[dict[str, Any]]:
+    from petrophys.model.units import normalize_depth_unit
+
+    def aligned(segments):
+        converted = []
+        for segment in segments:
+            item = dict(segment)
+            for field in ("depth_reference", "datum"):
+                if item.get(field) and str(item[field]).upper() != str(well.get_parameter(field) or "").upper():
+                    raise ValueError(f"Formation {field} does not match the well; align depth coordinates before export")
+            if item.get("depth_unit"):
+                source_unit = normalize_depth_unit(item["depth_unit"])
+                target_unit = normalize_depth_unit(well.depth_unit)
+                factor = 1.0 if source_unit == target_unit else (0.3048 if source_unit == "ft" else 1.0 / 0.3048)
+                for field in ("top_depth", "bottom_depth"):
+                    if item.get(field) is not None:
+                        item[field] *= factor
+                item["depth_unit"] = target_unit
+            converted.append(item)
+        return converted
+
     single_well_segments = tops_by_well.get(
         _normalize_tops_well_name("__SINGLE_WELL_TOPS__")
     )
     if single_well_segments is not None:
-        return single_well_segments
+        return aligned(single_well_segments)
 
     candidates = [
         _normalize_tops_well_name(source_file.stem),
@@ -5620,7 +5621,7 @@ def _formation_segments_for_well(
     ]
     for candidate in candidates:
         if candidate and candidate in tops_by_well:
-            return tops_by_well[candidate]
+            return aligned(tops_by_well[candidate])
 
     prefix_candidates: list[str] = []
     for candidate in candidates:
@@ -5635,7 +5636,7 @@ def _formation_segments_for_well(
 
     unique_prefix_candidates = sorted(set(prefix_candidates))
     if len(unique_prefix_candidates) == 1:
-        return tops_by_well[unique_prefix_candidates[0]]
+        return aligned(tops_by_well[unique_prefix_candidates[0]])
     return []
 
 
@@ -7221,6 +7222,8 @@ def export_reference_json_work_package_by_formation_lithology(
     minimum_group_thickness: float = 2.0,
     well_names: Optional[Sequence[str]] = None,
     lithology_mapping_file: Optional[str | Path] = None,
+    tops_options: Optional[dict] = None,
+    workflow_config: Optional["DynamicWorkflowConfig"] = None,
 ) -> List[ExampleFormatExportResult]:
     from petrophys.workflow.zoned_batch import (
         _finalize_export_curves,
@@ -7232,7 +7235,7 @@ def export_reference_json_work_package_by_formation_lithology(
     output_path.mkdir(parents=True, exist_ok=True)
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
     files = _filter_input_files_by_well_names(files, well_names)
-    tops_by_well = _load_excel_formation_segments(tops_file)
+    tops_by_well = _load_excel_formation_segments(tops_file, **(tops_options or {}))
     _validate_single_well_tops_scope(tops_by_well, files)
     lithology_mapping = (
         _load_lithology_mapping_workbook(lithology_mapping_file)
@@ -7250,7 +7253,7 @@ def export_reference_json_work_package_by_formation_lithology(
             well_folder = output_path / _sanitize_path_component(file_path.stem)
             well_folder.mkdir(parents=True, exist_ok=True)
             whole_well_original_curves = set(full_well.curves)
-            whole_well_result = run_dynamic_workflow_with_zones(copy.deepcopy(full_well), _legacy_workflow_config())
+            whole_well_result = run_dynamic_workflow_with_zones(copy.deepcopy(full_well), _legacy_workflow_config(workflow_config))
             _finalize_export_curves(whole_well_result.well, whole_well_original_curves)
             whole_well_las_path = well_folder / f"{_sanitize_path_component(file_path.stem)}.las"
             export_example_format_las(
@@ -7313,7 +7316,7 @@ def export_reference_json_work_package_by_formation_lithology(
                     continue
 
                 formation_original_curves = set(formation_input_well.curves)
-                workflow_result = run_dynamic_workflow_with_zones(formation_input_well, _legacy_workflow_config())
+                workflow_result = run_dynamic_workflow_with_zones(formation_input_well, _legacy_workflow_config(workflow_config))
                 warnings = list(fallback_warnings)
                 warnings.extend(workflow_result.warnings)
                 warnings.extend(workflow_result.base_result.warnings)
@@ -7412,6 +7415,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
     reference_structure_dir: Optional[str | Path] = None,
     raw_input_dir: Optional[str | Path] = None,
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
+    tops_options: Optional[dict] = None,
 ) -> List[ExampleFormatExportResult]:
     """Category-first context export.
 
@@ -7433,7 +7437,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
     files = _filter_input_files_by_well_names(files, well_names)
     raw_context_dir = Path(raw_input_dir) if raw_input_dir is not None else _raw_input_dir_for_processed(input_path)
     raw_curves_by_stem = _raw_curve_lookup(raw_context_dir, pattern, recursive)
-    tops_by_well = _load_excel_formation_segments(tops_file)
+    tops_by_well = _load_excel_formation_segments(tops_file, **(tops_options or {}))
     _validate_single_well_tops_scope(tops_by_well, files)
     lithology_mapping = (
         _load_lithology_mapping_workbook(lithology_mapping_file)

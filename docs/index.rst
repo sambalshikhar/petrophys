@@ -230,6 +230,8 @@ Continue with the :doc:`installation guide <installation>`, the
    :caption: User Guide
 
    workflows
+   context
+   data_quality
    capabilities
    specialist_data
    visualization_reporting
@@ -256,3 +258,4 @@ Continue with the :doc:`installation guide <installation>`, the
    :caption: Project
 
    changelog
+   publishing

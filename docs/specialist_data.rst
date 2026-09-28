@@ -29,7 +29,7 @@ permeability, and Timur-Coates permeability.
 
    swirr = nmr.swirr_nmr()                  # irreducible water saturation, v/v
    k_coates = nmr.permeability_coates()     # mD
-   k_sdr = nmr.permeability_sdr()           # mD
+   k_sdr = nmr.permeability_sdr()           # stored vendor KSDR, mD
    vendor = nmr.stored_permeability         # vendor KSDR/KTIM curves from the file
 
 ``nmr.t2_lm()`` needs T2 distribution bins or a stored T2 log-mean curve

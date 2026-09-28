@@ -27,9 +27,20 @@ STANDARD_CUTOFFS = {
 }
 
 
+def cutoff_family(lithology: str) -> str:
+    """Resolve rock labels to the two supported screening-cutoff families.
+
+    Marl follows the workflow's carbonate matrix convention, not a claim
+    that marl has clean-carbonate reservoir properties. Calibrate cutoffs.
+    """
+    label = str(lithology).strip().lower()
+    carbonate = {"carbonate", "carbonates", "carb", "limestone", "chalk", "dolomite", "marl", "marlstone"}
+    return "carbonate" if label in carbonate else "clastic"
+
+
 def standard_cutoffs(lithology: str = "clastic") -> dict:
     """Return a copy of the standard cutoff set for a lithology family."""
-    family = "carbonate" if str(lithology).lower().startswith("carb") else "clastic"
+    family = cutoff_family(lithology)
     return dict(STANDARD_CUTOFFS[family])
 
 
@@ -47,21 +58,21 @@ class Cutoffs:
     @property
     def active_phie(self) -> float:
         """PHIE cutoff for the selected formation type."""
-        if self.formation_type.lower() == "carbonate":
+        if cutoff_family(self.formation_type) == "carbonate":
             return self.phie_carbonate
         return self.phie_clastic
 
     @property
     def active_vcl(self) -> float:
         """VCL cutoff for the selected formation type."""
-        if self.formation_type.lower() == "carbonate":
+        if cutoff_family(self.formation_type) == "carbonate":
             return self.vcl_carbonate
         return self.vcl_clastic
 
     @property
     def active_sw(self) -> float:
         """Sw cutoff for the selected formation type."""
-        if self.formation_type.lower() == "carbonate":
+        if cutoff_family(self.formation_type) == "carbonate":
             return self.sw_carbonate
         return self.sw_clastic
 

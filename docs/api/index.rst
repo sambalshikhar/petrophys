@@ -95,6 +95,7 @@ Workflows, reporting, and visualization
    petrophys.workflow
    petrophys.workflow.schema
    petrophys.reporting
+   petrophys.reporting.context
    petrophys.visualization
    petrophys.mcp
    petrophys.mcp.server
