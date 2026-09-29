@@ -5873,25 +5873,6 @@ def _load_reference_group_segments(
 
 
 
-def _reference_category_payload_path(source_file: str | Path, category_name: str) -> Optional[Path]:
-    source_path = Path(source_file)
-    parts = list(source_path.parts)
-    source_category = None
-    for index, part in enumerate(parts):
-        if part in CATEGORY_CONTEXT_SPECS:
-            source_category = part
-            parts[index] = category_name
-            break
-    if source_category is None:
-        return source_path if category_name in source_path.stem and source_path.exists() else None
-
-    candidate = Path(*parts)
-    source_suffix = f"_{source_category}.json"
-    category_suffix = f"_{category_name}.json"
-    if candidate.name.endswith(source_suffix):
-        candidate = candidate.with_name(candidate.name[: -len(source_suffix)] + category_suffix)
-    return candidate if candidate.exists() else None
-
 def _depth_summary(well: "Well") -> dict[str, Any]:
     depth = np.asarray(well.depth, dtype=float)
     finite = depth[np.isfinite(depth)]
@@ -7472,7 +7453,6 @@ def export_reference_json_work_package_by_category_formation_lithology(
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
     tops_options: Optional[dict] = None,
     use_finalized_processed_curves: bool = False,
-    replay_reference_context_payloads: bool = False,
 ) -> List[ExampleFormatExportResult]:
     """Category-first context export.
 
@@ -7486,9 +7466,6 @@ def export_reference_json_work_package_by_category_formation_lithology(
     contains finalized interpretation curves and the export must summarize
     those values exactly instead of rerunning the dynamic workflow.
 
-    Set `replay_reference_context_payloads=True` with `reference_structure_dir`
-    only for benchmark reconstruction: matching reference JSON payloads are
-    copied byte-for-byte into the requested output layout.
     """
     from petrophys.workflow.zoned_batch import (
         ZonedWorkflowRunResult,
@@ -7624,6 +7601,14 @@ def export_reference_json_work_package_by_category_formation_lithology(
                         formation_depth_info = _depth_summary(group_well)
 
                     for category_name in CATEGORY_CONTEXT_SPECS:
+                        category_result = _category_analysis_result(category_name, group_well)
+                        derived_logs = _category_derived_logs_computed(
+                            category_name,
+                            group_well,
+                            workflow_result,
+                            formation_original_curves,
+                            category_result,
+                        )
                         json_path = (
                             output_path
                             / category_name
@@ -7631,45 +7616,24 @@ def export_reference_json_work_package_by_category_formation_lithology(
                             / _sanitize_path_component(formation_display_name)
                             / f"{_sanitize_path_component(file_stem)}_{category_name}.json"
                         )
-                        if replay_reference_context_payloads:
-                            source_json = _reference_category_payload_path(
-                                reference_segment["source_file"], category_name
-                            )
-                            if source_json is None:
-                                raise FileNotFoundError(
-                                    f"Reference payload for category {category_name!r} was not found "
-                                    f"beside {reference_segment['source_file']}"
-                                )
-                            json_path.parent.mkdir(parents=True, exist_ok=True)
-                            json_path.write_bytes(source_json.read_bytes())
-                            json_file = json_path
-                        else:
-                            category_result = _category_analysis_result(category_name, group_well)
-                            derived_logs = _category_derived_logs_computed(
-                                category_name,
-                                group_well,
-                                workflow_result,
-                                formation_original_curves,
-                                category_result,
-                            )
 
-                            json_file = _write_reference_analysis_json_to_path(
-                                json_path,
-                                group_well,
-                                workflow_result,
-                                file_path,
-                                formation_original_curves,
-                                formation_name=formation_display_name,
-                                formation_depth_info=formation_depth_info,
-                                lithology_group_name=json_group_name,
-                                lithology_name=json_lithology_name,
-                                lithology_mapping=lithology_mapping,
-                                analysis_summary_override=category_result.to_dict(),
-                                derived_logs_override=derived_logs,
-                                status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
-                                include_derived_log_status=False,
-                                extra_statistics_curves=category_result.derived_curves,
-                            )
+                        json_file = _write_reference_analysis_json_to_path(
+                            json_path,
+                            group_well,
+                            workflow_result,
+                            file_path,
+                            formation_original_curves,
+                            formation_name=formation_display_name,
+                            formation_depth_info=formation_depth_info,
+                            lithology_group_name=json_group_name,
+                            lithology_name=json_lithology_name,
+                            lithology_mapping=lithology_mapping,
+                            analysis_summary_override=category_result.to_dict(),
+                            derived_logs_override=derived_logs,
+                            status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
+                            include_derived_log_status=False,
+                            extra_statistics_curves=category_result.derived_curves,
+                        )
 
                         results.append(
                             ExampleFormatExportResult(

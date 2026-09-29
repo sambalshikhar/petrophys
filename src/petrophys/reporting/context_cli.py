@@ -31,7 +31,6 @@ def build_package_parser(layout):
         parser.add_argument("--reference-structure-dir", type=Path)
         parser.add_argument("--raw-input-dir", type=Path)
         parser.add_argument("--use-finalized-processed-curves", action="store_true", help="Treat input LAS files as finalized interpretation products; do not rerun the workflow")
-        parser.add_argument("--replay-reference-context-payloads", action="store_true", help="Benchmark reconstruction only: copy matched reference JSON payloads byte-for-byte")
     return parser
 
 
@@ -45,8 +44,7 @@ def package_main(layout, argv=None):
                    tops_options={key: value for key, value in (("rank", args.tops_rank), ("sheet_name", args.tops_sheet)) if value is not None})
     if layout == "category_formation_lithology":
         options.update(reference_structure_dir=args.reference_structure_dir, raw_input_dir=args.raw_input_dir,
-                       use_finalized_processed_curves=args.use_finalized_processed_curves,
-                       replay_reference_context_payloads=args.replay_reference_context_payloads)
+                       use_finalized_processed_curves=args.use_finalized_processed_curves)
     previous = os.environ.get(ENV_VAR)
     try:
         set_legacy_benchmark_context(args.legacy_benchmark_compat)
