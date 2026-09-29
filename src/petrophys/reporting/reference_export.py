@@ -7579,9 +7579,10 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     # Include exact benchmark boundary samples despite tiny float round-trip drift.
                     start_depth = float(reference_segment["start_depth"])
                     end_depth = float(reference_segment["end_depth"])
+                    boundary_tolerance = 5e-5
                     group_well = workflow_result.well.depth_slice(
-                        float(np.nextafter(start_depth, -np.inf)),
-                        float(np.nextafter(end_depth, np.inf)),
+                        start_depth - boundary_tolerance,
+                        end_depth + boundary_tolerance,
                     )
                     if group_well.n_samples == 0:
                         continue
