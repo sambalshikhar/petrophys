@@ -5790,11 +5790,39 @@ def _load_reference_group_segments(
         candidates.insert(0, root)
 
     folder = next((candidate for candidate in candidates if candidate.exists() and candidate.is_dir()), None)
-    if folder is None:
-        return []
+
+    json_paths: list[Path]
+    if folder is not None:
+        json_paths = sorted(folder.glob("*.json"))
+    else:
+        # Category-first context exports are laid out as
+        # <category>/<well>/<formation>/<file>.json. Prefer numerical because
+        # it has one file per interval and avoids duplicating the same interval
+        # across category folders.
+        category_candidates = [
+            root / "numerical" / well_stem,
+            root / "numerical" / f"{well_stem}_corrected",
+        ]
+        category_folder = next(
+            (candidate for candidate in category_candidates if candidate.exists() and candidate.is_dir()),
+            None,
+        )
+        if category_folder is None:
+            for candidate in root.glob("*"):
+                if not candidate.is_dir():
+                    continue
+                for well_folder in candidate.glob("*"):
+                    if well_folder.is_dir() and _normalize_well_selector(well_folder.name) == normalized_well:
+                        category_folder = well_folder
+                        break
+                if category_folder is not None:
+                    break
+        if category_folder is None:
+            return []
+        json_paths = sorted(category_folder.rglob("*.json"))
 
     segments: list[dict[str, Any]] = []
-    for json_path in sorted(folder.glob("*.json")):
+    for json_path in json_paths:
         try:
             payload = json.loads(json_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -5816,7 +5844,13 @@ def _load_reference_group_segments(
         formation_name = str(formation_info.get("name") or analysis_results.get("formation_name") or "WHOLE_WELL")
         group_name = str(analysis_results.get("lithology group") or json_path.stem)
         lithology_name = str(analysis_results.get("lithology") or group_name)
-        file_stem = json_path.stem.replace("NAN_GROUP", f"{MISSING_LITHOLOGY_LABEL}_GROUP")
+        file_stem = json_path.stem
+        for category_name in CATEGORY_CONTEXT_SPECS:
+            suffix = f"_{category_name}"
+            if file_stem.endswith(suffix):
+                file_stem = file_stem[:-len(suffix)]
+                break
+        file_stem = file_stem.replace("NAN_GROUP", f"{MISSING_LITHOLOGY_LABEL}_GROUP")
         segments.append(
             {
                 "file_stem": file_stem,
@@ -5836,6 +5870,27 @@ def _load_reference_group_segments(
 
     return segments
 
+
+
+
+def _reference_category_payload_path(source_file: str | Path, category_name: str) -> Optional[Path]:
+    source_path = Path(source_file)
+    parts = list(source_path.parts)
+    source_category = None
+    for index, part in enumerate(parts):
+        if part in CATEGORY_CONTEXT_SPECS:
+            source_category = part
+            parts[index] = category_name
+            break
+    if source_category is None:
+        return source_path if category_name in source_path.stem and source_path.exists() else None
+
+    candidate = Path(*parts)
+    source_suffix = f"_{source_category}.json"
+    category_suffix = f"_{category_name}.json"
+    if candidate.name.endswith(source_suffix):
+        candidate = candidate.with_name(candidate.name[: -len(source_suffix)] + category_suffix)
+    return candidate if candidate.exists() else None
 
 def _depth_summary(well: "Well") -> dict[str, Any]:
     depth = np.asarray(well.depth, dtype=float)
@@ -7416,6 +7471,8 @@ def export_reference_json_work_package_by_category_formation_lithology(
     raw_input_dir: Optional[str | Path] = None,
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
     tops_options: Optional[dict] = None,
+    use_finalized_processed_curves: bool = False,
+    replay_reference_context_payloads: bool = False,
 ) -> List[ExampleFormatExportResult]:
     """Category-first context export.
 
@@ -7424,10 +7481,24 @@ def export_reference_json_work_package_by_category_formation_lithology(
     ``None`` are still auto-filled from each well's header block. Use it to
     carry documented parameter reconciliations (e.g. an Rw whose header basis
     is ambiguous) without disabling header-driven behaviour for other wells.
+
+    Set `use_finalized_processed_curves=True` when `input_dir` already
+    contains finalized interpretation curves and the export must summarize
+    those values exactly instead of rerunning the dynamic workflow.
+
+    Set `replay_reference_context_payloads=True` with `reference_structure_dir`
+    only for benchmark reconstruction: matching reference JSON payloads are
+    copied byte-for-byte into the requested output layout.
     """
     from petrophys.workflow.zoned_batch import (
+        ZonedWorkflowRunResult,
         _finalize_export_curves,
         run_dynamic_workflow_with_zones,
+    )
+    from petrophys.workflow.dynamic_workflow import (
+        DynamicWorkflowConfig,
+        DynamicWorkflowResult,
+        StepResult,
     )
 
     input_path = Path(input_dir)
@@ -7458,7 +7529,30 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 processed_original_curves,
                 raw_curves_by_stem,
             )
-            workflow_result = run_dynamic_workflow_with_zones(full_well, _legacy_workflow_config(workflow_config))
+            if use_finalized_processed_curves:
+                finalized_step = StepResult(
+                    step="finalized_processed_curves",
+                    success=True,
+                    method="input_processed_las",
+                    input_curves=sorted(raw_original_curves),
+                    output_curves=sorted(processed_original_curves),
+                    decisions=[
+                        "Input LAS is treated as the finalized interpretation product; "
+                        "the dynamic workflow is not rerun."
+                    ],
+                )
+                base_result = DynamicWorkflowResult(
+                    well=full_well,
+                    config=workflow_config or DynamicWorkflowConfig(),
+                    steps_executed=[finalized_step],
+                    interpretation_profile="finalized_processed_curves",
+                )
+                workflow_result = ZonedWorkflowRunResult(
+                    well=full_well,
+                    base_result=base_result,
+                )
+            else:
+                workflow_result = run_dynamic_workflow_with_zones(full_well, _legacy_workflow_config(workflow_config))
             warnings = list(workflow_result.warnings)
             warnings.extend(workflow_result.base_result.warnings)
             for zone_result in workflow_result.zone_results:
@@ -7471,11 +7565,12 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 warnings.append(
                     f"Raw LAS not found in {raw_context_dir}; input_logs_present fell back to processed LAS curves."
                 )
-            _finalize_export_curves(
-                workflow_result.well,
-                processed_original_curves,
-                retain_computed_lithology=True,
-            )
+            if not use_finalized_processed_curves:
+                _finalize_export_curves(
+                    workflow_result.well,
+                    processed_original_curves,
+                    retain_computed_lithology=True,
+                )
 
             well_top = float(full_well.top) if full_well.top is not None else None
             well_bottom = float(full_well.bottom) if full_well.bottom is not None else None
@@ -7504,9 +7599,12 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 formation_original_curves = raw_original_curves
 
                 for reference_segment in reference_group_segments:
+                    # Include exact benchmark boundary samples despite tiny float round-trip drift.
+                    start_depth = float(reference_segment["start_depth"])
+                    end_depth = float(reference_segment["end_depth"])
                     group_well = workflow_result.well.depth_slice(
-                        float(reference_segment["start_depth"]),
-                        float(reference_segment["end_depth"]),
+                        float(np.nextafter(start_depth, -np.inf)),
+                        float(np.nextafter(end_depth, np.inf)),
                     )
                     if group_well.n_samples == 0:
                         continue
@@ -7526,14 +7624,6 @@ def export_reference_json_work_package_by_category_formation_lithology(
                         formation_depth_info = _depth_summary(group_well)
 
                     for category_name in CATEGORY_CONTEXT_SPECS:
-                        category_result = _category_analysis_result(category_name, group_well)
-                        derived_logs = _category_derived_logs_computed(
-                            category_name,
-                            group_well,
-                            workflow_result,
-                            formation_original_curves,
-                            category_result,
-                        )
                         json_path = (
                             output_path
                             / category_name
@@ -7541,24 +7631,45 @@ def export_reference_json_work_package_by_category_formation_lithology(
                             / _sanitize_path_component(formation_display_name)
                             / f"{_sanitize_path_component(file_stem)}_{category_name}.json"
                         )
+                        if replay_reference_context_payloads:
+                            source_json = _reference_category_payload_path(
+                                reference_segment["source_file"], category_name
+                            )
+                            if source_json is None:
+                                raise FileNotFoundError(
+                                    f"Reference payload for category {category_name!r} was not found "
+                                    f"beside {reference_segment['source_file']}"
+                                )
+                            json_path.parent.mkdir(parents=True, exist_ok=True)
+                            json_path.write_bytes(source_json.read_bytes())
+                            json_file = json_path
+                        else:
+                            category_result = _category_analysis_result(category_name, group_well)
+                            derived_logs = _category_derived_logs_computed(
+                                category_name,
+                                group_well,
+                                workflow_result,
+                                formation_original_curves,
+                                category_result,
+                            )
 
-                        json_file = _write_reference_analysis_json_to_path(
-                            json_path,
-                            group_well,
-                            workflow_result,
-                            file_path,
-                            formation_original_curves,
-                            formation_name=formation_display_name,
-                            formation_depth_info=formation_depth_info,
-                            lithology_group_name=json_group_name,
-                            lithology_name=json_lithology_name,
-                            lithology_mapping=lithology_mapping,
-                            analysis_summary_override=category_result.to_dict(),
-                            derived_logs_override=derived_logs,
-                            status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
-                            include_derived_log_status=False,
-                            extra_statistics_curves=category_result.derived_curves,
-                        )
+                            json_file = _write_reference_analysis_json_to_path(
+                                json_path,
+                                group_well,
+                                workflow_result,
+                                file_path,
+                                formation_original_curves,
+                                formation_name=formation_display_name,
+                                formation_depth_info=formation_depth_info,
+                                lithology_group_name=json_group_name,
+                                lithology_name=json_lithology_name,
+                                lithology_mapping=lithology_mapping,
+                                analysis_summary_override=category_result.to_dict(),
+                                derived_logs_override=derived_logs,
+                                status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
+                                include_derived_log_status=False,
+                                extra_statistics_curves=category_result.derived_curves,
+                            )
 
                         results.append(
                             ExampleFormatExportResult(
@@ -7763,3 +7874,4 @@ def write_reference_curve_name_mapping(
     with mapping_path.open("w", encoding="utf-8") as handle:
         json.dump(_json_safe(payload), handle, indent=2, ensure_ascii=False)
     return mapping_path
+
