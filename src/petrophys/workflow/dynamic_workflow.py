@@ -1103,6 +1103,39 @@ class DynamicWorkflowResult:
         output_path.write_text(text + "\n", encoding="utf-8")
         return output_path
 
+    def formation_summary(self, formations: Any = None, *, rank: Optional[str] = None) -> Any:
+        """Gross, net and average properties for each formation.
+
+        Parameters
+        ----------
+        formations : path, DataFrame, mapping or sequence, optional
+            Formation tops or intervals (anything
+            :func:`petrophys.read_formations` accepts). Defaults to the
+            formations attached with ``petrophys.read(path, formations=...)``.
+        rank : str, optional
+            Level to summarize when the tops mix levels, e.g. ``"group"`` or
+            ``"formation"``. NPD/GeoLink-style names (``"Brent Gp."``,
+            ``"Etive Fm."``) carry their rank; other tables need a ``rank``
+            column.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per formation: top, bottom, gross, net rock, net
+            reservoir and net pay thickness (in the well's depth unit),
+            net-to-gross, and average PHIE, Sw, VCL and permeability.
+
+        Examples
+        --------
+        >>> import petrophys as pp
+        >>> well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
+        >>> result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
+        >>> table = result.formation_summary(rank="formation")  # doctest: +SKIP
+        """
+        from petrophys.workflow.summary import summarize_formations
+
+        return summarize_formations(self, formations, rank=rank)
+
     def summary(
         self, top: Optional[float] = None, bottom: Optional[float] = None
     ) -> Dict[str, Any]:
@@ -1931,7 +1964,6 @@ class DynamicWorkflow:
         porosity = ("porosity (PHIE/PHIT)", "PHIE_CC", "PHIE", "PHIT")
         saturation = ("water saturation (SW)", "SW", "SWA", "SWT-LOG")
         deep_res = ("deep resistivity (RDEP/RT)", "RDEP", "RT")
-        context_disabled = "Not part of the canonical context workflow"
         missing: List[str] = []
         if step is WorkflowStep.NORMALIZATION:
             return "standardize_input=False"
@@ -1950,8 +1982,16 @@ class DynamicWorkflow:
                 ("neutron porosity (NPHI)", "NPHI", "PHIN"),
                 ("clay volume (VCL)", "VCL", "VCLAY"),
             )
-        elif step in (WorkflowStep.SPECTRAL_GAMMA, WorkflowStep.ELEMENTAL_SPECTROSCOPY):
-            return context_disabled
+        elif step is WorkflowStep.SPECTRAL_GAMMA:
+            return (
+                "Not run by the interpretation workflow; use "
+                "petrophys.interpretation.geochemistry.interpret_spectral_gamma directly"
+            )
+        elif step is WorkflowStep.ELEMENTAL_SPECTROSCOPY:
+            return (
+                "Not run by the interpretation workflow; use "
+                "petrophys.interpretation.geochemistry.interpret_elemental_spectroscopy directly"
+            )
         elif step is WorkflowStep.RMF:
             return (
                 "No mud-filtrate resistivity source: set mud_type='OBM', rmf_at_meas_temp, "
@@ -1972,7 +2012,7 @@ class DynamicWorkflow:
         elif step is WorkflowStep.POROSITY_REFINEMENT:
             if WorkflowStep.POROSITY.value in self.config.skip_steps:
                 return "The porosity step is disabled in skip_steps"
-            return context_disabled
+            return "Not run by the interpretation workflow; porosity is computed once in the porosity step"
         elif step is WorkflowStep.CORE_CORRECTION:
             missing = self._missing(
                 well,

@@ -92,3 +92,11 @@ def test_unrecognized_lithology_labels_are_reported(tmp_path):
         intervals = load_lithology_csv(path)
 
     assert [interval.lithology for interval in intervals] == ["clastic", "clastic"]
+
+
+def test_scale_hint_only_when_most_of_the_curve_is_implausible():
+    values = np.full(50, 2.4)
+    values[:3] = 2400.0
+    well = _density_well(values)
+    standardize_curves(well, rename_curves=False, convert_units=True)
+    assert well.get("RHOZ").metadata.custom["range_screening"]["hint"] == ""

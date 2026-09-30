@@ -165,11 +165,12 @@ calcite-dolomite density and closure solve.
 
 .. code-block:: python
 
-   config = pp.DynamicWorkflowConfig(
-       lithology_domain="carbonate",
-       matrix_type="auto",
-   )
-   result = pp.run_dynamic_workflow(well, config)
+   carbonate_well = pp.read(pp.sample("HW-3"))      # a COSTA carbonate well
+   result = pp.interpret(carbonate_well, lithology_domain="carbonate", rw=0.05)
+   print(result.well.get("VCALC").describe(), result.well.get("VDOLO").describe())
+
+The solve runs sample by sample, so on long, densely sampled wells it takes
+time; apply it to carbonate intervals rather than whole clastic wells.
 
 External lithology can supply the categorical rock log while the selected
 solver still calculates mineral volumes from log responses. Without the

@@ -70,3 +70,37 @@ def summarize_result(
         "warnings": list(result.warnings),
         "errors": list(result.errors),
     })
+
+
+def summarize_formations(
+    result: "DynamicWorkflowResult",
+    formations: Any = None,
+    *,
+    rank: Optional[str] = None,
+) -> Any:
+    """Per-formation table of an interpretation; see :meth:`DynamicWorkflowResult.formation_summary`."""
+    import pandas as pd
+
+    from petrophys.evaluation.summaries.formation_analysis import analyze_formations
+    from petrophys.io.geology_reader import read_formations
+    from petrophys.model.formation_tops import FormationTops
+    from petrophys.model.intervals import Formation
+
+    well = result.well
+    if formations is None:
+        records = (well.get_parameter("_geology_context") or {}).get("formations")
+        if not records:
+            raise ValueError(
+                "No formations are attached to this well. Pass formations=<file or table>, "
+                "or attach them with petrophys.read(path, formations=...)."
+            )
+        table = pd.DataFrame(records)
+    else:
+        table = read_formations(formations, well=well)
+    if "bottom_depth" in table and table["bottom_depth"].isna().all():
+        table = table.drop(columns="bottom_depth")
+    tops = FormationTops.from_dataframe(
+        table, name_col="formation_name", terminal_depth=well.bottom, rank=rank
+    )
+    zones = [interval for interval in tops.intervals if isinstance(interval, Formation)]
+    return analyze_formations(well, zones).to_dataframe()

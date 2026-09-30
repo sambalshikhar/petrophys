@@ -217,7 +217,10 @@ def _screen_standard_curve_values(
     if np.any(invalid):
         masked = int(np.count_nonzero(invalid))
         total = int(np.count_nonzero(finite))
-        hint = _unit_scale_hint(data[invalid], low, high)
+        # A scale hint only makes sense when most of the curve is implausible;
+        # a few spikes of any size say nothing about the unit label.
+        mostly_invalid = masked / total >= RANGE_SCREENING_WARNING_FRACTION
+        hint = _unit_scale_hint(data[invalid], low, high) if mostly_invalid else ""
         report = {
             "standard_curve": name,
             "low": low,
