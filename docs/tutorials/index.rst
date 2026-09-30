@@ -71,10 +71,11 @@ Choose a path
 
       Work with workflow orchestration, formation intervals, core calibration,
       imputation, NMR, saturation height, borehole images, visualization,
-      multiwell analysis, LLM context export, and LLM agents over MCP.
+      multiwell analysis, LLM context export, LLM agents over MCP, and your own
+      reusable custom workflows.
 
       +++
-      11 focused lessons (10-20)
+      12 focused lessons (10-21)
 
    .. grid-item-card:: Case studies
       :class-card: ph-card-green

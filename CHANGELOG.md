@@ -80,6 +80,30 @@ All notable changes to Petrophys are documented here.
   top-level `petrophys` namespace, a "Terms, curves and steps" reference and
   a review checklist for interpretations.
 - `read_formations(..., rank=...)` keeps one stratigraphic level.
+- Custom workflows: `pp.Workflow` and `pp.workflow_step` build reusable
+  interpretation recipes from built-in steps (`petrophys.workflow.steps`,
+  including `pp.interpret` as one step) and your own functions. Inputs are
+  checked before running; runs keep a full trace and export to LAS/JSON;
+  `run_many` runs a field; workflows save and load as JSON. New guide page and
+  tutorial 21.
+- Tools promoted from the tutorials into the library:
+  `find_core_depth_shift` / `shift_core_depths` (core-to-log depth matching,
+  with per-core-run scans); `find_held_readings` / `held_reading_mask` (held or
+  padded tool readings); `summarize_pay` / `PaySummary` (net pay, NTG, pay
+  averages and hydrocarbon pore thickness for a window); the new
+  `petrophys.evaluation.sensitivity` module with `cutoff_sensitivity`,
+  `parameter_sensitivity` (tornado data) and `compare_saturation_models`;
+  `sp_rw_in_window` (SP-derived Rw in a chosen window at a reference
+  temperature); `classify_th_u_environment`, `thorium_clay_index` and
+  `uranium_stripped_gamma_ray` for spectral gamma; `label_depths` and
+  `flag_intervals`. Tutorials 06, 11, 12, CS3, CS5 and the complete tour call
+  them instead of inline helpers.
+- The user guide is rewritten as executed pages: every example on the
+  quickstart, own-data, input-template, data-model, glossary, architecture,
+  workflow, review, context, MCP, visualization, specialist-data and
+  capabilities pages runs at each documentation build, so the outputs and
+  figures shown are always current. "What Petrophys can do" is a gallery of
+  every capability with the call that produces it.
 - A complete-tour notebook covering the whole library on four bundled GeoLink
   wells, and a real spectral-gamma geochemistry part plus a second-well core
   calibration in tutorial 12.
@@ -96,6 +120,17 @@ All notable changes to Petrophys are documented here.
 - Log-plot warnings no longer repeat a depth-reference note reported by both
   the formation and the lithology import.
 - `workflow_steps()` descriptions say which steps `pp.interpret` does not run.
+- Warnings escalated to errors (for example
+  `warnings.simplefilter("error", pp.DataQualityWarning)`) now stop
+  `pp.interpret` instead of being recorded as a failed step.
+- An invalid `lithology_domain` names that setting and suggests the closest
+  domain; `run_selected_steps` records skip reasons under the same step names
+  as a full run.
+- Interpreted LAS files record `PP_RW` and its temperature when
+  `rw_meas_temp_f` is given (it was dropped), and a lithology-dependent Archie
+  `a` is written as "per lithology".
+- `CoreData.filter_by_depth` slices only per-plug arrays in its metadata;
+  strings and dictionaries of the same length made it fail.
 - `TemperatureProfile.from_bht` reads "degC"-style BHT labels as Celsius
   (only a bare "C" was converted).
 - Buckles and Hingle plot labels stay inside the frame without overprinting;
