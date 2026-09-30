@@ -75,6 +75,13 @@ All notable changes to Petrophys are documented here.
   reports; core saturation fraction normalization with provenance.
 - Input templates, an own-data guide and notebook, and fresh-kernel execution
   of the user-journey tutorials in CI.
+- `config_schema()` entries carry the settings `group`. The documentation adds
+  an interpretation-settings page generated from it, a page for the
+  top-level `petrophys` namespace, a "Terms, curves and steps" reference and
+  a review checklist for interpretations.
+- `read_formations(..., rank=...)` keeps one stratigraphic level.
+- `scripts/check_notebook_outputs.py`, run in CI, rejects tutorial notebooks
+  with unexecuted cells, errors or local paths in their saved outputs.
 
 ### Fixed
 
@@ -82,8 +89,17 @@ All notable changes to Petrophys are documented here.
   an explicitly warned routing convention, not a calibrated mixed-rock model.
 - The bundled 30/6-5 formation CSV declares metre depths and group/formation
   hierarchy. Direct DataFrame and file codebooks use the same validation.
-- Installation instructions no longer lead with an unpublished PyPI package;
-  Netlify uses the strict documentation build and its required dependencies.
+- Netlify uses the strict documentation build and its required dependencies.
+- Log-plot warnings no longer repeat a depth-reference note reported by both
+  the formation and the lithology import.
+- `workflow_steps()` descriptions say which steps `pp.interpret` does not run.
+- `TemperatureProfile.from_bht` reads "degC"-style BHT labels as Celsius
+  (only a bare "C" was converted).
+- Buckles and Hingle plot labels stay inside the frame without overprinting;
+  Buckles colours permeability on a log scale; Pickett plots no longer
+  overlap minor tick labels.
+- The DLIS readers name the `petrophys[dlis]` extra when dlisio is missing,
+  and `result.summary()` rounds net thicknesses to 0.01.
 
 - A workflow reused across wells no longer carries one well's resolved
   matrix into the next.
@@ -101,6 +117,16 @@ All notable changes to Petrophys are documented here.
 
 ### Changed
 
+- Formation model and summary loaders no longer add a final bottom 100 units
+  below the last top; supply `terminal_depth` for top-only analysis, or use
+  `pp.read_formations` for point annotations.
+- Invalid geology rows raise instead of being skipped silently, summary
+  totals count the covered depth union rather than the sum of nested rows,
+  and unknown reader or workflow options raise instead of being ignored.
+- `load_lithology_csv` is kept for compatibility; new code should use the
+  shared validated readers.
+- Release steps and code-placement rules moved from the documentation site to
+  `CONTRIBUTING.md`; the Examples page is merged into Tutorials.
 - Public modules are organized under `model`, `io`, `preprocessing`,
   `interpretation`, `evaluation`, `workflow`, `reporting`, and `visualization`.
   Consult the API reference when migrating imports from 2.x.

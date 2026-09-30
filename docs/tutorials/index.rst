@@ -6,9 +6,11 @@ rendered directly into this documentation with its explanations, equations,
 Python code, tables, and saved figures. Jupyter is only needed when you want to
 rerun or modify a lesson locally.
 
-The curriculum uses public well data bundled with the package: North Sea wells
-30/6-5 and 16/7-1, the 17-well COSTA carbonate benchmark, and Daydream 1
-specialist logs.
+The curriculum uses public well data bundled with the package: North Sea
+GeoLink wells (chiefly 30/6-5, with 15/9-14, 16/7-1 and 25/5-1), 17 wells from
+the COSTA carbonate benchmark (each file covers only the Kharaib-2 reservoir
+interval), and Daydream 1 NMR logs. The borehole-image lesson uses a larger
+Daydream 1 DLIS file that is available in source checkouts through Git LFS.
 
 Choose a path
 -------------
@@ -22,7 +24,7 @@ Choose a path
       :link-type: doc
 
       Plot a bundled LAS first, optionally attach geology, then interpret on a
-      copy and inspect the calculation trace.
+      copy, read the decision trace, and summarize the reservoir interval.
 
       +++
       One complete well in a single lesson
@@ -33,7 +35,8 @@ Choose a path
       :link-type: doc
 
       Map CSV/TSV/Excel inputs, select wells and sheets, check depth metadata,
-      and diagnose optional geology and core saturation units.
+      diagnose optional geology and core saturation units, summarize results
+      per formation, and export LAS and JSON.
 
       +++
       Beginner examples followed by advanced import controls
@@ -47,18 +50,19 @@ Choose a path
       at a time, from input inspection and QC through net pay.
 
       +++
-      10 sequential lessons
+      10 sequential lessons (00-09)
 
    .. grid-item-card:: Advanced workflows
       :class-card: ph-card-blue
       :link: advanced
       :link-type: doc
 
-      Work with orchestration, core calibration, imputation, NMR, saturation
-      height, borehole images, multiwell analysis, and context export.
+      Work with workflow orchestration, formation intervals, core calibration,
+      imputation, NMR, saturation height, borehole images, visualization,
+      multiwell analysis, LLM context export, and LLM agents over MCP.
 
       +++
-      10 focused lessons
+      11 focused lessons (10-20)
 
    .. grid-item-card:: Case studies
       :class-card: ph-card-green
@@ -103,6 +107,11 @@ Each page can be read without running code. To experiment, install Petrophys
 with the relevant optional extras and open the source lesson from the page
 toolbar. Saved outputs let the online lesson retain its plots and numerical
 results without executing code during the documentation build.
+
+Most lessons need only the base install and the bundled samples. Lesson 13
+(curve imputation) needs the ``ml`` extra, lesson 16 (borehole images) needs
+the ``dlis`` extra and the Git LFS files of a source checkout, and lesson 20
+needs the ``mcp`` extra; see :doc:`../installation`.
 
 .. note::
 

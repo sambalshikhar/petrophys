@@ -28,7 +28,7 @@ permeability, and Timur-Coates permeability.
    )
 
    swirr = nmr.swirr_nmr()                  # irreducible water saturation, v/v
-   k_coates = nmr.permeability_coates()     # mD
+   k_coates = nmr.permeability_coates(prefer_stored=False)  # library Timur-Coates, mD
    k_sdr = nmr.permeability_sdr()           # stored vendor KSDR, mD
    vendor = nmr.stored_permeability         # vendor KSDR/KTIM curves from the file
 
@@ -68,12 +68,20 @@ tools, not a complete automatic fracture or structural interpretation system.
 Spectral gamma and elemental spectroscopy
 ------------------------------------------
 
-The dynamic workflow detects compatible spectral gamma and elemental channels
-before conventional interpretation. It can derive spectral-gamma products,
-standardized elemental fractions, oxide closure, mineral proxies, and
-geochemical quality information. Raw detector spectra remain available as
-specialist inputs; derived elemental curves should be preferred when a
-validated vendor delivery already provides them.
+``pp.interpret`` does not run spectral-gamma or elemental-spectroscopy
+interpretation; call it directly on the well:
+
+.. code-block:: python
+
+   from petrophys.interpretation.geochemistry import (
+       interpret_elemental_spectroscopy,
+       interpret_spectral_gamma,
+   )
+
+These functions derive spectral-gamma products, standardized elemental
+fractions, oxide closure, mineral proxies and geochemical quality flags.
+Prefer derived elemental curves from a validated vendor delivery over raw
+detector spectra when you have them.
 
 For laboratory XRF tables, :class:`petrophys.interpretation.geochemistry.XRFData`
 stores depth-indexed elemental measurements and supports ratios, normalization,

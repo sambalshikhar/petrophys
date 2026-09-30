@@ -166,29 +166,19 @@ need review.
 Start with a bundled well
 =========================
 
-The package includes small public datasets for reproducible examples. The
-following run reads a LAS file, applies recognized input standardization, and
-returns the same in-memory well with computed curves attached.
+The package includes small public datasets, so you can run a complete
+interpretation straight after installing:
 
 .. code-block:: python
 
-   import petrophys
-   from petrophys.io import read_las
-   from petrophys.workflow import DynamicWorkflowConfig, run_dynamic_workflow
+   import petrophys as pp
 
-   well = read_las(petrophys.sample("30_6-5"))
-   config = DynamicWorkflowConfig(
-       matrix_type="auto",
-       lithology="auto",
-       rw=0.07,  # example study assumption, ohm.m
-   )
-
-   result = run_dynamic_workflow(well, config)
+   well = pp.read(pp.sample("30_6-5"))
+   result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)  # Rw 0.07 ohm.m at 230 degF
 
    print(result.status)
-   print([step.step for step in result.steps_executed])
-   print(result.steps_skipped)
-   print(result.well.get("PHIE"))
+   print(result.summary(top=2841, bottom=2958))   # the Brent reservoir
+   result.plot(top=2800, height=200).save("30_6-5.png")
 
 Continue with the :doc:`installation guide <installation>`, the
 :doc:`quickstart <quickstart>`, or the browser-rendered :doc:`tutorials
@@ -213,8 +203,8 @@ Continue with the :doc:`installation guide <installation>`, the
 
    installation
    quickstart
-   input_templates
    own_data
+   input_templates
 
 .. toctree::
    :hidden:
@@ -222,6 +212,7 @@ Continue with the :doc:`installation guide <installation>`, the
    :caption: Fundamentals
 
    data_model
+   glossary
    architecture
 
 .. toctree::
@@ -243,7 +234,6 @@ Continue with the :doc:`installation guide <installation>`, the
    :caption: Learn
 
    tutorials/index
-   examples
 
 .. toctree::
    :hidden:
@@ -258,4 +248,3 @@ Continue with the :doc:`installation guide <installation>`, the
    :caption: Project
 
    changelog
-   publishing

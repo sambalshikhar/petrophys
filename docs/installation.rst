@@ -7,16 +7,16 @@ NumPy, pandas, SciPy, Matplotlib, lasio, openpyxl, and defusedxml.
 Install
 -------
 
-Until the first release is published on PyPI, install the development branch
-from GitHub. Private repositories require your GitHub access:
-
 .. code-block:: bash
 
-   python -m pip install "petrophys @ git+https://github.com/sambalshikhar/petrophys.git@dev"
+   python -m pip install petrophys
 
-From an existing checkout, use ``python -m pip install -e .`` instead.
+.. note::
 
-Verify the installation with a bundled sample well:
+   Until the first release is on PyPI, install from source (see
+   :ref:`install-from-source`).
+
+Check the installation with a bundled sample well:
 
 .. code-block:: python
 
@@ -29,51 +29,46 @@ Verify the installation with a bundled sample well:
 Optional features
 -----------------
 
-The commands below run from a local checkout.
+Add an extra in square brackets, for example
+``python -m pip install "petrophys[dlis,mcp]"``.
 
 .. list-table::
    :header-rows: 1
-   :widths: 17 50 33
+   :widths: 17 83
 
    * - Extra
      - Enables
-     - Install
    * - ``dlis``
      - DLIS scalar-frame and borehole-image reading through ``dlisio``
-     - ``python -m pip install -e ".[dlis]"``
    * - ``ml``
      - Pretrained curve imputation and KNN/RF/XGBoost training utilities.
        The ML stack requires Python 3.11+; on older Pythons the extra
        installs nothing.
-     - ``python -m pip install -e ".[ml]"``
    * - ``mcp``
      - MCP server so LLM clients can use Petrophys (Python 3.10+); see
        :doc:`mcp`
-     - ``python -m pip install -e ".[mcp]"``
    * - ``all``
-     - All optional runtime capabilities
-     - ``python -m pip install -e ".[all]"``
+     - All optional runtime capabilities above
    * - ``tutorials``
-     - Notebook kernel, validation and fresh-kernel execution tools
-     - ``python -m pip install -e ".[tutorials]"``
+     - Jupyter kernel and the tools that re-run the tutorial notebooks
    * - ``docs``
-     - Sphinx, Furo, notebook rendering, copy buttons, and design components
-     - ``python -m pip install -e ".[docs]"``
+     - Sphinx, Furo and notebook rendering, to build this documentation
    * - ``dev``
-     - Tests, coverage, formatting, linting, and type checking
-     - ``python -m pip install -e ".[dev]"``
+     - Tests, coverage, formatting, linting and type checking
 
-From a GitHub install, add the extra to the requirement, e.g.
-``pip install "petrophys[all] @ git+https://github.com/sambalshikhar/petrophys.git@dev"``.
+.. _install-from-source:
 
-Development checkout
---------------------
+Install from source
+-------------------
 
 .. code-block:: bash
 
-   git clone --branch dev https://github.com/sambalshikhar/petrophys.git
+   git clone https://github.com/sambalshikhar/petrophys.git
    cd petrophys
-   python -m pip install -e ".[all,dev,docs]"
+   python -m pip install -e ".[all]"
+
+Contributors should install the development tools as well:
+``python -m pip install -e ".[all,dev,docs]"``.
 
 Native Daydream fixtures
 ------------------------
@@ -107,10 +102,9 @@ Troubleshooting
 Windows
 ^^^^^^^
 
-Installing from GitHub needs Git. If PowerShell says Git is not recognized,
-install Git for Windows and restart the terminal/IDE so it receives the updated
-PATH; verify with ``git --version``. An already cloned checkout can be installed
-without another download using ``python -m pip install -e .`` from its root.
+Installing from source needs Git. If PowerShell says Git is not recognized,
+install Git for Windows and restart the terminal or IDE so it picks up the
+updated PATH; check with ``git --version``.
 
 Use a project environment without changing PowerShell execution policy:
 

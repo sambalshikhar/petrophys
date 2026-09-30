@@ -64,6 +64,39 @@ for source_relative, destination_relative in NOTEBOOK_GROUPS.items():
         target = destination / notebook.name
         copy_tutorial(notebook, target)
 
+# -- Generate the interpretation-settings table from the code ----------------
+def _setting_default(value):
+    if value is None:
+        return "``None``"
+    return f"``{value!r}``"
+
+
+def write_settings_table():
+    from petrophys.workflow.schema import config_schema
+
+    groups = {}
+    for item in config_schema():
+        groups.setdefault(item["group"], []).append(item)
+    lines = []
+    for group, items in groups.items():
+        lines += [group, "-" * len(group), "", ".. list-table::", "   :header-rows: 1",
+                  "   :widths: 26 16 58", "", "   * - Setting", "     - Default",
+                  "     - Description"]
+        for item in items:
+            description = item["description"].replace("*", "\\*") or " "
+            if item.get("choices"):
+                description += " One of: " + ", ".join(f"``{c}``" for c in item["choices"]) + "."
+            lines += [f"   * - ``{item['name']}``", f"     - {_setting_default(item['default'])}",
+                      f"     - {description}"]
+        lines.append("")
+    content = "\n".join(lines) + "\n"
+    target = DOCS_DIR / "api" / "settings_table.inc"
+    if not target.exists() or target.read_text(encoding="utf-8") != content:
+        target.write_text(content, encoding="utf-8")
+
+
+write_settings_table()
+
 TUTORIAL_SOURCE_PATHS = {
     "tutorials/quickstart": "examples/quickstart.ipynb",
     "tutorials/own_data": "examples/own_data.ipynb",

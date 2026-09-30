@@ -1,10 +1,14 @@
 Context Export
 ==============
 
-The context generator is model-neutral. It performs local petrophysical
-calculations and writes JSON; it does not call an LLM or send data over the
-network. It also never reads an earlier context package, copies archived
-numbers, or compares a run with reference JSON.
+A *context* is a compact JSON summary of one interpreted well: its header,
+curves and units, the settings and decisions of every workflow step, and
+statistics per formation and lithology. It holds no depth-by-depth arrays,
+so it is small enough to give to an LLM, a report generator or a database.
+
+Context export runs locally. It computes every number from the files you pass
+and writes JSON; it does not call an LLM or send data over the network. To let
+an LLM run the interpretation itself, see :doc:`mcp`.
 
 One well
 --------
@@ -42,16 +46,15 @@ Remove an optional flag when that input is unavailable. The command always
 runs the interpretation before exporting context. Use ``--overwrite`` only to
 replace an existing single-well JSON file.
 
-``build_context(well_or_result)`` remains a low-level serializer. It summarizes
-the object supplied to it and never runs hidden calculations. Pass an
-interpretation result, rather than a raw well, when calculated curves and
-workflow provenance are required.
+``pp.build_context(well_or_result)`` returns the same summary as a Python
+dictionary without writing a file. It summarizes only what you give it and
+runs no calculations, so pass an interpretation result, not a raw well, when
+you want calculated curves and workflow provenance in the context.
 
-One calculation engine
-----------------------
+Interpretation domain
+---------------------
 
-There are no dataset profiles or legacy replay modes. Every run uses the same
-workflow. ``lithology_domain`` only selects the appropriate mineral model:
+``lithology_domain`` selects the mineral model used by the interpretation:
 
 * ``auto`` derives a supported domain from supplied geological evidence.
 * ``clastic`` uses the canonical multi-mineral route.
@@ -64,10 +67,11 @@ belong in ``lithology_intervals.csv``. The standard gamma-ray endpoints are
 ``gr_clean=20`` and ``gr_shale=100`` for every domain unless the parameter
 table explicitly changes them.
 
-Formation and lithology packages
---------------------------------
+Many wells: context packages
+----------------------------
 
-A directory of LAS files can be interpreted in one call:
+A package interprets every LAS file in a folder and writes one context JSON
+per well, formation and lithology group:
 
 .. code-block:: python
 
@@ -95,10 +99,23 @@ mineral solver. If core is absent, core-dependent calibration is skipped and
 recorded in the workflow trace. A codebook is needed only for coded lithology
 whose labels are not already known.
 
-``minimum_group_thickness`` defaults to ``2.0`` in the LAS depth unit. This is
-the historical grouping rule retained for deterministic output. It therefore
-means 2 m for a metric LAS and 2 ft for a foot-based LAS; change it explicitly
-when a project requires one physical threshold across mixed units.
+Groups thinner than ``minimum_group_thickness`` (default ``2.0``) are not
+written. The value is in each LAS file's own depth unit, so it means 2 m for a
+metric LAS and 2 ft for a foot-based LAS; set it explicitly when a project
+mixes units and needs one physical threshold.
+
+Packages interpret wells as clastic (sandstone matrix) unless the
+parameters table or ``workflow_config`` says otherwise. For carbonate wells,
+set ``lithology_domain`` to ``carbonate`` in the parameters table, or pass
+``workflow_config=pp.DynamicWorkflowConfig(lithology_domain="carbonate")``.
+
+.. tip::
+
+   The COSTA sample wells are carbonates, and each LAS covers only the
+   Kharaib-2 reservoir interval. Export them with
+   ``tops_file=pp.sample("formations_costa")`` and the carbonate setting
+   above, so their groups are labelled ``KHARAIB-2`` with limestone and
+   dolomite lithology.
 
 The command-line package form is:
 
@@ -114,10 +131,18 @@ Input matching
 --------------
 
 CSV, TSV, Excel, and pandas DataFrames are accepted by the standardized
-readers. Multiwell rows are matched to the well name read from the LAS header,
-with common separator normalization (for example, ``30/6-5`` and
-``30_6-5`` match). Duplicate or missing matches raise clear errors rather than
-silently selecting a row.
+readers. In a package, each table row is matched to a LAS file by the well
+name in the LAS header, ignoring separators (``30/6-5`` matches ``30_6-5``).
+This gives two rules for multi-well tables:
+
+* every table that covers more than one well needs a ``well`` column;
+* the parameters table needs exactly one row for each LAS file in the
+  folder. A missing or duplicate row stops the export with an error naming
+  the well; use ``well_names=[...]`` (``--well`` on the command line) to export
+  a subset.
+
+A table without a ``well`` column is accepted only when the folder holds a
+single LAS file.
 
 Formation inputs accept the canonical templates and NPD/SODIR columns
 ``Well identifier`` / ``Surface`` / ``MD``. Use
