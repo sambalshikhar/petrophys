@@ -39,7 +39,7 @@ def test_own_data_tutorial_exercises_import_and_diagnostic_contracts():
     code = "\n".join("".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code")
     for marker in ("read_formations", "read_lithology_intervals", "sheet_name",
                    "depth_reference", "terminal_depth", "core_saturation_normalization",
-                   "show_expected_error", "specific_steps_skipped", "to_trace_dict"):
+                   "show_expected_error", "specific_steps_skipped", "to_json"):
         assert marker in code
 
 
