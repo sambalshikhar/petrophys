@@ -11,9 +11,12 @@ Provides functions for:
 
 from typing import Optional, Tuple, Dict, Union, Iterable
 from dataclasses import dataclass, field
+import warnings
+
 import numpy as np
 
 from petrophys.model.core import CoreData
+from petrophys.model.units import core_saturation_to_fraction
 from petrophys._internal.analysis_helpers import get_curve
 
 
@@ -145,6 +148,12 @@ def core_data_from_well(
     measurements such as ``PHIC``, ``CPOR-AMB``, ``KH_CORE``,
     ``CPERM-AMB-KL``, ``GDEN``, ``SWC``, and ``CSW-AMB``. The returned object
     keeps only depths where at least one requested core property exists.
+
+    Core water and oil saturations are returned as fractions (v/v). Percent
+    values are converted, including percentages labelled as fractions (see
+    :func:`petrophys.model.units.core_saturation_to_fraction`); each conversion
+    raises a ``UserWarning`` and is recorded in ``metadata["core_sw_normalization"]``
+    and ``metadata["core_so_normalization"]``.
     """
     if well.depth is None:
         raise ValueError("Well has no depth data")
@@ -161,6 +170,20 @@ def core_data_from_well(
     grain_density, grain_density_source = _first_curve(gd_curves)
     sw, sw_source = _first_curve(sw_curves)
     so, so_source = _first_curve(so_curves)
+
+    normalization = {}
+    for key, source, names in (("sw", sw_source, sw_curves), ("so", so_source, so_curves)):
+        if source is None:
+            continue
+        curve = get_curve(well, list(names))
+        fractions, record = core_saturation_to_fraction(curve.data, curve.unit, mnemonic=source)
+        for message in record["warnings"]:
+            warnings.warn(message, UserWarning, stacklevel=2)
+        normalization[key] = record
+        if key == "sw":
+            sw = fractions
+        else:
+            so = fractions
 
     lithology = None
     for name in lithology_curves:
@@ -195,6 +218,8 @@ def core_data_from_well(
         "core_grain_density_curve": grain_density_source,
         "core_sw_curve": sw_source,
         "core_so_curve": so_source,
+        "core_sw_normalization": normalization.get("sw"),
+        "core_so_normalization": normalization.get("so"),
     }
 
     return CoreData(

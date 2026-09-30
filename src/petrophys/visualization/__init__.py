@@ -17,6 +17,7 @@ from petrophys.visualization.batch_export import (
 from petrophys.visualization.log_plot import LogPlot, create_log_plot
 from petrophys.visualization.log_viewer import (
     DEFAULT_LOG_VIEWER_TEMPLATES,
+    GEOLINK_LITHOLOGY_CODE_LABELS,
     LogViewer,
     LogViewerTemplate,
     create_adaptive_log_viewer_template,
@@ -31,6 +32,11 @@ from petrophys.visualization.specialist_panels import (
     create_fmi_panel,
     create_nmr_panel,
     has_nmr_curves,
+)
+from petrophys.visualization.core import (
+    plot_calibration,
+    plot_core_on_logs,
+    plot_poro_perm,
 )
 from petrophys.visualization.analytics import (
     create_multiwell_overlay,
@@ -53,6 +59,7 @@ __all__ = [
     "LogPlot",
     "create_log_plot",
     "DEFAULT_LOG_VIEWER_TEMPLATES",
+    "GEOLINK_LITHOLOGY_CODE_LABELS",
     "LogViewer",
     "LogViewerTemplate",
     "create_adaptive_log_viewer_template",
@@ -80,4 +87,8 @@ __all__ = [
     "create_histogram_comparison",
     "create_line_comparison",
     "create_heatmap",
+    # Core data
+    "plot_calibration",
+    "plot_poro_perm",
+    "plot_core_on_logs",
 ]
