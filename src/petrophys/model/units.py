@@ -490,3 +490,104 @@ def temperature_to_fahrenheit(value: float, unit: Optional[str]) -> float:
     if scale == "K":
         return (float(value) - 273.15) * 9.0 / 5.0 + 32.0
     return float(value)
+
+
+PERCENT_SATURATION_UNITS = frozenset({"%", "percent", "percentage", "pct", "pu", "p.u."})
+FRACTION_SATURATION_UNITS = frozenset(
+    {"v/v", "frac", "fraction", "decimal", "m3/m3", "ft3/ft3", "1"}
+)
+
+
+def core_saturation_to_fraction(
+    values,
+    unit: Optional[str] = None,
+    *,
+    mnemonic: str = "saturation",
+    source_unit: Optional[str] = None,
+):
+    """Convert core saturation values to fractions (v/v).
+
+    Explicit percent units are divided by 100. For missing or fractional units,
+    percent is inferred only when at least two samples lie in (1, 100], at least
+    80% of positive plausible samples exceed 1, and their median is at least 2:
+    core laboratories often label percentages as fractions. Mixed or sparse
+    ambiguous data are not rescaled. Values outside 0-1 after conversion are
+    masked (never clipped), and ``-999``-style nulls become NaN.
+
+    Parameters
+    ----------
+    values : array-like
+        Core saturation samples.
+    unit : str, optional
+        Unit label from the source (``"%"``, ``"frac"``, ``"v/v"`` ...).
+    mnemonic : str
+        Name used in messages.
+    source_unit : str, optional
+        ``"%"`` or ``"v/v"`` to override the label and skip inference.
+
+    Returns
+    -------
+    fractions : numpy.ndarray
+        Saturation in v/v, with invalid samples set to NaN.
+    record : dict
+        ``original_unit``, ``source_unit``, ``factor``, ``reason``
+        (``declared_percent``, ``fraction``, ``inferred_percent`` or
+        ``explicit_override``), ``masked_count`` and ``warnings``.
+
+    Raises
+    ------
+    ValueError
+        If the unit label is not a recognized percent or fraction unit.
+    """
+    original_unit = str(unit or "")
+    label = str(source_unit if source_unit is not None else original_unit).strip().lower()
+    if label not in PERCENT_SATURATION_UNITS | FRACTION_SATURATION_UNITS | {"", "-", "none", "nan"}:
+        raise ValueError(
+            f"{mnemonic}: unknown core saturation unit {label!r}; "
+            "specify source_unit='%' or source_unit='v/v'."
+        )
+
+    data = np.array(values, dtype=float, copy=True)
+    data[data <= -900.0] = np.nan
+    factor = 0.01 if label in PERCENT_SATURATION_UNITS else 1.0
+    reason = "declared_percent" if factor == 0.01 else "fraction"
+    messages = []
+    if source_unit is not None:
+        reason = "explicit_override"
+    elif factor == 1.0:
+        plausible = data[np.isfinite(data) & (data >= 0.0) & (data <= 100.0)]
+        above_one = np.count_nonzero(plausible > 1.0)
+        fractional = np.count_nonzero((plausible > 0.0) & (plausible <= 1.0))
+        positive = plausible[plausible > 0.0]
+        if (above_one >= 2 and above_one >= 0.8 * (above_one + fractional)
+                and np.median(positive) >= 2.0):
+            factor, reason = 0.01, "inferred_percent"
+            messages.append(
+                f"{mnemonic}: inferred percent core saturation despite "
+                f"unit {original_unit!r}; divided by 100 to v/v. Verify source units."
+            )
+        elif above_one:
+            messages.append(
+                f"{mnemonic}: ambiguous core saturation scale; not rescaled. "
+                "Values outside 0-1 are masked. Confirm source units and use "
+                "standardize_core_saturation(source_unit='%' or 'v/v') on the original curve."
+            )
+
+    data *= factor
+    invalid = np.isinf(data) | (np.isfinite(data) & ((data < 0.0) | (data > 1.0)))
+    invalid_count = int(np.count_nonzero(invalid))
+    data[invalid] = np.nan
+    if invalid_count:
+        messages.append(
+            f"{mnemonic}: masked {invalid_count} invalid core saturation "
+            "sample(s) outside 0-1 after normalization."
+        )
+    return data, {
+        "original_unit": original_unit,
+        "source_unit": source_unit,
+        "factor": factor,
+        "reason": reason,
+        "masked_count": invalid_count,
+        "warnings": messages,
+    }
+

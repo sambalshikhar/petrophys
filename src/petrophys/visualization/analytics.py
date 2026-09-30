@@ -31,6 +31,55 @@ def _require_mpl() -> None:
         raise ImportError("matplotlib is required for visualization")
 
 
+def _depth_axis_down(ax: "Axes") -> None:
+    """Make y increase downwards once; safe on axes that are already inverted or shared."""
+    if not ax.yaxis_inverted():
+        ax.invert_yaxis()
+
+
+def _cell_edges(coords: Any, n: int, name: str) -> np.ndarray:
+    """Cell edges for ``n`` cells from ``n`` centres or ``n + 1`` edges.
+
+    Centres that are evenly spaced on a log scale (e.g. NMR T2 bins) get
+    geometric midpoints, so cells stay symmetric on a log axis; otherwise
+    arithmetic midpoints are used. The first and last cells extend by half of
+    their neighbouring spacing.
+    """
+    values = np.asarray(coords, dtype=float)
+    if values.ndim != 1 or not np.all(np.isfinite(values)):
+        raise ValueError(f"{name} must be a one-dimensional array of finite values")
+    if values.size == n + 1:
+        edges = values
+    elif values.size == n:
+        if n == 1:
+            return np.array([values[0] - 0.5, values[0] + 0.5])
+        steps = np.diff(values)
+        geometric = False
+        if np.all(values > 0):
+            ratios = values[1:] / values[:-1]
+            geometric = n > 2 and np.allclose(ratios, ratios[0], rtol=1e-3) and not np.allclose(
+                steps, steps[0], rtol=1e-3
+            )
+        if geometric:
+            logs = np.log(values)
+            mid = np.exp((logs[:-1] + logs[1:]) / 2)
+            first = np.exp(logs[0] - (logs[1] - logs[0]) / 2)
+            last = np.exp(logs[-1] + (logs[-1] - logs[-2]) / 2)
+        else:
+            mid = (values[:-1] + values[1:]) / 2
+            first = values[0] - steps[0] / 2
+            last = values[-1] + steps[-1] / 2
+        edges = np.concatenate([[first], mid, [last]])
+    else:
+        raise ValueError(
+            f"{name} has {values.size} values; give {n} cell centres or {n + 1} cell edges"
+        )
+    steps = np.diff(edges)
+    if not (np.all(steps > 0) or np.all(steps < 0)):
+        raise ValueError(f"{name} must be strictly increasing or decreasing")
+    return edges
+
+
 def _minmax_normalize(values: np.ndarray, low: float = 5.0, high: float = 95.0) -> np.ndarray:
     """Scale to 0-1 using robust (percentile) endpoints; NaNs preserved."""
     finite = np.isfinite(values)
@@ -95,7 +144,7 @@ def create_multiwell_overlay(
             data = _minmax_normalize(data)
         ax.plot(data, depth, lw=0.6, color=cmap(i % cmap.N), label=labels[i])
 
-    ax.invert_yaxis()
+    _depth_axis_down(ax)
     ax.grid(True, alpha=0.3)
     ax.set_xlabel(("normalized " if normalize else "") + curve)
     ax.set_ylabel("Depth")
@@ -182,7 +231,7 @@ def create_bar_comparison(
     if horizontal:
         ax.set_yticks(idx)
         ax.set_yticklabels(cats)
-        ax.invert_yaxis()
+        _depth_axis_down(ax)
         ax.set_xlabel(xlabel or "")
         ax.set_ylabel(ylabel or "")
     else:
@@ -325,7 +374,7 @@ def create_line_comparison(
     if logy:
         ax.set_yscale("log")
     if invert_yaxis:
-        ax.invert_yaxis()
+        _depth_axis_down(ax)
     ax.set_xlabel(xlabel or "")
     ax.set_ylabel(ylabel or "")
     ax.legend(fontsize=8)
@@ -351,9 +400,26 @@ def create_heatmap(
 ) -> Tuple["Figure", "Axes"]:
     """2-D intensity map, e.g. an NMR T2-distribution vs depth or a binned density crossplot.
 
-    ``matrix`` has shape ``(n_y, n_x)``. ``x`` / ``y`` give the axis coordinates
-    (e.g. T2 bin centres and depth); with ``invert_yaxis`` the y-axis reads like a
-    depth track. Set ``log_color`` for log-scaled colour (LogNorm).
+    Parameters
+    ----------
+    matrix : array-like, shape (n_y, n_x)
+        Cell values; NaN cells are left blank.
+    x, y : array-like, optional
+        Cell coordinates along each axis: either the ``n`` cell centres (e.g.
+        T2 bin centres, sample depths) or the ``n + 1`` cell edges. Each cell is
+        drawn centred on its coordinate. Log-spaced centres such as T2 bins get
+        log-symmetric cells, so ``ax.set_xscale("log")`` shows them correctly.
+        When omitted, cells are indexed 0..n.
+    invert_yaxis : bool
+        Show y increasing downwards, like a depth track.
+    log_color : bool
+        Log-scaled colour (LogNorm).
+    ax : matplotlib Axes, optional
+        Axes to draw on.
+
+    Returns
+    -------
+    (Figure, Axes)
     """
     _require_mpl()
     if ax is None:
@@ -371,15 +437,13 @@ def create_heatmap(
         if positive.size:
             norm = LogNorm(vmin=positive.min(), vmax=positive.max())
 
-    if x is not None and y is not None:
-        extent = [float(np.min(x)), float(np.max(x)), float(np.min(y)), float(np.max(y))]
-    else:
-        extent = [0, n_x, 0, n_y]
+    x_edges = _cell_edges(x, n_x, "x") if x is not None else np.arange(n_x + 1, dtype=float)
+    y_edges = _cell_edges(y, n_y, "y") if y is not None else np.arange(n_y + 1, dtype=float)
 
-    im = ax.imshow(mat, aspect="auto", origin="lower", extent=extent,
-                   cmap=cmap, norm=norm, interpolation="nearest")
+    im = ax.pcolormesh(x_edges, y_edges, np.ma.masked_invalid(mat), cmap=cmap, norm=norm,
+                       shading="flat")
     if invert_yaxis:
-        ax.invert_yaxis()
+        _depth_axis_down(ax)
     ax.set_xlabel(xlabel or "")
     ax.set_ylabel(ylabel or "")
     cb = fig.colorbar(im, ax=ax, pad=0.02)

@@ -263,6 +263,7 @@ COMPUTED_LITHOLOGY_CODE_LABELS: Dict[int, str] = {
 }
 
 
+#: Rock names for the numeric codes in GeoLink ``LITHOLOGY_GEOLINK`` curves.
 GEOLINK_LITHOLOGY_CODE_LABELS: Dict[int, str] = {
     1: "Sandstone",
     2: "Silty Sand",

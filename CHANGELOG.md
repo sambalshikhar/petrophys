@@ -101,6 +101,18 @@ All notable changes to Petrophys are documented here.
 - Buckles and Hingle plot labels stay inside the frame without overprinting;
   Buckles colours permeability on a log scale; Pickett plots no longer
   overlap minor tick labels.
+- `create_heatmap` centres each cell on its coordinate (cells were shifted by
+  half a cell), draws unevenly and log-spaced bins such as NMR T2 correctly,
+  and also accepts cell edges.
+- Analytics charts no longer flip the depth axis back when drawn twice on the
+  same axes.
+- `core_data_from_well` returns core water and oil saturation as fractions,
+  converting percentages labelled as fractions with a warning, as its
+  documentation states. The conversion rule now lives in
+  `petrophys.model.units.core_saturation_to_fraction`.
+- The core plotting helpers (`plot_calibration`, `plot_poro_perm`,
+  `plot_core_on_logs`) and `GEOLINK_LITHOLOGY_CODE_LABELS` are exported from
+  `petrophys.visualization` and appear in the API reference.
 - The DLIS readers name the `petrophys[dlis]` extra when dlisio is missing,
   and `result.summary()` rounds net thicknesses to 0.01.
 

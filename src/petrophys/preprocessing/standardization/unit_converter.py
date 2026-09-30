@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Union, Optional, Tuple
 import warnings
 import numpy as np
 
-from petrophys.model.units import UnitConverter
+from petrophys.model.units import UnitConverter, core_saturation_to_fraction
 from petrophys.preprocessing.standardization.alias_map import (
     get_standard_mnemonic,
     get_standard_unit,
@@ -44,50 +44,10 @@ def standardize_core_saturation(
     """
     result = curve if inplace else curve.copy()
     original_unit = str(curve.unit or "")
-    unit = str(source_unit if source_unit is not None else original_unit).strip().lower()
-    percent_units = {"%", "percent", "percentage", "pct", "pu", "p.u."}
-    fraction_units = {"v/v", "frac", "fraction", "decimal", "m3/m3", "ft3/ft3", "1"}
-    if unit not in percent_units | fraction_units | {"", "-", "none", "nan"}:
-        raise ValueError(
-            f"{curve.mnemonic}: unknown core saturation unit {unit!r}; "
-            "specify source_unit='%' or source_unit='v/v'."
-        )
-
-    data = np.asarray(curve.data, dtype=float).copy()
-    data[data <= -900.0] = np.nan
-    factor = 0.01 if unit in percent_units else 1.0
-    reason = "declared_percent" if factor == 0.01 else "fraction"
-    messages = []
-    if source_unit is not None:
-        reason = "explicit_override"
-    elif factor == 1.0:
-        plausible = data[np.isfinite(data) & (data >= 0.0) & (data <= 100.0)]
-        above_one = np.count_nonzero(plausible > 1.0)
-        fractional = np.count_nonzero((plausible > 0.0) & (plausible <= 1.0))
-        positive = plausible[plausible > 0.0]
-        if (above_one >= 2 and above_one >= 0.8 * (above_one + fractional)
-                and np.median(positive) >= 2.0):
-            factor, reason = 0.01, "inferred_percent"
-            messages.append(
-                f"{curve.mnemonic}: inferred percent core saturation despite "
-                f"unit {original_unit!r}; divided by 100 to v/v. Verify source units."
-            )
-        elif above_one:
-            messages.append(
-                f"{curve.mnemonic}: ambiguous core saturation scale; not rescaled. "
-                "Values outside 0-1 are masked. Confirm source units and use "
-                "standardize_core_saturation(source_unit='%' or 'v/v') on the original curve."
-            )
-
-    data *= factor
-    invalid = np.isinf(data) | (np.isfinite(data) & ((data < 0.0) | (data > 1.0)))
-    invalid_count = int(np.count_nonzero(invalid))
-    data[invalid] = np.nan
-    if invalid_count:
-        messages.append(
-            f"{curve.mnemonic}: masked {invalid_count} invalid core saturation "
-            "sample(s) outside 0-1 after normalization."
-        )
+    data, record = core_saturation_to_fraction(
+        curve.data, original_unit, mnemonic=curve.mnemonic, source_unit=source_unit
+    )
+    factor, messages = record["factor"], record["warnings"]
     result._data = data
     result.unit = "v/v"
     previous = result.metadata.custom.get("core_saturation_normalization")
@@ -99,8 +59,8 @@ def standardize_core_saturation(
             "source_unit": source_unit,
             "target_unit": "v/v",
             "factor": factor,
-            "reason": reason,
-            "masked_count": invalid_count,
+            "reason": record["reason"],
+            "masked_count": record["masked_count"],
             "warnings": messages,
         }
     if warn:
