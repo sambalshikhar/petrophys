@@ -100,3 +100,15 @@ def test_scale_hint_only_when_most_of_the_curve_is_implausible():
     well = _density_well(values)
     standardize_curves(well, rename_curves=False, convert_units=True)
     assert well.get("RHOZ").metadata.custom["range_screening"]["hint"] == ""
+
+
+def test_interpret_fails_fast_when_data_quality_warnings_are_errors():
+    import warnings
+
+    import petrophys as pp
+
+    well = pp.read(pp.sample("15_9-14"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", pp.DataQualityWarning)
+        with pytest.raises(pp.DataQualityWarning, match="DTE"):
+            pp.interpret(well, rw=0.05)

@@ -1,3 +1,13 @@
+"""
+Plots for wells, interpretations and specialist data.
+
+Log viewers and templates, triple combos, crossplots (neutron-density, M-N,
+MID, Pickett, Buckles, Hingle), specialist panels (NMR, borehole image, XRF),
+flow-unit and saturation-height plots, zone flags, core-calibration plots and
+analytics charts for multi-well and sensitivity studies. Every function returns
+the Matplotlib figure (and axes) so it can be styled further or saved.
+"""
+
 from petrophys.visualization.lithology_crossplots import (
     create_nd_crossplot, create_mn_plot, create_mid_plot,
     create_buckles_plot, create_hingle_plot,
@@ -5,9 +15,7 @@ from petrophys.visualization.lithology_crossplots import (
 from petrophys.visualization.xrf_panel import create_xrf_panel
 from petrophys.visualization.flow_unit_plot import create_flow_unit_plot
 from petrophys.visualization.saturation_height_plot import create_saturation_height_plot
-"""
-Visualization module for petrophysics log plots.
-"""
+
 
 from petrophys.visualization.batch_export import (
     BatchVisualizationResult,

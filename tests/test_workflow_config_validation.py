@@ -88,3 +88,12 @@ def test_all_problems_are_reported_together():
 def test_replace_revalidates():
     with pytest.raises(ValueError, match="hc_type"):
         dataclasses.replace(DynamicWorkflowConfig(), hc_type="gass")
+
+
+def test_lithology_domain_error_names_the_setting_and_suggests_a_domain():
+    with pytest.raises(ValueError) as info:
+        DynamicWorkflowConfig(lithology_domain="carbonates")
+    message = str(info.value)
+    assert "lithology_domain='carbonates'" in message
+    assert "auto, clastic, carbonate, evaporite" in message
+    assert "did you mean 'carbonate'" in message

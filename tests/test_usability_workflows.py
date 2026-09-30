@@ -365,6 +365,19 @@ def test_interpreted_las_records_the_settings_used(tmp_path):
     assert result.to_trace_dict()["petrophys_version"] == pp.__version__
 
 
+def test_interpreted_las_records_rw_with_its_temperature(tmp_path):
+    lasio = pytest.importorskip("lasio")
+    result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230)
+
+    las = lasio.read(result.to_las(tmp_path / "interpreted.las"))
+    params = {item.mnemonic: item for item in las.params}
+
+    assert params["PP_RW"].value == pytest.approx(0.07)
+    assert "230 degF" in params["PP_RW"].descr
+    assert all(not isinstance(item.value, str) or item.value == "per lithology"
+               for key, item in params.items() if key in {"PP_A", "PP_M", "PP_N"})
+
+
 def test_batch_processing_reports_missing_or_empty_folders(tmp_path):
     from petrophys.workflow import process_las_directory_with_workflow
 
