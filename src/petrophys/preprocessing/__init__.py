@@ -6,13 +6,16 @@ from petrophys.preprocessing.normalization import (
     normalize_log,
 )
 from petrophys.preprocessing.quality import (
+    HeldReadings,
     VALUE_RANGE_QC_PARAMETER,
     VALUE_RANGE_RULES,
     WashoutDetection,
     apply_value_range_qc,
     clean_curve_values,
     detect_washout,
+    find_held_readings,
     generate_bad_hole_flags,
+    held_reading_mask,
     value_range_qc_note,
 )
 from petrophys.preprocessing.standardization import (
@@ -25,6 +28,7 @@ from petrophys.preprocessing.standardization import (
 __all__ = [
     "ALIAS_MAP",
     "CurveStandardizer",
+    "HeldReadings",
     "NormalizationModule",
     "VALUE_RANGE_QC_PARAMETER",
     "VALUE_RANGE_RULES",
@@ -32,7 +36,9 @@ __all__ = [
     "apply_value_range_qc",
     "clean_curve_values",
     "detect_washout",
+    "find_held_readings",
     "generate_bad_hole_flags",
+    "held_reading_mask",
     "histogram_matching",
     "normalize_log",
     "standardize_curves",

@@ -14,6 +14,15 @@ from petrophys.interpretation.geochemistry.spectral_gamma import (
     has_spectral_gamma_inputs,
     interpret_spectral_gamma,
 )
+from petrophys.interpretation.geochemistry.thorium_uranium import (
+    TH_U_ENVIRONMENTS,
+    TH_U_ENVIRONMENT_THRESHOLDS,
+    ThoriumClayIndex,
+    ThUEnvironment,
+    classify_th_u_environment,
+    thorium_clay_index,
+    uranium_stripped_gamma_ray,
+)
 from petrophys.interpretation.geochemistry.xrf import XRFData
 
 __all__ = [
@@ -22,10 +31,17 @@ __all__ = [
     "ElementalSpectroscopyResult",
     "OxideClosureResult",
     "SpectralGammaResult",
+    "TH_U_ENVIRONMENTS",
+    "TH_U_ENVIRONMENT_THRESHOLDS",
+    "ThUEnvironment",
+    "ThoriumClayIndex",
     "XRFData",
+    "classify_th_u_environment",
     "has_elemental_spectroscopy_inputs",
     "has_spectral_gamma_inputs",
     "interpret_elemental_spectroscopy",
     "interpret_spectral_gamma",
     "oxide_closure",
+    "thorium_clay_index",
+    "uranium_stripped_gamma_ray",
 ]

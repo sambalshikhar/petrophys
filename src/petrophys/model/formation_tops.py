@@ -409,3 +409,161 @@ class FormationTops:
 
     def __repr__(self) -> str:
         return f"FormationTops({len(self._intervals)} intervals)"
+
+
+_TOP_COLUMNS = ("top_depth", "top", "top_md", "TOP_DEPTH", "TOP", "Top")
+_BOTTOM_COLUMNS = ("bottom_depth", "bottom", "base", "base_depth", "BOTTOM_DEPTH", "BOTTOM", "BASE",
+                   "Bottom", "Base")
+_LABEL_COLUMNS = ("formation_name", "name", "zone", "lithology", "FORMATION", "NAME", "Formation",
+                  "Name")
+_OVERLAP_RULES = ("error", "thinnest", "thickest")
+
+
+def _pick_column(columns, requested, candidates, role):
+    if requested is not None:
+        if requested not in columns:
+            raise ValueError(f"Column {requested!r} not found; available: {list(columns)}")
+        return requested
+    for name in candidates:
+        if name in columns:
+            return name
+    raise ValueError(
+        f"Could not find the interval {role} column (tried {', '.join(candidates)}); "
+        f"pass {role}= explicitly. Available: {list(columns)}"
+    )
+
+
+def _interval_records(intervals, label, top, bottom):
+    """Return (tops, bottoms, labels) arrays from a table or interval collection."""
+    if hasattr(intervals, "columns") and hasattr(intervals, "__getitem__"):
+        columns = list(intervals.columns)
+        top_col = _pick_column(columns, top, _TOP_COLUMNS, "top")
+        bottom_col = _pick_column(columns, bottom, _BOTTOM_COLUMNS, "bottom")
+        label_col = _pick_column(columns, label, _LABEL_COLUMNS, "label")
+        tops = np.asarray(intervals[top_col], dtype=float)
+        bottoms = np.asarray(intervals[bottom_col], dtype=float)
+        labels = np.asarray(intervals[label_col], dtype=object)
+    else:
+        if top is not None or bottom is not None:
+            raise ValueError("top= and bottom= apply only to tables; Interval objects "
+                             "use top_depth and bottom_depth")
+        items = list(intervals)
+        attribute = label or "name"
+        for item in items:
+            if not isinstance(item, Interval):
+                raise TypeError(
+                    "intervals must be a DataFrame, a FormationTops or a sequence of "
+                    f"Interval objects; got an item of type {type(item).__name__}"
+                )
+            if not hasattr(item, attribute):
+                raise ValueError(f"Interval {item.name!r} has no attribute {attribute!r}")
+        tops = np.array([item.top_depth for item in items], dtype=float)
+        bottoms = np.array([item.bottom_depth for item in items], dtype=float)
+        labels = np.array([getattr(item, attribute) for item in items], dtype=object)
+    usable = np.isfinite(tops) & np.isfinite(bottoms)
+    if np.any(usable & (bottoms < tops)):
+        raise ValueError("An interval has its bottom above its top")
+    return tops[usable], bottoms[usable], labels[usable]
+
+
+def label_depths(
+    depth,
+    intervals,
+    *,
+    label: Optional[str] = None,
+    top: Optional[str] = None,
+    bottom: Optional[str] = None,
+    overlap: str = "error",
+    default: Any = "",
+) -> np.ndarray:
+    """Label each depth with the name of the interval that contains it.
+
+    Use it to attach formation, zone or lithology names to log samples, core
+    plugs or any other depths. Each interval covers ``top <= depth < bottom``,
+    so a depth on a shared boundary belongs to the deeper interval.
+
+    Parameters
+    ----------
+    depth : float, array-like or Well
+        Depths to label (a well's depth is used when a ``Well`` is given), in
+        the same unit and reference as the intervals.
+    intervals : DataFrame, FormationTops or sequence of Interval
+        Interval table, for example from :func:`petrophys.read_formations`
+        (``top_depth``, ``bottom_depth``, ``formation_name``) or
+        :func:`petrophys.read_lithology_intervals` (``top``, ``bottom``,
+        ``lithology``). Column names are detected; override them with
+        ``top``, ``bottom`` and ``label``.
+    label : str, optional
+        Table column, or ``Interval`` attribute (default ``"name"``), holding
+        the label. For a table, the first of ``formation_name``, ``name``,
+        ``zone`` and ``lithology`` that exists is used.
+    top, bottom : str, optional
+        Top and bottom depth columns of a table.
+    overlap : {"error", "thinnest", "thickest"}, default "error"
+        What to do where intervals overlap, as in nested tops that list
+        groups and their member formations. ``"thinnest"`` picks the most
+        detailed interval (the formation), ``"thickest"`` the broadest (the
+        group). The default raises so that nesting is never resolved
+        silently.
+    default : object, default ""
+        Label for depths outside every interval.
+
+    Returns
+    -------
+    numpy.ndarray of object
+        One label per depth.
+
+    Raises
+    ------
+    ValueError
+        If intervals overlap and ``overlap="error"``, a column cannot be
+        found, or ``overlap`` is not a supported rule.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> tops = pd.DataFrame({
+    ...     "formation_name": ["BAAT GP.", "Ness Fm.", "Etive Fm."],
+    ...     "top_depth": [2841.0, 2841.0, 2865.0],
+    ...     "bottom_depth": [2958.0, 2865.0, 2958.0]})
+    >>> label_depths([2830.0, 2850.0, 2900.0], tops, overlap="thinnest").tolist()
+    ['', 'Ness Fm.', 'Etive Fm.']
+    >>> label_depths([2850.0], tops, overlap="thickest").tolist()
+    ['BAAT GP.']
+    """
+    if overlap not in _OVERLAP_RULES:
+        raise ValueError(f"overlap must be one of {', '.join(_OVERLAP_RULES)}; got {overlap!r}")
+    if hasattr(depth, "depth") and not isinstance(depth, np.ndarray):
+        depth = depth.depth
+    depth = np.asarray(depth, dtype=float).reshape(-1)
+    tops, bottoms, labels = _interval_records(intervals, label, top, bottom)
+
+    if overlap == "error" and tops.size > 1:
+        order = np.argsort(tops, kind="stable")
+        running_bottom = bottoms[order[0]]
+        running_index = order[0]
+        for index in order[1:]:
+            if tops[index] < running_bottom:
+                raise ValueError(
+                    f"Intervals overlap ({labels[running_index]!r} "
+                    f"{tops[running_index]:g}-{bottoms[running_index]:g} and "
+                    f"{labels[index]!r} {tops[index]:g}-{bottoms[index]:g}). Pick one level "
+                    "(e.g. read_formations(..., rank='formation')) or pass "
+                    "overlap='thinnest' or 'thickest'."
+                )
+            if bottoms[index] > running_bottom:
+                running_bottom, running_index = bottoms[index], index
+
+    result = np.empty(depth.size, dtype=object)
+    result[:] = default
+    thickness = bottoms - tops
+    # Later assignments win: broad intervals first for "thinnest", and the
+    # reverse for "thickest".
+    order = np.argsort(-thickness if overlap != "thickest" else thickness, kind="stable")
+    for index in order:
+        inside = (depth >= tops[index]) & (depth < bottoms[index])
+        value = labels[index]
+        if value is None or (isinstance(value, float) and np.isnan(value)):
+            value = default
+        result[inside] = value
+    return result

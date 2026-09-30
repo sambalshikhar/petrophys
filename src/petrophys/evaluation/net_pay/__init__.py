@@ -10,6 +10,7 @@ from petrophys.evaluation.net_pay.net_pay_module import (
 from petrophys.evaluation.net_pay.cutoffs import (
     Cutoffs, STANDARD_CUTOFFS, default_cutoffs, standard_cutoffs,
 )
+from petrophys.evaluation.net_pay.pay_summary import PaySummary, summarize_pay
 from petrophys.evaluation.net_pay.flags import (
     DEFAULT_HYDROCARBON_FLUIDS,
     DEFAULT_NON_PAY_FLUIDS,
@@ -22,6 +23,8 @@ __all__ = [
     "NetPayModule",
     "NetPayResult",
     "calculate_net_pay",
+    "PaySummary",
+    "summarize_pay",
     "Cutoffs",
     "default_cutoffs",
     "STANDARD_CUTOFFS",

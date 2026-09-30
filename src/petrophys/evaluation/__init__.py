@@ -1,11 +1,12 @@
 """
-Reservoir Umbrella Module - Reservoir evaluation.
+Reservoir evaluation: decisions and summaries built on interpreted curves.
 
-This umbrella module contains tools for:
+Tools for:
 - Bulk Volume Water (BVW)
 - Moveable Hydrocarbon Index (MHI)
-- Net Pay determination
+- Net Pay determination and pay summaries
 - Rock Quality (RQI, FZI, phi_z)
+- Sensitivity of net pay to cutoffs, parameters and saturation models
 """
 
 from petrophys.evaluation.bvw import calculate_bvw, BvwModule
@@ -16,6 +17,8 @@ from petrophys.evaluation.net_pay import (
     calculate_net_pay,
     NetPayModule,
     NetPayResult,
+    PaySummary,
+    summarize_pay,
 )
 from petrophys.evaluation.rock_quality import (
     RockQualityModule,
@@ -24,6 +27,13 @@ from petrophys.evaluation.rock_quality import (
     calculate_rqi,
     calculate_phi_z,
     calculate_fzi,
+)
+from petrophys.evaluation.sensitivity import (
+    SATURATION_MODELS,
+    SaturationModelComparison,
+    compare_saturation_models,
+    cutoff_sensitivity,
+    parameter_sensitivity,
 )
 from petrophys.evaluation.flow_units import (
     FlowUnitModule,
@@ -43,6 +53,13 @@ __all__ = [
     "standard_cutoffs",
     "NetPayModule",
     "NetPayResult",
+    "PaySummary",
+    "summarize_pay",
+    "SATURATION_MODELS",
+    "SaturationModelComparison",
+    "compare_saturation_models",
+    "cutoff_sensitivity",
+    "parameter_sensitivity",
     "RockQualityModule",
     "RockQualityResult",
     "calculate_rock_quality",
