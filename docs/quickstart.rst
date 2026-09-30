@@ -27,6 +27,10 @@ Load a well
    print(well.top, well.bottom, well.depth_unit)
    print(well.curves[:12])
 
+Reading 30/6-5 prints two warnings about the core saturation curves ``SWC`` and
+``SOC``: they are labelled as fractions but hold percentages, so Petrophys
+converts them and says so (see :ref:`core-saturation-units`).
+
 ``pp.read`` handles LAS, DLIS, CSV and TSV. The package also includes COSTA
 carbonate wells and processed NMR samples:
 
@@ -55,21 +59,37 @@ the distinction between grid alignment and physical log-depth matching.
 Interpret the well
 ------------------
 
-The example supplies ``Rw`` (formation water resistivity, ohm.m) as a study
-assumption. Petrophys does not invent formation-water resistivity when no
-supported measured or calculated route is available.
+Formation water resistivity (``Rw``) is the input logs rarely provide. For
+30/6-5 the study value is 0.07 ohm.m measured at 230 degF, the reservoir
+temperature. Give the temperature too: Rw changes strongly with temperature,
+and a value without one is taken to be at 75 degF.
 
 .. code-block:: python
 
-   result = pp.interpret(well, rw=0.07)
+   result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)   # Rw in ohm.m at 230 degF
    result.raise_for_errors()
 
    print("status:", result.status)
-   print("matrix:", result.config.matrix_type, "| lithology:", result.config.lithology)
+   print("matrix:", result.config.matrix_type, "| lithology:", result.config.lithology_domain)
    print("executed:", [step.step for step in result.steps_executed])
    for step, reason in result.specific_steps_skipped.items():
        print("skipped", step, "->", reason)
    print("warnings:", result.warnings)
+
+.. admonition:: Where Rw comes from
+
+   Without an ``rw`` setting, the workflow uses the first source available:
+   an ``RW`` value in the LAS header, a formation-water salinity
+   (``salinity_ppm``), the SP or Rxo/Rt response with a known mud-filtrate
+   resistivity, and finally the apparent Rw (Rwa) of clean, wet intervals.
+   The 30/6-5 header prints ``RW = 0.7`` with no temperature, which is why the
+   example passes its own value. See which source was used in the ``rw`` step
+   of the trace:
+
+   .. code-block:: python
+
+      rw_step = next(step for step in result.steps_executed if step.step == "rw")
+      print(rw_step.method, rw_step.decisions)
 
 ``pp.interpret`` accepts any :class:`~petrophys.workflow.DynamicWorkflowConfig`
 setting as a keyword (``sw_model="indonesia"``, ``bht_f=220``, ...) or a whole
@@ -79,9 +99,33 @@ the data; ``result.config`` shows the values used.
 Normalization runs first: canonical working aliases are added while vendor
 mnemonics are kept, supported units are converted, and implausible values are
 screened. When most of a curve is implausible, which usually means a wrong
-unit label, :class:`petrophys.DataQualityWarning` is raised and the problem is
-listed in ``result.warnings``. ``pp.interpret`` works on a copy unless
-``inplace=True``.
+unit label, :class:`~petrophys.exceptions.DataQualityWarning` is raised and the
+problem is listed in ``result.warnings``. ``pp.interpret`` works on a copy
+unless ``inplace=True``.
+
+``result.status`` tells you how far the interpretation got:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Status
+     - Meaning
+   * - ``"interpreted"``
+     - Steps ran and produced interpretation curves (porosity, saturation, ...).
+   * - ``"no_interpretation"``
+     - Nothing failed, but the inputs supported no interpretation step; read
+       ``result.specific_steps_skipped`` to see what is missing.
+   * - ``"failed"``
+     - A step or an input check failed; ``result.errors`` says why, and
+       ``result.raise_for_errors()`` raises it.
+
+For a compact overview of an interval, use ``result.summary``:
+
+.. code-block:: python
+
+   overview = result.summary(top=2841, bottom=2958)   # the Brent interval, in metres
+   print(overview["key_results"]["PHIE"]["median"], overview["net_thickness"])
 
 Inspect the trace
 -----------------
@@ -94,7 +138,7 @@ decisions.
    result.print_trace()
 
    trace = result.to_dataframe()
-   print(trace[["Step", "Status", "Method", "Message"]])
+   print(trace[["Step", "Status", "Method", "Decisions"]])
 
    payload = result.to_trace_dict(
        include_curves=["VCL", "PHIE", "SW", "PERM", "NET_PAY"]

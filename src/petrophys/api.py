@@ -5,7 +5,7 @@ These three functions are the recommended front door to Petrophys::
     import petrophys as pp
 
     well = pp.read(pp.sample("30_6-5"))
-    result = pp.interpret(well, rw=0.07)
+    result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)   # Rw (ohm.m) at 230 degF
     pp.plot(result, depth_range=(2800, 3000)).save("interpretation.png")
 
 Everything they do is also available through the lower-level modules
@@ -62,16 +62,24 @@ def read(
         Lithology intervals with ``top,bottom,lithology`` columns (see
         :func:`petrophys.read_lithology_intervals`). They take precedence over
         embedded lithology for plotting and interpretation.
-    formation_options, lithology_options : mapping, optional
-        Extra keyword arguments for the formation and lithology readers, e.g.
-        ``{"columns": {"formation_name": "Surface"}}`` or ``{"sheet_name": 1}``.
-    depth_reference, datum : str, optional
-        Depth reference (e.g. ``"MD"``) and datum (e.g. ``"KB"``) of the well,
-        used to reject geology recorded against a different reference.
+    formation_options : mapping, optional
+        Extra arguments for :func:`petrophys.read_formations`, e.g.
+        ``{"columns": {"formation_name": "Surface", "top_depth": "MD"}}``,
+        ``{"well_name": "30/6-5"}`` for a multi-well table, or
+        ``{"sheet_name": 1}`` for an Excel sheet.
+    lithology_options : mapping, optional
+        Extra arguments for :func:`petrophys.read_lithology_intervals`, e.g.
+        ``{"columns": {"lithology": "ROCK"}}``.
+    depth_reference : str, optional
+        Depth reference of the well, e.g. ``"MD"``; geology recorded against a
+        different reference is rejected.
+    datum : str, optional
+        Depth datum of the well, e.g. ``"KB"``; geology recorded against a
+        different datum is rejected.
     **reader_options
         Options for the format reader. CSV and TSV files require
         ``depth_unit="m"`` or ``depth_unit="ft"``; other options (e.g.
-        ``depth_col``) are passed to :func:`petrophys.io.read_csv`,
+        ``depth_column="MD"``) are passed to :func:`petrophys.io.read_csv`,
         :func:`petrophys.io.read_las` or :func:`petrophys.io.read_dlis`.
 
     Returns
@@ -260,7 +268,7 @@ def interpret(
         reading a file.
     **options
         Individual :class:`~petrophys.workflow.DynamicWorkflowConfig` settings,
-        e.g. ``rw=0.07`` or ``sw_model="indonesia"``. With ``config``, they
+        e.g. ``rw=0.07, rw_meas_temp_f=230`` or ``sw_model="indonesia"``. With ``config``, they
         override the corresponding fields of a copy of ``config``.
 
     Returns
@@ -281,7 +289,7 @@ def interpret(
     Examples
     --------
     >>> import petrophys as pp
-    >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07)
+    >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230)
     >>> result.raise_for_errors().status
     'interpreted'
     """

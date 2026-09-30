@@ -55,7 +55,7 @@ the Python that has Petrophys installed instead:
 ``"command": "/path/to/venv/bin/python", "args": ["-m", "petrophys.mcp", "--root", "/path/to/wells"]``.
 
 Then ask, for example: *"Load the sample well 30_6-5, interpret it with
-Rw = 0.07 ohm.m, and summarize net pay in the Brent Group."*
+Rw = 0.07 ohm.m at 230 degF, and summarize net pay in the Brent Group."*
 
 What the model can do
 ---------------------
@@ -122,18 +122,18 @@ list, then interprets with the Rw the user provided:
 .. code-block:: json
 
    {"tool": "interpret_well",
-    "arguments": {"well_id": "30_6-5", "settings": {"rw": 0.07},
+    "arguments": {"well_id": "30_6-5", "settings": {"rw": 0.07, "rw_meas_temp_f": 230},
                   "summary_top": 2841, "summary_bottom": 2958}}
 
 .. code-block:: json
 
    {"interpretation_id": "30_6-5/run-1",
     "status": "interpreted",
-    "resolved": {"matrix_type": "sandstone", "lithology": "clastic"},
-    "settings_used": {"rw": 0.07, "matrix_type": "sandstone", "lithology": "clastic"},
-    "skipped_steps": {"hc_correction": "apply_hc_correction=False (hydrocarbon correction is opt-in)"},
-    "net_thickness": {"net_pay": 82.8, "depth_unit": "m"},
-    "warnings": ["..."]}
+    "settings_used": {"rw": 0.07, "rw_meas_temp_f": 230,
+                      "matrix_type": "sandstone", "lithology_domain": "clastic"},
+    "skipped_steps": {"hc_correction": "apply_hc_correction=False (hydrocarbon correction is opt-in)", "...": "..."},
+    "net_thickness": {"net_pay": 40.5, "depth_unit": "m"},
+    "warnings": ["Auto lithology resolved via vendor_log (83% of 10732 samples): ...", "..."]}
 
 It then calls ``explain_step`` for ``rw`` to report how Rw was
 temperature-corrected, ``summarize_zones`` for per-formation net pay, and
@@ -156,7 +156,8 @@ The server can be driven in-process, which is also how its tests work:
        async with Client(create_server(roots=["."])) as client:
            well = await client.call_tool("load_sample_well", {"name": "30_6-5"})
            run = await client.call_tool(
-               "interpret_well", {"well_id": "30_6-5", "settings": {"rw": 0.07}}
+               "interpret_well",
+               {"well_id": "30_6-5", "settings": {"rw": 0.07, "rw_meas_temp_f": 230}},
            )
            print(run.structured_content["status"])
 

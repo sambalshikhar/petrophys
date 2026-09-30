@@ -15,6 +15,7 @@ These functions are also available as ``petrophys.read``,
    :toctree: generated
 
    petrophys.api
+   petrophys.exceptions
 
 Data model and I/O
 ------------------

@@ -15,7 +15,7 @@ Dynamic workflow
    import petrophys as pp
 
    well = pp.read(pp.sample("30_6-5"))
-   result = pp.interpret(well, rw=0.07, sw_model="auto")
+   result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230, sw_model="auto")
 
    print(result.status)
    print([step.step for step in result.steps_executed])

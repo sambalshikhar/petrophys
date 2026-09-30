@@ -320,6 +320,8 @@ For lithology, similarly select one well and rename ``FROM``/``TO``/``ROCK`` to
 dictionary, and select those three columns. WITSML XML, vendor ASCII headers,
 PDFs, and multi-component lithology are not directly accepted by this reader.
 
+.. _core-saturation-units:
+
 Core saturation units
 ---------------------
 
