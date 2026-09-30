@@ -83,13 +83,13 @@ def test_quality_mask_must_match_and_nan_is_not_usable():
     np.testing.assert_array_equal(result.net_pay, [True, False, False])
 
 
-def test_default_does_not_enable_archived_profile_for_vendor_lithology():
-    from tests.test_vendor_benchmark_profile import _profile_well
-    result = pp.interpret(_profile_well(True), rw=.07).raise_for_errors()
-    assert result.interpretation_profile == "generic_inference"
-    assert result.well.get("NET_PAY_REVIEW") is not None
+def test_default_uses_the_single_canonical_route_for_embedded_lithology():
+    from tests.test_canonical_workflow import _workflow_well
+
+    result = pp.interpret(_workflow_well(True), rw=.07).raise_for_errors()
+    assert "interpretation_profile" not in result.to_trace_dict()
     step = next(item for item in result.steps_executed if item.step == "net_pay")
-    assert step.parameters["assessment"] == "cutoff_screening_not_confirmed_pay"
+    assert step.parameters["cutoff_source"] == "canonical"
 
 
 def test_scalar_cmr_does_not_invent_t2lm():
@@ -107,21 +107,17 @@ def test_codebook_errors_support_noninteger_dataframe_index():
         pp.read_lithology_codes(table)
 
 
-def test_generic_net_pay_does_not_assume_clean_rock_when_vcl_is_missing():
-    from petrophys.workflow import DynamicWorkflow, WorkflowStep
+def test_canonical_net_pay_records_clean_rock_assumption_when_vcl_is_missing():
     well = pp.Well("MISSING-CLAY")
     well.depth = np.arange(10.0)
     well.add_curve("PHIE", np.full(10, .2), "v/v", "Porosity")
     well.add_curve("SW", np.full(10, .3), "v/v", "Water saturation")
     result = pp.interpret(well)
-    assert "net_pay" in result.steps_skipped
-    assert "clay volume" in result.specific_steps_skipped["net_pay"]
-    assert well.get("NET_PAY") is None
-    forced = DynamicWorkflow().run_selected_steps(well, [WorkflowStep.NET_PAY])
-    assert any("requires clay volume" in error for error in forced.errors)
+    assert "net_pay" not in result.steps_skipped
+    np.testing.assert_array_equal(result.well.get("NET_PAY").data, np.ones(10))
 
 
-def test_shale_conflict_is_flagged_without_rewriting_candidate_pay():
+def test_attached_shale_name_does_not_replace_calculated_pay_flags():
     from petrophys.workflow import DynamicWorkflow, WorkflowStep
     well = pp.Well("SHALE-CONFLICT")
     well.depth = np.arange(10.0)
@@ -132,6 +128,5 @@ def test_shale_conflict_is_flagged_without_rewriting_candidate_pay():
         {"formation_name": "Example", "top_depth": 2, "bottom_depth": 5, "lithology": "Shale"},
     ]})
     result = DynamicWorkflow().run_selected_steps(well, [WorkflowStep.NET_PAY]).raise_for_errors()
-    np.testing.assert_array_equal(well.get("NET_PAY_REVIEW").data, [0, 0, 1, 1, 1, 0, 0, 0, 0, 0])
+    assert well.get("NET_PAY_REVIEW") is None
     assert np.all(well.get("NET_PAY").data == 1)
-    assert any("not confirmed" in warning for warning in result.warnings)

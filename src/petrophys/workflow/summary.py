@@ -34,7 +34,9 @@ def summarize_result(
     settings = {
         name: getattr(result.config, name)
         for name, spec in defaults.items()
-        if spec.default is not dataclasses.MISSING and getattr(result.config, name) != spec.default
+        if name != "lithology"
+        and spec.default is not dataclasses.MISSING
+        and getattr(result.config, name) != spec.default
     }
     key_results: Dict[str, Any] = {}
     for name in SUMMARY_CURVES:
@@ -51,8 +53,11 @@ def summarize_result(
         "petrophys_version": __version__,
         "well": well.name,
         "status": result.status,
-        "interpretation_profile": result.interpretation_profile,
-        "resolved": {"matrix_type": result.config.matrix_type, "lithology": result.config.lithology},
+        "lithology_domain": result.lithology_domain,
+        "resolved": {
+            "matrix_type": result.config.matrix_type,
+            "lithology_domain": result.config.lithology_domain,
+        },
         "settings_used": settings,
         "summary_interval": {"top": top, "bottom": bottom, "depth_unit": well.depth_unit},
         "key_results": key_results,

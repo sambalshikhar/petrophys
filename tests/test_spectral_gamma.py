@@ -120,7 +120,7 @@ def test_dynamic_workflow_uses_uranium_free_gamma_for_generic_vcl():
     assert well.get("VCL") is not None
 
 
-def test_vendor_benchmark_profile_does_not_add_new_specialist_steps():
+def test_canonical_context_workflow_does_not_add_specialist_steps():
     well = _well(30)
     well.add_curve("POTA", np.linspace(1.0, 3.0, 30), "%", "Potassium Concentration")
     well.add_curve("THOR", np.linspace(2.0, 6.0, 30), "ppm", "Thorium Concentration")
@@ -132,7 +132,6 @@ def test_vendor_benchmark_profile_does_not_add_new_specialist_steps():
     )
     config = DynamicWorkflowConfig(
         standardize_input=False,
-        interpretation_profile="vendor_benchmark",
     )
 
     result = DynamicWorkflow(config).run(well)

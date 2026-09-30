@@ -24,7 +24,6 @@ def test_defaults_resolve_matrix_and_lithology_from_data():
         ("mud_water", "salty", "salt"),
         ("gr_method", "larionov_tertary", "larionov_tertiary"),
         ("perm_method", "timurr", "timur"),
-        ("interpretation_profile", "vendor_benchmrk", "vendor_benchmark"),
     ],
 )
 def test_misspelled_choices_are_rejected_with_a_suggestion(field, value, suggestion):

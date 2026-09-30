@@ -167,6 +167,90 @@ The files also ship with the installed package. Locate them with
 ``petrophys.sample("formation_tops_template")``. Work on your own copies;
 do not edit the installed package's examples.
 
+Well parameters (reproducible calculations)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:download:`well_parameters_template.csv <../src/petrophys/datasets/well_parameters_template.csv>`
+
+.. literalinclude:: ../src/petrophys/datasets/well_parameters_template.csv
+   :language: text
+
+Use one row per well. ``lithology_domain`` selects a calculation family,
+not a per-depth lithology label: choose ``clastic``, ``carbonate``, or
+``auto``. The detailed rock sequence still belongs in the optional lithology
+interval table. ``gr_clean=20`` and ``gr_shale=100`` are the shared
+defaults for all domains.
+
+``rw`` is formation-water resistivity at
+``rw_reference_temperature``; give the associated temperature unit. BHT and
+TD establish the temperature profile when the LAS does not provide sufficient
+header data. Archie ``a``, ``m``, and ``n``, saturation/permeability
+methods, and net-pay cutoffs are explicit so a future run uses the same
+assumptions. Blank cells use supported LAS metadata or workflow defaults; they
+do not copy values from another well.
+
+.. code-block:: python
+
+   settings = pp.read_well_parameters(
+       "well_parameters.csv",
+       well_name=well.name,
+   )
+   result = pp.interpret(well, **settings)
+
+CSV, TSV, Excel, and DataFrames are accepted. Friendly headers in the template
+are converted to the workflow's canonical units: temperatures become degrees
+Fahrenheit and total depth becomes feet. Unsupported columns, duplicate well
+rows, invalid choices, and ambiguous multiwell selection raise errors.
+
+Core measurements (sparse laboratory data)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:download:`core_measurements_template.csv <../src/petrophys/datasets/core_measurements_template.csv>`
+
+.. literalinclude:: ../src/petrophys/datasets/core_measurements_template.csv
+   :language: text
+
+Each row is a plug or laboratory measurement. Keep the core depth coordinate
+and unit explicit. ``core_to_log_shift`` is added to core depth before
+matching it to the nearest LAS sample. Porosity accepts fraction or percent;
+permeability accepts mD or D; saturation accepts fraction or percent; grain
+density is g/cm3. Multiple plugs mapped to one LAS row are averaged.
+
+.. code-block:: python
+
+   report = pp.attach_core_measurements(
+       well,
+       "core_measurements.csv",
+       well_name=well.name,
+   )
+
+The attached canonical curves are ``PHIC``, ``KH_CORE``, ``SWC``,
+``SOC``, and ``GDEN`` when their source columns are present. Missing
+measurement columns are allowed. A core depth outside half a LAS sample step
+raises an alignment error rather than being moved silently. The import report
+is stored with the well's geology context.
+
+Core saturation uses the same normalization described below. A declared
+percent unit is always divided by 100. If a file incorrectly says fraction,
+the conservative percent-scale check can correct a clearly percent-like
+distribution and records the reason.
+
+Generate context from the standardized inputs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For one well:
+
+.. code-block:: bash
+
+   petrophys-context well.las well_context.json --parameters well_parameters.csv --formations formation_intervals.csv --lithology lithology_intervals.csv --core core_measurements.csv
+
+For a LAS directory, add
+``--layout category_formation_lithology`` and use a new output directory.
+Every supplied table is selected by well identifier. Formations, lithology,
+core, and codebooks remain optional; omitting one causes the corresponding
+grouping or calibration step to use available log evidence or to be skipped
+with provenance. See :doc:`context`.
+
 Depth and source checklist
 --------------------------
 

@@ -313,6 +313,8 @@ def interpret(
     if config is None:
         config = DynamicWorkflowConfig(**options)
     elif options:
+        if "lithology_domain" in options and "lithology" not in options:
+            options["lithology"] = None
         config = dataclasses.replace(config, **options)
     else:
         config = deepcopy(config)

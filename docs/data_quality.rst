@@ -8,19 +8,16 @@ A completed run is not a calibrated reservoir interpretation. Inspect
 Net-pay screening
 -----------------
 
-New configurations default to ``generic_inference``. Vendor lithology no
-longer silently selects the historical benchmark. Explicit
-``interpretation_profile="auto"`` and ``"vendor_benchmark"`` remain available
-for replay.
+There is one context-generation workflow; vendor curves do not switch to a
+different calculation profile. Unless explicitly supplied in the standardized
+parameter table, the canonical net-pay route uses VCL < 0.30 and SW < 0.70,
+with the established lithology-family porosity cutoff.
 
-Generic screening excludes bad-hole samples, including unknown quality.
-It requires a clay-volume curve instead of treating missing clay volume as
-zero; missing prerequisites are reported as skipped steps.
-Named carbonates such as limestone and dolomite select carbonate cutoffs
-consistently in scalar and per-depth inputs. Candidate pay contradicting
-supplied shale/non-reservoir lithology is retained for inspection but marked
-``NET_PAY_REVIEW=1`` and reported in warnings. Formation names alone are
-not geological evidence.
+These flags intentionally retain the established context calculation. Missing
+VCL is treated as zero clay, and ``BAD_HOLE`` or a shale label does not
+automatically erase candidate pay. Therefore ``NET_ROCK``, ``NET_RES``, and
+``NET_PAY`` are screening outputs, not confirmed reservoir or hydrocarbons.
+Inspect them together with bad-hole QC and supplied geology.
 
 Review Rw **and its reference temperature**, clay-volume endpoints and
 method, porosity calibration, saturation model, cutoffs and hole quality.

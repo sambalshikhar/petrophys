@@ -160,7 +160,7 @@ def test_dynamic_workflow_adds_working_aliases_without_losing_vendor_curves():
 
     result = run_dynamic_workflow(
         well,
-        DynamicWorkflowConfig(rw=0.05, interpretation_profile="generic_inference"),
+        DynamicWorkflowConfig(rw=0.05),
     )
 
     assert result.success

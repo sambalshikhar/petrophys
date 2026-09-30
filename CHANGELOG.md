@@ -6,20 +6,17 @@ All notable changes to Petrophys are documented here.
 
 ### Breaking changes
 
-- New interpretations default to `generic_inference`; vendor lithology no
-  longer silently selects the archived benchmark profile. Explicit `auto`
-  and `vendor_benchmark` modes remain available, and legacy context packages
-  retain their prior automatic profile.
-- Generic net-pay screening requires clay volume and rejects unknown
-  bad-hole quality. Forced selected-step runs also reject missing clay.
+- Context generation now uses one canonical calculation path. Dataset names,
+  vendor curves, and earlier context packages cannot select another workflow
+  or provide archived numerical values.
 
 - `DynamicWorkflowConfig` validates every setting when it is created and
   raises `ValueError` listing all invalid fields with the accepted values
   (previously, typos such as `hc_type="gass"` silently used defaults).
-- `DynamicWorkflowConfig` defaults `matrix_type` and `lithology` to `"auto"`,
-  the same as `petrophys.interpret`; wells without lithology evidence still
-  resolve to sandstone/clastic. The legacy reference-JSON exporters keep
-  their previous sandstone/clastic default.
+- `DynamicWorkflowConfig` uses `lithology_domain` to distinguish the
+  clastic and carbonate mineral routes from per-depth lithology labels.
+  `matrix_type` and the domain default to `"auto"`; insufficient evidence
+  resolves to sandstone/clastic with a recorded warning.
 - Tabular readers (`io.read_csv`, `read_csv_wells`, `read_ascii` without a
   units row, `Well.from_dataframe`) require `depth_unit` instead of assuming
   feet. `Well.depth_unit` accepts only metre or foot labels.
@@ -30,14 +27,17 @@ All notable changes to Petrophys are documented here.
 ### Added
 
 - Public `build_context` / `export_context` and `petrophys-context` CLI with
-  schema version 1.0, UTF-8 byte budgets, explicit legacy mode, staged package
-  publication and overwrite protection. Historical scripts share this API.
+  schema version 1.0, UTF-8 byte budgets, staged package publication and
+  overwrite protection. The CLI always computes its context from input data.
+- Standardized well-parameter and core-measurement readers and templates.
+  Package generation accepts these alongside optional formation, lithology,
+  and lithology-code tables.
+- A COSTA carbonate mineral route using the published GR-illite relation and
+  bounded calcite-dolomite density/closure solve.
 - Context-package tops accept CSV/TSV/Excel, direct NPD/SODIR headers, explicit
   bottoms, depth units and rank selection without private default workbooks.
 - `read_lithology_codes` validates codebooks and prefers Kingdom `Attribute`
   rock labels over a conflicting `Lithology Attribute` grouping, with a warning.
-- `NET_PAY_REVIEW` flags candidate pay that conflicts with supplied
-  shale/non-reservoir lithology; warnings request scientific calibration.
 - A context API guide, data-quality notes and refreshed tutorial 19. CI now
   executes context generation and the real-file FMI tutorial.
 
@@ -106,7 +106,8 @@ All notable changes to Petrophys are documented here.
 - Mineral inversion reports non-resolvable and zero-volume failures as missing
   values with QC flags. A reduced calcite-dolomite model is available when
   carbonate evidence supports it. Workflow traces record mineral selection.
-- The vendor benchmark profile retains its versioned calculation path.
+- Context packages are computed by the same workflow as direct
+  interpretations; no archived context payload or benchmark manifest is read.
 - Package checks install the wheel and execute a sample workflow. Documentation
   builds treat warnings as errors, and release tags must match package versions.
 - Third-party data provenance and model validation records accompany the package.

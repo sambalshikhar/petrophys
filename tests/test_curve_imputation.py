@@ -125,7 +125,7 @@ def test_auto_selection_rejects_weak_held_out_score_by_default():
 
 
 def test_incompatible_model_pack_raises_model_compatibility_error(monkeypatch, tmp_path):
-    import joblib
+    joblib = pytest.importorskip("joblib")
 
     from petrophys.preprocessing.imputation import curve_imputer
 

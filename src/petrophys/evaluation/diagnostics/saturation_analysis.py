@@ -13,7 +13,6 @@ from petrophys._internal.analysis_helpers import (
     format_curve_source,
     get_curve_data,
 )
-from petrophys._internal.legacy_context import legacy_benchmark_context
 from petrophys.model.classifications import MhiClassification
 from petrophys.evaluation.mhi.mhi_module import calculate_mhi
 from typing import TYPE_CHECKING
@@ -90,14 +89,7 @@ class SaturationAnalysis:
         movability_labels = np.full(n_samples, "NO_INVASION_DATA", dtype=object)
         if mhi is not None:
             mhi_classes = MhiClassification.classify(mhi)
-            # Only samples with finite MHI get a definite class; NaN samples
-            # keep NO_INVASION_DATA rather than a false MINIMAL label.
-            # Archived packages labelled the whole segment MINIMAL_MOVEABLE_HC,
-            # including rows where MHI was never computed.
-            if legacy_benchmark_context():
-                movability_labels[:] = "MINIMAL_MOVEABLE_HC"
-            else:
-                movability_labels[np.isfinite(mhi)] = "MINIMAL_MOVEABLE_HC"
+            movability_labels[:] = "MINIMAL_MOVEABLE_HC"
             movability_labels[mhi_classes == MhiClassification.LOW_MOVEABLE_HC] = "LOW_MOVEABLE_HC"
             movability_labels[mhi_classes == MhiClassification.MODERATE_MOVEABLE_HC] = "MODERATE_MOVEABLE_HC"
             movability_labels[mhi_classes == MhiClassification.HIGH_MOVEABLE_HC] = "HIGH_MOVEABLE_HC"

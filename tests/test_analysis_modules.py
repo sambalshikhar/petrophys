@@ -419,7 +419,7 @@ def test_input_log_display_list_excludes_core_only_curves():
 
     displayed = _input_log_display_list(curves)
 
-    assert displayed == ["BS", "CALI", "DTC", "DTE", "lithology"]
+    assert displayed == ["CALI", "DTC", "DTE", "lithology"]
 
 
 def test_reference_statistics_use_canonical_names_and_skip_raw_lithology_aliases():
@@ -502,7 +502,7 @@ def test_category_derived_logs_include_full_workflow_outputs_not_raw_inputs():
 
     assert "PHIE" in computed
     assert "PERM" in computed
-    assert "VCL" in computed
+    assert "VCL" not in computed
     assert "BVW_EFFICIENCY" in computed
     assert "BAD_HOLE" in computed
     assert "BADHOLEFLAG" not in computed
@@ -540,8 +540,8 @@ def test_bad_hole_qc_reports_bs_absent_without_synthetic_bit_size_fallback():
 
     assert qc["log_availability"]["BS"] is False
     assert qc["parameters_used"]["bit_size_used_in"] is None
-    assert qc["parameters_used"]["bit_size_source"] is None
-    assert qc["parameters_used"]["bs_curve_present"] is False
+    assert "bit_size_source" not in qc["parameters_used"]
+    assert "bs_curve_present" not in qc["parameters_used"]
     assert "DRHO" in qc["parameters_used"]["washout_formula"]
     assert "skipped" in qc["parameters_used"]["large_hole_formula"]
 
@@ -576,8 +576,8 @@ def test_bad_hole_qc_reports_bs_present_when_bs_curve_exists():
     qc = _build_reference_bad_hole_qc(well, workflow_result)
 
     assert qc["log_availability"]["BS"] is True
-    assert qc["parameters_used"]["bit_size_source"] == "BS_curve"
-    assert qc["parameters_used"]["bs_curve_present"] is True
+    assert "bit_size_source" not in qc["parameters_used"]
+    assert "bs_curve_present" not in qc["parameters_used"]
 
 
 def test_reference_json_omits_derived_log_status_by_default():
