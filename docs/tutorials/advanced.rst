@@ -57,7 +57,9 @@ Course outline
    * - 12
      - :doc:`Core calibration and digital core <part_b/12_core_calibration_and_digital_core>`
      - Tie core plugs to logs, fit porosity and poro-perm transforms, and
-       cluster wireline electrofacies over the cored interval.
+       cluster wireline electrofacies over the cored interval; read spectral
+       gamma (Th/U, thorium clay indicator) on 25/5-1 and test a transform
+       against a second well's core.
    * - 13
      - :doc:`ML curve imputation <part_b/13_ml_curve_imputation>`
      - Fill gaps in existing curves with pretrained models, score them against

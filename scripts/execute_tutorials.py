@@ -12,6 +12,7 @@ import time
 REPO_ROOT = Path(__file__).resolve().parents[1]
 USER_JOURNEY_NOTEBOOKS = (
     "examples/quickstart.ipynb",
+    "examples/complete_tour.ipynb",
     "examples/part_a_foundations/00_orientation_and_setup.ipynb",
     "examples/part_a_foundations/01_loading_and_inspecting_data.ipynb",
     "examples/part_b_advanced/10_dynamic_workflow_glass_box.ipynb",
