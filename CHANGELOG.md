@@ -80,6 +80,9 @@ All notable changes to Petrophys are documented here.
   top-level `petrophys` namespace, a "Terms, curves and steps" reference and
   a review checklist for interpretations.
 - `read_formations(..., rank=...)` keeps one stratigraphic level.
+- A complete-tour notebook covering the whole library on four bundled GeoLink
+  wells, and a real spectral-gamma geochemistry part plus a second-well core
+  calibration in tutorial 12.
 - `scripts/check_notebook_outputs.py`, run in CI, rejects tutorial notebooks
   with unexecuted cells, errors or local paths in their saved outputs.
 

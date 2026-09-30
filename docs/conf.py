@@ -99,6 +99,7 @@ write_settings_table()
 
 TUTORIAL_SOURCE_PATHS = {
     "tutorials/quickstart": "examples/quickstart.ipynb",
+    "tutorials/complete_tour": "examples/complete_tour.ipynb",
     "tutorials/own_data": "examples/own_data.ipynb",
     "tutorials/part_a/": "examples/part_a_foundations/",
     "tutorials/part_b/": "examples/part_b_advanced/",

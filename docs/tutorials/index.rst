@@ -29,6 +29,18 @@ Choose a path
       +++
       One complete well in a single lesson
 
+   .. grid-item-card:: Complete tour
+      :class-card: ph-card-teal
+      :link: complete_tour
+      :link-type: doc
+
+      Every part of the library in one notebook: loading and QC, each
+      interpretation step, the full workflow, four-well comparison, core
+      calibration, sensitivity analysis and a gallery of every plot type.
+
+      +++
+      One long notebook on four GeoLink wells
+
    .. grid-item-card:: Your own data
       :class-card: ph-card-teal
       :link: own_data
@@ -124,6 +136,7 @@ needs the ``mcp`` extra; see :doc:`../installation`.
    :maxdepth: 2
 
    Quickstart notebook <quickstart>
+   Complete tour <complete_tour>
    Your own data notebook <own_data>
    Foundations <foundations>
    Advanced workflows <advanced>

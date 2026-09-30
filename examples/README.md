@@ -7,6 +7,12 @@ use the installable sample wells in `src/petrophys/datasets/`, available through
 Start with [`quickstart.ipynb`](quickstart.ipynb), then work through the numbered
 notebooks in order.
 
+For one notebook that covers the whole library - loading, QC, every
+interpretation step, the workflow, multi-well work, core calibration,
+sensitivity analysis and a full plotting gallery - open
+[`complete_tour.ipynb`](complete_tour.ipynb). Each section links to the lesson
+that goes deeper.
+
 For your own LAS and optional formations/lithology, continue directly to
 [`own_data.ipynb`](own_data.ipynb). It covers templates, CSV/TSV/Excel,
 column and sheet mapping, well selection, depth metadata, source selection,
