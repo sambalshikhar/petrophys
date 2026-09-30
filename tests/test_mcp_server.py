@@ -188,7 +188,7 @@ def test_resources_and_prompt(tmp_path):
     guide, settings, prompt = _run(tmp_path, script)
     assert "interpret_well" in guide.contents[0].text
     assert '"name": "rw"' in settings.contents[0].text
-    assert "do not assume one" in prompt.messages[0].content.text
+    assert "do not assume them" in prompt.messages[0].content.text
 
 
 def test_documentation_lists_every_tool():

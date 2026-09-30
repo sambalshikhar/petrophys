@@ -114,8 +114,8 @@ results without executing code during the documentation build.
    :hidden:
    :maxdepth: 2
 
-   Quickstart <quickstart>
-   Your own data <own_data>
+   Quickstart notebook <quickstart>
+   Your own data notebook <own_data>
    Foundations <foundations>
    Advanced workflows <advanced>
    Case studies <case_studies>

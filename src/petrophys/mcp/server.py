@@ -47,8 +47,11 @@ water saturation, permeability and net pay, recording every decision.
 Typical session:
 1. load_well(path) or load_sample_well(name); read the returned curve list.
 2. interpret_well(well_id, settings) - pass values the logs cannot provide,
-   above all formation water resistivity rw (ohm.m). Never invent rw: ask the
-   user, or use a value documented in the file header or report.
+   above all formation water resistivity rw (ohm.m) together with the
+   temperature it was measured at, rw_meas_temp_f (degF); without a
+   temperature 75 degF is assumed, which changes saturation strongly. Never
+   invent rw: ask the user, or use a value documented in the file header or
+   report, and say which source the rw step used (explain_step "rw").
 3. Read the summary: status, warnings, skipped_steps (each with a reason) and
    key_results. Use explain_step for the method and parameters of a step,
    curve_statistics or summarize_zones for intervals, plot_well for a figure.
@@ -595,13 +598,24 @@ def create_server(
             Optional[str],
             Field(description="Formation water resistivity in ohm.m, if known."),
         ] = None,
+        rw_temperature_f: Annotated[
+            Optional[str],
+            Field(description="Temperature (degF) at which rw was measured, if known."),
+        ] = None,
     ) -> str:
         """Guide the model through loading, interpreting and reporting on a well."""
-        rw_text = (
-            f"Use rw={rw} ohm.m."
-            if rw
-            else "Ask me for the formation water resistivity (rw) before interpreting; do not assume one."
-        )
+        if rw and rw_temperature_f:
+            rw_text = f"Use rw={rw} ohm.m with rw_meas_temp_f={rw_temperature_f}."
+        elif rw:
+            rw_text = (
+                f"Use rw={rw} ohm.m; ask me at what temperature it was measured "
+                "(rw_meas_temp_f) before interpreting."
+            )
+        else:
+            rw_text = (
+                "Ask me for the formation water resistivity (rw) and its temperature "
+                "before interpreting; do not assume them."
+            )
         return (
             f"Interpret the well '{well}' with the Petrophys tools.\n"
             "1. Load it (load_sample_well for a sample name, otherwise load_well) and review the curves.\n"

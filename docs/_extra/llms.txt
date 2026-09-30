@@ -4,10 +4,10 @@
 
 Key facts for code generation:
 
-- Front door: `import petrophys as pp`; `well = pp.read(path)`; `result = pp.interpret(well, rw=0.07)`; `pp.plot(result, depth_range=(top, base))`.
+- Front door: `import petrophys as pp`; `well = pp.read(path)`; `result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)`; `pp.plot(result, depth_range=(top, base))`.
 - `pp.read(path, *, formations=None, lithology=None, **reader_options)` reads LAS/DLIS/CSV/TSV; CSV/TSV need `depth_unit="m"` or `"ft"` among the reader options.
 - `pp.interpret(well, config=None, *, inplace=False, **settings)` returns `DynamicWorkflowResult`; it works on a copy. Settings are `pp.DynamicWorkflowConfig` fields (units in names: `bht_f` degF, `td_ft` feet; resistivities ohm.m). Invalid values raise `ValueError` listing accepted values.
-- Formation water resistivity `rw` usually cannot be derived from logs: ask for it instead of assuming.
+- Formation water resistivity `rw` (ohm.m) usually cannot be derived from logs: ask for it instead of assuming, and pass its temperature `rw_meas_temp_f` (degF); without it 75 degF is assumed.
 - Result: `result.status`, `result.well` (interpreted curves: VCL, PHIT, PHIE, SW, SXO, PERM, RQI, NET_ROCK, NET_RES, NET_PAY), `result.config` (settings used), `result.specific_steps_skipped` (reasons), `result.warnings`, `result.to_trace_dict()`, `result.to_json(path)`, `result.to_las(path)`, `result.raise_for_errors()`.
 - `well.describe()` and `result.summary(top=None, bottom=None)` return compact JSON-serializable overviews (curves and units; status, settings used, key statistics, net thickness, skip reasons, warnings).
 - `petrophys.workflow.config_schema()` lists every setting with type, default, description and accepted values; `petrophys.workflow.workflow_steps()` lists the steps.

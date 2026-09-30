@@ -19,7 +19,7 @@ and ``geolink_full``.
    import petrophys as pp
    from petrophys.visualization import create_log_viewer
 
-   result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07)
+   result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230)
 
    viewer = create_log_viewer(
        result.well,

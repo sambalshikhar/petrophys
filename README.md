@@ -51,7 +51,7 @@ pip install -e ".[all,dev,docs]"
 import petrophys as pp
 
 well = pp.read(pp.sample("30_6-5"))        # or pp.read("my_well.las")
-result = pp.interpret(well, rw=0.07)       # Rw in ohm.m; use your own value
+result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)   # Rw (ohm.m) at 230 degF; use your own
 result.raise_for_errors()
 
 result.print_trace()                       # what ran, what was skipped, and why
