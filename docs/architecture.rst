@@ -134,17 +134,8 @@ curves, then returns that same object in ``DynamicWorkflowResult.well``. This
 keeps granular and orchestrated use consistent: downstream APIs operate on one
 well model rather than a separate opaque workflow format.
 
-Placement rules
----------------
+Contributing
+------------
 
-* Put a measurement-to-property calculation in its scientific domain under
-  ``interpretation``.
-* Put a cutoff, classification, aggregation, or reservoir decision under
-  ``evaluation``.
-* Put file parsing and basic serialization in ``io``; put complete delivery
-  products in ``reporting``.
-* Put cleaning, standardization, and quality operations in ``preprocessing``.
-* Put sequencing and automatic method selection in ``workflow``.
-* Keep plotting out of scientific calculation modules.
-* Keep shared data structures dependency-light and place them in ``model``.
-* Expose supported user APIs from the relevant package ``__init__.py``.
+The rules for where new code belongs, and how to test and document it, are in
+`CONTRIBUTING.md <https://github.com/sambalshikhar/petrophys/blob/main/CONTRIBUTING.md>`_.

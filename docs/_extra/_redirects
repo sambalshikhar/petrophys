@@ -1,0 +1,5 @@
+# Netlify redirects for pages that moved.
+/examples.html  /tutorials/index.html  301
+/examples       /tutorials/            301
+/publishing.html  /installation.html  301
+/publishing       /installation       301

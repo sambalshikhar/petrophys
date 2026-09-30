@@ -5,11 +5,14 @@ The supported API is grouped by lifecycle and scientific domain. These pages
 are generated from the source docstrings. Internal helpers under
 ``petrophys._internal`` are intentionally excluded.
 
-Common tasks
-------------
+Start here
+----------
 
-These functions are also available as ``petrophys.read``,
-``petrophys.plot``, and ``petrophys.interpret``.
+.. toctree::
+   :maxdepth: 1
+
+   namespace
+   settings
 
 .. autosummary::
    :toctree: generated
@@ -100,3 +103,14 @@ Workflows, reporting, and visualization
    petrophys.visualization
    petrophys.mcp
    petrophys.mcp.server
+
+Legacy
+------
+
+Kept for existing code and scheduled for removal; new code should use
+``pp.interpret`` or :class:`petrophys.workflow.DynamicWorkflow`.
+
+.. autosummary::
+   :toctree: generated
+
+   petrophys.workflow.standard_workflow

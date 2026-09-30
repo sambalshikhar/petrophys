@@ -19,40 +19,45 @@ Projects
       :link: case_studies/cs1_full_formation_evaluation_30_6-5
       :link-type: doc
 
-      Interpret discovery well 30/6-5 and deliver a complete conventional
-      formation evaluation with interval results.
+      Interpret discovery well 30/6-5 with ``pp.interpret``, check where the
+      pay flag fires, and deliver a per-formation table and a ranked
+      completion plan for the Brent sands.
 
    .. grid-item-card:: CS2 | Carbonate rock typing
       :class-card: ph-card-amber
       :link: case_studies/cs2_carbonate_rock_typing_costa
       :link-type: doc
 
-      Combine COSTA core and log evidence for carbonate characterization and
-      hydraulic rock typing.
+      Calibrate logs to core-corrected curves over the Kharaib-2 interval of
+      COSTA well HW-10, then build hydraulic flow units and a
+      saturation-height model.
 
    .. grid-item-card:: CS3 | Multiwell field screening
       :class-card: ph-card-blue
       :link: case_studies/cs3_field_screening_costa_17wells
       :link-type: doc
 
-      Compare a 17-well public carbonate dataset and identify field-scale
-      trends and candidates for detailed review.
+      Screen the Kharaib-2 interval in all 17 COSTA wells with one uniform
+      recipe, rank them by hydrocarbon pore thickness, and cross-check the
+      result against the dynamic workflow.
 
    .. grid-item-card:: CS4 | Recovery from incomplete inputs
       :class-card: ph-card-coral
       :link: case_studies/cs4_imperfect_well_recovery_16_7-1
       :link-type: doc
 
-      Interpret well 16/7-1 with an imperfect log suite and inspect how the
-      workflow reports reduced coverage.
+      Assess data readiness on well 16/7-1, flag off-scale resistivity and
+      washouts, validate the ML imputer before trusting a synthetic neutron,
+      and report firm versus uncertain net pay. Needs the ``ml`` extra.
 
    .. grid-item-card:: CS5 | Saturation-model sensitivity
       :class-card: ph-card-green
       :link: case_studies/cs5_saturation_model_sensitivity_30_6-5
       :link-type: doc
 
-      Compare saturation methods and quantify how model choice propagates into
-      reservoir conclusions for well 30/6-5.
+      Compare five saturation models on the Brent sands of 30/6-5, run a
+      parameter tornado, and quote an uncertainty band on hydrocarbon pore
+      thickness.
 
 .. toctree::
    :hidden:

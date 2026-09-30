@@ -21,29 +21,28 @@ permeability, rock quality, and net pay.
 
 ## Installation
 
-Until the first PyPI release, install the development branch from GitHub
-(private repositories require your GitHub access):
-
 ```bash
-python -m pip install "petrophys @ git+https://github.com/sambalshikhar/petrophys.git@dev"
+python -m pip install petrophys
 ```
 
-Optional extras, from a local checkout:
-
-| Extra | Adds | Install |
-|-------|------|---------|
-| `dlis` | DLIS reading (logs and borehole images) | `python -m pip install -e ".[dlis]"` |
-| `ml` | Pretrained curve imputation (Python 3.11+) | `python -m pip install -e ".[ml]"` |
-| `mcp` | MCP server for LLM clients (Python 3.10+) | `python -m pip install -e ".[mcp]"` |
-| `all` | Everything above | `python -m pip install -e ".[all]"` |
-
-Development checkout:
+Until the first release is on PyPI, install from source:
 
 ```bash
-git clone --branch dev https://github.com/sambalshikhar/petrophys.git
+git clone https://github.com/sambalshikhar/petrophys.git
 cd petrophys
-pip install -e ".[all,dev,docs]"
+python -m pip install -e ".[all]"
 ```
+
+Optional extras (add in square brackets, e.g. `pip install "petrophys[dlis,mcp]"`):
+
+| Extra | Adds |
+|-------|------|
+| `dlis` | DLIS reading (logs and borehole images) |
+| `ml` | Pretrained curve imputation (Python 3.11+) |
+| `mcp` | MCP server for LLM clients (Python 3.10+) |
+| `all` | Everything above |
+
+Contributors: `python -m pip install -e ".[all,dev,docs]"`.
 
 ## Quick start
 
@@ -158,26 +157,31 @@ available; `result.specific_steps_skipped` explains every skip.
 | # | Step | Computes |
 |---|------|----------|
 | 1 | `normalization` | Canonical curve aliases and units, implausible-value screening |
-| 2 | `temperature` | Formation temperature profile from BHT or gradient |
-| 3 | `bad_hole` | Washout and density-correction quality flags |
-| 4 | `spectral_gamma` | Clay indicators from potassium, thorium, uranium |
-| 5 | `elemental_spectroscopy` | Mineral indicators from elemental yields |
-| 6 | `vclay` | Clay volume from GR, SP, and neutron-density |
-| 7 | `rcl` | Clay resistivity from shale intervals |
-| 8 | `rmf` | Mud-filtrate resistivity at formation temperature |
-| 9 | `hc_correction` | Neutron-density hydrocarbon correction (opt-in) |
-| 10 | `porosity` | Density, neutron, sonic, total, effective porosity |
-| 11 | `lithology` | Mineral volumes from an adaptive multi-mineral solve |
-| 12 | `porosity_refinement` | Porosity with per-depth lithology endpoints |
-| 13 | `core_correction` | Porosity and permeability calibrated to core |
-| 14 | `rw` | Formation water resistivity at formation temperature |
-| 15 | `invasion` | Invasion profile from shallow and deep resistivity |
-| 16 | `saturation` | Water and flushed-zone saturation |
-| 17 | `permeability` | Core-calibrated or empirical permeability |
-| 18 | `rock_quality` | RQI, FZI, normalized porosity |
-| 19 | `bvw` | Bulk volume water |
-| 20 | `mhi` | Moveable hydrocarbon index |
-| 21 | `net_pay` | Net rock, net reservoir, and net pay flags |
+| 2 | `input_context` | Records which formation and lithology sources were used |
+| 3 | `temperature` | Formation temperature profile from BHT or gradient |
+| 4 | `bad_hole` | Washout and density-correction quality flags |
+| 5 | `vclay` | Clay volume from GR, SP, and neutron-density |
+| 6 | `rcl` | Clay resistivity from shale intervals |
+| 7 | `rmf` | Mud-filtrate resistivity at formation temperature |
+| 8 | `hc_correction` | Neutron-density hydrocarbon correction (opt-in) |
+| 9 | `porosity` | Density, neutron, sonic, total, effective porosity |
+| 10 | `lithology` | Mineral volumes: clastic multi-mineral or carbonate solve |
+| 11 | `core_correction` | Porosity and permeability calibrated to core |
+| 12 | `rw` | Formation water resistivity at formation temperature |
+| 13 | `invasion` | Invasion profile from shallow and deep resistivity |
+| 14 | `saturation` | Water and flushed-zone saturation |
+| 15 | `permeability` | Core-calibrated or empirical permeability |
+| 16 | `rock_quality` | RQI, FZI, normalized porosity |
+| 17 | `bvw` | Bulk volume water |
+| 18 | `mhi` | Moveable hydrocarbon index |
+| 19 | `net_pay` | Net rock, net reservoir, and net pay flags |
+| 20 | `permeability_finalize`, `rock_quality_finalize` | Permeability and rock quality from the final reservoir flag |
+
+Spectral-gamma and elemental-spectroscopy interpretation are separate
+functions in `petrophys.interpretation.geochemistry`; `pp.interpret` lists
+them, and `porosity_refinement`, as skipped. The
+[glossary](https://petrophys.netlify.app/glossary.html) lists every curve the
+workflow adds.
 
 With `sw_model="auto"`, water saturation is routed per sample: Archie below the
 clay-volume cutoff (0.3); in shaly rock, Dual Water for carbonates,

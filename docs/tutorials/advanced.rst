@@ -13,8 +13,8 @@ formation-evaluation terminology.
 Optional dependencies
 ---------------------
 
-The workflow, formation, visualization, and context lessons run with the base
-documentation environment. Specialist lessons identify their own inputs and
+The workflow, formation, visualization, and context lessons need only the
+base install. Specialist lessons identify their own inputs and
 use these package extras where needed:
 
 .. list-table::
@@ -26,10 +26,15 @@ use these package extras where needed:
      - Used for
    * - DLIS
      - ``pip install "petrophys[dlis]"``
-     - Native DLIS frames, NMR arrays, and borehole-image channels
+     - Native DLIS frames and borehole-image channels (lesson 16)
    * - Machine learning
      - ``pip install "petrophys[ml]"``
-     - Classical curve-imputation models and training utilities
+     - K-means electrofacies (lesson 12) and pretrained curve-imputation
+       models (lesson 13); requires Python 3.11 or later
+   * - MCP server
+     - ``pip install "petrophys[mcp]"``
+     - The Petrophys MCP server for LLM agents (lesson 20); requires Python
+       3.10 or later
 
 Course outline
 --------------
@@ -43,25 +48,31 @@ Course outline
      - Work completed
    * - 10
      - :doc:`Dynamic workflow glass box <part_b/10_dynamic_workflow_glass_box>`
-     - Inspect routing, prerequisites, parameters, warnings, and execution states.
+     - Inspect routing, skip reasons, parameters, and warnings, then measure a
+       controlled net-pay sensitivity over the reservoir interval.
    * - 11
      - :doc:`Formation and interval analysis <part_b/11_formation_and_interval_analysis>`
-     - Apply tops and zones, then build depth-aware interval summaries and plots.
+     - Summarize pay per formation, keep overburden flags out of reservoir
+       totals, and shade formations on depth plots.
    * - 12
      - :doc:`Core calibration and digital core <part_b/12_core_calibration_and_digital_core>`
-     - Compare core and logs, calibrate properties, and inspect digital facies and mechanics.
+     - Tie core plugs to logs, fit porosity and poro-perm transforms, and
+       cluster wireline electrofacies over the cored interval.
    * - 13
      - :doc:`ML curve imputation <part_b/13_ml_curve_imputation>`
-     - Predict missing samples while preserving measured values and recording provenance.
+     - Fill gaps in existing curves with pretrained models, score them against
+       withheld data, and record provenance.
    * - 14
      - :doc:`NMR petrophysics <part_b/14_nmr_petrophysics>`
-     - Interpret processed T2 distributions, fluid volumes, and NMR permeability.
+     - Interpret a processed CMR summary log (no T2 bins): bound and free
+       fluid, Swirr, and Timur-Coates permeability checked against the vendor.
    * - 15
      - :doc:`Saturation height <part_b/15_capillary_pressure_saturation_height>`
-     - Build capillary-pressure, Leverett-J, and saturation-height relationships.
+     - Build capillary-pressure, Leverett-J, and saturation-height relationships
+       on a carbonate reservoir interval.
    * - 16
      - :doc:`Borehole images and FMI <part_b/16_borehole_image_fmi>`
-     - Read image arrays, orient and equalize data, assess coverage, and render images.
+     - Read image arrays, orient and equalize data, assess coverage, and render images (needs the ``dlis`` extra and the Git LFS image file of a source checkout).
    * - 17
      - :doc:`Visualization masterclass <part_b/17_visualization_masterclass>`
      - Compose interpretation panels, specialist displays, crossplots, and analytics.
@@ -70,10 +81,12 @@ Course outline
      - Run comparable interpretations across wells and screen field-scale results.
    * - 19
      - :doc:`LLM context generation <part_b/19_llm_context_generation>`
-     - Export portable, structured context from interpreted LAS data.
+     - Build compact, auditable JSON context from interpreted wells for any
+       LLM client or review workflow.
    * - 20
      - :doc:`Petrophys for LLM agents (MCP) <part_b/20_mcp_server>`
-     - Drive loading, interpretation, zone summaries and plots from an MCP client.
+     - Let LLM agents load wells, interpret, summarize zones, plot, and export
+       through the Petrophys MCP server.
 
 .. toctree::
    :hidden:

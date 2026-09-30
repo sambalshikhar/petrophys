@@ -93,7 +93,7 @@ not replace a separate detailed lithology interval file.
 
    formations = FormationTops.from_csv("formation_intervals.csv")
 
-The model, viewer, and formation summaries now share ``read_formations``.
+The model, viewer, and formation summaries all read formations through ``read_formations``.
 Missing names, nonfinite depths, missing files, and reversed intervals raise
 errors rather than disappearing. CSV, TSV, Excel and DataFrames are supported.
 Top-only picks need an explicit ``terminal_depth`` to become analysis intervals;
@@ -279,8 +279,8 @@ of verified alignment. Preserve original exports for traceability.
 Real industry practice and mapping
 ----------------------------------
 
-There is no single universal CSV layout. These design choices are based on
-documented industry workflows, reviewed on 2026-09-25:
+There is no single universal CSV layout. These templates follow documented
+industry workflows:
 
 * `Geocap well-top import <https://geocap.atlassian.net/wiki/spaces/ug/pages/22479309/Well%2BTops>`_
   uses a tabular ASCII/CSV exchange with well identity, marker name and measured

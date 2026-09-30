@@ -23,6 +23,24 @@ Build the documentation when changing public APIs, examples, or docstrings:
 sphinx-build -W -b html docs docs/_build/html
 ```
 
+## Where code goes
+
+- A measurement-to-property calculation goes in its scientific domain under
+  `petrophys.interpretation`.
+- A cutoff, classification, aggregation or reservoir decision goes under
+  `petrophys.evaluation`.
+- File parsing and basic serialization go in `petrophys.io`; complete delivery
+  products go in `petrophys.reporting`.
+- Cleaning, standardization and quality operations go in
+  `petrophys.preprocessing`.
+- Sequencing and automatic method selection go in `petrophys.workflow`.
+- Plotting stays out of scientific calculation modules.
+- Shared data structures stay dependency-light and live in `petrophys.model`.
+- Supported user APIs are exported from the relevant package `__init__.py`.
+
+See the [architecture page](https://petrophys.netlify.app/architecture.html)
+for the package map and dependency direction.
+
 ## Scientific changes
 
 - State the equation, units, assumptions, and literature or vendor reference.
@@ -46,3 +64,43 @@ sphinx-build -W -b html docs docs/_build/html
 Keep changes focused, describe the scientific and software behavior affected,
 and include the commands used for verification. New public functions should
 have docstrings, exports, and focused regression tests.
+
+## Tutorials
+
+The notebooks in `examples/` are rendered in the documentation with their
+saved outputs, so re-run any notebook you change in a fresh kernel before
+committing it:
+
+```bash
+python -m pip install -e ".[tutorials,mcp]"
+python scripts/execute_tutorials.py examples/part_a_foundations/03_clay_volume.ipynb --inplace
+python scripts/check_notebook_outputs.py
+```
+
+The second script fails on notebooks with unexecuted cells or with outputs
+that contain local paths.
+
+## Releasing (maintainers)
+
+Repository pushes, documentation deployments and PyPI releases are separate
+steps.
+
+**Documentation.** Build with warnings as errors, then deploy the built
+`docs/_build/html` folder with the landing page copied over it (the steps are
+in `netlify.toml`):
+
+```bash
+python -m pip install -e ".[docs,mcp]"
+python -m sphinx -W --keep-going -b html docs docs/_build/html
+cp -r docs/landing/. docs/_build/html/
+```
+
+After deploying, check that the site serves the intended commit and open the
+quickstart, context, input-template and tutorial pages.
+
+**PyPI.** `.github/workflows/publish.yml` builds and checks the
+distributions, tests the wheel and publishes with PyPI trusted publishing.
+Before triggering it, check the version, the data licences in
+`THIRD_PARTY_DATA.md` and the wheel contents, and configure the PyPI/TestPyPI
+trusted publisher and GitHub environments. Never put upload tokens in source
+files or notebooks.

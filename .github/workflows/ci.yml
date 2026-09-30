@@ -150,6 +150,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[docs,mcp]"
 
+      - name: Check saved notebook outputs are fresh and portable
+        run: python scripts/check_notebook_outputs.py
+
       - name: Build documentation
         run: sphinx-build -W --keep-going -b html docs docs/_build/html
 

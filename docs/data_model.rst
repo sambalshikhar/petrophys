@@ -102,7 +102,7 @@ well, so callers can inspect, plot, or export it after execution.
 
    result = run_dynamic_workflow(
        well,
-       DynamicWorkflowConfig(rw=0.07, matrix_type="auto", lithology="auto"),
+       DynamicWorkflowConfig(rw=0.07, rw_meas_temp_f=230),
    )
 
    phie = result.well.get("PHIE")
@@ -111,9 +111,12 @@ well, so callers can inspect, plot, or export it after execution.
 Bundled samples
 ---------------
 
-Small public examples are available through :func:`petrophys.datasets.sample` and
-:func:`petrophys.datasets.list_samples`. Larger native Daydream LAS/DLIS fixtures are
-repository integration data and are not installed in normal Python packages.
+The installed package includes small public LAS samples and input templates,
+listed by :func:`petrophys.list_samples` and found with :func:`petrophys.sample`;
+this includes the Daydream CMR logs ``daydream1_cmr`` and
+``daydream1_cmr_shallow``. The large native Daydream DLIS files are not
+installed: they are Git LFS files in the source repository, found with
+:func:`petrophys.datasets.integration_fixture` in a checkout.
 
 .. code-block:: python
 

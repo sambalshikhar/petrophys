@@ -35,13 +35,13 @@ causes the dependent step to appear in ``steps_skipped``, with its reason in
 ``result.success`` false. Warnings remain separate so a usable but reviewable
 interpretation can be distinguished from a failed run.
 
-One calculation path
---------------------
+Interpretation domain
+---------------------
 
-There are no dataset profiles or context replay modes. Dataset names, well
-names, and the presence of a vendor curve do not switch workflow versions.
-Imported curves remain on the well, and each trace step identifies the
-measurements, assumptions, method, and outputs that were used.
+Every run follows the same workflow: which steps execute depends only on the
+curves and settings available, never on the dataset or well name. Imported
+curves stay on the well, and each trace step records the measurements,
+assumptions, method, and outputs it used.
 
 ``lithology_domain`` selects only the mineral calculation family:
 
@@ -93,9 +93,10 @@ dependency order:
      - Net pay
      - Apply configurable net-rock, net-reservoir, net-pay, and quality masks.
 
-Spectral-gamma and elemental-spectroscopy modules remain available through
-their direct APIs, but they are not hidden dataset-specific branches in the
-context workflow.
+Spectral-gamma and elemental-spectroscopy interpretation are not part of
+``pp.interpret``; call :func:`petrophys.interpretation.geochemistry.interpret_spectral_gamma`
+and :func:`petrophys.interpretation.geochemistry.interpret_elemental_spectroscopy`
+directly (see :doc:`specialist_data`).
 
 Transparent routing
 -------------------
@@ -169,17 +170,16 @@ calcite-dolomite density and closure solve.
    result = pp.interpret(carbonate_well, lithology_domain="carbonate", rw=0.05)
    print(result.well.get("VCALC").describe(), result.well.get("VDOLO").describe())
 
-The solve runs sample by sample, so on long, densely sampled wells it takes
-time; apply it to carbonate intervals rather than whole clastic wells.
+The solve runs sample by sample: a 200-sample COSTA interval takes about a
+second, but a 20,000-sample well takes about ten minutes. Apply it to
+carbonate intervals rather than whole wells.
 
 External lithology can supply the categorical rock log while the selected
 solver still calculates mineral volumes from log responses. Without the
 required responses, mineral solving is skipped and the reason is retained.
-There are no well-name or dataset-name rules.
 
-The lower-level ``LithologyModule`` remains available for experimental
-mineral systems and direct equation studies. Those choices do not create a
-second context-generation workflow. Rank-deficient systems and zero solutions
+The lower-level ``LithologyModule`` is available for experimental mineral
+systems and direct equation studies. Rank-deficient systems and zero solutions
 with unallocated rock volume are unsolved: mineral values are NaN and QC is
 flagged. Closure alone does not prove that a mineral solution is geologically
 correct.
@@ -211,5 +211,6 @@ specified subset in pipeline order. Individual domain functions under
 ``petrophys.interpretation`` and ``petrophys.evaluation`` remain available
 for experiments that need direct control over equations.
 
-The fixed-configuration :class:`petrophys.workflow.StandardWorkflow` remains
-available for compatibility but is deprecated for new applications.
+The older fixed-configuration
+:class:`~petrophys.workflow.standard_workflow.StandardWorkflow` is deprecated;
+it is listed under Legacy in the :doc:`API reference <api/index>`.
