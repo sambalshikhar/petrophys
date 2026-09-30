@@ -115,7 +115,8 @@ def build_context(
 def _write_bytes(path: Path, data: bytes, overwrite: bool) -> None:
     if path.exists() and not overwrite:
         raise FileExistsError(
-            f"Output already exists: {path}; pass overwrite=True to replace it"
+            f"Output already exists: {path}; pass overwrite=True "
+            "(--overwrite on the command line) to replace it"
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     if not overwrite:
