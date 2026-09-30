@@ -4,7 +4,7 @@ import pytest
 from matplotlib.collections import PolyCollection
 
 from petrophys import Well, sample
-from petrophys.io import read_lithology_intervals
+from petrophys.io import read_formations, read_lithology_intervals
 from petrophys.model.formation_tops import FormationTops
 from petrophys.visualization import create_log_viewer
 
@@ -122,3 +122,10 @@ def test_costa_formation_table_matches_each_logged_interval():
         depth = well.depth[np.isfinite(well.get("GR").data)]
         assert attached[0]["top_depth"] == depth.min()
         assert attached[0]["bottom_depth"] == depth.max()
+
+
+def test_read_formations_selects_one_rank():
+    table = read_formations(sample("formations_30_6-5"), rank="formation")
+    assert set(table["rank"]) == {"formation"}
+    with pytest.raises(ValueError, match="available ranks"):
+        read_formations(sample("formations_30_6-5"), rank="membr")

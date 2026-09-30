@@ -228,7 +228,7 @@ def _check_depth_coverage(table, fields, well, unit, *, unit_assumed):
 
 def read_formations(source, *, columns=None, well_name=None, well=None, depth_unit=None,
                     depth_reference=None, datum=None, sheet_name=None, sep=None,
-                    encoding="utf-8-sig") -> pd.DataFrame:
+                    encoding="utf-8-sig", rank=None) -> pd.DataFrame:
     """Read formation picks or bounded intervals into one canonical table.
 
     Required columns are ``formation_name,top_depth``; ``bottom_depth`` is
@@ -238,6 +238,8 @@ def read_formations(source, *, columns=None, well_name=None, well=None, depth_un
     Rank, parent, age and lithology are preserved. Depth metadata and a structured
     import report are stored in ``DataFrame.attrs``. With ``well``, compatible
     length units are converted; incompatible reference/datum joins are rejected.
+    ``rank`` (e.g. ``"formation"``) keeps one stratigraphic level of a
+    hierarchical table; NPD-style names ("Etive Fm.") carry their rank.
     """
     if hasattr(source, "to_dataframe"):
         source = source.to_dataframe()
@@ -279,6 +281,18 @@ def read_formations(source, *, columns=None, well_name=None, well=None, depth_un
             raise ValueError(f"Geology row {index + 2}: top_depth must be less than bottom_depth.")
         table.at[index, "formation_name"] = re.sub(r"\s+top\.?$", "", name.strip(), flags=re.IGNORECASE)
     _infer_rank_from_names(table)
+    if rank is not None:
+        if "rank" not in table:
+            raise ValueError(
+                "rank= needs a rank column or NPD-style names ending in Gp./Fm./Mb."
+            )
+        selected = table["rank"].astype(str).str.strip().str.lower() == str(rank).strip().lower()
+        if not selected.any():
+            available = ", ".join(repr(str(value)) for value in table["rank"].dropna().unique())
+            raise ValueError(f"No formations at rank {rank!r}; available ranks: {available}.")
+        attrs = dict(table.attrs)
+        table = table.loc[selected].copy()
+        table.attrs = attrs
     return table.sort_values("top_depth", kind="stable").reset_index(drop=True)
 
 

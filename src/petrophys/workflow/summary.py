@@ -48,7 +48,9 @@ def summarize_result(
         curve = well.get(flag)
         if curve is not None and well.step is not None:
             values = np.asarray(curve.data, dtype=float)[mask]
-            thickness[flag.lower()] = float(np.count_nonzero(values == 1) * abs(float(well.step)))
+            thickness[flag.lower()] = round(
+                float(np.count_nonzero(values == 1) * abs(float(well.step))), 2
+            )
     return json_object({
         "petrophys_version": __version__,
         "well": well.name,

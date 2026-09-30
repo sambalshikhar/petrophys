@@ -12,6 +12,7 @@ import numpy as np
 
 try:
     import matplotlib.pyplot as plt
+    from matplotlib.colors import LogNorm
     HAS_MPL = True
 except Exception:  # pragma: no cover
     HAS_MPL = False
@@ -48,9 +49,9 @@ def _color(well, color_curve, depth_range):
     return c, color_curve
 
 
-def _scatter(ax, x, y, c, clabel, fig, cmap="viridis"):
+def _scatter(ax, x, y, c, clabel, fig, cmap="viridis", norm=None):
     if c is not None and np.any(np.isfinite(c)):
-        sc = ax.scatter(x, y, c=c, s=6, alpha=0.6, cmap=cmap)
+        sc = ax.scatter(x, y, c=c, s=6, alpha=0.6, cmap=cmap, norm=norm)
         cb = fig.colorbar(sc, ax=ax, pad=0.02)
         cb.set_label(clabel, fontsize=8)
     else:
@@ -182,17 +183,25 @@ def create_buckles_plot(
         raise ValueError("Buckles plot needs PHIE and SW")
     c, clabel = _color(well, color_curve, depth_range)
 
+    norm = None
+    if c is not None and color_curve.upper().startswith("PERM"):
+        positive = c[np.isfinite(c) & (c > 0)]
+        if positive.size:
+            # Permeability spans decades; colour it on a log scale.
+            norm = LogNorm(vmin=float(positive.min()), vmax=float(positive.max()))
+            c = np.where(c > 0, c, np.nan)
+
     fig, ax = plt.subplots(figsize=figsize)
-    _scatter(ax, phie, sw, c, clabel, fig, cmap="viridis")
+    _scatter(ax, phie, sw, c, clabel, fig, cmap="viridis", norm=norm)
 
     phi_line = np.linspace(0.01, 0.40, 200)
     for bvw in (0.02, 0.04, 0.06, 0.08, 0.10, 0.15):
         sw_line = np.clip(bvw / phi_line, 0, 1)
         ax.plot(phi_line, sw_line, color="0.5", lw=0.8, alpha=0.7)
-        # label near the top of each hyperbola
-        xi = bvw / 0.95
-        if xi <= 0.40:
-            ax.annotate(f"BVW={bvw:g}", (xi, 0.95), fontsize=7, color="0.4")
+        # Label each hyperbola where it meets the right edge (Sw = BVW / 0.40),
+        # so the labels are spread out instead of stacked near the top.
+        ax.annotate(f"BVW={bvw:g}", (0.40, bvw / 0.40), xytext=(-3, 2),
+                    textcoords="offset points", ha="right", fontsize=7, color="0.4")
 
     ax.set_xlabel("Effective porosity (v/v)"); ax.set_ylabel("Water saturation (v/v)")
     ax.set_xlim(0, 0.40); ax.set_ylim(0, 1.0)
@@ -230,7 +239,8 @@ def create_hingle_plot(
         # Sw^n = a*Rw / (phi^m * Rt)  ->  Rt^(-1/m) = phi * Sw^(n/m) / (a*Rw)^(1/m)
         y_line = phi_line * sw ** (n / m) / (a * rw) ** (1.0 / m)
         ax.plot(phi_line, y_line, color="0.5", lw=0.9, alpha=0.7)
-        ax.annotate(f"Sw={int(sw*100)}%", (0.40, y_line[-1]), fontsize=7, color="0.4")
+        ax.annotate(f"Sw={int(sw*100)}%", (0.40, y_line[-1]), xytext=(-3, 2),
+                    textcoords="offset points", ha="right", fontsize=7, color="0.4")
 
     ax.set_xlabel("Effective porosity (v/v)")
     ax.set_ylabel(f"Rt^(-1/{m:g})")
