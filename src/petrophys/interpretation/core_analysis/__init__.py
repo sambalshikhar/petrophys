@@ -1,7 +1,8 @@
 """Core calibration and digital-core interpretation.
 
-The package owns laboratory calibration, rock-mechanics measurements, grain
-size analysis, digital facies, and core-image measurements. Plotting helpers
+The package owns laboratory calibration, core-to-log depth matching,
+rock-mechanics measurements, grain size analysis, digital facies, and
+core-image measurements. Plotting helpers
 live in :mod:`petrophys.visualization.core`.
 """
 
@@ -24,6 +25,11 @@ from petrophys.interpretation.core_analysis.calibration import (
     interpolate_log_at_core,
 )
 from petrophys.interpretation.core_analysis.color_analysis import CoreImageData
+from petrophys.interpretation.core_analysis.depth_matching import (
+    CoreDepthShift,
+    find_core_depth_shift,
+    shift_core_depths,
+)
 from petrophys.interpretation.core_analysis.digital_facies import (
     DigitalCoreFacies,
     FaciesResult,
@@ -54,6 +60,9 @@ __all__ = [
     "estimate_archie_m",
     "interpolate_log_at_core",
     "core_data_from_well",
+    "CoreDepthShift",
+    "find_core_depth_shift",
+    "shift_core_depths",
     "CoreMechanical",
     "GrainSizeData",
     "wentworth_class",

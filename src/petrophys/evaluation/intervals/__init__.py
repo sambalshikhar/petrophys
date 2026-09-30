@@ -5,6 +5,7 @@ This module provides tools for formation-level (interval-based) analysis:
 - Interval types: Formation, Zone, SubZone, ManualInterval
 - Tops management: load/validate/query formation tops from CSV
 - Per-interval analysis: summaries, net pay, averages, HCPV
+- Depth labels (``label_depths``) and flag-to-interval tables (``flag_intervals``)
 
 """
 
@@ -19,7 +20,10 @@ from petrophys.model.intervals import (
 )
 
 # Tops management
-from petrophys.model.formation_tops import FormationTops
+from petrophys.model.formation_tops import FormationTops, label_depths
+
+# Flags to intervals
+from petrophys.evaluation.intervals.flag_intervals import flag_intervals
 
 # Per-interval analysis
 from petrophys.evaluation.intervals.analyzer import (
@@ -38,6 +42,9 @@ __all__ = [
     "ManualInterval",
     # Tops management
     "FormationTops",
+    "label_depths",
+    # Flags to intervals
+    "flag_intervals",
     # Analysis
     "IntervalSummary",
     "IntervalAnalyzer",

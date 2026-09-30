@@ -9,6 +9,7 @@ from petrophys.interpretation.electrical.rw.rw_module import RwModule, calculate
 from petrophys.interpretation.electrical.rw.sp_rw import calculate_ssp, estimate_sp_lines, rw_from_sp, rw_from_ssp
 from petrophys.interpretation.electrical.rw.salinity_rw import rw_from_salinity, salinity_from_rw
 from petrophys.interpretation.electrical.rw.temp_correction import correct_rw_temperature
+from petrophys.interpretation.electrical.rw.sp_window import SpRwEstimate, sp_rw_in_window
 
 __all__ = [
     "RwModule",
@@ -17,6 +18,8 @@ __all__ = [
     "rw_from_sp",
     "rw_from_ssp",
     "calculate_ssp",
+    "SpRwEstimate",
+    "sp_rw_in_window",
     "rw_from_salinity",
     "salinity_from_rw",
     "correct_rw_temperature",

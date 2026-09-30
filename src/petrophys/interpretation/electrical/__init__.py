@@ -10,16 +10,23 @@ from petrophys.interpretation.electrical.invasion import (
     classify_invasion,
 )
 from petrophys.interpretation.electrical.rmf import RmfModule, calculate_rmf
-from petrophys.interpretation.electrical.rw import RwModule, calculate_rw
+from petrophys.interpretation.electrical.rw import (
+    RwModule,
+    SpRwEstimate,
+    calculate_rw,
+    sp_rw_in_window,
+)
 
 __all__ = [
     "ArchieParameters",
     "InvasionModule",
     "RmfModule",
     "RwModule",
+    "SpRwEstimate",
     "calculate_invasion_ratio",
     "calculate_rmf",
     "calculate_rw",
     "classify_invasion",
     "pickett_analysis",
+    "sp_rw_in_window",
 ]

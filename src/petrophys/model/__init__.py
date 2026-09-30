@@ -10,7 +10,7 @@ This module provides:
 """
 
 from petrophys.model.core import CoreData
-from petrophys.model.formation_tops import FormationTops
+from petrophys.model.formation_tops import FormationTops, label_depths
 from petrophys.model.intervals import (
     Formation,
     Interval,
@@ -60,6 +60,7 @@ __all__ = [
     "CoreData",
     "Formation",
     "FormationTops",
+    "label_depths",
     "Interval",
     "IntervalKind",
     "ManualInterval",

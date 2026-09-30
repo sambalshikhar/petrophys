@@ -88,6 +88,7 @@ Reservoir evaluation
    petrophys.evaluation.intervals
    petrophys.evaluation.summaries
    petrophys.evaluation.volumetrics
+   petrophys.evaluation.sensitivity
    petrophys.evaluation.diagnostics
 
 Workflows, reporting, and visualization
@@ -97,6 +98,8 @@ Workflows, reporting, and visualization
    :toctree: generated
 
    petrophys.workflow
+   petrophys.workflow.custom
+   petrophys.workflow.steps
    petrophys.workflow.schema
    petrophys.reporting
    petrophys.reporting.context
