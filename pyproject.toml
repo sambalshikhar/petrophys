@@ -148,6 +148,8 @@ files = [
     "src/petrophys/datasets/__init__.py",
     "src/petrophys/workflow/schema.py",
     "src/petrophys/workflow/summary.py",
+    "src/petrophys/workflow/custom.py",
+    "src/petrophys/workflow/steps.py",
     "src/petrophys/_internal/serialization.py",
     "src/petrophys/mcp",
 ]
