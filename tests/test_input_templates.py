@@ -107,3 +107,18 @@ def test_lithology_codebook_template_works_for_embedded_codes():
         assert viewer.lithology_mapping[3] == "Limestone"
     finally:
         viewer.close()
+
+
+def test_costa_formation_table_matches_each_logged_interval():
+    import petrophys as pp
+
+    table = pd.read_csv(sample("formations_costa"))
+    assert set(table["formation_name"]) == {"KHARAIB-2"}
+    assert sorted(table["well"]) == sorted(pp.list_samples("costa"))
+    for name in ("HW-3", "HW-31"):
+        well = pp.read(sample(name), formations=sample("formations_costa"))
+        attached = well.get_parameter("_geology_context")["formations"]
+        assert [row["formation_name"] for row in attached] == ["KHARAIB-2"]
+        depth = well.depth[np.isfinite(well.get("GR").data)]
+        assert attached[0]["top_depth"] == depth.min()
+        assert attached[0]["bottom_depth"] == depth.max()

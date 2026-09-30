@@ -29,7 +29,7 @@ any user-owned path directly to `read_las()` or `read_dlis()`.
 
 | Folder or file | Purpose |
 |---|---|
-| `costa/` | The 17-well Costa carbonate field used by the multiwell field-study and screening notebooks. |
+| `costa/` | The 17-well Costa carbonate field used by the multiwell field-study and screening notebooks. Each file covers only the Kharaib-2 reservoir interval, not the whole well. |
 | `geolink/30_6-5.las` | Main North Sea clastic tutorial well with a rich curve suite and vendor lithology. |
 | `geolink/16_7-1.las` | Tight-zone and industrial curve-wrapping example. |
 | `geolink/15_9-14.las` | Mineral-solver tutorial well with vendor lithology. |
@@ -38,6 +38,7 @@ any user-owned path directly to `read_las()` or `read_dlis()`.
 | `daydream/daydream1_cmr.las` | Daydream 1 processed CMR summary, 3755-4145 m. |
 | `daydream/daydream1_cmr_shallow.las` | Daydream 1 processed CMR summary, 2860-3050 m. |
 | `formations_30_6-5.csv` | Formation tops for 30/6-5. |
+| `formations_costa.csv` | The KHARAIB-2 interval of each Costa well (first to last logged sample, in ft), as a multi-well table: `pp.read(pp.sample("HW-3"), formations=pp.sample("formations_costa"))` selects the row for the well. |
 | `lithology_30_6-5.csv` | Per-interval lithology for 30/6-5. |
 
 ## Repository fixtures

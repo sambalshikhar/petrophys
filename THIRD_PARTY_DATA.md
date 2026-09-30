@@ -19,6 +19,8 @@ specifies **CC BY**, without a licence version in the displayed dataset entry.
 
 Petrophys distributes a 17-well subset with selected/renamed curves and adapted
 LAS headers. These are benchmark inputs, not independently acquired field truth.
+Each file covers only the Kharaib-2 reservoir interval; `formations_costa.csv`
+records that interval (first to last logged sample) for every well.
 For publications, also cite Costa Gomes, Geiger, and Arnold, *The Design of an
 Open-Source Carbonate Reservoir Model*, Petroleum Geoscience 28 (2022),
 [DOI 10.1144/petgeo2021-067](https://doi.org/10.1144/petgeo2021-067).
