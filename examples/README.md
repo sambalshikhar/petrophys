@@ -19,10 +19,25 @@ and assumptions. Advanced equation-level APIs remain part of the curriculum.
 
 ## Run and Verify
 
-Install `python -m pip install -e ".[tutorials]"` in the environment used by
-your notebook editor. The extra includes the kernel and execution tools, not
-a separate notebook editor. Open a notebook in VS Code/Jupyter, select that
-environment, and restart/run all cells.
+From the repository root, install the package with the extras the notebooks
+use, in the environment your notebook editor runs:
+
+```bash
+python -m pip install -e ".[tutorials,ml,mcp,dlis]"
+```
+
+`tutorials` provides the kernel and execution tools (not a notebook editor).
+The other extras are only needed by some notebooks:
+
+| Extra | Needed by | Notes |
+|-------|-----------|-------|
+| `ml` | 12, 13, CS4 | Pretrained imputation models; Python 3.11 or later |
+| `dlis` | 16 | DLIS reader; lesson 16 also needs the Git LFS image data |
+| `mcp` | 20 | MCP server; Python 3.10 or later |
+
+Every other notebook runs with `python -m pip install -e ".[tutorials]"`.
+Open a notebook in VS Code/Jupyter, select that environment, and restart/run
+all cells.
 
 From the repository root, verify the thirteen primary user-journey notebooks:
 
@@ -74,11 +89,11 @@ vendor permeability from T2 calculations; tutorial 16 needs real Git LFS data.
 
 | Notebook | Scope |
 |----------|-------|
-| [`cs1_full_formation_evaluation_30_6-5.ipynb`](case_studies/cs1_full_formation_evaluation_30_6-5.ipynb) | Full clastic formation evaluation |
-| [`cs2_carbonate_rock_typing_costa.ipynb`](case_studies/cs2_carbonate_rock_typing_costa.ipynb) | Carbonate characterization and rock typing |
-| [`cs3_field_screening_costa_17wells.ipynb`](case_studies/cs3_field_screening_costa_17wells.ipynb) | Field-scale screening and well ranking |
-| [`cs4_imperfect_well_recovery_16_7-1.ipynb`](case_studies/cs4_imperfect_well_recovery_16_7-1.ipynb) | Interpretation of an incomplete log suite |
-| [`cs5_saturation_model_sensitivity_30_6-5.ipynb`](case_studies/cs5_saturation_model_sensitivity_30_6-5.ipynb) | Saturation-model selection and sensitivity |
+| [`cs1_full_formation_evaluation_30_6-5.ipynb`](case_studies/cs1_full_formation_evaluation_30_6-5.ipynb) | Full clastic formation evaluation, per-formation summary and completion ranking |
+| [`cs2_carbonate_rock_typing_costa.ipynb`](case_studies/cs2_carbonate_rock_typing_costa.ipynb) | Carbonate core calibration and rock typing over the Kharaib-2 interval |
+| [`cs3_field_screening_costa_17wells.ipynb`](case_studies/cs3_field_screening_costa_17wells.ipynb) | Kharaib-2 screening and ranking across 17 COSTA wells |
+| [`cs4_imperfect_well_recovery_16_7-1.ipynb`](case_studies/cs4_imperfect_well_recovery_16_7-1.ipynb) | Data readiness, QC flags and validated imputation on an incomplete log suite (`ml` extra) |
+| [`cs5_saturation_model_sensitivity_30_6-5.ipynb`](case_studies/cs5_saturation_model_sensitivity_30_6-5.ipynb) | Saturation-model selection and parameter sensitivity |
 
-The ML examples require the optional `scikit-learn`, `xgboost`, and `joblib`
-dependencies.
+Lessons 12, 13 and CS4 need the `ml` extra (scikit-learn, xgboost and joblib;
+Python 3.11 or later); see [Run and Verify](#run-and-verify).
