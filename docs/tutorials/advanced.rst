@@ -36,6 +36,14 @@ use these package extras where needed:
      - The Petrophys MCP server for LLM agents (lesson 20); requires Python
        3.10 or later
 
+.. note::
+
+   Sections marked **Coming with real data** in lessons 12, 14 and 15 need
+   measurements Petrophys does not bundle yet: XRF, grain size and core
+   mechanics (12); an NMR T2 distribution (14); laboratory capillary
+   pressure and formation pressures (15). They return once public datasets
+   are added.
+
 Course outline
 --------------
 
