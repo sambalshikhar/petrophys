@@ -1,15 +1,22 @@
-"""Compact, JSON-serializable summaries of interpretation results."""
+"""Compact, JSON-serializable summaries of interpretation results.
+
+The helpers work on any interpreted :class:`~petrophys.model.Well`, so the
+prebuilt workflow (:class:`~petrophys.workflow.DynamicWorkflowResult`) and
+custom workflows (:class:`~petrophys.workflow.WorkflowRunResult`) report the
+same statistics in the same layout.
+"""
 
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional
 
 import numpy as np
 
 from petrophys._internal.serialization import curve_statistics, depth_mask, json_object
 
 if TYPE_CHECKING:
+    from petrophys.model.well import Well
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowResult
 
 #: Interpretation products whose statistics are included in a summary.
@@ -17,6 +24,29 @@ SUMMARY_CURVES = ("VCL", "PHIT", "PHIE", "SW", "PERM")
 
 #: Net flags whose thickness is included in a summary.
 NET_FLAGS = ("NET_ROCK", "NET_RES", "NET_PAY")
+
+
+def curve_results(well: "Well", names: Iterable[str], mask: np.ndarray) -> Dict[str, Any]:
+    """Unit and statistics of each named curve over ``mask``; absent curves are left out."""
+    results: Dict[str, Any] = {}
+    for name in names:
+        curve = well.get(name)
+        if curve is not None:
+            results[name] = {"unit": curve.unit, **curve_statistics(np.asarray(curve.data)[mask])}
+    return results
+
+
+def net_thickness(well: "Well", mask: np.ndarray) -> Dict[str, Any]:
+    """Thickness flagged by each net flag over ``mask``, rounded to 0.01 depth units."""
+    thickness: Dict[str, Any] = {"depth_unit": well.depth_unit}
+    for flag in NET_FLAGS:
+        curve = well.get(flag)
+        if curve is not None and well.step is not None:
+            values = np.asarray(curve.data, dtype=float)[mask]
+            thickness[flag.lower()] = round(
+                float(np.count_nonzero(values == 1) * abs(float(well.step))), 2
+            )
+    return thickness
 
 
 def summarize_result(
@@ -38,19 +68,6 @@ def summarize_result(
         and spec.default is not dataclasses.MISSING
         and getattr(result.config, name) != spec.default
     }
-    key_results: Dict[str, Any] = {}
-    for name in SUMMARY_CURVES:
-        curve = well.get(name)
-        if curve is not None:
-            key_results[name] = {"unit": curve.unit, **curve_statistics(np.asarray(curve.data)[mask])}
-    thickness: Dict[str, Any] = {"depth_unit": well.depth_unit}
-    for flag in NET_FLAGS:
-        curve = well.get(flag)
-        if curve is not None and well.step is not None:
-            values = np.asarray(curve.data, dtype=float)[mask]
-            thickness[flag.lower()] = round(
-                float(np.count_nonzero(values == 1) * abs(float(well.step))), 2
-            )
     return json_object({
         "petrophys_version": __version__,
         "well": well.name,
@@ -62,8 +79,8 @@ def summarize_result(
         },
         "settings_used": settings,
         "summary_interval": {"top": top, "bottom": bottom, "depth_unit": well.depth_unit},
-        "key_results": key_results,
-        "net_thickness": thickness,
+        "key_results": curve_results(well, SUMMARY_CURVES, mask),
+        "net_thickness": net_thickness(well, mask),
         "executed_steps": [
             {"name": step.step, "method": step.method, "success": step.success}
             for step in result.steps_executed
@@ -74,13 +91,31 @@ def summarize_result(
     })
 
 
-def summarize_formations(
-    result: "DynamicWorkflowResult",
-    formations: Any = None,
-    *,
-    rank: Optional[str] = None,
-) -> Any:
-    """Per-formation table of an interpretation; see :meth:`DynamicWorkflowResult.formation_summary`."""
+def formation_table(well: "Well", formations: Any = None, *, rank: Optional[str] = None) -> Any:
+    """Per-formation gross, net and pay-averaged properties of an interpreted well.
+
+    Parameters
+    ----------
+    well : Well
+        Interpreted well.
+    formations : path, DataFrame, mapping or sequence, optional
+        Formation tops or intervals (anything :func:`petrophys.read_formations`
+        accepts). Defaults to the formations attached by
+        ``petrophys.read(path, formations=...)``.
+    rank : str, optional
+        Level to summarize when the tops mix levels, e.g. ``"formation"``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per formation, as returned by
+        :meth:`DynamicWorkflowResult.formation_summary`.
+
+    Raises
+    ------
+    ValueError
+        If no formations are given or attached to ``well``.
+    """
     import pandas as pd
 
     from petrophys.evaluation.summaries.formation_analysis import analyze_formations
@@ -88,7 +123,6 @@ def summarize_formations(
     from petrophys.model.formation_tops import FormationTops
     from petrophys.model.intervals import Formation
 
-    well = result.well
     if formations is None:
         records = (well.get_parameter("_geology_context") or {}).get("formations")
         if not records:
@@ -106,3 +140,13 @@ def summarize_formations(
     )
     zones = [interval for interval in tops.intervals if isinstance(interval, Formation)]
     return analyze_formations(well, zones).to_dataframe()
+
+
+def summarize_formations(
+    result: "DynamicWorkflowResult",
+    formations: Any = None,
+    *,
+    rank: Optional[str] = None,
+) -> Any:
+    """Per-formation table of an interpretation; see :meth:`DynamicWorkflowResult.formation_summary`."""
+    return formation_table(result.well, formations, rank=rank)

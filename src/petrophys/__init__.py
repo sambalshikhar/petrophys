@@ -48,8 +48,10 @@ from petrophys.datasets import sample, list_samples
 from petrophys.workflow import (
     DynamicWorkflowConfig,
     DynamicWorkflowResult,
+    Workflow,
     run_comprehensive_analysis,
     run_dynamic_workflow,
+    workflow_step,
 )
 from petrophys.preprocessing.imputation import (
     CurveImputationResult,
@@ -72,6 +74,8 @@ __all__ = [
     "DynamicWorkflowConfig",
     "DynamicWorkflowResult",
     "run_dynamic_workflow",
+    "Workflow",
+    "workflow_step",
     "DataQualityWarning",
     "read_formations",
     "read_lithology_intervals",

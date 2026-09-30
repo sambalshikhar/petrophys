@@ -39,6 +39,16 @@ from petrophys.workflow.zoned_batch import (
 )
 from petrophys.workflow.comprehensive_analysis import run_comprehensive_analysis
 from petrophys.workflow.schema import config_schema, workflow_steps
+from petrophys.workflow.custom import (
+    Step,
+    Workflow,
+    WorkflowBatchResult,
+    WorkflowRunResult,
+    WorkflowStepError,
+    WorkflowValidationError,
+    workflow_step,
+)
+from petrophys.workflow import steps
 
 __all__ = [
     # Standard workflow
@@ -73,4 +83,13 @@ __all__ = [
     "run_comprehensive_analysis",
     "config_schema",
     "workflow_steps",
+    # Custom workflows
+    "Workflow",
+    "Step",
+    "workflow_step",
+    "steps",
+    "WorkflowRunResult",
+    "WorkflowBatchResult",
+    "WorkflowValidationError",
+    "WorkflowStepError",
 ]
