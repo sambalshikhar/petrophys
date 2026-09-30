@@ -59,6 +59,11 @@ All notable changes to Petrophys are documented here.
   settings used (`PP_*` parameters) and step reasons; traces record the
   package version.
 - Every skipped step records a specific reason, and `print_trace()` shows it.
+- `formations_costa.csv` labels the logged interval of each Costa well as
+  its single formation, KHARAIB-2, so formation summaries and context
+  packages name the reservoir instead of treating the file as a whole well.
+- `DynamicWorkflowResult.formation_summary()` tabulates gross, net and
+  average properties per formation.
 - NPD/GeoLink-style tops without a rank column get their stratigraphic rank
   from the name suffix (GP./Fm./Mb.), so mixed group/formation picks can be
   analyzed one level at a time with `run_formation_analysis(..., rank=...)`.
