@@ -1,126 +1,146 @@
 Context Export
 ==============
 
-Start with one well
--------------------
+The context generator is model-neutral. It performs local petrophysical
+calculations and writes JSON; it does not call an LLM or send data over the
+network. It also never reads an earlier context package, copies archived
+numbers, or compares a run with reference JSON.
 
-The public context API is model-neutral. It does not call an LLM or send
-data over the network.
+One well
+--------
+
+For a reproducible interpretation, provide the LAS plus the standardized
+tables that are available for the well:
 
 .. code-block:: python
 
    import petrophys as pp
 
-   well = pp.read(pp.sample("30_6-5"))
-   context = pp.build_context(well)
-   pp.export_context(well, "well_context.json")
+   well = pp.read(
+       "well.las",
+       formations="formation_intervals.csv",  # optional
+       lithology="lithology_intervals.csv",    # optional
+   )
+   pp.attach_core_measurements(well, "core_measurements.csv")  # optional
+   settings = pp.read_well_parameters("well_parameters.csv")
 
-Raw-well context contains input summaries, units, parameters and attached
-geology. It does **not** run an interpretation. To include calculations:
+   result = pp.interpret(well, **settings).raise_for_errors()
+   pp.export_context(result, "well_context.json")
 
-.. code-block:: python
+Only the LAS is mandatory. Blank parameter cells use a supported LAS value or
+the documented workflow default. Formation, lithology, core, and codebook
+tables add measured or interpreted evidence; none is fabricated when omitted.
+See :doc:`input_templates` for the exact columns and unit rules.
 
-   result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230).raise_for_errors()
-   pp.export_context(result, "interpreted_context.json")
+The equivalent one-command workflow is:
 
-Rw and temperature here are illustrative, not a calibration for your well.
-Formations and lithology are optional; see :doc:`input_templates` and
-:doc:`data_quality`.
+.. code-block:: bash
 
-Schema and size contracts
--------------------------
+   petrophys-context well.las well_context.json --parameters well_parameters.csv --formations formation_intervals.csv --lithology lithology_intervals.csv --core core_measurements.csv
 
-The default schema is ``"1.0"``. Single-well documents contain
-``schema_version``, ``petrophys_version``, ``context_kind="well_summary"``,
-``well``, ``interpretation`` and ``geology``. Raw depth-by-depth arrays are
-excluded. Missing numeric values serialize as JSON null, not NaN.
+Remove an optional flag when that input is unavailable. The command always
+runs the interpretation before exporting context. Use ``--overwrite`` only to
+replace an existing single-well JSON file.
 
-``max_bytes`` defaults to 1,000,000 UTF-8 bytes per JSON document. Packages
-also enforce ``max_total_bytes=50_000_000``, including ancillary files.
-Oversized outputs raise ``pp.ContextSizeError``; nothing is silently
-truncated. These are serialized-output budgets, not limits on computation,
-memory or temporary disk space.
+``build_context(well_or_result)`` remains a low-level serializer. It summarizes
+the object supplied to it and never runs hidden calculations. Pass an
+interpretation result, rather than a raw well, when calculated curves and
+workflow provenance are required.
 
-Existing single files are preserved unless ``overwrite=True``. Packages
-require a **new directory**. They are staged and validated before publication,
-so a failed or oversized run does not leave a partial package at its destination.
+One calculation engine
+----------------------
+
+There are no dataset profiles or legacy replay modes. Every run uses the same
+workflow. ``lithology_domain`` only selects the appropriate mineral model:
+
+* ``auto`` derives a supported domain from supplied geological evidence.
+* ``clastic`` uses the canonical multi-mineral route.
+* ``carbonate`` uses the COSTA carbonate route for illite, calcite, and
+  dolomite.
+
+This setting describes the interpretation domain; it is not a per-depth rock
+label. Detailed limestone, dolomite, marl, sandstone, and shale intervals
+belong in ``lithology_intervals.csv``. The standard gamma-ray endpoints are
+``gr_clean=20`` and ``gr_shale=100`` for every domain unless the parameter
+table explicitly changes them.
 
 Formation and lithology packages
 --------------------------------
 
+A directory of LAS files can be interpreted in one call:
+
 .. code-block:: python
 
-   results = pp.export_context(
-       "logs", "outputs/context_run_01",
+   records = pp.export_context(
+       "logs",
+       "outputs/context_run_01",
        layout="category_formation_lithology",
-       tops_file="formation_intervals.csv",
+       parameters_file="well_parameters.csv",
+       tops_file="formation_intervals.csv",       # optional
+       lithology_file="lithology_intervals.csv",  # optional
+       core_file="core_measurements.csv",         # optional
+       lithology_mapping_file="lithology_codes.csv",  # optional
        tops_options={"rank": "formation"},
-       workflow_config=pp.DynamicWorkflowConfig(
-           rw=0.07, rw_meas_temp_f=230,
-       ),
    )
 
-Packages run the workflow and split outputs by formation and available
-lithology. Layouts are ``formation_lithology`` and
-``category_formation_lithology``. The return value is a list of export
-records with ``json_file``, ``warnings`` and ``success``. A failed record
-prevents publication. Versioned package documents wrap the existing
-analysis structure under ``payload`` and add schema/package metadata.
+Available package layouts are ``formation_lithology`` and
+``category_formation_lithology``. Package exports read each LAS, select its
+rows from the standardized tables, run the same workflow, group the computed
+results, and write direct context JSON documents. They do not wrap category
+documents in a ``payload`` object.
 
-Unlike single-well context, these layouts need a formation table because
-their purpose is formation grouping. CSV, TSV and Excel are accepted,
-including canonical templates and NPD/SODIR columns
-``Well identifier`` / ``Surface`` / ``MD``. Explicit bottoms and depth units
-are preserved. Use ``tops_options={"sheet_name": "Tops", "rank": "formation"}``
-for multi-sheet or hierarchical files. Depth references and datums must
-match the well; this API does not transform MD to TVD.
+If formations are absent, the logged interval is analyzed as ``WHOLE_WELL``.
+If detailed lithology is absent, the workflow uses embedded evidence or its
+mineral solver. If core is absent, core-dependent calibration is skipped and
+recorded in the workflow trace. A codebook is needed only for coded lithology
+whose labels are not already known.
 
-Well identifiers match the LAS filename stem or well name with common
-separator normalization. A multiwell package needs a well column.
-A single-well table is matched only when unambiguous.
+``minimum_group_thickness`` defaults to ``2.0`` in the LAS depth unit. This is
+the historical grouping rule retained for deterministic output. It therefore
+means 2 m for a metric LAS and 2 ft for a foot-based LAS; change it explicitly
+when a project requires one physical threshold across mixed units.
 
-A codebook is optional; otherwise built-in vendor labels are used.
-``lithology_mapping_file="codes.xlsx"`` accepts canonical
-``code,lithology`` or Kingdom ``Abbreviation,Attribute``.
-``Attribute`` is preferred over ``Lithology Attribute`` when both exist;
-disagreement generates a warning. For deliberate grouping, select it with
-``pp.read_lithology_codes(..., label_column=...)`` and prepare a canonical
-codebook containing that mapping.
-
-Command line
-------------
+The command-line package form is:
 
 .. code-block:: bash
 
-   petrophys-context well.las well_context.json
-   petrophys-context well.las interpreted.json --interpret --rw 0.07 --rw-temp-f 230
-   petrophys-context logs outputs/run_01 --layout formation_lithology --formations tops.csv
+   petrophys-context logs outputs/context_run_01 --layout category_formation_lithology --parameters well_parameters.csv --formations formation_intervals.csv --lithology lithology_intervals.csv --core core_measurements.csv --lithology-codes lithology_codes.csv --tops-rank formation
 
-``python -m petrophys.reporting.context_cli`` is equivalent. Use ``--help``
-for schema, byte-budget and input options.
+Use ``--well`` repeatedly to select wells, ``--recursive`` for nested LAS
+directories, and ``--min-thickness`` to override the grouping threshold.
+``python -m petrophys.reporting.context_cli`` is equivalent.
 
-The historical ``scripts/generate_*context_json*`` entry points now call
-this API. ``--input-dir`` and ``--tops-file`` are required unless supplied
-through ``PETROPHYS_DATA_DIR`` and ``PETROPHYS_TOPS_FILE``. No private
-workbook is assumed. ``--tops-sheet`` and ``--tops-rank`` select sheet/rank.
+Input matching
+--------------
 
-Legacy compatibility
---------------------
+CSV, TSV, Excel, and pandas DataFrames are accepted by the standardized
+readers. Multiwell rows are matched to the well name read from the LAS header,
+with common separator normalization (for example, ``30/6-5`` and
+``30_6-5`` match). Duplicate or missing matches raise clear errors rather than
+silently selecting a row.
 
-Use ``schema_version="legacy"`` (CLI: ``--schema-version legacy``) when an
-existing consumer needs the unwrapped payload. Package replay retains the
-old automatic workflow profile unless a configuration is supplied.
-Versioned packages default to ``generic_inference``.
+Formation inputs accept the canonical templates and NPD/SODIR columns
+``Well identifier`` / ``Surface`` / ``MD``. Use
+``tops_options={"sheet_name": "Tops", "rank": "formation"}`` for a
+multi-sheet or hierarchical workbook. Depth references and datums must match
+the well; the importer can convert metres and feet, but it does not invent an
+MD-to-TVD or datum transformation.
 
-Interpreted legacy single-well exports require ``original_curves`` captured
-before interpretation, to distinguish measured inputs from generated curves.
-``source_file`` preserves source naming.
+``lithology_mapping_file`` accepts canonical ``code,lithology`` or Kingdom
+``Abbreviation,Attribute`` columns. ``Attribute`` is preferred over
+``Lithology Attribute`` when both exist; disagreement generates a warning.
 
-Regression tests compare bytes against the existing exporters for a single
-well and both package layouts. This is fixture-based compatibility, not a
-claim that every historical well was replayed. Corrected RMF note labels
-and decorated Celsius-unit parsing remain corrected. Conflicting custom
-codebooks also use corrected label selection; fixes are not reverted for replay.
+Schema and size contracts
+-------------------------
 
-``--legacy-benchmark-compat`` on the historical scripts additionally enables
-archived benchmark conventions. It is not recommended for new interpretations.
+Single-well JSON uses schema ``1.0`` and contains ``schema_version``,
+``petrophys_version``, ``context_kind``, ``well``, ``interpretation``, and
+``geology``. Raw depth-by-depth arrays are excluded. Missing numeric values
+serialize as JSON ``null``, never NaN.
+
+``max_bytes`` defaults to 1,000,000 UTF-8 bytes per JSON document. Packages
+also enforce ``max_total_bytes=50_000_000``, including ancillary files.
+Oversized outputs raise ``pp.ContextSizeError``; nothing is silently
+truncated. Existing package directories are never overwritten. A package is
+staged and validated before publication, so a failed run does not leave a
+partial destination.

@@ -51,7 +51,7 @@ def test_step_result_to_dict_is_json_safe():
     json.dumps(payload, allow_nan=False)
 
 
-def test_context_notes_prefer_finalized_benchmark_permeability_trace():
+def test_context_notes_prefer_finalized_permeability_trace():
     preliminary = StepResult(
         step="permeability",
         success=True,
@@ -63,7 +63,7 @@ def test_context_notes_prefer_finalized_benchmark_permeability_trace():
         },
     )
     finalized = StepResult(
-        step="permeability_benchmark_finalize",
+        step="permeability_finalize",
         success=True,
         method="timur",
         parameters={
@@ -151,10 +151,10 @@ def test_assumed_reference_temperature_method_is_labelled_per_resistivity():
     assert rw_detail.startswith("LAS header RW")
 
 
-def test_legacy_exporters_keep_their_sandstone_clastic_default():
-    from petrophys.reporting.reference_export import _legacy_workflow_config
+def test_context_exporters_keep_their_sandstone_clastic_default():
+    from petrophys.reporting.reference_export import _context_workflow_config
 
-    default = _legacy_workflow_config()
+    default = _context_workflow_config()
     assert (default.matrix_type, default.lithology) == ("sandstone", "clastic")
     explicit = DynamicWorkflowConfig(rw=0.07)
-    assert _legacy_workflow_config(explicit) is explicit
+    assert _context_workflow_config(explicit) is explicit

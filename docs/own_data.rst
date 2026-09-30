@@ -7,8 +7,8 @@ Choose the task
 * View/QC: ``pp.read`` then ``pp.plot``. No interpretation required.
 * Interpret: ``pp.interpret`` then inspect the result trace and calculated curves.
 * Individual equations: use the modules under ``petrophys.interpretation``.
-* Batch and legacy reference reports: see :doc:`workflows` and
-  :doc:`visualization_reporting`; these retain their separate interfaces.
+* Batch interpretation: see :doc:`workflows`.
+* Computed context packages: see :doc:`context`.
 
 Read and plot
 -------------
@@ -143,5 +143,5 @@ Compatibility changes
 * Invalid geology rows raise instead of being silently skipped.
 * Summary totals count the covered depth union, not the sum of nested rows.
 * Unknown reader/workflow options fail instead of being ignored.
-* Legacy ``load_lithology_csv`` and specialized reference-export/batch interfaces
-  retain their historical contracts. Prefer the shared readers for new code.
+* The old ``load_lithology_csv`` helper remains for compatibility. Prefer
+  the shared validated readers for new code.

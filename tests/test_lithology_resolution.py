@@ -251,13 +251,12 @@ def test_explicit_carbonate_setting_passes_through_workflow():
     well.remove_curve('PHIE_CC')
     well.add_curve('NPHI', np.full(60, 0.2), 'v/v')
     result = DynamicWorkflow(DynamicWorkflowConfig(
-        lithology='carbonate', matrix_type='limestone',
-        interpretation_profile='generic_inference',
+        lithology_domain='carbonate', matrix_type='limestone',
     )).run(well)
     step = next(step for step in result.steps_executed if step.step == 'lithology')
-    assert step.parameters['mineral_selection']['source'] == 'configured'
-    assert step.parameters['mineral_selection']['reduced_minerals'] == ['calcite', 'dolomite']
-    assert step.parameters['multi_mineral_solved_samples'] == 60
+    assert step.method == 'costa_gr_illite_calcite_dolomite'
+    assert step.parameters['lithology_domain'] == 'carbonate'
+    assert 'VILL' in step.output_curves
 
 
 def test_custom_mineral_set_is_preserved_for_a_carbonate_well():
@@ -270,18 +269,15 @@ def test_custom_mineral_set_is_preserved_for_a_carbonate_well():
     assert result.mineral_selection['reduced_minerals'] == ['quartz', 'calcite']
 
 
-def test_weak_auto_resolution_is_not_an_explicit_carbonate_constraint():
+def test_auto_resolution_selects_the_carbonate_domain_route():
     from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 
     well = _well_with_core_porosity(2.71)
     well['RHOB'].data[-20:] = 2.65 * 0.8 + 0.2
     well.add_curve('NPHI', np.full(60, 0.2), 'v/v')
     result = DynamicWorkflow(DynamicWorkflowConfig(
-        lithology='auto', matrix_type='auto',
-        interpretation_profile='generic_inference',
+        lithology_domain='auto', matrix_type='auto',
     )).run(well)
     step = next(step for step in result.steps_executed if step.step == 'lithology')
-    selection = step.parameters['mineral_selection']
-    assert selection['source'] == 'core_matrix_density'
-    assert selection['agreement'] < 0.8
-    assert selection['reduced_minerals'] == ['quartz', 'calcite', 'dolomite']
+    assert result.config.lithology_domain == 'carbonate'
+    assert step.method == 'costa_gr_illite_calcite_dolomite'

@@ -1,11 +1,4 @@
-"""May 2026 vendor-lithology benchmark compatibility calculations.
-
-This module is intentionally private.  It preserves the numerical behavior
-used to create the historical context benchmark at commit ``3b8051c`` while
-the public interpretation modules continue to use the current, more general
-algorithms.  Only :class:`petrophys.workflow.DynamicWorkflow` selects these
-calculations, and only for the explicit vendor benchmark profile.
-"""
+"""Canonical mineral inversion and saturation calculations."""
 
 from typing import Dict, Optional, Tuple
 
@@ -21,7 +14,7 @@ from petrophys.interpretation.saturation.sw_module import (
 )
 
 
-BENCHMARK_PROFILE_VERSION = "may_2026"
+CALCULATION_REVISION = "canonical"
 
 
 def _mineral_endpoints(name: str) -> Dict[str, float]:
@@ -47,14 +40,8 @@ def _constrain_mineral_fractions(
     return constrained
 
 
-class May2026BenchmarkMultiMineralSolver:
-    """Reproduce the mineral inversion used by the May 2026 benchmark.
-
-    In particular, this keeps the historical equation selection and the
-    absolute 0.05 closure gate.  The generic solver deliberately does not use
-    this implementation because it supports missing-neutron alternatives and
-    improved QC behavior.
-    """
+class CanonicalMultiMineralSolver:
+    """Solve canonical mineral volumes with an absolute 0.05 closure gate."""
 
     def __init__(
         self,
@@ -189,8 +176,8 @@ class May2026BenchmarkMultiMineralSolver:
         return result
 
 
-def may_2026_indonesia(rt, rw, phi, vcl, rcl, a=1.0, m=2.0, n=2.0):
-    """Historical Indonesia implementation retained for benchmark parity."""
+def canonical_indonesia(rt, rw, phi, vcl, rcl, a=1.0, m=2.0, n=2.0):
+    """Calculate Indonesia water saturation in the canonical operation order."""
     rt = np.asarray(rt, dtype=float)
     phi = np.asarray(phi, dtype=float)
     rt = np.where(rt <= 0, 1e-10, rt)
@@ -211,8 +198,8 @@ def may_2026_indonesia(rt, rw, phi, vcl, rcl, a=1.0, m=2.0, n=2.0):
     return np.clip(np.power(lhs / sand_term, 2.0 / n), 0.0, 1.0)
 
 
-def may_2026_dual_water(phi_t, rt, rw, rwb, vcl, phi_cl, a=1.0, m=2.0, n=2.0):
-    """Historical Dual Water operation order retained for benchmark parity."""
+def canonical_dual_water(phi_t, rt, rw, rwb, vcl, phi_cl, a=1.0, m=2.0, n=2.0):
+    """Calculate Dual Water saturation in the canonical operation order."""
     phi_bw = vcl * phi_cl
     phi_t_safe = np.where(phi_t <= 0, 1e-10, phi_t)
     swb = phi_bw / phi_t_safe
@@ -222,8 +209,8 @@ def may_2026_dual_water(phi_t, rt, rw, rwb, vcl, phi_cl, a=1.0, m=2.0, n=2.0):
     return np.clip((swt - swb_safe) / (1.0 - swb_safe), 0.0, 1.0)
 
 
-class May2026BenchmarkSaturationModule(SaturationModule):
-    """Use historical Indonesia/Dual Water equations within current routing."""
+class CanonicalSaturationModule(SaturationModule):
+    """Use canonical Indonesia and Dual Water equations within current routing."""
 
     def _run_model(
         self,
@@ -251,13 +238,13 @@ class May2026BenchmarkSaturationModule(SaturationModule):
         m_value = self.m if m_value is None else m_value
         n_value = self.n if n_value is None else n_value
         if model == SwModel.INDONESIA:
-            return may_2026_indonesia(
+            return canonical_indonesia(
                 rt, rw, phie, vcl, rcl, a_value, m_value, n_value
             )
         if model == SwModel.DUAL_WATER:
             if rwb is None:
                 rwb = rw * 0.3
-            return may_2026_dual_water(
+            return canonical_dual_water(
                 phit, rt, rw, rwb, vcl, phi_cl, a_value, m_value, n_value
             )
         return super()._run_model(

@@ -278,7 +278,7 @@ def test_full_dynamic_workflow_records_trace_for_every_module(record_route):
 
     expected_steps = {
         "temperature", "bad_hole", "vclay", "rcl", "lithology", "rmf", "rw",
-        "invasion", "hc_correction", "porosity", "porosity_refinement",
+        "invasion", "hc_correction", "porosity",
         "saturation", "permeability", "rock_quality", "bvw", "mhi", "net_pay",
     }
     executed = {step.step for step in result.steps_executed if step.success}
@@ -295,7 +295,7 @@ def test_pipeline_solves_provisional_porosity_before_lithology_then_refines():
     assert pipeline_steps.index("core_correction") < pipeline_steps.index("saturation")
 
 
-def test_dynamic_workflow_preserves_vendor_vcl_and_phie_as_active_curves():
+def test_canonical_workflow_recalculates_vcl_and_preserves_prioritized_phie():
     depth = np.arange(1000.0, 1006.0)
     well = Well("VENDOR-INTERP")
     well.depth = depth
@@ -331,21 +331,17 @@ def test_dynamic_workflow_preserves_vendor_vcl_and_phie_as_active_curves():
     ).run(well)
 
     assert result.success
-    np.testing.assert_allclose(well["VCL"].data, vendor_vcl)
+    assert not np.allclose(well["VCL"].data, vendor_vcl)
     np.testing.assert_allclose(well["PHIE"].data, vendor_phie)
-    assert "VCL_CALC" in well
+    assert "VCL_CALC" not in well
     assert "PHIE_CALC" in well
-    assert not np.allclose(well["VCL_CALC"].data, vendor_vcl)
-    assert not np.allclose(well["PHIE_CALC"].data, vendor_phie)
 
     vcl_step = _step_by_name(result, "vclay")
     por_step = _step_by_name(result, "porosity")
-    assert vcl_step.parameters["active_vcl_source"] == "input_interpretation"
-    assert vcl_step.parameters["computed_vcl_curve"] == "VCL_CALC"
+    assert vcl_step.parameters["active_vcl_source"] == "workflow_calculation"
+    assert vcl_step.parameters["computed_vcl_curve"] == "VCL"
     assert por_step.parameters["active_phie_source"] == "input_interpretation"
     assert por_step.parameters["computed_phie_curve"] == "PHIE_CALC"
-    assert any("preserved as active" in decision for decision in vcl_step.decisions)
-    assert any("preserved as active" in decision for decision in por_step.decisions)
 
 
 def test_dynamic_workflow_skips_modules_when_inputs_are_missing(record_route):
@@ -466,7 +462,7 @@ def test_vclay_keeps_nan_where_all_methods_are_missing_without_runtime_warning()
     )
 
 
-def test_vclay_trace_reports_the_clean_line_used(record_route):
+def test_vclay_trace_reports_the_canonical_clean_line(record_route):
     well = _routing_well("VCL-SANDSTONE-CLEAN-LINE")
     result = _run(
         "vclay_sandstone_clean_line",
@@ -478,11 +474,11 @@ def test_vclay_trace_reports_the_clean_line_used(record_route):
     )
     parameters = _step_by_name(result, "vclay").parameters
 
-    assert parameters["nd_matrix"] == "sandstone"
-    assert parameters["nd_clean1_density"] == pytest.approx(2.65)
-    assert parameters["nd_clean1_neutron"] == pytest.approx(-0.02)
-    assert parameters["nd_clean2_density"] == pytest.approx(1.99)
-    assert parameters["nd_clean2_neutron"] == pytest.approx(0.38)
+    assert parameters["nd_matrix"] == "limestone"
+    assert parameters["nd_clean1_density"] == pytest.approx(2.71)
+    assert parameters["nd_clean1_neutron"] == pytest.approx(0.0)
+    assert parameters["nd_clean2_density"] == pytest.approx(2.03)
+    assert parameters["nd_clean2_neutron"] == pytest.approx(0.40)
 
 
 @pytest.mark.parametrize("curve_to_keep", ["CALI", "CAL"])
@@ -665,7 +661,7 @@ def test_lithology_fallback_writes_litho_when_input_lithology_absent(record_rout
         assert well.get(curve) is not None
 
 
-def test_lithology_solves_with_pef_dtc_when_neutron_missing(record_route):
+def test_canonical_lithology_requires_neutron_even_with_pef_dtc(record_route):
     well = _remove_curves(_routing_well("lithology_without_neutron", n=8), "NPHI", "PHIN")
 
     result = _run(
@@ -684,13 +680,11 @@ def test_lithology_solves_with_pef_dtc_when_neutron_missing(record_route):
         curves=["PHID", "PHIT", "PHIE", "VQUAR", "VCALC", "VDOLO", "VANHY", "MMQC", "LITHO"],
     )
 
-    lith_step = _step_by_name(result, "lithology")
-    assert lith_step.success is True
-    assert lith_step.parameters["multi_mineral_solved_samples"] == well.n_samples
-    assert "MMQC" in lith_step.output_curves
+    assert _step_or_none(result, "lithology") is None
+    assert "lithology" in result.steps_skipped
     for curve in ("VQUAR", "VCALC", "VDOLO", "VANHY"):
-        assert np.any(np.isfinite(well.get(curve).data))
-    assert well.get("MMQC") is not None
+        assert well.get(curve) is None
+    assert well.get("MMQC") is None
 
 
 @pytest.mark.parametrize(
@@ -1084,7 +1078,7 @@ def test_porosity_phin_uses_lithology_specific_nphi_ma(record_route):
     assert any("lithology-specific matrix neutron endpoints" in item for item in step.decisions)
 
 
-def test_porosity_refinement_uses_computed_lithology_matrix_endpoints(record_route):
+def test_canonical_workflow_keeps_single_porosity_pass(record_route):
     well = _routing_well("porosity_refined_from_computed_lithology", n=8)
 
     result = _run(
@@ -1105,17 +1099,12 @@ def test_porosity_refinement_uses_computed_lithology_matrix_endpoints(record_rou
     )
 
     initial = _step_by_name(result, "porosity")
-    refined = _step_by_name(result, "porosity_refinement")
 
     assert initial.parameters["porosity_pass"] == "initial"
     assert initial.parameters["matrix_mode"] == "constant"
-    assert refined.parameters["porosity_pass"] == "refined_after_computed_lithology"
-    assert refined.parameters["matrix_mode"] == "lithology_dependent"
-    assert refined.parameters["matrix_source"] == "computed_lithology_curve"
-    assert refined.parameters["uses_computed_lithology"] is True
-    assert refined.parameters["matrix_endpoints"]
+    assert _step_or_none(result, "porosity_refinement") is None
+    assert "porosity_refinement" in result.steps_skipped
     assert well.get("LITHO") is not None
-    assert any("computed lithology matrix endpoints" in item for item in refined.decisions)
 
 
 def test_porosity_refinement_skips_when_porosity_step_is_skipped():

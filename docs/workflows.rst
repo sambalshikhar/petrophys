@@ -2,9 +2,9 @@ Workflows
 =========
 
 Petrophys can be used one calculation at a time, but most complete-well work
-starts with :func:`~petrophys.api.interpret`. It runs the dynamic workflow, which
-examines the available curves and parameters before each stage, executes
-applicable calculations in dependency order, and records the outcome in a
+starts with :func:`~petrophys.api.interpret`. It runs the dynamic workflow,
+examines available curves and parameters before each stage, and records every
+executed or skipped calculation in a
 :class:`petrophys.workflow.DynamicWorkflowResult`.
 
 Dynamic workflow
@@ -21,25 +21,47 @@ Dynamic workflow
    print([step.step for step in result.steps_executed])
    print(result.specific_steps_skipped)
 
-Settings are :class:`~petrophys.workflow.DynamicWorkflowConfig` fields, passed
-as keywords or as a config object; invalid values raise ``ValueError`` before
-anything runs. ``pp.interpret`` works on a copy of the well. The lower-level
-:func:`petrophys.workflow.run_dynamic_workflow` takes the same settings but adds
-curves to the well it is given, and :class:`petrophys.workflow.DynamicWorkflow`
-can be reused across wells: each run resolves ``"auto"`` settings afresh.
+Settings are :class:`~petrophys.workflow.DynamicWorkflowConfig` fields,
+passed as keywords or as one config object. Invalid values raise
+``ValueError`` before calculation starts. ``pp.interpret`` works on a copy
+of the well. The lower-level
+:func:`petrophys.workflow.run_dynamic_workflow` adds curves to the well it is
+given. A :class:`petrophys.workflow.DynamicWorkflow` can be reused across
+wells; each run resolves ``auto`` settings independently.
 
 The workflow does not require every possible input. A missing prerequisite
-causes the dependent step to be listed in ``steps_skipped``, with the missing
-curves or settings in ``specific_steps_skipped``. A hard
-input error or a failed executed step makes ``result.success`` false. Warnings
-remain separate so a usable but reviewable interpretation can be distinguished
-from a failed run.
+causes the dependent step to appear in ``steps_skipped``, with its reason in
+``specific_steps_skipped``. A failed executed step makes
+``result.success`` false. Warnings remain separate so a usable but reviewable
+interpretation can be distinguished from a failed run.
+
+One calculation path
+--------------------
+
+There are no dataset profiles or context replay modes. Dataset names, well
+names, and the presence of a vendor curve do not switch workflow versions.
+Imported curves remain on the well, and each trace step identifies the
+measurements, assumptions, method, and outputs that were used.
+
+``lithology_domain`` selects only the mineral calculation family:
+
+* ``clastic`` selects the canonical multi-mineral calculation.
+* ``carbonate`` selects the COSTA carbonate calculation.
+* ``auto`` resolves a supported domain from attached or embedded geological
+  evidence, then records the decision. Insufficient evidence falls back to
+  clastic with a warning.
+
+The domain is not the per-depth lithology. External intervals such as shale,
+sandstone, limestone, dolomite, and marl are separate inputs and take
+precedence over embedded or solver-generated categorical labels. Use the
+standardized tables in :doc:`input_templates` to make project assumptions
+reproducible.
 
 Pipeline order
 --------------
 
-The exact executed path depends on the well. The complete pipeline is grouped
-below in its current dependency order.
+The executed path depends on the available inputs. The pipeline follows this
+dependency order:
 
 .. list-table::
    :header-rows: 1
@@ -50,20 +72,16 @@ below in its current dependency order.
      - Purpose
    * - Preparation
      - Normalization, temperature, bad-hole QC
-     - Create canonical working aliases, convert supported units, establish
+     - Create canonical aliases, convert supported units, establish
        environmental context, and identify compromised borehole intervals.
-   * - Specialist inputs
-     - Spectral gamma, elemental spectroscopy
-     - Interpret compatible specialist channels when they are present.
    * - Matrix and fluids
      - VCL, Rcl, Rmf, hydrocarbon correction
      - Establish clay, electrical, mud-filtrate, and optional hydrocarbon
        corrections required by later calculations.
    * - Pore system
-     - Porosity, lithology, porosity refinement, core correction
-     - Calculate available porosity families, solve mineral volumes where the
-       response system is supported, refine matrix endpoints, and apply
-       compatible laboratory calibration.
+     - Porosity, lithology, core correction
+     - Calculate porosity, solve mineral volumes when the response system is
+       supported, and apply compatible laboratory calibration.
    * - Electrical interpretation
      - Rw, invasion, saturation
      - Resolve formation-water resistivity, diagnose invasion, and route water
@@ -75,13 +93,15 @@ below in its current dependency order.
      - Net pay
      - Apply configurable net-rock, net-reservoir, net-pay, and quality masks.
 
+Spectral-gamma and elemental-spectroscopy modules remain available through
+their direct APIs, but they are not hidden dataset-specific branches in the
+context workflow.
+
 Transparent routing
 -------------------
 
 Each executed :class:`petrophys.workflow.StepResult` records its method,
-input and output curves, parameters, decisions, warnings, and message. The
-result can be printed, converted to a DataFrame, or serialized as a trace
-dictionary.
+input and output curves, parameters, decisions, warnings, and message.
 
 .. code-block:: python
 
@@ -92,99 +112,85 @@ dictionary.
        include_curves=["VCL", "PHIE", "SW", "PERM", "NET_PAY"]
    )
 
-New interpretations default to ``interpretation_profile="generic_inference"``.
-The presence of vendor lithology no longer silently enables archived benchmark
-physics or disables bad-hole pay exclusions. For historical reproduction,
-explicit ``interpretation_profile="auto"`` uses a validated vendor lithology route
-when an authoritative lithology-code curve is available and otherwise uses
-the generic inference route. Callers can request ``"generic_inference"``
-explicitly when testing the log-derived matrix workflow. Imported interpreted
-curves remain available on the well; the trace identifies the curves selected
-for each calculation. Legacy reference exporters explicitly retain ``"auto"``.
-
 Net-pay curves are cutoff-screening results, not confirmation of hydrocarbons.
-``NET_PAY_REVIEW`` flags candidate pay that conflicts with supplied shale or
-non-reservoir lithology, without rewriting the measurements or imposing a
-formation-name blacklist. Review Rw and its reference temperature, clay-volume
-endpoints, porosity calibration, borehole quality, and project-specific cutoffs.
-Marl uses the limestone matrix and carbonate cutoff family consistently; this
-routing convention is not a substitute for a calibrated clay-carbonate model.
+Review Rw and its reference temperature, clay-volume endpoints, porosity
+calibration, borehole quality, and project-specific cutoffs. Marl is a mixed
+clay-carbonate rock and requires project calibration; a categorical label is
+not a calibrated mineral model.
 
 Assumptions remain explicit
 ---------------------------
 
 The workflow accepts environmental, matrix, saturation, permeability, and
-cutoff assumptions through :class:`petrophys.workflow.DynamicWorkflowConfig`.
-Formation-water resistivity is not silently defaulted unless
-``allow_default_rw=True`` is deliberately set. If no measured, header-derived,
-salinity-derived, or SP-derived Rw route is supported, saturation-dependent
-steps are reduced or skipped.
+cutoff assumptions through
+:class:`petrophys.workflow.DynamicWorkflowConfig`. Formation-water
+resistivity is resolved from the supplied setting, LAS metadata, salinity, or
+supported log evidence. The trace records the selected source.
 
 .. code-block:: python
 
-   config = DynamicWorkflowConfig(
+   config = pp.DynamicWorkflowConfig(
        bht_f=220.0,
        td_ft=8500.0,
        rw=0.05,
        rw_meas_temp_f=180.0,
        salinity_ppm=25000.0,
-       lithology="clastic",
+       lithology_domain="clastic",
        matrix_type="sandstone",
        a=1.0,
        m=2.0,
        n=2.0,
-       vcl_cutoff=0.35,
+       gr_min=20.0,
+       gr_max=100.0,
+       vcl_cutoff=0.30,
        phie_cutoff=0.08,
-       sw_cutoff=0.60,
+       sw_cutoff=0.70,
    )
 
-Minerals with limited logs
---------------------------
+The well-parameter template uses the friendlier headers ``gr_clean`` and
+``gr_shale``; the reader maps them to ``gr_min`` and ``gr_max``.
+The shared defaults are 20 and 100 for all lithology domains.
 
-The generic solver uses density and unity plus each available neutron, PEF, or
-sonic response. Clay volume is a supplied constraint. Porosity is either solved
-jointly or fixed by a supplied core-related porosity curve. A solution requires
-enough independent equations for the selected unknowns.
+Mineral calculations
+--------------------
 
-For reduced mineral selection, ``LithologyModule(lithology="auto")`` accepts a
-recognized interpreted-lithology log or core-constrained matrix-density evidence
-when at least 80% of its classified samples agree on the rock family. This is a
-well-level modelling constraint, not a calibrated confidence probability or a
-replacement for zonation. The selected source, agreement, and mineral set appear
-in the workflow trace. There are no well-name or dataset-name selection rules.
+The clastic route requires RHOB, NPHI/PHIN, and VCL. It uses the canonical
+multi-mineral equation set and closure gate; PEF or DTC can add response
+information when available.
 
-For an independently established carbonate interval, the workflow can be run as:
+The carbonate route follows the COSTA method. It requires RHOB, GR, and
+PHIT/PHIE. Bulk illite is calculated as
+``-0.0424035 + 0.00562239 * GR``, followed by a bounded
+calcite-dolomite density and closure solve.
 
 .. code-block:: python
 
-   config = DynamicWorkflowConfig(
-       interpretation_profile="generic_inference",
-       lithology="carbonate",
+   config = pp.DynamicWorkflowConfig(
+       lithology_domain="carbonate",
        matrix_type="auto",
    )
-   result = run_dynamic_workflow(well, config)
+   result = pp.run_dynamic_workflow(well, config)
 
-With limited responses the carbonate constraint uses calcite and dolomite;
-quartz and anhydrite remain in the full system when enough equations are
-available. Without sufficient geological evidence, automatic mineral selection
-does not assert that a sparse log suite is carbonate. Custom mineral lists are
-respected. Check matrix endpoints, fluid assumptions, and applicability over
-mixed-lithology intervals before accepting the result.
+External lithology can supply the categorical rock log while the selected
+solver still calculates mineral volumes from log responses. Without the
+required responses, mineral solving is skipped and the reason is retained.
+There are no well-name or dataset-name rules.
 
-Rank-deficient systems and zero solutions with unallocated rock volume are
-unsolved: mineral values are NaN and QC is flagged. A finite solution may still
-carry a poor-closure flag. Normalized closure alone does not demonstrate that
-the minerals or their calculated log responses are geologically correct. The
-historical vendor-benchmark profile uses its separate solver and is not altered
-by generic mineral-set selection.
+The lower-level ``LithologyModule`` remains available for experimental
+mineral systems and direct equation studies. Those choices do not create a
+second context-generation workflow. Rank-deficient systems and zero solutions
+with unallocated rock volume are unsolved: mineral values are NaN and QC is
+flagged. Closure alone does not prove that a mineral solution is geologically
+correct.
 
 Zoned and batch execution
 -------------------------
 
-Use :func:`petrophys.workflow.run_dynamic_workflow_with_zones` when LAS header
-parameters or project intervals provide depth-varying overrides. For folders
-of wells, :func:`petrophys.workflow.process_las_directory_with_workflow`
-combines input-aware execution, LAS output, traces, and batch reports.
+Use :func:`petrophys.workflow.run_dynamic_workflow_with_zones` when LAS
+header parameters or project intervals provide depth-varying overrides. For
+folders of wells,
+:func:`petrophys.workflow.process_las_directory_with_workflow` combines
+input-aware execution, LAS output, traces, and batch reports.
 
 .. code-block:: python
 
@@ -201,8 +207,8 @@ Selective and granular use
 
 For controlled studies, ``DynamicWorkflow.run_selected_steps`` executes a
 specified subset in pipeline order. Individual domain functions under
-``petrophys.interpretation`` and ``petrophys.evaluation`` remain available for
-experiments that need direct control over inputs and equations.
+``petrophys.interpretation`` and ``petrophys.evaluation`` remain available
+for experiments that need direct control over equations.
 
 The fixed-configuration :class:`petrophys.workflow.StandardWorkflow` remains
 available for compatibility but is deprecated for new applications.

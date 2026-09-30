@@ -1,6 +1,5 @@
-"""Public context, bounded serialization, and legacy compatibility contracts."""
+"""Public contracts for computed, bounded context generation."""
 
-from copy import deepcopy
 import json
 from pathlib import Path
 
@@ -17,14 +16,20 @@ def context_well():
     well = pp.Well("CONTEXT-1")
     well.depth = np.arange(1000.0, 1040.0, 0.5)
     well.depth_unit = "m"
-    for name, start, stop, unit in (("GR", 30, 100, "API"), ("RHOB", 2.3, 2.6, "g/cc"),
-                                    ("NPHI", .1, .3, "v/v"), ("RDEP", 10, 40, "ohm.m"),
-                                    ("PHIE", .12, .25, "v/v"), ("SW", .4, .8, "v/v")):
+    curves = (
+        ("GR", 30, 100, "API"),
+        ("RHOB", 2.3, 2.6, "g/cc"),
+        ("NPHI", 0.1, 0.3, "v/v"),
+        ("RDEP", 10, 40, "ohm.m"),
+        ("PHIE", 0.12, 0.25, "v/v"),
+        ("SW", 0.4, 0.8, "v/v"),
+    )
+    for name, start, stop, unit in curves:
         well.add_curve(name, np.linspace(start, stop, well.n_samples), unit, name)
     return well
 
 
-def test_versioned_context_is_json_safe_deterministic_and_nonmutating(context_well):
+def test_context_is_json_safe_deterministic_and_nonmutating(context_well):
     context_well.set_parameter("RW", np.nan)
     before = context_well.to_dataframe().copy()
     context = pp.build_context(context_well)
@@ -37,11 +42,12 @@ def test_versioned_context_is_json_safe_deterministic_and_nonmutating(context_we
     assert context_well.to_dataframe().equals(before)
 
 
-def test_context_accepts_interpretation_result(context_well):
-    result = pp.interpret(context_well, rw=.07).raise_for_errors()
+def test_context_accepts_one_canonical_interpretation_result(context_well):
+    result = pp.interpret(context_well, rw=0.07).raise_for_errors()
     context = pp.build_context(result)
     assert context["interpretation"] == result.summary()
-    assert context["interpretation"]["interpretation_profile"] == "generic_inference"
+    assert context["interpretation"]["lithology_domain"] == result.lithology_domain
+    assert "interpretation_profile" not in context["interpretation"]
 
 
 @pytest.mark.parametrize("limit", [0, -1, True, 1.5, None])
@@ -55,11 +61,10 @@ def test_size_limit_counts_utf8_and_does_not_touch_existing_output(context_well,
     payload = pp.build_context(context_well)
     text = json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False)
     size = len(text.encode("utf-8"))
-    assert size > len(text)
     output = tmp_path / "context.json"
     output.write_text("keep", encoding="utf-8")
     with pytest.raises(pp.ContextSizeError):
-        pp.export_context(context_well, output, max_bytes=size-1, overwrite=True)
+        pp.export_context(context_well, output, max_bytes=size - 1, overwrite=True)
     assert output.read_text(encoding="utf-8") == "keep"
     pp.export_context(context_well, output, max_bytes=size, overwrite=True)
     assert output.stat().st_size == size
@@ -67,46 +72,40 @@ def test_size_limit_counts_utf8_and_does_not_touch_existing_output(context_well,
         pp.export_context(context_well, output)
 
 
-def test_legacy_single_context_bytes_match_existing_writer(context_well, tmp_path):
-    from petrophys.workflow.zoned_batch import ZonedWorkflowRunResult
-    original = set(context_well.curves)
-    raw_result = ZonedWorkflowRunResult(context_well, pp.DynamicWorkflowResult(context_well, pp.DynamicWorkflowConfig()))
-    expected = reference._write_reference_analysis_json(
-        deepcopy(context_well), deepcopy(raw_result), Path("CONTEXT-1.las"), tmp_path / "expected.las", original)
-    actual = pp.export_context(context_well, tmp_path / "actual.json", schema_version="legacy",
-                               source_file="CONTEXT-1.las", original_curves=original)
-    assert actual.read_bytes() == expected.read_bytes()
-    assert "schema_version" not in json.loads(actual.read_text(encoding="utf-8"))
-
-
-def test_legacy_result_requires_honest_raw_curve_provenance(context_well):
-    result = pp.interpret(context_well, rw=.07).raise_for_errors()
-    with pytest.raises(ValueError, match="original_curves"):
-        pp.build_context(result, schema_version="legacy")
-
-
-def test_context_validates_schema_and_category(context_well):
-    with pytest.raises(ValueError, match="schema_version"):
-        pp.build_context(context_well, schema_version="future")
+def test_removed_context_profiles_are_not_accepted(context_well):
+    with pytest.raises(TypeError, match="schema_version"):
+        pp.build_context(context_well, schema_version="legacy")
     with pytest.raises(ValueError, match="Unknown category"):
         pp.build_context(context_well, category="invalid")
 
 
-def test_cli_and_script_defaults_do_not_depend_on_missing_workbooks(context_well, tmp_path, monkeypatch):
+def test_cli_always_interprets_single_las(context_well, tmp_path, monkeypatch):
     from petrophys.io import export_las
-    for name in ("PETROPHYS_DATA_DIR", "PETROPHYS_TOPS_FILE", "PETROPHYS_LITHO_FILE"):
+
+    for name in (
+        "PETROPHYS_DATA_DIR",
+        "PETROPHYS_PARAMETERS_FILE",
+        "PETROPHYS_FORMATIONS_FILE",
+        "PETROPHYS_LITHOLOGY_FILE",
+        "PETROPHYS_CORE_FILE",
+        "PETROPHYS_LITHOLOGY_CODES_FILE",
+    ):
         monkeypatch.delenv(name, raising=False)
     for layout in ("formation_lithology", "category_formation_lithology"):
         parser = build_package_parser(layout)
         with pytest.raises(SystemExit):
             parser.parse_args([])
-        args = parser.parse_args(["--input-dir", str(tmp_path), "--tops-file", "tops.csv"])
-        assert args.lithology_mapping_file is None
-    source = tmp_path / "well.las"
+        args = parser.parse_args(["--input-dir", str(tmp_path)])
+        assert args.formations is None
+        assert args.parameters is None
+
+    source = tmp_path / "CONTEXT-1.las"
     export_las(context_well, source)
     output = tmp_path / "context.json"
     assert main([str(source), str(output)]) == 0
-    assert json.loads(output.read_text(encoding="utf-8"))["schema_version"] == "1.0"
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "1.0"
+    assert payload["interpretation"] is not None
 
 
 def test_failed_or_oversized_package_is_not_published(tmp_path, monkeypatch):
@@ -115,30 +114,61 @@ def test_failed_or_oversized_package_is_not_published(tmp_path, monkeypatch):
         output = output_dir / "sample.json"
         output.write_text(json.dumps({"text": "x" * 1000}), encoding="utf-8")
         return [reference.ExampleFormatExportResult("input.las", str(output), True, str(output))]
-    monkeypatch.setattr(reference, "export_reference_json_work_package_by_formation_lithology", fake_exporter)
+
+    monkeypatch.setattr(
+        reference,
+        "export_reference_json_work_package_by_formation_lithology",
+        fake_exporter,
+    )
     output = tmp_path / "package"
     with pytest.raises(pp.ContextSizeError):
-        pp.export_context(tmp_path, output, layout="formation_lithology", tops_file="tops.csv", max_bytes=50)
+        pp.export_context(
+            tmp_path,
+            output,
+            layout="formation_lithology",
+            max_bytes=50,
+        )
     assert not output.exists()
     assert not list(tmp_path.glob(".petrophys-context-*"))
 
 
-@pytest.mark.parametrize("layout", ["formation_lithology", "category_formation_lithology"])
-def test_legacy_package_context_bytes_match_direct_export(context_well, tmp_path, layout):
+@pytest.mark.parametrize(
+    "layout",
+    ["formation_lithology", "category_formation_lithology"],
+)
+def test_package_context_bytes_match_direct_computed_export(context_well, tmp_path, layout):
     from petrophys.io import export_las
+
     source = tmp_path / "input"
     source.mkdir()
-    context_well.add_curve("LITHOLOGY_GEOLINK", np.ones(context_well.n_samples), "", "Lithology")
+    context_well.add_curve(
+        "LITHOLOGY_GEOLINK",
+        np.ones(context_well.n_samples),
+        "",
+        "Lithology",
+    )
     export_las(context_well, source / "CONTEXT-1.las")
     tops = tmp_path / "tops.csv"
-    tops.write_text("well,formation,md_top\nCONTEXT-1,TEST FM. TOP,1000\n", encoding="utf-8")
+    tops.write_text(
+        "well,formation,md_top\nCONTEXT-1,TEST FM. TOP,1000\n",
+        encoding="utf-8",
+    )
     baseline = tmp_path / "baseline"
     actual = tmp_path / "actual"
-    exporter = (reference.export_reference_json_work_package_by_formation_lithology if layout == "formation_lithology"
-                else reference.export_reference_json_work_package_by_category_formation_lithology)
+    exporter = (
+        reference.export_reference_json_work_package_by_formation_lithology
+        if layout == "formation_lithology"
+        else reference.export_reference_json_work_package_by_category_formation_lithology
+    )
     direct = exporter(source, baseline, tops)
     assert direct and all(item.success for item in direct), [item.errors for item in direct]
-    exported = pp.export_context(source, actual, layout=layout, tops_file=tops, schema_version="legacy", max_bytes=5_000_000)
+    exported = pp.export_context(
+        source,
+        actual,
+        layout=layout,
+        tops_file=tops,
+        max_bytes=5_000_000,
+    )
     assert len(exported) == len(direct)
     for item in direct:
         path = Path(item.json_file)
@@ -146,20 +176,48 @@ def test_legacy_package_context_bytes_match_direct_export(context_well, tmp_path
         assert path.read_bytes() == (actual / relative).read_bytes(), relative
 
 
-def test_trace_paths_survive_package_staging(tmp_path, monkeypatch):
+def test_package_can_run_without_formations(context_well, tmp_path):
+    from petrophys.io import export_las
+
+    source = tmp_path / "input"
+    source.mkdir()
+    context_well.add_curve(
+        "LITHOLOGY_GEOLINK",
+        np.ones(context_well.n_samples),
+        "",
+        "Lithology",
+    )
+    export_las(context_well, source / "CONTEXT-1.las")
+    output = tmp_path / "package"
+    results = pp.export_context(source, output, layout="formation_lithology")
+    assert results and all(item.success for item in results)
+    assert any("WHOLE_WELL" in str(path) for path in output.rglob("*.json"))
+
+
+def test_trace_paths_survive_package_staging_without_payload_wrapper(tmp_path, monkeypatch):
     def fake_exporter(input_dir, output_dir, **options):
         output_dir.mkdir()
         output = output_dir / "sample.json"
         output.write_text("{}", encoding="utf-8")
-        (output_dir / "sample.trace.json").write_text(json.dumps({
-            "schema": "petrophys_lithology_group_trace",
-            "context_json_file": str(output),
-        }), encoding="utf-8")
+        (output_dir / "sample.trace.json").write_text(
+            json.dumps(
+                {
+                    "schema": "petrophys_lithology_group_trace",
+                    "context_json_file": str(output),
+                }
+            ),
+            encoding="utf-8",
+        )
         return [reference.ExampleFormatExportResult("input.las", str(output), True, str(output))]
-    monkeypatch.setattr(reference, "export_reference_json_work_package_by_formation_lithology", fake_exporter)
+
+    monkeypatch.setattr(
+        reference,
+        "export_reference_json_work_package_by_formation_lithology",
+        fake_exporter,
+    )
     output = tmp_path / "package"
-    pp.export_context(tmp_path, output, layout="formation_lithology", tops_file="tops.csv")
-    payload = json.loads((output / "sample.trace.json").read_text(encoding="utf-8"))["payload"]
+    pp.export_context(tmp_path, output, layout="formation_lithology")
+    payload = json.loads((output / "sample.trace.json").read_text(encoding="utf-8"))
     assert Path(payload["context_json_file"]) == output / "sample.json"
     assert Path(payload["context_json_file"]).is_file()
 
@@ -170,8 +228,18 @@ def test_total_package_budget_is_enforced(tmp_path, monkeypatch):
         output = output_dir / "sample.json"
         output.write_text("{}", encoding="utf-8")
         return [reference.ExampleFormatExportResult("input.las", str(output), True, str(output))]
-    monkeypatch.setattr(reference, "export_reference_json_work_package_by_formation_lithology", fake_exporter)
+
+    monkeypatch.setattr(
+        reference,
+        "export_reference_json_work_package_by_formation_lithology",
+        fake_exporter,
+    )
     output = tmp_path / "package"
     with pytest.raises(pp.ContextSizeError, match="max_total_bytes"):
-        pp.export_context(tmp_path, output, layout="formation_lithology", tops_file="tops.csv", max_total_bytes=10)
+        pp.export_context(
+            tmp_path,
+            output,
+            layout="formation_lithology",
+            max_total_bytes=10,
+        )
     assert not output.exists()

@@ -135,6 +135,7 @@ def test_safe_per_depth_statistics_handles_all_nan_rows():
 
 
 def test_daydream_processed_fmi_dlis_can_be_read_and_oriented_when_available():
+    pytest.importorskip("dlisio")
     path = Path(os.environ.get("PETROPHYS_FMI_DLIS", FMI_FIXTURE))
     if not path.exists():
         pytest.skip(

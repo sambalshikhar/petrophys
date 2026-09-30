@@ -33,17 +33,12 @@ from petrophys.preprocessing.quality.value_ranges import (
 )
 from petrophys.preprocessing.standardization import standardize_curves
 from petrophys._internal.analysis_helpers import CategoryAnalysisResult, build_section, get_curve, get_curve_data_depthwise
-from petrophys._internal.legacy_context import (
-    LEGACY_EXCLUDED_CONTEXT_CURVES,
-    legacy_electrofacies_v1_entry,
-    legacy_benchmark_context,
-)
-
 if TYPE_CHECKING:
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
 
 
 NULL_VALUE = -9999.0
+CONTEXT_EXCLUDED_INPUT_CURVES = frozenset({"BS", "SO"})
 
 PREFERRED_CURVE_ORDER = [
     "DEPT",
@@ -1236,55 +1231,6 @@ def _display_trace_value(value: Any) -> Any:
     return value
 
 
-def _raw_input_dir_for_processed(input_path: Path) -> Optional[Path]:
-    """Infer a sibling raw LAS directory for processed inputs when possible."""
-    name = input_path.name
-    candidates: list[Path] = []
-    if name.endswith("_processed"):
-        candidates.append(input_path.with_name(name[: -len("_processed")]))
-    if name.lower() == "eval_processed":
-        candidates.append(input_path.with_name("eval"))
-
-    for candidate in candidates:
-        if candidate.exists() and candidate.is_dir():
-            return candidate
-    return None
-
-
-def _raw_curve_lookup(
-    raw_input_dir: Optional[str | Path],
-    pattern: str,
-    recursive: bool,
-) -> dict[str, set[str]]:
-    """Return standardized raw LAS curve names keyed by LAS stem."""
-    if raw_input_dir is None:
-        return {}
-
-    raw_path = Path(raw_input_dir)
-    if not raw_path.exists() or not raw_path.is_dir():
-        return {}
-
-    files = sorted(raw_path.rglob(pattern) if recursive else raw_path.glob(pattern))
-    lookup: dict[str, set[str]] = {}
-    for file_path in files:
-        try:
-            raw_well = read_las(file_path)
-            raw_well = standardize_curves(raw_well, rename_curves=True, convert_units=True)
-            lookup[file_path.stem.lower()] = set(raw_well.curves)
-        except Exception:
-            continue
-    return lookup
-
-
-def _raw_original_curves_for_file(
-    file_path: Path,
-    processed_original_curves: set[str],
-    raw_curves_by_stem: dict[str, set[str]],
-) -> set[str]:
-    """Use raw LAS curves for context provenance, falling back to processed input."""
-    return set(raw_curves_by_stem.get(file_path.stem.lower()) or processed_original_curves)
-
-
 def _input_log_display_list(curves: set[str]) -> List[str]:
     curve_names = {str(name).upper() for name in curves}
     display_names: list[str] = []
@@ -1293,7 +1239,7 @@ def _input_log_display_list(curves: set[str]) -> List[str]:
         canonical = _canonical_delivery_curve_name(upper)
         if canonical in CORE_ONLY_CONTEXT_CURVES:
             continue
-        if legacy_benchmark_context() and canonical in LEGACY_EXCLUDED_CONTEXT_CURVES:
+        if canonical in CONTEXT_EXCLUDED_INPUT_CURVES:
             continue
         if upper == "DCAL" and "CALI" in curve_names:
             continue
@@ -1447,14 +1393,14 @@ def _all_step_results(workflow_result, step_name: Optional[str] = None) -> List[
 PROVENANCE_PASSTHROUGH_STEPS = {"normalization"}
 
 
-FINALIZED_BENCHMARK_STEPS = {
-    "permeability": "permeability_benchmark_finalize",
-    "rock_quality": "rock_quality_benchmark_finalize",
+FINALIZED_WORKFLOW_STEPS = {
+    "permeability": "permeability_finalize",
+    "rock_quality": "rock_quality_finalize",
 }
 
 
 def _canonical_workflow_step_name(step_name: str) -> str:
-    for canonical, finalized in FINALIZED_BENCHMARK_STEPS.items():
+    for canonical, finalized in FINALIZED_WORKFLOW_STEPS.items():
         if step_name == finalized:
             return canonical
     return step_name
@@ -1506,13 +1452,12 @@ def _derived_logs_computed(
     # method-specific aliases that are internal compatibility artifacts.
     derived.difference_update(REFERENCE_DERIVED_LOG_EXCLUDE)
     derived.difference_update(CORE_ONLY_CONTEXT_CURVES)
-    if legacy_benchmark_context():
-        # A curve supplied by the input LAS is not a derived log, even when a
-        # workflow step rewrites it in place and declares it as an output.
-        derived.difference_update(
-            _canonical_delivery_curve_name(curve) for curve in original_curves
-        )
-        derived.difference_update(LEGACY_EXCLUDED_CONTEXT_CURVES)
+    # A curve supplied by the input LAS is not a derived log, even when a
+    # workflow step rewrites it in place and declares it as an output.
+    derived.difference_update(
+        _canonical_delivery_curve_name(curve) for curve in original_curves
+    )
+    derived.difference_update(CONTEXT_EXCLUDED_INPUT_CURVES)
     derived.discard("TMPC")
     derived.discard("PHI_Z")
     derived.difference_update({"SWA", "SWXOA", "VCLAY", "VSH", "VCLGR", "VCLSP", "VCLND", "VCL_GR", "VCL_SP", "VCL_ND"})
@@ -1578,7 +1523,7 @@ def _step_lookup(workflow_result) -> tuple[dict[str, Any], set[str]]:
         for step in run.steps_executed:
             if step.step not in step_results or step.success:
                 step_results[step.step] = step
-    for canonical, finalized in FINALIZED_BENCHMARK_STEPS.items():
+    for canonical, finalized in FINALIZED_WORKFLOW_STEPS.items():
         finalized_step = step_results.get(finalized)
         if finalized_step is not None and finalized_step.success:
             step_results[canonical] = finalized_step
@@ -2467,20 +2412,58 @@ _STEP_SPECIFIC_METHOD_LABELS: dict[tuple[str, str], str] = {
 }
 
 
-def _legacy_workflow_config(config: Optional["DynamicWorkflowConfig"] = None) -> "DynamicWorkflowConfig":
-    """Return ``config``, or the sandstone/clastic default these exporters always used.
+def _context_workflow_config(
+    config: Optional["DynamicWorkflowConfig"] = None,
+    *,
+    parameters_file: Optional[str | Path] = None,
+    well_name: Optional[str] = None,
+    lithology_file: Optional[str | Path] = None,
+) -> "DynamicWorkflowConfig":
+    """Build the canonical workflow configuration from standardized inputs."""
+    import dataclasses
 
-    The library default for matrix and lithology is ``"auto"``; the reference
-    JSON exporters keep their historical explicit default so existing
-    benchmark packages are reproduced unchanged.
-    """
+    from petrophys.io import read_well_parameters
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
 
-    if config is not None:
-        return config
-    return DynamicWorkflowConfig(
-        matrix_type="sandstone", lithology="clastic", interpretation_profile="auto"
+    options = (
+        read_well_parameters(parameters_file, well_name=well_name)
+        if parameters_file is not None else {}
     )
+    if lithology_file is not None:
+        options.update(lithology_intervals=lithology_file, lithology_source="external")
+    if config is None:
+        options.setdefault("matrix_type", "sandstone")
+        options.setdefault("lithology_domain", "clastic")
+        return DynamicWorkflowConfig(**options)
+    if not options:
+        return config
+    if "lithology_domain" in options and "lithology" not in options:
+        options["lithology"] = None
+    return dataclasses.replace(config, **options)
+
+
+def _read_context_input_well(
+    file_path: Path,
+    *,
+    parameters_file: Optional[str | Path] = None,
+    lithology_file: Optional[str | Path] = None,
+    core_file: Optional[str | Path] = None,
+    workflow_config: Optional["DynamicWorkflowConfig"] = None,
+):
+    """Read one LAS and apply every standardized, well-specific input."""
+    from petrophys.io import attach_core_measurements
+
+    well = read_las(file_path)
+    well = standardize_curves(well, rename_curves=True, convert_units=True)
+    config = _context_workflow_config(
+        workflow_config,
+        parameters_file=parameters_file,
+        well_name=well.name,
+        lithology_file=lithology_file,
+    )
+    if core_file is not None:
+        attach_core_measurements(well, core_file, well_name=well.name)
+    return well, config
 
 
 def _method_label(name: str, subject: Optional[str] = None) -> str:
@@ -3288,7 +3271,7 @@ def _build_lithology_method_notes(
 
 
 def _first_step_result(workflow_result, step_name: str):
-    finalized_name = FINALIZED_BENCHMARK_STEPS.get(step_name)
+    finalized_name = FINALIZED_WORKFLOW_STEPS.get(step_name)
     if finalized_name is not None:
         finalized_steps = _all_step_results(workflow_result, finalized_name)
         successful_finalized = next(
@@ -3889,9 +3872,7 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
             bit_text = "; bit-size values=" + ", ".join(_format_numeric(value, 2) for value in bit_values) + " in"
         washout_terms = []
         if bit_size is not None and well.get("CALI") is not None:
-            caliper_term = (
-                "(caliper-minus-bit-size)" if legacy_benchmark_context() else "caliper-minus-bit-size"
-            )
+            caliper_term = "(caliper-minus-bit-size)"
             washout_terms.append(f"{caliper_term}>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in")
         elif well.get("CALI") is not None:
             washout_terms.append("caliper-minus-bit-size skipped because bit size unavailable")
@@ -4266,11 +4247,7 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
     if curve == "NET_ROCK" and step is not None:
         return f"NET_ROCK: 1 where VCL<{params.get('vcl_cutoff')}; else 0."
     if curve in {"NET_RES", "RESFLAG"} and step is not None:
-        cutoff = params.get("phie_cutoff")
-        if legacy_benchmark_context():
-            # Archived packages reported the lithology-dependent cutoff pair
-            # rather than the concrete value resolved for the segment.
-            cutoff = None
+        cutoff = None
         cutoff_text = cutoff if cutoff is not None else "lithology cutoff: 0.08 clastic, 0.045 carbonate"
         return f"{curve}: 1 where NET_ROCK=1 and selected effective porosity>{cutoff_text}; else 0."
     if curve == "NET_PAY" and step is not None:
@@ -4478,11 +4455,7 @@ def _build_concise_delivery_computation_notes(
     net_step = _first_step_result(workflow_result, "net_pay")
     if net_step is not None:
         flag_parts = [f"NET_ROCK=VCL<{net_step.parameters.get('vcl_cutoff')}"]
-        phie_cutoff = net_step.parameters.get("phie_cutoff")
-        if legacy_benchmark_context():
-            # Archived packages described the screening step rather than the
-            # concrete porosity cutoff resolved for the segment.
-            phie_cutoff = None
+        phie_cutoff = None
         if phie_cutoff is not None:
             flag_parts.append(f"NET_RES and RESFLAG add selected effective porosity>{phie_cutoff}")
         else:
@@ -5770,109 +5743,6 @@ def _build_lithology_group_segments(
     return segments
 
 
-def _load_reference_group_segments(
-    reference_structure_dir: Optional[str | Path],
-    well_stem: str,
-) -> list[dict[str, Any]]:
-    if reference_structure_dir is None:
-        return []
-
-    root = Path(reference_structure_dir)
-    if not root.exists():
-        return []
-
-    normalized_well = _normalize_well_selector(well_stem)
-    candidates = [
-        root / f"{well_stem}_corrected",
-        root / well_stem,
-    ]
-    if _normalize_well_selector(root.name.replace("_corrected", "")) == normalized_well:
-        candidates.insert(0, root)
-
-    folder = next((candidate for candidate in candidates if candidate.exists() and candidate.is_dir()), None)
-
-    json_paths: list[Path]
-    if folder is not None:
-        json_paths = sorted(folder.glob("*.json"))
-    else:
-        # Category-first context exports are laid out as
-        # <category>/<well>/<formation>/<file>.json. Prefer numerical because
-        # it has one file per interval and avoids duplicating the same interval
-        # across category folders.
-        category_candidates = [
-            root / "numerical" / well_stem,
-            root / "numerical" / f"{well_stem}_corrected",
-        ]
-        category_folder = next(
-            (candidate for candidate in category_candidates if candidate.exists() and candidate.is_dir()),
-            None,
-        )
-        if category_folder is None:
-            for candidate in root.glob("*"):
-                if not candidate.is_dir():
-                    continue
-                for well_folder in candidate.glob("*"):
-                    if well_folder.is_dir() and _normalize_well_selector(well_folder.name) == normalized_well:
-                        category_folder = well_folder
-                        break
-                if category_folder is not None:
-                    break
-        if category_folder is None:
-            return []
-        json_paths = sorted(category_folder.rglob("*.json"))
-
-    segments: list[dict[str, Any]] = []
-    for json_path in json_paths:
-        try:
-            payload = json.loads(json_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-
-        formation_info = payload.get("formation_info") or {}
-        analysis_results = payload.get("analysis_results") or {}
-        group_info = analysis_results.get("lithology_group_info") or {}
-        start_depth = group_info.get("start_depth", formation_info.get("min_depth"))
-        end_depth = group_info.get("end_depth", formation_info.get("max_depth"))
-        try:
-            start_depth = float(start_depth)
-            end_depth = float(end_depth)
-        except (TypeError, ValueError):
-            continue
-        if not np.isfinite(start_depth) or not np.isfinite(end_depth) or end_depth < start_depth:
-            continue
-
-        formation_name = str(formation_info.get("name") or analysis_results.get("formation_name") or "WHOLE_WELL")
-        group_name = str(analysis_results.get("lithology group") or json_path.stem)
-        lithology_name = str(analysis_results.get("lithology") or group_name)
-        file_stem = json_path.stem
-        for category_name in CATEGORY_CONTEXT_SPECS:
-            suffix = f"_{category_name}"
-            if file_stem.endswith(suffix):
-                file_stem = file_stem[:-len(suffix)]
-                break
-        file_stem = file_stem.replace("NAN_GROUP", f"{MISSING_LITHOLOGY_LABEL}_GROUP")
-        segments.append(
-            {
-                "file_stem": file_stem,
-                "formation_name": formation_name,
-                "formation_depth_info": {
-                    "min_depth": formation_info.get("min_depth"),
-                    "max_depth": formation_info.get("max_depth"),
-                    "thickness": formation_info.get("thickness"),
-                },
-                "group_name": group_name,
-                "lithology": lithology_name,
-                "start_depth": start_depth,
-                "end_depth": end_depth,
-                "source_file": str(json_path),
-            }
-        )
-
-    return segments
-
-
-
-
 def _depth_summary(well: "Well") -> dict[str, Any]:
     depth = np.asarray(well.depth, dtype=float)
     finite = depth[np.isfinite(depth)]
@@ -6132,7 +6002,7 @@ def _reference_statistics_curve_key(mnemonic: str, well: "Well") -> Optional[str
         return None
     if canonical in CORE_ONLY_CONTEXT_CURVES:
         return None
-    if legacy_benchmark_context() and canonical in LEGACY_EXCLUDED_CONTEXT_CURVES:
+    if canonical in CONTEXT_EXCLUDED_INPUT_CURVES:
         return None
     if upper == "LITHOLOGY_GEOLINK":
         return None
@@ -6246,10 +6116,9 @@ def _build_reference_bad_hole_qc(well: "Well", workflow_result) -> dict[str, Any
 
     thresholds = details["thresholds"]
     counts = details["counts"]
-    legacy_shape = legacy_benchmark_context()
     washout_terms = []
     if details["bit_size_used"] is not None and details["log_availability"].get("CALI"):
-        caliper_term = "(caliper-minus-bit-size)" if legacy_shape else "caliper-minus-bit-size"
+        caliper_term = "(caliper-minus-bit-size)"
         washout_terms.append(f"{caliper_term} > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in")
     elif details["log_availability"].get("CALI"):
         washout_terms.append("caliper-minus-bit-size skipped because bit size unavailable")
@@ -6276,15 +6145,6 @@ def _build_reference_bad_hole_qc(well: "Well", workflow_result) -> dict[str, Any
         ),
         "parameters_used": {
             "bit_size_used_in": _json_safe(details["bit_size_used"]),
-            # Archived packages predate the bit-size provenance fields.
-            **(
-                {}
-                if legacy_shape
-                else {
-                    "bit_size_source": details.get("bit_size_source"),
-                    "bs_curve_present": bool(details.get("bs_curve_present", False)),
-                }
-            ),
             "washout_formula": washout_formula,
             "large_hole_formula": large_hole_formula,
             "pef_exclusion_formula": (
@@ -6526,50 +6386,10 @@ def _write_reference_analysis_json_to_path(
         include_derived_log_status=include_derived_log_status,
         extra_statistics_curves=extra_statistics_curves,
     )
-    _apply_legacy_electrofacies_v1_statistics(
-        payload,
-        json_path=json_path,
-        source_file=source_file,
-        formation_name=formation_name,
-    )
     json_path.parent.mkdir(parents=True, exist_ok=True)
     with json_path.open("w", encoding="utf-8") as handle:
         json.dump(_json_safe(payload), handle, indent=2, ensure_ascii=False)
     return json_path
-
-
-def _apply_legacy_electrofacies_v1_statistics(
-    payload: dict[str, Any],
-    *,
-    json_path: Path,
-    source_file: Path,
-    formation_name: str,
-) -> None:
-    if not legacy_benchmark_context() or not json_path.name.endswith(
-        "_numerical.json"
-    ):
-        return
-
-    context_key = "/".join(
-        (
-            _sanitize_path_component(source_file.stem),
-            _sanitize_path_component(formation_name),
-            json_path.name,
-        )
-    )
-    known_context, archived_statistics = legacy_electrofacies_v1_entry(
-        context_key
-    )
-    if not known_context:
-        return
-
-    statistics = payload["analysis_results"]["statistics"]
-    if archived_statistics is None:
-        statistics.pop("ELECTROFACIES_overall", None)
-    else:
-        statistics["ELECTROFACIES_overall"] = copy.deepcopy(
-            archived_statistics
-        )
 
 
 def _trace_safe_value(value: Any) -> Any:
@@ -6960,7 +6780,7 @@ def export_example_work_package_directory(
             well = standardize_curves(well, rename_curves=True, convert_units=True)
             original_curves = set(well.curves)
 
-            workflow_result = run_dynamic_workflow_with_zones(well, _legacy_workflow_config())
+            workflow_result = run_dynamic_workflow_with_zones(well, _context_workflow_config())
             _finalize_export_curves(workflow_result.well, original_curves)
 
             warnings = list(workflow_result.warnings)
@@ -7037,7 +6857,7 @@ def export_reference_json_work_package_directory(
             well = standardize_curves(well, rename_curves=True, convert_units=True)
             original_curves = set(well.curves)
 
-            workflow_result = run_dynamic_workflow_with_zones(well, _legacy_workflow_config())
+            workflow_result = run_dynamic_workflow_with_zones(well, _context_workflow_config())
             json_well = copy.deepcopy(workflow_result.well)
 
             warnings = list(workflow_result.warnings)
@@ -7116,7 +6936,7 @@ def export_reference_json_work_package_by_formation(
             well_folder = output_path / _sanitize_path_component(file_path.stem)
             well_folder.mkdir(parents=True, exist_ok=True)
             whole_well_original_curves = set(full_well.curves)
-            whole_well_result = run_dynamic_workflow_with_zones(copy.deepcopy(full_well), _legacy_workflow_config())
+            whole_well_result = run_dynamic_workflow_with_zones(copy.deepcopy(full_well), _context_workflow_config())
             _finalize_export_curves(whole_well_result.well, whole_well_original_curves)
             whole_well_las_path = well_folder / f"{_sanitize_path_component(file_path.stem)}.las"
             export_example_format_las(
@@ -7179,7 +6999,7 @@ def export_reference_json_work_package_by_formation(
                     continue
 
                 original_curves = set(sliced_well.curves)
-                workflow_result = run_dynamic_workflow_with_zones(sliced_well, _legacy_workflow_config())
+                workflow_result = run_dynamic_workflow_with_zones(sliced_well, _context_workflow_config())
                 json_well = copy.deepcopy(workflow_result.well)
 
                 warnings = list(fallback_warnings)
@@ -7252,7 +7072,7 @@ def export_reference_json_work_package_by_formation(
 def export_reference_json_work_package_by_formation_lithology(
     input_dir: str | Path,
     output_dir: str | Path,
-    tops_file: str | Path,
+    tops_file: Optional[str | Path] = None,
     pattern: str = "*.las",
     recursive: bool = False,
     minimum_group_thickness: float = 2.0,
@@ -7260,6 +7080,9 @@ def export_reference_json_work_package_by_formation_lithology(
     lithology_mapping_file: Optional[str | Path] = None,
     tops_options: Optional[dict] = None,
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
+    parameters_file: Optional[str | Path] = None,
+    lithology_file: Optional[str | Path] = None,
+    core_file: Optional[str | Path] = None,
 ) -> List[ExampleFormatExportResult]:
     from petrophys.workflow.zoned_batch import (
         _finalize_export_curves,
@@ -7271,7 +7094,11 @@ def export_reference_json_work_package_by_formation_lithology(
     output_path.mkdir(parents=True, exist_ok=True)
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
     files = _filter_input_files_by_well_names(files, well_names)
-    tops_by_well = _load_excel_formation_segments(tops_file, **(tops_options or {}))
+    tops_by_well = (
+        _load_excel_formation_segments(tops_file, **(tops_options or {}))
+        if tops_file is not None
+        else {}
+    )
     _validate_single_well_tops_scope(tops_by_well, files)
     lithology_mapping = (
         _load_lithology_mapping_workbook(lithology_mapping_file)
@@ -7282,14 +7109,19 @@ def export_reference_json_work_package_by_formation_lithology(
     results: List[ExampleFormatExportResult] = []
     for file_path in files:
         try:
-            full_well = read_las(file_path)
-            full_well = standardize_curves(full_well, rename_curves=True, convert_units=True)
+            full_well, well_config = _read_context_input_well(
+                file_path,
+                parameters_file=parameters_file,
+                lithology_file=lithology_file,
+                core_file=core_file,
+                workflow_config=workflow_config,
+            )
             formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
 
             well_folder = output_path / _sanitize_path_component(file_path.stem)
             well_folder.mkdir(parents=True, exist_ok=True)
             whole_well_original_curves = set(full_well.curves)
-            whole_well_result = run_dynamic_workflow_with_zones(copy.deepcopy(full_well), _legacy_workflow_config(workflow_config))
+            whole_well_result = run_dynamic_workflow_with_zones(copy.deepcopy(full_well), well_config)
             _finalize_export_curves(whole_well_result.well, whole_well_original_curves)
             whole_well_las_path = well_folder / f"{_sanitize_path_component(file_path.stem)}.las"
             export_example_format_las(
@@ -7352,7 +7184,7 @@ def export_reference_json_work_package_by_formation_lithology(
                     continue
 
                 formation_original_curves = set(formation_input_well.curves)
-                workflow_result = run_dynamic_workflow_with_zones(formation_input_well, _legacy_workflow_config(workflow_config))
+                workflow_result = run_dynamic_workflow_with_zones(formation_input_well, well_config)
                 warnings = list(fallback_warnings)
                 warnings.extend(workflow_result.warnings)
                 warnings.extend(workflow_result.base_result.warnings)
@@ -7442,40 +7274,22 @@ def export_reference_json_work_package_by_formation_lithology(
 def export_reference_json_work_package_by_category_formation_lithology(
     input_dir: str | Path,
     output_dir: str | Path,
-    tops_file: str | Path,
+    tops_file: Optional[str | Path] = None,
     pattern: str = "*.las",
     recursive: bool = False,
     minimum_group_thickness: float = 2.0,
     well_names: Optional[Sequence[str]] = None,
     lithology_mapping_file: Optional[str | Path] = None,
-    reference_structure_dir: Optional[str | Path] = None,
-    raw_input_dir: Optional[str | Path] = None,
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
     tops_options: Optional[dict] = None,
-    use_finalized_processed_curves: bool = False,
+    parameters_file: Optional[str | Path] = None,
+    lithology_file: Optional[str | Path] = None,
+    core_file: Optional[str | Path] = None,
 ) -> List[ExampleFormatExportResult]:
-    """Category-first context export.
-
-    ``workflow_config`` (optional) seeds the per-well interpretation run.
-    Explicitly set fields always win over LAS-header parameters; fields left
-    ``None`` are still auto-filled from each well's header block. Use it to
-    carry documented parameter reconciliations (e.g. an Rw whose header basis
-    is ambiguous) without disabling header-driven behaviour for other wells.
-
-    Set `use_finalized_processed_curves=True` when `input_dir` already
-    contains finalized interpretation curves and the export must summarize
-    those values exactly instead of rerunning the dynamic workflow.
-
-    """
+    """Generate category contexts from LAS and standardized input tables."""
     from petrophys.workflow.zoned_batch import (
-        ZonedWorkflowRunResult,
         _finalize_export_curves,
         run_dynamic_workflow_with_zones,
-    )
-    from petrophys.workflow.dynamic_workflow import (
-        DynamicWorkflowConfig,
-        DynamicWorkflowResult,
-        StepResult,
     )
 
     input_path = Path(input_dir)
@@ -7483,9 +7297,11 @@ def export_reference_json_work_package_by_category_formation_lithology(
     output_path.mkdir(parents=True, exist_ok=True)
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
     files = _filter_input_files_by_well_names(files, well_names)
-    raw_context_dir = Path(raw_input_dir) if raw_input_dir is not None else _raw_input_dir_for_processed(input_path)
-    raw_curves_by_stem = _raw_curve_lookup(raw_context_dir, pattern, recursive)
-    tops_by_well = _load_excel_formation_segments(tops_file, **(tops_options or {}))
+    tops_by_well = (
+        _load_excel_formation_segments(tops_file, **(tops_options or {}))
+        if tops_file is not None
+        else {}
+    )
     _validate_single_well_tops_scope(tops_by_well, files)
     lithology_mapping = (
         _load_lithology_mapping_workbook(lithology_mapping_file)
@@ -7496,40 +7312,20 @@ def export_reference_json_work_package_by_category_formation_lithology(
     results: List[ExampleFormatExportResult] = []
     for file_path in files:
         try:
-            full_well = read_las(file_path)
-            full_well = standardize_curves(full_well, rename_curves=True, convert_units=True)
+            full_well, well_config = _read_context_input_well(
+                file_path,
+                parameters_file=parameters_file,
+                lithology_file=lithology_file,
+                core_file=core_file,
+                workflow_config=workflow_config,
+            )
             formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
             fallback_warnings: list[str] = []
-            processed_original_curves = set(full_well.curves)
-            raw_original_curves = _raw_original_curves_for_file(
-                file_path,
-                processed_original_curves,
-                raw_curves_by_stem,
+            original_curves = set(full_well.curves)
+            workflow_result = run_dynamic_workflow_with_zones(
+                full_well,
+                well_config,
             )
-            if use_finalized_processed_curves:
-                finalized_step = StepResult(
-                    step="finalized_processed_curves",
-                    success=True,
-                    method="input_processed_las",
-                    input_curves=sorted(raw_original_curves),
-                    output_curves=sorted(processed_original_curves),
-                    decisions=[
-                        "Input LAS is treated as the finalized interpretation product; "
-                        "the dynamic workflow is not rerun."
-                    ],
-                )
-                base_result = DynamicWorkflowResult(
-                    well=full_well,
-                    config=workflow_config or DynamicWorkflowConfig(),
-                    steps_executed=[finalized_step],
-                    interpretation_profile="finalized_processed_curves",
-                )
-                workflow_result = ZonedWorkflowRunResult(
-                    well=full_well,
-                    base_result=base_result,
-                )
-            else:
-                workflow_result = run_dynamic_workflow_with_zones(full_well, _legacy_workflow_config(workflow_config))
             warnings = list(workflow_result.warnings)
             warnings.extend(workflow_result.base_result.warnings)
             for zone_result in workflow_result.zone_results:
@@ -7538,16 +7334,11 @@ def export_reference_json_work_package_by_category_formation_lithology(
             errors = list(workflow_result.base_result.errors)
             for zone_result in workflow_result.zone_results:
                 errors.extend(zone_result.errors)
-            if raw_context_dir is not None and file_path.stem.lower() not in raw_curves_by_stem:
-                warnings.append(
-                    f"Raw LAS not found in {raw_context_dir}; input_logs_present fell back to processed LAS curves."
-                )
-            if not use_finalized_processed_curves:
-                _finalize_export_curves(
-                    workflow_result.well,
-                    processed_original_curves,
-                    retain_computed_lithology=True,
-                )
+            _finalize_export_curves(
+                workflow_result.well,
+                original_curves,
+                retain_computed_lithology=True,
+            )
 
             well_top = float(full_well.top) if full_well.top is not None else None
             well_bottom = float(full_well.bottom) if full_well.bottom is not None else None
@@ -7560,93 +7351,6 @@ def export_reference_json_work_package_by_category_formation_lithology(
                         errors=["Well has no valid depth range for formation slicing."],
                     )
                 )
-                continue
-
-            reference_group_segments = _load_reference_group_segments(
-                reference_structure_dir,
-                file_path.stem,
-            )
-            if reference_group_segments:
-                source_folder = Path(reference_group_segments[0]["source_file"]).parent
-                reference_warnings = list(warnings)
-                reference_warnings.append(
-                    "Using reference formation/lithology group structure from "
-                    f"{source_folder}; the tops workbook was not used to rename or split this well."
-                )
-                formation_original_curves = raw_original_curves
-
-                for reference_segment in reference_group_segments:
-                    # Include exact benchmark boundary samples despite tiny float round-trip drift.
-                    start_depth = float(reference_segment["start_depth"])
-                    end_depth = float(reference_segment["end_depth"])
-                    boundary_tolerance = 5e-5
-                    group_well = workflow_result.well.depth_slice(
-                        start_depth - boundary_tolerance,
-                        end_depth + boundary_tolerance,
-                    )
-                    if group_well.n_samples == 0:
-                        continue
-                    apply_value_range_qc(group_well)
-
-                    formation_display_name = str(reference_segment["formation_name"])
-                    file_stem = str(reference_segment["file_stem"])
-                    json_group_name = str(reference_segment["group_name"])
-                    json_lithology_name = str(reference_segment["lithology"])
-                    formation_depth_info = dict(
-                        reference_segment.get("formation_depth_info") or {}
-                    )
-                    if not all(
-                        formation_depth_info.get(key) is not None
-                        for key in ("min_depth", "max_depth", "thickness")
-                    ):
-                        formation_depth_info = _depth_summary(group_well)
-
-                    for category_name in CATEGORY_CONTEXT_SPECS:
-                        category_result = _category_analysis_result(category_name, group_well)
-                        derived_logs = _category_derived_logs_computed(
-                            category_name,
-                            group_well,
-                            workflow_result,
-                            formation_original_curves,
-                            category_result,
-                        )
-                        json_path = (
-                            output_path
-                            / category_name
-                            / _sanitize_path_component(file_path.stem)
-                            / _sanitize_path_component(formation_display_name)
-                            / f"{_sanitize_path_component(file_stem)}_{category_name}.json"
-                        )
-
-                        json_file = _write_reference_analysis_json_to_path(
-                            json_path,
-                            group_well,
-                            workflow_result,
-                            file_path,
-                            formation_original_curves,
-                            formation_name=formation_display_name,
-                            formation_depth_info=formation_depth_info,
-                            lithology_group_name=json_group_name,
-                            lithology_name=json_lithology_name,
-                            lithology_mapping=lithology_mapping,
-                            analysis_summary_override=category_result.to_dict(),
-                            derived_logs_override=derived_logs,
-                            status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
-                            include_derived_log_status=False,
-                            extra_statistics_curves=category_result.derived_curves,
-                        )
-
-                        results.append(
-                            ExampleFormatExportResult(
-                                source_file=str(file_path),
-                                output_file=str(json_file),
-                                success=not errors,
-                                json_file=str(json_file),
-                                curves_exported=0,
-                                warnings=reference_warnings,
-                                errors=errors,
-                            )
-                        )
                 continue
 
             if not formation_segments:
@@ -7688,7 +7392,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 if formation_well.n_samples == 0:
                     continue
 
-                formation_original_curves = raw_original_curves
+                formation_original_curves = original_curves
                 formation_depth_info = _depth_summary(formation_well)
                 lithology_segments = _build_lithology_group_segments(
                     formation_well,

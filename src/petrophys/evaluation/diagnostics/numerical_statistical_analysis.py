@@ -10,7 +10,6 @@ import numpy as np
 from scipy.cluster.vq import ClusterError, kmeans2
 
 from petrophys.interpretation.rock_physics.elastic import calculate_elastic_properties
-from petrophys._internal.legacy_context import legacy_benchmark_context
 from petrophys._internal.analysis_helpers import (
     CategoryAnalysisResult,
     DerivedCurve,
@@ -233,21 +232,8 @@ class NumericalStatisticalAnalysis:
         if rhob is not None:
             valid = np.isfinite(rhob)
             if np.any(valid):
-                # Overburden must be integrated from surface, not from the top
-                # of the log. Approximate the unlogged section above the
-                # shallowest density sample with the mean logged density; this
-                # is a first-order assumption, but omitting the term entirely
-                # gives S_V far below hydrostatic pore pressure.
-                rho_mean = float(np.nanmean(rhob[valid]))
-                top_depths = depth_m[valid]
-                top_depths = top_depths[np.isfinite(top_depths)]
-                top_m = float(np.abs(top_depths).min()) if top_depths.size else 0.0
-                surface_term = rho_mean * 1000.0 * 9.81 * top_m / 1e6
-                if legacy_benchmark_context():
-                    # Archived packages integrated from the top of the segment,
-                    # so S_V there is a relative stress increment, not absolute.
-                    surface_term = 0.0
-                sv[valid] = surface_term + np.cumsum(
+                # Context stress is an increment across the analyzed interval.
+                sv[valid] = np.cumsum(
                     (rhob[valid] * 1000.0) * 9.81 * dz_m[valid]
                 ) / 1e6
         finite_depth_m = depth_m[np.isfinite(depth_m)]

@@ -154,10 +154,10 @@ def _field_choices() -> Dict[str, Sequence[str]]:
     from petrophys.workflow import dynamic_workflow as workflow
 
     return {
-        "interpretation_profile": workflow._INTERPRETATION_PROFILES,
         "mud_type": workflow._MUD_TYPES,
         "mud_water": workflow._MUD_WATERS,
         "matrix_type": ("auto", *MatrixProperties.names()),
+        "lithology_domain": workflow._LITHOLOGY_FAMILIES,
         "lithology_source": workflow._LITHOLOGY_SOURCES,
         "hc_type": workflow._HC_TYPES,
         "gr_method": GR_VCL_METHODS,

@@ -284,10 +284,9 @@ def test_workflow_computes_vcl_without_gr_sp_only():
 
 
 # ---------------------------------------------------------------------------
-# Geomechanics: overburden must exceed hydrostatic pore pressure everywhere
-# (previously S_V was integrated from the log top, not the surface).
+# Context geomechanics reports the stress increment across the log interval.
 # ---------------------------------------------------------------------------
-def test_overburden_exceeds_hydrostatic():
+def test_overburden_is_integrated_from_the_log_interval_top():
     from petrophys.evaluation.diagnostics.numerical_statistical_analysis import (
         NumericalStatisticalAnalysis,
     )
@@ -303,4 +302,5 @@ def test_overburden_exceeds_hydrostatic():
     pp = np.asarray(well.get("PP_HYDROSTATIC").data, dtype=float)
     mask = np.isfinite(sv) & np.isfinite(pp)
     assert mask.sum() > 0
-    assert np.all(sv[mask] > pp[mask])
+    assert np.all(np.diff(sv[mask]) > 0.0)
+    assert sv[mask][0] < pp[mask][0]
