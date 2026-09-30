@@ -195,6 +195,9 @@ def test_documentation_lists_every_tool():
     import re
     from pathlib import Path
 
-    page = Path(__file__).resolve().parents[1] / "docs" / "mcp.rst"
-    documented = set(re.findall(r"^   \* - ``(\w+)``$", page.read_text(), re.M))
-    assert documented == EXPECTED_TOOLS
+    # The guide builds its tool table from the running server at docs build
+    # time, so every registered tool is listed; check it still does.
+    page = Path(__file__).resolve().parents[1] / "docs" / "mcp.md"
+    source = page.read_text()
+    assert "execution_mode: force" in source
+    assert re.search(r"await client\.list_tools\(\)", source)

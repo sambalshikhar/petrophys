@@ -358,9 +358,57 @@ article .cell_output table {
 
 article .cell_output pre,
 article .cell_output .output,
-article .cell_output .text_html {
+article .text_html {
   max-width: 100%;
   overflow-x: auto;
+}
+
+/* Tables printed by executed pages (pandas DataFrames and Stylers), in cell
+   outputs and in outputs glued into cards or tabs. */
+article .text_html table {
+  width: auto;
+  margin: 0.25rem 0;
+  border: none;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+article .text_html table th,
+article .text_html table td {
+  padding: 0.32rem 0.7rem;
+  border: none;
+  border-bottom: 1px solid var(--ph-line);
+  text-align: left !important;
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+
+article .text_html table thead th {
+  border-bottom: 2px solid var(--ph-muted);
+  font-weight: 650;
+}
+
+/* pandas prints the index name on its own header row; keep it quiet. */
+article .text_html table thead tr + tr th {
+  padding-top: 0;
+  color: var(--ph-muted);
+  font-weight: 500;
+}
+
+article .text_html table tbody th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Tables glued into narrow cards: tighter cells so they fit the card. */
+article .sd-card .text_html table th,
+article .sd-card .text_html table td {
+  padding: 0.3rem 0.45rem;
+}
+
+article .text_html table tbody tr:hover {
+  background: var(--ph-surface, rgba(0, 0, 0, 0.03));
 }
 
 .ph-status {

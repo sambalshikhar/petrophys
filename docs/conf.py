@@ -158,6 +158,11 @@ autodoc_default_options = {
 
 # myst-nb: render notebooks with their saved outputs, never execute on RTD.
 nb_execution_mode = "off"
+# Guide pages written as MyST notebooks opt in with `mystnb: execution_mode: force`
+# in their front matter, so every output they show is produced by the build.
+nb_execution_raise_on_error = True
+nb_execution_show_tb = True
+nb_execution_timeout = 300
 myst_enable_extensions = ["dollarmath", "amsmath", "colon_fence"]
 nb_merge_streams = True
 

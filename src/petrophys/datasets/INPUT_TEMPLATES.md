@@ -39,5 +39,5 @@ require selection. Attached lithology is used by both plotting and subsequent
 Interpretation works on a copy by default. Top-only formation analysis requires
 an explicit terminal depth; plotting tops does not require bottoms.
 Read the full [input guide](https://petrophys.readthedocs.io/en/latest/input_templates.html)
-(`docs/input_templates.rst` in the repository) for industry sources, vendor field
+(`docs/input_templates.md` in the repository) for industry sources, vendor field
 mapping, validation, saturation unit handling and a complete bundled-well example.

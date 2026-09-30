@@ -56,7 +56,7 @@ What is in the library
       curves, and impute only missing samples when a compatible model exists.
 
       +++
-      :doc:`Capability map <capabilities>`
+      :doc:`What Petrophys can do <capabilities>`
 
    .. grid-item-card:: Formation evaluation
       :class-card: ph-card-amber
@@ -86,7 +86,7 @@ What is in the library
       interval summaries.
 
       +++
-      :doc:`Capability map <capabilities>`
+      :doc:`What Petrophys can do <capabilities>`
 
    .. grid-item-card:: Plots and delivery
       :class-card: ph-card-blue
@@ -220,12 +220,13 @@ Continue with the :doc:`installation guide <installation>`, the
    :maxdepth: 2
    :caption: User Guide
 
-   workflows
-   context
-   data_quality
    capabilities
-   specialist_data
+   workflows
+   custom_workflows
    visualization_reporting
+   specialist_data
+   data_quality
+   context
    mcp
 
 .. toctree::

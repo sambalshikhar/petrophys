@@ -90,6 +90,7 @@ vendor permeability from T2 calculations; tutorial 16 needs real Git LFS data.
 | 18 | [`18_multiwell_field_study.ipynb`](part_b_advanced/18_multiwell_field_study.ipynb) | Multiwell analysis and field screening |
 | 19 | [`19_llm_context_generation.ipynb`](part_b_advanced/19_llm_context_generation.ipynb) | Portable LAS-to-JSON context generation |
 | 20 | [`20_mcp_server.ipynb`](part_b_advanced/20_mcp_server.ipynb) | Petrophys for LLM agents through the MCP server |
+| 21 | [`21_custom_workflows.ipynb`](part_b_advanced/21_custom_workflows.ipynb) | Build, check, save and run your own interpretation workflows |
 
 ## Case Studies
 

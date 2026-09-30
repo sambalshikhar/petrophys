@@ -97,6 +97,10 @@ Course outline
      - :doc:`Petrophys for LLM agents (MCP) <part_b/20_mcp_server>`
      - Let LLM agents load wells, interpret, summarize zones, plot, and export
        through the Petrophys MCP server.
+   * - 21
+     - :doc:`Custom workflows <part_b/21_custom_workflows>`
+     - Build, check, save and share your own interpretation recipe, add your own
+       steps around ``pp.interpret``, and run it across the COSTA field.
 
 .. toctree::
    :hidden:
@@ -113,3 +117,4 @@ Course outline
    Multiwell field study <part_b/18_multiwell_field_study>
    LLM context generation <part_b/19_llm_context_generation>
    Petrophys for LLM agents (MCP) <part_b/20_mcp_server>
+   Custom workflows <part_b/21_custom_workflows>

@@ -118,6 +118,31 @@ Data problems also raise `petrophys.DataQualityWarning`, for example when a
 density curve labelled g/cc is really in kg/m3. Turn them into errors with
 `warnings.simplefilter("error", pp.DataQualityWarning)`.
 
+## Custom workflows
+
+Build your own reusable recipe from built-in steps and your own functions,
+check it against a well, run it on one well or a whole field, and share it as
+JSON:
+
+```python
+from petrophys.workflow import steps
+
+wf = pp.Workflow("Brent quick look", [
+    steps.clay_volume(method="gr", gr_clean=20, gr_shale=110),
+    steps.porosity(method="density", matrix_density=2.65),
+    steps.formation_water(rw=0.07, rw_temp_f=230),
+    steps.saturation(model="archie"),
+    steps.net_pay(vcl_cutoff=0.35, phie_cutoff=0.10, sw_cutoff=0.60),
+])
+run = wf.run(well)                    # checks inputs first; full trace
+run.summary(top=2841, bottom=2958)
+wf.save("brent_quick_look.json")      # pp.Workflow.load(...) later
+```
+
+`steps.interpret(...)` runs the whole prebuilt workflow as one step, so you
+can add your own steps around it. See the
+[custom workflows guide](https://petrophys.netlify.app/custom_workflows.html).
+
 ## Context JSON
 
 ```python
@@ -127,7 +152,7 @@ pp.export_context(result, "well_context.json")
 
 The versioned API enforces byte budgets and preserves existing files by default.
 It supports formation/lithology packages and the `petrophys-context` command.
-See the [context guide](docs/context.rst) and [data-quality notes](docs/data_quality.rst).
+See the [context guide](https://petrophys.netlify.app/context.html) and [interpretation review guide](https://petrophys.netlify.app/data_quality.html).
 Net-pay output is cutoff screening, not confirmed pay; review warnings and calibration.
 
 ## Use with LLM agents (MCP)
