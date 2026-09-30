@@ -965,7 +965,7 @@ class DynamicWorkflowResult:
                     return f"{finite[0]:.4f}"
                 return f"{np.nanmin(finite):.4f}-{np.nanmax(finite):.4f}"
             print(f"Rw = {_summary(self.rw_computed)} ohm.m | Rmf = {_summary(self.rmf_computed) if self.rmf_computed is not None else 'None'} | "
-                  f"Rcl = {self.rcl_computed}")
+                  f"Rcl = {_summary(self.rcl_computed) if self.rcl_computed is not None else 'None'}")
         print()
 
         for sr in self.steps_executed:
@@ -1123,7 +1123,9 @@ class DynamicWorkflowResult:
         pandas.DataFrame
             One row per formation: top, bottom, gross, net rock, net
             reservoir and net pay thickness (in the well's depth unit),
-            net-to-gross, and average PHIE, Sw, VCL and permeability.
+            net-to-gross (net pay / gross), and PHIE, Sw, VCL and
+            permeability averaged over the net-pay samples only (geometric
+            mean for permeability; NaN where a formation has no pay).
 
         Examples
         --------
@@ -1162,7 +1164,7 @@ class DynamicWorkflowResult:
         Examples
         --------
         >>> import petrophys as pp
-        >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07)
+        >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230)
         >>> result.summary(top=2841, bottom=2958)["status"]
         'interpreted'
         """
@@ -1465,8 +1467,10 @@ class DynamicWorkflow:
 
         Formation tops drive formation-specific core permeability calibration.
         An explicit ``DynamicWorkflowConfig.formation_tops`` always wins;
-        otherwise attached formations are used when they form a single,
-        non-overlapping level.
+        otherwise attached formations are used when they do not overlap,
+        apart from groups containing their own ranked formations. Models are
+        applied group first, so a formation's model takes precedence over its
+        group's wherever it can be fitted.
         """
         if self.config.formation_tops is not None:
             report["formations"] = {"source": "config", "used": True}

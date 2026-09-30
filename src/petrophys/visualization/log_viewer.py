@@ -1661,10 +1661,11 @@ class LogViewer:
         self.fig: Optional[Figure] = None
         self.axes: List[Axes] = []
         self.header_axes: List[Axes] = []
-        self.warnings: List[str] = []
-        self.warnings.extend(self.formation_import_report.get("diagnostics", []))
+        import_messages = list(self.formation_import_report.get("diagnostics", []))
         if self.lithology_intervals is not None:
-            self.warnings.extend(self.lithology_intervals.attrs.get("import_report", {}).get("diagnostics", []))
+            import_messages.extend(self.lithology_intervals.attrs.get("import_report", {}).get("diagnostics", []))
+        # Formation and lithology imports can report the same depth-reference note.
+        self.warnings: List[str] = list(dict.fromkeys(import_messages))
         self.curve_lookup: Dict[str, str] = {}
         self._header_axis_by_data_axis: Dict[int, Axes] = {}
         self._header_row_counts: Dict[int, int] = {}

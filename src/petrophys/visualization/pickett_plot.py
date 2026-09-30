@@ -11,6 +11,7 @@ try:
     import matplotlib.pyplot as plt
     from matplotlib.figure import Figure
     from matplotlib.axes import Axes
+    from matplotlib.ticker import FormatStrFormatter, NullFormatter
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
@@ -116,9 +117,13 @@ class PickettPlot:
         self.ax.set_xscale('log')
         self.ax.set_yscale('log')
 
-        # Set limits
+        # Set limits. The porosity axis spans less than two decades, so
+        # matplotlib would label minor ticks and the labels would collide.
         self.ax.set_xlim(0.01, 0.5)
         self.ax.set_ylim(0.1, 1000)
+        self.ax.set_xticks([0.01, 0.02, 0.05, 0.1, 0.2, 0.5])
+        self.ax.xaxis.set_major_formatter(FormatStrFormatter("%g"))
+        self.ax.xaxis.set_minor_formatter(NullFormatter())
 
         # Labels
         self.ax.set_xlabel('Effective Porosity (PHIE)')

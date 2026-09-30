@@ -182,7 +182,7 @@ class BoreholeImageData:
         DLIS dimensions indicate more than one per-depth sample.
         """
         if not HAS_DLISIO:
-            raise ImportError("dlisio is required: pip install dlisio")
+            raise ImportError('dlisio is required; install the DLIS extra: pip install "petrophys[dlis]"')
 
         physical_file = dlis.load(str(filepath))
         try:

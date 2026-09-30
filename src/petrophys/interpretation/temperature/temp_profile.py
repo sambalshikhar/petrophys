@@ -11,7 +11,7 @@ import numpy as np
 
 from petrophys.model.well import Well
 from petrophys.model.constants import DefaultParameters
-from petrophys.model.units import UnitConverter, temperature_to_fahrenheit
+from petrophys.model.units import UnitConverter, temperature_to_fahrenheit, temperature_unit
 from petrophys.interpretation.temperature.temp_gradient import (
     calculate_temperature_gradient,
     estimate_gradient_from_bht,
@@ -149,11 +149,8 @@ class TemperatureProfile:
         reference_temperature: Optional[float] = None,
         reference_depth: Optional[float] = None,
     ):
-        self.surface_temp = surface_temp
-        self.temp_unit = temp_unit.upper()
-
-        if self.temp_unit == "C":
-            self.surface_temp = UnitConverter.celsius_to_fahrenheit(surface_temp)
+        self.temp_unit = temperature_unit(temp_unit) or "F"
+        self.surface_temp = temperature_to_fahrenheit(surface_temp, temp_unit)
 
         self._gradient = gradient  # °F/100ft
         self.source = source
@@ -201,9 +198,8 @@ class TemperatureProfile:
         TemperatureProfile
             Configured temperature profile
         """
-        # Convert to standard units
-        if bht_unit.upper() == "C":
-            bht = UnitConverter.celsius_to_fahrenheit(bht)
+        # Convert to standard units ("C", "degC", "deg C" ... are all Celsius)
+        bht = temperature_to_fahrenheit(bht, bht_unit)
 
         if surface_temp_unit is None:
             surface_temp_unit = (

@@ -106,3 +106,12 @@ def test_las_reader_falls_back_for_non_utf8_files(tmp_path):
     latin1 = tmp_path / "latin1.las"
     latin1.write_text(open(pp.sample("30_6-5"), encoding="utf-8").read(), encoding="latin-1")
     assert pp.read(latin1).header.field == "OSEBERG ØST"
+
+
+def test_temperature_profile_reads_celsius_labels():
+    from petrophys.interpretation.temperature.temp_profile import TemperatureProfile
+
+    for label in ("C", "degC", "deg C", "DEGC"):
+        profile = TemperatureProfile.from_bht(126.0, 3556.0, bht_unit=label, depth_unit="m")
+        assert abs(profile.reference_temperature - 258.8) < 1e-9, label
+    assert TemperatureProfile(gradient=1.0, surface_temp=20.0, temp_unit="degC").surface_temp == 68.0

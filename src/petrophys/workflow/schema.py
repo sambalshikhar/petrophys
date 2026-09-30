@@ -26,15 +26,21 @@ WORKFLOW_STEP_DESCRIPTIONS: Dict[str, str] = {
     "normalization": "Canonical curve aliases and units; implausible-value screening",
     "temperature": "Formation temperature profile from BHT or a gradient",
     "bad_hole": "Washout and density-correction quality flags",
-    "spectral_gamma": "Clay indicators from potassium, thorium and uranium",
-    "elemental_spectroscopy": "Mineral indicators from elemental concentrations or yields",
+    "spectral_gamma": (
+        "Not run by pp.interpret; call "
+        "petrophys.interpretation.geochemistry.interpret_spectral_gamma directly"
+    ),
+    "elemental_spectroscopy": (
+        "Not run by pp.interpret; call "
+        "petrophys.interpretation.geochemistry.interpret_elemental_spectroscopy directly"
+    ),
     "vclay": "Clay volume (VCL) from gamma ray, SP and neutron-density",
     "rcl": "Clay resistivity from shale intervals",
     "rmf": "Mud-filtrate resistivity at formation temperature",
     "hc_correction": "Neutron-density hydrocarbon correction (opt-in)",
     "porosity": "Density, neutron, sonic, total (PHIT) and effective (PHIE) porosity",
-    "lithology": "Mineral volumes from an adaptive multi-mineral solve",
-    "porosity_refinement": "Porosity recomputed with per-depth lithology endpoints",
+    "lithology": "Mineral volumes: clastic multi-mineral or carbonate solve",
+    "porosity_refinement": "Not run by pp.interpret; porosity is computed once, in the porosity step",
     "core_correction": "Porosity and permeability calibrated to core data",
     "rw": "Formation water resistivity at formation temperature",
     "invasion": "Invasion profile from shallow and deep resistivity",
@@ -48,13 +54,20 @@ WORKFLOW_STEP_DESCRIPTIONS: Dict[str, str] = {
 
 
 def workflow_steps() -> List[Dict[str, str]]:
-    """Return the workflow steps in execution order with a description each.
+    """Return every workflow step name, in pipeline order, with a description.
+
+    These are the names accepted by ``skip_steps`` and used in
+    ``result.steps_skipped``. ``spectral_gamma``, ``elemental_spectroscopy``
+    and ``porosity_refinement`` are listed but never run by
+    :func:`petrophys.interpret`; their descriptions say so. A run's trace
+    (``result.steps_executed``) also contains ``input_context``,
+    ``permeability_finalize`` and ``rock_quality_finalize``.
 
     Returns
     -------
     list of dict
-        ``{"name": ..., "description": ...}`` for every step, in the order
-        :func:`petrophys.interpret` runs them.
+        ``{"name": ..., "description": ...}`` for every step, in pipeline
+        order.
 
     Examples
     --------
@@ -77,8 +90,9 @@ def config_schema() -> List[Dict[str, Any]]:
     Returns
     -------
     list of dict
-        One entry per setting, in declaration order, with ``name``, ``type``
-        (as written in the source), ``default`` (JSON-serializable),
+        One entry per setting, in declaration order, with ``name``,
+        ``group`` (the section it belongs to, such as ``"Formation water"``),
+        ``type`` (as written in the source), ``default`` (JSON-serializable),
         ``description`` and, for settings with a fixed set of values,
         ``choices``.
 
@@ -90,6 +104,7 @@ def config_schema() -> List[Dict[str, Any]]:
     True
     """
     descriptions = _field_comments(DynamicWorkflowConfig)
+    groups = _field_groups(DynamicWorkflowConfig)
     choices = _field_choices()
     schema = []
     for item in dataclasses.fields(DynamicWorkflowConfig):
@@ -102,6 +117,7 @@ def config_schema() -> List[Dict[str, Any]]:
             default = None
         entry: Dict[str, Any] = {
             "name": item.name,
+            "group": groups.get(item.name, ""),
             "type": _type_name(item.type),
             "default": default,
             "description": descriptions.get(item.name, ""),
@@ -144,6 +160,22 @@ def _field_comments(cls: type) -> Dict[str, str]:
         if stripped and not stripped.startswith("#"):
             pending = []
     return comments
+
+
+def _field_groups(cls: type) -> Dict[str, str]:
+    """Map each dataclass field to the ``# -- Section --`` comment above it."""
+    groups: Dict[str, str] = {}
+    current = ""
+    for line in inspect.getsource(cls).splitlines():
+        stripped = line.strip()
+        section = re.match(r"^# -- (.+?) -+$", stripped)
+        if section:
+            current = section.group(1).strip()
+            continue
+        match = re.match(r"^([A-Za-z_]\w*)\s*:", stripped)
+        if match and current:
+            groups.setdefault(match.group(1), current)
+    return groups
 
 
 def _field_choices() -> Dict[str, Sequence[str]]:

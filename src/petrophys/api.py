@@ -56,8 +56,11 @@ def read(
         ``.dlis``, ``.csv`` or ``.tsv``).
     formations : path, DataFrame, mapping, or sequence, optional
         Formation tops or intervals (see :func:`petrophys.read_formations`).
-        They annotate plots and, when they form a single non-overlapping
-        level, calibrate core permeability per formation in :func:`interpret`.
+        They annotate plots and calibrate core permeability per formation in
+        :func:`interpret` when they do not overlap, apart from groups that
+        contain their own ranked formations (the formation's model then takes
+        precedence). ``formation_options={"rank": "formation"}`` attaches one
+        level only.
     lithology : path or DataFrame, optional
         Lithology intervals with ``top,bottom,lithology`` columns (see
         :func:`petrophys.read_lithology_intervals`). They take precedence over
@@ -65,7 +68,8 @@ def read(
     formation_options : mapping, optional
         Extra arguments for :func:`petrophys.read_formations`, e.g.
         ``{"columns": {"formation_name": "Surface", "top_depth": "MD"}}``,
-        ``{"well_name": "30/6-5"}`` for a multi-well table, or
+        ``{"well_name": "30/6-5"}`` for a multi-well table,
+        ``{"rank": "formation"}`` for one stratigraphic level, or
         ``{"sheet_name": 1}`` for an Excel sheet.
     lithology_options : mapping, optional
         Extra arguments for :func:`petrophys.read_lithology_intervals`, e.g.

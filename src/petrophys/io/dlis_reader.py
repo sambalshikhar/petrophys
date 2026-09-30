@@ -278,7 +278,7 @@ class DLISReader:
         if not HAS_DLISIO:
             raise ImportError(
                 "dlisio is required for DLIS file reading. "
-                "Install with: pip install dlisio"
+                'Install the DLIS extra: pip install "petrophys[dlis]"'
             )
 
         self.filepath = Path(filepath)

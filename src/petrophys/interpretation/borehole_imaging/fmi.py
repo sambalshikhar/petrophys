@@ -58,7 +58,7 @@ def read_fmi_dlis(
     frame in the same logical file, and interpolates them onto image depth.
     """
     if not HAS_DLISIO:
-        raise ImportError("dlisio is required: pip install dlisio")
+        raise ImportError('dlisio is required; install the DLIS extra: pip install "petrophys[dlis]"')
 
     physical_file = dlis.load(str(filepath))
     try:

@@ -32,6 +32,8 @@ def test_workflow_steps_are_ordered_and_described():
     assert steps[0]["name"] == "normalization" and steps[-1]["name"] == "net_pay"
     assert all(step["description"] for step in steps)
     assert describe_setting("bht_f")["type"] == "Optional[float]"
+    assert describe_setting("rw")["group"] == "Formation water"
+    assert all(item["group"] for item in config_schema())
 
 
 def test_well_and_result_summaries_are_json_ready():
