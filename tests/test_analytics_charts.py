@@ -100,3 +100,18 @@ def test_core_plot_helpers_are_public():
     for name in ("plot_calibration", "plot_poro_perm", "plot_core_on_logs",
                  "GEOLINK_LITHOLOGY_CODE_LABELS"):
         assert name in viz.__all__ and hasattr(viz, name)
+
+
+def test_core_filter_keeps_non_array_metadata_whole():
+    from petrophys.model.core import CoreData
+
+    core = CoreData(
+        depth=np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        porosity=np.linspace(0.1, 0.2, 6),
+        metadata={"well_name": "ABCDEF", "record": {k: k for k in "abcdef"},
+                  "plug_id": np.arange(6)},
+    )
+    kept = core.filter_by_depth(2.0, 4.0)
+    assert kept.metadata["well_name"] == "ABCDEF"
+    assert kept.metadata["record"] == {k: k for k in "abcdef"}
+    np.testing.assert_array_equal(kept.metadata["plug_id"], [1, 2, 3])

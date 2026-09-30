@@ -586,7 +586,7 @@ class DynamicWorkflowConfig:
     #: Minimum effective porosity for net reservoir, v/v.
     phie_cutoff: Optional[float] = None
 
-    # -- Gamma-ray clay volume (None: picked from the log) -------------------
+    # -- Gamma-ray clay volume ----------------------------------------------
     #: Clean-rock gamma-ray endpoint, API.
     gr_min: Optional[float] = 20.0
     #: Shale gamma-ray endpoint, API.
@@ -737,7 +737,17 @@ def _validate_lithology(config: "DynamicWorkflowConfig", errors: List[str]) -> N
         return
     if ArchieParameterDefaults.normalize(value) in ArchieParameterDefaults.names():
         return
-    message = _choice_error("lithology", value, _LITHOLOGY_FAMILIES + tuple(ArchieParameterDefaults.names()))
+    import difflib
+
+    message = (
+        f"lithology_domain={value!r} is not valid; use one of: "
+        f"{', '.join(_LITHOLOGY_FAMILIES)}, or a lithology with tabulated Archie "
+        "coefficients (petrophys.model.constants.ArchieParameterDefaults.names())"
+    )
+    candidates = list(_LITHOLOGY_FAMILIES) + [name.lower() for name in ArchieParameterDefaults.names()]
+    close = difflib.get_close_matches(key, candidates, n=1, cutoff=0.75)
+    if close:
+        message += f" (did you mean {close[0]!r}?)"
     errors.append(message)
 
 
@@ -1197,26 +1207,35 @@ class DynamicWorkflowResult:
         rw_step = steps.get(WorkflowStep.RW.value)
         if rw_step is not None:
             parameters = rw_step.parameters
-            if parameters.get("rw") is not None:
-                reference = parameters.get("reference_temp_f")
+            # Temperature-corrected runs record the input as rw_at_measured_temp.
+            rw_input = parameters.get("rw", parameters.get("rw_at_measured_temp"))
+            if rw_input is not None:
+                reference = parameters.get("reference_temp_f", parameters.get("measured_temp_f"))
                 descr = f"Rw input ({rw_step.method})"
                 if reference is not None:
                     descr = f"Rw input at {reference:g} degF ({rw_step.method})"
-                items.append({"mnemonic": "PP_RW", "value": parameters["rw"], "unit": "ohm.m", "descr": descr})
+                items.append({"mnemonic": "PP_RW", "value": rw_input, "unit": "ohm.m", "descr": descr})
             for key, mnemonic, descr in (
                 ("rw_min", "PP_RWTMIN", "Minimum Rw at formation temperature"),
                 ("rw_max", "PP_RWTMAX", "Maximum Rw at formation temperature"),
             ):
                 if parameters.get(key) is not None:
-                    items.append({"mnemonic": mnemonic, "value": parameters[key], "unit": "ohm.m", "descr": descr})
+                    items.append({"mnemonic": mnemonic, "value": float(f"{parameters[key]:.4g}"),
+                                  "unit": "ohm.m", "descr": descr})
         sw_step = steps.get(WorkflowStep.SATURATION.value)
         if sw_step is not None:
             parameters = sw_step.parameters
             items.append({"mnemonic": "PP_SWMODEL", "value": sw_step.method, "descr": "Water saturation model(s)"})
             for key in ("a", "m", "n"):
-                if parameters.get(key) is not None:
-                    items.append({"mnemonic": f"PP_{key.upper()}", "value": parameters[key],
+                value = parameters.get(key)
+                if value is None:
+                    continue
+                if isinstance(value, (int, float)):
+                    items.append({"mnemonic": f"PP_{key.upper()}", "value": value,
                                   "descr": f"Archie {key}"})
+                else:
+                    items.append({"mnemonic": f"PP_{key.upper()}", "value": "per lithology",
+                                  "descr": f"Archie {key} from the lithology table"})
         return items
 
     def to_las(self, path: Union[str, Path], **options: Any) -> Path:
@@ -1702,10 +1721,10 @@ class DynamicWorkflow:
                 if not step_trace.success:
                     self._result.errors.append(f"{step_name}: {step_trace.message}")
             except Exception as e:
-                if self.config.raise_on_error:
+                if self.config.raise_on_error or isinstance(e, Warning):
                     raise
                 self._result.errors.append(f"{step_name}: {e}")
-                self._result.specific_steps_skipped[step_enum.name] = str(e)
+                self._result.specific_steps_skipped[step_name] = str(e)
                 self._result.steps_executed.append(
                     StepResult(step=step_name, success=False, message=str(e))
                 )
@@ -1772,7 +1791,7 @@ class DynamicWorkflow:
                 self._result.steps_executed.append(self._step_normalization(well))
                 normalization_done = True
             except Exception as exc:
-                if self.config.raise_on_error:
+                if self.config.raise_on_error or isinstance(exc, Warning):
                     raise
                 message = f"normalization: {exc}"
                 self._result.errors.append(message)
@@ -1848,7 +1867,7 @@ class DynamicWorkflow:
                         if self.config.raise_on_error:
                             raise RuntimeError(step_trace.message)
                 except Exception as e:
-                    if self.config.raise_on_error:
+                    if self.config.raise_on_error or isinstance(e, Warning):
                         raise
                     msg = f"{step_name}: {str(e)}"
                     self._result.warnings.append(msg)
@@ -1894,7 +1913,7 @@ class DynamicWorkflow:
                     )
                     self._result.steps_executed.append(final_quality_trace)
             except Exception as exc:
-                if self.config.raise_on_error:
+                if self.config.raise_on_error or isinstance(exc, Warning):
                     raise
                 self._result.errors.append(f"permeability_finalize: {exc}")
                 self._result.warnings.append(f"permeability_finalize: {exc}")

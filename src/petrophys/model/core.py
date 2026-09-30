@@ -20,6 +20,20 @@ except ImportError:
     HAS_PANDAS = False
 
 
+
+def _slice_per_plug(value: Any, mask: np.ndarray) -> Any:
+    """Slice a per-plug metadata sequence; keep strings, dicts and scalars whole."""
+    if isinstance(value, (str, bytes, dict)) or not hasattr(value, "__len__"):
+        return value
+    if len(value) != len(mask):
+        return value
+    if isinstance(value, (list, tuple)):
+        return type(value)(item for item, keep in zip(value, mask) if keep)
+    try:
+        return value[mask]
+    except (TypeError, IndexError, KeyError):
+        return value
+
 @dataclass
 class CoreData:
     """
@@ -250,8 +264,7 @@ class CoreData:
             sw=self.sw[mask] if self.sw is not None else None,
             so=self.so[mask] if self.so is not None else None,
             lithology=self.lithology[mask] if self.lithology is not None else None,
-            metadata={k: v[mask] if hasattr(v, '__getitem__') and len(v) == len(self.depth) else v
-                      for k, v in self.metadata.items()},
+            metadata={k: _slice_per_plug(v, mask) for k, v in self.metadata.items()},
         )
 
     def __repr__(self) -> str:
