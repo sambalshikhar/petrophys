@@ -1,5 +1,5 @@
 """
-Lithology Determination Module.
+Mineral volumes, matrix properties, lithology crossplots and lithology logs.
 
 This module provides tools for multi-mineral analysis and
 lithology determination from well logs, as well as interval-based

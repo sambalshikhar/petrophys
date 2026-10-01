@@ -1,5 +1,5 @@
 """
-Moveable Hydrocarbon Index (MHI) Module.
+Moveable hydrocarbon index, MHI = SW / SXO, and its classes.
 """
 
 from petrophys.evaluation.mhi.mhi_module import MhiModule, calculate_mhi

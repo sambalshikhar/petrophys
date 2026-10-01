@@ -1,5 +1,5 @@
 """
-Water Saturation Module.
+Water saturation from Archie and shaly-sand models, and flushed-zone saturation.
 
 This module provides multiple water saturation models including
 Archie, Simandoux, Indonesia, Waxman-Smits, and Dual Water.

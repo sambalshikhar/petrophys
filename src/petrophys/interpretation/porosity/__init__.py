@@ -1,5 +1,5 @@
 """
-Porosity Module.
+Density, neutron, sonic, total and effective porosity.
 
 This module provides comprehensive porosity calculations including
 density, neutron, sonic, total, and effective porosity.

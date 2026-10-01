@@ -1,5 +1,5 @@
 """
-Invasion Profile Module.
+Invasion profiles from shallow and deep resistivity.
 
 This module provides tools for characterizing invasion profiles
 from shallow and deep resistivity measurements.

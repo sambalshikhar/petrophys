@@ -659,6 +659,29 @@ class ExportCurveSpec:
 
 @dataclass
 class ExampleFormatExportResult:
+    """Outcome of exporting one source file in a batch export.
+
+    The batch exporters in :mod:`petrophys.reporting` return one per file
+    written (one per formation or lithology group for the split exporters);
+    :func:`write_example_format_report` tabulates them.
+
+    Attributes
+    ----------
+    source_file : str
+        The LAS file that was read.
+    output_file : str
+        The LAS file written, or the intended path (or ``""``) when the
+        export failed.
+    success : bool
+        True when the export finished without workflow errors.
+    json_file : str
+        The JSON analysis file written next to the LAS file, if any.
+    curves_exported : int
+        Number of curves written to the LAS file, excluding depth (0 when the
+        result is a JSON context only).
+    warnings, errors : list of str
+        Workflow warnings and errors collected for this file.
+    """
     source_file: str
     output_file: str
     success: bool
@@ -937,6 +960,42 @@ def export_example_format_las(
     set_name: Optional[str] = None,
     original_curves: Optional[set[str]] = None,
 ) -> Path:
+    """Write a well to LAS 2.0 in the example delivery format.
+
+    The file has the delivery header blocks (well information, a parameter
+    block with a ``TLFamily_<curve>`` log-family entry per curve, curve
+    information) and one row per depth sample, with nulls written as
+    ``-9999``. Curves are written in the standard delivery order; internal
+    flags and duplicate raw curves are left out.
+
+    Parameters
+    ----------
+    well : Well
+        The well to write, usually an interpreted one.
+    filepath : str or Path
+        Output LAS path. Missing parent folders are created.
+    set_name : str, optional
+        Value of the ``SET`` parameter; defaults to
+        ``"<well name> Petrophys Export"``.
+    original_curves : set of str, optional
+        Names of the curves read from the input file. Curves outside the
+        standard delivery list are written only if they are in this set, so
+        working curves added during interpretation are left out. Defaults to
+        every curve of ``well``.
+
+    Returns
+    -------
+    Path
+        The file written.
+
+    Examples
+    --------
+    >>> import petrophys as pp
+    >>> from petrophys.reporting import export_example_format_las
+    >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230)
+    >>> export_example_format_las(result.well, "delivery/30_6-5.las")
+    PosixPath('delivery/30_6-5.las')
+    """
     output_path = Path(filepath)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -6719,6 +6778,41 @@ def export_example_format_directory(
     pattern: str = "*.las",
     recursive: bool = False,
 ) -> List[ExampleFormatExportResult]:
+    """Rewrite every LAS file in a folder in the example delivery format.
+
+    Each file is read and rewritten by :func:`export_example_format_las`,
+    without running an interpretation. The output folder
+    mirrors the input folder's layout. A file that cannot be read or written is
+    recorded as failed and the others still run.
+
+    Parameters
+    ----------
+    input_dir : str or Path
+        Folder of LAS files.
+    output_dir : str or Path
+        Folder for the rewritten files; created if needed.
+    pattern : str, optional
+        Glob pattern selecting the input files; ``"*.las"`` by default.
+    recursive : bool, default False
+        Search subfolders of ``input_dir`` as well.
+
+    Returns
+    -------
+    list of ExampleFormatExportResult
+        One result per input file, in sorted path order.
+
+    See Also
+    --------
+    export_example_work_package_directory : Interpret each file before writing it.
+
+    Examples
+    --------
+    >>> from petrophys.reporting import (
+    ...     export_example_format_directory, write_example_format_report)
+    >>> results = export_example_format_directory("logs", "delivery")
+    >>> write_example_format_report(results, "delivery/report.csv")
+    PosixPath('delivery/report.csv')
+    """
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
@@ -6760,6 +6854,38 @@ def export_example_work_package_directory(
     pattern: str = "*.las",
     recursive: bool = False,
 ) -> List[ExampleFormatExportResult]:
+    """Interpret every LAS file in a folder and write a delivery work package.
+
+    For each file, curve names and units are standardized and the dynamic
+    workflow runs with the depth-zoned settings found in the LAS header (see
+    :func:`~petrophys.workflow.run_dynamic_workflow_with_zones`). The
+    interpreted well is written by :func:`export_example_format_las`, and a
+    JSON file with the same name holds an analysis summary and notes on how
+    each derived log was computed. The output folder mirrors the input
+    folder's layout. A file that fails is recorded and the others still run.
+
+    Parameters
+    ----------
+    input_dir : str or Path
+        Folder of LAS files.
+    output_dir : str or Path
+        Folder for the LAS and JSON files; created if needed.
+    pattern : str, optional
+        Glob pattern selecting the input files; ``"*.las"`` by default.
+    recursive : bool, default False
+        Search subfolders of ``input_dir`` as well.
+
+    Returns
+    -------
+    list of ExampleFormatExportResult
+        One result per input file. ``success`` is False when the workflow
+        reported errors; workflow warnings and errors are kept on the result.
+
+    See Also
+    --------
+    export_reference_json_work_package_directory : The same package with
+        reference-format JSON context files.
+    """
     from petrophys.workflow.zoned_batch import (
         _finalize_export_curves,
         run_dynamic_workflow_with_zones,
@@ -6837,6 +6963,37 @@ def export_reference_json_work_package_directory(
     pattern: str = "*.las",
     recursive: bool = False,
 ) -> List[ExampleFormatExportResult]:
+    """Interpret every LAS file in a folder and write reference-format contexts.
+
+    Like :func:`export_example_work_package_directory`, each file is
+    standardized, interpreted with its depth-zoned LAS header settings and
+    written as a delivery LAS file. The JSON file written next to it uses the
+    reference context format instead: well and interval information, input
+    logs present, curve statistics, lithology distribution, data completeness
+    and the analysis summary for the whole well.
+
+    Parameters
+    ----------
+    input_dir : str or Path
+        Folder of LAS files.
+    output_dir : str or Path
+        Folder for the LAS and JSON files; created if needed. It mirrors the
+        input folder's layout.
+    pattern : str, optional
+        Glob pattern selecting the input files; ``"*.las"`` by default.
+    recursive : bool, default False
+        Search subfolders of ``input_dir`` as well.
+
+    Returns
+    -------
+    list of ExampleFormatExportResult
+        One result per input file. ``success`` is False when the workflow
+        reported errors.
+
+    See Also
+    --------
+    export_reference_json_work_package_by_formation : One context per formation.
+    """
     from petrophys.workflow.zoned_batch import (
         _finalize_export_curves,
         run_dynamic_workflow_with_zones,
@@ -6914,6 +7071,42 @@ def export_reference_json_work_package_by_formation(
     pattern: str = "*.las",
     recursive: bool = False,
 ) -> List[ExampleFormatExportResult]:
+    """Write reference-format contexts for every formation of every well.
+
+    Each LAS file in ``input_dir`` is standardized and interpreted once as a
+    whole well, written to ``<output_dir>/<well>/<well>.las``, and then split
+    at the formation tops listed for it in ``tops_file``. Each formation slice
+    is interpreted on its own and written to
+    ``<output_dir>/<well>/<formation>/<well>__<formation>__<top>_<base>.las``
+    with a reference-format JSON context next to it. A well without matching
+    tops is exported as one ``WHOLE_WELL`` segment, with a warning.
+
+    Parameters
+    ----------
+    input_dir : str or Path
+        Folder of LAS files.
+    output_dir : str or Path
+        Folder for the per-well packages; created if needed.
+    tops_file : str or Path
+        Formation tops as CSV or Excel. Without a well column, the table
+        applies to a single well and ``input_dir`` must hold one LAS file.
+    pattern : str, optional
+        Glob pattern selecting the input files; ``"*.las"`` by default.
+    recursive : bool, default False
+        Search subfolders of ``input_dir`` as well.
+
+    Returns
+    -------
+    list of ExampleFormatExportResult
+        One result per formation written, plus one failed result for each
+        well that could not be read or sliced.
+
+    Raises
+    ------
+    ValueError
+        If the tops table has no well column and ``input_dir`` holds more
+        than one LAS file.
+    """
     from petrophys.workflow.zoned_batch import (
         _finalize_export_curves,
         run_dynamic_workflow_with_zones,
@@ -7084,6 +7277,69 @@ def export_reference_json_work_package_by_formation_lithology(
     lithology_file: Optional[str | Path] = None,
     core_file: Optional[str | Path] = None,
 ) -> List[ExampleFormatExportResult]:
+    """Write reference-format contexts per formation and lithology group.
+
+    Each well is read with its standardized inputs (well parameters,
+    lithology intervals and core data, when given), interpreted as a whole
+    well and written to ``<output_dir>/<well>/<well>.las``. Each formation is
+    then interpreted on its own and split into lithology groups: runs of
+    consecutive samples with the same lithology, taken from
+    ``LITHOLOGY_GEOLINK`` or else the computed ``LITHO`` curve. Every group
+    thicker than ``minimum_group_thickness`` gets a JSON context at
+    ``<output_dir>/<well>/<formation>/<formation>_<group>.json``. Without
+    tops, or when no tops match a well, the whole well is one ``WHOLE_WELL``
+    formation.
+
+    Parameters
+    ----------
+    input_dir : str or Path
+        Folder of LAS files.
+    output_dir : str or Path
+        Folder for the per-well packages; created if needed.
+    tops_file : str or Path, optional
+        Formation tops as CSV or Excel.
+    pattern : str, optional
+        Glob pattern selecting the input files; ``"*.las"`` by default.
+    recursive : bool, default False
+        Search subfolders of ``input_dir`` as well.
+    minimum_group_thickness : float, default 2.0
+        Lithology groups this thick or thinner (in the well depth unit) are
+        skipped.
+    well_names : sequence of str, optional
+        Only export LAS files whose name (without extension) matches one of
+        these well names.
+    lithology_mapping_file : str or Path, optional
+        Codebook of numeric lithology codes and rock names (see
+        :func:`~petrophys.io.read_lithology_codes`), used to name the groups.
+    tops_options : dict, optional
+        Options for reading ``tops_file``: ``rank``, ``sheet_name``,
+        ``columns`` or ``sep``.
+    workflow_config : DynamicWorkflowConfig, optional
+        Interpretation settings; values from ``parameters_file`` take
+        precedence for each well. Without it, the defaults are used with a
+        sandstone matrix and the clastic lithology domain.
+    parameters_file : str or Path, optional
+        Per-well interpretation settings (see
+        :func:`~petrophys.io.read_well_parameters`).
+    lithology_file : str or Path, optional
+        Per-depth lithology intervals for the wells.
+    core_file : str or Path, optional
+        Core measurements to attach to each well (see
+        :func:`~petrophys.io.attach_core_measurements`).
+
+    Returns
+    -------
+    list of ExampleFormatExportResult
+        One result per lithology group written, each pointing at the
+        whole-well LAS file and the group's JSON file, plus one failed result
+        for each well that could not be processed.
+
+    Raises
+    ------
+    ValueError
+        If the tops table has no well column and more than one LAS file is
+        selected, or the lithology codebook has non-numeric codes.
+    """
     from petrophys.workflow.zoned_batch import (
         _finalize_export_curves,
         run_dynamic_workflow_with_zones,
@@ -7494,6 +7750,24 @@ def write_example_format_report(
     results: Iterable[ExampleFormatExportResult],
     report_path: str | Path,
 ) -> Path:
+    """Write a CSV summary of a batch export, one row per result.
+
+    Columns are ``source_file``, ``output_file``, ``json_file``, ``success``,
+    ``curves_exported``, ``warnings`` and ``errors``; several warnings or
+    errors in one cell are joined with ``" | "``.
+
+    Parameters
+    ----------
+    results : iterable of ExampleFormatExportResult
+        Results returned by one of the batch exporters.
+    report_path : str or Path
+        Output CSV path. Missing parent folders are created.
+
+    Returns
+    -------
+    Path
+        The file written.
+    """
     report_file = Path(report_path)
     report_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -7530,6 +7804,25 @@ def write_reference_curve_name_mapping(
     output_dir: str | Path,
     file_name: str = "curve_name_mapping.json",
 ) -> Path:
+    """Write the mapping from current export curve names to the older ones.
+
+    The JSON file lists the curves whose exported mnemonic changed (for
+    example ``SXO``, previously ``SWXO``), the method-specific legacy names,
+    explicit replacements and the key curves whose names did not change, so
+    that consumers of earlier reference deliveries can match curves.
+
+    Parameters
+    ----------
+    output_dir : str or Path
+        Folder for the file; created if needed.
+    file_name : str, default "curve_name_mapping.json"
+        Name of the file.
+
+    Returns
+    -------
+    Path
+        The file written.
+    """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     mapping_path = output_path / file_name

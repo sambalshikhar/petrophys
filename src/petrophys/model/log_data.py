@@ -1,5 +1,5 @@
 """
-Log data structures and utilities.
+Depth intervals, zone sets and depth-index helpers for log data.
 
 This module provides supporting data structures for handling
 well log data including interval management and zone definitions.

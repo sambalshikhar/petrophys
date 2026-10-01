@@ -1,5 +1,5 @@
 """
-Analysis module — category-level classification analyses.
+Diagnostic analyses of an interpreted well: lithology, porosity, saturation, permeability and hydrocarbons.
 
 Each class takes a Well, produces a CategoryAnalysisResult with
 sections, derived curves, and metadata aligned with the reference

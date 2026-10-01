@@ -1,5 +1,5 @@
 """
-Standard petrophysics workflow.
+Deprecated fixed-configuration workflow; use pp.interpret or DynamicWorkflow instead.
 """
 
 from typing import TYPE_CHECKING, Optional, List, Dict, Any

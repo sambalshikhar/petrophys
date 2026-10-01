@@ -31,10 +31,10 @@ Custom workflows
 .. list-table::
    :widths: 38 62
 
-   * - :class:`pp.Workflow <petrophys.workflow.Workflow>`
+   * - :class:`pp.Workflow <petrophys.workflow.custom.Workflow>`
      - Your own reusable sequence of steps: check it against a well, run it
        on one well or many, save it and share it; see :doc:`../custom_workflows`
-   * - :func:`pp.workflow_step <petrophys.workflow.workflow_step>`
+   * - :func:`pp.workflow_step <petrophys.workflow.custom.workflow_step>`
      - Turn your own function into a workflow step
    * - :mod:`petrophys.workflow.steps`
      - Built-in steps: clay volume, porosity, Rw, saturation, permeability,

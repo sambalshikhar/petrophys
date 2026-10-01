@@ -1,5 +1,5 @@
 """
-Permeability Estimation Module.
+Permeability from porosity and irreducible water saturation, or from core.
 
 This module provides multiple permeability estimation methods
 including Timur, Wyllie-Rose, Coates-Denoo, lith_vcl equations, and

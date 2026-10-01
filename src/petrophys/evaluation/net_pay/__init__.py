@@ -1,5 +1,5 @@
 """
-Net Pay / Net Reservoir / Net Sand Module.
+Net rock, net reservoir and net pay flags from cutoffs, and pay summaries.
 """
 
 from petrophys.evaluation.net_pay.net_pay_module import (
