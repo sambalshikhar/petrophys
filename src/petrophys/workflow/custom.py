@@ -1576,6 +1576,11 @@ class Workflow:
         Every step is re-created through its factory, so parameters are
         validated again.
 
+        .. warning::
+           A custom step is stored as ``"module:function"`` and rebuilt by
+           importing that module, which runs its code. Only load workflows
+           from sources you trust, as you would only run their Python files.
+
         Parameters
         ----------
         data : mapping
@@ -1693,6 +1698,10 @@ class Workflow:
     @classmethod
     def load(cls, path: PathLike) -> "Workflow":
         """Load a workflow saved with :meth:`save`.
+
+        .. warning::
+           Custom steps are rebuilt by importing their modules; only load
+           workflow files you trust (see :meth:`from_dict`).
 
         Parameters
         ----------
