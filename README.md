@@ -158,14 +158,19 @@ Net-pay output is cutoff screening, not confirmed pay; review warnings and calib
 ## Use with LLM agents (MCP)
 
 Petrophys includes a [Model Context Protocol](https://modelcontextprotocol.io)
-server, so Claude Desktop, Claude Code, Cursor, VS Code and other MCP clients
+server, so Claude, ChatGPT/OpenAI, Cursor, VS Code, Codex and other MCP clients
 can load wells, interpret them, read the trace, summarize zones, plot, and
-export results on your machine:
+export results:
 
 ```bash
-python -m pip install -e ".[mcp]"                 # From the checkout; Python 3.10+
-claude mcp add petrophys -- petrophys-mcp --root /path/to/wells
+python -m pip install "petrophys[mcp]"                         # Python 3.10+
+petrophys-mcp config claude-code --root /path/to/wells         # prints the exact client setup
+petrophys-mcp serve --http --root /path/to/wells --token auto  # or serve remote clients over HTTP
+petrophys-mcp check --root /path/to/wells                      # verify folders and a test session
 ```
+
+`docker compose up` runs the HTTP server in a container, and
+`examples/mcp_openai_agent.py` connects an OpenAI model to a local server.
 
 The model calls the same validated workflow as `pp.interpret`; invalid settings
 come back with the accepted values, and file access is limited to the `--root`

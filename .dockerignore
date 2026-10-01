@@ -1,0 +1,14 @@
+.git
+**/__pycache__
+**/*.pyc
+docs/_build
+docs/tutorials/**/*.ipynb
+docs/api/generated
+docs/api/reference
+examples
+tests
+reports
+demos
+*.egg-info
+.venv
+wells
