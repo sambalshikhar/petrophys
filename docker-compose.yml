@@ -1,0 +1,18 @@
+# Petrophys MCP server for a team or a hosted LLM.
+#
+#   export PETROPHYS_MCP_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+#   mkdir -p wells && docker compose up -d
+#
+# Endpoint: http://localhost:8000/mcp (send "Authorization: Bearer $PETROPHYS_MCP_TOKEN").
+# Check it: petrophys-mcp check --url http://localhost:8000/mcp
+services:
+  petrophys-mcp:
+    build: .
+    image: petrophys-mcp
+    ports:
+      - "8000:8000"
+    environment:
+      PETROPHYS_MCP_TOKEN: ${PETROPHYS_MCP_TOKEN:?Set PETROPHYS_MCP_TOKEN before starting}
+    volumes:
+      - ./wells:/data
+    restart: unless-stopped

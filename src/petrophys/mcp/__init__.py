@@ -1,9 +1,11 @@
 """Model Context Protocol (MCP) server for Petrophys.
 
 Lets any MCP-capable LLM client (Claude Desktop, Claude Code, Cursor, VS Code,
-...) load wells, run interpretations, inspect traces, summarize zones, plot
-logs and export results. Install with ``pip install "petrophys[mcp]"`` and run
-``petrophys-mcp``; see the MCP guide in the documentation.
+Codex, OpenAI/ChatGPT) load wells, run interpretations, inspect traces,
+summarize zones, plot logs and export results. Install with
+``pip install "petrophys[mcp]"`` and run ``petrophys-mcp`` (stdio) or
+``petrophys-mcp serve --http`` (remote clients); ``petrophys-mcp config`` and
+``petrophys-mcp check`` help set it up. See the MCP guide in the documentation.
 """
 
 from petrophys.mcp.session import ROOTS_ENV_VAR, Session, SessionError
@@ -19,7 +21,7 @@ def create_server(*args, **kwargs):
 
 
 def main(argv=None):
-    """Run the MCP server over stdio; see :func:`petrophys.mcp.server.main`."""
-    from petrophys.mcp.server import main as _main
+    """Run the ``petrophys-mcp`` command line; see :mod:`petrophys.mcp.cli`."""
+    from petrophys.mcp.cli import main as _main
 
     return _main(argv)

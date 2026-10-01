@@ -49,57 +49,80 @@ The server needs Python 3.10 or newer.
 
 ```bash
 python -m pip install "petrophys[mcp]"
-petrophys-mcp --help
+petrophys-mcp check --root /path/to/wells     # installation, folders and a test session
 ```
 
-`petrophys-mcp` (or `python -m petrophys.mcp`) serves over standard input and output; MCP clients start it for you.
+## Connect a client on your machine
 
-## Connect a client
-
-Give the server the folders that hold your wells with `--root` (repeatable). It reads and writes only inside them; the bundled sample wells are always readable.
+Local clients start the server themselves over stdio. Let `petrophys-mcp config` write the exact settings: it uses absolute paths, so it works whatever the client's `PATH` is. `--root` names the folders the server may read wells from and write exports to (repeatable); the bundled sample wells are always readable.
 
 ::::{tab-set}
 
 :::{tab-item} Claude Code
 ```bash
-claude mcp add petrophys -- petrophys-mcp --root /path/to/wells
+petrophys-mcp config claude-code --root /path/to/wells   # prints the `claude mcp add ...` command
 ```
 :::
 
 :::{tab-item} Claude Desktop
-In `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "petrophys": {
-      "command": "petrophys-mcp",
-      "args": ["--root", "/path/to/wells"]
-    }
-  }
-}
+```bash
+petrophys-mcp config claude-desktop --root /path/to/wells
 ```
+Paste the printed `mcpServers` entry into `claude_desktop_config.json` and restart Claude Desktop.
 :::
 
-:::{tab-item} Cursor and VS Code
-Cursor uses `.cursor/mcp.json` with the same content as Claude Desktop. VS Code uses `.vscode/mcp.json` with the key `servers`:
-
-```json
-{
-  "servers": {
-    "petrophys": {
-      "command": "petrophys-mcp",
-      "args": ["--root", "/path/to/wells"]
-    }
-  }
-}
+:::{tab-item} Cursor, VS Code, Codex
+```bash
+petrophys-mcp config cursor --root /path/to/wells    # .cursor/mcp.json
+petrophys-mcp config vscode --root /path/to/wells    # .vscode/mcp.json
+petrophys-mcp config codex --root /path/to/wells     # ~/.codex/config.toml
 ```
 :::
 
 ::::
 
-If `petrophys-mcp` is not on the client's `PATH`, use the Python that has Petrophys installed:
-`"command": "/path/to/venv/bin/python", "args": ["-m", "petrophys.mcp", "--root", "/path/to/wells"]`.
+## Deploy over HTTP
+
+Use HTTP when the model is not on your machine: a server shared by a team, a container, or a hosted model (OpenAI's Responses API, ChatGPT connectors) that reaches the server by URL. Clients send a bearer token; the server refuses to listen beyond localhost without one.
+
+::::{tab-set}
+
+:::{tab-item} Run it
+```bash
+petrophys-mcp serve --http --root /path/to/wells --token auto
+# Petrophys MCP server (http) at http://127.0.0.1:8000/mcp   (the generated token is printed)
+```
+Add `--host 0.0.0.0` to accept other machines. Behind a proxy or tunnel, pass its domain with `--allowed-host`. `GET /healthz` answers without a token.
+:::
+
+:::{tab-item} Docker
+```bash
+export PETROPHYS_MCP_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+mkdir -p wells && docker compose up -d           # uses the repository's docker-compose.yml
+```
+The container serves `http://localhost:8000/mcp`, reads wells from `./wells` and writes exports there.
+:::
+
+:::{tab-item} OpenAI
+A hosted model needs a public HTTPS URL, from a reverse proxy or a tunnel to the server. Then:
+
+```bash
+petrophys-mcp config openai --url https://<your-host>/mcp --token <TOKEN>
+```
+
+prints the `{"type": "mcp", ...}` entry for `tools=[...]` in the Responses API. Without a public URL, `examples/mcp_openai_agent.py` connects an OpenAI model to a local server: `python examples/mcp_openai_agent.py "Interpret sample well 30/6-5 ..."`.
+:::
+
+:::{tab-item} Clients and checks
+```bash
+petrophys-mcp config claude-code --url https://<your-host>/mcp --token <TOKEN>
+petrophys-mcp config vscode --url https://<your-host>/mcp --token <TOKEN>
+petrophys-mcp check --url https://<your-host>/mcp --token <TOKEN>
+```
+`check` opens a real session against the running server and reports a rejected token plainly.
+:::
+
+::::
 
 Then ask, for example: *"Load the sample well 30_6-5, interpret it with Rw = 0.07 ohm.m at 230 degF, and summarize net pay in the Brent Group."*
 
@@ -182,7 +205,9 @@ Every response is compact JSON that carries the well's depth unit. Data-quality 
 | File access | keep `--root` to the folders the model may use; exports overwrite files of the same name there |
 | `The Petrophys MCP server needs the MCP SDK` | `pip install "petrophys[mcp]"` (Python 3.10+) |
 | `... is outside the folders this server may access` | add the folder with `--root` or `PETROPHYS_MCP_ROOTS` (`:`-separated on Linux and macOS, `;` on Windows) |
-| The client shows no Petrophys tools | run the configured command in a terminal: it should wait without errors. Logs go to standard error, which clients show in their MCP logs |
+| The client shows no Petrophys tools | run `petrophys-mcp check --root <folder>`, then the configured command in a terminal: it should wait without errors. Logs go to standard error, which clients show in their MCP logs |
+| HTTP clients get 401 | the client must send `Authorization: Bearer <token>`; `petrophys-mcp check --url ... --token ...` confirms the token |
+| Hosted model cannot reach the server | it needs a public HTTPS URL (proxy or tunnel); pass that domain with `--allowed-host` |
 
 ## Go deeper
 

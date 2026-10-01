@@ -80,6 +80,25 @@ All notable changes to Petrophys are documented here.
   top-level `petrophys` namespace, a "Terms, curves and steps" reference and
   a review checklist for interpretations.
 - `read_formations(..., rank=...)` keeps one stratigraphic level.
+- MCP server, tested live with an OpenAI model on 18 realistic requests
+  (all answered correctly; input tokens down from 599k to 268k and tool
+  errors from 5 to 1 on the original 14):
+  - new tools `check_data_quality`, `spectral_gamma`, `run_workflow` /
+    `workflow_step_kinds` (custom workflows) and `interpret_wells` (many wells
+    in one table);
+  - rich tool descriptions and compact outputs; header values with units and
+    notes (e.g. an Rw without its temperature); `interpret_well` returns its
+    assumptions and review notes (whole-well totals include non-reservoir
+    rock); `summarize_zones(rank=...)`; forgiving well and track names;
+    `curve_values` is capped; paths are reported relative to the allowed
+    folders.
+- MCP deployment: `petrophys-mcp serve --http` (streamable HTTP or `--sse`)
+  with bearer-token auth, required beyond localhost, and `/healthz`;
+  `petrophys-mcp config <client>` prints the setup for Claude Code, Claude
+  Desktop, Cursor, VS Code, Codex and OpenAI; `petrophys-mcp check` verifies
+  folders and a live session; a Dockerfile and docker-compose.yml;
+  `examples/mcp_openai_agent.py`; and `scripts/mcp_live_eval.py` for
+  re-running the live evaluation.
 - Custom workflows: `pp.Workflow` and `pp.workflow_step` build reusable
   interpretation recipes from built-in steps (`petrophys.workflow.steps`,
   including `pp.interpret` as one step) and your own functions. Inputs are
