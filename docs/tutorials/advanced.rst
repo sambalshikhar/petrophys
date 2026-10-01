@@ -49,6 +49,12 @@ use these package extras where needed:
    markers, with provenance and precision recorded. The separate HW-3
    saturation-height example uses its own explicitly assumed FWL.
 
+.. note::
+
+   Sections marked **Coming with real data** in lessons 14 and 15 wait for
+   their datasets to be worked in: the NMR T2 distribution sections (14) and
+   the fit of a measured capillary-pressure curve (15).
+
 Course outline
 --------------
 
