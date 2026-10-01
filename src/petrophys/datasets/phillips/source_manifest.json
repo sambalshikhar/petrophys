@@ -1,0 +1,689 @@
+{
+  "schema_version": 1,
+  "verified_date": "2026-10-01",
+  "author": "E. Craig Phillips (Philliec459)",
+  "sources": {
+    "nmr_bins": {
+      "repository": "https://github.com/Philliec459/NMR-Echo-Train-Inversion-to-created-a-typical-NMR-log",
+      "commit": "d7d1b6810427a0b007e6651b5cb15539ec6aab2f",
+      "repository_license": "MIT",
+      "license_file": "phillips/LICENSE-Craig-2022.txt"
+    },
+    "nmr_core": {
+      "repository": "https://github.com/Philliec459/Estimate-Core-Permeability-from-NMR-data-using-either-Map-Inversion-or-kNN",
+      "commit": "1907883c8b721005f7cd0a617d2e0a50eab09621",
+      "repository_license": "MIT",
+      "license_file": "phillips/LICENSE-Craig-2020.txt"
+    },
+    "gulfcoast": {
+      "repository": "https://github.com/Philliec459/NEW-Shaley-Sand-Log-Analysis-Tutorial-using-Combined-NMR-and-Conventional-Logs",
+      "commit": "63599cf47aa28ad348ddabb9a09381170a3d304d",
+      "repository_license": "MIT",
+      "license_file": "phillips/LICENSE-Craig-2020.txt"
+    },
+    "costa": {
+      "repository": "https://github.com/Philliec459/Jupyter-Notebooks_for-Characterization-of-a-New-Open-Source-Carbonate-Reservoir-Benchmarking-Case-St",
+      "commit": "b2bf2df1e6a6b24c9187e3a982b975790a49108b",
+      "repository_license": "MIT",
+      "license_file": "phillips/LICENSE-Craig-2022.txt"
+    }
+  },
+  "files": [
+    {
+      "path": "phillips/phillips_nmr_bins.csv",
+      "source": "nmr_bins",
+      "upstream_path": "nmr.csv",
+      "upstream_git_blob_sha1": "4fefc791612d4722def1b72832a6d4641f16e77a",
+      "sha256": "38b4595d35170379332f5137b611c9694a71da5e790a902396855a537b2ffafc",
+      "bytes": 3699,
+      "modification": "filename only",
+      "purpose": "Eight-bin NMR example; original well/acquisition provenance unspecified."
+    },
+    {
+      "path": "phillips/phillips_cmr_log.csv",
+      "source": "nmr_core",
+      "upstream_path": "CMR.csv",
+      "upstream_git_blob_sha1": "fb2a0b8cff5bb4fb8540972705e4d6fbdeb5327d",
+      "sha256": "8274105695c1eb73d23d60eacd4233a3d143fe2f278adca84b10149a65d77108",
+      "bytes": 17765,
+      "modification": "filename only",
+      "purpose": "Scalar CMR reference log paired with sidewall-core table; no T2 bins."
+    },
+    {
+      "path": "phillips/phillips_cmr_core.csv",
+      "source": "nmr_core",
+      "upstream_path": "RSWC_CMR.csv",
+      "upstream_git_blob_sha1": "ccff1d138317bfbe057cbefc6b72bf9e0bd065a3",
+      "sha256": "b9102d93478b95063fd0c3ce793d6a8429ddd4c775d4fe82ef1d446bd991ed05",
+      "bytes": 3089,
+      "modification": "filename only",
+      "purpose": "Paired core air permeability, core porosity and interpolated CMR summaries."
+    },
+    {
+      "path": "phillips/phillips_gulfcoast_nmr.xlsx",
+      "source": "gulfcoast",
+      "upstream_path": "GulfCoast_NMR.xlsx",
+      "upstream_git_blob_sha1": "25b2d8e5ddf578dee19a7714ec3d77d7f5f4ae4c",
+      "sha256": "09f42664e5213b7ec0c55c0ffa1d5800314093b284af68549a79fad9d766613a",
+      "bytes": 242328,
+      "modification": "filename only",
+      "purpose": "Gulf of Mexico conventional logs with scalar NMR; no T2 bins."
+    },
+    {
+      "path": "phillips/costa_core_pc.xlsx",
+      "source": "costa",
+      "upstream_path": "data/Costa_core_data.xlsx",
+      "upstream_git_blob_sha1": "7a09785fa507732edb679b406d0d7ae2f6c9559c",
+      "sha256": "08c6340f16fd8d8317bac9e714e99f92d217b422af083a551877df5f118b2f12",
+      "bytes": 1252816,
+      "modification": "filename only",
+      "purpose": "110 COSTA HPMI samples in Craig's processed table; no well/depth mapping."
+    },
+    {
+      "path": "phillips/costa_thomeer_fits.xlsx",
+      "source": "costa",
+      "upstream_path": "data/Thomeer_results_final.xlsx",
+      "upstream_git_blob_sha1": "e0df527c01aecef1555e2d19e49671d43d37b4ef",
+      "sha256": "dd9e1888b16a755cd2aa957b12024729f1cf00f92b2d707488ef7f1462174c58",
+      "bytes": 24738,
+      "modification": "filename only",
+      "purpose": "Craig's fitted Thomeer parameters for 109 sample IDs; sample 104 absent."
+    },
+    {
+      "path": "phillips/LICENSE-Craig-2022.txt",
+      "source": "nmr_bins",
+      "upstream_path": "LICENSE",
+      "upstream_git_blob_sha1": "58a3d151e93d9995e7a072f9472fdfbb9bcd849d",
+      "sha256": "bb6d3f1a15ccc640ef4d510be3d680e64ecbbc5d676ec48c7cb835ae2424f291",
+      "bytes": 1071,
+      "modification": "filename only",
+      "purpose": "Unmodified upstream MIT notice."
+    },
+    {
+      "path": "phillips/LICENSE-Craig-2020.txt",
+      "source": "nmr_core",
+      "upstream_path": "LICENSE",
+      "upstream_git_blob_sha1": "350ed0b7d47351718b96686989a6286cf3801cd1",
+      "sha256": "90d1011be6d3fa3ca95e69fd37ba2fd44f37c4c1193b33f763aadf4702cc015b",
+      "bytes": 1070,
+      "modification": "filename only",
+      "purpose": "Unmodified upstream MIT notice."
+    }
+  ],
+  "existing_costa_derivatives": [
+    {
+      "path": "costa/HW-10.las",
+      "source": "costa",
+      "upstream_path": "data/HW-10.las",
+      "upstream_git_blob_sha1": "85313268514e7e487ce06f26a82ce2d163654f08",
+      "upstream_sha256": "23a524246e543c938dfe0ceb5c48d301e516d82fa4a11a2ba052cda4cf2e93af",
+      "rows": 381,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "d4be2c6841c1d567811d34610de26bf0090b777d45ed302ed6ddf54ebda4f0c2",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-24.las",
+      "source": "costa",
+      "upstream_path": "data/HW-24.las",
+      "upstream_git_blob_sha1": "b9b8753bb695af65e6472e0de29d932a6cd9c50d",
+      "upstream_sha256": "efbfcfd18ef1b347c0ca1488c2be88de515e9152eb1d58246d447247d5e05875",
+      "rows": 433,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "04f49eb6af22ee314c6b741cee799c9b96020271df9956d31bcfdcb854048ad0",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-25.las",
+      "source": "costa",
+      "upstream_path": "data/HW-25.las",
+      "upstream_git_blob_sha1": "dc8d24f082691563f682296038cffec808a8f0ae",
+      "upstream_sha256": "5b43b00ed5255d9fcd2f0be16ea57534d7813f29c6eb9551cc135657e189e308",
+      "rows": 413,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "cb3187448f3e69c4dae5a16371dbcd20264f8ae6339d94098fd0983fe2bb6ba4",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-26.las",
+      "source": "costa",
+      "upstream_path": "data/HW-26.las",
+      "upstream_git_blob_sha1": "a2f99b9c4d67f693cc95c7eaf48f45d61ed37f23",
+      "upstream_sha256": "e0380735406db77988c9e3ff18ccf2045f8fe36e93af1aac40f13c59dfd7f827",
+      "rows": 345,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "51e580a638064ef71b9c008a807b908670fb48ebd91d0ad6d7770ffc5691fbbf",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-27.las",
+      "source": "costa",
+      "upstream_path": "data/HW-27.las",
+      "upstream_git_blob_sha1": "c2f57782a3411917256312aa0ed608edcb23842d",
+      "upstream_sha256": "f4fab4827a38b8261fe2398165781b089199a1ad886f903d1d39c5eb339da2fd",
+      "rows": 409,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "40d25b92efa31d5bd629ecb0f4a8d0a03c334814ba8285ece0f56dbb79e940dc",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-28.las",
+      "source": "costa",
+      "upstream_path": "data/HW-28.las",
+      "upstream_git_blob_sha1": "47cbef3fefdfbcd2d4e03a21a2f8e3f832efa703",
+      "upstream_sha256": "2cc9322f9493d1730d6eeb41f7d8b63d2c50ffdca6b01b68f24db31d6e826a42",
+      "rows": 407,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "4008089d12988e5b3ae73dca2f42d30faf1b62632092dec3a8f3e4e42c2c2121",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-29.las",
+      "source": "costa",
+      "upstream_path": "data/HW-29.las",
+      "upstream_git_blob_sha1": "81a4b2046a4c9f6f911973ebdd6b198368e96db7",
+      "upstream_sha256": "921eaa658abc7f1ecaa4892f06461da57db3c8ad618c341f99ace3541b772342",
+      "rows": 445,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "27d35a4eb9f2271f605a75c1613e204945ce25a07e9c9695a74ec890356d3e60",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-3.las",
+      "source": "costa",
+      "upstream_path": "data/HW-3.las",
+      "upstream_git_blob_sha1": "b7b0b532cf35954f9de49fe8ff097fbb5c80ce62",
+      "upstream_sha256": "132e0753c20e09b48226243a4a2671ebcc45a7e9eef968cf2b24b68f47b0834e",
+      "rows": 431,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "01061f3fcda531a8f4690bba13f242fb666d099a05991e42987f3f1852ffff1e",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-30.las",
+      "source": "costa",
+      "upstream_path": "data/HW-30.las",
+      "upstream_git_blob_sha1": "44eade45f6e8caea507bef2a8f32f1b2e7c92080",
+      "upstream_sha256": "a346a57405c2769a7826c3d89cf3b79ef8c256bb19cc7b2b3c4f97e4114c59c4",
+      "rows": 481,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "010d2959275d80cd51da15cac078f2a37e2c47b6ff1806b8e2606d3ae9ed055b",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-31.las",
+      "source": "costa",
+      "upstream_path": "data/HW-31.las",
+      "upstream_git_blob_sha1": "b2ee2bd12ad32698a86bc325aef549a96005a9b8",
+      "upstream_sha256": "030d6e0fa2bf70857893731c5244511b39bbb0f32ad6609686ec65f14a342d5f",
+      "rows": 421,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "909695435cc13a8ed19d05620dbd84e0a530191e23396ea35626bc4fa75710c4",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-32.las",
+      "source": "costa",
+      "upstream_path": "data/HW-32.las",
+      "upstream_git_blob_sha1": "326e04825b1c5701b4348ba27ad8f7f1ea612dcd",
+      "upstream_sha256": "2de82eb1e098d596f8d0e2d29de86886f615a7eb191eb885c3ed61b581ab6cb2",
+      "rows": 419,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "44cfcf8308fa6042f57784130656dd5cf0d0cf8ae877bafa64148f7bd19e42a4",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-4.las",
+      "source": "costa",
+      "upstream_path": "data/HW-4.las",
+      "upstream_git_blob_sha1": "c694cd05a6dd849b91f4a94b60bc16370fb81181",
+      "upstream_sha256": "01178aec03c45b42b77239ee93b4127be836b08a9b2f9662a2d890aa58454686",
+      "rows": 361,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "59e41e62d86def39927fa11b036a6f5ca06c2903571067dd3241aa6521177322",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-5.las",
+      "source": "costa",
+      "upstream_path": "data/HW-5.las",
+      "upstream_git_blob_sha1": "a388416b39621f1ec653ee6f2213606e925cc655",
+      "upstream_sha256": "d78a50b6c03eef807328300fb5fb9773a001bb07201e0074bbe8be89c4a1fb94",
+      "rows": 337,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "d3e42b50f8872921513aa29ae9bcfb94c2f564cbf865ce44fbac394d28de9201",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-6.las",
+      "source": "costa",
+      "upstream_path": "data/HW-6.las",
+      "upstream_git_blob_sha1": "550bd639ccfcd0541aa18677b330420219465803",
+      "upstream_sha256": "b5ff90208f4c60a2f5acca240744eb0dc07012445150c91c1e73a06c41ff6b58",
+      "rows": 417,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "fbdc5b8681db23a3f94633e928f5bdc7bfa7352a3e97f5ef2efdb647b019cd10",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-7.las",
+      "source": "costa",
+      "upstream_path": "data/HW-7.las",
+      "upstream_git_blob_sha1": "2e533622d31e5678fafd245172ad6c615400b4e9",
+      "upstream_sha256": "4aa3fd3e9605516e0406f815481e3ee75e9b9b856ff93b246e54cbd5c900dcf1",
+      "rows": 371,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "a9c80bf6a56c39afdf7fbca18849db87be1aea7a2c390cfa92bd4c7fd7c8b851",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-8.las",
+      "source": "costa",
+      "upstream_path": "data/HW-8.las",
+      "upstream_git_blob_sha1": "a635ae5b7c094073ce37b95c749f3f60f47e49e3",
+      "upstream_sha256": "ea2a123232e71dff028db41d2273b497a252e0b10ffcdd5a76dc5f1f54c91e22",
+      "rows": 391,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "0def7264bba6174bd47d67068b4c1bfe681bfefcfbc4987f937e6e50e3380c10",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    },
+    {
+      "path": "costa/HW-9.las",
+      "source": "costa",
+      "upstream_path": "data/HW-9.las",
+      "upstream_git_blob_sha1": "dc01899ec14b64aa61334233df3781af107015a9",
+      "upstream_sha256": "98e1531b0d9515229669154a9da9ca1ee0c32b2a6ecf15805e3488483184092a",
+      "rows": 407,
+      "columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE_CC",
+        "RT",
+        "SW_INPUT",
+        "PERM_CC"
+      ],
+      "source_columns": [
+        "DEPT",
+        "GR",
+        "RHOB",
+        "NPHI",
+        "DT",
+        "PHIE",
+        "RT",
+        "SW",
+        "CORE_PERM"
+      ],
+      "numeric_sha256": "d56131e2a74ec96bc7c1f193cbfba1a7033a11e244c42b99cc3835c6294d3f34",
+      "modifications": "Selected/renamed curves and adapted LAS headers; retained numeric values and null masks unchanged."
+    }
+  ],
+  "nmr_bin_metadata": {
+    "sample": "phillips_nmr_bins",
+    "bin_columns": [
+      "P1",
+      "P2",
+      "P3",
+      "P4",
+      "P5",
+      "P6",
+      "P7",
+      "P8"
+    ],
+    "t2_centers_ms": [
+      4,
+      8,
+      16,
+      32,
+      64,
+      128,
+      256,
+      512
+    ],
+    "porosity_unit": "pu",
+    "split_ms_matching_supplied_summaries": 32,
+    "bound_rule": "T2 < 32 ms",
+    "free_rule": "T2 >= 32 ms",
+    "rounding_tolerance_pu": 0.0021,
+    "axis_source": "curve_fit_echo_train11_works.py:40-41 in nmr_bins source",
+    "provenance_limit": "Upstream example does not identify the source well/acquisition. Its Python program synthesizes noisy echoes from these bins; those echoes are not raw acquired measurements."
+  }
+}

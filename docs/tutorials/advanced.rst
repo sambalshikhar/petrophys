@@ -38,11 +38,16 @@ use these package extras where needed:
 
 .. note::
 
-   Sections marked **Coming with real data** in lessons 12, 14 and 15 need
-   measurements Petrophys does not bundle yet: XRF, grain size and core
-   mechanics (12); an NMR T2 distribution (14); laboratory capillary
-   pressure and formation pressures (15). They return once public datasets
-   are added.
+   Some specialist exercises remain unfinished. Epslog scanner data and a
+   matching routine-core extract are available for lesson 12; Phillips NMR
+   examples and COSTA capillary tables support parts of lessons 14 and 15.
+   Collection READMEs distinguish available inputs from missing calibration
+   measurements and metadata. Lesson 15 reads CSV/LAS pressure stations for
+   35/11-13 and 35/11-10 Fensfjord with ``read_formation_pressure``, then calls
+   the library's ``fit_fwl`` and plotting APIs. Report comparisons remain in
+   the tutorial, outside the module. The second well uses digitized station
+   markers, with provenance and precision recorded. The separate HW-3
+   saturation-height example uses its own explicitly assumed FWL.
 
 Course outline
 --------------

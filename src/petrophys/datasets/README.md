@@ -37,7 +37,10 @@ any user-owned path directly to `read_las()` or `read_dlis()`.
 | `kgs/1046123714.las` | Morgan No. 1-17 legacy LAS example with generic CSV formation tops. |
 | `daydream/daydream1_cmr.las` | Daydream 1 processed CMR summary, 3755-4145 m. |
 | `daydream/daydream1_cmr_shallow.las` | Daydream 1 processed CMR summary, 2860-3050 m. |
+| `phillips/` | Six small NMR, paired core and COSTA capillary-pressure reference datasets from Craig Phillips. See `phillips/README.md` for provenance, units and limitations; CSV and Excel paths are available through `sample()`. |
+| `epslog/` | 15/12-20 S cores C01/C02: XRF, image/laser grain-size estimates, scanner strength and ultrasonic velocities, plus a same-well RealPore core-table extract. See `epslog/README.md` for loading mappings and unresolved calibration inputs; discover with `list_samples("epslog")`. |
 | `formations_30_6-5.csv` | Formation tops for 30/6-5. |
+| `formation_pressure/` | 35/11-13 tabulated MDT stations and 35/11-10 Fensfjord digitized stations, in LAS 2.0 and CSV, with source evidence; Tutorial 15 calls the library reader, FWL fitter and plotter. |
 | `formations_costa.csv` | The KHARAIB-2 interval of each Costa well (first to last logged sample, in ft), as a multi-well table: `pp.read(pp.sample("HW-3"), formations=pp.sample("formations_costa"))` selects the row for the well. |
 | `lithology_30_6-5.csv` | Per-interval lithology for 30/6-5. |
 

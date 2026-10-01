@@ -13,6 +13,9 @@ recursive-include src/petrophys/preprocessing/imputation/pretrained *.json
 recursive-include src/petrophys *.xml
 recursive-include src/petrophys/_internal/data *.json.gz
 recursive-include src/petrophys/datasets *.las *.csv *.md *.txt
+recursive-include src/petrophys/datasets/phillips *.xlsx *.json
+recursive-include src/petrophys/datasets/epslog *.json
+recursive-include src/petrophys/datasets/formation_pressure *.json *.pdf *.png
 exclude src/petrophys/datasets/daydream/daydream1_deep_curated_scalar_logs.las
 exclude src/petrophys/datasets/daydream/daydream1_shallow_aps_pex_hngs.las
 

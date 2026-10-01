@@ -23,6 +23,10 @@ from petrophys.interpretation.saturation.height.saturation_height_module import 
     fit_brooks_corey,
     saturation_height_from_logs,
 )
+from petrophys.interpretation.saturation.height.formation_pressure import (
+    PressureGradient, PressureFWLResult, fit_pressure_fwl,
+    FormationPressureData, read_formation_pressure,
+)
 
 __all__ = [
     "pc_from_height",
@@ -38,4 +42,9 @@ __all__ = [
     "fit_j_function",
     "fit_brooks_corey",
     "saturation_height_from_logs",
+    "PressureGradient",
+    "PressureFWLResult",
+    "fit_pressure_fwl",
+    "FormationPressureData",
+    "read_formation_pressure",
 ]

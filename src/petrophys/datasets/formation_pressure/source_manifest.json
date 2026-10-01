@@ -1,0 +1,49 @@
+{
+  "source_report": "5063_35_11_13_COMPLETION_REPORT_3e589220b5.pdf",
+  "document": "NH/OD-B-4522/05 Rev 1",
+  "date": "2005-12-13",
+  "originator": "Norsk Hydro",
+  "source_sha256": "5a3b5613c3c11abe0ea7d5259aa9a2c0a3fde4e0a098bca733448c99cdc219a3",
+  "wellbore_id": 5063,
+  "source_pdf_pages": [
+    44,
+    45,
+    54,
+    55
+  ],
+  "table": "3.7.4",
+  "figure": "3.7.5",
+  "depth_unit": "m",
+  "depth_reference": "positive-down TVD below MSL, as tabulated",
+  "pressure_unit": "bar",
+  "pressure_reference": "absolute/gauge not explicitly stated; same CQG gauge",
+  "reported_fwl_tvd_msl_m": 3112.6,
+  "reported_fwl_md_rkb_m": 3138.0,
+  "reported_gradients_bar_per_m": {
+    "oil": 0.0642,
+    "water": 0.0951
+  },
+  "extraction": "Table text, not digitized or synthesized points. Dry-test pressure/mobility stay null. Added fluid branch labels use report contact intervals. USE_FIT excludes gas, low mobility and dry tests. OLS comparison reproduces a reported interpretation, not independent validation.",
+  "files": [
+    {
+      "path": "35_11_13_mdt.las",
+      "bytes": 5509,
+      "sha256": "9409ea4b16952e9b11ccb2da3aee997f8b1c09e1e02fb134c6a689cea31a10ff"
+    },
+    {
+      "path": "35_11_13_mdt_points.csv",
+      "bytes": 2739,
+      "sha256": "8a03906fdbb7a4a96226b3a9e60d02dac6e70841cfc96c78b25b66f1b1cae48c"
+    },
+    {
+      "path": "35_11_13_pressure_plot.png",
+      "bytes": 222425,
+      "sha256": "51f77e51a843a0f69bc485b2f7407941ae40892cc1580bc12adb508bd34f2544"
+    },
+    {
+      "path": "35_11_13_pressure_source.pdf",
+      "bytes": 295595,
+      "sha256": "45a9b4d612662df45152b00bbaaa3a12114a5dc2fdaabcfbbd71445983aef359"
+    }
+  ]
+}

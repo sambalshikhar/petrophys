@@ -22,6 +22,16 @@ def test_sample_extension_optional_and_case_insensitive():
     assert petrophys.sample("hw-3") == petrophys.sample("HW-3.las")
 
 
+def test_phillips_spreadsheet_is_a_resolvable_sample():
+    import pandas as pd
+
+    path = petrophys.sample("COSTA_CORE_PC.XLSX")
+    assert path == petrophys.sample("costa_core_pc")
+    table = pd.read_excel(path)
+    assert {"Sample", "Porosity", "Perm", "Sw", "PcHg"}.issubset(table.columns)
+    assert table["Sample"].nunique() == 110
+
+
 def test_sample_loads_a_well():
     well = read_las(petrophys.sample("30_6-5"))
     assert len(well.curves) > 3

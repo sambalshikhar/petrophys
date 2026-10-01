@@ -1,3 +1,11 @@
 src/petrophys/datasets/daydream/*.dlis filter=lfs diff=lfs merge=lfs -text
 src/petrophys/datasets/daydream/daydream1_deep_curated_scalar_logs.las filter=lfs diff=lfs merge=lfs -text
 src/petrophys/datasets/daydream/daydream1_shallow_aps_pex_hngs.las filter=lfs diff=lfs merge=lfs -text
+# Preserve exact upstream bytes for the checksummed Phillips source copies.
+src/petrophys/datasets/phillips/*.csv -text
+src/petrophys/datasets/phillips/LICENSE-*.txt -text
+# Preserve the Epslog deliveries and checksummed core extract byte for byte.
+src/petrophys/datasets/epslog/*.las -text
+src/petrophys/datasets/epslog/*.csv -text
+src/petrophys/datasets/formation_pressure/*.las -text
+src/petrophys/datasets/formation_pressure/*.csv -text
