@@ -20,7 +20,7 @@ from typing import Iterable, List, Optional
 
 DATA_DIR = Path(__file__).resolve().parent
 DAYDREAM_DATA_DIR = DATA_DIR / "daydream"
-_SAMPLE_EXTS = (".las", ".csv")
+_SAMPLE_EXTS = (".las", ".csv", ".xlsx")
 _FIXTURE_COLLECTION_DIRS = {"daydream": DAYDREAM_DATA_DIR}
 _KNOWN_INTEGRATION_FIXTURES = {
     "daydream": (
@@ -82,7 +82,9 @@ def list_samples(kind: Optional[str] = None) -> List[str]:
 def sample(name: str) -> Path:
     """Return the filesystem path to a bundled sample.
 
-    ``name`` may include its ``.las`` or ``.csv`` extension. Repository-only
+    ``name`` may include its ``.las``, ``.csv`` or ``.xlsx`` extension. Pass
+    spreadsheet paths to an appropriate table reader such as pandas.read_excel.
+    Repository-only
     fixtures are deliberately excluded; use :func:`integration_fixture` for
     those.
     """

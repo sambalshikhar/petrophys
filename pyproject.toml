@@ -8,7 +8,7 @@ version = "3.0.0"
 description = "A comprehensive petrophysics library for well log analysis and formation evaluation"
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE", "THIRD_PARTY_DATA.md"]
+license-files = ["LICENSE", "THIRD_PARTY_DATA.md", "src/petrophys/datasets/phillips/LICENSE-*.txt"]
 requires-python = ">=3.9"
 authors = [
     {name = "Petrophys Contributors"}
@@ -115,10 +115,25 @@ petrophys = [
     "datasets/daydream/daydream1_cmr_shallow.las",
     "datasets/geolink/*.las",
     "datasets/geolink/*.md",
+    "datasets/epslog/*.las",
+    "datasets/epslog/*.csv",
+    "datasets/epslog/*.json",
+    "datasets/epslog/*.md",
+    "datasets/formation_pressure/*.las",
+    "datasets/formation_pressure/*.csv",
+    "datasets/formation_pressure/*.json",
+    "datasets/formation_pressure/*.md",
+    "datasets/formation_pressure/*.pdf",
+    "datasets/formation_pressure/*.png",
     "datasets/kgs/*.las",
     "datasets/kgs/*.csv",
     "datasets/kgs/*.md",
     "datasets/kgs/*.txt",
+    "datasets/phillips/*.csv",
+    "datasets/phillips/*.xlsx",
+    "datasets/phillips/*.json",
+    "datasets/phillips/*.md",
+    "datasets/phillips/*.txt",
     "_internal/data/*.json.gz",
 ]
 

@@ -261,17 +261,41 @@ create_fmi_panel(image, depth_range=(4052, 4058), orient=True, equalize="dynamic
 
 {doc}`Tutorial 16 <tutorials/part_b/16_borehole_image_fmi>` runs it on the real Daydream 1 FMI.
 
-## APIs waiting for public data
+## Specialist inputs and remaining tutorial work
 
-These tools exist, but no bundled public data exercises them yet. Tutorials 12, 14 and 15 mark their sections "Coming with real data".
+The Epslog collection now supplies core-scanner inputs for 15/12-20 S and a
+same-well RealPore core extract. Discover them with `petrophys.list_samples("epslog")`;
+the collection README records curve mappings, units and depth-matching limits.
+These inputs and the Phillips reference tables do not by themselves complete
+the notebook exercises.
 
-| Data | API | Tutorial |
+| Data or workflow | Existing API and remaining requirement | Tutorial |
 | --- | --- | --- |
-| XRF element concentrations | `XRFData`, `create_xrf_panel` | 12 |
-| Grain size (Wentworth classes, Kozeny-Carman) | `GrainSizeData`, `wentworth_class` | 12 |
-| Core mechanics (UCS, static moduli) | `CoreMechanical` | 12 |
-| NMR T2 distributions (T2 log-mean, BVI and FFI from bins, SDR) | `NMRData` with bins, `t2lm_from_bins` | 14 |
-| Laboratory capillary pressure and pressure-based FWL | `convert_pc_lab_to_reservoir`, `fit_j_function` | 15 |
+| XRF concentrations and mineral proxies | `XRFData`, `create_xrf_panel`; Epslog inputs available, same-well wireline comparison pending | 12 |
+| Grain size and Kozeny-Carman | `GrainSizeData`; Epslog P50 and routine-core measurements available, depth/unit verification pending; P13/P87 absent | 12 |
+| Scanner strength and dynamic mechanics | `CoreMechanical`; Epslog Vp/Vs available; static moduli, plug-test validation and same-well wireline logs still missing | 12 |
+| NMR T2 distributions and SDR | `NMRData` with bins; Phillips teaching example available, traceable field distribution and matching core calibration still missing | 14 |
+| Laboratory capillary pressure | `convert_pc_lab_to_reservoir`, `fit_brooks_corey`, `fit_j_function`; COSTA sample curves available, complete fluid/unit and well/depth metadata pending | 15 |
+
+`read_formation_pressure` accepts CSV/LAS files, DataFrames and LAS objects.
+Call `.fit_fwl()` to intersect oil/water or gas/water pressure gradients, and
+`create_formation_pressure_plot(data, fit)` to plot the stations and result.
+The array-level `fit_pressure_fwl` API remains available. Units, a positive-down
+TVD datum, fluid labels and measurement QC must be established; column mappings
+and numeric fluid-code mappings can be supplied explicitly. Images are not inputs.
+
+Tutorial 15 calls these library APIs for 35/11-13 (tabulated MDT pressures) and
+35/11-10 Fensfjord (digitized station markers). CSV and LAS give identical fits:
+3113.7 m versus reported 3112.6 m, and 2287.3 m versus reported 2290 m TVD MSL,
+respectively. These are interpretation reproduction checks, not blind validation;
+the second case also has plot-digitization limitations. Report comparisons are
+outside the module. See the `formation_pressure` dataset README for provenance,
+quality selection and a custom-input recipe.
+
+Pressure alone does not determine a saturation-height function. Capillary-pressure
+or rock-property calibration and fluid properties are still required.
+`saturation_height_from_logs` accepts `fwl_depth` as an input on a matching datum
+and units; neither of these contacts applies to the separate HW-3 example.
 
 Sonic saturation (`petrophys.interpretation.saturation.sonic`) estimates Sw without resistivity, by Gassmann substitution, and says when the fluid effect is undetectable.
 
