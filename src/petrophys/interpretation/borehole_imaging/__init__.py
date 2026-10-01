@@ -1,5 +1,5 @@
 """
-Borehole image tool support.
+Borehole image (FMI) reading, navigation, orientation, equalization and display.
 
 This module handles electrical/acoustic borehole image logs such as FMI.
 """

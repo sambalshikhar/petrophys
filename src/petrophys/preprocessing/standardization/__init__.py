@@ -1,5 +1,5 @@
 """
-Curve Standardization Module.
+Standard curve mnemonics and units, from vendor aliases and log units.
 
 This module provides tools for standardizing curve mnemonics and units
 to ensure consistency across wells and datasets.

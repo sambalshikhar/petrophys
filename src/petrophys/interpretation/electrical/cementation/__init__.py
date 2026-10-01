@@ -1,5 +1,5 @@
 """
-Cementation Parameters Module.
+Archie parameters (a, m, n) and Pickett-plot analysis.
 
 This module provides tools for determining Archie parameters
 (a, m, n) from crossplot analysis.

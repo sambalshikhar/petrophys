@@ -1,5 +1,5 @@
 """
-Saturation-height modeling.
+Capillary pressure, saturation-height models and formation-pressure free-water levels.
 
 Capillary-pressure primitives (Pc<->height, lab<->reservoir, Leverett J) plus
 fitted saturation functions (J power-law, Brooks-Corey) and a log-column

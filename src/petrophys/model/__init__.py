@@ -1,5 +1,5 @@
 """
-Fundamental data structures shared by the library.
+Wells, curves, intervals, core data and the reference properties shared by the library.
 
 This module provides:
 - Well: Container for well data and metadata

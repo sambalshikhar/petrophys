@@ -1,5 +1,5 @@
 """
-Workflow orchestration module for petrophysics processing.
+Interpretation workflows: the dynamic workflow behind pp.interpret, custom workflows and batch runs.
 """
 
 from petrophys.workflow.standard_workflow import (

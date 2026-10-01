@@ -1,5 +1,5 @@
 """
-Clay Volume (VCL) Module.
+Clay volume (VCL) from gamma ray, SP or neutron-density, and clay resistivity.
 
 This module provides multiple methods for calculating clay volume
 from well log data, plus clay resistivity (Rcl) estimation.

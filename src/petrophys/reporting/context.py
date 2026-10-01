@@ -1,4 +1,4 @@
-"""Bounded context serialization and computed package exports."""
+"""Compact, size-bounded JSON summaries of wells and results for LLMs and other tools."""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 """
-Log Normalization Module.
+Normalize logs across wells: linear rescaling, histogram matching and equalization.
 
 This module provides tools for normalizing well logs to ensure
 consistency across multi-well datasets.

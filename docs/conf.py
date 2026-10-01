@@ -97,6 +97,20 @@ def write_settings_table():
 
 write_settings_table()
 
+# -- Generate the grouped API reference from the area map ---------------------
+# docs/api/_generate.py holds the map of areas and subpackages; it writes the
+# area and subpackage pages into docs/api/reference/ (gitignored) and
+# autosummary adds one page per public function and class.
+import importlib.util
+
+_api_spec = importlib.util.spec_from_file_location(
+    "petrophys_docs_api_reference", DOCS_DIR / "api" / "_generate.py"
+)
+api_reference = importlib.util.module_from_spec(_api_spec)
+sys.modules[_api_spec.name] = api_reference
+_api_spec.loader.exec_module(api_reference)
+API_REFERENCE = api_reference.write_reference(DOCS_DIR)
+
 TUTORIAL_SOURCE_PATHS = {
     "tutorials/quickstart": "examples/quickstart.ipynb",
     "tutorials/complete_tour": "examples/complete_tour.ipynb",
@@ -125,6 +139,12 @@ def tutorial_source_link(app, pagename, templatename, context, doctree):
 
 def setup(app):
     app.connect("html-page-context", tutorial_source_link)
+    # Links to petrophys.read, petrophys.workflow.Workflow and other aliases
+    # resolve to the one page that documents the object.
+    app.connect("missing-reference", API_REFERENCE.resolve_reference)
+    app.connect("autodoc-process-docstring", api_reference.clean_docstring, priority=400)
+    # After furo builds the sidebar: full-path tooltips on function and class pages.
+    app.connect("html-page-context", API_REFERENCE.add_sidebar_titles, priority=900)
 
 # -- General configuration ---------------------------------------------------
 extensions = [
@@ -149,12 +169,30 @@ napoleon_use_rtype = True
 
 # Autosummary / autodoc
 autosummary_generate = True
+# Data for the templates in _templates/autosummary: the other public paths of
+# each object ("Also available as") and the attributes a class docstring lists.
+autosummary_context = API_REFERENCE.autosummary_context
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
+# The class template adds :show-inheritance: when a class has bases other than
+# object, so plain classes do not show "Bases: object".
 autodoc_default_options = {
     "members": True,
-    "show-inheritance": True,
 }
+# Show defaults as written in the source (``DEFAULT_T2_CENTERS``, not an array).
+autodoc_preserve_defaults = True
+
+# Readable names and signatures: each object page shows its import path once,
+# so signatures, type hints and the page contents use short names.
+add_module_names = False
+python_use_unqualified_type_names = True
+toc_object_entries_show_parents = "hide"
+# Keep functions, classes and members out of the page contents: each class
+# page lists its members in summary tables, and the sidebar tree furo renders
+# on every page copies the contents of every page it lists (about 30 s more).
+toc_object_entries = False
+# Long signatures put one parameter per line.
+python_maximum_signature_line_length = 88
 
 # myst-nb: render notebooks with their saved outputs, never execute on RTD.
 nb_execution_mode = "off"
@@ -174,7 +212,14 @@ intersphinx_mapping = {
 }
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
+exclude_patterns = [
+    "_build",
+    "Thumbs.db",
+    ".DS_Store",
+    "**.ipynb_checkpoints",
+    # Pages of the old one-page-per-module reference, if a checkout still has them.
+    "api/generated",
+]
 
 # Silence noisy-but-harmless warnings so real problems stand out.
 suppress_warnings = ["myst.header"]

@@ -1,5 +1,5 @@
 """
-Formation Water Resistivity (Rw) Module.
+Formation water resistivity (Rw) from SP, salinity or a measured value, at formation temperature.
 
 This module provides multiple methods for calculating formation
 water resistivity at formation temperature.

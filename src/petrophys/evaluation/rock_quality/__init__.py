@@ -1,5 +1,5 @@
 """
-Rock Quality Module.
+Rock quality index (RQI), flow zone indicator (FZI) and normalized porosity.
 
 Provides Rock Quality Index (RQI), Flow Zone Indicator (FZI),
 and normalized porosity (phi_z) calculations.

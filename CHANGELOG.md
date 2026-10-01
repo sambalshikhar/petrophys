@@ -98,6 +98,13 @@ All notable changes to Petrophys are documented here.
   `uranium_stripped_gamma_ray` for spectral gamma; `label_depths` and
   `flag_intervals`. Tutorials 06, 11, 12, CS3, CS5 and the complete tour call
   them instead of inline helpers.
+- The API reference is reorganized: a landing page with one card per area
+  (front door, data model and I/O, preprocessing, interpretation, evaluation,
+  workflows, visualization, reporting and LLM agents, legacy), a page per
+  section with grouped summary tables, and one page per function and class,
+  each documented once with its other import paths noted. It is generated
+  from each package's `__all__`, so it follows the code; old reference URLs
+  redirect to the new pages.
 - The user guide is rewritten as executed pages: every example on the
   quickstart, own-data, input-template, data-model, glossary, architecture,
   workflow, review, context, MCP, visualization, specialist-data and

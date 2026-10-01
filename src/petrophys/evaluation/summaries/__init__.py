@@ -1,5 +1,5 @@
 """
-Summation and reporting module for petrophysics results.
+Zone and formation summaries: averages, net-to-gross and formation analysis.
 """
 
 from petrophys.evaluation.summaries.zone_summary import (

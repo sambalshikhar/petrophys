@@ -1,5 +1,5 @@
 """
-Hydrocarbon Correction Module.
+Hydrocarbon corrections for neutron and density logs.
 
 This module provides corrections for neutron and density logs
 affected by hydrocarbon presence.

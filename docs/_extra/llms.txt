@@ -36,10 +36,13 @@ Key facts for code generation:
 
 ## API
 
-- [API reference](https://petrophys.netlify.app/api/): all public modules
-- [Front door (read, plot, interpret)](https://petrophys.netlify.app/api/generated/petrophys.api)
-- [Workflow and DynamicWorkflowConfig](https://petrophys.netlify.app/api/generated/petrophys.workflow)
-- [Built-in workflow steps](https://petrophys.netlify.app/api/generated/petrophys.workflow.steps)
+- [API reference](https://petrophys.netlify.app/api/): every public module, grouped by area
+- [pp namespace](https://petrophys.netlify.app/api/namespace): every name in `import petrophys as pp`
+- [Interpretation settings](https://petrophys.netlify.app/api/settings): every `pp.interpret` keyword with its default
+- [Front door](https://petrophys.netlify.app/api/reference/front-door): [pp.read](https://petrophys.netlify.app/api/reference/petrophys.api.read), [pp.interpret](https://petrophys.netlify.app/api/reference/petrophys.api.interpret), [pp.plot](https://petrophys.netlify.app/api/reference/petrophys.api.plot)
+- [DynamicWorkflowConfig](https://petrophys.netlify.app/api/reference/petrophys.workflow.DynamicWorkflowConfig) and [DynamicWorkflowResult](https://petrophys.netlify.app/api/reference/petrophys.workflow.DynamicWorkflowResult): settings and result of `pp.interpret`
+- [Custom workflows and built-in steps](https://petrophys.netlify.app/api/reference/petrophys.workflow.custom): `pp.Workflow`, `pp.workflow_step`, `petrophys.workflow.steps`
+- API areas: [data model and I/O](https://petrophys.netlify.app/api/reference/data-io), [preprocessing](https://petrophys.netlify.app/api/reference/preprocessing), [interpretation](https://petrophys.netlify.app/api/reference/interpretation), [evaluation](https://petrophys.netlify.app/api/reference/evaluation), [workflows](https://petrophys.netlify.app/api/reference/workflows), [visualization](https://petrophys.netlify.app/api/reference/visualization), [reporting and LLM agents](https://petrophys.netlify.app/api/reference/reporting)
 
 ## Optional
 

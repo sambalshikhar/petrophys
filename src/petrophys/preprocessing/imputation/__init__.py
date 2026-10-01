@@ -1,5 +1,5 @@
 """
-Curve imputation tools for well-log LAS data.
+Fill missing curve samples with pretrained models.
 """
 
 from petrophys.preprocessing.imputation.curve_imputer import (

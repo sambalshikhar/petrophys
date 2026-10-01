@@ -1,5 +1,5 @@
 """
-Temperature Profile Module.
+Formation temperature profiles, geothermal gradients and temperature corrections.
 
 This module provides tools for calculating formation temperature
 profiles and temperature-related corrections.

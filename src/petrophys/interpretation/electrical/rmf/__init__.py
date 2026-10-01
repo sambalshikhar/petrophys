@@ -1,5 +1,5 @@
 """
-Mud Filtrate Resistivity (Rmf) Module.
+Mud filtrate resistivity (Rmf) at formation temperature.
 
 This module provides tools for calculating mud filtrate resistivity
 at formation temperature.
