@@ -1,10 +1,10 @@
-"""Standardized well-parameter and core-table inputs."""
+"""LAS metadata inputs for the unified workflow."""
 
 import numpy as np
-import pandas as pd
 import pytest
 
 import petrophys as pp
+from petrophys.workflow.zoned_batch import lithology_domain_from_metadata
 
 
 def _well():
@@ -14,81 +14,138 @@ def _well():
     return well
 
 
-def test_well_parameters_select_well_and_convert_declared_units():
-    table = pd.DataFrame(
-        {
-            "well": ["HW-30", "HW-31"],
-            "lithology_domain": ["clastic", "carbonate"],
-            "rw": [0.05, 0.07],
-            "rw_reference_temperature": [75.0, 25.0],
-            "rw_temperature_unit": ["F", "C"],
-            "bht": [200.0, 100.0],
-            "bht_unit": ["F", "C"],
-            "td": [9000.0, 3000.0],
-            "depth_unit": ["ft", "m"],
-            "gr_clean": [20.0, 20.0],
-            "gr_shale": [100.0, 100.0],
-        }
-    )
-    options = pp.read_well_parameters(table, well_name="HW-31")
-    assert options["lithology_domain"] == "carbonate"
-    assert options["rw"] == pytest.approx(0.07)
-    assert options["rw_meas_temp_f"] == pytest.approx(77.0)
-    assert options["bht_f"] == pytest.approx(212.0)
-    assert options["td_ft"] == pytest.approx(3000.0 / 0.3048)
-    assert options["gr_min"] == 20.0
-    assert options["gr_max"] == 100.0
-
-
-def test_well_parameters_reject_unknown_columns_and_duplicate_wells():
-    with pytest.raises(ValueError, match="Unsupported"):
-        pp.read_well_parameters(pd.DataFrame({"well": ["A"], "mystery": [1]}))
-    duplicate = pd.DataFrame({"well": ["A", "A"], "rw": [0.05, 0.06]})
-    with pytest.raises(ValueError, match="duplicate"):
-        pp.read_well_parameters(duplicate, well_name="A")
-
-
-def test_core_table_aligns_depths_and_infers_mislabeled_percent_saturation():
+def test_lithology_domain_reads_round_trip_las_metadata():
     well = _well()
-    table = pd.DataFrame(
-        {
-            "well": ["HW-31", "HW-31"],
-            "depth": [1000.0, 1001.0],
-            "depth_unit": ["m", "m"],
-            "core_porosity": [12.0, 18.0],
-            "porosity_unit": ["percent", "percent"],
-            "core_permeability": [0.1, 0.2],
-            "permeability_unit": ["D", "D"],
-            "core_water_saturation": [20.0, 80.0],
-            "core_oil_saturation": [80.0, 20.0],
-            "saturation_unit": ["frac", "frac"],
-        }
-    )
-    with pytest.warns(UserWarning, match="inferred percent"):
-        report = pp.attach_core_measurements(well, table, well_name="HW-31")
-    np.testing.assert_allclose(well.get("PHIC").data[[0, 2]], [0.12, 0.18])
-    np.testing.assert_allclose(well.get("KH_CORE").data[[0, 2]], [100.0, 200.0])
-    np.testing.assert_allclose(well.get("SWC").data[[0, 2]], [0.2, 0.8])
-    np.testing.assert_allclose(well.get("SOC").data[[0, 2]], [0.8, 0.2])
-    assert report["curves"] == ["KH_CORE", "PHIC", "SOC", "SWC"]
+    assert lithology_domain_from_metadata(well) is None
+    well.set_parameter("PP_DOMAIN", "Carbonate")
+    assert lithology_domain_from_metadata(well) == "carbonate"
+    well.set_parameter("PP_DOMAIN", "unknown")
+    with pytest.raises(ValueError, match="PP_DOMAIN"):
+        lithology_domain_from_metadata(well)
 
 
-def test_core_table_averages_duplicate_plugs_at_one_log_depth():
+def test_interpret_uses_las_workflow_parameters_and_explicit_options_win():
     well = _well()
-    table = pd.DataFrame(
-        {
-            "well": ["HW-31", "HW-31"],
-            "depth": [1000.49, 1000.51],
-            "depth_unit": ["m", "m"],
-            "core_porosity": [0.1, 0.2],
-            "porosity_unit": ["fraction", "fraction"],
-        }
-    )
-    report = pp.attach_core_measurements(well, table, well_name="HW-31")
-    assert well.get("PHIC").data[1] == pytest.approx(0.15)
-    assert report["duplicate_log_rows_averaged"] == 1
+    well.set_parameter("A", 0.62)
+    well.set_parameter("M", 2.15)
+    well.set_parameter("N", 2.05)
+    well.set_parameter("PP_DOMAIN", "carbonate")
+
+    result = pp.interpret(well)
+    assert result.config.a == pytest.approx(0.62)
+    assert result.config.m == pytest.approx(2.15)
+    assert result.config.n == pytest.approx(2.05)
+    assert result.config.lithology_domain == "carbonate"
+
+    overridden = pp.interpret(well, a=1.0, lithology_domain="clastic")
+    assert overridden.config.a == pytest.approx(1.0)
+    assert overridden.config.lithology_domain == "clastic"
 
 
-def test_packaged_context_input_templates_are_discoverable():
-    for name in ("well_parameters_template", "core_measurements_template"):
-        assert pp.sample(name).is_file()
+def test_interpret_preserves_native_las_rw_provenance():
+    well = _well()
+    well.add_curve("GR", np.array([20.0, 30.0, 40.0, 50.0]), "API")
+    well.set_parameter("RW", 0.07)
+    well.set_parameter("RWT", 230.0)
+    well.set_parameter("RWT__UNIT", "degF")
+
+    result = pp.interpret(well)
+    rw_step = next(step for step in result.steps_executed if step.step == "rw")
+
+    assert result.config.rw is None
+    assert rw_step.parameters["source_priority"] == "las.RW"
+    assert rw_step.parameters["rw_at_measured_temp"] == pytest.approx(0.07)
+    assert rw_step.parameters["measured_temp_f"] == pytest.approx(230.0)
+
+
+@pytest.mark.parametrize("method", ["linear", "larionov_tertiary", "steiber"])
+def test_gr_equation_from_las_metadata_is_used_by_api_and_context(method):
+    from petrophys.reporting.reference_export import _context_workflow_config
+    from petrophys.workflow import run_dynamic_workflow_with_zones
+
+    well = _well()
+    well.add_curve("GR", np.array([20.0, 40.0, 60.0, 100.0]), "API")
+    well.set_parameter("GR_METHOD", method)
+    well.set_parameter("GR_MIN", 20.0)
+    well.set_parameter("GR_MAX", 100.0)
+    igr = np.array([0.0, 0.25, 0.5, 1.0])
+    expected = {
+        "linear": igr,
+        "larionov_tertiary": np.clip(0.083 * (2 ** (3.7 * igr) - 1), 0, 1),
+        "steiber": igr / (3 - 2 * igr),
+    }[method]
+
+    result = pp.interpret(well)
+    np.testing.assert_allclose(result.well["VCL"].data, expected)
+    config = _context_workflow_config(well=well)
+    packaged = run_dynamic_workflow_with_zones(well, config)
+    np.testing.assert_allclose(packaged.well["VCL"].data, expected)
+    assert next(s for s in packaged.base_result.steps_executed if s.step == "vclay").method == method
+
+    overridden = pp.interpret(well, gr_method="linear")
+    np.testing.assert_allclose(overridden.well["VCL"].data, igr)
+
+
+def test_vcl_trace_reports_the_endpoints_used_in_the_equation():
+    from petrophys.reporting.reference_export import _curve_route_reason, _vcl_curve_note
+
+    well = _well()
+    well.add_curve("GR", np.array([0.0, 40.0, 100.0, 160.0]), "API")
+    result = pp.interpret(well)
+    trace = next(s for s in result.steps_executed if s.step == "vclay")
+
+    assert trace.parameters["gr_min_used"] == 0.0
+    assert trace.parameters["gr_max_used"] == 160.0
+    np.testing.assert_allclose(result.well["VCL"].data, [0, 0.25, 0.625, 1])
+    assert "IGR=clip((GR-0)/(160-0),0,1)" in _vcl_curve_note(trace)
+    reason = _curve_route_reason("VCL", trace, result.well)
+    assert "GRmin=0 API, GRmax=160 API" in reason
+
+
+def test_las_auto_gr_endpoints_are_computed_from_samples(tmp_path):
+    from petrophys.io import export_las
+    from petrophys.reporting.reference_export import _read_context_input_well
+    from petrophys.workflow import run_dynamic_workflow_with_zones
+
+    well = _well()
+    well.add_curve("GR", np.array([0.0, 40.0, 100.0, 160.0]), "API")
+    well.set_parameter("GR_MIN", "AUTO")
+    well.set_parameter("GR_MAX", "auto")
+    path = tmp_path / "well.las"
+    export_las(well, path)
+    loaded = pp.read(path)
+    result = pp.interpret(loaded)
+    expected = [0, 34 / 145, 94 / 145, 1]
+    np.testing.assert_allclose(result.well["VCL"].data, expected)
+    trace = next(s for s in result.steps_executed if s.step == "vclay")
+    assert trace.parameters["gr_min_used"] == pytest.approx(6.0)
+    assert trace.parameters["gr_max_used"] == pytest.approx(151.0)
+
+    context_well, config = _read_context_input_well(path)
+    assert config.gr_min is None and config.gr_max is None
+    packaged = run_dynamic_workflow_with_zones(context_well, config)
+    np.testing.assert_allclose(packaged.well["VCL"].data, expected)
+
+    overridden = pp.interpret(loaded, gr_min=10.0, gr_max=150.0)
+    np.testing.assert_allclose(overridden.well["VCL"].data, [0, 30 / 140, 90 / 140, 1])
+
+
+def test_las_cutoffs_override_lithology_defaults():
+    well = _well()
+    phi = np.array([0.06, 0.09, 0.05, 0.1])
+    well.add_curve("LITHOLOGY_GEOLINK", np.full(4, 9.0), "")
+    well.add_curve("GR", np.zeros(4), "API")
+    well.add_curve("RHOB", 2.71 - 1.71 * phi, "g/cc")
+    well.add_curve("NPHI", phi, "v/v")
+    well.add_curve("RDEP", np.full(4, 10.0), "ohm.m")
+    well.set_parameter("VCL_CUTOFF", 0.3)
+    well.set_parameter("PHIE_CUTOFF", 0.08)
+    well.set_parameter("SW_CUTOFF", 0.7)
+    result = pp.interpret(well).raise_for_errors()
+    assert result.config.vcl_cutoff == 0.3
+    assert result.config.phie_cutoff == 0.08
+    assert result.config.sw_cutoff == 0.7
+    np.testing.assert_array_equal(result.well["NET_RES"].data, [0, 1, 0, 1])
+    np.testing.assert_array_equal(result.well["RESFLAG"].data, [0, 1, 0, 1])
+    overridden = pp.interpret(well, phie_cutoff=0.045)
+    np.testing.assert_array_equal(overridden.well["NET_RES"].data, [1, 1, 1, 1])

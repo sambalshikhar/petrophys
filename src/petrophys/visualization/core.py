@@ -8,6 +8,8 @@ Plotting functions for core-to-log calibration:
 - Core data on log depth plot
 """
 
+from petrophys.visualization.style import _styled_plot
+
 from typing import Optional, Tuple, List
 import numpy as np
 
@@ -26,6 +28,7 @@ from petrophys.interpretation.core_analysis.calibration import (
 )
 
 
+@_styled_plot
 def plot_calibration(
     result: CalibrationResult,
     ax: Optional["Axes"] = None,
@@ -116,6 +119,7 @@ def plot_calibration(
     return fig, ax
 
 
+@_styled_plot
 def plot_poro_perm(
     core: CoreData,
     transform: Optional[PoroPermTransform] = None,
@@ -200,6 +204,7 @@ def plot_poro_perm(
     return fig, ax
 
 
+@_styled_plot
 def plot_core_on_logs(
     well,
     core: CoreData,

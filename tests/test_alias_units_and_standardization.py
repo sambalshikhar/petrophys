@@ -42,7 +42,9 @@ def test_parameter_aliases_convert_temperature_depth_salinity_and_booleans():
     assert unmapped == []
 
     overrides, _, unmapped = _alias_override("LITHOLOGY", "carbonate")
-    assert overrides["lithology"] == "carbonate"
+    assert overrides["lithology_domain"] == "carbonate"
+    overrides, _, unmapped = _alias_override("PP_DOMAIN", "carbonate")
+    assert overrides["lithology_domain"] == "carbonate"
     assert unmapped == []
 
 

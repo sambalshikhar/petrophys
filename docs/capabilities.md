@@ -29,7 +29,8 @@ warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core sat
 pd.set_option("display.max_colwidth", None)
 
 THUMB = (4, 3)  # inches: every gallery figure is a small thumbnail
-plt.rcParams.update({"font.size": 8, "axes.titlesize": 9, "legend.fontsize": 7})
+from petrophys.visualization import use_plot_style
+use_plot_style()
 
 
 def thumb(key, fig):
@@ -543,7 +544,7 @@ from petrophys.workflow import BatchProcessor
 # Seventeen COSTA wells, each covering the Kharaib-2 interval only.
 costa_tops = pp.sample("formations_costa")
 wells = [pp.read(pp.sample(name), formations=costa_tops) for name in pp.list_samples("costa")]
-batch = BatchProcessor(config=dict(vcl_cutoff=0.30, phie_cutoff=0.10, sw_cutoff=0.60))
+batch = BatchProcessor(config=dict(lithology_domain="carbonate", vcl_cutoff=0.30, phie_cutoff=0.10, sw_cutoff=0.60))
 runs = batch.process_wells(wells)
 pay = {run.well_name: run.result.formation_summary().iloc[0]["Net Pay (ft)"] for run in runs}
 fig, ax = create_bar_comparison(list(pay), list(pay.values()), sort_by=0, figsize=THUMB,

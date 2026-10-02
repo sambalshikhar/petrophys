@@ -533,10 +533,10 @@ class DynamicWorkflowConfig:
     dt_fl: float = 189.0
 
     # -- Lithology -----------------------------------------------------------
-    #: Broad interpretation domain: ``"auto"``, ``"clastic"``,
-    #: ``"carbonate"`` or ``"evaporite"``. This selects the mineral-solving
-    #: family and cutoff defaults; it is distinct from per-depth lithology.
-    lithology_domain: str = "auto"
+    #: Broad interpretation domain: ``"clastic"`` (default), ``"carbonate"``,
+    #: ``"evaporite"`` or ``"auto"``. This selects the mineral-solving family
+    #: and cutoff defaults; it is distinct from per-depth lithology.
+    lithology_domain: str = "clastic"
     #: Deprecated alias for ``lithology_domain``. It remains accepted so old
     #: notebooks fail gracefully while new inputs use the unambiguous name.
     lithology: Optional[str] = None
@@ -636,7 +636,7 @@ class DynamicWorkflowConfig:
     def __post_init__(self) -> None:
         if self.lithology is not None:
             alias = str(self.lithology).strip()
-            if self.lithology_domain != "auto" and alias.lower() != str(self.lithology_domain).lower():
+            if self.lithology_domain not in {"auto", "clastic"} and alias.lower() != str(self.lithology_domain).lower():
                 raise ValueError(
                     "Supply lithology_domain only; the deprecated lithology alias conflicts with it."
                 )
@@ -1435,6 +1435,7 @@ class DynamicWorkflow:
                 "dolo": "dolomite", "salt": "halite",
             }
             unknown = set()
+            category_groups = {}
             for row in table.itertuples():
                 key = str(row.lithology).strip().lower()
                 group = aliases.get(key, key)
@@ -1444,11 +1445,14 @@ class DynamicWorkflow:
                 mask = (well.depth >= row.top) & (well.depth < row.bottom)
                 if row.bottom == table["bottom"].max():
                     mask |= well.depth == row.bottom
-                codes[mask] = labels.index(row.lithology) + 1
+                code = labels.index(row.lithology) + 1
+                codes[mask] = code
                 groups[mask] = group
+                category_groups[code] = group
             well.add_curve("LITHO_CLASS", codes, "", "External lithology categories")
             well["LITHO_CLASS"].metadata.custom.update({
                 "category_labels": {index + 1: label for index, label in enumerate(labels)},
+                "category_groups": category_groups,
                 "source": "external", "code_scheme": "local_categories",
             })
             self._lithology_log = groups
@@ -1554,10 +1558,10 @@ class DynamicWorkflow:
         """Keep an auto-resolved matrix inside an explicitly chosen lithology domain.
 
         ``lithology_domain="carbonate"`` with ``matrix_type="auto"`` resolves to
-        limestone or dolomite, never sandstone; ``"clastic"`` resolves to
-        sandstone. When the matrix evidence points outside the chosen domain,
-        the domain wins and the conflict is reported in ``warnings``. Without an
-        explicit domain (``"auto"``) the evidence decides both, as before.
+        limestone or dolomite, never sandstone; ``"clastic"`` (the default)
+        resolves to sandstone. When the matrix evidence points outside the
+        domain, the domain wins and the conflict is reported in ``warnings``.
+        With ``lithology_domain="auto"`` the evidence decides both.
         """
         domain = str(self.config.lithology_domain).strip().lower()
         allowed = _DOMAIN_MATRICES.get(domain)
@@ -1568,14 +1572,19 @@ class DynamicWorkflow:
             matrix = "dolomite" if votes.get("dolomite", 0) > votes.get("limestone", 0) else "limestone"
         else:
             matrix = allowed[0]
+        is_default = domain == DynamicWorkflowConfig.__dataclass_fields__["lithology_domain"].default
+        label = f"lithology_domain is '{domain}'" + (" (the default)" if is_default else "")
         if res.method == "default":
-            message = (f"lithology_domain='{domain}' with matrix_type='auto' and no matrix evidence: "
+            message = (f"{label} with matrix_type='auto' and no matrix evidence: "
                        f"using the {domain} matrix '{matrix}'.")
         else:
-            message = (f"lithology_domain='{domain}' was set, but {res.method} points to a "
-                       f"{res.matrix} matrix ({res.confidence:.0%} of {res.n} samples); using the "
-                       f"{domain} matrix '{matrix}' instead. Set matrix_type to choose it yourself, "
-                       f"or lithology_domain='auto' to let the evidence decide.")
+            hint = ""
+            if domain == "clastic" and res.matrix in _DOMAIN_MATRICES["carbonate"]:
+                hint = " If the rock is a carbonate, set lithology_domain='carbonate'."
+            message = (f"{label}, but {res.method} points to a {res.matrix} matrix "
+                       f"({res.confidence:.0%} of {res.n} samples); using the {domain} matrix "
+                       f"'{matrix}'.{hint} Set matrix_type to choose the matrix yourself, or "
+                       f"lithology_domain='auto' to let the evidence decide.")
         if self._result is not None and message not in self._result.warnings:
             self._result.warnings.append(message)
         return matrix
@@ -2665,6 +2674,10 @@ class DynamicWorkflow:
         )
         curve_mapping = {"gr": gr_curve_name} if gr_curve_name else None
         result = vcl_module.calculate(well, curves=curve_mapping)
+        if result.gr_min_used is not None:
+            decisions.append(
+                f"Applied GR endpoints: {result.gr_min_used:g} to {result.gr_max_used:g} API"
+            )
 
         inputs = []
         if gr_curve is not None:
@@ -2702,6 +2715,7 @@ class DynamicWorkflow:
         trace.output_curves = outputs
         trace.parameters = {
             "gr_min": gr_min, "gr_max": gr_max,
+            "gr_min_used": result.gr_min_used, "gr_max_used": result.gr_max_used,
             "gr_curve": gr_curve_name,
             "gr_method": self.config.gr_method,
             "use_sp": use_sp, "use_nd": use_nd,

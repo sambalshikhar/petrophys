@@ -54,7 +54,7 @@ Add an extra in square brackets, for example
    * - ``docs``
      - Sphinx, Furo and notebook rendering, to build this documentation
    * - ``dev``
-     - Tests, coverage, formatting, linting and type checking
+     - Formatting, linting and type checking
 
 .. _install-from-source:
 

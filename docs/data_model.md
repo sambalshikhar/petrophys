@@ -85,6 +85,8 @@ plotting or numerical library can use them.
 
 ```{code-cell} python
 import matplotlib.pyplot as plt
+from petrophys.visualization import use_plot_style
+use_plot_style()
 
 brent = well.depth_slice(2841, 2958)          # the Brent reservoir, in metres
 fig, axes = plt.subplots(1, 3, figsize=(8, 5), sharey=True)

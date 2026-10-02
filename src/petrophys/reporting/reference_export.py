@@ -2474,23 +2474,29 @@ _STEP_SPECIFIC_METHOD_LABELS: dict[tuple[str, str], str] = {
 def _context_workflow_config(
     config: Optional["DynamicWorkflowConfig"] = None,
     *,
-    parameters_file: Optional[str | Path] = None,
-    well_name: Optional[str] = None,
+    well: Optional["Well"] = None,
     lithology_file: Optional[str | Path] = None,
 ) -> "DynamicWorkflowConfig":
-    """Build the canonical workflow configuration from standardized inputs."""
+    """Build the canonical workflow configuration from LAS and geology inputs."""
     import dataclasses
 
-    from petrophys.io import read_well_parameters
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
-
-    options = (
-        read_well_parameters(parameters_file, well_name=well_name)
-        if parameters_file is not None else {}
+    from petrophys.workflow.zoned_batch import (
+        _extract_global_parameter_overrides,
+        lithology_domain_from_metadata,
     )
+
+    options = {}
     if lithology_file is not None:
         options.update(lithology_intervals=lithology_file, lithology_source="external")
     if config is None:
+        if well is not None:
+            metadata_options, _ = _extract_global_parameter_overrides(well)
+            options.update(metadata_options)
+        if "lithology_domain" not in options and well is not None:
+            metadata_domain = lithology_domain_from_metadata(well)
+            if metadata_domain is not None:
+                options["lithology_domain"] = metadata_domain
         options.setdefault("matrix_type", "sandstone")
         options.setdefault("lithology_domain", "clastic")
         return DynamicWorkflowConfig(**options)
@@ -2504,24 +2510,22 @@ def _context_workflow_config(
 def _read_context_input_well(
     file_path: Path,
     *,
-    parameters_file: Optional[str | Path] = None,
     lithology_file: Optional[str | Path] = None,
-    core_file: Optional[str | Path] = None,
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
+    lithology_domain: Optional[str] = None,
 ):
-    """Read one LAS and apply every standardized, well-specific input."""
-    from petrophys.io import attach_core_measurements
-
+    """Read one LAS and apply optional lithology input."""
     well = read_las(file_path)
     well = standardize_curves(well, rename_curves=True, convert_units=True)
     config = _context_workflow_config(
         workflow_config,
-        parameters_file=parameters_file,
-        well_name=well.name,
+        well=well,
         lithology_file=lithology_file,
     )
-    if core_file is not None:
-        attach_core_measurements(well, core_file, well_name=well.name)
+    if lithology_domain is not None:
+        from dataclasses import replace
+
+        config = replace(config, lithology_domain=lithology_domain, lithology=None)
     return well, config
 
 
@@ -3102,8 +3106,8 @@ def _curve_route_reason(curve: str, step: Any, well: "Well") -> str:
             skipped.append("neutron-density not used because NPHI or RHOB was unavailable")
         text = (
             f"VCL route selected because {', '.join(used)} inputs were usable; "
-            f"GRmin={_format_numeric(params.get('gr_min'), 1)} API, "
-            f"GRmax={_format_numeric(params.get('gr_max'), 1)} API"
+            f"GRmin={_format_numeric(params.get('gr_min_used', params.get('gr_min')), 1)} API, "
+            f"GRmax={_format_numeric(params.get('gr_max_used', params.get('gr_max')), 1)} API"
         )
         if skipped:
             text += "; " + "; ".join(skipped)
@@ -3438,6 +3442,16 @@ def _segment_lithology_groups_for_saturation(well: "Well", fallback: Any = "clas
                 groups[idx] = mapping.get(int(code), fallback_text)
         return groups
 
+    selected = (well.get_parameter("_geology_context") or {}).get("selected_lithology_source")
+    if selected == "external":
+        curve = well.get("LITHO_CLASS")
+        mapping = curve.metadata.custom.get("category_groups", {}) if curve is not None else {}
+        mapping = {int(code): group for code, group in mapping.items()}
+        groups = _groups_from_curve("LITHO_CLASS", mapping)
+        if groups is not None:
+            return groups
+        return np.full(int(well.n_samples), fallback_text, dtype=object)
+
     geolink_groups = _groups_from_curve("LITHOLOGY_GEOLINK", GROUND_TRUTH_CODE_TO_GROUP)
     if geolink_groups is not None:
         return geolink_groups
@@ -3668,8 +3682,8 @@ def _vcl_gr_equation(method: str) -> str:
 
 def _vcl_curve_note(step: Any) -> str:
     params = getattr(step, "parameters", {}) or {}
-    gr_min_raw = params.get("gr_min")
-    gr_max_raw = params.get("gr_max")
+    gr_min_raw = params.get("gr_min_used", params.get("gr_min"))
+    gr_max_raw = params.get("gr_max_used", params.get("gr_max"))
     try:
         gr_clean = min(float(gr_min_raw), 20.0)
     except (TypeError, ValueError):
@@ -5724,6 +5738,30 @@ def _well_mask_slice(well: "Well", mask: np.ndarray) -> "Well":
     return sliced
 
 
+def _context_lithology_curve(well: "Well", *, include_computed: bool = False):
+    """Use the same lithology source selected by the interpretation."""
+    selected = (well.get_parameter("_geology_context") or {}).get("selected_lithology_source")
+    if selected == "external":
+        return well.get("LITHO_CLASS"), "external"
+    if selected not in {"computed", "config"}:
+        curve = well.get("LITHOLOGY_GEOLINK")
+        if curve is not None:
+            return curve, "vendor"
+    return (well.get("LITHO"), "computed") if include_computed else (None, "computed")
+
+
+def _context_lithology_label(value, curve, source, lithology_mapping=None):
+    if _is_null_like_lithology(value) or _is_sentinel_lithology(value):
+        return None
+    if source == "computed":
+        return _normalize_computed_lithology_label(value)
+    if source == "external":
+        categories = curve.metadata.custom.get("category_labels", {})
+        value = categories.get(value, categories.get(str(value)))
+        return None if value is None else _display_lithology_text(str(value))
+    return _normalize_lithology_label(value, lithology_mapping=lithology_mapping)
+
+
 def _build_lithology_group_segments(
     well: "Well",
     minimum_group_thickness: float = 2.0,
@@ -5733,28 +5771,15 @@ def _build_lithology_group_segments(
         return []
 
     depth = np.asarray(well.depth, dtype=float)
-    lithology_curve = well.get("LITHOLOGY_GEOLINK")
-    computed_lithology = False
-    if lithology_curve is None:
-        lithology_curve = well.get("LITHO")
-        computed_lithology = lithology_curve is not None
+    lithology_curve, source = _context_lithology_curve(well, include_computed=True)
 
     if lithology_curve is None:
         labels = np.asarray([MISSING_LITHOLOGY_LABEL] * well.n_samples, dtype=object)
     else:
         labels_list = []
         for value in lithology_curve.data:
-            if _is_null_like_lithology(value) or _is_sentinel_lithology(value):
-                labels_list.append(MISSING_LITHOLOGY_LABEL)
-            else:
-                if computed_lithology:
-                    label = _normalize_computed_lithology_label(value)
-                else:
-                    label = _normalize_lithology_label(
-                        value,
-                        lithology_mapping=lithology_mapping,
-                    )
-                labels_list.append(label or MISSING_LITHOLOGY_LABEL)
+            label = _context_lithology_label(value, lithology_curve, source, lithology_mapping)
+            labels_list.append(label or MISSING_LITHOLOGY_LABEL)
         labels = np.asarray(labels_list, dtype=object)
 
     group_changes = np.ones(labels.shape[0], dtype=bool)
@@ -5909,12 +5934,12 @@ def _valid_lithology_labels(
     well: "Well",
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
 ) -> List[str]:
-    curve = well.get("LITHOLOGY_GEOLINK")
+    curve, source = _context_lithology_curve(well)
     if curve is None:
         return []
     labels: List[str] = []
     for value in np.asarray(curve.data, dtype=object):
-        label = _normalize_lithology_label(value, lithology_mapping=lithology_mapping)
+        label = _context_lithology_label(value, curve, source, lithology_mapping)
         if label is None:
             continue
         labels.append(label)
@@ -5936,7 +5961,7 @@ def _build_reference_lithology_info(
     well: "Well",
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
 ) -> dict[str, Any]:
-    curve = well.get("LITHOLOGY_GEOLINK")
+    curve, source = _context_lithology_curve(well)
     total_rows = int(well.n_samples)
     if curve is None:
         return {
@@ -5963,7 +5988,7 @@ def _build_reference_lithology_info(
         if _is_sentinel_lithology(value):
             sentinel_count += 1
             continue
-        label = _normalize_lithology_label(value, lithology_mapping=lithology_mapping)
+        label = _context_lithology_label(value, curve, source, lithology_mapping)
         if label is None:
             continue
         valid_labels.append(label)
@@ -6063,7 +6088,7 @@ def _reference_statistics_curve_key(mnemonic: str, well: "Well") -> Optional[str
         return None
     if canonical in CONTEXT_EXCLUDED_INPUT_CURVES:
         return None
-    if upper == "LITHOLOGY_GEOLINK":
+    if upper in {"LITHOLOGY_GEOLINK", "LITHO_CLASS"}:
         return None
     if upper == "DCAL" and well.get("CALI") is not None:
         return None
@@ -7273,15 +7298,14 @@ def export_reference_json_work_package_by_formation_lithology(
     lithology_mapping_file: Optional[str | Path] = None,
     tops_options: Optional[dict] = None,
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
-    parameters_file: Optional[str | Path] = None,
     lithology_file: Optional[str | Path] = None,
-    core_file: Optional[str | Path] = None,
+    lithology_domain: Optional[str] = None,
 ) -> List[ExampleFormatExportResult]:
     """Write reference-format contexts per formation and lithology group.
 
-    Each well is read with its standardized inputs (well parameters,
-    lithology intervals and core data, when given), interpreted as a whole
-    well and written to ``<output_dir>/<well>/<well>.las``. Each formation is
+    Each well is read with its LAS metadata and optional lithology intervals,
+    interpreted as a whole well and written to
+    ``<output_dir>/<well>/<well>.las``. Each formation is
     then interpreted on its own and split into lithology groups: runs of
     consecutive samples with the same lithology, taken from
     ``LITHOLOGY_GEOLINK`` or else the computed ``LITHO`` curve. Every group
@@ -7315,17 +7339,13 @@ def export_reference_json_work_package_by_formation_lithology(
         Options for reading ``tops_file``: ``rank``, ``sheet_name``,
         ``columns`` or ``sep``.
     workflow_config : DynamicWorkflowConfig, optional
-        Interpretation settings; values from ``parameters_file`` take
-        precedence for each well. Without it, the defaults are used with a
-        sandstone matrix and the clastic lithology domain.
-    parameters_file : str or Path, optional
-        Per-well interpretation settings (see
-        :func:`~petrophys.io.read_well_parameters`).
+        Interpretation settings. Without it, LAS metadata is used when
+        available, then the defaults are used with a sandstone matrix and the
+        clastic lithology domain.
     lithology_file : str or Path, optional
         Per-depth lithology intervals for the wells.
-    core_file : str or Path, optional
-        Core measurements to attach to each well (see
-        :func:`~petrophys.io.attach_core_measurements`).
+    lithology_domain : str, optional
+        Override the broad domain while retaining per-well LAS settings.
 
     Returns
     -------
@@ -7367,10 +7387,9 @@ def export_reference_json_work_package_by_formation_lithology(
         try:
             full_well, well_config = _read_context_input_well(
                 file_path,
-                parameters_file=parameters_file,
                 lithology_file=lithology_file,
-                core_file=core_file,
                 workflow_config=workflow_config,
+                lithology_domain=lithology_domain,
             )
             formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
 
@@ -7538,11 +7557,10 @@ def export_reference_json_work_package_by_category_formation_lithology(
     lithology_mapping_file: Optional[str | Path] = None,
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
     tops_options: Optional[dict] = None,
-    parameters_file: Optional[str | Path] = None,
     lithology_file: Optional[str | Path] = None,
-    core_file: Optional[str | Path] = None,
+    lithology_domain: Optional[str] = None,
 ) -> List[ExampleFormatExportResult]:
-    """Generate category contexts from LAS and standardized input tables."""
+    """Generate category contexts from LAS and optional geology inputs."""
     from petrophys.workflow.zoned_batch import (
         _finalize_export_curves,
         run_dynamic_workflow_with_zones,
@@ -7570,10 +7588,9 @@ def export_reference_json_work_package_by_category_formation_lithology(
         try:
             full_well, well_config = _read_context_input_well(
                 file_path,
-                parameters_file=parameters_file,
                 lithology_file=lithology_file,
-                core_file=core_file,
                 workflow_config=workflow_config,
+                lithology_domain=lithology_domain,
             )
             formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
             fallback_warnings: list[str] = []

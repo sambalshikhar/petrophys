@@ -12,6 +12,8 @@ arrays so notebooks never need to hand-roll matplotlib.
 
 from __future__ import annotations
 
+from petrophys.visualization.style import _styled_plot
+
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -93,6 +95,7 @@ def _minmax_normalize(values: np.ndarray, low: float = 5.0, high: float = 95.0) 
     return out
 
 
+@_styled_plot
 def create_multiwell_overlay(
     wells: Sequence[Any],
     curve: str,
@@ -154,6 +157,7 @@ def create_multiwell_overlay(
     return fig, ax
 
 
+@_styled_plot
 def create_bar_comparison(
     categories: Sequence[str],
     values: Any,
@@ -248,6 +252,7 @@ def create_bar_comparison(
     return fig, ax
 
 
+@_styled_plot
 def create_tornado_plot(
     labels: Sequence[str],
     low: Sequence[float],
@@ -297,6 +302,7 @@ def create_tornado_plot(
     return fig, ax
 
 
+@_styled_plot
 def create_histogram_comparison(
     datasets: "Mapping[str, Any]",
     bins: int = 40,
@@ -339,6 +345,7 @@ def create_histogram_comparison(
     return fig, ax
 
 
+@_styled_plot
 def create_line_comparison(
     x: Any,
     series: "Mapping[str, Any]",
@@ -384,6 +391,7 @@ def create_line_comparison(
     return fig, ax
 
 
+@_styled_plot
 def create_heatmap(
     matrix: Any,
     x: Optional[Sequence[float]] = None,

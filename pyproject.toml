@@ -134,7 +134,6 @@ petrophys = [
     "datasets/phillips/*.json",
     "datasets/phillips/*.md",
     "datasets/phillips/*.txt",
-    "_internal/data/*.json.gz",
 ]
 
 [tool.black]
@@ -145,6 +144,16 @@ include = '\.pyi?$'
 [tool.isort]
 profile = "black"
 line_length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+# Keep default invocation (`pytest`) working without the optional pytest-cov.
+# Run coverage explicitly, e.g.:
+#   pytest --cov=petrophys --cov-report=term-missing
+addopts = "-ra"
 
 [tool.mypy]
 # Modules held to a clean type check in CI; extend the list as modules are
@@ -172,13 +181,3 @@ follow_imports = "silent"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
-python_files = ["test_*.py"]
-python_functions = ["test_*"]
-# Keep default invocation (`pytest`) working without the optional pytest-cov.
-# Run coverage explicitly, e.g.:
-#   pytest --cov=petrophys --cov-report=term-missing
-addopts = "-ra"

@@ -27,6 +27,13 @@ from petrophys.interpretation.saturation.height.formation_pressure import (
     PressureGradient, PressureFWLResult, fit_pressure_fwl,
     FormationPressureData, read_formation_pressure,
 )
+from petrophys.interpretation.saturation.height.pressure_contacts import (
+    PressureBranch, PressureContact, PressureContactResult, infer_pressure_contacts,
+)
+from petrophys.interpretation.saturation.height.mdt_pretest import (
+    MDTPickingConfig, MDTBuildup, MDTPressurePick, MDTPretest,
+    read_mdt_pretest, pick_mdt_pressure, formation_pressures_from_mdt,
+)
 
 __all__ = [
     "pc_from_height",
@@ -47,4 +54,15 @@ __all__ = [
     "fit_pressure_fwl",
     "FormationPressureData",
     "read_formation_pressure",
+    "PressureBranch",
+    "PressureContact",
+    "PressureContactResult",
+    "infer_pressure_contacts",
+    "MDTPickingConfig",
+    "MDTBuildup",
+    "MDTPressurePick",
+    "MDTPretest",
+    "read_mdt_pretest",
+    "pick_mdt_pressure",
+    "formation_pressures_from_mdt",
 ]

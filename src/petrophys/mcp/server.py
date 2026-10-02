@@ -570,8 +570,8 @@ def create_server(
           its temperature; take both from the user. Without rw the header RW is
           used (at RWT, else an assumed 75 degF): ask the user. Or salinity_ppm.
         - bht_f (degF), td_ft (ft): bottom-hole temperature; default header BHT.
-        - lithology_domain: auto|clastic|carbonate|evaporite (use 'carbonate' for
-          carbonates); matrix_type: auto|sandstone|limestone|dolomite.
+        - lithology_domain: clastic (default)|carbonate|evaporite|auto (set
+          'carbonate' for carbonates); matrix_type: auto|sandstone|limestone|dolomite.
         - sw_model: auto|archie|simandoux|indonesia|dual_water|waxman_smits;
           a, m, n: Archie parameters (default by lithology).
         - vcl_cutoff, phie_cutoff, sw_cutoff (v/v): net-pay cutoffs; defaults
@@ -930,7 +930,9 @@ def create_server(
                 if viewer.fig is None:
                     raise ToolError("The plot could not be drawn.")
                 buffer = io.BytesIO()
-                viewer.fig.savefig(buffer, format="png", dpi=dpi, bbox_inches="tight")
+                from petrophys.visualization import save_figure
+
+                save_figure(viewer.fig, buffer, format="png", dpi=dpi)
                 drawn = [track.display_name for track in viewer.template.tracks]
                 info = {
                     "target_id": target_id,

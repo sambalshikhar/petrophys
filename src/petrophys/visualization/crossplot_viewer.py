@@ -2,6 +2,8 @@
 Crossplot visualization.
 """
 
+from petrophys.visualization.style import _styled_plot, save_figure
+
 from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 if TYPE_CHECKING:
@@ -37,6 +39,7 @@ class CrossPlot:
         self.fig: Optional[Figure] = None
         self.ax: Optional[Axes] = None
 
+    @_styled_plot
     def create(
         self,
         x_data: np.ndarray,
@@ -168,21 +171,24 @@ class CrossPlot:
             self.ax.annotate(mineral, (x, y), textcoords="offset points",
                            xytext=(5, 5), fontsize=9)
 
+    @_styled_plot
     def show(self) -> None:
         """Display the plot."""
         if self.fig is None:
             raise RuntimeError("Call create() first")
-        plt.tight_layout()
+        self.fig.tight_layout()
         plt.show()
 
+    @_styled_plot
     def save(self, filename: str, dpi: int = 150) -> None:
         """Save the plot to file."""
         if self.fig is None:
             raise RuntimeError("Call create() first")
-        plt.tight_layout()
-        self.fig.savefig(filename, dpi=dpi, bbox_inches='tight')
+        self.fig.tight_layout()
+        save_figure(self.fig, filename, dpi=dpi)
 
 
+@_styled_plot
 def create_crossplot(
     well: "Well",
     x_curve: str,
@@ -265,6 +271,7 @@ def create_crossplot(
     return plot
 
 
+@_styled_plot
 def create_density_neutron_crossplot(
     well: "Well",
     depth_range: Optional[Tuple[float, float]] = None,

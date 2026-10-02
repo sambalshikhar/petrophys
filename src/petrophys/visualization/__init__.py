@@ -8,6 +8,7 @@ analytics charts for multi-well and sensitivity studies. Every function returns
 the Matplotlib figure (and axes) so it can be styled further or saved.
 """
 
+from petrophys.visualization.style import plot_style, use_plot_style, save_figure
 from petrophys.visualization.lithology_crossplots import (
     create_nd_crossplot, create_mn_plot, create_mid_plot,
     create_buckles_plot, create_hingle_plot,
@@ -15,7 +16,10 @@ from petrophys.visualization.lithology_crossplots import (
 from petrophys.visualization.xrf_panel import create_xrf_panel
 from petrophys.visualization.flow_unit_plot import create_flow_unit_plot
 from petrophys.visualization.saturation_height_plot import create_saturation_height_plot
-from petrophys.visualization.formation_pressure_plot import create_formation_pressure_plot
+from petrophys.visualization.formation_pressure_plot import (
+    create_formation_pressure_plot, create_pressure_contact_plot,
+)
+from petrophys.visualization.mdt_pretest_plot import create_mdt_pretest_plot
 
 
 from petrophys.visualization.batch_export import (
@@ -57,9 +61,12 @@ from petrophys.visualization.analytics import (
 )
 
 __all__ = [
+    "plot_style", "use_plot_style", "save_figure",
     "create_buckles_plot", "create_hingle_plot", "create_xrf_panel",
     "create_flow_unit_plot", "create_saturation_height_plot",
     "create_formation_pressure_plot",
+    "create_mdt_pretest_plot",
+    "create_pressure_contact_plot",
     "create_nd_crossplot", "create_mn_plot", "create_mid_plot",
     # Batch export
     "BatchVisualizationResult",

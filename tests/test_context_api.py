@@ -84,10 +84,8 @@ def test_cli_always_interprets_single_las(context_well, tmp_path, monkeypatch):
 
     for name in (
         "PETROPHYS_DATA_DIR",
-        "PETROPHYS_PARAMETERS_FILE",
         "PETROPHYS_FORMATIONS_FILE",
         "PETROPHYS_LITHOLOGY_FILE",
-        "PETROPHYS_CORE_FILE",
         "PETROPHYS_LITHOLOGY_CODES_FILE",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -97,7 +95,6 @@ def test_cli_always_interprets_single_las(context_well, tmp_path, monkeypatch):
             parser.parse_args([])
         args = parser.parse_args(["--input-dir", str(tmp_path)])
         assert args.formations is None
-        assert args.parameters is None
 
     source = tmp_path / "CONTEXT-1.las"
     export_las(context_well, source)
@@ -192,6 +189,88 @@ def test_package_can_run_without_formations(context_well, tmp_path):
     results = pp.export_context(source, output, layout="formation_lithology")
     assert results and all(item.success for item in results)
     assert any("WHOLE_WELL" in str(path) for path in output.rglob("*.json"))
+
+
+@pytest.mark.parametrize("layout", ["formation_lithology", "category_formation_lithology"])
+def test_package_groups_by_selected_external_lithology(context_well, tmp_path, layout):
+    from petrophys.io import export_las
+
+    source = tmp_path / "input"
+    source.mkdir()
+    context_well.add_curve("LITHOLOGY_GEOLINK", np.ones(context_well.n_samples), "", "Sand")
+    export_las(context_well, source / "CONTEXT-1.las")
+    intervals = tmp_path / "lithology.csv"
+    intervals.write_text(
+        "well,top,bottom,lithology,depth_unit\n"
+        "CONTEXT-1,1000,1020,Chalk,m\n"
+        "CONTEXT-1,1025,1040,Marl,m\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "output"
+    results = pp.export_context(
+        source, output, layout=layout, lithology_file=intervals,
+    )
+    assert results and all(r.success for r in results), [r.errors for r in results]
+    contexts = [json.loads(Path(r.json_file).read_text(encoding="utf-8")) for r in results]
+    named = {d["analysis_results"]["lithology"] for d in contexts}
+    assert named == {"CHALK", "MARL", "No lithology information available"}
+    for payload in contexts:
+        analysis = payload["analysis_results"]
+        label = analysis["lithology"]
+        if label in {"CHALK", "MARL"}:
+            assert set(analysis["lithology_distribution"]) == {label}
+            assert analysis["lithology_info"]["unique_lithologies"] == [label]
+        else:
+            assert analysis["lithology_distribution"] == {}
+            assert not analysis["ground_truth_lithology_present"]
+
+
+def test_cli_domain_option_keeps_the_las_gr_equation(context_well, tmp_path):
+    from petrophys.io import export_las
+    from petrophys.reporting.context_cli import _package_options
+
+    context_well.set_parameter("GR_METHOD", "steiber")
+    context_well.set_parameter("RHO_FL", 1.1)
+    source = tmp_path / "well.las"
+    export_las(context_well, source)
+    args = build_package_parser("category_formation_lithology").parse_args(
+        ["--input-dir", str(tmp_path), "--lithology-domain", "carbonate"]
+    )
+    options = _package_options(args)
+    _, config = reference._read_context_input_well(
+        source, lithology_domain=options["lithology_domain"],
+    )
+    assert config.lithology_domain == "carbonate"
+    assert config.gr_method == "steiber"
+    assert config.rho_fl == 1.1
+
+    output = tmp_path / "context.json"
+    assert main([str(source), str(output), "--lithology-domain", "clastic"]) == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["interpretation"] is not None
+
+
+def test_saturation_notes_follow_selected_external_lithology(context_well):
+    import pandas as pd
+
+    context_well.add_curve("LITHOLOGY_GEOLINK", np.ones(context_well.n_samples), "", "Sand")
+    intervals = pd.DataFrame({
+        "top": [1000.0, 1025.0],
+        "bottom": [1020.0, 1040.0],
+        "lithology": ["Chalk", "Marl"],
+        "depth_unit": ["m", "m"],
+    })
+    result = pp.interpret(context_well, lithology_intervals=intervals)
+    well = result.well
+    groups = reference._segment_lithology_groups_for_saturation(well)
+    assert set(groups[:40]) == {"limestone"}
+    assert set(groups[40:50]) == {"clastic"}
+    assert set(groups[50:]) == {"limestone"}
+
+    well.add_curve("VCL", np.full(well.n_samples, 0.5), "v/v")
+    well.add_curve("SW", np.full(well.n_samples, 0.5), "v/v")
+    counts = reference._segment_saturation_model_counts(well, {"sw_model_requested": "auto"})
+    assert counts == {"dual_water": 70, "indonesia": 10}
 
 
 def test_trace_paths_survive_package_staging_without_payload_wrapper(tmp_path, monkeypatch):
