@@ -678,13 +678,6 @@ def step_detail(result: Any, step: str) -> Dict[str, Any]:
                     "depth_unit": well.depth_unit}
             if not data.get("data"):
                 data.pop("data", None)
-            if wanted == "net_pay" and well.depth_unit != "m" and any(
-                " m)" in text for text in record.decisions
-            ):
-                data["note"] = (
-                    f"Thicknesses in 'decisions' are labelled m but are in the well's depth "
-                    f"unit ({well.depth_unit})."
-                )
             return compact_object(_trim(data))
     if wanted in skipped:
         return {"status": "skipped", "step": wanted, "reason": skipped[wanted]}

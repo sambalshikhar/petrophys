@@ -146,6 +146,15 @@ All notable changes to Petrophys are documented here.
 - Log-plot warnings no longer repeat a depth-reference note reported by both
   the formation and the lithology import.
 - `workflow_steps()` descriptions say which steps `pp.interpret` does not run.
+- Net-pay trace decisions report thicknesses in the well's depth unit; feet
+  wells (e.g. the COSTA set) were labelled "m". The core-on-logs plot title
+  uses the well's unit too.
+- An explicit `lithology_domain` now keeps `matrix_type="auto"` inside that
+  domain: "carbonate" resolves to limestone or dolomite (the evidence picks
+  between them) and "clastic" to sandstone. When the matrix evidence points
+  elsewhere, the domain wins and a warning names the conflict. With
+  `lithology_domain="auto"` (the default) the evidence still decides both,
+  falling back to sandstone/clastic.
 - Warnings escalated to errors (for example
   `warnings.simplefilter("error", pp.DataQualityWarning)`) now stop
   `pp.interpret` instead of being recorded as a failed step.
