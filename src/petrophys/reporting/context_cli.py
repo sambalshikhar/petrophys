@@ -97,11 +97,7 @@ def _package_options(args: argparse.Namespace) -> dict:
         },
     }
     if args.lithology_domain is not None:
-        from petrophys.workflow import DynamicWorkflowConfig
-
-        options["workflow_config"] = DynamicWorkflowConfig(
-            lithology_domain=args.lithology_domain
-        )
+        options["lithology_domain"] = args.lithology_domain
     return options
 
 
@@ -125,7 +121,6 @@ def package_main(layout: str, argv=None) -> int:
 
 def _single_well_result(args: argparse.Namespace):
     from petrophys.api import interpret, read
-    from petrophys.workflow import DynamicWorkflowConfig
     from petrophys.workflow.zoned_batch import lithology_domain_from_metadata
 
     reader_options = {"depth_unit": args.depth_unit} if args.depth_unit else {}
@@ -146,8 +141,7 @@ def _single_well_result(args: argparse.Namespace):
             lithology_intervals=args.lithology,
             lithology_source="external",
         )
-    config = DynamicWorkflowConfig(**settings)
-    return interpret(well, config=config).raise_for_errors()
+    return interpret(well, **settings).raise_for_errors()
 
 
 def main(argv=None) -> int:
