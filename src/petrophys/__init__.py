@@ -16,10 +16,8 @@ from petrophys.version import __version__
 from petrophys.api import read, plot, interpret
 from petrophys.exceptions import DataQualityWarning
 from petrophys.io import (
-    attach_core_measurements,
     read_formations,
     read_lithology_intervals,
-    read_well_parameters,
 )
 from petrophys.io.lithology_reader import read_lithology_codes
 from petrophys.reporting.context import ContextSizeError, build_context, export_context
@@ -69,8 +67,6 @@ __all__ = [
     "export_context",
     "ContextSizeError",
     "read_lithology_codes",
-    "read_well_parameters",
-    "attach_core_measurements",
     "DynamicWorkflowConfig",
     "DynamicWorkflowResult",
     "run_dynamic_workflow",

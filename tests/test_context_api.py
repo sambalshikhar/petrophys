@@ -84,10 +84,8 @@ def test_cli_always_interprets_single_las(context_well, tmp_path, monkeypatch):
 
     for name in (
         "PETROPHYS_DATA_DIR",
-        "PETROPHYS_PARAMETERS_FILE",
         "PETROPHYS_FORMATIONS_FILE",
         "PETROPHYS_LITHOLOGY_FILE",
-        "PETROPHYS_CORE_FILE",
         "PETROPHYS_LITHOLOGY_CODES_FILE",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -97,7 +95,6 @@ def test_cli_always_interprets_single_las(context_well, tmp_path, monkeypatch):
             parser.parse_args([])
         args = parser.parse_args(["--input-dir", str(tmp_path)])
         assert args.formations is None
-        assert args.parameters is None
 
     source = tmp_path / "CONTEXT-1.las"
     export_las(context_well, source)

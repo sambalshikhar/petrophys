@@ -263,7 +263,8 @@ def interpret(
     config : DynamicWorkflowConfig, optional
         Complete workflow settings. When omitted, settings come from
         ``options`` and the :class:`~petrophys.workflow.DynamicWorkflowConfig`
-        defaults (matrix and lithology are resolved from the data).
+        defaults. Recognized LAS header parameters fill otherwise unspecified
+        settings; explicit Python options take precedence.
     inplace : bool, default False
         If False, the well is copied and the caller's well is left unchanged.
         If True, calculated curves are added to ``well`` itself.
@@ -301,6 +302,7 @@ def interpret(
         DynamicWorkflowConfig,
         run_dynamic_workflow,
     )
+    from petrophys.workflow.zoned_batch import _extract_global_parameter_overrides
 
     known = {item.name for item in dataclasses.fields(DynamicWorkflowConfig)}
     unknown = sorted(set(options) - known)
@@ -322,12 +324,32 @@ def interpret(
         if not inplace:
             well = deepcopy(well)
 
+    metadata_options, _ = _extract_global_parameter_overrides(well)
+    # These values have native LAS routes in DynamicWorkflow. Leaving them on
+    # the well preserves source provenance (for example, ``las.RW`` instead of
+    # ``config.rw``) and lets each step apply its own unit/reference handling.
+    for native_field in (
+        "bht_f",
+        "td_ft",
+        "rmf_at_meas_temp",
+        "rmf_meas_temp_f",
+        "rm",
+        "rm_meas_temp_f",
+        "rw",
+        "rw_meas_temp_f",
+    ):
+        metadata_options.pop(native_field, None)
     if config is None:
-        config = DynamicWorkflowConfig(**options)
-    elif options:
-        if "lithology_domain" in options and "lithology" not in options:
-            options["lithology"] = None
-        config = dataclasses.replace(config, **options)
+        settings = {**metadata_options, **options}
+        config = DynamicWorkflowConfig(**settings)
     else:
-        config = deepcopy(config)
+        settings = {
+            name: value
+            for name, value in metadata_options.items()
+            if getattr(config, name, None) is None
+        }
+        settings.update(options)
+        if "lithology_domain" in settings and "lithology" not in settings:
+            settings["lithology"] = None
+        config = dataclasses.replace(config, **settings) if settings else deepcopy(config)
     return run_dynamic_workflow(well, config=config)
