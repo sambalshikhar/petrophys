@@ -17,7 +17,7 @@ resolves cross-references to it, so ``petrophys.read`` and
 
 Names a module exports but no curated group lists fall into automatic
 Functions, Classes and Constants groups, so the reference never drifts from
-the code. ``tests/test_api_reference.py`` checks the plan without Sphinx.
+the code.
 """
 
 from __future__ import annotations

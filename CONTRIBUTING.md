@@ -8,13 +8,14 @@ scientific traceability and predictable behavior on incomplete well-log data.
 ```bash
 git clone https://github.com/sambalshikhar/petrophys.git
 cd petrophys
-python -m pip install -e ".[all,dev,docs]"
+python -m pip install -e ".[all,dev,docs,tutorials]"
 ```
 
-Run the test suite before opening a pull request:
+Execute the affected tutorials in fresh kernels before opening a pull request:
 
 ```bash
-python -m pytest
+python scripts/execute_tutorials.py --output-dir tutorial-results
+python scripts/check_notebook_outputs.py
 ```
 
 Build the documentation when changing public APIs, examples, or docstrings:
@@ -44,8 +45,8 @@ for the package map and dependency direction.
 ## Scientific changes
 
 - State the equation, units, assumptions, and literature or vendor reference.
-- Add tests for scalar and array inputs, missing values, invalid physical
-  values, and ascending or descending depth where applicable.
+- Verify scalar and array inputs, missing values, invalid physical values,
+  and ascending or descending depth where applicable.
 - Preserve imported interpreted curves unless replacement is explicitly
   requested and recorded in the workflow trace.
 - Record routing decisions, defaults, warnings, and skipped prerequisites.
@@ -63,9 +64,15 @@ for the package map and dependency direction.
 
 Keep changes focused, describe the scientific and software behavior affected,
 and include the commands used for verification. New public functions should
-have docstrings, exports, and focused regression tests.
+have docstrings, exports, and a reproducible example.
 
 ## Tutorials
+
+Library plots use the shared style in `petrophys.visualization.style`. Use
+`use_plot_style()` in notebooks that also draw directly with Matplotlib, and
+`save_figure(fig, path)` for consistent exports. Preserve the conventional
+colours of curves, minerals and image logs. Publisher figures and source-data
+images are evidence, not generated plots, and must not be restyled.
 
 The notebooks in `examples/` are rendered in the documentation with their
 saved outputs, so re-run any notebook you change in a fresh kernel before

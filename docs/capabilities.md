@@ -29,7 +29,8 @@ warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core sat
 pd.set_option("display.max_colwidth", None)
 
 THUMB = (4, 3)  # inches: every gallery figure is a small thumbnail
-plt.rcParams.update({"font.size": 8, "axes.titlesize": 9, "legend.fontsize": 7})
+from petrophys.visualization import use_plot_style
+use_plot_style()
 
 
 def thumb(key, fig):

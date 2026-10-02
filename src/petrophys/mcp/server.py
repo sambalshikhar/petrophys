@@ -930,7 +930,9 @@ def create_server(
                 if viewer.fig is None:
                     raise ToolError("The plot could not be drawn.")
                 buffer = io.BytesIO()
-                viewer.fig.savefig(buffer, format="png", dpi=dpi, bbox_inches="tight")
+                from petrophys.visualization import save_figure
+
+                save_figure(viewer.fig, buffer, format="png", dpi=dpi)
                 drawn = [track.display_name for track in viewer.template.tracks]
                 info = {
                     "target_id": target_id,

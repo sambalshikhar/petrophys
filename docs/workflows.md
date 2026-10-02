@@ -41,6 +41,8 @@ print(result.status, "|", result.lithology_domain, "|",
 ```{code-cell} python
 :tags: [remove-input]
 import matplotlib.pyplot as plt
+from petrophys.visualization import use_plot_style
+use_plot_style()
 from matplotlib.patches import FancyBboxPatch, Patch
 from petrophys.workflow import workflow_steps
 

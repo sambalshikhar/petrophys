@@ -23,7 +23,8 @@ import matplotlib.pyplot as plt
 # 30/6-5 labels its percent core saturations (SWC, SOC) as fractions; Petrophys
 # converts them to v/v and warns. The page explains this once, in the text.
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
-plt.rcParams.update({"font.size": 9})
+from petrophys.visualization import use_plot_style
+use_plot_style()
 ```
 
 ## NMR: Daydream CMR

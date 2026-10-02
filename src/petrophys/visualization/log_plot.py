@@ -2,6 +2,8 @@
 Basic log plot functionality.
 """
 
+from petrophys.visualization.style import _styled_plot, save_figure
+
 from typing import TYPE_CHECKING, Optional, List, Dict, Tuple, Union
 import numpy as np
 
@@ -38,6 +40,7 @@ class LogPlot:
         self.fig: Optional[Figure] = None
         self.axes: List[Axes] = []
 
+    @_styled_plot
     def create_figure(self, n_tracks: int = 3) -> Tuple[Figure, List[Axes]]:
         """
         Create figure with specified number of tracks.
@@ -69,6 +72,7 @@ class LogPlot:
 
         return self.fig, self.axes
 
+    @_styled_plot
     def add_curve(
         self,
         track: int,
@@ -217,6 +221,7 @@ class LogPlot:
         for ax in self.axes:
             ax.set_ylim(bottom, top)
 
+    @_styled_plot
     def add_title(self, title: str) -> None:
         """Add title to the figure."""
         if self.fig is None:
@@ -225,23 +230,26 @@ class LogPlot:
         well_name = self.well.name or "Unknown Well"
         self.fig.suptitle(f"{title}\n{well_name}", fontsize=12)
 
+    @_styled_plot
     def show(self) -> None:
         """Display the figure."""
         if self.fig is None:
             raise RuntimeError("Call create_figure() first")
 
-        plt.tight_layout()
+        self.fig.tight_layout()
         plt.show()
 
+    @_styled_plot
     def save(self, filename: str, dpi: int = 150) -> None:
         """Save the figure to file."""
         if self.fig is None:
             raise RuntimeError("Call create_figure() first")
 
-        plt.tight_layout()
-        self.fig.savefig(filename, dpi=dpi, bbox_inches='tight')
+        self.fig.tight_layout()
+        save_figure(self.fig, filename, dpi=dpi)
 
 
+@_styled_plot
 def create_log_plot(
     well: "Well",
     curves: List[Dict],

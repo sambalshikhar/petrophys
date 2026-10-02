@@ -68,7 +68,7 @@ The report's fluid scanning found water already at 3111.6 m TVD MSL, above its
 pressure FWL; this illustrates the difference between mobility and equilibrium.
 
 Tutorial 15 section 3b calls the library reader, fitter and plotter. It never
-loads a PDF or source image. Report comparisons live in the tutorial and tests,
+loads a PDF or source image. Report comparisons live in the tutorial,
 not in the interpretation module. Its separate HW-3 saturation-height example
 retains an assumed HW-3 FWL; another well's contact must not be applied to it.
 

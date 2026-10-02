@@ -397,7 +397,10 @@ def plot_fmi(
         raise ImportError("matplotlib is required for plotting")
 
     if ax is None:
-        _, ax = plt.subplots(figsize=(5, 11))
+        from petrophys.visualization.style import plot_style
+
+        with plot_style():
+            _, ax = plt.subplots(figsize=(5, 11))
 
     display_data = (
         data.filter_by_depth(*depth_range) if depth_range is not None else data

@@ -1,7 +1,10 @@
 """Formation-pressure stations, fitted fluid gradients and their intersection."""
+
+from petrophys.visualization.style import _styled_plot
 import numpy as np
 
 
+@_styled_plot
 def create_formation_pressure_plot(data, result=None, *, hydrocarbon="oil",
                                    figsize=(7, 8), title="Formation pressures"):
     """Plot FormationPressureData; return a Matplotlib Figure.
@@ -42,6 +45,7 @@ def create_formation_pressure_plot(data, result=None, *, hydrocarbon="oil",
     return fig
 
 
+@_styled_plot
 def create_pressure_contact_plot(data, result=None, *, figsize=(7, 8),
                                  title="Pressure contact interpretation"):
     """Plot unlabeled inference, including unresolved contacts and suspect points.

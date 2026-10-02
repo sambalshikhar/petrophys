@@ -2,6 +2,8 @@
 Zone flag plotting utilities.
 """
 
+from petrophys.visualization.style import _styled_plot
+
 from typing import TYPE_CHECKING, Optional, Tuple, List, Dict
 
 if TYPE_CHECKING:
@@ -21,6 +23,7 @@ import numpy as np
 from petrophys._internal.analysis_helpers import resolve_well_depth_range, well_depth_array
 
 
+@_styled_plot
 def plot_zone_flags(
     well: "Well",
     flag_curves: List[str],
@@ -154,6 +157,7 @@ def add_zone_shading(
         )
 
 
+@_styled_plot
 def create_net_pay_summary_plot(
     well: "Well",
     depth_range: Optional[Tuple[float, float]] = None,

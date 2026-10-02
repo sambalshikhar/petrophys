@@ -10,6 +10,8 @@ turns those into errors.
 
 from __future__ import annotations
 
+from petrophys.visualization.style import _styled_plot, save_figure
+
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib import resources
@@ -1175,6 +1177,7 @@ def _is_geolink_well(well: "Well") -> bool:
     return well.get("LITHOLOGY_GEOLINK") is not None
 
 
+@_styled_plot
 def create_adaptive_log_viewer_template(
     well: "Well",
     max_generic_tracks: int = 0,
@@ -1672,6 +1675,7 @@ class LogViewer:
         self._header_row_counts: Dict[int, int] = {}
         self._bad_hole_legend = None
 
+    @_styled_plot
     def create(
         self,
         depth_range: Optional[Tuple[float, float]] = None,
@@ -1749,6 +1753,7 @@ class LogViewer:
         )
         return self.fig, self.axes
 
+    @_styled_plot
     def show(self) -> None:
         """Display the figure."""
         if self.fig is None:
@@ -1761,6 +1766,7 @@ class LogViewer:
             plt.close(self.fig)
             self.fig = None
 
+    @_styled_plot
     def save(self, filename: str | Path, dpi: int = 150) -> None:
         """Save the plot to disk."""
         if self.fig is None:
@@ -1768,7 +1774,7 @@ class LogViewer:
         assert self.fig is not None
         output_path = Path(filename)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        self.fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
+        save_figure(self.fig, output_path, dpi=dpi)
 
     def _well_title(self) -> str:
         header = getattr(self.well, "header", None)
@@ -3532,6 +3538,7 @@ class LogViewer:
         ]
 
 
+@_styled_plot
 def create_log_viewer(
     well: "Well",
     template_xml_path: Optional[str | Path] = None,

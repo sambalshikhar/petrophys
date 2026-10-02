@@ -1,7 +1,10 @@
 """Show raw MDT pressure and the library's selected/review buildup windows."""
+
+from petrophys.visualization.style import _styled_plot
 import numpy as np
 
 
+@_styled_plot
 def create_mdt_pretest_plot(trace, result=None, *, figsize=(10, 4), title=None):
     """Return a Matplotlib Figure; review candidates are never labeled picks.
 
