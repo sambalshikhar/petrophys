@@ -277,20 +277,72 @@ the notebook exercises.
 | NMR T2 distributions and SDR | `NMRData` with bins; Phillips teaching example available, traceable field distribution and matching core calibration still missing | 14 |
 | Laboratory capillary pressure | `convert_pc_lab_to_reservoir`, `fit_brooks_corey`, `fit_j_function`; COSTA sample curves available, complete fluid/unit and well/depth metadata pending | 15 |
 
-`read_formation_pressure` accepts CSV/LAS files, DataFrames and LAS objects.
-Call `.fit_fwl()` to intersect oil/water or gas/water pressure gradients, and
-`create_formation_pressure_plot(data, fit)` to plot the stations and result.
-The array-level `fit_pressure_fwl` API remains available. Units, a positive-down
-TVD datum, fluid labels and measurement QC must be established; column mappings
-and numeric fluid-code mappings can be supplied explicitly. Images are not inputs.
+`read_formation_pressure` accepts CSV/LAS station files, DataFrames and LAS objects.
+Fluid labels are optional. For unlabeled stations call `.infer_contacts()` and
+`create_pressure_contact_plot(data, result)`. This compares up to three robust
+depth-ordered gradients, estimates fluid densities, evaluates possible fluid
+sequences and intersects adjacent lines. It returns model scores, assignments,
+suspect flags and conditional sensitivity intervals. A single gradient, weak
+separation, competing models or ambiguous fluid identities do not yield a definite
+FWL. Density bounds and pressure error are configurable interpretation assumptions.
+Do not use an old fluid-dependent selection mask as measurement QC.
 
-Tutorial 15 calls these library APIs for 35/11-13 (tabulated MDT pressures) and
-35/11-10 Fensfjord (digitized station markers). CSV and LAS give identical fits:
-3113.7 m versus reported 3112.6 m, and 2287.3 m versus reported 2290 m TVD MSL,
-respectively. These are interpretation reproduction checks, not blind validation;
-the second case also has plot-digitization limitations. Report comparisons are
-outside the module. See the `formation_pressure` dataset README for provenance,
-quality selection and a custom-input recipe.
+Tutorial 15 removes the bundled report-derived fluid labels. For 35/11-13 it uses
+all 21 tests marked `ok`, including the shallow gas points, and obtains a two-branch
+oil/water candidate near 3113.2 m (report: 3112.6 m TVD MSL). The two-point gas leg
+is not resolved separately. For 35/11-10 Fensfjord the digitized subset produces
+a candidate near 2289.1 m but ambiguous fluid hypotheses, so `fwl_depth` is `None`.
+The report's 2290 m contact is used only for external comparison. These are limited
+unlabeled reproduction checks, not validation across unseen reservoirs.
+
+Raw MDT pretests are a different input stage. The public
+[JAMSTEC C0020A archive](https://www.jamstec.go.jp/sio7/well-logging/337/C0020A/)
+contains time-indexed quartz pressure/temperature and probe-depth curves, without
+fluid codes. As described in [SLB's Formation Pressure workflow](https://www.slb.com/products-and-services/delivering-digital-at-scale/software/techlog-wellbore-software/techlog/techlog-reservoir-engineering/techlog-formation-pressure),
+pressure picking/QC precedes gradient analysis. Use `read_mdt_pretest` for this
+input stage; `read_formation_pressure` reads the resulting station table.
+
+```python
+from petrophys import sample
+from petrophys.interpretation.saturation.height import read_mdt_pretest
+from petrophys.visualization import create_mdt_pretest_plot
+
+trace = read_mdt_pretest(sample("c0020a_mdt_077"))
+pick = trace.pick_pressure()
+print(pick.status, pick.pressure, pick.pressure_unit, pick.flags)
+fig = create_mdt_pretest_plot(trace, pick)
+```
+
+This library picker supports complete **overbalanced, stationary probe settings**
+with mud baselines before and after the pretest, including repeated drawdowns.
+It checks buildup drift, spread, agreement between successive tail windows,
+repeat-test agreement and probe movement. It selects the final stable buildup
+before retraction; it does not select the final mud-pressure sample. CSV,
+DataFrame and LAS inputs support explicit channel mappings and units.
+`MDTPickingConfig` exposes thresholds in physical units. Missing/gapped traces,
+incomplete recoveries, inconsistent repeats and unclear pressure responses
+return `status="review"`, flags and `pressure=None`; diagnostic candidates are
+kept separately. Acceptance is a stable-plateau QC proposal, not proof of
+equilibrium, a good seal or absence of supercharging. Pumpout, underbalanced
+tests and multiple probe settings in one trace are outside this method.
+
+`formation_pressures_from_mdt(picks, tvd=depths, depth_unit="m",
+depth_reference="TVDSS")` builds unlabeled station data for `.infer_contacts()`.
+Supply one verified TVD per trace in the same order, including review rows; those
+rows have null pressures and are excluded. The module never substitutes MD for
+TVD, supplies a trajectory, or selects connected reservoirs on your behalf.
+
+All 35 original C0020A LAS traces and the independent report are bundled with
+checksums. With default settings, 22 picks differ from report formation pressures
+by at most 0.149 psi. Both tight tests, both lost-seal tests and nine report-valid
+tests require review. These are regression checks on one field delivery, not
+an accuracy claim for unseen tools or reservoirs. Tutorial 15 calls the library
+picker and plots its windows; report values enter only the later verification.
+
+For already interpreted fluid labels, `.fit_fwl()`, `fit_pressure_fwl` and
+`create_formation_pressure_plot` remain available. Images and report contacts
+are not interpretation inputs. Units, a positive-down TVD datum, a consistent
+pressure reference and reservoir selection remain necessary for either mode.
 
 Pressure alone does not determine a saturation-height function. Capillary-pressure
 or rock-property calibration and fluid properties are still required.
