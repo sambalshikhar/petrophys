@@ -27,7 +27,8 @@ from myst_nb import glue
 # converts them to v/v and warns. The page explains this once, in the text.
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
 pd.set_option("display.max_colwidth", None)
-plt.rcParams.update({"font.size": 9})
+from petrophys.visualization import use_plot_style
+use_plot_style()
 
 
 def place(key, fig):
@@ -57,6 +58,23 @@ result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
 viewer = pp.plot(result, depth_range=(2800, 3000), figsize=(15, 11))
 viewer.show()
 ```
+
+## Figure style and export
+
+Library plots share DejaVu Sans typography, white backgrounds and PNG export
+defaults. Curve colours, lithology patterns and specialist colour scales retain
+their scientific meaning. Importing the library does not change Matplotlib's
+global settings.
+
+For custom Matplotlib figures in the same notebook, call
+`petrophys.visualization.use_plot_style()` once. For temporary overrides, use
+`with petrophys.visualization.plot_style({"font.size": 10}):` around your plotting
+code. Existing axes and explicit curve styling remain under your control.
+
+Save any figure with `petrophys.visualization.save_figure(fig, "plot.png")`.
+Exports use 150 dpi, a white background and tight margins; pass `dpi=300` for
+higher-resolution raster output, or use a `.pdf` or `.svg` extension for vectors.
+Viewer `.save(...)` methods use the same defaults.
 
 ## Log plot templates
 

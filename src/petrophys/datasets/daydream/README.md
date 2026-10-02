@@ -9,11 +9,10 @@ All retained Daydream 1 files live in this collection folder. The two processed
 CMR summary LAS files are small package samples. The native DLIS files and
 paired scalar LAS validation files use Git LFS and are intentionally excluded
 from wheels and source distributions. Run `git lfs pull` in a source checkout
-before running the native-reader, format-equivalence, or FMI tests.
+before running the native-reader or FMI examples.
 
-The repository fixtures are not runtime dependencies. Unit tests use small
-synthetic wells; tests that require native deliveries skip when Git LFS data
-are unavailable. The DLIS files preserve multi-frame and processed-image
+The repository fixtures are not runtime dependencies. Tutorials that use the
+native deliveries require the downloaded files. The DLIS files preserve multi-frame and processed-image
 coverage that cannot be represented faithfully by scalar LAS alone.
 
 The files are public Queensland well-completion data for Daydream 1, ATP 645.

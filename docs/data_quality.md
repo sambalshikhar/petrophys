@@ -96,6 +96,8 @@ for name, run in {"Rw at 230 degF": result, "Rw at assumed 75 degF": assumed}.it
 ```{code-cell} python
 :tags: [remove-input]
 import matplotlib.pyplot as plt
+from petrophys.visualization import use_plot_style
+use_plot_style()
 
 fig, (ax_rw, ax_sw) = plt.subplots(1, 2, figsize=(8, 4.5), sharey=True,
                                    gridspec_kw={"width_ratios": [1, 2]})

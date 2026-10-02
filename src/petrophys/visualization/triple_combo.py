@@ -7,9 +7,12 @@ module just provides the conventional name as a shortcut.
 
 from __future__ import annotations
 
+from petrophys.visualization.style import _styled_plot
+
 from typing import Optional, Tuple
 
 
+@_styled_plot
 def create_triple_combo(
     well,
     depth_range: Optional[Tuple[float, float]] = None,

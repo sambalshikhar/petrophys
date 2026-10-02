@@ -57,8 +57,6 @@ ml = [
     "xgboost>=3.2.0,<3.3.0; python_version >= '3.11'",
 ]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=3.0.0",
     "black>=22.0.0",
     "isort>=5.10.0",
     "flake8>=4.0.0",
@@ -134,7 +132,6 @@ petrophys = [
     "datasets/phillips/*.json",
     "datasets/phillips/*.md",
     "datasets/phillips/*.txt",
-    "_internal/data/*.json.gz",
 ]
 
 [tool.black]
@@ -172,13 +169,3 @@ follow_imports = "silent"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
-python_files = ["test_*.py"]
-python_functions = ["test_*"]
-# Keep default invocation (`pytest`) working without the optional pytest-cov.
-# Run coverage explicitly, e.g.:
-#   pytest --cov=petrophys --cov-report=term-missing
-addopts = "-ra"
