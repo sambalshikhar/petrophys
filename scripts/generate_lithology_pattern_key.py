@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 from petrophys import Well
-from petrophys.visualization import create_log_viewer
+from petrophys.visualization import create_log_viewer, use_plot_style, save_figure
 from petrophys.visualization.log_viewer import (
     GEOLINK_LITHOLOGY_CODE_LABELS,
     LogViewer,
@@ -82,7 +82,7 @@ def generate_pattern_key(out_path: Path) -> None:
     codes = sorted(GEOLINK_LITHOLOGY_CODE_LABELS)
 
     n_cols, n_rows = 3, 12
-    fig = plt.figure(figsize=(12.0, 6.6), dpi=110)
+    fig = plt.figure(figsize=(12.0, 6.6))
     fig.suptitle(
         "GeoLink Lithology Pattern Key - Codes 1-36",
         fontsize=14,
@@ -110,7 +110,7 @@ def generate_pattern_key(out_path: Path) -> None:
             ha="left",
         )
 
-    fig.savefig(out_path, dpi=110, bbox_inches="tight", facecolor="white")
+    save_figure(fig, out_path)
     plt.close(fig)
     print(f"wrote {out_path}")
 
@@ -142,12 +142,13 @@ def generate_many_lithologies(out_path: Path) -> None:
     )
     fig = viewer.fig
     fig.suptitle("GeoLink Synthetic Lithology", fontsize=13, fontweight="bold")
-    fig.savefig(out_path, dpi=110, bbox_inches="tight", facecolor="white")
+    save_figure(fig, out_path)
     plt.close(fig)
     print(f"wrote {out_path}")
 
 
 def main() -> None:
+    use_plot_style()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     generate_pattern_key(OUT_DIR / "geolink_lithology_pattern_key_all_codes.png")
     generate_many_lithologies(OUT_DIR / "geolink_many_lithologies.png")

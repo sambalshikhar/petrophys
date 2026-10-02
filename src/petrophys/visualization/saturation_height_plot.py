@@ -7,6 +7,8 @@ Two panels:
 
 from __future__ import annotations
 
+from petrophys.visualization.style import _styled_plot
+
 from typing import Optional, Sequence, Tuple
 
 import numpy as np
@@ -20,6 +22,7 @@ except Exception:  # pragma: no cover
 from petrophys.interpretation.saturation.height.saturation_height_module import JFunctionModel
 
 
+@_styled_plot
 def create_saturation_height_plot(
     model: JFunctionModel,
     j: Optional[Sequence[float]] = None,

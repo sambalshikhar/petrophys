@@ -59,12 +59,10 @@ The same input has a different name in each interface. File layouts are in
 | --- | --- | --- | --- |
 | Formations | `pp.read(..., formations=)` | `tops_file` | `--formations` |
 | Lithology intervals | `pp.read(..., lithology=)` | `lithology_file` | `--lithology` |
-| Well parameters | `pp.read_well_parameters` | `parameters_file` | `--parameters` |
-| Core measurements | `pp.attach_core_measurements` | `core_file` | `--core` |
 | Lithology codebook | `pp.read_lithology_codes` | `lithology_mapping_file` | `--lithology-codes` |
 
 Through MCP, `load_well` takes `formations` and `lithology`, and `interpret_well`
-takes the settings; core and codebooks are not available there.
+takes the settings; codebooks are not available there.
 
 :::{warning}
 In `pp.read`, `lithology=` attaches lithology intervals. In `pp.interpret`,

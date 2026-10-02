@@ -1575,15 +1575,20 @@ def test_explicit_carbonate_domain_keeps_a_carbonate_matrix():
     well = pp.read(pp.sample("HW-27"))  # core grain density alone points to sandstone
     result = pp.interpret(well, lithology_domain="carbonate")
     assert result.config.matrix_type in {"limestone", "dolomite"}
-    assert any("lithology_domain='carbonate' was set" in warning for warning in result.warnings)
+    assert any("lithology_domain is 'carbonate', but" in warning for warning in result.warnings)
 
 
-def test_auto_domain_still_lets_the_evidence_decide():
+def test_default_domain_is_clastic_and_points_to_carbonate_evidence():
     import petrophys as pp
 
-    result = pp.interpret(pp.read(pp.sample("HW-27")))
-    assert (result.config.lithology_domain, result.config.matrix_type) == ("clastic", "sandstone")
-    assert not any("was set, but" in warning for warning in result.warnings)
+    well = pp.read(pp.sample("HW-3"))  # core grain density says dolomite
+    default = pp.interpret(well)
+    assert (default.config.lithology_domain, default.config.matrix_type) == ("clastic", "sandstone")
+    assert any("(the default)" in w and "set lithology_domain='carbonate'" in w
+               for w in default.warnings)
+
+    auto = pp.interpret(well, lithology_domain="auto")
+    assert (auto.config.lithology_domain, auto.config.matrix_type) == ("carbonate", "dolomite")
 
 
 def test_net_pay_decisions_use_the_well_depth_unit():

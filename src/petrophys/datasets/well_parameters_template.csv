@@ -1,2 +1,0 @@
-well,lithology_domain,matrix_type,rw,rw_unit,rw_reference_temperature,rw_temperature_unit,bht,bht_unit,td,depth_unit,a,m,n,gr_clean,gr_shale,gr_method,sw_model,perm_method,vcl_cutoff,phie_cutoff,sw_cutoff
-WELL_001,carbonate,auto,0.05,ohm.m,75,F,220,F,8500,ft,1,2,2,20,100,linear,auto,auto,0.3,0.045,0.7

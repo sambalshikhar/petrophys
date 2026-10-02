@@ -74,12 +74,20 @@ def test_endpoints_clean_and_shale():
     assert vcl_clavier(1.0) == pytest.approx(1.0, abs=1e-9)
 
 
-def test_vcl_from_gr_clamps_baselines_to_min_window():
-    # Design-doc rule: vcl_from_gr enforces a minimum [20, 100] GR window, so a
-    # tighter caller window (40, 80) is widened to (20, 100) before the linear
-    # index is computed: IGR = (GR - 20) / (100 - 20).
-    out = vcl_from_gr(np.array([40.0, 60.0, 80.0]), gr_min=40, gr_max=80, method="linear")
-    np.testing.assert_allclose(out, [0.25, 0.5, 0.75])
+@pytest.mark.parametrize(
+    "gr_min,gr_max,expected",
+    [
+        (40, 80, [0.25, 0.5, 0.75]),
+        (10, 80, [1 / 3, 5 / 9, 7 / 9]),
+        (40, 120, [0.2, 0.4, 0.6]),
+        (10, 120, [3 / 11, 5 / 11, 7 / 11]),
+        (20, 100, [0.25, 0.5, 0.75]),
+    ],
+)
+def test_vcl_from_gr_clamps_baselines_to_min_window(gr_min, gr_max, expected):
+    # Each bound acts independently; wider caller windows must not become 20/100.
+    out = vcl_from_gr(np.array([40.0, 60.0, 80.0]), gr_min, gr_max, method="linear")
+    np.testing.assert_allclose(out, expected)
 
 
 def test_vcl_from_sp_known_value():

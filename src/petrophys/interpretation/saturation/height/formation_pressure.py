@@ -121,6 +121,8 @@ class FormationPressureData:
 
     def fit_fwl(self, hydrocarbon="oil"):
         """Fit the selected fluid pair; report contacts are never inputs."""
+        if not self.points.fluid.isin(["oil", "gas", "water"]).any():
+            raise ValueError("No fluid labels supplied; use infer_contacts() for unlabeled station pressures")
         p = self.points.loc[self.fit_mask(hydrocarbon)]
         return fit_pressure_fwl(p.depth, p.pressure, p.fluid,
                                 hydrocarbon=hydrocarbon,
@@ -128,9 +130,23 @@ class FormationPressureData:
                                 pressure_unit=self.pressure_unit,
                                 depth_reference=self.depth_reference)
 
+    def infer_contacts(self, **kwargs):
+        """Infer pressure branches and candidate contacts, ignoring fluid labels.
+
+        USE_FIT is respected as a measurement-QC mask. Do not reuse a mask
+        based on previously interpreted fluid intervals for an unlabeled check.
+        See infer_pressure_contacts for assumptions and ambiguity handling.
+        """
+        from .pressure_contacts import infer_pressure_contacts
+        return infer_pressure_contacts(
+            self.points.depth, self.points.pressure, use=self.points.use_fit,
+            depth_unit=self.depth_unit, pressure_unit=self.pressure_unit,
+            depth_reference=self.depth_reference, **kwargs,
+        )
+
 
 def read_formation_pressure(
-    source, *, depth_column=None, pressure_column=None, fluid_column="FLUID",
+    source, *, depth_column=None, pressure_column=None, fluid_column=None,
     use_column=None, depth_unit=None, pressure_unit=None, depth_reference=None,
     fluid_map=None, csv_kwargs=None,
 ):
@@ -141,13 +157,17 @@ def read_formation_pressure(
     names, units and a positive-down TVD datum explicitly. DEPT alone never
     implies TVD; this reader does not convert MD to TVD.
 
-    FLUID contains oil/gas/water (case insensitive), or numeric codes mapped
+    FLUID is optional: without it, use the result's ``infer_contacts()`` method.
+    If present it contains oil/gas/water (case insensitive), or numeric codes mapped
     by ``fluid_map={1: 'gas', 2: 'oil', 3: 'water'}``. LAS may instead provide
     ``FLDMAP`` as ``1=gas;2=oil;3=water``. Codes are not assumed universal.
     USE_FIT, if present, accepts true/false or 1/0. Without it, every finite
     station of the selected fluid pair is used. Unknown labels are rejected.
-    Apply reservoir selection and measurement QC before fitting; automatic
-    outlier removal and fluid identification are not performed.
+    Apply reservoir selection and measurement QC before fitting. The reader
+    does not infer fluid identities; ``infer_contacts()`` is an explicit,
+    separate interpretation step. Raw time-indexed pretests are not station
+    pressure measurements: use read_mdt_pretest().pick_pressure() first, then
+    formation_pressures_from_mdt() with explicit TVD depths and datum.
 
     ``csv_kwargs`` passes delimiter, null-value and other options to read_csv.
     Inputs are copied, never modified. Units are retained; pressures must
@@ -170,6 +190,8 @@ def read_formation_pressure(
             else:
                 raise ValueError("Supply a .csv/.las file, DataFrame or lasio.LASFile")
         if las is not None:
+            if las.curves[0].mnemonic.upper() in {"TIME", "ETIM", "TIME_1900"} or las.curves[0].unit.upper() in {"S", "SEC", "MS", "SECOND"}:
+                raise ValueError("Raw time-indexed MDT pretest: use read_mdt_pretest().pick_pressure(), then formation_pressures_from_mdt() with TVD depths before gradient analysis")
             frame = las.df().reset_index()
     columns = {str(c).upper(): c for c in frame.columns}
     if len(columns) != len(frame.columns):
@@ -190,7 +212,7 @@ def read_formation_pressure(
     dc = column(depth_column, depth_names + ["TVDSS", "TVD", "DEPT", "DEPTH"], "depth")
     pc = column(pressure_column, ["PRES", "PRESSURE", "PRES_BAR", "PRES_PSI",
                                  "PRES_KPA", "PRES_MPA"], "pressure")
-    fc = column(fluid_column, [], "fluid")
+    fc = column(fluid_column, [], "fluid") if fluid_column is not None else columns.get("FLUID")
     uc = column(use_column, [], "use") if use_column is not None else columns.get("USE_FIT")
     dname, pname = str(dc).upper(), str(pc).upper()
     if depth_unit is None:
@@ -228,12 +250,14 @@ def read_formation_pressure(
         except (ValueError, TypeError):
             return str(value).strip().lower()
 
-    if fluid_map is not None:
+    if fc is None:
+        labels = pd.Series("unknown", index=frame.index)
+    elif fluid_map is not None:
         mapping = {fluid_key(k): str(v).strip().lower() for k, v in fluid_map.items()}
         labels = frame[fc].map(lambda v: mapping.get(fluid_key(v)))
     else:
         labels = frame[fc].astype(str).str.strip().str.lower()
-    if not labels.isin(["oil", "gas", "water"]).all():
+    if fc is not None and not labels.isin(["oil", "gas", "water"]).all():
         raise ValueError("FLUID must identify oil/gas/water; supply fluid_map for coded curves")
     selected = pd.Series(True, index=frame.index)
     if uc is not None:

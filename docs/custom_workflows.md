@@ -213,6 +213,8 @@ field[columns].style.hide(axis="index").format(precision=2)
 ```{code-cell} python
 :tags: [remove-input]
 import matplotlib.pyplot as plt
+from petrophys.visualization import use_plot_style
+use_plot_style()
 
 ranked = field.sort_values("Net Pay")
 fig, ax = plt.subplots(figsize=(8, 4.5))

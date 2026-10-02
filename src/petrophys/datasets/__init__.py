@@ -111,7 +111,7 @@ def integration_fixture(name: str) -> Path:
     """Return the path to an optional repository integration fixture.
 
     ``name`` may be a complete filename or an unambiguous file stem. Missing
-    fixtures raise ``FileNotFoundError`` so callers can skip optional tests or
+    fixtures raise ``FileNotFoundError`` so callers can skip optional examples or
     ask contributors to run ``git lfs pull``.
     """
     key = str(name).strip().lower()

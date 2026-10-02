@@ -8,6 +8,8 @@ viewer pages. This module only adds specialist panels for NMR and FMI data.
 
 from __future__ import annotations
 
+from petrophys.visualization.style import _styled_plot
+
 import warnings
 from typing import TYPE_CHECKING, Optional, Sequence, Tuple
 
@@ -50,6 +52,7 @@ def has_nmr_curves(well: "Well") -> bool:
     )
 
 
+@_styled_plot
 def create_nmr_panel(
     well: "Well",
     depth_range: Optional[Tuple[float, float]] = None,
@@ -150,6 +153,7 @@ def create_nmr_panel(
     return fig
 
 
+@_styled_plot
 def create_fmi_panel(
     fmi_image: BoreholeImageData,
     depth_range: Optional[Tuple[float, float]] = None,

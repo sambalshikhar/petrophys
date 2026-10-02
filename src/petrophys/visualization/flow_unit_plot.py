@@ -8,6 +8,8 @@ confirm the unit partitioning.
 
 from __future__ import annotations
 
+from petrophys.visualization.style import _styled_plot
+
 from typing import Optional, Tuple
 
 import numpy as np
@@ -21,6 +23,7 @@ except Exception:  # pragma: no cover
 from petrophys.evaluation.flow_units import calculate_flow_units, FlowUnitResult
 
 
+@_styled_plot
 def create_flow_unit_plot(
     result: Optional[FlowUnitResult] = None,
     phi_e=None,

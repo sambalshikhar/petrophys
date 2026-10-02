@@ -17,7 +17,7 @@ resolves cross-references to it, so ``petrophys.read`` and
 
 Names a module exports but no curated group lists fall into automatic
 Functions, Classes and Constants groups, so the reference never drifts from
-the code. ``tests/test_api_reference.py`` checks the plan without Sphinx.
+the code.
 """
 
 from __future__ import annotations
@@ -160,7 +160,7 @@ The rest of the reference documents what these calls are built from.""",
                 "petrophys.io",
                 "Reading and writing files",
                 key="petrophys.io.read_las petrophys.io.read_formations "
-                "petrophys.io.read_well_parameters petrophys.io.export_las",
+                "petrophys.io.read_lithology_intervals petrophys.io.export_las",
                 sections=[
                     Section(
                         "petrophys.io",
@@ -171,10 +171,9 @@ The rest of the reference documents what these calls are built from.""",
                                 "read_csv_wells read_ascii",
                             ),
                             (
-                                "Formations, lithology, parameters and core",
+                                "Formations and lithology",
                                 "read_formations read_lithology_intervals "
-                                "read_lithology_codes read_well_parameters "
-                                "attach_core_measurements",
+                                "read_lithology_codes",
                             ),
                             ("Export", "export_las export_csv export_excel"),
                             ("Reader classes", "LASReader DLISReader"),
@@ -434,6 +433,16 @@ The rest of the reference documents what these calls are built from.""",
                                 "Formation pressure and free-water level",
                                 "read_formation_pressure fit_pressure_fwl "
                                 "FormationPressureData PressureGradient PressureFWLResult",
+                            ),
+                            (
+                                "Unlabeled pressure contacts",
+                                "infer_pressure_contacts PressureBranch PressureContact "
+                                "PressureContactResult",
+                            ),
+                            (
+                                "Raw MDT pretest pressure picking",
+                                "read_mdt_pretest pick_mdt_pressure formation_pressures_from_mdt "
+                                "MDTPickingConfig MDTPretest MDTBuildup MDTPressurePick",
                             ),
                         ],
                     ),
@@ -850,7 +859,8 @@ The rest of the reference documents what these calls are built from.""",
                 description="NMR, borehole-image and XRF panels, saturation-height "
                 "type curves and formation-pressure plots.",
                 names="create_nmr_panel has_nmr_curves create_fmi_panel create_xrf_panel "
-                "create_saturation_height_plot create_formation_pressure_plot",
+                "create_saturation_height_plot create_formation_pressure_plot "
+                "create_pressure_contact_plot create_mdt_pretest_plot",
             ),
             Section(
                 VIZ,

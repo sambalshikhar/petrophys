@@ -489,7 +489,10 @@ class BoreholeImageData:
             raise ImportError("matplotlib is required for plotting")
 
         if ax is None:
-            _, ax = plt.subplots(figsize=(5, 10))
+            from petrophys.visualization.style import plot_style
+
+            with plot_style():
+                _, ax = plt.subplots(figsize=(5, 10))
 
         data = self.filter_by_depth(*depth_range) if depth_range else self
         image = data.normalized_image() if normalize else data.image

@@ -6,6 +6,8 @@ straight off the plot, the way Techlog / Interactive Petrophysics / Geolog show 
 
 from __future__ import annotations
 
+from petrophys.visualization.style import _styled_plot
+
 from typing import Optional, Tuple
 
 import numpy as np
@@ -58,6 +60,7 @@ def _scatter(ax, x, y, c, clabel, fig, cmap="viridis", norm=None):
         ax.scatter(x, y, s=6, alpha=0.6, color="0.3")
 
 
+@_styled_plot
 def create_nd_crossplot(
     well, color_curve: str = "GR", depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
@@ -92,6 +95,7 @@ def create_nd_crossplot(
     return fig
 
 
+@_styled_plot
 def create_mn_plot(
     well, color_curve: str = "GR", depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
@@ -131,6 +135,7 @@ def create_mn_plot(
     return fig
 
 
+@_styled_plot
 def create_mid_plot(
     well, color_curve: str = "GR", depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
@@ -169,6 +174,7 @@ def create_mid_plot(
     return fig
 
 
+@_styled_plot
 def create_buckles_plot(
     well, phie_curve: str = "PHIE", sw_curve: str = "SW",
     color_curve: str = "PERM", depth_range: Optional[Tuple[float, float]] = None,
@@ -210,6 +216,7 @@ def create_buckles_plot(
     return fig
 
 
+@_styled_plot
 def create_hingle_plot(
     well, rw: float = 0.05, m: float = 2.0, n: float = 2.0,
     phie_curve: str = "PHIE", rt_curve: str = "RDEP", color_curve: str = "VCL",

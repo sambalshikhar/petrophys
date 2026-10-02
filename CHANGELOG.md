@@ -15,8 +15,9 @@ All notable changes to Petrophys are documented here.
   (previously, typos such as `hc_type="gass"` silently used defaults).
 - `DynamicWorkflowConfig` uses `lithology_domain` to distinguish the
   clastic and carbonate mineral routes from per-depth lithology labels.
-  `matrix_type` and the domain default to `"auto"`; insufficient evidence
-  resolves to sandstone/clastic with a recorded warning.
+  `lithology_domain` defaults to `"clastic"` (set `"carbonate"` for
+  carbonates, or `"auto"` to resolve it from the data); `matrix_type`
+  defaults to `"auto"` within the domain's matrices.
 - Tabular readers (`io.read_csv`, `read_csv_wells`, `read_ascii` without a
   units row, `Well.from_dataframe`) require `depth_unit` instead of assuming
   feet. `Well.depth_unit` accepts only metre or foot labels.
@@ -26,6 +27,14 @@ All notable changes to Petrophys are documented here.
 
 ### Added
 
+- Raw MDT pretest pressure picking through `read_mdt_pretest` and
+  `pick_mdt_pressure`, configurable buildup QC, review flags, and a library
+  plot of selected windows. `formation_pressures_from_mdt` passes accepted
+  picks to station interpretation with explicit TVD metadata. Tutorial 15
+  verifies the picker against 35 native C0020A LAS traces and their report.
+- Unlabeled station-pressure contact inference through `infer_contacts`,
+  exposing competing fluid hypotheses and unresolved contacts. The existing
+  labeled FWL fit remains available.
 - Public `build_context` / `export_context` and `petrophys-context` CLI with
   schema version 1.0, UTF-8 byte budgets, staged package publication and
   overwrite protection. The CLI always computes its context from input data.
@@ -149,12 +158,12 @@ All notable changes to Petrophys are documented here.
 - Net-pay trace decisions report thicknesses in the well's depth unit; feet
   wells (e.g. the COSTA set) were labelled "m". The core-on-logs plot title
   uses the well's unit too.
-- An explicit `lithology_domain` now keeps `matrix_type="auto"` inside that
-  domain: "carbonate" resolves to limestone or dolomite (the evidence picks
-  between them) and "clastic" to sandstone. When the matrix evidence points
-  elsewhere, the domain wins and a warning names the conflict. With
-  `lithology_domain="auto"` (the default) the evidence still decides both,
-  falling back to sandstone/clastic.
+- `lithology_domain` now keeps `matrix_type="auto"` inside its family:
+  "carbonate" resolves to limestone or dolomite (the evidence picks between
+  them) and "clastic", the default, to sandstone. When the matrix evidence
+  points elsewhere, the domain wins and a warning names the conflict (on a
+  default run it suggests `lithology_domain="carbonate"`). With
+  `lithology_domain="auto"` the evidence decides both.
 - Warnings escalated to errors (for example
   `warnings.simplefilter("error", pp.DataQualityWarning)`) now stop
   `pp.interpret` instead of being recorded as a failed step.

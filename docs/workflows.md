@@ -41,6 +41,8 @@ print(result.status, "|", result.lithology_domain, "|",
 ```{code-cell} python
 :tags: [remove-input]
 import matplotlib.pyplot as plt
+from petrophys.visualization import use_plot_style
+use_plot_style()
 from matplotlib.patches import FancyBboxPatch, Patch
 from petrophys.workflow import workflow_steps
 
@@ -138,17 +140,17 @@ pd.DataFrame([{"setting": name, "default": repr(schema[name]["default"]),
               for name in used_most]).style.hide(axis="index")
 ```
 
-In the well-parameter template, `gr_clean` and `gr_shale` map to `gr_min` and `gr_max`.
-
 ## Lithology domain
 
-`lithology_domain` picks the mineral solver. It is not a per-depth rock label: lithology intervals from {doc}`input_templates` supply those, and take precedence over computed labels.
+`lithology_domain` picks the mineral solver and keeps the automatic matrix within its family. It defaults to `clastic`: set `carbonate` for carbonate wells. It is not a per-depth rock label: lithology intervals from {doc}`input_templates` supply those, and take precedence over computed labels.
 
 | Domain | Mineral solver | Needs |
 |---|---|---|
-| `clastic` | canonical multi-mineral solve with a closure gate | RHOB, NPHI, VCL (PEF or DTC add information) |
-| `carbonate` | COSTA method: illite from GR, then a bounded calcite-dolomite solve | RHOB, GR, PHIT or PHIE |
+| `clastic` (default) | canonical multi-mineral solve with a closure gate; sandstone matrix | RHOB, NPHI, VCL (PEF or DTC add information) |
+| `carbonate` | COSTA method: illite from GR, then a bounded calcite-dolomite solve; limestone or dolomite matrix | RHOB, GR, PHIT or PHIE |
 | `auto` | resolved from attached or embedded geology; falls back to clastic with a warning | |
+
+If the data point to a carbonate while the domain is `clastic`, the run keeps the sandstone matrix and warns you to set `lithology_domain="carbonate"`.
 
 Here the clastic run on 30/6-5 is set against a carbonate run on the COSTA well HW-3:
 

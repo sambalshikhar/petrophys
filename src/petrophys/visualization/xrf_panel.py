@@ -7,6 +7,8 @@ display uses in Techlog / Geolog.
 
 from __future__ import annotations
 
+from petrophys.visualization.style import _styled_plot
+
 from typing import Optional, Tuple
 
 import numpy as np
@@ -33,6 +35,7 @@ _PROXY_COLORS = [
 ]
 
 
+@_styled_plot
 def create_xrf_panel(
     xrf,
     depth_range: Optional[Tuple[float, float]] = None,

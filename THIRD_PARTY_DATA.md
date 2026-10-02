@@ -111,6 +111,23 @@ the drawn gradient lines. Fluid labels, pixel calibration, rounding and the
 subset selection are documented in `35_11_10_source_manifest.json`. These
 derivatives have the same attribution and licence qualification stated above.
 
+## JAMSTEC C0020A native MDT pretests
+
+Files: `src/petrophys/datasets/formation_pressure/c0020a_mdt_*`.
+Originator: **Schlumberger**, acquired for **JAMSTEC**, IODP Expedition 337,
+well C0020A, Run 4 XLD probe, September 2012. Public custodian: JAMSTEC's
+[Sio7 logging archive](https://www.jamstec.go.jp/sio7/well-logging/337/C0020A/).
+
+The 35 LAS traces retain original bytes and source headers; filenames alone
+were shortened. The associated pretest report is unchanged. The reference CSV
+is a Petrophys transcription of per-test formation pressures/statuses, with
+null formation pressure for failed tests. Exact source URLs, original filenames,
+report pages and SHA-256 checksums are recorded in the collection manifest.
+These data are used for scientific/educational reproducibility. JAMSTEC
+[identifies IODP policy as governing IODP cruise data](https://www.jamstec.go.jp/mare3/e/information/sampledata.html).
+No separate software-style licence is embedded in the delivery; it is not
+relicensed as MIT code, and no supplier endorsement of our picker is claimed.
+
 ## GeoLink
 
 Files: `src/petrophys/datasets/geolink/*.las` and the associated 30/6-5

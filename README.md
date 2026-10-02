@@ -264,7 +264,7 @@ dependency rules.
 ## Contributing
 
 Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the
-development setup, tests, and pull-request checklist.
+development setup, verification commands, and pull-request checklist.
 
 ## License
 
