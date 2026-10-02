@@ -43,6 +43,8 @@ class VclResult:
     vcl_sp: Optional[np.ndarray] = None
     vcl_nd: Optional[np.ndarray] = None
     method_used: Optional[np.ndarray] = None
+    gr_min_used: Optional[float] = None
+    gr_max_used: Optional[float] = None
 
 
 class VclModule:
@@ -229,6 +231,8 @@ class VclModule:
         vcl_gr = None
         vcl_sp = None
         vcl_nd = None
+        gr_min_used = None
+        gr_max_used = None
 
         # GR method (primary). When the default "GR" is requested, fall back to the
         # GR family (computed/spectral) so a well that only carries CGR/SGR is still
@@ -238,6 +242,8 @@ class VclModule:
         gr_data, _, _ = get_curve_data_depthwise(well, gr_candidates)
         if gr_data is not None:
             gr_min, gr_max = self._resolve_gr_baselines(gr_data)
+            gr_min_used = min(float(gr_min), 20.0)
+            gr_max_used = max(float(gr_max), 100.0)
             vcl_gr = vcl_from_gr(
                 gr_data, gr_min, gr_max, self.gr_method
             )
@@ -310,7 +316,9 @@ class VclModule:
             vcl_gr=vcl_gr,
             vcl_sp=vcl_sp,
             vcl_nd=vcl_nd,
-            method_used=method_used
+            method_used=method_used,
+            gr_min_used=gr_min_used,
+            gr_max_used=gr_max_used,
         )
 
     def add_to_well(

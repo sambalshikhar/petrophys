@@ -84,6 +84,12 @@ PARAMETER_ALIASES: dict[str, str] = {
     "PNMA": "nphi_ma",
     "RBFL": "rho_fl",
     "RBSH": "rho_cl",
+    "GR_METHOD": "gr_method",
+    "GR_MIN": "gr_min",
+    "GR_MAX": "gr_max",
+    "VCL_CUTOFF": "vcl_cutoff",
+    "PHIE_CUTOFF": "phie_cutoff",
+    "SW_CUTOFF": "sw_cutoff",
 }
 
 DIRECT_INTERVAL_METADATA: set[str] = set()
@@ -535,13 +541,17 @@ def _apply_parameter_alias(
 
     if target in {
         "mud_type", "mud_water", "lithology", "lithology_domain",
-        "matrix_type", "hc_type",
+        "matrix_type", "hc_type", "gr_method",
     }:
         overrides[target] = _normalize_text(value)
         return
 
     if target in {"apply_hc_correction"}:
         overrides[target] = _parse_bool(value)
+        return
+
+    if target in {"gr_min", "gr_max"} and _normalize_text(value).lower() == "auto":
+        overrides[target] = None
         return
 
     try:

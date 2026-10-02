@@ -213,6 +213,48 @@ use `--lithology-domain carbonate`. Existing LAS core curves such as `PHIC`,
 interpreted copy. Log-derived saturation remains the primary `SW` result;
 core saturation is supporting evidence, not an automatic replacement.
 
+The GR equation can also be declared in the LAS parameter section. For example:
+
+```text
+GR_METHOD. steiber : Gamma-ray clay-volume transform
+GR_MIN.API 20 : Clean-rock gamma-ray endpoint
+GR_MAX.API 100 : Shale gamma-ray endpoint
+```
+
+`GR_METHOD` accepts `linear`, `larionov_tertiary`, `larionov_older`, `steiber`
+and `clavier`; `linear` remains the default. The workflow trace and context
+notes record the equation and the endpoints actually applied. These settings
+are read per well, including when `--lithology-domain` is supplied. Explicit
+Python settings override the LAS values.
+
+The values 20 and 100 API are bounds, not fixed endpoints for every well:
+`GRclean = min(GRmin, 20)` and `GRshale = max(GRmax, 100)`. A lower GR minimum
+or higher GR maximum is retained; only a minimum above 20 or a maximum below
+100 is replaced. For example, selected endpoints of 10.3/71.4 become
+10.3/100, while 10/140 stay 10/140. With the module defaults, finite log
+minimum/maximum values determine whether the endpoints extend beyond 20/100.
+The same bounds apply to explicitly supplied endpoint estimates.
+
+To select the finite GR 5th/95th percentiles instead of the log extrema,
+set `GR_MIN` and `GR_MAX` to `auto` in LAS metadata, or pass
+`gr_min=None, gr_max=None` to `pp.interpret`. The percentiles are calculated
+from the input GR samples on each run, then the same 20/100 bounds apply.
+
+```text
+GR_MIN.API auto : Calculate clean endpoint from GR P5
+GR_MAX.API auto : Calculate shale endpoint from GR P95
+PHIE_CUTOFF.v/v 0.08 : Explicit net-reservoir porosity cutoff
+```
+
+`VCL_CUTOFF`, `PHIE_CUTOFF` and `SW_CUTOFF` are optional LAS parameters for
+explicit cutoffs. Leaving them absent retains the workflow defaults;
+supplying `PHIE_CUTOFF` makes that value apply to every lithology in the well.
+
+When external lithology intervals are selected, context grouping and lithology
+summaries use their labels. Gaps stay unclassified even if a different LAS
+lithology curve is present. A formation's descriptive majority lithology should
+only be supplied as calculation lithology when that interpretation is intended.
+
 (core-saturation-units)=
 ## Core saturation units
 

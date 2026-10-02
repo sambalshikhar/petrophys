@@ -56,3 +56,96 @@ def test_interpret_preserves_native_las_rw_provenance():
     assert rw_step.parameters["source_priority"] == "las.RW"
     assert rw_step.parameters["rw_at_measured_temp"] == pytest.approx(0.07)
     assert rw_step.parameters["measured_temp_f"] == pytest.approx(230.0)
+
+
+@pytest.mark.parametrize("method", ["linear", "larionov_tertiary", "steiber"])
+def test_gr_equation_from_las_metadata_is_used_by_api_and_context(method):
+    from petrophys.reporting.reference_export import _context_workflow_config
+    from petrophys.workflow import run_dynamic_workflow_with_zones
+
+    well = _well()
+    well.add_curve("GR", np.array([20.0, 40.0, 60.0, 100.0]), "API")
+    well.set_parameter("GR_METHOD", method)
+    well.set_parameter("GR_MIN", 20.0)
+    well.set_parameter("GR_MAX", 100.0)
+    igr = np.array([0.0, 0.25, 0.5, 1.0])
+    expected = {
+        "linear": igr,
+        "larionov_tertiary": np.clip(0.083 * (2 ** (3.7 * igr) - 1), 0, 1),
+        "steiber": igr / (3 - 2 * igr),
+    }[method]
+
+    result = pp.interpret(well)
+    np.testing.assert_allclose(result.well["VCL"].data, expected)
+    config = _context_workflow_config(well=well)
+    packaged = run_dynamic_workflow_with_zones(well, config)
+    np.testing.assert_allclose(packaged.well["VCL"].data, expected)
+    assert next(s for s in packaged.base_result.steps_executed if s.step == "vclay").method == method
+
+    overridden = pp.interpret(well, gr_method="linear")
+    np.testing.assert_allclose(overridden.well["VCL"].data, igr)
+
+
+def test_vcl_trace_reports_the_endpoints_used_in_the_equation():
+    from petrophys.reporting.reference_export import _curve_route_reason, _vcl_curve_note
+
+    well = _well()
+    well.add_curve("GR", np.array([0.0, 40.0, 100.0, 160.0]), "API")
+    result = pp.interpret(well)
+    trace = next(s for s in result.steps_executed if s.step == "vclay")
+
+    assert trace.parameters["gr_min_used"] == 0.0
+    assert trace.parameters["gr_max_used"] == 160.0
+    np.testing.assert_allclose(result.well["VCL"].data, [0, 0.25, 0.625, 1])
+    assert "IGR=clip((GR-0)/(160-0),0,1)" in _vcl_curve_note(trace)
+    reason = _curve_route_reason("VCL", trace, result.well)
+    assert "GRmin=0 API, GRmax=160 API" in reason
+
+
+def test_las_auto_gr_endpoints_are_computed_from_samples(tmp_path):
+    from petrophys.io import export_las
+    from petrophys.reporting.reference_export import _read_context_input_well
+    from petrophys.workflow import run_dynamic_workflow_with_zones
+
+    well = _well()
+    well.add_curve("GR", np.array([0.0, 40.0, 100.0, 160.0]), "API")
+    well.set_parameter("GR_MIN", "AUTO")
+    well.set_parameter("GR_MAX", "auto")
+    path = tmp_path / "well.las"
+    export_las(well, path)
+    loaded = pp.read(path)
+    result = pp.interpret(loaded)
+    expected = [0, 34 / 145, 94 / 145, 1]
+    np.testing.assert_allclose(result.well["VCL"].data, expected)
+    trace = next(s for s in result.steps_executed if s.step == "vclay")
+    assert trace.parameters["gr_min_used"] == pytest.approx(6.0)
+    assert trace.parameters["gr_max_used"] == pytest.approx(151.0)
+
+    context_well, config = _read_context_input_well(path)
+    assert config.gr_min is None and config.gr_max is None
+    packaged = run_dynamic_workflow_with_zones(context_well, config)
+    np.testing.assert_allclose(packaged.well["VCL"].data, expected)
+
+    overridden = pp.interpret(loaded, gr_min=10.0, gr_max=150.0)
+    np.testing.assert_allclose(overridden.well["VCL"].data, [0, 30 / 140, 90 / 140, 1])
+
+
+def test_las_cutoffs_override_lithology_defaults():
+    well = _well()
+    phi = np.array([0.06, 0.09, 0.05, 0.1])
+    well.add_curve("LITHOLOGY_GEOLINK", np.full(4, 9.0), "")
+    well.add_curve("GR", np.zeros(4), "API")
+    well.add_curve("RHOB", 2.71 - 1.71 * phi, "g/cc")
+    well.add_curve("NPHI", phi, "v/v")
+    well.add_curve("RDEP", np.full(4, 10.0), "ohm.m")
+    well.set_parameter("VCL_CUTOFF", 0.3)
+    well.set_parameter("PHIE_CUTOFF", 0.08)
+    well.set_parameter("SW_CUTOFF", 0.7)
+    result = pp.interpret(well).raise_for_errors()
+    assert result.config.vcl_cutoff == 0.3
+    assert result.config.phie_cutoff == 0.08
+    assert result.config.sw_cutoff == 0.7
+    np.testing.assert_array_equal(result.well["NET_RES"].data, [0, 1, 0, 1])
+    np.testing.assert_array_equal(result.well["RESFLAG"].data, [0, 1, 0, 1])
+    overridden = pp.interpret(well, phie_cutoff=0.045)
+    np.testing.assert_array_equal(overridden.well["NET_RES"].data, [1, 1, 1, 1])

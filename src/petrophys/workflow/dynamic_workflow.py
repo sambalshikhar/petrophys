@@ -1432,6 +1432,7 @@ class DynamicWorkflow:
                 "dolo": "dolomite", "salt": "halite",
             }
             unknown = set()
+            category_groups = {}
             for row in table.itertuples():
                 key = str(row.lithology).strip().lower()
                 group = aliases.get(key, key)
@@ -1441,11 +1442,14 @@ class DynamicWorkflow:
                 mask = (well.depth >= row.top) & (well.depth < row.bottom)
                 if row.bottom == table["bottom"].max():
                     mask |= well.depth == row.bottom
-                codes[mask] = labels.index(row.lithology) + 1
+                code = labels.index(row.lithology) + 1
+                codes[mask] = code
                 groups[mask] = group
+                category_groups[code] = group
             well.add_curve("LITHO_CLASS", codes, "", "External lithology categories")
             well["LITHO_CLASS"].metadata.custom.update({
                 "category_labels": {index + 1: label for index, label in enumerate(labels)},
+                "category_groups": category_groups,
                 "source": "external", "code_scheme": "local_categories",
             })
             self._lithology_log = groups
@@ -2631,6 +2635,10 @@ class DynamicWorkflow:
         )
         curve_mapping = {"gr": gr_curve_name} if gr_curve_name else None
         result = vcl_module.calculate(well, curves=curve_mapping)
+        if result.gr_min_used is not None:
+            decisions.append(
+                f"Applied GR endpoints: {result.gr_min_used:g} to {result.gr_max_used:g} API"
+            )
 
         inputs = []
         if gr_curve is not None:
@@ -2668,6 +2676,7 @@ class DynamicWorkflow:
         trace.output_curves = outputs
         trace.parameters = {
             "gr_min": gr_min, "gr_max": gr_max,
+            "gr_min_used": result.gr_min_used, "gr_max_used": result.gr_max_used,
             "gr_curve": gr_curve_name,
             "gr_method": self.config.gr_method,
             "use_sp": use_sp, "use_nd": use_nd,

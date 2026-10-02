@@ -152,9 +152,9 @@ def vcl_from_gr(
     gr : float or np.ndarray
         Gamma ray values (API)
     gr_min : float
-        Clean formation GR (default 20 API)
+        Clean formation GR estimate (API); applied as min(gr_min, 20).
     gr_max : float
-        Shale GR (default 100 API)
+        Shale GR estimate (API); applied as max(gr_max, 100).
     method : str, optional
         Method to use:
         - "linear": Linear IGR
