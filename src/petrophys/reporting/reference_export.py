@@ -2474,23 +2474,23 @@ _STEP_SPECIFIC_METHOD_LABELS: dict[tuple[str, str], str] = {
 def _context_workflow_config(
     config: Optional["DynamicWorkflowConfig"] = None,
     *,
-    parameters_file: Optional[str | Path] = None,
-    well_name: Optional[str] = None,
+    well: Optional["Well"] = None,
     lithology_file: Optional[str | Path] = None,
 ) -> "DynamicWorkflowConfig":
-    """Build the canonical workflow configuration from standardized inputs."""
+    """Build the canonical workflow configuration from LAS and geology inputs."""
     import dataclasses
 
-    from petrophys.io import read_well_parameters
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
+    from petrophys.workflow.zoned_batch import lithology_domain_from_metadata
 
-    options = (
-        read_well_parameters(parameters_file, well_name=well_name)
-        if parameters_file is not None else {}
-    )
+    options = {}
     if lithology_file is not None:
         options.update(lithology_intervals=lithology_file, lithology_source="external")
     if config is None:
+        if "lithology_domain" not in options and well is not None:
+            metadata_domain = lithology_domain_from_metadata(well)
+            if metadata_domain is not None:
+                options["lithology_domain"] = metadata_domain
         options.setdefault("matrix_type", "sandstone")
         options.setdefault("lithology_domain", "clastic")
         return DynamicWorkflowConfig(**options)
@@ -2504,24 +2504,17 @@ def _context_workflow_config(
 def _read_context_input_well(
     file_path: Path,
     *,
-    parameters_file: Optional[str | Path] = None,
     lithology_file: Optional[str | Path] = None,
-    core_file: Optional[str | Path] = None,
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
 ):
-    """Read one LAS and apply every standardized, well-specific input."""
-    from petrophys.io import attach_core_measurements
-
+    """Read one LAS and apply optional lithology input."""
     well = read_las(file_path)
     well = standardize_curves(well, rename_curves=True, convert_units=True)
     config = _context_workflow_config(
         workflow_config,
-        parameters_file=parameters_file,
-        well_name=well.name,
+        well=well,
         lithology_file=lithology_file,
     )
-    if core_file is not None:
-        attach_core_measurements(well, core_file, well_name=well.name)
     return well, config
 
 
@@ -7273,15 +7266,13 @@ def export_reference_json_work_package_by_formation_lithology(
     lithology_mapping_file: Optional[str | Path] = None,
     tops_options: Optional[dict] = None,
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
-    parameters_file: Optional[str | Path] = None,
     lithology_file: Optional[str | Path] = None,
-    core_file: Optional[str | Path] = None,
 ) -> List[ExampleFormatExportResult]:
     """Write reference-format contexts per formation and lithology group.
 
-    Each well is read with its standardized inputs (well parameters,
-    lithology intervals and core data, when given), interpreted as a whole
-    well and written to ``<output_dir>/<well>/<well>.las``. Each formation is
+    Each well is read with its LAS metadata and optional lithology intervals,
+    interpreted as a whole well and written to
+    ``<output_dir>/<well>/<well>.las``. Each formation is
     then interpreted on its own and split into lithology groups: runs of
     consecutive samples with the same lithology, taken from
     ``LITHOLOGY_GEOLINK`` or else the computed ``LITHO`` curve. Every group
@@ -7315,17 +7306,11 @@ def export_reference_json_work_package_by_formation_lithology(
         Options for reading ``tops_file``: ``rank``, ``sheet_name``,
         ``columns`` or ``sep``.
     workflow_config : DynamicWorkflowConfig, optional
-        Interpretation settings; values from ``parameters_file`` take
-        precedence for each well. Without it, the defaults are used with a
-        sandstone matrix and the clastic lithology domain.
-    parameters_file : str or Path, optional
-        Per-well interpretation settings (see
-        :func:`~petrophys.io.read_well_parameters`).
+        Interpretation settings. Without it, LAS metadata is used when
+        available, then the defaults are used with a sandstone matrix and the
+        clastic lithology domain.
     lithology_file : str or Path, optional
         Per-depth lithology intervals for the wells.
-    core_file : str or Path, optional
-        Core measurements to attach to each well (see
-        :func:`~petrophys.io.attach_core_measurements`).
 
     Returns
     -------
@@ -7367,9 +7352,7 @@ def export_reference_json_work_package_by_formation_lithology(
         try:
             full_well, well_config = _read_context_input_well(
                 file_path,
-                parameters_file=parameters_file,
                 lithology_file=lithology_file,
-                core_file=core_file,
                 workflow_config=workflow_config,
             )
             formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
@@ -7538,11 +7521,9 @@ def export_reference_json_work_package_by_category_formation_lithology(
     lithology_mapping_file: Optional[str | Path] = None,
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
     tops_options: Optional[dict] = None,
-    parameters_file: Optional[str | Path] = None,
     lithology_file: Optional[str | Path] = None,
-    core_file: Optional[str | Path] = None,
 ) -> List[ExampleFormatExportResult]:
-    """Generate category contexts from LAS and standardized input tables."""
+    """Generate category contexts from LAS and optional geology inputs."""
     from petrophys.workflow.zoned_batch import (
         _finalize_export_curves,
         run_dynamic_workflow_with_zones,
@@ -7570,9 +7551,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
         try:
             full_well, well_config = _read_context_input_well(
                 file_path,
-                parameters_file=parameters_file,
                 lithology_file=lithology_file,
-                core_file=core_file,
                 workflow_config=workflow_config,
             )
             formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)

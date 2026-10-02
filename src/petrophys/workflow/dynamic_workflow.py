@@ -533,10 +533,10 @@ class DynamicWorkflowConfig:
     dt_fl: float = 189.0
 
     # -- Lithology -----------------------------------------------------------
-    #: Broad interpretation domain: ``"auto"``, ``"clastic"``,
-    #: ``"carbonate"`` or ``"evaporite"``. This selects the mineral-solving
-    #: family and cutoff defaults; it is distinct from per-depth lithology.
-    lithology_domain: str = "auto"
+    #: Broad interpretation domain: ``"clastic"`` (default), ``"carbonate"``,
+    #: ``"evaporite"`` or ``"auto"``. This selects the mineral-solving family
+    #: and cutoff defaults; it is distinct from per-depth lithology.
+    lithology_domain: str = "clastic"
     #: Deprecated alias for ``lithology_domain``. It remains accepted so old
     #: notebooks fail gracefully while new inputs use the unambiguous name.
     lithology: Optional[str] = None
@@ -636,7 +636,7 @@ class DynamicWorkflowConfig:
     def __post_init__(self) -> None:
         if self.lithology is not None:
             alias = str(self.lithology).strip()
-            if self.lithology_domain != "auto" and alias.lower() != str(self.lithology_domain).lower():
+            if self.lithology_domain not in {"auto", "clastic"} and alias.lower() != str(self.lithology_domain).lower():
                 raise ValueError(
                     "Supply lithology_domain only; the deprecated lithology alias conflicts with it."
                 )

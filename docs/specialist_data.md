@@ -19,12 +19,10 @@ NMR, spectral gamma, core, saturation-height and borehole-image data each have t
 import warnings
 
 import matplotlib.pyplot as plt
-import pandas as pd
 
 # 30/6-5 labels its percent core saturations (SWC, SOC) as fractions; Petrophys
 # converts them to v/v and warns. The page explains this once, in the text.
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
-pd.set_option("display.max_colwidth", None)
 plt.rcParams.update({"font.size": 9})
 ```
 
@@ -36,7 +34,6 @@ The bundled Daydream 1 file is a vendor CMR summary, with GR and calipers.
 ```{code-cell} python
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import petrophys as pp
 from petrophys.interpretation.nmr import NMRData
 from petrophys.visualization import create_nmr_panel
@@ -140,7 +137,7 @@ Where uranium dominates, GR over-reads clay and thorium is the safer clay indica
 
 ## Core data and calibration: 30/6-5
 
-{func}`pp.attach_core_measurements <petrophys.io.attach_core_measurements>` checks a lab table's units and depths, then puts each plug on the nearest log row. The 30/6-5 plugs, which ship inside its LAS, stand in for a lab table here. That LAS labels its percent core SWC and SOC as fractions; Petrophys converts them with a warning, hidden on this page.
+The 30/6-5 LAS contains core porosity, permeability, grain-density and saturation curves. {func}`~petrophys.interpretation.core_analysis.core_data_from_well` reads those embedded measurements directly. The LAS labels its percent core SWC and SOC as fractions; Petrophys detects and converts them to fractions with a warning, hidden on this page.
 
 ```{code-cell} python
 from petrophys.interpretation.core_analysis import (
@@ -148,20 +145,7 @@ from petrophys.interpretation.core_analysis import (
     fit_poro_perm_transform,
 )
 
-lab = pp.read(pp.sample("30_6-5")).to_dataframe().dropna(subset=["PHIC"])
-core_table = pd.DataFrame({
-    "well": "30/6-5", "depth": lab["DEPTH"].round(2), "depth_unit": "m",
-    "core_porosity": lab["PHIC"], "porosity_unit": "fraction",
-    "core_permeability": lab["KH_CORE"], "permeability_unit": "mD",
-    "grain_density": lab["GDEN"],
-})
 logs = pp.read(pp.sample("30_6-5"))
-for name in ["PHIC", "KH_CORE", "KV_CORE", "GDEN", "SWC", "SOC"]:
-    logs.remove_curve(name)                   # a log-only well
-report = pp.attach_core_measurements(logs, core_table)
-print(f"{report['input_rows']} plugs attached as {report['curves']}, "
-      f"each within {report['alignment_tolerance']:.2f} {report['depth_unit']} of a row")
-
 core = core_data_from_well(logs)
 print(core)
 ```

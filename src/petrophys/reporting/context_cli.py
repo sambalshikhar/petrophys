@@ -1,4 +1,4 @@
-"""Generate context by computing LAS data with standardized input tables."""
+"""Generate context by computing LAS data and optional geology inputs."""
 
 from __future__ import annotations
 
@@ -20,10 +20,9 @@ def _path_from_env(name: str) -> Path | None:
 
 def _add_standard_inputs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--parameters",
-        type=Path,
-        default=_path_from_env("PETROPHYS_PARAMETERS_FILE"),
-        help="Well-parameter CSV/TSV/Excel table",
+        "--lithology-domain",
+        choices=("clastic", "carbonate", "evaporite", "auto"),
+        help="Broad mineral-solving domain; defaults to LAS metadata or clastic",
     )
     parser.add_argument(
         "--formations",
@@ -36,12 +35,6 @@ def _add_standard_inputs(parser: argparse.ArgumentParser) -> None:
         type=Path,
         default=_path_from_env("PETROPHYS_LITHOLOGY_FILE"),
         help="Optional per-depth lithology intervals table",
-    )
-    parser.add_argument(
-        "--core",
-        type=Path,
-        default=_path_from_env("PETROPHYS_CORE_FILE"),
-        help="Optional core measurements table",
     )
     parser.add_argument(
         "--lithology-codes",
@@ -86,11 +79,9 @@ def build_package_parser(layout: str) -> argparse.ArgumentParser:
 
 
 def _package_options(args: argparse.Namespace) -> dict:
-    return {
+    options = {
         "tops_file": args.formations,
-        "parameters_file": args.parameters,
         "lithology_file": args.lithology,
-        "core_file": args.core,
         "lithology_mapping_file": args.lithology_codes,
         "pattern": args.pattern,
         "recursive": args.recursive,
@@ -105,6 +96,13 @@ def _package_options(args: argparse.Namespace) -> dict:
             if value is not None
         },
     }
+    if args.lithology_domain is not None:
+        from petrophys.workflow import DynamicWorkflowConfig
+
+        options["workflow_config"] = DynamicWorkflowConfig(
+            lithology_domain=args.lithology_domain
+        )
+    return options
 
 
 def package_main(layout: str, argv=None) -> int:
@@ -127,8 +125,8 @@ def package_main(layout: str, argv=None) -> int:
 
 def _single_well_result(args: argparse.Namespace):
     from petrophys.api import interpret, read
-    from petrophys.io import attach_core_measurements, read_well_parameters
     from petrophys.workflow import DynamicWorkflowConfig
+    from petrophys.workflow.zoned_batch import lithology_domain_from_metadata
 
     reader_options = {"depth_unit": args.depth_unit} if args.depth_unit else {}
     well = read(
@@ -137,13 +135,12 @@ def _single_well_result(args: argparse.Namespace):
         lithology=args.lithology,
         **reader_options,
     )
-    if args.core is not None:
-        attach_core_measurements(well, args.core, well_name=well.name)
-    settings = (
-        read_well_parameters(args.parameters, well_name=well.name)
-        if args.parameters is not None
-        else {}
-    )
+    settings = {}
+    metadata_domain = lithology_domain_from_metadata(well)
+    if metadata_domain is not None:
+        settings.setdefault("lithology_domain", metadata_domain)
+    if args.lithology_domain is not None:
+        settings["lithology_domain"] = args.lithology_domain
     if args.lithology is not None:
         settings.update(
             lithology_intervals=args.lithology,

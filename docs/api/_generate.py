@@ -160,7 +160,7 @@ The rest of the reference documents what these calls are built from.""",
                 "petrophys.io",
                 "Reading and writing files",
                 key="petrophys.io.read_las petrophys.io.read_formations "
-                "petrophys.io.read_well_parameters petrophys.io.export_las",
+                "petrophys.io.read_lithology_intervals petrophys.io.export_las",
                 sections=[
                     Section(
                         "petrophys.io",
@@ -171,10 +171,9 @@ The rest of the reference documents what these calls are built from.""",
                                 "read_csv_wells read_ascii",
                             ),
                             (
-                                "Formations, lithology, parameters and core",
+                                "Formations and lithology",
                                 "read_formations read_lithology_intervals "
-                                "read_lithology_codes read_well_parameters "
-                                "attach_core_measurements",
+                                "read_lithology_codes",
                             ),
                             ("Export", "export_las export_csv export_excel"),
                             ("Reader classes", "LASReader DLISReader"),

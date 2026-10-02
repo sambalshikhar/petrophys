@@ -66,8 +66,10 @@ PARAMETER_ALIASES: dict[str, str] = {
     "MUD_TYPE": "mud_type",
     "MUD": "mud_type",
     "MUDWATER": "mud_water",
-    "LITH": "lithology",
-    "LITHOLOGY": "lithology",
+    "LITH": "lithology_domain",
+    "LITHOLOGY": "lithology_domain",
+    "LITHOLOGY_DOMAIN": "lithology_domain",
+    "PP_DOMAIN": "lithology_domain",
     "MATRIX": "matrix_type",
     "MATRIX_TYPE": "matrix_type",
     "APPLY_HC_CORRECTION": "apply_hc_correction",
@@ -208,6 +210,22 @@ def _parameter_float(well: "Well", name: str) -> Optional[float]:
         return None
 
 
+def lithology_domain_from_metadata(well: "Well") -> Optional[str]:
+    """Return the broad interpretation domain declared in LAS metadata."""
+    for name in ("PP_DOMAIN", "LITHOLOGY_DOMAIN"):
+        value = well.get_parameter(name)
+        if value is None or not str(value).strip():
+            continue
+        domain = str(value).strip().lower()
+        if domain not in {"clastic", "carbonate", "evaporite", "auto"}:
+            raise ValueError(
+                f"LAS parameter {name} must be clastic, carbonate, evaporite, or auto; "
+                f"got {value!r}."
+            )
+        return domain
+    return None
+
+
 def _clone_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowConfig:
     return copy.deepcopy(config) if config is not None else DynamicWorkflowConfig()
 
@@ -274,6 +292,11 @@ def _salinity_to_ppm(value: float, unit: str) -> float:
 
 def _set_config_value(config: DynamicWorkflowConfig, field_name: str, value: Any) -> None:
     if value is None or not hasattr(config, field_name):
+        return
+    if field_name in {"lithology", "lithology_domain"}:
+        domain = str(value).strip().lower()
+        config.lithology_domain = domain
+        config.lithology = domain
         return
     setattr(config, field_name, value)
 
@@ -510,7 +533,10 @@ def _apply_parameter_alias(
             unmapped_parameters.append(base_name)
         return
 
-    if target in {"mud_type", "mud_water", "lithology", "matrix_type", "hc_type"}:
+    if target in {
+        "mud_type", "mud_water", "lithology", "lithology_domain",
+        "matrix_type", "hc_type",
+    }:
         overrides[target] = _normalize_text(value)
         return
 
@@ -670,7 +696,10 @@ def run_dynamic_workflow_with_zones(
     # config decision).
     override_notes: List[str] = []
     for field_name, value in global_overrides.items():
-        if getattr(base_config, field_name, None) is None:
+        if (
+            getattr(base_config, field_name, None) is None
+            or (config is None and field_name == "lithology_domain")
+        ):
             _set_config_value(base_config, field_name, value)
         else:
             override_notes.append(
@@ -678,7 +707,13 @@ def run_dynamic_workflow_with_zones(
                 "config sets it explicitly; config value kept."
             )
     for field_name, value in zoned_default_overrides.items():
-        if field_name not in global_overrides and getattr(base_config, field_name, None) is None:
+        if (
+            field_name not in global_overrides
+            and (
+                getattr(base_config, field_name, None) is None
+                or (config is None and field_name == "lithology_domain")
+            )
+        ):
             _set_config_value(base_config, field_name, value)
     _derive_sw_model(global_overrides, base_config)
     if "vsh_exp" not in global_overrides:

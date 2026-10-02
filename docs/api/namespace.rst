@@ -55,10 +55,6 @@ Inputs
      - Per-depth lithology intervals
    * - :func:`pp.read_lithology_codes <petrophys.io.read_lithology_codes>`
      - Lithology codebooks (canonical or Kingdom layout)
-   * - :func:`pp.read_well_parameters <petrophys.io.read_well_parameters>`
-     - Interpretation settings for a well from the parameters template
-   * - :func:`pp.attach_core_measurements <petrophys.io.attach_core_measurements>`
-     - Attach core porosity, permeability and saturation to a well
 
 Context for LLMs and other tools
 --------------------------------

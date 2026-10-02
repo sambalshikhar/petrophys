@@ -9,15 +9,16 @@ mystnb:
 
 # Input templates
 
-Only a well log is required. Six optional tables add formations, lithology,
-core data and interpretation settings. Each ships with Petrophys: copy one,
-replace its synthetic rows, and read it with the function listed here.
+Only a well log is required. Four optional geology tables add formations,
+lithology intervals and coded-lithology labels. Each ships with Petrophys:
+copy one, replace its synthetic rows, and read it with the function listed here.
 
 ```{code-cell} python
 :tags: [remove-cell]
 %matplotlib inline
 import textwrap
 import warnings
+import numpy as np
 import pandas as pd
 
 # Display settings for this page: whole table cells, warnings wrapped and without file paths.
@@ -35,8 +36,6 @@ readers = {
     "formation_intervals_template": "pp.read_formations",
     "lithology_intervals_template": "pp.read_lithology_intervals",
     "lithology_codes_template": "pp.read_lithology_codes",
-    "well_parameters_template": "pp.read_well_parameters",
-    "core_measurements_template": "pp.attach_core_measurements",
 }
 rows = []
 for name in pp.list_samples():
@@ -52,9 +51,7 @@ Download:
 {download}`formation tops <../src/petrophys/datasets/formation_tops_template.csv>`,
 {download}`formation intervals <../src/petrophys/datasets/formation_intervals_template.csv>`,
 {download}`lithology intervals <../src/petrophys/datasets/lithology_intervals_template.csv>`,
-{download}`lithology codes <../src/petrophys/datasets/lithology_codes_template.csv>`,
-{download}`well parameters <../src/petrophys/datasets/well_parameters_template.csv>`,
-{download}`core measurements <../src/petrophys/datasets/core_measurements_template.csv>`.
+{download}`lithology codes <../src/petrophys/datasets/lithology_codes_template.csv>`.
 In Python, `pp.sample("<template name>")` gives the installed copy's path.
 
 ## What the tables add
@@ -194,74 +191,27 @@ print(pp.read_lithology_codes(kingdom, label_column="Lithology Attribute"))
 | Codes | Vendor-specific; the template's assignments are only examples |
 | Use | `pp.plot(well, lithology_mapping=codes)` |
 
-## Well parameters
+## LAS metadata and embedded core data
 
-One row per well records the settings a run used, so it can be repeated.
+No separate well-parameter or core-measurement template is required. The
+workflow reads supported parameters such as Rw, its reference temperature,
+BHT, TD, Archie coefficients and zoned values from LAS metadata. Explicit
+Python settings take precedence, and documented defaults are used when a value
+is absent.
 
-```{code-cell} python
-from textwrap import fill
-
-template = pp.sample("well_parameters_template")
-row = pd.read_csv(template).iloc[0]
-print(fill(", ".join(f"{name}={value}" for name, value in row.items()), 88))
-```
-
-The reader converts friendly names and units into interpretation settings:
+`lithology_domain` defaults to `clastic`. Set it to `carbonate` for the
+COSTA mineral route or to `auto` when deliberate domain inference is wanted:
 
 ```{code-cell} python
-settings = pp.read_well_parameters(template, well_name="WELL_001")
-print(fill(", ".join(f"{name}={value!r}" for name, value in settings.items()), 88))
-# Then: result = pp.interpret(well, **settings)
-
-# The same row in degC and metres gives the same settings:
-metric = pd.read_csv(template).assign(bht=104.44, bht_unit="C", td=2590.8, depth_unit="m")
-converted = pp.read_well_parameters(metric)
-print({name: round(converted[name], 1) for name in ("bht_f", "td_ft")})
+carbonate = pp.interpret(pp.read(pp.sample("HW-3")), lithology_domain="carbonate")
+print(carbonate.config.lithology_domain)
 ```
 
-| Rule | Behaviour |
-| --- | --- |
-| Column names | Any {doc}`interpretation setting <api/settings>`, plus `gr_clean`, `gr_shale`, `rw_reference_temperature`, `bht`, `td` |
-| Units | Temperatures become degF and `td` becomes feet; `rw` must be ohm.m |
-| `lithology_domain` | A calculation family (`clastic`, `carbonate`, `auto`), not a per-depth label |
-| Blank cell | Uses the LAS header or the workflow default; never another well's value |
-| Several rows | Select with `well_name`; duplicates and ambiguous selections are errors |
-| Unknown columns, invalid choices | Error |
-
-## Core measurements
-
-One row per plug. The reader converts units and places each plug on the nearest
-log sample.
-
-```{code-cell} python
-plugs = pd.read_csv(pp.sample("core_measurements_template"))
-plugs.T.rename(columns=lambda row: f"plug {row + 1}")
-```
-
-The template's plugs are at 8000 ft on a well called `WELL_001`, so a small
-matching well receives them here:
-
-```{code-cell} python
-import numpy as np
-
-depth = np.arange(7990.0, 8010.0, 0.5)
-core_well = pp.Well.from_dataframe(pd.DataFrame({"DEPTH": depth, "GR": 40.0}),
-                                   depth_unit="ft", name="WELL_001")
-report = pp.attach_core_measurements(core_well, pp.sample("core_measurements_template"))
-for key in ["input_rows", "curves", "alignment_tolerance", "depth_unit"]:
-    print(f"{key}: {report[key]}")
-
-attached = core_well.to_dataframe(curves=["PHIC", "KH_CORE", "SWC", "SOC", "GDEN"])
-attached.dropna(subset=["PHIC"]).style.hide(axis="index").format("{:g}")
-```
-
-| Column | Curve | Units accepted |
-| --- | --- | --- |
-| `core_porosity` | `PHIC` | fraction or percent |
-| `core_permeability` | `KH_CORE` (mD) | mD or D |
-| `core_water_saturation`, `core_oil_saturation` | `SWC`, `SOC` | fraction or percent |
-| `grain_density` | `GDEN` | g/cm3 |
-| `depth`, `depth_unit`, `core_to_log_shift` | — | The shift is added before matching. A plug farther than half a sample step from the log is an error. Plugs on the same sample are averaged. |
+In LAS metadata, use `PP_DOMAIN` or `LITHOLOGY_DOMAIN`. On the command line,
+use `--lithology-domain carbonate`. Existing LAS core curves such as `PHIC`,
+`KH_CORE`, `SWC`, `SOC` and `GDEN` are standardized in place on the
+interpreted copy. Log-derived saturation remains the primary `SW` result;
+core saturation is supporting evidence, not an automatic replacement.
 
 (core-saturation-units)=
 ## Core saturation units
@@ -293,15 +243,14 @@ record = swc.metadata.custom["core_saturation_normalization"]
 A unit correction does not make core saturation equivalent to log-derived
 water saturation.
 
-## All templates at once
+## Use the optional geology together
 
-The `petrophys-context` command reads every template for one well, or for a
-directory of LAS files; see {doc}`context`.
+The `petrophys-context` command reads a LAS plus either or both optional
+geology tables; see {doc}`context`.
 
 ```bash
-petrophys-context well.las well_context.json --parameters well_parameters.csv \
-    --formations formation_intervals.csv --lithology lithology_intervals.csv \
-    --core core_measurements.csv
+petrophys-context well.las well_context.json \
+    --formations formation_intervals.csv --lithology lithology_intervals.csv
 ```
 
 ## What to ask your data provider for

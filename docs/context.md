@@ -133,14 +133,12 @@ for key, value in excerpt.items():
 
 ```bash
 petrophys-context well.las well_context.json \
-    --parameters well_parameters.csv --formations formation_intervals.csv \
-    --lithology lithology_intervals.csv --core core_measurements.csv
+    --formations formation_intervals.csv --lithology lithology_intervals.csv
 ```
 
 ```bash
 petrophys-context logs outputs/context_run_01 --layout category_formation_lithology \
-    --parameters well_parameters.csv --formations formation_intervals.csv \
-    --lithology lithology_intervals.csv --core core_measurements.csv \
+    --formations formation_intervals.csv --lithology lithology_intervals.csv \
     --lithology-codes lithology_codes.csv --tops-rank formation
 ```
 
@@ -150,6 +148,7 @@ petrophys-context logs outputs/context_run_01 --layout category_formation_lithol
 | `--recursive`, `--pattern` | search nested folders; choose which files to read |
 | `--min-thickness` | override the grouping threshold |
 | `--tops-rank`, `--tops-sheet` | pick the formation level (`group`, `formation`, `member`) and the Excel sheet |
+| `--lithology-domain` | broad mineral-solving domain: `clastic`, `carbonate`, `evaporite` or `auto` |
 | `--max-bytes`, `--max-total-bytes` | change the size limits |
 | `--depth-unit` | required for CSV/TSV logs |
 | `--overwrite` | replace an existing single-well JSON (packages are never overwritten) |
@@ -161,9 +160,8 @@ The first command in Python, with your own files:
 ```python
 well = pp.read("well.las", formations="formation_intervals.csv",
                lithology="lithology_intervals.csv")
-pp.attach_core_measurements(well, "core_measurements.csv")
-settings = pp.read_well_parameters("well_parameters.csv")
-pp.export_context(pp.interpret(well, **settings).raise_for_errors(), "well_context.json")
+result = pp.interpret(well)  # reads supported settings and core curves from LAS
+pp.export_context(result.raise_for_errors(), "well_context.json")
 ```
 
 ## Multi-well input rules
@@ -174,15 +172,14 @@ The standardized readers accept CSV, TSV, Excel and DataFrames; {doc}`input_temp
 |---|---|
 | Matching | each table row matches a LAS file by the well name in its header, ignoring separators (`30/6-5` matches `30_6-5`) |
 | Tables covering several wells | need a `well` column; without one, the folder may hold only one LAS |
-| Parameters (`parameters_file`) | exactly one row per LAS file; a missing or duplicate row stops the export and names the well. Use `well_names=[...]` for a subset |
 | Formations (`tops_file`) | canonical templates or NPD/SODIR `Well identifier` / `Surface` / `MD`; `tops_options={"sheet_name": ..., "rank": "formation"}` for workbooks |
 | Depths | must share the well's reference and datum; metres and feet convert, MD-to-TVD does not |
 | Lithology codes (`lithology_mapping_file`) | `code,lithology` or Kingdom `Abbreviation,Attribute`; `Attribute` wins over `Lithology Attribute`, with a warning if they disagree |
 | No formations | the logged interval is analyzed as `WHOLE_WELL` |
 | No lithology | embedded evidence or the mineral solver supplies it |
-| No core | core calibration is skipped and recorded in the trace |
+| No core curves in LAS | core calibration is skipped and recorded in the trace |
 | Thin groups | groups thinner than `minimum_group_thickness` (default 2.0, in each LAS's own depth unit) are not written |
-| Carbonate wells | set `lithology_domain` to `carbonate` in the parameters table or `workflow_config` |
+| Carbonate wells | set `lithology_domain` to `carbonate` in LAS metadata, `workflow_config`, or the CLI flag |
 
 ## Schema and size contracts
 

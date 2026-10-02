@@ -84,7 +84,13 @@ def test_config_for_every_client(client, tmp_path):
     remote = cli.config_text(client, url="https://wells.example.com/mcp", token="s3cret")
     assert "petrophys" in local
     if client != "openai":
-        assert sys.executable in local and str(tmp_path) in local
+        if client in {"claude-desktop", "cursor", "vscode", "codex"}:
+            # JSON and TOML must escape Windows backslashes; compare the
+            # serialized values rather than their raw filesystem spellings.
+            assert json.dumps(sys.executable) in local
+            assert json.dumps(str(tmp_path)) in local
+        else:
+            assert sys.executable in local and str(tmp_path) in local
         assert "https://wells.example.com/mcp" in remote
     if client == "codex":  # Codex reads the token from an environment variable
         assert "bearer_token_env_var" in remote
