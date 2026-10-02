@@ -1,0 +1,260 @@
+{
+  "well": "JAMSTEC IODP Expedition 337 C0020A",
+  "delivery": "Schlumberger Run 4 XLD MDT, September 2012",
+  "archive_url": "https://www.jamstec.go.jp/sio7/well-logging/337/C0020A/ORIGINAL/DATA/337_C0020A_Run4_MDT_XLD_pretest_LAS.zip",
+  "archive_sha256": "cbcaf4e58f233237866635705228a98813a495ce1e64d3fb81839ae573894612",
+  "report_url": "https://www.jamstec.go.jp/sio7/well-logging/337/C0020A/ORIGINAL/DOCUMENTS/337_C0020A_Run4_MDT_XLD_pretest_report.pdf",
+  "report_file": "c0020a_mdt_pretest_report.pdf",
+  "report_sha256": "052bfa75fd5acf29d35459a4951559e7fdae3b81957a4c0c52e931686285d72e",
+  "reference_file": "c0020a_mdt_report_reference.csv",
+  "reference_sha256": "d6bc83101c82bad51d8648e0bc2301e4398530591337543df33fd4a68de0bae8",
+  "retrieved": "2026-10-01",
+  "processing": "LAS files renamed only; original bytes and headers preserved. Reference CSV transcribed programmatically from native text of per-pretest report pages 14-48. Failed tests keep a null formation pressure even if Last Read Buildup is populated. No report values or statuses are passed to the pressure picker.",
+  "files": [
+    {
+      "file": "c0020a_mdt_070.las",
+      "original_archive_member": "Jamstec_C0020A_2482.99m_OFA_MDT_070LTC.las",
+      "file_id": 70,
+      "sha256": "a77163facb1e534f029ce4314e60d15fe0f58b2a3a60e63685eb1d47d4f80649",
+      "bytes": 37402
+    },
+    {
+      "file": "c0020a_mdt_072.las",
+      "original_archive_member": "Jamstec_C0020A_2487.44m_OFA_MDT_072LTC.las",
+      "file_id": 72,
+      "sha256": "c7cc191579936f01cd7ba8936a004563ae14449c5dbf38673d69790c05501946",
+      "bytes": 52192
+    },
+    {
+      "file": "c0020a_mdt_073.las",
+      "original_archive_member": "Jamstec_C0020A_2586.49m_OFA_MDT_073LTC.las",
+      "file_id": 73,
+      "sha256": "a79553b2af87e6d730ff657a7b0e7a055cc54703437d3d65c89a8d26fd7dd883",
+      "bytes": 39748
+    },
+    {
+      "file": "c0020a_mdt_077.las",
+      "original_archive_member": "Jamstec_C0020A_2696.99m_OFA_MDT_077LTC.las",
+      "file_id": 77,
+      "sha256": "0f942e5ce210c4157ec78f94de1f4f8c1c7d4576a7a9e08c133e43f00ec264d0",
+      "bytes": 34699
+    },
+    {
+      "file": "c0020a_mdt_078.las",
+      "original_archive_member": "Jamstec_C0020A_2724.47m_OFA_MDT_078LTC.las",
+      "file_id": 78,
+      "sha256": "593d2f2e191e16ae2de9d08e8db1d2bf12f2f6c7963ccd5ae0e7f2e71459ea85",
+      "bytes": 25876
+    },
+    {
+      "file": "c0020a_mdt_079.las",
+      "original_archive_member": "Jamstec_C0020A_2789.02m_OFA_MDT_079LTC.las",
+      "file_id": 79,
+      "sha256": "6e7fca8fba13d1e90ecd0e6cf41d96d80e181c72d743014dcc1ba2244b656622",
+      "bytes": 32659
+    },
+    {
+      "file": "c0020a_mdt_080.las",
+      "original_archive_member": "Jamstec_C0020A_2906.49m_OFA_MDT_080LTC.las",
+      "file_id": 80,
+      "sha256": "f70c0a1d1e876287821579e50d53f1f9064be966f5f1af35663236510a004865",
+      "bytes": 80548
+    },
+    {
+      "file": "c0020a_mdt_082.las",
+      "original_archive_member": "Jamstec_C0020A_3016.48m_OFA_MDT_082LTC.las",
+      "file_id": 82,
+      "sha256": "e67424330ad551045b7e0dda4e1b49d0ed7e8f432721fb0d4e960ac805d3d293",
+      "bytes": 26386
+    },
+    {
+      "file": "c0020a_mdt_083.las",
+      "original_archive_member": "Jamstec_C0020A_3035.02m_OFA_MDT_083LTC.las",
+      "file_id": 83,
+      "sha256": "e9500fdd5d128ba7429e8c4365720ba9e4bacb448cc46a85c3ce1501e1217e24",
+      "bytes": 41635
+    },
+    {
+      "file": "c0020a_mdt_084.las",
+      "original_archive_member": "Jamstec_C0020A_3052.52m_OFA_MDT_084LTC.las",
+      "file_id": 84,
+      "sha256": "62c9ed47013415a4060c227de0d50342ae74e3d83d7dc3246277dd482573a764",
+      "bytes": 28222
+    },
+    {
+      "file": "c0020a_mdt_085.las",
+      "original_archive_member": "Jamstec_C0020A_3056.48m_OFA_MDT_085LTC.las",
+      "file_id": 85,
+      "sha256": "812b8ff62a54e3ca831da88ea61658bfe013a51871f248f311c50d254321bb60",
+      "bytes": 43930
+    },
+    {
+      "file": "c0020a_mdt_086.las",
+      "original_archive_member": "Jamstec_C0020A_3069.01m_OFA_MDT_086LTC.las",
+      "file_id": 86,
+      "sha256": "9a01cc2975290ebbd03161da5963cb60fbb40fa8a275a02dc55dae2d8876507b",
+      "bytes": 19348
+    },
+    {
+      "file": "c0020a_mdt_087.las",
+      "original_archive_member": "Jamstec_C0020A_3069.25m_OFA_MDT_087LTC.las",
+      "file_id": 87,
+      "sha256": "cd270797e8c6f3f5eaa19819e0bda3f6540b3b47bc30ce7902a5429037f08bc6",
+      "bytes": 43267
+    },
+    {
+      "file": "c0020a_mdt_088.las",
+      "original_archive_member": "Jamstec_C0020A_3070.42m_OFA_MDT_088LTC.las",
+      "file_id": 88,
+      "sha256": "c1f67e1fc734815447c248f32a2c7ae7f487b2eeb7026d0654a39eef2acb4981",
+      "bytes": 79732
+    },
+    {
+      "file": "c0020a_mdt_089.las",
+      "original_archive_member": "Jamstec_C0020A_3084m_OFA_MDT_089LTC.las",
+      "file_id": 89,
+      "sha256": "23f366e51e856e38ae18faa47daf8c4bcf689a986ec792cd5127883e64307141",
+      "bytes": 26743
+    },
+    {
+      "file": "c0020a_mdt_090.las",
+      "original_archive_member": "Jamstec_C0020A_3093.98m_OFA_MDT_090LTC.las",
+      "file_id": 90,
+      "sha256": "e3780181f9b6ebbd9e4dd68369f01766707325fc8cd957a5beb3464e94ae5280",
+      "bytes": 30058
+    },
+    {
+      "file": "c0020a_mdt_092.las",
+      "original_archive_member": "Jamstec_C0020A_3109.9m_OFA_MDT_092LTC.las",
+      "file_id": 92,
+      "sha256": "42b38708f740fa6911ea4f297996886065a06745526da0f48280e31f4398faff",
+      "bytes": 32455
+    },
+    {
+      "file": "c0020a_mdt_094.las",
+      "original_archive_member": "Jamstec_C0020A_3113.03m_OFA_MDT_094LTC.las",
+      "file_id": 94,
+      "sha256": "e17647d43362099e9a1587b11b36b2ea3ad5958d00314ea2d9814a9f3f3b0f6e",
+      "bytes": 30364
+    },
+    {
+      "file": "c0020a_mdt_095.las",
+      "original_archive_member": "Jamstec_C0020A_3136.01m_OFA_MDT_095LTC.las",
+      "file_id": 95,
+      "sha256": "bb2d96e9667ba5cd3ff57fe727bec1d614ac5b6a9eb7c411c6cb45b91d408147",
+      "bytes": 36841
+    },
+    {
+      "file": "c0020a_mdt_096.las",
+      "original_archive_member": "Jamstec_C0020A_3152.03m_OFA_MDT_096LTC.las",
+      "file_id": 96,
+      "sha256": "99736be8ec7c9718f3cd995c4b370b36fb0c5f7a2db3d413e4711e0c3feddef2",
+      "bytes": 61882
+    },
+    {
+      "file": "c0020a_mdt_097.las",
+      "original_archive_member": "Jamstec_C0020A_3168.52m_OFA_MDT_097LTC.las",
+      "file_id": 97,
+      "sha256": "6b3ea89cd91f5d843cde722b3d1362eabcd022cad381fb8c317a5feccc9becfb",
+      "bytes": 42094
+    },
+    {
+      "file": "c0020a_mdt_098.las",
+      "original_archive_member": "Jamstec_C0020A_3182.5m_OFA_MDT_098LTC.las",
+      "file_id": 98,
+      "sha256": "a6289833c423becca6014ad6ee4fc63333cff0d6ade02357a57ff0d020d0bc64",
+      "bytes": 38014
+    },
+    {
+      "file": "c0020a_mdt_099.las",
+      "original_archive_member": "Jamstec_C0020A_3186.47m_OFA_MDT_099LTC.las",
+      "file_id": 99,
+      "sha256": "cf2dfbd0e37f88635755cb2fa869cb0ed8e0b40cc1efde0a166884f01265cf8b",
+      "bytes": 28783
+    },
+    {
+      "file": "c0020a_mdt_102.las",
+      "original_archive_member": "Jamstec_C0020A_3200.46m_OFA_MDT_102LTC.las",
+      "file_id": 102,
+      "sha256": "e53c1080520b344308f3e9b0da66757405dda7a01b6bcd8e7cb725c63b634afc",
+      "bytes": 31282
+    },
+    {
+      "file": "c0020a_mdt_103.las",
+      "original_archive_member": "Jamstec_C0020A_3227.01m_OFA_MDT_103LTC.las",
+      "file_id": 103,
+      "sha256": "0d8248818b88ab2c664b3ea4cc48b0333eb8a8786b773f3689265ecaf1001af3",
+      "bytes": 47653
+    },
+    {
+      "file": "c0020a_mdt_104.las",
+      "original_archive_member": "Jamstec_C0020A_3233.01m_OFA_MDT_104LTC.las",
+      "file_id": 104,
+      "sha256": "a632ad20b5a7ae9ac32ce25bfc6c90b0fa5c2b5a243d40f15423d577f721e5d6",
+      "bytes": 46582
+    },
+    {
+      "file": "c0020a_mdt_105.las",
+      "original_archive_member": "Jamstec_C0020A_3235.02m_OFA_MDT_105LTC.las",
+      "file_id": 105,
+      "sha256": "e0bf29e57fc9b67d1779e4513b89f3e5b6bf95ce06f2a6d493aad6c7294122c9",
+      "bytes": 26386
+    },
+    {
+      "file": "c0020a_mdt_112.las",
+      "original_archive_member": "Jamstec_C0020A_3473.45m_OFA_MDT_112LTC.las",
+      "file_id": 112,
+      "sha256": "a3d2d1461a8ea66daadfd86940d2c4c2b71d8fac4b0de1637a3a990ad6576732",
+      "bytes": 24907
+    },
+    {
+      "file": "c0020a_mdt_113.las",
+      "original_archive_member": "Jamstec_C0020A_3473.79m_OFA_MDT_113LTC.las",
+      "file_id": 113,
+      "sha256": "fb61d37db2180e501b5b1cf3e0514450ea6b35fc9e962b0eab7ba19d2d2ba887",
+      "bytes": 19756
+    },
+    {
+      "file": "c0020a_mdt_114.las",
+      "original_archive_member": "Jamstec_C0020A_3510.46m_OFA_MDT_114LTC.las",
+      "file_id": 114,
+      "sha256": "b6a43be6eaaf61a9c954409640c1b8465d865969d1da9a93636a83551395b3d9",
+      "bytes": 35005
+    },
+    {
+      "file": "c0020a_mdt_115.las",
+      "original_archive_member": "Jamstec_C0020A_3594.98m_OFA_MDT_115LTC.las",
+      "file_id": 115,
+      "sha256": "c8d5a2c8edd348dbf5896a71d083597cb0c1efca659a6ac901215bbc680805a8",
+      "bytes": 20572
+    },
+    {
+      "file": "c0020a_mdt_116.las",
+      "original_archive_member": "Jamstec_C0020A_3595.3m_OFA_MDT_116LTC.las",
+      "file_id": 116,
+      "sha256": "b3c0477b9015d11f7546d25e623e7212a779debad8e5fa2542f7c5ee4b061632",
+      "bytes": 35311
+    },
+    {
+      "file": "c0020a_mdt_117.las",
+      "original_archive_member": "Jamstec_C0020A_3607.47m_OFA_MDT_117LTC.las",
+      "file_id": 117,
+      "sha256": "caa18ca85fe7090de4a62f7ecd0b6baee279aac47785d439371c8f9751a84092",
+      "bytes": 36280
+    },
+    {
+      "file": "c0020a_mdt_118.las",
+      "original_archive_member": "Jamstec_C0020A_3606.99m_OFA_MDT_118LTC.las",
+      "file_id": 118,
+      "sha256": "bc4bd59e668262d376e2ac332fc223d98cb703602599183b189ac577adaea1b9",
+      "bytes": 18532
+    },
+    {
+      "file": "c0020a_mdt_119.las",
+      "original_archive_member": "Jamstec_C0020A_3629.53m_OFA_MDT_119LTC.las",
+      "file_id": 119,
+      "sha256": "962570fa841abf82d857391f5ccde4d2b277313ee56af93283ecfb4bd3c0b291",
+      "bytes": 31435
+    }
+  ]
+}

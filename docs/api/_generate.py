@@ -435,6 +435,16 @@ The rest of the reference documents what these calls are built from.""",
                                 "read_formation_pressure fit_pressure_fwl "
                                 "FormationPressureData PressureGradient PressureFWLResult",
                             ),
+                            (
+                                "Unlabeled pressure contacts",
+                                "infer_pressure_contacts PressureBranch PressureContact "
+                                "PressureContactResult",
+                            ),
+                            (
+                                "Raw MDT pretest pressure picking",
+                                "read_mdt_pretest pick_mdt_pressure formation_pressures_from_mdt "
+                                "MDTPickingConfig MDTPretest MDTBuildup MDTPressurePick",
+                            ),
                         ],
                     ),
                     Section(
@@ -850,7 +860,8 @@ The rest of the reference documents what these calls are built from.""",
                 description="NMR, borehole-image and XRF panels, saturation-height "
                 "type curves and formation-pressure plots.",
                 names="create_nmr_panel has_nmr_curves create_fmi_panel create_xrf_panel "
-                "create_saturation_height_plot create_formation_pressure_plot",
+                "create_saturation_height_plot create_formation_pressure_plot "
+                "create_pressure_contact_plot create_mdt_pretest_plot",
             ),
             Section(
                 VIZ,

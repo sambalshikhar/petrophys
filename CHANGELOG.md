@@ -26,6 +26,14 @@ All notable changes to Petrophys are documented here.
 
 ### Added
 
+- Raw MDT pretest pressure picking through `read_mdt_pretest` and
+  `pick_mdt_pressure`, configurable buildup QC, review flags, and a library
+  plot of selected windows. `formation_pressures_from_mdt` passes accepted
+  picks to station interpretation with explicit TVD metadata. Tutorial 15
+  verifies the picker against 35 native C0020A LAS traces and their report.
+- Unlabeled station-pressure contact inference through `infer_contacts`,
+  exposing competing fluid hypotheses and unresolved contacts. The existing
+  labeled FWL fit remains available.
 - Public `build_context` / `export_context` and `petrophys-context` CLI with
   schema version 1.0, UTF-8 byte budgets, staged package publication and
   overwrite protection. The CLI always computes its context from input data.

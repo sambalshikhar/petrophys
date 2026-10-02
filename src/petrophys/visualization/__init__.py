@@ -15,7 +15,10 @@ from petrophys.visualization.lithology_crossplots import (
 from petrophys.visualization.xrf_panel import create_xrf_panel
 from petrophys.visualization.flow_unit_plot import create_flow_unit_plot
 from petrophys.visualization.saturation_height_plot import create_saturation_height_plot
-from petrophys.visualization.formation_pressure_plot import create_formation_pressure_plot
+from petrophys.visualization.formation_pressure_plot import (
+    create_formation_pressure_plot, create_pressure_contact_plot,
+)
+from petrophys.visualization.mdt_pretest_plot import create_mdt_pretest_plot
 
 
 from petrophys.visualization.batch_export import (
@@ -60,6 +63,8 @@ __all__ = [
     "create_buckles_plot", "create_hingle_plot", "create_xrf_panel",
     "create_flow_unit_plot", "create_saturation_height_plot",
     "create_formation_pressure_plot",
+    "create_mdt_pretest_plot",
+    "create_pressure_contact_plot",
     "create_nd_crossplot", "create_mn_plot", "create_mid_plot",
     # Batch export
     "BatchVisualizationResult",
