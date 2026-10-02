@@ -310,7 +310,7 @@ def plot_core_on_logs(
     well_name = well.name or "Unknown"
     fig.suptitle(
         f"{well_name} - Core Data on Logs ({core.n_plugs} plugs, "
-        f"{core.top:.0f}-{core.bottom:.0f}m)",
+        f"{core.top:.0f}-{core.bottom:.0f} {well.depth_unit or 'm'})",
         fontsize=13,
         fontweight="bold",
     )

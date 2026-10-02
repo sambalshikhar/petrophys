@@ -667,6 +667,9 @@ def _attached_formation_tops(records: List[Dict[str, Any]], terminal_depth: floa
 
 # --- DynamicWorkflowConfig validation ---------------------------------------
 
+# Matrices that belong to each explicitly chosen lithology domain (first = default).
+_DOMAIN_MATRICES = {"clastic": ("sandstone",), "carbonate": ("limestone", "dolomite")}
+
 _MUD_TYPES = ("WBM", "OBM")
 _MUD_WATERS = ("fresh", "salt")
 _LITHOLOGY_FAMILIES = ("auto", "clastic", "carbonate", "evaporite")
@@ -1536,8 +1539,9 @@ class DynamicWorkflow:
         """Write an auto-resolved lithology/matrix to the (copied) run config."""
         applied = []
         if self._auto_matrix:
-            self.config.matrix_type = res.matrix
-            applied.append(f"matrix_type={res.matrix}")
+            matrix = res.matrix if self._auto_lith else self._matrix_within_domain(res)
+            self.config.matrix_type = matrix
+            applied.append(f"matrix_type={matrix}")
         if self._auto_lith:
             self.config.lithology = res.lithology
             self.config.lithology_domain = res.lithology
@@ -1545,6 +1549,36 @@ class DynamicWorkflow:
                 self._result.lithology_domain = res.lithology
             applied.append(f"lithology={res.lithology}")
         return applied
+
+    def _matrix_within_domain(self, res) -> str:
+        """Keep an auto-resolved matrix inside an explicitly chosen lithology domain.
+
+        ``lithology_domain="carbonate"`` with ``matrix_type="auto"`` resolves to
+        limestone or dolomite, never sandstone; ``"clastic"`` resolves to
+        sandstone. When the matrix evidence points outside the chosen domain,
+        the domain wins and the conflict is reported in ``warnings``. Without an
+        explicit domain (``"auto"``) the evidence decides both, as before.
+        """
+        domain = str(self.config.lithology_domain).strip().lower()
+        allowed = _DOMAIN_MATRICES.get(domain)
+        if not allowed or res.matrix in allowed:
+            return res.matrix
+        votes = getattr(res, "votes", None) or {}
+        if domain == "carbonate":
+            matrix = "dolomite" if votes.get("dolomite", 0) > votes.get("limestone", 0) else "limestone"
+        else:
+            matrix = allowed[0]
+        if res.method == "default":
+            message = (f"lithology_domain='{domain}' with matrix_type='auto' and no matrix evidence: "
+                       f"using the {domain} matrix '{matrix}'.")
+        else:
+            message = (f"lithology_domain='{domain}' was set, but {res.method} points to a "
+                       f"{res.matrix} matrix ({res.confidence:.0%} of {res.n} samples); using the "
+                       f"{domain} matrix '{matrix}' instead. Set matrix_type to choose it yourself, "
+                       f"or lithology_domain='auto' to let the evidence decide.")
+        if self._result is not None and message not in self._result.warnings:
+            self._result.warnings.append(message)
+        return matrix
 
     def _apply_lithology_resolution(self, res, iterations: int = 0) -> None:
         """Apply a resolution and record it (single-shot: vendor log / default)."""
@@ -4640,15 +4674,17 @@ class DynamicWorkflow:
         n_res = int(np.nansum(well.get("NET_RES").data > 0.5)) if well.get("NET_RES") else 0
         n_pay = int(np.nansum(well.get("NET_PAY").data > 0.5)) if well.get("NET_PAY") else 0
         n_seal = int(np.nansum(seal_flag > 0.5))
-        step_m = well.step or 0.15
-        trace.decisions.append(f"NET_ROCK: VCL < {self._resolved_cutoff('vcl_cutoff')} -> {n_rock} samples ({n_rock*step_m:.1f} m)")
-        trace.decisions.append(f"NET_RES:  + {phie_source} > {self._resolved_cutoff('phie_cutoff')} -> {n_res} samples ({n_res*step_m:.1f} m)")
-        trace.decisions.append(f"NET_PAY:  + {sw_source} < {self._resolved_cutoff('sw_cutoff')} -> {n_pay} samples ({n_pay*step_m:.1f} m)")
-        trace.decisions.append(f"SEALFLAG: VCL >= 0.8 -> {n_seal} samples ({n_seal*step_m:.1f} m)")
+        # Thicknesses are in the well's own depth unit (ft for the COSTA wells).
+        step = abs(float(well.step)) if well.step else 0.15
+        unit = well.depth_unit or "m"
+        trace.decisions.append(f"NET_ROCK: VCL < {self._resolved_cutoff('vcl_cutoff')} -> {n_rock} samples ({n_rock*step:.1f} {unit})")
+        trace.decisions.append(f"NET_RES:  + {phie_source} > {self._resolved_cutoff('phie_cutoff')} -> {n_res} samples ({n_res*step:.1f} {unit})")
+        trace.decisions.append(f"NET_PAY:  + {sw_source} < {self._resolved_cutoff('sw_cutoff')} -> {n_pay} samples ({n_pay*step:.1f} {unit})")
+        trace.decisions.append(f"SEALFLAG: VCL >= 0.8 -> {n_seal} samples ({n_seal*step:.1f} {unit})")
         if well.get("CROSSOVER_FLAG") is not None:
             n_crossover = int(np.nansum(np.asarray(well.get("CROSSOVER_FLAG").data, dtype=float) > 0.5))
             trace.decisions.append(
-                f"CROSSOVER_FLAG from hydrocarbon analysis -> {n_crossover} samples ({n_crossover*step_m:.1f} m)"
+                f"CROSSOVER_FLAG from hydrocarbon analysis -> {n_crossover} samples ({n_crossover*step:.1f} {unit})"
             )
         trace.decisions.extend(
             f"Hydrocarbon analysis: {section_name}"

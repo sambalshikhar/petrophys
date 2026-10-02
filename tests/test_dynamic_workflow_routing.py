@@ -1567,3 +1567,31 @@ def test_skipped_steps_explain_what_is_missing(capsys):
 
     result.print_trace()
     assert "hc_correction: apply_hc_correction=False" in capsys.readouterr().out
+
+
+def test_explicit_carbonate_domain_keeps_a_carbonate_matrix():
+    import petrophys as pp
+
+    well = pp.read(pp.sample("HW-27"))  # core grain density alone points to sandstone
+    result = pp.interpret(well, lithology_domain="carbonate")
+    assert result.config.matrix_type in {"limestone", "dolomite"}
+    assert any("lithology_domain='carbonate' was set" in warning for warning in result.warnings)
+
+
+def test_auto_domain_still_lets_the_evidence_decide():
+    import petrophys as pp
+
+    result = pp.interpret(pp.read(pp.sample("HW-27")))
+    assert (result.config.lithology_domain, result.config.matrix_type) == ("clastic", "sandstone")
+    assert not any("was set, but" in warning for warning in result.warnings)
+
+
+def test_net_pay_decisions_use_the_well_depth_unit():
+    import petrophys as pp
+
+    feet = pp.interpret(pp.read(pp.sample("HW-3")), lithology_domain="carbonate")
+    metres = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230)
+    for result, unit in ((feet, "ft"), (metres, "m")):
+        decisions = [d for s in result.steps_executed if s.step == "net_pay" for d in s.decisions
+                     if d.startswith("NET_PAY")]
+        assert decisions and decisions[0].endswith(f" {unit})"), decisions
