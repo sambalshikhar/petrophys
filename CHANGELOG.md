@@ -27,6 +27,10 @@ All notable changes to Petrophys are documented here.
 
 ### Added
 
+- `DynamicWorkflowConfig.swirr_flag_phi_cl` chooses the PHIE behind the reservoir flag that picks the
+  SWIRR_APP samples. The default `"workflow"` keeps the reported PHIE; `"all_shale_phit"` recomputes PHIE
+  for that flag only with clay porosity from the mean PHIT of all shale-lithology samples, the rule behind
+  SWIRR_APP in the GeoLink benchmark context generated on 2026-05-01. The trace records the rule and its phi_cl.
 - Raw MDT pretest pressure picking through `read_mdt_pretest` and
   `pick_mdt_pressure`, configurable buildup QC, review flags, and a library
   plot of selected windows. `formation_pressures_from_mdt` passes accepted
