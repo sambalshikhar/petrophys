@@ -608,6 +608,14 @@ class DynamicWorkflowConfig:
     perm_fallback_method: str = "coates"
     #: Irreducible water saturation, v/v. Defaults to curves or NMR data.
     swirr: Optional[float] = None
+    #: Clay porosity behind the PHIE that picks the SWIRR_APP samples, i.e. the
+    #: reservoir flag built before permeability when the well has no RESFLAG or
+    #: NET_RES curve. ``"workflow"`` uses the reported PHIE. ``"all_shale_phit"``
+    #: recomputes PHIE for that flag only, as ``clip(PHIT - VCL * phi_cl, 0, PHIT)``
+    #: with ``phi_cl`` the mean PHIT of all shale-lithology samples, the rule
+    #: behind SWIRR_APP in the GeoLink benchmark context generated on
+    #: 2026-05-01. The reported PHIE and SW are unchanged.
+    swirr_flag_phi_cl: str = "workflow"
     #: Offset wells (``Well`` objects) whose core data calibrate permeability.
     peer_wells: Optional[List[Any]] = None
     #: Formation intervals (``FormationTops``) for per-formation core
@@ -675,6 +683,7 @@ _MUD_WATERS = ("fresh", "salt")
 _LITHOLOGY_FAMILIES = ("auto", "clastic", "carbonate", "evaporite")
 _LITHOLOGY_SOURCES = ("auto", "external", "vendor", "computed", "config")
 _HC_TYPES = ("oil", "gas")
+_SWIRR_FLAG_PHI_CL = ("workflow", "all_shale_phit")
 _BOOL_FIELDS = (
     "standardize_input", "rename_input_curves", "allow_default_rw",
     "mud_has_clay_or_kcl", "raise_on_error", "apply_hc_correction", "use_peer_core",
@@ -778,6 +787,7 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     config.lithology_domain = config.lithology
     _normalized_choice(config, "lithology_source", _LITHOLOGY_SOURCES, errors)
     _normalized_choice(config, "hc_type", _HC_TYPES, errors)
+    _normalized_choice(config, "swirr_flag_phi_cl", _SWIRR_FLAG_PHI_CL, errors)
     _normalized_choice(config, "gr_method", GR_VCL_METHODS, errors)
     _normalized_choice(
         config, "perm_method", PERMEABILITY_METHODS, errors,
@@ -4497,6 +4507,53 @@ class DynamicWorkflow:
         trace.decisions = decisions
         return trace
 
+    def _swirr_flag_phie(
+        self, well: "Well", vcl: Optional[np.ndarray], phie_curve
+    ) -> tuple[np.ndarray, Optional[Dict[str, Any]]]:
+        """PHIE for the reservoir flag that picks the SWIRR_APP samples.
+
+        Returns the reported PHIE unless ``config.swirr_flag_phi_cl`` is
+        ``"all_shale_phit"``; then PHIE is recomputed with ``phi_cl`` equal to
+        the mean PHIT of all shale-lithology samples (VCL > 0.9 when the
+        lithology log has no shale). An explicit PNSH parameter, or missing
+        PHIT/VCL/shale samples, keeps the reported PHIE; the returned details
+        say which rule applied.
+        """
+        reported = np.asarray(phie_curve.data, dtype=float)
+        if self.config.swirr_flag_phi_cl == "workflow":
+            return reported, None
+        details: Dict[str, Any] = {"swirr_flag_phi_cl": self.config.swirr_flag_phi_cl}
+        if _parameter_float(well, "PNSH") is not None or _constant_zoned_parameter(well, "PNSH") is not None:
+            details["swirr_flag_phi_cl_applied"] = "LAS PNSH parameter; reported PHIE used"
+            return reported, details
+        phit_curve = get_curve(well, ["PHIT"])
+        if phit_curve is None or vcl is None:
+            details["swirr_flag_phi_cl_applied"] = "PHIT or VCL unavailable; reported PHIE used"
+            return reported, details
+        phit = np.asarray(phit_curve.data, dtype=float)
+        lithology = self._build_lithology_log(well)
+        shale = (
+            np.asarray([_is_shale_group(item) for item in lithology], dtype=bool)
+            if isinstance(lithology, np.ndarray)
+            else np.zeros(well.n_samples, dtype=bool)
+        )
+        if not np.any(shale):
+            vcl_values = np.asarray(vcl, dtype=float)
+            shale = np.isfinite(vcl_values) & (vcl_values > 0.9)
+        control = shale & np.isfinite(phit)
+        if not np.any(control):
+            details["swirr_flag_phi_cl_applied"] = "no shale PHIT samples; reported PHIE used"
+            return reported, details
+        phi_cl = float(np.clip(np.nanmean(phit[control]), 0.0, 0.6))
+        with np.errstate(invalid="ignore"):
+            phie = np.clip(phit - np.asarray(vcl, dtype=float) * phi_cl, 0.0, phit)
+        details.update(
+            swirr_flag_phi_cl_applied="mean PHIT of all shale-lithology samples",
+            swirr_flag_phi_cl_value=phi_cl,
+            swirr_flag_phi_cl_samples=int(np.count_nonzero(control)),
+        )
+        return phie, details
+
     def _ensure_resflag_for_swirr(self, well: "Well") -> Optional[Dict[str, Any]]:
         """Create RESFLAG before permeability so Swirr uses workflow net-reservoir logic."""
         resflag_curve = get_curve(well, ["RESFLAG"])
@@ -4538,20 +4595,29 @@ class DynamicWorkflow:
             sw_cutoff=self._cutoff_argument("sw_cutoff"),
             lithology=lithology,
         )
+        flag_phie, flag_phie_details = self._swirr_flag_phie(well, vcl, phie_curve)
         result = np_module.calculate(
             well,
             vcl=vcl,
-            phie=np.asarray(phie_curve.data, dtype=float),
+            phie=flag_phie,
             sw=np.asarray(sw_curve.data, dtype=float),
         )
         resflag = result.net_reservoir.astype(float)
         well.add_curve("RESFLAG", resflag, "", "Reservoir Flag")
 
+        phie_label = phie_curve.mnemonic
+        if flag_phie_details and "swirr_flag_phi_cl_value" in flag_phie_details:
+            phie_label = (
+                f"{phie_curve.mnemonic} recomputed with phi_cl="
+                f"{flag_phie_details['swirr_flag_phi_cl_value']:.3f} (mean PHIT of "
+                f"{flag_phie_details['swirr_flag_phi_cl_samples']} shale samples)"
+            )
         return {
+            **(flag_phie_details or {}),
             "source_curve": "NetPayModule.net_reservoir",
             "created": True,
             "vcl_curve": vcl_curve.mnemonic if vcl_curve is not None else "implicit_0",
-            "phie_curve": phie_curve.mnemonic,
+            "phie_curve": phie_label,
             "sw_curve": sw_curve.mnemonic,
             "vcl_cutoff": self._resolved_cutoff("vcl_cutoff"),
             "phie_cutoff": self._resolved_cutoff("phie_cutoff"),
