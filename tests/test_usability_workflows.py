@@ -78,7 +78,7 @@ def test_las_only_entry_points_and_copy_contract():
     result = pp.interpret(raw, rw=.08).raise_for_errors()
     assert list(raw.curves) == before
     assert result.well is not raw
-    assert "LITHO" in result.well.curves
+    assert "VCL" in result.well.curves
     assert pp.interpret(raw, inplace=True, rw=.08).well is raw
 
 
@@ -94,7 +94,7 @@ def test_workflow_errors_are_actionable_and_options_are_not_ignored():
     config = DynamicWorkflowConfig()
     with pytest.raises(TypeError):
         pp.interpret(_well(), config, imaginary_setting=True)
-    assert config.matrix_type == "auto"
+    assert config.matrix_type == "sandstone"
 
 
 @pytest.mark.parametrize("headers", [

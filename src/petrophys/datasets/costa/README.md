@@ -19,7 +19,7 @@ The original MIT notice is retained in `../phillips/LICENSE-Craig-2022.txt`.
 Related HPMI data and fitted parameters are available as
 `sample("costa_core_pc")` and `sample("costa_thomeer_fits")`.
 
-For the carbonate interpretation, pass `lithology="carbonate"` and
-`matrix_type="auto"` in `DynamicWorkflowConfig`. Automatic mineral selection can
+For the carbonate interpretation, pass `lithology_domain="carbonate"` in
+`DynamicWorkflowConfig`; the matrix is then resolved within the carbonate domain. Automatic mineral selection can
 also use interpreted lithology or core-constrained matrix density. Sparse or
 conflicting measurements cannot establish the mineral system uniquely.

@@ -104,16 +104,16 @@ def test_temperature_conversion_has_a_single_implementation():
         assert module.temperature_to_fahrenheit is temperature_to_fahrenheit
 
 
-def test_reference_temperature_arrays_respect_worded_units():
+def test_reference_temperature_arrays_convert_units():
     import numpy as np
     from petrophys.reporting.reference_export import (
         _convert_temperature_to_celsius,
         _convert_temperature_to_fahrenheit,
     )
     data = np.array([100.0])
-    assert _convert_temperature_to_fahrenheit(data, "deg C (from log)")[0] == pytest.approx(212.0)
+    assert _convert_temperature_to_fahrenheit(data, "degC")[0] == pytest.approx(212.0)
     assert _convert_temperature_to_celsius(data, "degF")[0] == pytest.approx(37.7777778)
-    assert _convert_temperature_to_celsius(data, "deg C (from log)")[0] == pytest.approx(100.0)
+    assert _convert_temperature_to_celsius(data, "degC")[0] == pytest.approx(100.0)
 
 
 def test_imputation_metrics_flag_in_sample_vs_held_out():

@@ -237,12 +237,16 @@ def test_cli_domain_option_keeps_the_las_gr_equation(context_well, tmp_path):
         ["--input-dir", str(tmp_path), "--lithology-domain", "carbonate"]
     )
     options = _package_options(args)
-    _, config = reference._read_context_input_well(
+    well, config = reference._read_context_input_well(
         source, lithology_domain=options["lithology_domain"],
     )
     assert config.lithology_domain == "carbonate"
-    assert config.gr_method == "steiber"
-    assert config.rho_fl == 1.1
+    # LAS header parameters are applied by the zoned workflow runner.
+    from petrophys.workflow.zoned_batch import run_dynamic_workflow_with_zones
+
+    steps = {step.step: step for step in run_dynamic_workflow_with_zones(well, config).base_result.steps_executed}
+    assert steps["vclay"].parameters["gr_method"] == "steiber"
+    assert steps["porosity"].parameters["rho_fl"] == 1.1
 
     output = tmp_path / "context.json"
     assert main([str(source), str(output), "--lithology-domain", "clastic"]) == 0

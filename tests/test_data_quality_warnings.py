@@ -47,7 +47,7 @@ def test_interpretation_reports_removed_curves():
     well = _density_well(np.full(50, 2400.0))
 
     with pytest.warns(pp.DataQualityWarning):
-        result = pp.interpret(well, rw=0.07)
+        result = pp.interpret(well, rw=0.07, standardize_input=True)
 
     assert any("RHOZ" in warning and "unit label" in warning for warning in result.warnings)
     normalization = next(s for s in result.steps_executed if s.step == "normalization")
@@ -111,4 +111,4 @@ def test_interpret_fails_fast_when_data_quality_warnings_are_errors():
     with warnings.catch_warnings():
         warnings.simplefilter("error", pp.DataQualityWarning)
         with pytest.raises(pp.DataQualityWarning, match="DTE"):
-            pp.interpret(well, rw=0.05)
+            pp.interpret(well, rw=0.05, standardize_input=True)

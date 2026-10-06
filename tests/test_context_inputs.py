@@ -91,7 +91,7 @@ def test_vcl_trace_reports_the_endpoints_used_in_the_equation():
 
     well = _well()
     well.add_curve("GR", np.array([0.0, 40.0, 100.0, 160.0]), "API")
-    result = pp.interpret(well)
+    result = pp.interpret(well, gr_min=0.0, gr_max=160.0)
     trace = next(s for s in result.steps_executed if s.step == "vclay")
 
     assert trace.parameters["gr_min_used"] == 0.0

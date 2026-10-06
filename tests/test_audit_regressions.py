@@ -79,16 +79,16 @@ def test_mhi_not_clipped_above_one():
 # ---------------------------------------------------------------------------
 # Net-pay cutoffs are inclusive (<=/>=), matching the documented contract
 # ---------------------------------------------------------------------------
-def test_net_pay_cutoffs_are_inclusive_at_boundary():
+def test_net_pay_cutoffs_are_strict_at_boundary():
     from petrophys.evaluation.net_pay.flags import generate_net_flags
 
-    vcl = np.array([0.30])    # exactly at vcl cutoff
-    phie = np.array([0.08])   # exactly at phie cutoff
-    sw = np.array([0.70])     # exactly at sw cutoff
+    vcl = np.array([0.30, 0.20, 0.20])    # at the vcl cutoff, then below it
+    phie = np.array([0.10, 0.08, 0.10])   # at the phie cutoff in the second sample
+    sw = np.array([0.50, 0.50, 0.70])     # at the sw cutoff in the third sample
     flags = generate_net_flags(vcl, phie, sw, 0.30, 0.08, 0.70)
-    assert bool(flags["net_rock"][0])
-    assert bool(flags["net_reservoir"][0])
-    assert bool(flags["net_pay"][0])
+    assert flags["net_rock"].tolist() == [False, True, True]
+    assert flags["net_reservoir"].tolist() == [False, False, True]
+    assert flags["net_pay"].tolist() == [False, False, False]
 
 
 # ---------------------------------------------------------------------------

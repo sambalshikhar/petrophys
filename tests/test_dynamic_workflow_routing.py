@@ -295,7 +295,7 @@ def test_pipeline_solves_provisional_porosity_before_lithology_then_refines():
     assert pipeline_steps.index("core_correction") < pipeline_steps.index("saturation")
 
 
-def test_canonical_workflow_recalculates_vcl_and_preserves_prioritized_phie():
+def test_workflow_recalculates_interpreted_vcl_and_phie():
     depth = np.arange(1000.0, 1006.0)
     well = Well("VENDOR-INTERP")
     well.depth = depth
@@ -332,16 +332,13 @@ def test_canonical_workflow_recalculates_vcl_and_preserves_prioritized_phie():
 
     assert result.success
     assert not np.allclose(well["VCL"].data, vendor_vcl)
-    np.testing.assert_allclose(well["PHIE"].data, vendor_phie)
+    assert not np.allclose(well["PHIE"].data, vendor_phie)
     assert "VCL_CALC" not in well
-    assert "PHIE_CALC" in well
+    assert "PHIE_CALC" not in well
 
     vcl_step = _step_by_name(result, "vclay")
-    por_step = _step_by_name(result, "porosity")
     assert vcl_step.parameters["active_vcl_source"] == "workflow_calculation"
     assert vcl_step.parameters["computed_vcl_curve"] == "VCL"
-    assert por_step.parameters["active_phie_source"] == "input_interpretation"
-    assert por_step.parameters["computed_phie_curve"] == "PHIE_CALC"
 
 
 def test_dynamic_workflow_skips_modules_when_inputs_are_missing(record_route):
@@ -538,7 +535,7 @@ def test_bad_hole_uses_depth_dependent_bs_curve(record_route):
     )
 
 
-def test_bad_hole_does_not_use_synthetic_bit_size_when_bs_missing(record_route):
+def test_bad_hole_assumes_8_5_in_when_bs_missing(record_route):
     well = _routing_well("BAD-HOLE-NO-BS")
     _remove_curves(well, "BS")
     well.header.bit_size = None
@@ -554,10 +551,8 @@ def test_bad_hole_does_not_use_synthetic_bit_size_when_bs_missing(record_route):
     step = _step_by_name(result, "bad_hole")
 
     assert "BS" not in step.input_curves
-    assert step.parameters["bit_size_used"] is None
-    assert step.parameters["bit_size_source"] is None
-    assert np.nansum(well["BAD_HOLE"].data) == 2
-    assert any("CALI-BS" in decision and "skipped" in decision for decision in step.decisions)
+    assert step.parameters["bit_size_used"] == 8.5
+    assert step.parameters["bit_size_source"] == "fallback_8.5"
 
 
 @pytest.mark.parametrize(
@@ -765,7 +760,7 @@ def test_rmf_routing_sources_and_temperature_units(
             "rw_rwa_clean_wet_fallback",
             lambda well: _remove_curves(well, "SP", "RXO", "RSHA", "RESS"),
             DynamicWorkflowConfig(),
-            "rwa_clean_wet_adaptive",
+            "rwa_clean_wet_p5",
         ),
     ],
 )
@@ -780,7 +775,6 @@ def test_rw_routing_sources_and_temperature_units(case_id, mutate, config, expec
         "user_provided_temperature_profile_corrected",
         "las_metadata_temperature_profile_corrected",
     }:
-        assert "salinity_ppm_estimated" not in step.parameters
         rw_in = step.parameters["rw_at_measured_temp"]
         measured_temp = step.parameters["measured_temp_f"]
         expected_min = rw_in * (measured_temp + 6.77) / (step.parameters["formation_temp_max_f"] + 6.77)
@@ -791,28 +785,19 @@ def test_rw_routing_sources_and_temperature_units(case_id, mutate, config, expec
         "user_provided_assumed_reference_temperature",
         "las_metadata_assumed_reference_temperature",
     }:
-        assert "salinity_ppm_estimated" not in step.parameters
-        assert np.isclose(step.parameters["reference_temp_f"], 75.0)
+        # Without a measurement temperature, Rw is taken at the median formation temperature.
+        reference = step.parameters["reference_temp_f"]
+        assert step.parameters["formation_temp_min_f"] < reference < step.parameters["formation_temp_max_f"]
         rw_in = step.parameters["rw"]
-        expected_min = rw_in * (75.0 + 6.77) / (step.parameters["formation_temp_max_f"] + 6.77)
-        expected_max = rw_in * (75.0 + 6.77) / (step.parameters["formation_temp_min_f"] + 6.77)
+        expected_min = rw_in * (reference + 6.77) / (step.parameters["formation_temp_max_f"] + 6.77)
+        expected_max = rw_in * (reference + 6.77) / (step.parameters["formation_temp_min_f"] + 6.77)
         assert np.isclose(step.parameters["rw_min"], expected_min)
         assert np.isclose(step.parameters["rw_max"], expected_max)
     if case_id == "rw_rwa_clean_wet_fallback":
         assert "rwa_reference_temp_f" in step.parameters
-        assert "salinity_ppm_estimated" not in step.parameters
         assert step.parameters["rw_min"] < step.parameters["rw_max"]
-        # Adaptive percentile: median for a narrow (all-wet) Rwa spread, low tail
-        # (P10) when a hydrocarbon leg broadens it.
-        assert step.parameters["rwa_percentile"] in (10.0, 50.0)
-        assert step.parameters["rwa_regime"] in (
-            "narrow_spread_all_wet_median", "wide_spread_hc_leg_low_tail")
-        if isinstance(step.parameters["archie_a"], (int, float)) and isinstance(step.parameters["archie_m"], (int, float)):
-            expected = _expected_adaptive_rwa(well, result, step)
-            assert np.isclose(step.parameters["rw_from_rwa"], expected)
-        else:
-            assert step.parameters["archie_coefficients"]
-            assert np.isfinite(step.parameters["rw_from_rwa"])
+        assert step.parameters["rwa_percentile"] == 5.0
+        assert np.isfinite(step.parameters["rw_from_rwa"])
 
 
 def test_rw_rwa_fallback_uses_lithology_specific_archie_coefficients(record_route):
@@ -829,11 +814,10 @@ def test_rw_rwa_fallback_uses_lithology_specific_archie_coefficients(record_rout
     )
     step = _step_by_name(result, "rw")
 
-    assert step.method == "rwa_clean_wet_adaptive"
+    assert step.method == "rwa_clean_wet_p5"
     assert step.parameters["archie_coefficients"]["LIMESTONE"]["a"] == 1.0
     assert step.parameters["archie_a"] == 1.0
-    assert step.parameters["rwa_percentile"] in (10.0, 50.0)
-    assert np.isclose(step.parameters["rw_from_rwa"], _expected_adaptive_rwa(well, result, step))
+    assert step.parameters["rwa_percentile"] == 5.0
 
 
 def test_saturation_uses_lithology_specific_archie_coefficients(record_route):
@@ -1034,8 +1018,8 @@ def test_porosity_routes_by_available_inputs(case_id, mutate, expected_method, e
     assert step.parameters["phie_apparent"] is bool(expected_apparent_source)
     assert step.parameters["apparent_porosity_source"] == expected_apparent_source
 
-    phit = well.get(step.parameters["computed_phit_curve"])
-    phie = well.get(step.parameters["computed_phie_curve"])
+    phit = well.get("PHIT")
+    phie = well.get("PHIE")
     assert phit is not None
     assert phie is not None
     assert phit.metadata.custom["porosity_apparent"] is bool(expected_apparent_source)
@@ -1487,7 +1471,7 @@ def test_mhi_skips_when_sxo_is_only_fifth_root_fallback(record_route):
             {
                 "temperature": "fallback_geothermal_gradient",
                 "rcl": "lithology_shale_median_rt",
-                "rw": "rwa_clean_wet_adaptive",
+                "rw": "rwa_clean_wet_p5",
             },
             {"rmf", "hc_correction"},
             {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "NET_PAY"},
@@ -1498,7 +1482,7 @@ def test_mhi_skips_when_sxo_is_only_fifth_root_fallback(record_route):
             {
                 "temperature": "fallback_geothermal_gradient",
                 "rcl": "lithology_shale_median_rt",
-                "rw": "rwa_clean_wet_adaptive",
+                "rw": "rwa_clean_wet_p5",
             },
             {"rmf", "hc_correction"},
             {"TEMP", "VCL", "RW", "PHIE", "SW", "SXO", "PERM", "BVW", "NET_PAY"},
@@ -1578,14 +1562,12 @@ def test_explicit_carbonate_domain_keeps_a_carbonate_matrix():
     assert any("lithology_domain is 'carbonate', but" in warning for warning in result.warnings)
 
 
-def test_default_domain_is_clastic_and_points_to_carbonate_evidence():
+def test_default_domain_is_clastic_and_auto_domain_follows_the_evidence():
     import petrophys as pp
 
     well = pp.read(pp.sample("HW-3"))  # core grain density says dolomite
     default = pp.interpret(well)
     assert (default.config.lithology_domain, default.config.matrix_type) == ("clastic", "sandstone")
-    assert any("(the default)" in w and "set lithology_domain='carbonate'" in w
-               for w in default.warnings)
 
     auto = pp.interpret(well, lithology_domain="auto")
     assert (auto.config.lithology_domain, auto.config.matrix_type) == ("carbonate", "dolomite")

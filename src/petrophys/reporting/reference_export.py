@@ -4,10 +4,12 @@ Export helpers for writing delivery LAS files and paired JSON summaries.
 
 from __future__ import annotations
 
+
 import copy
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 import csv
 import json
 import re
@@ -24,9 +26,9 @@ from petrophys.evaluation.diagnostics import (
     SaturationAnalysis,
 )
 from petrophys.io.las_reader import read_las
-from petrophys.model.units import temperature_unit
 from petrophys.preprocessing.quality.value_ranges import (
     VALUE_RANGE_QC_PARAMETER,
+    ValueRangeRule,
     apply_value_range_qc,
     clean_curve_values,
     value_range_qc_note,
@@ -34,12 +36,11 @@ from petrophys.preprocessing.quality.value_ranges import (
 from petrophys.preprocessing.standardization import standardize_curves
 from petrophys._internal.analysis_helpers import CategoryAnalysisResult, build_section, get_curve, get_curve_data_depthwise
 if TYPE_CHECKING:
+    from petrophys.model.well import Well
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
 
 
 NULL_VALUE = -9999.0
-CONTEXT_EXCLUDED_INPUT_CURVES = frozenset({"BS", "SO"})
-
 PREFERRED_CURVE_ORDER = [
     "DEPT",
     "CALI",
@@ -79,7 +80,6 @@ PREFERRED_CURVE_ORDER = [
     "SALAPP",
     "SALMUDAPP",
     "SW",
-    "SO",
     "SXO",
     "PERM",
     "PERM_CC",
@@ -95,28 +95,6 @@ PREFERRED_CURVE_ORDER = [
     "INVASION_RATIO",
     "MHI",
 ]
-
-FRACTION_SATURATION_EXPORT_CURVES = {
-    "SW",
-    "SWA",
-    "SWT",
-    "SWE",
-    "SXO",
-    "SWXOA",
-    "SO",
-    "SOC",
-    "SG",
-    "SWC",
-    "CSW",
-    "SWI",
-    "SWIR",
-    "SWIRR",
-    "SWIRR_APP",
-    "NMR_SWIRR",
-    "SWIRR_NMR",
-    "CMR_SWIRR",
-    "SWIRR_CMR",
-}
 
 FAMILY_LABELS = {
     "DEPT": "Measured Depth",
@@ -158,7 +136,6 @@ FAMILY_LABELS = {
     "SALAPP": "Apparent Water Salinity",
     "SALMUDAPP": "Apparent Mud Filtrate Salinity",
     "SW": "Water Saturation",
-    "SO": "Oil Saturation",
     "SXO": "Flushed Zone Water Saturation",
     "PERM": "Permeability",
     "PERM_CC": "Core-Calibrated Permeability",
@@ -226,8 +203,6 @@ ALIASED_SOURCE_CURVES = {
 EXCLUDED_LAS_CURVES = {
     "BAD_HOLE",
     "BADHOLEFLAG",
-    "BS",
-    "SO",
     "CALI_SMOOTH",
     "CALI_ROUGHNESS",
     "COMPOSITE_CLAY",
@@ -305,7 +280,6 @@ MISSING_LITHOLOGY_LABEL = "NO_LITHOLOGY_DATA"
 
 REFERENCE_DERIVED_LOG_EXCLUDE = {
     "BADHOLEFLAG",
-    "SO",
     "SWA",
     "SWXOA",
     "SXO-ARCHIE",
@@ -439,13 +413,66 @@ PRIMARY_LOGS_FOR_COMPLETENESS = [
 # runs. Curves already in REFERENCE_DERIVED_LOG_TARGETS keep their position
 # from that list; the trailing entries here are the ones whose order is only
 # defined by this tuple, so keep them where they are.
+# Value-range rules applied to the context statistics (lower RMF bound 0.01;
+# no SP, SO or NMR rules).
+_CONTEXT_VALUE_RANGE_RULES = {
+    "RMF": ValueRangeRule(0.01, 10.0, "nan", ('RMF',)),
+    "TEMP": ValueRangeRule(-5.0, 400.0, "nan", ('TEMP', 'TMPC')),
+    "RXO": ValueRangeRule(0.01, 2000.0, "nan", ('RXO', 'RSHA', 'RESS', 'MSFL', 'SFL')),
+    "RDEP": ValueRangeRule(0.01, 2000.0, "nan", ('RDEP', 'RT', 'RMED', 'RESM', 'ILD')),
+    "GR": ValueRangeRule(0.0, 400.0, "nan", ('GR', 'GRC')),
+    "DTC": ValueRangeRule(20.0, 300.0, "nan", ('DTC', 'DT')),
+    "DTS": ValueRangeRule(20.0, 600.0, "nan", ('DTS', 'DTE')),
+    "RHOB": ValueRangeRule(1.0, 3.5, "nan", ('RHOB',)),
+    "NPHI": ValueRangeRule(-0.15, 0.6, "nan", ('NPHI',)),
+    "PEF": ValueRangeRule(0.0, 15.0, "nan", ('PEF',)),
+    "CALI": ValueRangeRule(4.0, 40.0, "nan", ('CALI', 'CAL', 'DCAL')),
+    "BS": ValueRangeRule(4.0, 40.0, "nan", ('BS',)),
+    "PHIS": ValueRangeRule(-0.05, 0.6, "nan", ('PHIS',)),
+    "PERM": ValueRangeRule(0.0001, 20000.0, "nan", ('PERM',)),
+    "PERM_CC": ValueRangeRule(0.0001, 20000.0, "nan", ('PERM_CC',)),
+    "PHID": ValueRangeRule(-0.05, 0.6, "nan", ('PHID',)),
+    "PHIN": ValueRangeRule(-0.15, 0.6, "nan", ('PHIN',)),
+    "PHIND": ValueRangeRule(-0.05, 0.6, "nan", ('PHIND',)),
+    "PHIRH": ValueRangeRule(-0.05, 0.6, "nan", ('PHIRH',)),
+    "PHIT": ValueRangeRule(0.0, 0.45, "nan", ('PHIT',)),
+    "PHIE": ValueRangeRule(0.0, 0.45, "nan", ('PHIE',)),
+    "PHIE_CC": ValueRangeRule(0.0, 0.45, "nan", ('PHIE_CC',)),
+    "PHI_SEC": ValueRangeRule(-0.05, 0.6, "nan", ('PHI_SEC',)),
+    "RESFLAG": ValueRangeRule(0.0, 1.0, "nan", ('RESFLAG', 'NET_ROCK', 'NET_RES', 'NET_PAY', 'SEALFLAG', 'CROSSOVER_FLAG')),
+    "RW": ValueRangeRule(0.005, 20.0, "nan", ('RW',)),
+    "RWA": ValueRangeRule(0.005, 20.0, "nan", ('RWA',)),
+    "SW": ValueRangeRule(0.0, 1.0, "clip", ('SW', 'SWA', 'SWT-LOG')),
+    "SXO": ValueRangeRule(0.0, 1.0, "clip", ('SXO', 'SWXO', 'SWXOA', 'SXO-LOG')),
+    "SWIRR_APP": ValueRangeRule(0.0, 1.0, "nan", ('SWIRR_APP', 'SWIRR', 'SWI', 'SWIR')),
+    "BVW": ValueRangeRule(0.0, 1.0, "nan", ('BVW',)),
+    "MHI": ValueRangeRule(0.0, 1.0, "nan", ('MHI',)),
+    "VDOL": ValueRangeRule(0.0, 1.0, "nan", ('VDOL', 'VDOLO')),
+    "VLIM": ValueRangeRule(0.0, 1.0, "nan", ('VLIM', 'VCALC')),
+    "VSAND": ValueRangeRule(0.0, 1.0, "nan", ('VSAND', 'VQUAR')),
+    "VANHY": ValueRangeRule(0.0, 1.0, "nan", ('VANHY',)),
+    "VSH": ValueRangeRule(0.0, 1.0, "nan", ('VSH', 'VCL', 'VCLAY', 'VSHGR', 'VSHND', 'VCL_GR', 'VCL_SP', 'VCL_ND')),
+    "VP_VS_RATIO": ValueRangeRule(0.5, 5.0, "nan", ('VP_VS_RATIO',)),
+    "POISSON_RATIO": ValueRangeRule(0.0, 0.49, "nan", ('POISSON_RATIO',)),
+    "BRITTLENESS_INDEX": ValueRangeRule(0.0, 1.0, "nan", ('BRITTLENESS_INDEX',)),
+    "ACOUSTIC_IMPEDANCE": ValueRangeRule(1000000.0, 30000000.0, "nan", ('ACOUSTIC_IMPEDANCE',)),
+    "YOUNG_MOD": ValueRangeRule(0.0, 150.0, "nan", ('YOUNG_MOD',)),
+    "S_V": ValueRangeRule(0.0, 250.0, "nan", ('S_V',)),
+    "PP_HYDROSTATIC": ValueRangeRule(0.0, 150.0, "nan", ('PP_HYDROSTATIC',)),
+    "SH_MIN": ValueRangeRule(0.0, 250.0, "nan", ('SH_MIN',)),
+    "DATA_COMPLETENESS": ValueRangeRule(0.0, 1.0, "nan", ('DATA_COMPLETENESS',)),
+    "CONSISTENCY_RATIO": ValueRangeRule(0.0, 1.0, "nan", ('CONSISTENCY_RATIO',)),
+}
+
+
 CATEGORY_CONTEXT_SPECS = {
     "hydrocarbon": {
         "analyzer": HydrocarbonAnalysis,
-        "targets": (
+        "targets": {
             "TEMP",
             "RMF",
             "RW",
+            "RWA",
             "PHID",
             "PHIN",
             "PHIS",
@@ -460,19 +487,19 @@ CATEGORY_CONTEXT_SPECS = {
             "MHI",
             "CROSSOVER_FLAG",
             "VP_VS_RATIO",
+            "PRIME_GAS_TARGET",
+            "PRIME_OIL_TARGET",
             "RESFLAG",
             "SEALFLAG",
-            "PRIME_OIL_TARGET",
-            "PRIME_GAS_TARGET",
-            "RWA",
-        ),
+        },
     },
     "saturation": {
         "analyzer": SaturationAnalysis,
-        "targets": (
+        "targets": {
             "TEMP",
             "RMF",
             "RW",
+            "RWA",
             "PHID",
             "PHIN",
             "PHIS",
@@ -482,30 +509,29 @@ CATEGORY_CONTEXT_SPECS = {
             "SXO",
             "BVW",
             "MHI",
-            "RWA",
             "ND_SEPARATION",
             "PHIT_GAS_CORR",
-        ),
+        },
     },
     "permeability": {
         "analyzer": PermeabilityAnalysis,
-        "targets": (
+        "targets": {
             "PERM",
             "PERM_CC",
             "RQI",
             "FZI",
+            "KH",
+            "PERM_QUALITY_INDEX",
+            "RXO_RDEP_RATIO",
             "PHIE",
             "PHIT",
             "VCL",
             "MHI",
-            "RXO_RDEP_RATIO",
-            "PERM_QUALITY_INDEX",
-            "KH",
-        ),
+        },
     },
     "porosity": {
         "analyzer": PorosityAnalysis,
-        "targets": (
+        "targets": {
             "PHID",
             "PHIN",
             "PHIS",
@@ -513,60 +539,60 @@ CATEGORY_CONTEXT_SPECS = {
             "PHIE",
             "PHIE_CC",
             "PHI_SEC",
+            "DS_SEPARATION",
+            "PORO_QUALITY_INDEX",
             "RQI",
             "FZI",
             "VCL",
-            "DS_SEPARATION",
-            "PORO_QUALITY_INDEX",
-        ),
+        },
     },
     "numerical": {
         "analyzer": NumericalStatisticalAnalysis,
-        "targets": (
+        "targets": {
             "TEMP",
             "RW",
             "RMF",
             "BAD_HOLE",
-            "NET_PAY",
-            "PP_HYDROSTATIC",
-            "DTC_GRAD",
-            "CONSISTENCY_RATIO",
-            "S_V",
-            "SH_MIN",
             "DATA_COMPLETENESS",
-            "ELECTROFACIES",
             "GR_GRAD",
-            "ACOUSTIC_IMPEDANCE",
-            "POISSON_RATIO",
             "RHOB_GRAD",
             "RDEP_GRAD",
             "NPHI_GRAD",
-            "BRITTLENESS_INDEX",
+            "DTC_GRAD",
+            "CONSISTENCY_RATIO",
+            "ACOUSTIC_IMPEDANCE",
+            "POISSON_RATIO",
             "YOUNG_MOD",
-        ),
+            "BRITTLENESS_INDEX",
+            "ELECTROFACIES",
+            "S_V",
+            "PP_HYDROSTATIC",
+            "SH_MIN",
+            "NET_PAY",
+        },
     },
     "lithology": {
         "analyzer": LithologyAnalysis,
-        "targets": (
+        "targets": {
             "LITHO",
             "VCL",
             "VQUAR",
             "VCALC",
             "VDOLO",
             "VANHY",
-            "LITHOLOGY_NAME",
-            "CARBONATE_INDICATOR",
             "GT_LITHOLOGY_GROUP_CODE",
+            "LIMESTONE_INDICATOR",
+            "DOLOMITE_INDICATOR",
+            "CARBONATE_INDICATOR",
             "GR_CLAY_INDICATOR",
             "NPHI_CLAY_INDICATOR",
+            "PEF_CLAY_INDICATOR",
+            "COMPOSITE_CLAY",
             "COMPOSITE_CLAY_INDICATOR",
             "CONSISTENCY_SCORE",
-            "COMPOSITE_CLAY",
-            "PEF_CLAY_INDICATOR",
-            "LIMESTONE_INDICATOR",
             "LITHOLOGY_GROUP",
-            "DOLOMITE_INDICATOR",
-        ),
+            "LITHOLOGY_NAME",
+        },
     },
 }
 
@@ -715,46 +741,21 @@ def _curve_family(mnemonic: str, description: str) -> str:
     return FAMILY_LABELS.get(mnemonic, description or mnemonic.replace("_", " ").title())
 
 
-def _export_curve_unit(mnemonic: str, unit: str) -> str:
-    text = str(unit or "").strip()
-    lower = text.lower()
-    upper = str(mnemonic or "").upper()
-    if upper in FRACTION_SATURATION_EXPORT_CURVES and lower in {
-        "",
-        "-",
-        "none",
-        "nan",
-        "v/v",
-        "fraction",
-        "decimal",
-        "dec",
-        "unitless",
-    }:
-        return "frac"
-    if lower in {"ohmm", "ohm-m", "ohm m", "ohm.meter", "ohm-meter"}:
-        return "ohm.m"
-    return text
-
-
 def _convert_temperature_to_celsius(data: np.ndarray, unit: str) -> np.ndarray:
     """Convert a temperature array to Celsius; unlabelled data is assumed Celsius."""
+    text = (unit or "").strip().lower()
     numeric = _normalize_numeric_array(data)
-    scale = temperature_unit(unit)
-    if scale == "F":
+    if "f" in text and "c" not in text:
         return (numeric - 32.0) * 5.0 / 9.0
-    if scale == "K":
-        return numeric - 273.15
     return numeric
 
 
 def _convert_temperature_to_fahrenheit(data: np.ndarray, unit: str) -> np.ndarray:
     """Convert a temperature array to Fahrenheit; unlabelled data is assumed Fahrenheit."""
+    text = (unit or "").strip().lower()
     numeric = _normalize_numeric_array(data)
-    scale = temperature_unit(unit)
-    if scale == "C":
+    if "c" in text and "f" not in text:
         return (numeric * 9.0 / 5.0) + 32.0
-    if scale == "K":
-        return (numeric - 273.15) * 9.0 / 5.0 + 32.0
     return numeric
 
 
@@ -795,7 +796,7 @@ def _build_alias_specs(well: "Well") -> List[ExportCurveSpec]:
         specs.append(
             ExportCurveSpec(
                 mnemonic="SW",
-                unit=_export_curve_unit("SW", sw.unit),
+                unit="v/v",
                 description="Water Saturation",
                 family=FAMILY_LABELS["SW"],
                 data=_normalize_numeric_array(sw.data),
@@ -808,7 +809,7 @@ def _build_alias_specs(well: "Well") -> List[ExportCurveSpec]:
         specs.append(
             ExportCurveSpec(
                 mnemonic="SXO",
-                unit=_export_curve_unit("SXO", sxo.unit),
+                unit="v/v",
                 description="Flushed Zone Water Saturation",
                 family=FAMILY_LABELS["SXO"],
                 data=_normalize_numeric_array(sxo.data),
@@ -865,7 +866,7 @@ def _direct_curve_spec(well: "Well", mnemonic: str) -> Optional[ExportCurveSpec]
     description = _curve_description(mnemonic, curve)
     return ExportCurveSpec(
         mnemonic=mnemonic,
-        unit=_export_curve_unit(mnemonic, curve.unit),
+        unit=curve.unit or "",
         description=description,
         family=_curve_family(mnemonic, description),
         data=_normalize_numeric_array(curve.data),
@@ -1113,13 +1114,13 @@ def _workflow_bad_hole_analysis(
         "then combined with the large-hole geometry screen."
     )
     calculation_thresholds = (
-        f"WASHOUT when caliper-minus-bit-size > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in"
+        f"WASHOUT when (CALI - BS) > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in"
         + (
             f" or |DRHO| > {thresholds['drho_washout_threshold_g_per_cc']:.2f} g/cc"
             if details["log_availability"].get("DRHO")
             else ""
         )
-        + f"; LARGE_HOLE when bit size > {thresholds['large_hole_bit_size_threshold_in']:.2f} in; "
+        + f"; LARGE_HOLE when BS > {thresholds['large_hole_bit_size_threshold_in']:.2f} in; "
         "BAD_HOLE = WASHOUT OR LARGE_HOLE."
     )
 
@@ -1129,7 +1130,7 @@ def _workflow_bad_hole_analysis(
             "bad_hole_detection": build_section(
                 well,
                 labels,
-                description="Bad-hole screening from caliper geometry and density-correction thresholds.",
+                description="Bad-hole screening from caliper, bit size, and density-correction thresholds.",
                 methodology=methodology,
                 calculation_thresholds=calculation_thresholds,
             )
@@ -1238,8 +1239,6 @@ def _canonical_delivery_curve_name(curve: str) -> str:
     upper = curve.upper()
     if upper == "TMPC":
         return "TEMP"
-    if upper == "RSHAL":
-        return "RSHA"
     if upper == "PHI_Z":
         return "PHI_NORM"
     if upper == "SWA":
@@ -1298,30 +1297,12 @@ def _input_log_display_list(curves: set[str]) -> List[str]:
         canonical = _canonical_delivery_curve_name(upper)
         if canonical in CORE_ONLY_CONTEXT_CURVES:
             continue
-        if canonical in CONTEXT_EXCLUDED_INPUT_CURVES:
-            continue
         if upper == "DCAL" and "CALI" in curve_names:
             continue
         if upper == "DT" and "DTC" in curve_names:
             continue
         display_names.append(_display_curve_name(name))
     return sorted(_ordered_unique(display_names))
-
-
-def _primary_log_available_for_context(
-    well: "Well",
-    workflow_result,
-    name: str,
-    original_curves: set[str],
-) -> bool:
-    canonical = _canonical_delivery_curve_name(name)
-    original_canonical = {
-        _canonical_delivery_curve_name(str(curve))
-        for curve in original_curves
-    }
-    if canonical in original_canonical:
-        return True
-    return _has_finite_any_curve(well, _target_curve_candidates(canonical))
 
 
 def _target_curve_candidates(curve: str) -> List[str]:
@@ -1349,9 +1330,9 @@ def _finite_input_status_text(well: "Well", specs: Sequence[tuple[str, Sequence[
         if _has_finite_any_curve(well, candidates):
             status = "present"
         elif _has_any_curve(well, candidates):
-            status = "curve present but no finite samples in this segment"
+            status = "present/no finite samples"
         else:
-            status = "missing in this segment"
+            status = "missing/no finite samples"
         parts.append(f"{label}={status}")
     return ", ".join(parts)
 
@@ -1449,38 +1430,11 @@ def _all_step_results(workflow_result, step_name: Optional[str] = None) -> List[
     return step_results
 
 
-PROVENANCE_PASSTHROUGH_STEPS = {"normalization"}
-
-
-FINALIZED_WORKFLOW_STEPS = {
-    "permeability": "permeability_finalize",
-    "rock_quality": "rock_quality_finalize",
-}
-
-
-def _canonical_workflow_step_name(step_name: str) -> str:
-    for canonical, finalized in FINALIZED_WORKFLOW_STEPS.items():
-        if step_name == finalized:
-            return canonical
-    return step_name
-
-
 def _workflow_output_curves(workflow_result) -> List[str]:
     curves: List[str] = []
     for step in _all_step_results(workflow_result):
-        if step.step in PROVENANCE_PASSTHROUGH_STEPS:
-            continue
         curves.extend(step.output_curves or [])
     return curves
-
-
-def _workflow_passthrough_curves(workflow_result) -> set[str]:
-    return {
-        _canonical_delivery_curve_name(curve)
-        for step in _all_step_results(workflow_result)
-        if step.step in PROVENANCE_PASSTHROUGH_STEPS
-        for curve in (step.output_curves or [])
-    }
 
 
 def _workflow_output_curve_written(workflow_result, curve_name: str) -> bool:
@@ -1500,23 +1454,15 @@ def _derived_logs_computed(
         _canonical_delivery_curve_name(curve)
         for curve in _workflow_output_curves(workflow_result)
     }
-    undeclared_new_curves = {
+    derived.update(
         _canonical_delivery_curve_name(curve)
         for curve in (set(well.curves) - set(original_curves))
-    }
-    undeclared_new_curves.difference_update(_workflow_passthrough_curves(workflow_result))
-    derived.update(undeclared_new_curves)
+    )
 
     # Keep the reference-style list on canonical mnemonics rather than
     # method-specific aliases that are internal compatibility artifacts.
     derived.difference_update(REFERENCE_DERIVED_LOG_EXCLUDE)
     derived.difference_update(CORE_ONLY_CONTEXT_CURVES)
-    # A curve supplied by the input LAS is not a derived log, even when a
-    # workflow step rewrites it in place and declares it as an output.
-    derived.difference_update(
-        _canonical_delivery_curve_name(curve) for curve in original_curves
-    )
-    derived.difference_update(CONTEXT_EXCLUDED_INPUT_CURVES)
     derived.discard("TMPC")
     derived.discard("PHI_Z")
     derived.difference_update({"SWA", "SWXOA", "VCLAY", "VSH", "VCLGR", "VCLSP", "VCLND", "VCL_GR", "VCL_SP", "VCL_ND"})
@@ -1582,10 +1528,6 @@ def _step_lookup(workflow_result) -> tuple[dict[str, Any], set[str]]:
         for step in run.steps_executed:
             if step.step not in step_results or step.success:
                 step_results[step.step] = step
-    for canonical, finalized in FINALIZED_WORKFLOW_STEPS.items():
-        finalized_step = step_results.get(finalized)
-        if finalized_step is not None and finalized_step.success:
-            step_results[canonical] = finalized_step
     return step_results, skipped_steps
 
 
@@ -1608,38 +1550,19 @@ def _missing_curve_reason(
         return ""
 
     if curve == "SXO":
+        sw_present = _has_finite_curve(well, "SW")
         shallow_present = _has_finite_any_curve(well, ("RSHA", "RXO", "RESS"))
         rmf_present = _has_finite_curve(well, "RMF")
-        phie_present = _has_finite_any_curve(well, ("PHIE_CC", "PHIE"))
-        sw_present = _has_finite_any_curve(well, ("SW", "SWA", "SWT-LOG"))
-
-        direct_missing: list[str] = []
+        if not sw_present:
+            return "SW unavailable or non-finite in this segment, so SXO could not be calculated"
+        if not shallow_present and not rmf_present:
+            return "SXO was not written; only the fifth-root fallback inputs were available"
         if not shallow_present:
             if _has_any_curve(well, ("RSHA", "RXO", "RESS")):
-                direct_missing.append("RSHA/RXO/RESS curve present but no finite samples in this segment")
-            else:
-                direct_missing.append("RSHA/RXO/RESS missing in this segment")
+                return "shallow resistivity curve was present but had no finite samples"
+            return "shallow resistivity curve was absent"
         if not rmf_present:
-            if _has_any_curve(well, ("RMF",)):
-                direct_missing.append("RMF curve present but no finite samples in this segment")
-            else:
-                direct_missing.append("RMF missing in this segment")
-        if not phie_present:
-            if _has_any_curve(well, ("PHIE_CC", "PHIE")):
-                direct_missing.append("PHIE_CC/PHIE curve present but no finite samples in this segment")
-            else:
-                direct_missing.append("PHIE_CC/PHIE missing in this segment")
-
-        if direct_missing:
-            if sw_present:
-                fallback_reason = "fifth-root fallback input SW was present, but SXO was not written"
-            elif _has_any_curve(well, ("SW", "SWA", "SWT-LOG")):
-                fallback_reason = "fifth-root fallback also unavailable because SW had no finite samples in this segment"
-            else:
-                fallback_reason = "fifth-root fallback also unavailable because SW was missing in this segment"
-            return "direct invaded-zone inputs unavailable: " + "; ".join(direct_missing) + "; " + fallback_reason
-
-        return "direct invaded-zone inputs were present, but no finite SXO values were produced after screening"
+            return "shallow resistivity was available but RMF was unavailable"
 
     if curve == "MHI":
         if not _has_finite_curve(well, "SW"):
@@ -1711,28 +1634,11 @@ def _missing_curve_reason(
         return reason or "no finite PHI_SEC values were produced in this segment"
 
     if curve == "SW":
-        missing_inputs: list[str] = []
-        nonfinite_inputs: list[str] = []
-        for label, candidates in (
-            ("RDEP or RT", ("RDEP", "RT")),
-            ("selected effective porosity", ("PHIE_CC", "PHIE")),
-            ("RW", ("RW",)),
-        ):
-            if _has_finite_any_curve(well, candidates):
-                continue
-            if _has_any_curve(well, candidates):
-                nonfinite_inputs.append(label)
-            else:
-                missing_inputs.append(label)
-        if missing_inputs or nonfinite_inputs:
-            parts = []
-            if missing_inputs:
-                parts.append("missing " + ", ".join(missing_inputs))
-            if nonfinite_inputs:
-                parts.append("present but no finite samples in this segment: " + ", ".join(nonfinite_inputs))
-            reason = "; ".join(parts)
-        else:
-            reason = ""
+        reason = missing_required({
+            "RDEP or RT": _has_finite_any_curve(well, ("RDEP", "RT")),
+            "selected effective porosity": _has_finite_any_curve(well, ("PHIE_CC", "PHIE")),
+            "RW": _has_finite_curve(well, "RW"),
+        })
         if reason:
             return reason
         return "no finite SW values were produced in this segment after saturation routing"
@@ -1833,7 +1739,7 @@ def _missing_curve_reason(
             "CROSSOVER_FLAG": _has_finite_curve(well, "CROSSOVER_FLAG"),
             "VP_VS_RATIO": _has_finite_curve(well, "VP_VS_RATIO"),
             "selected effective porosity": _has_finite_any_curve(well, ("PHIE_CC", "PHIE")),
-            "PERM_CC or PERM": _has_finite_curve(well, "PERM_CC") or _has_finite_curve(well, "PERM"),
+            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
         }
         missing_inputs = [name for name, present in required.items() if not present]
         if missing_inputs:
@@ -1844,7 +1750,7 @@ def _missing_curve_reason(
         required = {
             "NET_PAY": _has_finite_curve(well, "NET_PAY"),
             "selected effective porosity": _has_finite_any_curve(well, ("PHIE_CC", "PHIE")),
-            "PERM_CC or PERM": _has_finite_curve(well, "PERM_CC") or _has_finite_curve(well, "PERM"),
+            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
         }
         missing_inputs = [name for name, present in required.items() if not present]
         if missing_inputs:
@@ -1933,7 +1839,7 @@ def _missing_curve_reason(
     if curve == "PORO_QUALITY_INDEX":
         reason = missing_required({
             "PHIT": _has_finite_curve(well, "PHIT"),
-            "PERM_CC or PERM": _has_finite_curve(well, "PERM_CC") or _has_finite_curve(well, "PERM"),
+            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
         })
         return reason or "porosity analysis did not write PORO_QUALITY_INDEX"
 
@@ -1951,7 +1857,7 @@ def _missing_curve_reason(
         return f"{curve} was not written after resistivity-ratio screening"
 
     if curve == "KH":
-        reason = missing_required({"PERM_CC or PERM": _has_finite_curve(well, "PERM_CC") or _has_finite_curve(well, "PERM")})
+        reason = missing_required({"PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC")})
         return reason or "permeability analysis did not write KH"
 
     if curve == "PERM_QUALITY_INDEX":
@@ -1961,7 +1867,7 @@ def _missing_curve_reason(
             or _has_finite_curve(well, "RQI")
             or _has_finite_curve(well, "FZI")
         ):
-            return "required input curves unavailable: PERM_CC/PERM, RQI, or FZI"
+            return "required input curves unavailable: PERM/PERM_CC, RQI, or FZI"
         return "permeability analysis did not write PERM_QUALITY_INDEX"
 
     if curve.endswith("_GRAD"):
@@ -2083,9 +1989,9 @@ def _computed_curve_detail(curve: str, step_results: dict[str, Any], well: Optio
                 return f"computed with fifth-root quick-look fallback because {sxo_reason}"
             return "computed with fifth-root quick-look fallback SXO = SW^(1/5)"
     if curve == "RMF":
-        return _method_label(step.method, subject="RMF") if step.method else "computed"
+        return _method_label(step.method) if step.method else "computed"
     if curve == "RW":
-        return _method_label(step.method, subject="RW") if step.method else "computed"
+        return _method_label(step.method) if step.method else "computed"
     if curve in {"RWA", "SAL", "SALAPP", "SALMUDAPP"}:
         return "computed by resistivity/salinity category analysis"
     if curve == "INVASION_RATIO":
@@ -2460,24 +2366,13 @@ def _step_parameter_values(step_results: Sequence[Any], key: str) -> List[Any]:
     return values
 
 
-# Method names the workflow emits for more than one step, labelled per step.
-_STEP_SPECIFIC_METHOD_LABELS: dict[tuple[str, str], str] = {
-    ("RMF", "las_metadata_assumed_reference_temperature"): (
-        "LAS header RMF with assumed-reference depth-wise temperature correction"
-    ),
-    ("RW", "las_metadata_assumed_reference_temperature"): (
-        "LAS header RW with assumed-reference depth-wise temperature correction"
-    ),
-}
-
-
 def _context_workflow_config(
     config: Optional["DynamicWorkflowConfig"] = None,
     *,
     well: Optional["Well"] = None,
     lithology_file: Optional[str | Path] = None,
 ) -> "DynamicWorkflowConfig":
-    """Build the canonical workflow configuration from LAS and geology inputs."""
+    """Build the workflow configuration from LAS and geology inputs."""
     import dataclasses
 
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
@@ -2514,31 +2409,30 @@ def _read_context_input_well(
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
     lithology_domain: Optional[str] = None,
 ):
-    """Read one LAS and apply optional lithology input."""
+    """Read one LAS and build its workflow configuration.
+
+    The configuration is ``workflow_config`` (default: the workflow defaults)
+    with the optional lithology intervals and domain applied; LAS header
+    parameters are applied by the zoned workflow runner.
+    """
+    import dataclasses
+
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
+
     well = read_las(file_path)
     well = standardize_curves(well, rename_curves=True, convert_units=True)
-    config = _context_workflow_config(
-        workflow_config,
-        well=well,
-        lithology_file=lithology_file,
-    )
+    config = workflow_config if workflow_config is not None else DynamicWorkflowConfig()
+    options: dict[str, Any] = {}
+    if lithology_file is not None:
+        options.update(lithology_intervals=lithology_file, lithology_source="external")
     if lithology_domain is not None:
-        from dataclasses import replace
-
-        config = replace(config, lithology_domain=lithology_domain, lithology=None)
+        options.update(lithology_domain=lithology_domain, lithology=None)
+    if options:
+        config = dataclasses.replace(config, **options)
     return well, config
 
 
-def _method_label(name: str, subject: Optional[str] = None) -> str:
-    """Return the report label for a workflow method name.
-
-    ``subject`` names the resistivity being described (``"RMF"`` or ``"RW"``)
-    for method names that both workflow steps emit.
-    """
-    if subject is not None:
-        specific = _STEP_SPECIFIC_METHOD_LABELS.get((subject, name))
-        if specific is not None:
-            return specific
+def _method_label(name: str) -> str:
     mapping = {
         "mud_filtrate_salinity_conversion": "CLFL-to-RMF salinity conversion",
         "las_metadata": "direct LAS header value",
@@ -2559,7 +2453,6 @@ def _method_label(name: str, subject: Optional[str] = None) -> str:
         "salinity_conversion": "salinity-to-RW conversion",
         "sp_clean_water": "SP clean-water method",
         "rxo_rt_clean_water": "Rxo/Rt clean-water method",
-        "rwa_clean_wet_adaptive": "Rwa clean-wet adaptive (P50/P10) fallback",
         "rwa_clean_wet_p5": "Rwa clean-wet P5 fallback",
         "default_fallback": "default RW fallback (0.05 ohm.m)",
         "default_fallback_profile": "default RW fallback (0.05 ohm.m) with depth-wise temperature correction",
@@ -2713,7 +2606,7 @@ def _rw_route_reason_text(rw_steps: Sequence[Any], selected_method: str) -> str:
             reasons.append("SP route skipped because " + sp_decision.split("because", 1)[1].strip())
         elif sp_failure:
             reasons.append("SP route failed because " + sp_failure.split(":", 1)[1].strip())
-        elif selected in {"rxo_rt_clean_water", "rwa_clean_wet_p5", "rwa_clean_wet_adaptive", "default_fallback_profile"}:
+        elif selected in {"rxo_rt_clean_water", "rwa_clean_wet_p5", "default_fallback_profile"}:
             reasons.append("SP route did not supply the selected RW curve")
 
     rxo_failure = next(
@@ -2723,7 +2616,7 @@ def _rw_route_reason_text(rw_steps: Sequence[Any], selected_method: str) -> str:
     if selected != "rxo_rt_clean_water":
         if rxo_failure:
             reasons.append("Rxo/Rt route failed because " + rxo_failure.split(":", 1)[1].strip())
-        elif selected in {"rwa_clean_wet_p5", "rwa_clean_wet_adaptive", "default_fallback_profile"}:
+        elif selected in {"rwa_clean_wet_p5", "default_fallback_profile"}:
             reasons.append("Rxo/Rt route did not supply the selected RW curve")
 
     if selected == "default_fallback_profile":
@@ -2763,11 +2656,8 @@ def _bit_size_used_for_bad_hole(well: "Well", workflow_result) -> Optional[float
     if bs_data is not None:
         return _representative_bit_size(bs_data)
 
-    for step in _all_step_results(workflow_result, "bad_hole"):
-        source = str(step.parameters.get("bit_size_source") or "")
-        if source.lower().startswith("fallback"):
-            continue
-        value = step.parameters.get("bit_size_used")
+    values = _step_parameter_values(_all_step_results(workflow_result, "bad_hole"), "bit_size_used")
+    for value in values:
         try:
             numeric = float(value)
         except (TypeError, ValueError):
@@ -2783,37 +2673,6 @@ def _bit_size_used_for_bad_hole(well: "Well", workflow_result) -> Optional[float
     except (TypeError, ValueError):
         return None
     return numeric if np.isfinite(numeric) else None
-
-
-def _bit_size_source_for_bad_hole(well: "Well", workflow_result) -> Optional[str]:
-    bs_data = _bit_size_curve_data(well)
-    if bs_data is not None:
-        unique_count = np.unique(np.round(bs_data[np.isfinite(bs_data)], 4)).size
-        return "BS_curve_depth_by_depth" if unique_count > 1 else "BS_curve"
-
-    values = _step_parameter_values(_all_step_results(workflow_result, "bad_hole"), "bit_size_source")
-    for value in values:
-        if value:
-            if str(value).lower().startswith("fallback"):
-                continue
-            return str(value)
-
-    header_value = getattr(well.header, "bit_size", None)
-    if header_value is not None:
-        return "well_header"
-    return None
-
-
-def _bit_size_context_phrase(bit_size: Optional[float], source: Optional[str]) -> str:
-    if bit_size is None:
-        return ""
-    value = _format_numeric(bit_size, 2)
-    source_text = (source or "").lower()
-    if source_text.startswith("bs_curve"):
-        return f"bit size={value} in"
-    if source_text == "well_header":
-        return f"header bit size={value} in"
-    return f"bit size={value} in"
 
 
 def _flag_intervals(depth: np.ndarray, flag: np.ndarray) -> List[str]:
@@ -2836,7 +2695,6 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
 
     bit_size = _bit_size_used_for_bad_hole(well, workflow_result)
     bs_data = _bit_size_curve_data(well)
-    bit_size_source = _bit_size_source_for_bad_hole(well, workflow_result)
     bit_size_for_flags = bs_data if bs_data is not None else bit_size
     if well.get("CALI") is None and well.get("DRHO") is None:
         return None
@@ -2871,8 +2729,6 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
         "bit_size_depth_dependent": bool(
             bs_data is not None and np.unique(np.round(bs_data[np.isfinite(bs_data)], 4)).size > 1
         ),
-        "bit_size_source": bit_size_source,
-        "bs_curve_present": bs_data is not None,
         "thresholds": {
             "cali_minus_bs_washout_threshold_in": float(DefaultParameters.CALI_BS_THRESHOLD),
             "drho_washout_threshold_g_per_cc": float(DefaultParameters.DRHO_THRESHOLD),
@@ -2882,7 +2738,7 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
         },
         "log_availability": {
             "CALI": well.get("CALI") is not None,
-            "BS": bs_data is not None,
+            "BS": well.get("BS") is not None or bit_size is not None,
             "DRHO": well.get("DRHO") is not None,
             "PEF": well.get("PEF") is not None,
         },
@@ -3060,7 +2916,7 @@ def _curve_route_reason(curve: str, step: Any, well: "Well") -> str:
     if step is None:
         return ""
 
-    step_name = _canonical_workflow_step_name(str(getattr(step, "step", "") or ""))
+    step_name = str(getattr(step, "step", "") or "")
     method = str(getattr(step, "method", "") or "")
     params = getattr(step, "parameters", {}) or {}
     inputs = list(getattr(step, "input_curves", []) or [])
@@ -3081,15 +2937,12 @@ def _curve_route_reason(curve: str, step: Any, well: "Well") -> str:
     if step_name == "bad_hole":
         from petrophys.model.constants import DefaultParameters
 
-        bit_size = params.get("bit_size_used")
-        bit_phrase = _bit_size_context_phrase(bit_size, params.get("bit_size_source"))
-        bit_text = f", {bit_phrase}" if bit_phrase else ", caliper-minus-bit-size and large-hole criteria skipped because bit size unavailable"
         return (
             f"caliper/DRHO QC selected because input curves present were {', '.join(_display_curve_list(inputs)) or 'none'}; "
-            f"caliper-minus-bit-size threshold={DefaultParameters.CALI_BS_THRESHOLD:.2f} in, "
+            f"washout=(CALI-BS)>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in, "
             f"DRHO threshold={DefaultParameters.DRHO_THRESHOLD:.2f} g/cc, "
-            f"large-hole threshold={DefaultParameters.LARGE_HOLE_BS:.2f} in"
-            f"{bit_text}"
+            f"large-hole BS>{DefaultParameters.LARGE_HOLE_BS:.2f} in, "
+            f"bit_size_used={_format_numeric(params.get('bit_size_used'), 2)} in"
         )
 
     if step_name == "vclay":
@@ -3106,8 +2959,8 @@ def _curve_route_reason(curve: str, step: Any, well: "Well") -> str:
             skipped.append("neutron-density not used because NPHI or RHOB was unavailable")
         text = (
             f"VCL route selected because {', '.join(used)} inputs were usable; "
-            f"GRmin={_format_numeric(params.get('gr_min_used', params.get('gr_min')), 1)} API, "
-            f"GRmax={_format_numeric(params.get('gr_max_used', params.get('gr_max')), 1)} API"
+            f"GRmin={_format_numeric(params.get('gr_min'), 1)} API, "
+            f"GRmax={_format_numeric(params.get('gr_max'), 1)} API"
         )
         if skipped:
             text += "; " + "; ".join(skipped)
@@ -3334,15 +3187,6 @@ def _build_lithology_method_notes(
 
 
 def _first_step_result(workflow_result, step_name: str):
-    finalized_name = FINALIZED_WORKFLOW_STEPS.get(step_name)
-    if finalized_name is not None:
-        finalized_steps = _all_step_results(workflow_result, finalized_name)
-        successful_finalized = next(
-            (step for step in finalized_steps if getattr(step, "success", False)),
-            None,
-        )
-        if successful_finalized is not None:
-            return successful_finalized
     steps = _all_step_results(workflow_result, step_name)
     return steps[0] if steps else None
 
@@ -3446,12 +3290,10 @@ def _segment_lithology_groups_for_saturation(well: "Well", fallback: Any = "clas
     if selected == "external":
         curve = well.get("LITHO_CLASS")
         mapping = curve.metadata.custom.get("category_groups", {}) if curve is not None else {}
-        mapping = {int(code): group for code, group in mapping.items()}
-        groups = _groups_from_curve("LITHO_CLASS", mapping)
+        groups = _groups_from_curve("LITHO_CLASS", {int(code): group for code, group in mapping.items()})
         if groups is not None:
             return groups
         return np.full(int(well.n_samples), fallback_text, dtype=object)
-
     geolink_groups = _groups_from_curve("LITHOLOGY_GEOLINK", GROUND_TRUTH_CODE_TO_GROUP)
     if geolink_groups is not None:
         return geolink_groups
@@ -3475,27 +3317,17 @@ def _segment_saturation_model_counts(well: "Well", params: dict[str, Any]) -> di
     if requested and requested != "auto":
         return {requested: routed_samples}
 
-    def _fit_length(arr, fill):
-        # Pad (with fill) or truncate to n_samples; avoid np.resize's cyclic tiling.
-        arr = np.asarray(arr).ravel()
-        if arr.shape[0] == n_samples:
-            return arr
-        out = np.full(n_samples, fill, dtype=arr.dtype if arr.size else type(fill))
-        k = min(arr.shape[0], n_samples)
-        out[:k] = arr[:k]
-        return out
-
     vcl_curve = _first_curve(well, ["VCL", "VCLAY", "VSH"])
     if vcl_curve is not None:
         vcl = _normalize_numeric_array(vcl_curve.data)
     else:
         vcl = np.zeros(n_samples, dtype=float)
-    vcl = _fit_length(vcl, np.nan)
+    vcl = np.resize(vcl, n_samples)
 
     lithology = _segment_lithology_groups_for_saturation(
         well, params.get("lithology_type") or "clastic"
     )
-    lithology = _fit_length(lithology, params.get("lithology_type") or "clastic")
+    lithology = np.resize(lithology, n_samples)
 
     cutoff = float(params.get("vcl_cutoff_for_routing") or 0.3)
     salinity = params.get("salinity_ppm")
@@ -3657,14 +3489,6 @@ def _permeability_equation_text(method: str, params: dict[str, Any]) -> str:
     return f"{method} empirical equation"
 
 
-def _rw_salinity_formula_text() -> str:
-    return "Rw75=0.0123+3647.5/salinity^0.955; RW(T)=Rw75*(75+6.77)/(TEMP+6.77)"
-
-
-def _rw_arps_formula_text() -> str:
-    return "RW(T)=RWref*(Tref+6.77)/(TEMP+6.77)"
-
-
 def _vcl_gr_equation(method: str) -> str:
     method_norm = str(method or "linear").lower()
     if method_norm == "linear":
@@ -3682,8 +3506,8 @@ def _vcl_gr_equation(method: str) -> str:
 
 def _vcl_curve_note(step: Any) -> str:
     params = getattr(step, "parameters", {}) or {}
-    gr_min_raw = params.get("gr_min_used", params.get("gr_min"))
-    gr_max_raw = params.get("gr_max_used", params.get("gr_max"))
+    gr_min_raw = params.get("gr_min")
+    gr_max_raw = params.get("gr_max")
     try:
         gr_clean = min(float(gr_min_raw), 20.0)
     except (TypeError, ValueError):
@@ -3758,23 +3582,19 @@ def _rw_curve_note(step: Any, well: "Well") -> str:
     params = getattr(step, "parameters", {}) or {}
     rw_range = _depth_profile_range_text([step], "rw_min", "rw_max", 4, "ohm.m")
     method = getattr(step, "method", "")
-    arps_formula = _rw_arps_formula_text()
-    salinity_formula = _rw_salinity_formula_text()
+    formula = _rw_temperature_formula_text()
 
-    if method in ("rwa_clean_wet_p5", "rwa_clean_wet_adaptive"):
+    if method == "rwa_clean_wet_p5":
         coeff_text = _archie_coefficients_text(params, well).lstrip("; ")
-        pct = params.get("rwa_percentile", 5)
-        regime = params.get("rwa_regime")
-        regime_text = f" ({regime})" if regime else ""
         return (
-            f"RW: RWA clean-wet adaptive P{_format_numeric(pct, 0)}{regime_text}; "
+            "RW: RWA clean-wet P5; "
             "RWA=RDEP*PHIE^m/a, "
             f"mask=VCL<{params.get('vcl_cutoff')} and PHIE>{params.get('phie_cutoff')}; "
-            f"P{_format_numeric(pct, 0)} at reference temperature={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
-            f"Tref={_format_numeric(params.get('rwa_reference_temp_f'), 1)} F, "
+            f"P5={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
             f"samples={params.get('rwa_clean_wet_samples')}, "
+            f"salinity={_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm; "
             + (f"{coeff_text}; " if coeff_text else "")
-            + f"{arps_formula}; RW(T)={rw_range}."
+            + f"{formula}; RW(T)={rw_range}."
         )
     if method == "sp_clean_water":
         rmf_range = _depth_profile_range_text([step], "rmf_min", "rmf_max", 4, "ohm.m")
@@ -3787,33 +3607,35 @@ def _rw_curve_note(step: Any, well: "Well") -> str:
         )
     if method == "rxo_rt_clean_water":
         return (
-            "RW: clean-water Rxo/Rt; RW_clean=RMF(T)*RT/RXO, then direct Arps temperature correction; "
-            f"samples={params.get('n_points')}, RWref={_format_numeric(params.get('rw_at_reference_temp'), 4)} ohm.m "
-            f"at Tref={_format_numeric(params.get('rw_reference_temp_f'), 1)} F, RW(T)={rw_range}."
+            "RW: clean-water Rxo/Rt; RW_clean=RMF(T)*RT/RXO, converted to salinity and corrected by temperature; "
+            f"samples={params.get('n_points')}, salinity={_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm, RW(T)={rw_range}."
         )
     if method == "salinity_conversion":
         return (
             f"RW: salinity conversion; salinity={_format_numeric(params.get('salinity_ppm'), 0)} ppm; "
-            f"{salinity_formula}; RW(T)={rw_range}."
+            f"{formula}; RW(T)={rw_range}."
         )
     if method in {"user_provided_temperature_profile_corrected", "las_metadata_temperature_profile_corrected"}:
         source = "user input" if method.startswith("user") else "LAS metadata"
         return (
             f"RW: {source}; measured RW={_format_numeric(params.get('rw_at_measured_temp'), 4)} ohm.m "
-            f"at { _format_numeric(params.get('measured_temp_f'), 1)} F; {arps_formula}; RW(T)={rw_range}."
+            f"at { _format_numeric(params.get('measured_temp_f'), 1)} F, converted to salinity "
+            f"{_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm; {formula}; RW(T)={rw_range}."
         )
     if method in {"user_provided_assumed_reference_temperature", "las_metadata_assumed_reference_temperature"}:
         source = "user input" if method.startswith("user") else "LAS metadata"
         return (
             f"RW: {source}; RW={_format_numeric(params.get('rw'), 4)} ohm.m at reference "
-            f"{_format_numeric(params.get('reference_temp_f'), 1)} F; {arps_formula}; RW(T)={rw_range}."
+            f"{_format_numeric(params.get('reference_temp_f'), 1)} F, converted to salinity "
+            f"{_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm; {formula}; RW(T)={rw_range}."
         )
     if method == "default_fallback_profile":
         return (
             f"RW: default fallback; RW={_format_numeric(params.get('rw_default'), 4)} ohm.m at "
-            f"{_format_numeric(params.get('reference_temp_f'), 1)} F; {arps_formula}; RW(T)={rw_range}."
+            f"{_format_numeric(params.get('reference_temp_f'), 1)} F, converted to salinity and temperature-corrected; "
+            f"{formula}; RW(T)={rw_range}."
         )
-    return f"RW: {method}; {arps_formula}; RW(T)={rw_range or 'not recorded'}."
+    return f"RW: {method}; {formula}; RW(T)={rw_range or 'not recorded'}."
 
 
 def _core_model_text(params: dict[str, Any]) -> str:
@@ -3875,10 +3697,9 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
             inputs = _finite_input_status_text(
                 well,
                 [
+                    ("SW", ("SW",)),
                     ("RSHA/RXO/RESS", ("RSHA", "RXO", "RESS")),
                     ("RMF", ("RMF",)),
-                    ("PHIE_CC/PHIE", ("PHIE_CC", "PHIE")),
-                    ("SW", ("SW", "SWA", "SWT-LOG")),
                 ],
             )
             return f"SXO: skipped because {reason}. Inputs/status: {inputs}."
@@ -3930,36 +3751,18 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
         bad_pct = bad_count / max(int(well.n_samples), 1) * 100.0
         bs_data = _bit_size_curve_data(well)
         bit_size = _representative_bit_size(bs_data) if bs_data is not None else params.get("bit_size_used")
-        if bs_data is not None:
-            bit_size_source = "BS_curve_depth_by_depth" if np.unique(np.round(bs_data[np.isfinite(bs_data)], 4)).size > 1 else "BS_curve"
-        else:
-            bit_size_source = params.get("bit_size_source")
         bit_values = (
             sorted({float(value) for value in np.round(bs_data[np.isfinite(bs_data)], 4)})
             if bs_data is not None
             else None
         )
-        bit_phrase = _bit_size_context_phrase(bit_size, bit_size_source)
-        bit_text = f"; {bit_phrase}" if bit_phrase else ""
+        bit_text = f"; BS={_format_numeric(bit_size, 2)} in" if bit_size is not None else ""
         if bit_values and len(bit_values) > 1:
-            bit_text = "; bit-size values=" + ", ".join(_format_numeric(value, 2) for value in bit_values) + " in"
-        washout_terms = []
-        if bit_size is not None and well.get("CALI") is not None:
-            caliper_term = "(caliper-minus-bit-size)"
-            washout_terms.append(f"{caliper_term}>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in")
-        elif well.get("CALI") is not None:
-            washout_terms.append("caliper-minus-bit-size skipped because bit size unavailable")
-        if well.get("DRHO") is not None:
-            washout_terms.append(f"|DRHO|>{DefaultParameters.DRHO_THRESHOLD:.2f} g/cc")
-        washout_text = " or ".join(washout_terms) if washout_terms else "not evaluated"
-        large_hole_text = (
-            f"large_hole=bit_size>{DefaultParameters.LARGE_HOLE_BS:.2f} in"
-            if bit_size is not None
-            else "large_hole skipped because bit size unavailable"
-        )
+            bit_text = "; BS values=" + ", ".join(_format_numeric(value, 2) for value in bit_values) + " in"
         return (
-            f"{curve}: washout={washout_text}; "
-            f"{large_hole_text}; rule=washout OR large_hole"
+            f"{curve}: washout=(CALI-BS)>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in or "
+            f"|DRHO|>{DefaultParameters.DRHO_THRESHOLD:.2f} g/cc; "
+            f"large_hole=BS>{DefaultParameters.LARGE_HOLE_BS:.2f} in; rule=washout OR large_hole"
             + bit_text
             + f"; flagged={bad_count}/{well.n_samples} ({bad_pct:.0f}%)."
         )
@@ -4320,7 +4123,7 @@ def _compact_curve_note(curve: str, status: str, reason: str, step: Any, well: "
     if curve == "NET_ROCK" and step is not None:
         return f"NET_ROCK: 1 where VCL<{params.get('vcl_cutoff')}; else 0."
     if curve in {"NET_RES", "RESFLAG"} and step is not None:
-        cutoff = None
+        cutoff = params.get("phie_cutoff")
         cutoff_text = cutoff if cutoff is not None else "lithology cutoff: 0.08 clastic, 0.045 carbonate"
         return f"{curve}: 1 where NET_ROCK=1 and selected effective porosity>{cutoff_text}; else 0."
     if curve == "NET_PAY" and step is not None:
@@ -4528,7 +4331,7 @@ def _build_concise_delivery_computation_notes(
     net_step = _first_step_result(workflow_result, "net_pay")
     if net_step is not None:
         flag_parts = [f"NET_ROCK=VCL<{net_step.parameters.get('vcl_cutoff')}"]
-        phie_cutoff = None
+        phie_cutoff = net_step.parameters.get("phie_cutoff")
         if phie_cutoff is not None:
             flag_parts.append(f"NET_RES and RESFLAG add selected effective porosity>{phie_cutoff}")
         else:
@@ -4639,37 +4442,25 @@ def _build_delivery_computation_notes(
         if details is not None:
             thresholds = details["thresholds"]
             counts = details["counts"]
-            washout_terms = []
-            if details["bit_size_used"] is not None and details["log_availability"].get("CALI"):
-                washout_terms.append(
-                    f"caliper-minus-bit-size > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in"
-                )
-            elif details["log_availability"].get("CALI"):
-                washout_terms.append("caliper-minus-bit-size skipped because bit size was unavailable")
+            note = (
+                "BAD HOLE QC: "
+                f"Washout = (CALI - BS) > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in"
+            )
             if details["log_availability"].get("DRHO"):
-                washout_terms.append(
-                    f"|DRHO| > {thresholds['drho_washout_threshold_g_per_cc']:.2f} g/cc"
+                note += (
+                    f" or |DRHO| > {thresholds['drho_washout_threshold_g_per_cc']:.2f} g/cc"
                 )
-            note = "BAD HOLE QC: Washout = " + (" or ".join(washout_terms) if washout_terms else "not evaluated")
-            if details["bit_size_used"] is not None:
-                note += f"; large_hole = bit size > {thresholds['large_hole_bit_size_threshold_in']:.2f} in. "
-            else:
-                note += "; large_hole skipped because bit size was unavailable. "
             note += (
+                f"; large_hole = BS > {thresholds['large_hole_bit_size_threshold_in']:.2f} in. "
                 "Final BAD_HOLE is the logical OR of washout and large_hole."
             )
             if details["bit_size_used"] is not None:
                 bit_values = details.get("bit_size_unique_values") or []
                 if details.get("bit_size_depth_dependent") and len(bit_values) > 1:
                     values_text = ", ".join(_format_numeric(value, 2) for value in bit_values)
-                    note += f" Bit-size values in this segment: {values_text} in."
+                    note += f" Bit sizes in this segment: {values_text} in."
                 else:
-                    bit_phrase = _bit_size_context_phrase(
-                        details["bit_size_used"],
-                        details.get("bit_size_source"),
-                    )
-                    if bit_phrase:
-                        note += f" {bit_phrase[0].upper() + bit_phrase[1:]}."
+                    note += f" Bit size used for this well: {_format_numeric(details['bit_size_used'], 2)} in."
             note += (
                 f" Counts in this well: washout={counts['washout']}, large_hole={counts['large_hole']}, "
                 f"final BAD_HOLE={counts['bad_hole']} of {counts['total_points']} "
@@ -4860,7 +4651,7 @@ def _build_delivery_computation_notes(
                 + (f" RMF = {rmf_value}." if rmf_value else "")
             )
         else:
-            labels = _ordered_unique(_method_label(name, subject="RMF") for name in methods)
+            labels = _ordered_unique(_method_label(name) for name in methods)
             note = f"RMF: Multiple RMF methods were used across this well: {_friendly_join(labels)}."
             if rmf_profile:
                 note += f" Final RMF(T) range: {rmf_profile}."
@@ -4900,20 +4691,20 @@ def _build_delivery_computation_notes(
             notes.append(note)
         elif methods == ["rxo_rt_clean_water"]:
             rmf_used = _depth_profile_range_text(rw_steps, "rmf_min", "rmf_max", 4, "ohm.m")
-            rw_ref = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_at_reference_temp"), 4, "ohm.m")
-            reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_reference_temp_f"), 1, "F")
+            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
             sample_count = _format_numeric_summary(_step_parameter_values(rw_steps, "n_points"), 0)
             note = (
                 "RW: RW was derived from clean-water Rxo/Rt control points because no direct RW or salinity input was used and the SP route did not produce the selected RW. "
-                "The clean-water estimate used Rw_clean = RMF * Rt / Rxo, then direct Arps correction: "
-                "RW(T) = RWref * (Tref + 6.77) / (T + 6.77)."
+                "The clean-water estimate used Rw_clean = RMF * Rt / Rxo, then converted those values to salinity, "
+                "and finally wrote depth-wise RW(T) from Rw75 = 0.0123 + 3647.5 / SAL^0.955 and "
+                "Rw(T) = Rw75 * (75 + 6.77) / (T + 6.77)."
             )
             if rmf_used:
                 note += f" RMF(T) range used: {rmf_used}."
             if sample_count:
                 note += f" Clean-water sample count: {sample_count}."
-            if rw_ref and reference_temp:
-                note += f" Reference RW: {rw_ref} at {reference_temp}."
+            if salinity:
+                note += f" Salinity inferred from clean-water points: {salinity}."
             if rw_values:
                 note += f" Final RW(T) range: {rw_values}"
                 if temp_profile:
@@ -4941,12 +4732,16 @@ def _build_delivery_computation_notes(
         elif methods == ["las_metadata_temperature_profile_corrected"]:
             measured_rw = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_at_measured_temp"), 4, "ohm.m")
             measured_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "measured_temp_f"), 1, "F")
+            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
             note = (
                 "RW: RW came from the LAS header because RW and RWT metadata were available. "
-                "The header value was corrected directly with Arps: RW(T) = RWmeas * (Tmeas + 6.77) / (T + 6.77)."
+                "The header value was converted to equivalent salinity at RWT, then rewritten depth-by-depth with "
+                "Rw75 = 0.0123 + 3647.5 / SAL^0.955 and Rw(T) = Rw75 * (75 + 6.77) / (T + 6.77)."
             )
             if measured_rw and measured_temp:
                 note += f" Input RW: {measured_rw} at {measured_temp}."
+            if salinity:
+                note += f" Equivalent salinity from the LAS RW input: {salinity}."
             if rw_values:
                 note += f" Final RW(T) range: {rw_values}"
                 if temp_profile:
@@ -4958,13 +4753,17 @@ def _build_delivery_computation_notes(
         elif methods == ["las_metadata_assumed_reference_temperature"]:
             input_rw = _format_numeric_summary(_step_parameter_values(rw_steps, "rw"), 4, "ohm.m")
             reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "reference_temp_f"), 1, "F")
+            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
             note = (
                 "RW: RW came from the LAS header because RW metadata was available. "
-                "No RWT metadata was provided, so the RW input was treated as a reference-temperature value and corrected directly with Arps: "
-                "RW(T) = RWref * (Tref + 6.77) / (T + 6.77)."
+                "No RWT metadata was provided, so the RW input was treated as a reference-temperature value, converted to equivalent salinity, "
+                "and rewritten depth-by-depth with Rw75 = 0.0123 + 3647.5 / SAL^0.955 and "
+                "Rw(T) = Rw75 * (75 + 6.77) / (T + 6.77)."
             )
             if input_rw and reference_temp:
                 note += f" Input RW: {input_rw} at assumed reference temperature {reference_temp}."
+            if salinity:
+                note += f" Equivalent salinity from the LAS RW input: {salinity}."
             if rw_values:
                 note += f" Final RW(T) range: {rw_values}"
                 if temp_profile:
@@ -4977,12 +4776,16 @@ def _build_delivery_computation_notes(
             source = _config_source_phrase(workflow_result, "rw")
             measured_rw = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_at_measured_temp"), 4, "ohm.m")
             measured_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "measured_temp_f"), 1, "F")
+            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
             note = (
                 f"RW: RW came from {source} because an explicit RW value and measurement temperature were available. "
-                "That input was corrected directly with Arps: RW(T) = RWmeas * (Tmeas + 6.77) / (T + 6.77)."
+                "That input was converted to equivalent salinity at the stated measurement temperature, then rewritten depth-by-depth with "
+                "Rw75 = 0.0123 + 3647.5 / SAL^0.955 and Rw(T) = Rw75 * (75 + 6.77) / (T + 6.77)."
             )
             if measured_rw and measured_temp:
                 note += f" Input RW: {measured_rw} at {measured_temp}."
+            if salinity:
+                note += f" Equivalent salinity from the RW input: {salinity}."
             if rw_values:
                 note += f" Final RW(T) range: {rw_values}"
                 if temp_profile:
@@ -4995,13 +4798,17 @@ def _build_delivery_computation_notes(
             source = _config_source_phrase(workflow_result, "rw")
             input_rw = _format_numeric_summary(_step_parameter_values(rw_steps, "rw"), 4, "ohm.m")
             reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "reference_temp_f"), 1, "F")
+            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
             note = (
                 f"RW: RW came from {source} because an explicit RW value was available. "
-                "No RWT metadata was provided, so the RW input was treated as a reference-temperature value and corrected directly with Arps: "
-                "RW(T) = RWref * (Tref + 6.77) / (T + 6.77)."
+                "No RWT metadata was provided, so the RW input was treated as a reference-temperature value, converted to equivalent salinity, "
+                "and rewritten depth-by-depth with Rw75 = 0.0123 + 3647.5 / SAL^0.955 and "
+                "Rw(T) = Rw75 * (75 + 6.77) / (T + 6.77)."
             )
             if input_rw and reference_temp:
                 note += f" Input RW: {input_rw} at assumed reference temperature {reference_temp}."
+            if salinity:
+                note += f" Equivalent salinity from the RW input: {salinity}."
             if rw_values:
                 note += f" Final RW(T) range: {rw_values}"
                 if temp_profile:
@@ -5010,19 +4817,21 @@ def _build_delivery_computation_notes(
             if rw_route_reasons:
                 note += f" Route reasons: {rw_route_reasons}."
             notes.append(note)
-        elif methods in (["rwa_clean_wet_adaptive"], ["rwa_clean_wet_p5"]):
+        elif methods == ["rwa_clean_wet_p5"]:
             n_samples = _format_numeric_summary(_step_parameter_values(rw_steps, "rwa_clean_wet_samples"), 0, "samples")
             rw_from_rwa = _format_numeric_summary(_step_parameter_values(rw_steps, "rw_from_rwa"), 4, "ohm.m")
             reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "rwa_reference_temp_f"), 1, "F")
             archie_text = _archie_coefficients_text(getattr(rw_steps[0], "parameters", {}) or {}).lstrip("; ")
+            salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
             notes.append(
                 "RW: RW was derived from apparent Rw because direct RW metadata/configuration, salinity input, RMF+SP, and RMF+Rxo/Rt routes did not produce usable RW. "
                 "Formula used: RWA = RDEP * PHIE^m / a. Mask used: VCL < 0.30 and PHIE > 0.05. Percentile used: P5. "
-                "The selected RWA value was corrected directly with Arps as RW(T)."
+                "The selected RWA value was converted to equivalent salinity and rewritten depth-by-depth as RW(T)."
                 + (f" {archie_text}." if archie_text else "")
                 + (f" Samples used: {n_samples}." if n_samples else "")
                 + (f" P5 RWA reference value: {rw_from_rwa}." if rw_from_rwa else "")
                 + (f" Reference temperature: {reference_temp}." if reference_temp else "")
+                + (f" Equivalent salinity: {salinity}." if salinity else "")
                 + (f" Final RW(T) range: {rw_values}." if rw_values else "")
                 + (f" Temperature profile: {temp_profile}." if temp_profile else "")
                 + (f" Route reasons: {rw_route_reasons}." if rw_route_reasons else "")
@@ -5031,13 +4840,13 @@ def _build_delivery_computation_notes(
             reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "reference_temp_f"), 1, "F")
             notes.append(
                 "RW: RW used the default 0.05 ohm.m input because direct RW metadata/configuration, salinity input, RMF+SP, RMF+Rxo/Rt, and RWA clean-wet routes all failed. "
-                "The default RW was corrected directly with Arps."
+                "The default RW was converted to equivalent salinity and rewritten depth-by-depth."
                 + (f" Assumed reference temperature: {reference_temp}." if reference_temp else "")
                 + (f" Final RW(T) range: {rw_values}." if rw_values else "")
                 + (f" Route reasons: {rw_route_reasons}." if rw_route_reasons else "")
             )
         else:
-            labels = _ordered_unique(_method_label(name, subject="RW") for name in methods)
+            labels = _ordered_unique(_method_label(name) for name in methods)
             note = f"RW: Multiple RW methods were used across this well: {_friendly_join(labels)}."
             if rw_values:
                 note += f" Final RW(T) values span {rw_values}."
@@ -5309,7 +5118,7 @@ def _build_delivery_computation_notes(
             for step in permeability_steps
             if step.parameters.get("swirr_source")
         )
-        swirr_scalar = _format_numeric_summary(_step_parameter_values(permeability_steps, "swirr"), 4, "frac")
+        swirr_scalar = _format_numeric_summary(_step_parameter_values(permeability_steps, "swirr"), 4, "v/v")
         perm_present = well.get("PERM") is not None
         perm_cc_present = well.get("PERM_CC") is not None
         failure_reasons = _ordered_unique(
@@ -5533,13 +5342,37 @@ def _display_lithology_text(value: str) -> str:
 def _load_lithology_mapping_workbook(
     mapping_file: str | Path,
 ) -> dict[int, dict[str, str]]:
-    from petrophys.io.lithology_reader import read_lithology_codes
+    import pandas as pd
 
-    labels = read_lithology_codes(mapping_file)
-    if any(not isinstance(code, int) for code in labels):
-        raise ValueError("Reference exports require numeric lithology codes")
-    return {code: {"attribute": label, "lithology_attribute": label}
-            for code, label in labels.items()}
+    mapping_path = Path(mapping_file)
+    if not mapping_path.exists():
+        raise FileNotFoundError(f"Lithology mapping workbook not found: {mapping_path}")
+
+    dataframe = pd.read_excel(mapping_path)
+    normalized_columns = {str(column).strip().lower(): column for column in dataframe.columns}
+    required = {"attribute", "lithology attribute", "abbreviation"}
+    missing = required.difference(normalized_columns)
+    if missing:
+        raise ValueError(
+            "Lithology mapping workbook is missing required columns: "
+            + ", ".join(sorted(missing))
+        )
+
+    attribute_col = normalized_columns["attribute"]
+    lithology_attr_col = normalized_columns["lithology attribute"]
+    abbreviation_col = normalized_columns["abbreviation"]
+
+    mapping: dict[int, dict[str, str]] = {}
+    for _, row in dataframe.iterrows():
+        try:
+            code = int(round(float(row[abbreviation_col])))
+        except (TypeError, ValueError):
+            continue
+        mapping[code] = {
+            "attribute": str(row[attribute_col]).strip(),
+            "lithology_attribute": str(row[lithology_attr_col]).strip(),
+        }
+    return mapping
 
 
 def _strip_top_suffix(name: str) -> str:
@@ -5738,30 +5571,6 @@ def _well_mask_slice(well: "Well", mask: np.ndarray) -> "Well":
     return sliced
 
 
-def _context_lithology_curve(well: "Well", *, include_computed: bool = False):
-    """Use the same lithology source selected by the interpretation."""
-    selected = (well.get_parameter("_geology_context") or {}).get("selected_lithology_source")
-    if selected == "external":
-        return well.get("LITHO_CLASS"), "external"
-    if selected not in {"computed", "config"}:
-        curve = well.get("LITHOLOGY_GEOLINK")
-        if curve is not None:
-            return curve, "vendor"
-    return (well.get("LITHO"), "computed") if include_computed else (None, "computed")
-
-
-def _context_lithology_label(value, curve, source, lithology_mapping=None):
-    if _is_null_like_lithology(value) or _is_sentinel_lithology(value):
-        return None
-    if source == "computed":
-        return _normalize_computed_lithology_label(value)
-    if source == "external":
-        categories = curve.metadata.custom.get("category_labels", {})
-        value = categories.get(value, categories.get(str(value)))
-        return None if value is None else _display_lithology_text(str(value))
-    return _normalize_lithology_label(value, lithology_mapping=lithology_mapping)
-
-
 def _build_lithology_group_segments(
     well: "Well",
     minimum_group_thickness: float = 2.0,
@@ -5771,15 +5580,18 @@ def _build_lithology_group_segments(
         return []
 
     depth = np.asarray(well.depth, dtype=float)
-    lithology_curve, source = _context_lithology_curve(well, include_computed=True)
-
+    lithology_curve = _context_lithology_curve(well)
     if lithology_curve is None:
         labels = np.asarray([MISSING_LITHOLOGY_LABEL] * well.n_samples, dtype=object)
     else:
         labels_list = []
         for value in lithology_curve.data:
-            label = _context_lithology_label(value, lithology_curve, source, lithology_mapping)
-            labels_list.append(label or MISSING_LITHOLOGY_LABEL)
+            if _is_null_like_lithology(value) or _is_sentinel_lithology(value):
+                labels_list.append(MISSING_LITHOLOGY_LABEL)
+            else:
+                labels_list.append(
+                    _normalize_lithology_label(value, lithology_mapping=lithology_mapping) or MISSING_LITHOLOGY_LABEL
+                )
         labels = np.asarray(labels_list, dtype=object)
 
     group_changes = np.ones(labels.shape[0], dtype=bool)
@@ -5908,38 +5720,36 @@ def _normalize_lithology_label(
     return _display_lithology_text(text)
 
 
-def _normalize_computed_lithology_label(value: Any) -> Optional[str]:
-    if _is_null_like_lithology(value) or _is_sentinel_lithology(value):
-        return None
+def _context_lithology_curve(well: "Well"):
+    """LITHOLOGY_GEOLINK, or the lithology intervals the interpretation selected.
 
-    try:
-        numeric = int(round(float(str(value).strip())))
-    except (TypeError, ValueError):
-        return None
-
-    try:
-        from petrophys.workflow.dynamic_workflow import COMPUTED_LITHO_CODE_TO_GROUP
-    except Exception:
-        COMPUTED_LITHO_CODE_TO_GROUP = {}
-
-    group = COMPUTED_LITHO_CODE_TO_GROUP.get(numeric)
-    if group is None:
-        group = {0: "unknown", 8: "mixed"}.get(numeric)
-    if group is None:
-        return None
-    return _display_lithology_text(str(group).replace("_", " "))
+    Interval labels are returned as text (NaN where the intervals leave a gap),
+    in an object with the ``data`` and ``metadata`` of a curve.
+    """
+    selected = (well.get_parameter("_geology_context") or {}).get("selected_lithology_source")
+    external = well.get("LITHO_CLASS") if selected == "external" else None
+    if external is None:
+        return well.get("LITHOLOGY_GEOLINK")
+    categories = external.metadata.custom.get("category_labels", {})
+    labels = []
+    for value in np.asarray(external.data, dtype=object):
+        label = None
+        if not _is_null_like_lithology(value):
+            label = categories.get(value, categories.get(str(value)))
+        labels.append(np.nan if label is None else str(label))
+    return SimpleNamespace(data=np.asarray(labels, dtype=object), metadata=external.metadata)
 
 
 def _valid_lithology_labels(
     well: "Well",
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
 ) -> List[str]:
-    curve, source = _context_lithology_curve(well)
+    curve = _context_lithology_curve(well)
     if curve is None:
         return []
     labels: List[str] = []
     for value in np.asarray(curve.data, dtype=object):
-        label = _context_lithology_label(value, curve, source, lithology_mapping)
+        label = _normalize_lithology_label(value, lithology_mapping=lithology_mapping)
         if label is None:
             continue
         labels.append(label)
@@ -5961,7 +5771,7 @@ def _build_reference_lithology_info(
     well: "Well",
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
 ) -> dict[str, Any]:
-    curve, source = _context_lithology_curve(well)
+    curve = _context_lithology_curve(well)
     total_rows = int(well.n_samples)
     if curve is None:
         return {
@@ -5988,7 +5798,7 @@ def _build_reference_lithology_info(
         if _is_sentinel_lithology(value):
             sentinel_count += 1
             continue
-        label = _context_lithology_label(value, curve, source, lithology_mapping)
+        label = _normalize_lithology_label(value, lithology_mapping=lithology_mapping)
         if label is None:
             continue
         valid_labels.append(label)
@@ -6086,9 +5896,7 @@ def _reference_statistics_curve_key(mnemonic: str, well: "Well") -> Optional[str
         return None
     if canonical in CORE_ONLY_CONTEXT_CURVES:
         return None
-    if canonical in CONTEXT_EXCLUDED_INPUT_CURVES:
-        return None
-    if upper in {"LITHOLOGY_GEOLINK", "LITHO_CLASS"}:
+    if upper == "LITHOLOGY_GEOLINK":
         return None
     if upper == "DCAL" and well.get("CALI") is not None:
         return None
@@ -6121,7 +5929,7 @@ def _apply_value_range_qc_to_extra_curves(extra_derived_curves: Optional[dict[st
     for mnemonic, curve in (extra_derived_curves or {}).items():
         try:
             data = getattr(curve, "data", curve)
-            cleaned, item = clean_curve_values(mnemonic, data)
+            cleaned, item = clean_curve_values(mnemonic, data, rules=_CONTEXT_VALUE_RANGE_RULES)
         except (TypeError, ValueError):
             continue
         if item is None:
@@ -6200,20 +6008,6 @@ def _build_reference_bad_hole_qc(well: "Well", workflow_result) -> dict[str, Any
 
     thresholds = details["thresholds"]
     counts = details["counts"]
-    washout_terms = []
-    if details["bit_size_used"] is not None and details["log_availability"].get("CALI"):
-        caliper_term = "(caliper-minus-bit-size)"
-        washout_terms.append(f"{caliper_term} > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in")
-    elif details["log_availability"].get("CALI"):
-        washout_terms.append("caliper-minus-bit-size skipped because bit size unavailable")
-    if details["log_availability"].get("DRHO"):
-        washout_terms.append(f"|DRHO| > {thresholds['drho_washout_threshold_g_per_cc']:.2f} g/cc")
-    washout_formula = " OR ".join(washout_terms) if washout_terms else "not evaluated"
-    large_hole_formula = (
-        f"bit size > {thresholds['large_hole_bit_size_threshold_in']:.2f} in"
-        if details["bit_size_used"] is not None
-        else "skipped because bit size unavailable"
-    )
     return {
         "total_points": counts["total_points"],
         "bad_hole_points": counts["bad_hole"],
@@ -6229,8 +6023,15 @@ def _build_reference_bad_hole_qc(well: "Well", workflow_result) -> dict[str, Any
         ),
         "parameters_used": {
             "bit_size_used_in": _json_safe(details["bit_size_used"]),
-            "washout_formula": washout_formula,
-            "large_hole_formula": large_hole_formula,
+            "washout_formula": (
+                f"(CALI - BS) > {thresholds['cali_minus_bs_washout_threshold_in']:.2f} in"
+                + (
+                    f" OR |DRHO| > {thresholds['drho_washout_threshold_g_per_cc']:.2f} g/cc"
+                    if details["log_availability"].get("DRHO")
+                    else ""
+                )
+            ),
+            "large_hole_formula": f"BS > {thresholds['large_hole_bit_size_threshold_in']:.2f} in",
             "pef_exclusion_formula": (
                 f"PEF < {thresholds['pef_exclusion_min']:.2f} or "
                 f"PEF > {thresholds['pef_exclusion_max']:.2f}"
@@ -6310,7 +6111,7 @@ def _build_reference_json_payload(
     well_name = _reference_well_name(source_file, well)
     extra_qc_report = _apply_value_range_qc_to_extra_curves(extra_statistics_curves)
     if hasattr(well, "get_parameter") and well.get_parameter(VALUE_RANGE_QC_PARAMETER) is None:
-        apply_value_range_qc(well)
+        apply_value_range_qc(well, rules=_CONTEXT_VALUE_RANGE_RULES)
     if extra_qc_report and hasattr(well, "get_parameter") and hasattr(well, "set_parameter"):
         base_report = list(well.get_parameter(VALUE_RANGE_QC_PARAMETER, []) or [])
         well.set_parameter(VALUE_RANGE_QC_PARAMETER, [*base_report, *extra_qc_report])
@@ -6354,12 +6155,7 @@ def _build_reference_json_payload(
             _display_curve_name(name)
             for name in PRIMARY_LOGS_FOR_COMPLETENESS
             if _canonical_delivery_curve_name(name) not in CORE_ONLY_CONTEXT_CURVES
-            and not _primary_log_available_for_context(
-                well,
-                workflow_result,
-                name,
-                original_curves,
-            )
+            and name not in original_curves
         ],
         "derived_log_computation_notes": computation_notes,
     }
@@ -7339,9 +7135,8 @@ def export_reference_json_work_package_by_formation_lithology(
         Options for reading ``tops_file``: ``rank``, ``sheet_name``,
         ``columns`` or ``sep``.
     workflow_config : DynamicWorkflowConfig, optional
-        Interpretation settings. Without it, LAS metadata is used when
-        available, then the defaults are used with a sandstone matrix and the
-        clastic lithology domain.
+        Interpretation settings (default: the workflow defaults). LAS header
+        parameters override them.
     lithology_file : str or Path, optional
         Per-depth lithology intervals for the wells.
     lithology_domain : str, optional
@@ -7559,8 +7354,15 @@ def export_reference_json_work_package_by_category_formation_lithology(
     tops_options: Optional[dict] = None,
     lithology_file: Optional[str | Path] = None,
     lithology_domain: Optional[str] = None,
+    raw_input_dir: Optional[str | Path] = None,
 ) -> List[ExampleFormatExportResult]:
-    """Generate category contexts from LAS and optional geology inputs."""
+    """Generate category contexts from LAS and optional geology inputs.
+
+    With the default settings this reproduces the GeoLink eval context
+    benchmark. Input curves are classified against the raw LAS files in
+    ``raw_input_dir`` (default: the sibling of a ``*_processed`` input
+    directory), falling back to the curves of the LAS being read.
+    """
     from petrophys.workflow.zoned_batch import (
         _finalize_export_curves,
         run_dynamic_workflow_with_zones,
@@ -7571,6 +7373,8 @@ def export_reference_json_work_package_by_category_formation_lithology(
     output_path.mkdir(parents=True, exist_ok=True)
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
     files = _filter_input_files_by_well_names(files, well_names)
+    raw_context_dir = Path(raw_input_dir) if raw_input_dir is not None else _raw_input_dir_for_processed(input_path)
+    raw_curves_by_stem = _raw_curve_lookup(raw_context_dir, pattern, recursive)
     tops_by_well = (
         _load_excel_formation_segments(tops_file, **(tops_options or {}))
         if tops_file is not None
@@ -7594,11 +7398,13 @@ def export_reference_json_work_package_by_category_formation_lithology(
             )
             formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
             fallback_warnings: list[str] = []
-            original_curves = set(full_well.curves)
-            workflow_result = run_dynamic_workflow_with_zones(
-                full_well,
-                well_config,
+            processed_original_curves = set(full_well.curves)
+            raw_original_curves = _raw_original_curves_for_file(
+                file_path,
+                processed_original_curves,
+                raw_curves_by_stem,
             )
+            workflow_result = run_dynamic_workflow_with_zones(full_well, well_config)
             warnings = list(workflow_result.warnings)
             warnings.extend(workflow_result.base_result.warnings)
             for zone_result in workflow_result.zone_results:
@@ -7607,11 +7413,11 @@ def export_reference_json_work_package_by_category_formation_lithology(
             errors = list(workflow_result.base_result.errors)
             for zone_result in workflow_result.zone_results:
                 errors.extend(zone_result.errors)
-            _finalize_export_curves(
-                workflow_result.well,
-                original_curves,
-                retain_computed_lithology=True,
-            )
+            if raw_context_dir is not None and file_path.stem.lower() not in raw_curves_by_stem:
+                warnings.append(
+                    f"Raw LAS not found in {raw_context_dir}; input_logs_present fell back to processed LAS curves."
+                )
+            _finalize_export_curves(workflow_result.well, processed_original_curves)
 
             well_top = float(full_well.top) if full_well.top is not None else None
             well_bottom = float(full_well.bottom) if full_well.bottom is not None else None
@@ -7665,7 +7471,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 if formation_well.n_samples == 0:
                     continue
 
-                formation_original_curves = original_curves
+                formation_original_curves = raw_original_curves
                 formation_depth_info = _depth_summary(formation_well)
                 lithology_segments = _build_lithology_group_segments(
                     formation_well,
@@ -7678,7 +7484,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     group_well = _well_mask_slice(formation_well, lithology_segment["mask"])
                     if group_well.n_samples == 0:
                         continue
-                    apply_value_range_qc(group_well)
+                    apply_value_range_qc(group_well, rules=_CONTEXT_VALUE_RANGE_RULES)
 
                     raw_group_name = str(lithology_segment["group_name"])
                     raw_lithology_name = str(lithology_segment["lithology"])
@@ -7853,4 +7659,60 @@ def write_reference_curve_name_mapping(
     with mapping_path.open("w", encoding="utf-8") as handle:
         json.dump(_json_safe(payload), handle, indent=2, ensure_ascii=False)
     return mapping_path
+
+
+# Benchmark calculation profile.
+
+def _raw_curve_lookup(
+    raw_input_dir: Optional[str | Path],
+    pattern: str,
+    recursive: bool,
+) -> dict[str, set[str]]:
+    """Return standardized raw LAS curve names keyed by LAS stem."""
+    if raw_input_dir is None:
+        return {}
+
+    raw_path = Path(raw_input_dir)
+    if not raw_path.exists() or not raw_path.is_dir():
+        return {}
+
+    files = sorted(raw_path.rglob(pattern) if recursive else raw_path.glob(pattern))
+    lookup: dict[str, set[str]] = {}
+    for file_path in files:
+        try:
+            raw_well = read_las(file_path)
+            raw_well = standardize_curves(raw_well, rename_curves=True, convert_units=True)
+            lookup[file_path.stem.lower()] = set(raw_well.curves)
+        except Exception:
+            continue
+    return lookup
+
+
+def _raw_input_dir_for_processed(input_path: Path) -> Optional[Path]:
+    """Infer a sibling raw LAS directory for processed inputs when possible."""
+    name = input_path.name
+    candidates: list[Path] = []
+    if name.endswith("_processed"):
+        candidates.append(input_path.with_name(name[: -len("_processed")]))
+    if name.lower() == "eval_processed":
+        candidates.append(input_path.with_name("eval"))
+
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+    return None
+
+
+def _raw_original_curves_for_file(
+    file_path: Path,
+    processed_original_curves: set[str],
+    raw_curves_by_stem: dict[str, set[str]],
+) -> set[str]:
+    """Use raw LAS curves for context provenance, falling back to processed input."""
+    return set(raw_curves_by_stem.get(file_path.stem.lower()) or processed_original_curves)
+
+
+def _rw_temperature_formula_text() -> str:
+    return "Rw75=0.0123+3647.5/salinity^0.955; RW(T)=Rw75*(75+6.77)/(TEMP+6.77)"
+
 

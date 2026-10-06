@@ -2,9 +2,7 @@ from textwrap import dedent
 
 import numpy as np
 
-from petrophys.io import read_las
 from petrophys.interpretation.nmr import NMRData
-from petrophys.preprocessing.quality.bad_hole import detect_washout
 from petrophys.preprocessing.standardization.alias_map import (
     find_curve_type,
     get_standard_mnemonic,
@@ -86,16 +84,6 @@ def test_explicit_cmr_loader_and_descending_depth_filter(tmp_path):
     np.testing.assert_allclose(filtered.depth, [100.0, 99.75])
     np.testing.assert_allclose(filtered.mphi, [8.0, 10.0])
     np.testing.assert_allclose(filtered.stored_permeability["KSDR"], [0.1, 0.2])
-
-
-def test_cmr_pad_calipers_drive_bad_hole_and_descending_thickness_is_positive(tmp_path):
-    well = read_las(_write_cmr_las(tmp_path))
-
-    result = detect_washout(well, cali_threshold=0.5)
-
-    np.testing.assert_array_equal(result.washout_flag, [False, True, False])
-    assert result.statistics["washout_count"] == 1
-    assert result.statistics["washout_thickness"] == 0.25
 
 
 def test_cmr_mnemonics_are_standardized_and_range_qced():

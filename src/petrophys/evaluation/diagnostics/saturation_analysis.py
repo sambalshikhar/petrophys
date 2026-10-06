@@ -33,7 +33,6 @@ class SaturationAnalysis:
     ) -> CategoryAnalysisResult:
         n_samples = well.n_samples
         sw, sw_source = get_curve_data(well, ["SWA", "SW", "SWT-LOG"])
-        so, so_source = get_curve_data(well, ["SO"])
         sxo, sxo_source = get_curve_data(well, ["SWXOA", "SXO", "SXO-LOG"])
         if sxo is None:
             sxo = self._first_sxo_curve(well)
@@ -58,12 +57,6 @@ class SaturationAnalysis:
         if bvw is None and phie is not None and sw is not None:
             bvw = phie * sw
             derived_curves["BVW"] = DerivedCurve(bvw, "v/v", "Bulk Volume Water")
-
-        if so is None and sw is not None:
-            so = np.full(n_samples, np.nan, dtype=float)
-            valid = np.isfinite(sw)
-            so[valid] = 1.0 - sw[valid]
-            derived_curves["SO"] = DerivedCurve(so, "frac", "Oil Saturation")
 
         if mhi is None and sw is not None and sxo is not None:
             mhi = calculate_mhi(sxo, sw)

@@ -18,6 +18,8 @@ from petrophys.interpretation.geochemistry import (
 )
 from petrophys.interpretation.lithology import (
     MultiMineralSolver,
+    MultiMineralSolverV1,
+    MultiMineralSolverV2,
     calculate_lithology,
 )
 from petrophys.interpretation.permeability import (
@@ -31,6 +33,8 @@ __all__ = [
     "ArchieParameters",
     "ElementalSpectroscopyResult",
     "MultiMineralSolver",
+    "MultiMineralSolverV1",
+    "MultiMineralSolverV2",
     "PermeabilityModule",
     "PorosityModule",
     "SaturationModule",

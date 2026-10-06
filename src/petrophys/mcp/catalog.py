@@ -165,7 +165,7 @@ _RUNTIME_DEFAULTS = {
     "phie_cutoff": "0.08 clastic, 0.045 carbonate samples",
     "bht_f": "header BHT (converted to degF)",
     "td_ft": "header TD, else deepest sample",
-    "rw": "header RW (at RWT; 75 degF assumed when RWT is missing)",
+    "rw": "header RW (at RWT; median formation temperature assumed when RWT is missing)",
     "a": "by lithology", "m": "by lithology", "n": "by lithology",
     "rho_ma": "from matrix_type",
 }

@@ -27,3 +27,14 @@ tool call, error, output size, token count and final answer. Use it after
 changing tool descriptions or outputs. It needs `OPENAI_API_KEY`, costs API
 tokens, and can target the in-process server, stdio, or a running HTTP server
 (`--target http://127.0.0.1:8000/mcp`, token from `PETROPHYS_MCP_TOKEN`).
+
+## Eval context benchmark
+
+`generate_benchmark_context.py` regenerates the GeoLink eval context benchmark
+package (`context_json_category_all_wells_fm_gp_mb_core_no_metrics_phiecc_sat_latest`).
+Run
+`python scripts/generate_benchmark_context.py --input-dir PATH/eval_processed --output-dir NEW_DIR`.
+It reads the raw LAS files from the sibling `eval` folder and, by default, the
+NPD tops workbook and lithology codebook next to `eval_processed`. Reruns are
+byte-identical. ELECTROFACIES labels cannot be recovered (the original clustering was
+unseeded).

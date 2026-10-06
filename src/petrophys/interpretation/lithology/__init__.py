@@ -12,8 +12,12 @@ from petrophys.interpretation.lithology.lithology_module import (
 )
 from petrophys.interpretation.lithology.multi_mineral_solver import (
     MultiMineralSolver,
+    MultiMineralSolverV2,
     solve_two_mineral,
     solve_three_mineral,
+)
+from petrophys.interpretation.lithology.multi_mineral_solver_v1 import (
+    MultiMineralSolverV1,
 )
 from petrophys.interpretation.lithology.matrix_properties import (
     get_mineral_properties,
@@ -34,6 +38,8 @@ __all__ = [
     "LithologyModule",
     "calculate_lithology",
     "MultiMineralSolver",
+    "MultiMineralSolverV1",
+    "MultiMineralSolverV2",
     "solve_two_mineral",
     "solve_three_mineral",
     "get_mineral_properties",

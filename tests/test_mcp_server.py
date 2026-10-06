@@ -145,7 +145,7 @@ def test_responses_are_compact_json(tmp_path):
     loaded = result.structured_content
     assert loaded["header_parameters"]["BHT"].startswith("126 degC (= 258.8 degF)")
     notes = " ".join(loaded["header_notes"])
-    assert "no RWT" in notes and "ASSUMED 75 degF" in notes
+    assert "no RWT" in notes and "median formation temperature (ASSUMED)" in notes
     assert "higher than RMF" in notes
 
 

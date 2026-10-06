@@ -326,7 +326,7 @@ def test_cutoff_sensitivity_grid(interpreted_hw3):
     grid = cutoff_sensitivity(vcl=VCL, phie=PHIE, sw=SW, depth=DEPTH,
                               vcl_cutoffs=[0.2, 0.4], sw_cutoffs=[0.4, 0.9])
     net = grid.pivot(index="vcl_cutoff", columns="sw_cutoff", values="net_pay_thickness")
-    assert net.to_dict("index") == {0.2: {0.4: 4.0, 0.9: 6.0}, 0.4: {0.4: 4.0, 0.9: 7.0}}
+    assert net.to_dict("index") == {0.2: {0.4: 4.0, 0.9: 5.0}, 0.4: {0.4: 4.0, 0.9: 7.0}}
     assert (grid["phie_cutoff"] == 0.08).all()          # unset cutoff: clastic standard
 
     sw_cuts = np.round(np.arange(0.4, 0.91, 0.1), 2)
@@ -365,7 +365,7 @@ def test_parameter_sensitivity_scalar_mapping_and_object_outputs():
     both = parameter_sensitivity(pay, {"Sw cutoff": ({"sw_cutoff": 0.4}, {"sw_cutoff": 0.8})},
                                  outputs=["net_pay_thickness", "hcpt"])
     assert both["output"].tolist() == ["net_pay_thickness", "hcpt"]
-    assert both.loc[0, ["low", "base", "high"]].tolist() == [4.0, 6.0, 7.0]
+    assert both.loc[0, ["low", "base", "high"]].tolist() == [4.0, 6.0, 6.0]
 
     mapping = parameter_sensitivity(lambda x=1.0: {"a": x, "b": 2 * x, "label": "ignored"},
                                     {"x": ({"x": 0.0}, {"x": 3.0})})

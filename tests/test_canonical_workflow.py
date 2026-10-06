@@ -49,7 +49,7 @@ def test_canonical_route_is_used_with_embedded_lithology():
     assert _step(result, "vclay").parameters["nd_matrix"] == "limestone"
     assert _step(result, "lithology").method == "canonical_multi_mineral_solver"
     assert _step(result, "saturation").parameters["vcl_cutoff_for_routing"] == 0.3
-    assert _step(result, "net_pay").parameters["cutoff_source"] == "canonical"
+    assert _step(result, "net_pay").parameters["vcl_cutoff"] == 0.3
     assert well.get("LITHOLOGY_GEOLINK") is not None
     assert well.get("LITHO") is None
     assert well.get("MMQC") is None
