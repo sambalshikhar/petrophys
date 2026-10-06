@@ -62,12 +62,12 @@ def test_bundled_formations_declare_units_and_intentional_hierarchy():
     assert tops["Heather Fm."].metadata["parent"] == "VIKING GP."
 
 
-def test_marl_and_carbonate_names_use_consistent_cutoffs(tmp_path):
+def test_only_the_carbonate_label_selects_carbonate_cutoffs(tmp_path):
     well = pp.Well("CUTOFFS")
     well.depth = np.arange(5.0)
     labels = np.array(["limestone", "dolomite", "marl", "carbonate", "clastic"])
     result = NetPayModule(lithology=labels).calculate(well, vcl=np.full(5, .1), phie=np.full(5, .06), sw=np.full(5, .65))
-    np.testing.assert_array_equal(result.net_pay, [True, True, True, True, False])
+    np.testing.assert_array_equal(result.net_pay, [False, False, False, True, False])
     path = tmp_path / "marl.csv"
     path.write_text("top,bottom,lithology\n0,5,Marl\n", encoding="utf-8")
     assert load_lithology_csv(path)[0].lithology == "carbonate"
@@ -89,7 +89,7 @@ def test_default_uses_the_single_canonical_route_for_embedded_lithology():
     result = pp.interpret(_workflow_well(True), rw=.07).raise_for_errors()
     assert "interpretation_profile" not in result.to_trace_dict()
     step = next(item for item in result.steps_executed if item.step == "net_pay")
-    assert step.parameters["cutoff_source"] == "canonical"
+    assert (step.parameters["vcl_cutoff"], step.parameters["sw_cutoff"]) == (0.3, 0.7)
 
 
 def test_scalar_cmr_does_not_invent_t2lm():

@@ -25,9 +25,6 @@ if TYPE_CHECKING:
     from petrophys.model.well import Well
 
 
-_Z_THRESHOLD_TOLERANCE = 1e-12
-
-
 class NumericalStatisticalAnalysis:
     """Numerical and statistical data-quality analysis."""
 
@@ -139,18 +136,18 @@ class NumericalStatisticalAnalysis:
             finite_values = values[np.isfinite(values)]
             if finite_values.size == 0:
                 continue
-            mean = float(np.mean(finite_values))
-            std = float(np.std(finite_values))
+            mean = float(np.nanmean(values))
+            std = float(np.nanstd(values))
             if not np.isfinite(std) or std <= 0.0:
                 continue
             z = np.abs((values - mean) / std)
             deviation_count += np.where(
-                np.isfinite(z) & (z > 2.0 + _Z_THRESHOLD_TOLERANCE),
+                np.isfinite(z) & (z > 2.0),
                 1,
                 0,
             )
             extreme_count += np.where(
-                np.isfinite(z) & (z > 3.0 + _Z_THRESHOLD_TOLERANCE),
+                np.isfinite(z) & (z > 3.0),
                 1,
                 0,
             )

@@ -129,33 +129,27 @@ def test_standardizer_collision_incoming_wins():
     from petrophys.preprocessing.standardization import standardize_curves
 
     well = _res_well([("RT", 7), ("ILD", 10)])
-    with pytest.warns(UserWarning):
-        standardize_curves(well, rename_curves=True, convert_units=False)
+    standardize_curves(well, rename_curves=True, convert_units=False)
     assert well.get("RDEP").valid_count() == 10          # ILD data won the slot
-    parked = well.get("RT")
-    assert parked is not None and parked.valid_count() == 7
-    assert parked.mnemonic == "RT"                        # not mislabeled
+    assert well.get("ILD").valid_count() == 7            # the occupant moves to the incoming name
 
 
 def test_standardizer_collision_incoming_loses():
     from petrophys.preprocessing.standardization import standardize_curves
 
     well = _res_well([("RT", 10), ("ILD", 5)])
-    with pytest.warns(UserWarning):
-        standardize_curves(well, rename_curves=True, convert_units=False)
+    standardize_curves(well, rename_curves=True, convert_units=False)
     assert well.get("RDEP").valid_count() == 10
-    parked = well.get("ILD")
-    assert parked is not None and parked.valid_count() == 5  # not dropped
+    assert well.get("ILD") is None                       # fewer valid samples: dropped
 
 
-def test_standardizer_collision_native_takes_slot():
+def test_standardizer_collision_ties_keep_the_first_curve():
     from petrophys.preprocessing.standardization import standardize_curves
 
-    well = _res_well([("RT", 10), ("RDEP", 5)])
-    with pytest.warns(UserWarning):
-        standardize_curves(well, rename_curves=True, convert_units=False)
-    assert well.get("RDEP").valid_count() == 5           # native curve kept
-    assert well.get("RT").valid_count() == 10            # alias parked, not lost
+    well = _res_well([("RT", 10), ("RDEP", 10)])
+    standardize_curves(well, rename_curves=True, convert_units=False)
+    assert well.get("RDEP").valid_count() == 10
+    assert "RT" not in well.curves
 
 
 def test_standardizer_keeps_tvd_distinct():

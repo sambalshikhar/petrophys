@@ -63,7 +63,7 @@ def test_workflow_normalization_converts_units_without_losing_vendor_names():
     np.testing.assert_allclose(well["NPHI"].data, [0.20, 0.25])
 
 
-def test_workflow_preserves_a_step_failure_and_does_not_default_rw():
+def test_workflow_preserves_a_step_failure_and_default_rw_can_be_disabled():
     well = Well("NO-RW")
     well.depth = np.arange(4.0)
     well.add_curve("GR", [40.0, 50.0, 60.0, 70.0], "API")
@@ -75,10 +75,15 @@ def test_workflow_preserves_a_step_failure_and_does_not_default_rw():
     selected = workflow.run_selected_steps(well, [WorkflowStep.NORMALIZATION])
     assert selected.success is False
 
-    result = DynamicWorkflow(DynamicWorkflowConfig()).run(well)
+    result = DynamicWorkflow(DynamicWorkflowConfig(allow_default_rw=False)).run(well)
     rw_step = next(step for step in result.steps_executed if step.step == "rw")
     assert rw_step.method == "unavailable"
     assert "RW" not in well
+
+    result = DynamicWorkflow(DynamicWorkflowConfig()).run(well)
+    rw_step = next(step for step in result.steps_executed if step.step == "rw")
+    assert rw_step.method == "default_fallback_profile"
+    assert any("default 0.05 ohm.m" in warning for warning in result.warnings)
 
 
 def test_workflow_does_not_count_temperature_or_qaqc_as_interpretation():
@@ -86,7 +91,7 @@ def test_workflow_does_not_count_temperature_or_qaqc_as_interpretation():
     well.depth = np.arange(4.0)
     well.add_curve("MYSTERY", [1.0, 2.0, 3.0, 4.0], "")
 
-    result = DynamicWorkflow(DynamicWorkflowConfig()).run(well)
+    result = DynamicWorkflow(DynamicWorkflowConfig(allow_default_rw=False)).run(well)
 
     assert result.success
     assert result.status == "no_interpretation"
@@ -244,7 +249,6 @@ def test_calibrated_dlis_alias_beats_uncalibrated_native_curve():
     standardize_curves(well)
 
     np.testing.assert_allclose(well["RDEP"].data, [10.0, 11.0])
-    np.testing.assert_allclose(well["RDEP_ALT"].data, [1.0, 1.0])
 
 
 def test_nmr_missing_bin_rows_remain_missing_and_shapes_are_validated():

@@ -341,7 +341,7 @@ The rest of the reference documents what these calls are built from.""",
                             ("Lithology of a well", "calculate_lithology LithologyModule"),
                             (
                                 "Mineral solvers",
-                                "MultiMineralSolver solve_two_mineral solve_three_mineral "
+                                "MultiMineralSolver MultiMineralSolverV1 solve_two_mineral solve_three_mineral "
                                 "get_mineral_properties",
                             ),
                             (

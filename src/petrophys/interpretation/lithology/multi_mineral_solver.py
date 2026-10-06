@@ -57,10 +57,12 @@ def _constrain_mineral_fractions(
 
 class MultiMineralSolver:
     """
-    Multi-mineral solver for complex lithology.
+    Multi-mineral solver for complex lithology, version 2.
 
     This class solves for mineral fractions using multiple
-    log measurements simultaneously.
+    log measurements simultaneously. Version 1, the original solver that takes
+    PHIE as a fixed input and gates samples on closure, is
+    :class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`.
 
     Vcl (from VclModule) must be pre-computed before calling this solver and is
     subtracted from the RHS of every equation. Porosity is NOT taken as an input
@@ -111,6 +113,8 @@ class MultiMineralSolver:
     >>> solver = MultiMineralSolver()
     >>> result = solver.solve(rhob, nphi=None, vcl=vcl, phie=phie, pef=pef, dt=dt)
     """
+
+    version = 2
 
     def __init__(
         self,
@@ -530,6 +534,10 @@ class MultiMineralSolver:
         )
 
         return well
+
+
+# Explicit name for the current solver alongside MultiMineralSolverV1.
+MultiMineralSolverV2 = MultiMineralSolver
 
 
 def solve_two_mineral(

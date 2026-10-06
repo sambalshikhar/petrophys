@@ -568,10 +568,12 @@ def create_server(
         Key settings (others: interpretation_settings):
         - rw (ohm.m) with rw_meas_temp_f (degF): formation water resistivity and
           its temperature; take both from the user. Without rw the header RW is
-          used (at RWT, else an assumed 75 degF): ask the user. Or salinity_ppm.
+          used (at RWT, else at the median formation temperature): ask the user.
+          Or salinity_ppm.
         - bht_f (degF), td_ft (ft): bottom-hole temperature; default header BHT.
         - lithology_domain: clastic (default)|carbonate|evaporite|auto (set
-          'carbonate' for carbonates); matrix_type: auto|sandstone|limestone|dolomite.
+          'carbonate' for carbonates); matrix_type: auto|sandstone|limestone|dolomite
+          (default sandstone in the clastic domain, auto in the others).
         - sw_model: auto|archie|simandoux|indonesia|dual_water|waxman_smits;
           a, m, n: Archie parameters (default by lithology).
         - vcl_cutoff, phie_cutoff, sw_cutoff (v/v): net-pay cutoffs; defaults

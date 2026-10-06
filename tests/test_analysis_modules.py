@@ -226,41 +226,6 @@ def test_numerical_analysis_skips_all_nan_curves_without_runtime_warnings():
     assert not any(issubclass(item.category, RuntimeWarning) for item in caught)
 
 
-def test_numerical_deviation_threshold_ignores_floating_point_noise():
-    values = np.array([0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    z_score = abs((values[0] - np.mean(values)) / np.std(values))
-    assert z_score > 3.0
-    assert np.isclose(z_score, 3.0, rtol=0.0, atol=1e-12)
-
-    well = Well("NUMERICAL-THRESHOLD")
-    well.depth = np.arange(values.size, dtype=float)
-    well.add_curve("VANHY", values, "v/v", "Anhydrite volume")
-    well.add_curve("NET_PAY", np.zeros(values.size), "", "Net pay flag")
-
-    result = NumericalStatisticalAnalysis().analyze(well, add_curves=False)
-    labels = result.sections["statistical_deviation_detection"].raw_labels
-
-    assert labels[0] == "NORMAL_ZONE"
-
-
-def test_numerical_deviation_count_ignores_z2_floating_point_noise():
-    values = np.array([1e-12, 0.0, 0.0, 0.0, 0.0])
-    z_score = abs((values[0] - np.mean(values)) / np.std(values))
-    assert z_score > 2.0
-    assert np.isclose(z_score, 2.0, rtol=0.0, atol=1e-12)
-
-    well = Well("NUMERICAL-Z2-THRESHOLD")
-    well.depth = np.arange(values.size, dtype=float)
-    for mnemonic in ("TEST_A", "TEST_B", "TEST_C"):
-        well.add_curve(mnemonic, values, "", "Threshold test")
-    well.add_curve("NET_PAY", np.zeros(values.size), "", "Net pay flag")
-
-    result = NumericalStatisticalAnalysis().analyze(well, add_curves=False)
-    labels = result.sections["statistical_deviation_detection"].raw_labels
-
-    assert labels[0] == "NORMAL_ZONE"
-
-
 def test_electrofacies_is_reproducible_and_independent_of_row_order():
     well = _build_analysis_well()
 
@@ -419,7 +384,7 @@ def test_input_log_display_list_excludes_core_only_curves():
 
     displayed = _input_log_display_list(curves)
 
-    assert displayed == ["CALI", "DTC", "DTE", "lithology"]
+    assert displayed == ["BS", "CALI", "DTC", "DTE", "lithology"]
 
 
 def test_reference_statistics_use_canonical_names_and_skip_raw_lithology_aliases():
@@ -473,7 +438,6 @@ def test_category_derived_logs_include_full_workflow_outputs_not_raw_inputs():
     workflow_result = SimpleNamespace(
         base_result=SimpleNamespace(
             steps_executed=[
-                SimpleNamespace(step="normalization", output_curves=sorted(original_curves)),
                 SimpleNamespace(step="vclay", output_curves=["VCL"]),
                 SimpleNamespace(step="porosity", output_curves=["PHIE"]),
                 SimpleNamespace(step="permeability", output_curves=["PERM"]),
@@ -502,48 +466,11 @@ def test_category_derived_logs_include_full_workflow_outputs_not_raw_inputs():
 
     assert "PHIE" in computed
     assert "PERM" in computed
-    assert "VCL" not in computed
+    assert "VCL" in computed
     assert "BVW_EFFICIENCY" in computed
     assert "BAD_HOLE" in computed
     assert "BADHOLEFLAG" not in computed
     assert "GR" not in computed
-
-
-def test_bad_hole_qc_reports_bs_absent_without_synthetic_bit_size_fallback():
-    well = Well("BAD-HOLE-NO-BS")
-    well.depth = np.arange(3.0)
-    well.depth_unit = "ft"
-    well.add_curve("DEPT", well.depth, "ft", "Depth")
-    well.add_curve("CALI", np.array([8.5, 10.2, 8.6]), "in", "Caliper")
-    well.add_curve("DRHO", np.array([0.01, 0.02, 0.20]), "g/cc", "Density correction")
-
-    workflow_result = SimpleNamespace(
-        base_result=SimpleNamespace(
-            steps_executed=[
-                SimpleNamespace(
-                    step="bad_hole",
-                    parameters={
-                        "bit_size_used": None,
-                        "bit_size_source": None,
-                    },
-                    output_curves=["BAD_HOLE"],
-                )
-            ],
-            steps_skipped=[],
-            warnings=[],
-            errors=[],
-        ),
-        zone_results=[],
-    )
-
-    qc = _build_reference_bad_hole_qc(well, workflow_result)
-
-    assert qc["log_availability"]["BS"] is False
-    assert qc["parameters_used"]["bit_size_used_in"] is None
-    assert "bit_size_source" not in qc["parameters_used"]
-    assert "bs_curve_present" not in qc["parameters_used"]
-    assert "DRHO" in qc["parameters_used"]["washout_formula"]
-    assert "skipped" in qc["parameters_used"]["large_hole_formula"]
 
 
 def test_bad_hole_qc_reports_bs_present_when_bs_curve_exists():
@@ -598,51 +525,6 @@ def test_reference_json_omits_derived_log_status_by_default():
     )
 
     assert "derived_log_status" not in payload["analysis_results"]["data_completeness"]
-
-
-def test_saturation_analysis_derives_so_from_sw():
-    well = Well("SAT-SO")
-    well.depth = np.arange(3.0)
-    well.add_curve("SW", np.array([0.2, 0.65, np.nan]), "v/v", "Water Saturation")
-
-    result = SaturationAnalysis().analyze(well)
-
-    assert "SO" in result.derived_curves
-    np.testing.assert_allclose(
-        result.derived_curves["SO"].data,
-        np.array([0.8, 0.35, np.nan]),
-        equal_nan=True,
-    )
-    assert result.derived_curves["SO"].unit == "frac"
-
-
-def test_reference_json_primary_completeness_counts_alias_metadata_and_processed_curves():
-    well = Well("PAYLOAD-COMPLETENESS")
-    well.depth = np.arange(3.0)
-    well.header.bit_size = 17.5
-    well.add_curve("DEPT", well.depth, "ft", "Depth")
-    well.add_curve("TEMP", np.array([150.0, 151.0, 152.0]), "degF", "Temperature")
-    well.add_curve("RMF", np.array([0.005, 0.006, 0.007]), "ohm.m", "Mud filtrate")
-    well.add_curve("RW", np.array([0.08, 0.09, 0.10]), "ohm.m", "Formation water")
-    workflow_result = SimpleNamespace(
-        base_result=SimpleNamespace(steps_executed=[], steps_skipped=[], warnings=[], errors=[]),
-        zone_results=[],
-    )
-
-    payload = _build_reference_json_payload(
-        well,
-        workflow_result,
-        Path("PAYLOAD-COMPLETENESS.las"),
-        original_curves={"DEPT", "RSHAL"},
-    )
-
-    missing = set(payload["analysis_results"]["data_completeness"]["missing_primary_logs"])
-    assert "BS" in missing
-    assert "RSHA" not in missing
-    assert "TEMP" not in missing
-    assert "RMF" not in missing
-    assert "RW" not in missing
-    assert "RXO" in missing
 
 
 def test_reference_json_sets_core_flags_when_core_corrected_curves_used():
@@ -761,7 +643,7 @@ def test_missing_lithology_group_uses_readable_group_name():
     assert segments[0]["group_name"] == "NO_LITHOLOGY_DATA_GROUP_1"
 
 
-def test_computed_lithology_is_used_when_geolink_lithology_is_absent():
+def test_lithology_groups_need_geolink_lithology():
     well = Well("COMPUTED-LITHO")
     well.depth = np.arange(1000.0, 1008.0)
     well.add_curve("DEPT", well.depth, "ft", "Depth")
@@ -774,12 +656,7 @@ def test_computed_lithology_is_used_when_geolink_lithology_is_absent():
 
     segments = _build_lithology_group_segments(well, minimum_group_thickness=0.0)
 
-    assert [segment["lithology"] for segment in segments] == [
-        "SANDSTONE",
-        "LIMESTONE",
-        "MIXED",
-        "UNKNOWN",
-    ]
+    assert [segment["lithology"] for segment in segments] == ["NO_LITHOLOGY_DATA"]
 
 
 def test_geolink_lithology_remains_authoritative_when_computed_lithology_exists():
@@ -882,7 +759,7 @@ def test_sw_missing_note_lists_blocking_inputs():
 
     assert "selected effective porosity" in reason
     assert "RDEP/RT=present" in note
-    assert "PHIE=missing in this segment" in note
+    assert "PHIE=missing/no finite samples" in note
     assert "RW=present" in note
 
 

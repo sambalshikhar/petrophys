@@ -83,8 +83,6 @@ from petrophys.workflow import workflow_steps
 
 trace_only = {
     "input_context": "Records which formation and lithology sources were used",
-    "permeability_finalize": "Permeability recomputed with the final reservoir flag",
-    "rock_quality_finalize": "RQI and FZI recomputed with the final permeability",
 }
 executed = {step.step: step for step in result.steps_executed}
 described = [item["name"] for item in workflow_steps()]

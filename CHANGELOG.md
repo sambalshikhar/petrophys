@@ -6,9 +6,47 @@ All notable changes to Petrophys are documented here.
 
 ### Breaking changes
 
-- Context generation now uses one canonical calculation path. Dataset names,
+- Context generation now uses one calculation path. Dataset names,
   vendor curves, and earlier context packages cannot select another workflow
   or provide archived numerical values.
+- The workflow, `interpret`, `export_context`, `petrophys-context` and the MCP
+  tools compute the calculations behind the GeoLink eval context benchmark:
+  - Defaults: no input re-standardization (`standardize_input=False`), GR
+    endpoints picked from the log (`gr_min`/`gr_max` None: P5/P95),
+    a sandstone matrix in the clastic domain, `vcl_cutoff=0.3`,
+    `sw_cutoff=0.7`. With another `lithology_domain` the matrix is
+    resolved within that domain.
+  - LAS header parameters override settings left at their defaults (for
+    example `RHO_FL` over `rho_fl=1.0`); explicitly set values still win.
+  - Without a measurement temperature, a given Rw is taken at the median
+    formation temperature (no temperature correction); the clean-wet Rwa
+    fallback uses P5. When no Rw source is found, 0.05 ohm.m is used with a
+    warning (`allow_default_rw` now defaults to True; set it to False to
+    skip saturation instead).
+  - PHIT and PHIE are always recalculated; interpreted input porosity is no
+    longer kept as the active curve (no `PHIT_CALC`/`PHIE_CALC`).
+  - The clastic lithology step needs RHOB, NPHI, PEF or DTC, VCL and PHIE.
+  - Net-pay cutoffs are strict (`VCL < cutoff`, `PHIE > cutoff`,
+    `SW < cutoff`), and only the family label `"carbonate"` selects the
+    carbonate cutoffs. Rw and net pay use the benchmark steps.
+  - Swirr stays as picked before permeability: the `permeability_finalize`
+    and `rock_quality_finalize` steps are gone.
+  - The workflow uses 83 us/ft for gypsum matrix slowness.
+  - Bad-hole flags assume an 8.5 in bit size when a well has no BS curve or
+    header bit size, need a caliper for washout (DRHO alone does not flag it),
+    and no longer fall back to pad calipers (HD1/HD2) when CALI is absent.
+  - `standardize_curves` gives core saturation curves the ordinary unit
+    conversion (no percent inference); when two curves map to one standard
+    mnemonic, the incoming curve takes the slot only with more valid samples
+    and otherwise is dropped.
+  - `SaturationAnalysis` no longer derives SO; `NumericalStatisticalAnalysis`
+    counts 2- and 3-sigma deviations with `np.nanmean`/`np.nanstd` and exact
+    thresholds.
+  - Context packages use the benchmark layout and notes: input curves are
+    classified against the raw LAS files (`raw_input_dir`, default the
+    sibling of a `*_processed` folder), value ranges use the benchmark rules
+    (RMF from 0.01 ohm.m; no SP, SO or NMR rules), BS gets statistics and SO
+    does not.
 
 - `DynamicWorkflowConfig` validates every setting when it is created and
   raises `ValueError` listing all invalid fields with the accepted values
@@ -17,7 +55,8 @@ All notable changes to Petrophys are documented here.
   clastic and carbonate mineral routes from per-depth lithology labels.
   `lithology_domain` defaults to `"clastic"` (set `"carbonate"` for
   carbonates, or `"auto"` to resolve it from the data); `matrix_type`
-  defaults to `"auto"` within the domain's matrices.
+  defaults to `"sandstone"` in the clastic domain and to `"auto"` within
+  any other domain.
 - Tabular readers (`io.read_csv`, `read_csv_wells`, `read_ascii` without a
   units row, `Well.from_dataframe`) require `depth_unit` instead of assuming
   feet. `Well.depth_unit` accepts only metre or foot labels.
@@ -27,6 +66,15 @@ All notable changes to Petrophys are documented here.
 
 ### Added
 
+- Mineral solvers are versioned. `MultiMineralSolverV1` restores the original solver as a public class:
+  VCL and PHIE are fixed inputs, mineral volumes come from non-negative least squares, and samples whose
+  mineral total misses `1 - VCL - PHIE` by more than 0.05 are left unsolved; its endpoints are frozen.
+  `MultiMineralSolver` is version 2 (also exported as `MultiMineralSolverV2`) and is unchanged.
+  `DynamicWorkflowConfig.mineral_solver_version` selects the clastic workflow solver (default `1`, the
+  algorithm the workflow already used, so results are unchanged; it replaces the private
+  `CanonicalMultiMineralSolver`), and `LithologyModule(solver_version=...)` selects it there (default `2`).
+- `scripts/generate_benchmark_context.py` regenerates the GeoLink eval context benchmark package.
+- `apply_value_range_qc`, `clean_curve_values` and `rule_for_curve` take a `rules` argument.
 - `DynamicWorkflowConfig.swirr_flag_phi_cl` chooses the PHIE behind the reservoir flag that picks the
   SWIRR_APP samples. The default `"workflow"` keeps the reported PHIE; `"all_shale_phit"` recomputes PHIE
   for that flag only with clay porosity from the mean PHIT of all shale-lithology samples, the rule behind

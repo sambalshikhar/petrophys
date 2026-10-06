@@ -205,7 +205,6 @@ available; `result.specific_steps_skipped` explains every skip.
 | 17 | `bvw` | Bulk volume water |
 | 18 | `mhi` | Moveable hydrocarbon index |
 | 19 | `net_pay` | Net rock, net reservoir, and net pay flags |
-| 20 | `permeability_finalize`, `rock_quality_finalize` | Permeability and rock quality from the final reservoir flag |
 
 Spectral-gamma and elemental-spectroscopy interpretation are separate
 functions in `petrophys.interpretation.geochemistry`; `pp.interpret` lists

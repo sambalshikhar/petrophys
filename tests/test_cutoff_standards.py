@@ -45,9 +45,9 @@ def test_netpay_module_per_depth_lithology_cutoffs():
     np.testing.assert_allclose(sw_cut, [0.60, 0.70, 0.70, 0.60])
 
 
-def test_dynamic_config_cutoffs_default_to_none():
+def test_dynamic_config_cutoff_defaults():
     cfg = DynamicWorkflowConfig()
-    assert cfg.vcl_cutoff is None and cfg.sw_cutoff is None and cfg.phie_cutoff is None
+    assert (cfg.vcl_cutoff, cfg.sw_cutoff, cfg.phie_cutoff) == (0.3, 0.7, None)
 
 
 def test_constants_match_standards():

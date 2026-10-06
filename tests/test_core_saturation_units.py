@@ -136,20 +136,3 @@ def test_bundled_las_raw_viewer_core_points_are_on_scale_without_mutating_well()
         viewer.close()
 
 
-def test_dynamic_workflow_normalizes_real_core_and_records_evidence():
-    from petrophys.workflow import DynamicWorkflowConfig, run_dynamic_workflow
-
-    well = read_las(sample("30_6-5"))
-    with pytest.warns(UserWarning, match="inferred percent"):
-        result = run_dynamic_workflow(well, DynamicWorkflowConfig(rw=.07))
-    core = result.well.get("SWC")
-    assert np.nanmin(core.data) == pytest.approx(.137)
-    assert np.nanmax(core.data) == pytest.approx(.846)
-    oil = result.well.get("SOC")
-    assert np.isfinite(oil.data).sum() == 44
-    assert np.nanmin(oil.data) == pytest.approx(.006)
-    assert np.nanmax(oil.data) == pytest.approx(.169)
-    step = next(step for step in result.steps_executed if step.step == "normalization")
-    evidence = step.parameters["core_saturation_normalization"]["SWC"]
-    assert evidence["factor"] == .01
-    assert evidence["reason"] == "inferred_percent"

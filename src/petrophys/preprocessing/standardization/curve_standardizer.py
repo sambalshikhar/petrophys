@@ -18,8 +18,6 @@ from petrophys.preprocessing.standardization.alias_map import (
     ALIAS_MAP,
 )
 from petrophys.preprocessing.standardization.unit_converter import (
-    CORE_SATURATION_CURVES,
-    standardize_core_saturation,
     convert_curve_units,
     standardize_units,
     get_conversion_factor,
@@ -349,22 +347,6 @@ class CurveStandardizer:
         # Track renamed curves to avoid conflicts
         new_curves = {}
         rename_map = {}
-        # Original mnemonic of the curve currently occupying each standard slot,
-        # so a collision loser can be parked under its own name (never dropped,
-        # never stored under another curve's mnemonic).
-        origin_of = {}
-
-        def parking_name(origin: str, standard: str) -> str:
-            """Return a free non-standard slot for a collision loser."""
-            if origin != standard and origin not in new_curves:
-                return origin
-            base = f"{origin}_ALT"
-            candidate = base
-            suffix = 2
-            while candidate == standard or candidate in new_curves:
-                candidate = f"{base}_{suffix}"
-                suffix += 1
-            return candidate
 
         for mnemonic, curve in well._curves.items():
             # Get standard name
@@ -389,9 +371,7 @@ class CurveStandardizer:
                 rename_map[mnemonic] = standard_name
 
             # Convert units if needed
-            if self.convert_units and standard_name in CORE_SATURATION_CURVES:
-                standardize_core_saturation(new_curve, inplace=True)
-            elif self.convert_units:
+            if self.convert_units:
                 standard_unit = get_standard_unit(standard_name)
                 if standard_unit and curve.unit:
                     factor = get_conversion_factor(curve.unit, standard_unit)
@@ -402,55 +382,24 @@ class CurveStandardizer:
 
             _screen_standard_curve_values(new_curve, standard_name, curve.unit)
 
-            # Handle duplicate standard names. Both curves always survive:
-            # the winner takes the standard slot, the loser keeps its own
-            # original mnemonic. A curve natively named like the standard
-            # (e.g. a real RDEP alongside an ILD alias) takes the slot.
+            # Handle duplicate standard names: the incoming curve replaces the
+            # occupant only with a higher source priority (DLIS channel
+            # quality) or, at equal priority, more valid samples; the occupant
+            # is then kept under the incoming curve's mnemonic. Otherwise the
+            # incoming curve is dropped.
             if (
                 standard_name in new_curves
                 and self.rename_curves
                 and eligible_for_standard_slot
             ):
                 existing = new_curves[standard_name]
-                existing_origin = origin_of.get(standard_name, standard_name)
-                incoming_is_native = mnemonic == standard_name
-                existing_custom = getattr(existing.metadata, "custom", {}) or {}
-                incoming_custom = getattr(new_curve.metadata, "custom", {}) or {}
-                existing_priority = int(existing_custom.get("standardization_priority", 0))
-                incoming_priority = int(incoming_custom.get("standardization_priority", 0))
-                incoming_wins = (
-                    incoming_priority > existing_priority
-                    or (
-                        incoming_priority == existing_priority
-                        and (
-                            incoming_is_native
-                            or new_curve.valid_count() > existing.valid_count()
-                        )
-                    )
-                )
-                if incoming_wins:
-                    # Incoming takes the slot; park the previous occupant
-                    # back under its own original mnemonic.
-                    parked_name = parking_name(existing_origin, standard_name)
-                    existing.mnemonic = parked_name
-                    new_curves[parked_name] = existing
-                    rename_map.pop(existing_origin, None)
+                existing_priority = _curve_standardization_priority(existing)
+                if source_priority > existing_priority or (
+                    source_priority == existing_priority
+                    and new_curve.valid_count() > existing.valid_count()
+                ):
+                    new_curves[mnemonic] = existing
                     new_curves[standard_name] = new_curve
-                    origin_of[standard_name] = mnemonic
-                    slot_holder, parked = mnemonic, parked_name
-                else:
-                    # Existing keeps the slot; park the incoming curve under
-                    # its own original mnemonic.
-                    parked_name = parking_name(mnemonic, standard_name)
-                    new_curve.mnemonic = parked_name
-                    new_curves[parked_name] = new_curve
-                    rename_map.pop(mnemonic, None)
-                    slot_holder, parked = existing_origin, parked_name
-                warnings.warn(
-                    f"Curves '{existing_origin}' and '{mnemonic}' both standardize "
-                    f"to '{standard_name}'; '{slot_holder}' takes the "
-                    f"'{standard_name}' slot and '{parked}' keeps its original name."
-                )
             else:
                 target_name = (
                     standard_name
@@ -458,8 +407,6 @@ class CurveStandardizer:
                     else mnemonic
                 )
                 new_curves[target_name] = new_curve
-                if self.rename_curves and eligible_for_standard_slot:
-                    origin_of[standard_name] = mnemonic
 
         # Update well curves
         well._curves = new_curves
@@ -503,9 +450,7 @@ class CurveStandardizer:
         else:
             standard_name = curve.mnemonic
 
-        if convert and self.get_standard_name(curve.mnemonic) in CORE_SATURATION_CURVES:
-            standardize_core_saturation(new_curve, inplace=True)
-        elif convert:
+        if convert:
             standard_unit = get_standard_unit(standard_name)
             if standard_unit and curve.unit:
                 factor = get_conversion_factor(curve.unit, standard_unit)

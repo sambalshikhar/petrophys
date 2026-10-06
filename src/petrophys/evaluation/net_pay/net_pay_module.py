@@ -9,7 +9,6 @@ import numpy as np
 
 from petrophys.model.constants import DefaultParameters
 from petrophys.evaluation.net_pay.flags import generate_net_flags
-from petrophys.evaluation.net_pay.cutoffs import cutoff_family
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 
 if TYPE_CHECKING:
@@ -42,6 +41,8 @@ class NetPayModule:
     Lithology can be a single string or a per-depth numpy array.
     When an array is provided, the VCL and PHIE cutoffs vary by depth
     with the local lithology.
+
+    Only the family label ``"carbonate"`` selects the carbonate cutoffs.
     """
 
     def __init__(
@@ -49,7 +50,7 @@ class NetPayModule:
         vcl_cutoff: Optional[float] = None,
         phie_cutoff: Optional[float] = None,
         sw_cutoff: Optional[float] = None,
-        lithology: Union[str, np.ndarray] = "clastic"
+        lithology: Union[str, np.ndarray] = "clastic",
     ):
         self.lithology = lithology
         self._explicit_phie_cutoff = phie_cutoff
@@ -58,7 +59,7 @@ class NetPayModule:
 
         # For single-string lithology, resolve cutoffs immediately
         if isinstance(lithology, str):
-            carbonate = cutoff_family(lithology) == "carbonate"
+            carbonate = self._is_carbonate(lithology)
             if phie_cutoff is not None:
                 self.phie_cutoff = phie_cutoff
             elif carbonate:
@@ -83,8 +84,12 @@ class NetPayModule:
             self.vcl_cutoff = vcl_cutoff
             self.sw_cutoff = sw_cutoff
 
+    @staticmethod
+    def _is_carbonate(label) -> bool:
+        return str(label).lower() == "carbonate"
+
     def _carbonate_mask(self) -> np.ndarray:
-        return np.array([cutoff_family(v) == "carbonate" for v in self.lithology])
+        return np.array([self._is_carbonate(v) for v in self.lithology])
 
     def _build_phie_cutoff(self, n_samples: int) -> Union[float, np.ndarray]:
         """Build per-depth PHIE cutoff array from lithology."""
@@ -166,7 +171,7 @@ class NetPayModule:
 
         flags = generate_net_flags(
             vcl, phie, sw,
-            vcl_cutoff, phie_cutoff, sw_cutoff
+            vcl_cutoff, phie_cutoff, sw_cutoff,
         )
 
         if quality_mask is not None:

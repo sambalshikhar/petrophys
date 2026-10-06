@@ -159,8 +159,8 @@ def header_notes(well: "Well") -> List[str]:
     if rw is not None and rwt is None:
         notes.append(
             f"Header RW = {rw:g} {_describe_unit(well, 'RW') or 'ohm.m'} has NO measurement "
-            "temperature (no RWT). Without an rw setting interpret_well uses it at an ASSUMED "
-            "75 degF. Ask the user for Rw and its temperature; if you use the header value, "
+            "temperature (no RWT). Without an rw setting interpret_well uses it at the median "
+            "formation temperature (ASSUMED). Ask the user for Rw and its temperature; if you use the header value, "
             "report it as unverified."
         )
     elif rw is not None:
@@ -410,16 +410,13 @@ def _assumptions(result: Any) -> tuple[List[str], List[str]]:
     net_pay = _step(result, "net_pay")
     if net_pay is not None:
         parameters = net_pay.parameters or {}
+        phie_cutoff = parameters.get("phie_cutoff")
         cutoffs = [
             f"VCL < {parameters.get('vcl_cutoff')}",
-            f"PHIE > {parameters.get('phie_cutoff')}",
+            f"PHIE > {phie_cutoff}" if phie_cutoff is not None else "PHIE > 0.08 (0.045 where carbonate)",
             f"SW < {parameters.get('sw_cutoff')}",
         ]
-        cutoff_source = parameters.get("cutoff_source")
         text = "Net-pay cutoffs: " + ", ".join(cutoffs)
-        text += " (defaults)" if cutoff_source == "canonical" else " (from settings)"
-        if parameters.get("lithology") == "per-depth":
-            text += "; PHIE cutoff 0.045 where samples are carbonate"
         items.append(text)
     return items, notes
 

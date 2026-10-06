@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Optional, List
 from dataclasses import dataclass
 import numpy as np
 
+from petrophys.interpretation.lithology.multi_mineral_solver_v1 import MultiMineralSolverV1
 from petrophys.interpretation.lithology.multi_mineral_solver import (
     MultiMineralSolver,
 )
@@ -77,6 +78,13 @@ class LithologyModule:
         lithology log or core-constrained matrix density with at least 80%
         agreement. Carbonate samples with limited logs use calcite and dolomite;
         the full mineral set remains available when there are enough equations.
+    solver_version : {1, 2}, optional
+        Mineral solver version (default: 2). Version 2 is
+        :class:`MultiMineralSolver`, which solves porosity jointly with the
+        minerals. Version 1 is :class:`MultiMineralSolverV1`, the original
+        solver that takes PHIE as a fixed input and leaves samples unsolved
+        when the closure gate fails; the reduced-mineral selection above
+        applies to version 2 only.
 
     Examples
     --------
@@ -103,17 +111,22 @@ class LithologyModule:
         minerals: List[str] = None,
         include_clay: bool = True,
         lithology: str = "auto",
+        solver_version: int = 2,
     ):
         self._custom_minerals = minerals is not None
         if lithology not in {"auto", "clastic", "carbonate"}:
             raise ValueError("lithology must be auto, clastic, or carbonate")
+        if solver_version not in (1, 2):
+            raise ValueError("solver_version must be 1 or 2")
         self.lithology = lithology
         if minerals is None:
             minerals = ["quartz", "calcite", "dolomite", "anhydrite"]
 
         self.minerals = minerals
         self.include_clay = include_clay
-        self.solver = MultiMineralSolver(minerals=minerals)
+        self.solver_version = solver_version
+        solver_class = MultiMineralSolverV1 if solver_version == 1 else MultiMineralSolver
+        self.solver = solver_class(minerals=minerals)
 
     def _select_solver(self, well):
         """Choose a reduced mineral set from independent geological evidence."""

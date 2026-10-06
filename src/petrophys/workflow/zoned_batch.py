@@ -236,6 +236,26 @@ def _clone_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowCon
     return copy.deepcopy(config) if config is not None else DynamicWorkflowConfig()
 
 
+def _left_at_default(config: DynamicWorkflowConfig, field_name: str) -> bool:
+    """True when a setting is unset or still has its default value."""
+    import dataclasses
+
+    value = getattr(config, field_name, None)
+    if value is None:
+        return True
+    item = DynamicWorkflowConfig.__dataclass_fields__.get(field_name)
+    if item is None:
+        return False
+    if field_name == "matrix_type":
+        # The default (None) resolves to the domain's matrix when the config is made.
+        return value in ("sandstone", "auto")
+    if item.default is not dataclasses.MISSING:
+        return value == item.default
+    if item.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
+        return value == item.default_factory()  # type: ignore[misc]
+    return False
+
+
 def _prepare_batch_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowConfig:
     prepared = _clone_config(config)
     skip_steps = list(prepared.skip_steps)
@@ -677,9 +697,9 @@ def run_dynamic_workflow_with_zones(
 ) -> ZonedWorkflowRunResult:
     """Run the dynamic workflow with depth-varying LAS header parameters.
 
-    Whole-well header parameters (e.g. ``RW``, ``BHT``) fill settings the
-    config leaves unset; an explicit config value always wins and the
-    conflict is noted in ``warnings``. Zones from
+    Whole-well header parameters (e.g. ``RW``, ``BHT``, ``RHO_FL``) override
+    settings left at their defaults; a value set explicitly in the config wins
+    and the conflict is noted in ``warnings``. Zones from
     :func:`extract_zoned_parameters` are then re-run with their own settings
     and merged over their depth ranges.
 
@@ -700,16 +720,12 @@ def run_dynamic_workflow_with_zones(
     zoned_default_overrides, zoned_default_injected, zoned_default_notes = _derive_default_values_from_zones(zones)
 
     base_config = _prepare_batch_config(config)
-    # Header-derived parameters only FILL fields the caller left unset: an
-    # explicitly configured value always wins over what the LAS header prints
-    # (e.g. an unreconciled RW basis must not silently override a documented
-    # config decision).
+    # Header-derived parameters override settings left at their defaults; an
+    # explicitly configured value wins (e.g. a documented Rw over an
+    # unreconciled header RW).
     override_notes: List[str] = []
     for field_name, value in global_overrides.items():
-        if (
-            getattr(base_config, field_name, None) is None
-            or (config is None and field_name == "lithology_domain")
-        ):
+        if _left_at_default(base_config, field_name):
             _set_config_value(base_config, field_name, value)
         else:
             override_notes.append(
@@ -717,13 +733,7 @@ def run_dynamic_workflow_with_zones(
                 "config sets it explicitly; config value kept."
             )
     for field_name, value in zoned_default_overrides.items():
-        if (
-            field_name not in global_overrides
-            and (
-                getattr(base_config, field_name, None) is None
-                or (config is None and field_name == "lithology_domain")
-            )
-        ):
+        if field_name not in global_overrides and _left_at_default(base_config, field_name):
             _set_config_value(base_config, field_name, value)
     _derive_sw_model(global_overrides, base_config)
     if "vsh_exp" not in global_overrides:

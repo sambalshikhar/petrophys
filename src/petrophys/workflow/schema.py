@@ -60,8 +60,7 @@ def workflow_steps() -> List[Dict[str, str]]:
     ``result.steps_skipped``. ``spectral_gamma``, ``elemental_spectroscopy``
     and ``porosity_refinement`` are listed but never run by
     :func:`petrophys.interpret`; their descriptions say so. A run's trace
-    (``result.steps_executed``) also contains ``input_context``,
-    ``permeability_finalize`` and ``rock_quality_finalize``.
+    (``result.steps_executed``) also contains ``input_context``.
 
     Returns
     -------
@@ -193,6 +192,7 @@ def _field_choices() -> Dict[str, Sequence[str]]:
         "lithology_source": workflow._LITHOLOGY_SOURCES,
         "hc_type": workflow._HC_TYPES,
         "swirr_flag_phi_cl": workflow._SWIRR_FLAG_PHI_CL,
+        "mineral_solver_version": workflow._MINERAL_SOLVER_VERSIONS,
         "gr_method": GR_VCL_METHODS,
         "perm_method": PERMEABILITY_METHODS,
         "perm_fallback_method": tuple(m for m in PERMEABILITY_METHODS if m != "auto"),

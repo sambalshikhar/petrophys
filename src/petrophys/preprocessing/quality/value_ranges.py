@@ -115,12 +115,23 @@ def _rule_lookup() -> dict[str, tuple[str, ValueRangeRule]]:
 _RULE_LOOKUP = _rule_lookup()
 
 
-def rule_for_curve(mnemonic: str) -> Optional[tuple[str, ValueRangeRule]]:
-    """Return the canonical range rule for a curve mnemonic."""
+def rule_for_curve(
+    mnemonic: str, rules: Optional[Mapping[str, ValueRangeRule]] = None
+) -> Optional[tuple[str, ValueRangeRule]]:
+    """Return the canonical range rule for a curve mnemonic.
+
+    ``rules`` replaces :data:`VALUE_RANGE_RULES` (for example the benchmark-profile set).
+    """
     upper = str(mnemonic or "").upper()
+    table = VALUE_RANGE_RULES if rules is None else rules
     if upper.startswith("SXO-"):
-        return "SXO", VALUE_RANGE_RULES["SXO"]
-    return _RULE_LOOKUP.get(upper)
+        return "SXO", table["SXO"]
+    if rules is None:
+        return _RULE_LOOKUP.get(upper)
+    for canonical, rule in rules.items():
+        if upper == canonical.upper() or upper in (alias.upper() for alias in rule.aliases):
+            return canonical, rule
+    return None
 
 
 def _qc_curve_data(
@@ -143,10 +154,10 @@ def _qc_curve_data(
 
 
 def clean_curve_values(
-    mnemonic: str, data: Any
+    mnemonic: str, data: Any, rules: Optional[Mapping[str, ValueRangeRule]] = None
 ) -> tuple[np.ndarray, Optional[dict[str, Any]]]:
     """Clean one curve array with its configured value-range rule."""
-    match = rule_for_curve(mnemonic)
+    match = rule_for_curve(mnemonic, rules)
     arr = np.asarray(data, dtype=float)
     if match is None:
         return arr.copy(), None
@@ -168,12 +179,14 @@ def apply_value_range_qc(
     well: "Well",
     curve_names: Optional[Iterable[str]] = None,
     store_report: bool = True,
+    rules: Optional[Mapping[str, ValueRangeRule]] = None,
 ) -> list[dict[str, Any]]:
     """
     Apply configured value-range QC to curves in a well.
 
     Values outside ``nan`` rules are set to NaN. Values outside ``clip`` rules
-    are clipped to the configured low/high bounds.
+    are clipped to the configured low/high bounds. ``rules`` replaces
+    :data:`VALUE_RANGE_RULES`.
     """
     names = list(curve_names or getattr(well, "curves", []))
     report: list[dict[str, Any]] = []
@@ -183,7 +196,7 @@ def apply_value_range_qc(
         if curve is None:
             continue
         try:
-            cleaned, item = clean_curve_values(name, curve.data)
+            cleaned, item = clean_curve_values(name, curve.data, rules)
         except (TypeError, ValueError):
             continue
         if item is None:
