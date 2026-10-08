@@ -19,8 +19,12 @@ from petrophys.interpretation.temperature.temp_gradient import (
 )
 
 
-def store_temperature_parameters(well: "Well", result: Any) -> None:
-    """Record a temperature profile's parameters, with units, on ``well``."""
+def store_temperature_parameters(well: "Well", result: Any, *, with_metadata: bool = True) -> None:
+    """Record a temperature profile's parameters on ``well``.
+
+    ``with_metadata=False`` stores the values alone, without the ``__UNIT`` and
+    ``__DESCR`` entries that a LAS export writes beside them.
+    """
     values = (
         ("temperature_gradient", result.gradient, "degF/100ft", "Temperature gradient"),
         ("surface_temperature", result.surface_temp, "degF", "Surface temperature"),
@@ -33,6 +37,8 @@ def store_temperature_parameters(well: "Well", result: Any) -> None:
         if value is None:
             continue
         well.set_parameter(name, value)
+        if not with_metadata:
+            continue
         if unit:
             well.set_parameter(f"{name}__UNIT", unit)
         well.set_parameter(f"{name}__DESCR", description)

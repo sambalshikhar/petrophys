@@ -22,6 +22,7 @@ from petrophys.preprocessing.standardization import standardize_curves
 from petrophys.workflow.dynamic_workflow import (
     DynamicWorkflowConfig,
     DynamicWorkflowResult,
+    _left_at_default,
     run_dynamic_workflow,
 )
 
@@ -236,24 +237,9 @@ def _clone_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowCon
     return copy.deepcopy(config) if config is not None else DynamicWorkflowConfig()
 
 
-def _left_at_default(config: DynamicWorkflowConfig, field_name: str) -> bool:
-    """True when a setting is unset or still has its default value."""
-    import dataclasses
-
-    value = getattr(config, field_name, None)
-    if value is None:
-        return True
-    item = DynamicWorkflowConfig.__dataclass_fields__.get(field_name)
-    if item is None:
-        return False
-    if field_name == "matrix_type":
-        # The default (None) resolves to the domain's matrix when the config is made.
-        return value in ("sandstone", "auto")
-    if item.default is not dataclasses.MISSING:
-        return value == item.default
-    if item.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
-        return value == item.default_factory()  # type: ignore[misc]
-    return False
+def _is_benchmark_profile(config: Optional[DynamicWorkflowConfig]) -> bool:
+    """True when this batch reproduces the eval package's interpreted LAS."""
+    return getattr(config, "calculation_profile", "current") == "benchmark"
 
 
 def _prepare_batch_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowConfig:
@@ -453,6 +439,7 @@ def _finalize_export_curves(
     original_curves: set[str],
     *,
     retain_computed_lithology: bool = False,
+    drop_redundant_porosity: bool = False,
 ) -> None:
     if well.get("SW") is None:
         for alias in ("SWA", "SWT-LOG"):
@@ -534,6 +521,23 @@ def _finalize_export_curves(
     for name in ("PRIME_GAS_TARGET", "PRIME_OIL_TARGET"):
         if name not in original_curves:
             well.remove_curve(name)
+
+    if drop_redundant_porosity:
+        # A sonic-only porosity pass leaves PHIT equal to PHIS and PHI_SEC all
+        # zero; the eval package's interpreted LAS carried neither.
+        phis = well.get("PHIS")
+        phit = well.get("PHIT")
+        if phis is not None and phit is not None and "PHIT" not in original_curves:
+            a = np.asarray(phit.data, dtype=float)
+            b = np.asarray(phis.data, dtype=float)
+            if np.array_equal(np.nan_to_num(a, nan=-9e99), np.nan_to_num(b, nan=-9e99)):
+                well.remove_curve("PHIT")
+        secondary = well.get("PHI_SEC")
+        if secondary is not None and "PHI_SEC" not in original_curves:
+            values = np.asarray(secondary.data, dtype=float)
+            finite = np.isfinite(values)
+            if finite.any() and not np.any(values[finite]):
+                well.remove_curve("PHI_SEC")
 
 
 def _apply_parameter_alias(
@@ -1231,6 +1235,7 @@ def process_las_directory_with_workflow(
     pattern: str = "*.las",
     recursive: bool = False,
     config: Optional[DynamicWorkflowConfig] = None,
+    well_names: Optional[Sequence[str]] = None,
 ) -> List[BatchLasResult]:
     """Interpret every LAS file in a folder with zone-aware settings.
 
@@ -1250,6 +1255,9 @@ def process_las_directory_with_workflow(
         Also search subfolders.
     config : DynamicWorkflowConfig, optional
         Base settings for every well.
+    well_names : sequence of str, optional
+        Only interpret files whose name (without extension) matches one of
+        these well names.
 
     Returns
     -------
@@ -1267,6 +1275,9 @@ def process_las_directory_with_workflow(
     if not input_path.is_dir():
         raise FileNotFoundError(f"LAS input folder not found: {input_path}")
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
+    if well_names:
+        wanted = {str(name).strip().lower().replace("/", "_") for name in well_names}
+        files = [item for item in files if item.stem.strip().lower() in wanted]
     if not files:
         _warn(
             f"No files matching {pattern!r} in {input_path}"
@@ -1283,10 +1294,21 @@ def process_las_directory_with_workflow(
 
         try:
             well = read_las(file_path)
-            well = standardize_curves(well, rename_curves=True, convert_units=True)
+            well = standardize_curves(
+                well,
+                rename_curves=True,
+                convert_units=True,
+                # The benchmark profile keeps the source's own label where the
+                # standard unit is equivalent (e.g. m3/m3, gAPI).
+                relabel_equivalent_units=not _is_benchmark_profile(config),
+            )
             input_curves = set(well.curves)
             workflow_result = run_dynamic_workflow_with_zones(well, config=config)
-            _finalize_export_curves(workflow_result.well, input_curves)
+            _finalize_export_curves(
+                workflow_result.well,
+                input_curves,
+                drop_redundant_porosity=_is_benchmark_profile(config),
+            )
             export_las(workflow_result.well, export_path)
 
             computed_curves = sorted(set(workflow_result.well.curves) - input_curves)
@@ -1373,10 +1395,21 @@ def write_workflow_json_traces_directory(
         relative_path = file_path.relative_to(input_path)
         try:
             well = read_las(file_path)
-            well = standardize_curves(well, rename_curves=True, convert_units=True)
+            well = standardize_curves(
+                well,
+                rename_curves=True,
+                convert_units=True,
+                # The benchmark profile keeps the source's own label where the
+                # standard unit is equivalent (e.g. m3/m3, gAPI).
+                relabel_equivalent_units=not _is_benchmark_profile(config),
+            )
             input_curves = set(well.curves)
             workflow_result = run_dynamic_workflow_with_zones(well, config=config)
-            _finalize_export_curves(workflow_result.well, input_curves)
+            _finalize_export_curves(
+                workflow_result.well,
+                input_curves,
+                drop_redundant_porosity=_is_benchmark_profile(config),
+            )
 
             computed_curves = sorted(set(workflow_result.well.curves) - input_curves)
             warnings = list(workflow_result.warnings)

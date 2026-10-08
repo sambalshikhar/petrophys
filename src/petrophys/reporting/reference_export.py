@@ -7661,7 +7661,7 @@ def write_reference_curve_name_mapping(
     return mapping_path
 
 
-# Benchmark calculation profile.
+# Raw-LAS lookup for the input-curve classification of the context packages.
 
 def _raw_curve_lookup(
     raw_input_dir: Optional[str | Path],

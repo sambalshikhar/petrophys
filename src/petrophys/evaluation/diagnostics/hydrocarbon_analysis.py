@@ -25,6 +25,12 @@ class HydrocarbonAnalysis:
     """Integrated hydrocarbon classification analysis."""
 
     CATEGORY_KEY = "HYDROCARBON_ANALYSIS"
+
+    def __init__(self, porosity_curves=None):
+        #: Porosity curve preference, in order. The default prefers the
+        #: core-corrected PHIE_CC and falls back to PHIT.
+        self.porosity_curves = list(porosity_curves) if porosity_curves else ["PHIE_CC", "PHIE", "PHIT"]
+
     CROSSOVER_ND_SEPARATION = 0.05
     CROSSOVER_VCL_MAX = 0.35
     CROSSOVER_PHIE_MIN = 0.05
@@ -39,8 +45,10 @@ class HydrocarbonAnalysis:
         sw, _ = get_curve_data(well, ["SWA", "SW", "SWT-LOG"])
         mhi, _ = get_curve_data(well, ["MHI"])
         vcl, vcl_source = get_curve_data(well, ["VCL", "VCLAY", "VSH"])
-        phie, phie_source = get_curve_data(well, ["PHIE_CC", "PHIE", "PHIT"])
-        phie_effective, phie_effective_source = get_curve_data(well, ["PHIE_CC", "PHIE"])
+        phie, phie_source = get_curve_data(well, self.porosity_curves)
+        phie_effective, phie_effective_source = get_curve_data(
+            well, [name for name in self.porosity_curves if name != "PHIT"] or ["PHIE"]
+        )
         phid, _ = get_curve_data(well, ["PHID"])
         phin, _ = get_curve_data(well, ["PHIN", "NPHIC", "NPHI_HC", "NPHI"])
         bad_hole, bad_hole_source = get_curve_data(well, ["BAD_HOLE", "BAD_HOLE_FLAG"])

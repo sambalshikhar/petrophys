@@ -48,6 +48,14 @@ All notable changes to Petrophys are documented here.
     (RMF from 0.01 ohm.m; no SP, SO or NMR rules), BS gets statistics and SO
     does not.
 
+- The reservoir flag that picks the SWIRR_APP samples before permeability is
+  recomputed from the run's own cutoffs. A `RESFLAG` or `NET_RES` curve already
+  on the well, as an interpreted LAS carries, is no longer used for it, and a
+  warning says so; set `reuse_input_resflag=True` to pick Swirr from the
+  supplied flag as before. Re-interpreting an already-interpreted LAS therefore
+  changes SWIRR_APP and permeability, which previously followed the older run's
+  cutoffs silently.
+
 - `DynamicWorkflowConfig` validates every setting when it is created and
   raises `ValueError` listing all invalid fields with the accepted values
   (previously, typos such as `hc_type="gass"` silently used defaults).
@@ -74,6 +82,20 @@ All notable changes to Petrophys are documented here.
   algorithm the workflow already used, so results are unchanged; it replaces the private
   `CanonicalMultiMineralSolver`), and `LithologyModule(solver_version=...)` selects it there (default `2`).
 - `scripts/generate_benchmark_context.py` regenerates the GeoLink eval context benchmark package.
+  With `--from-raw` it starts from the raw LAS files and writes both outputs: the interpreted
+  ("processed") LAS files under `<output-dir>/processed_las`, then the context built from those.
+- `DynamicWorkflowConfig.calculation_profile` selects `"current"` (default) or `"benchmark"`.
+  `"benchmark"` restores the calculations behind the eval package's interpreted LAS files, so they
+  can be regenerated from the raw logs: clay porosity from the mean PHIT of every shale-lithology
+  sample; saturation, rock quality, net pay and BVW reading PHIE and PERM rather than the
+  core-corrected PHIE_CC and PERM_CC, with no PHIT fallback; one Archie coefficient set from the
+  lithology domain rather than per-depth values; the SXO quick-look relation only as a whole-curve
+  fallback; the invasion ratio from the first shallow curve present, with no medium/deep proxy;
+  MHI wherever SW and SXO are finite; and a duplicate BADHOLEFLAG curve. The default is unchanged.
+- Options behind that profile, usable on their own: `InvasionModule(medium_deep_proxy=...,
+  depthwise_curve_merge=...)`, `SaturationModule(sxo_quicklook_fallback="per_sample"|"whole_curve",
+  depthwise_curve_merge=...)`, `PermeabilityModule(porosity_curves=...)` and
+  `HydrocarbonAnalysis(porosity_curves=...)`. Defaults keep the current behaviour.
 - `apply_value_range_qc`, `clean_curve_values` and `rule_for_curve` take a `rules` argument.
 - `DynamicWorkflowConfig.swirr_flag_phi_cl` chooses the PHIE behind the reservoir flag that picks the
   SWIRR_APP samples. The default `"workflow"` keeps the reported PHIE; `"all_shale_phit"` recomputes PHIE

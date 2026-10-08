@@ -2,7 +2,7 @@
 Main permeability estimation module.
 """
 
-from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any
+from typing import TYPE_CHECKING, Optional, Sequence, Union, List, Dict, Any
 from dataclasses import dataclass, field
 import numpy as np
 
@@ -788,11 +788,14 @@ class PermeabilityModule:
         fallback_method: str = "coates",
         min_core_points: int = 3,
         use_peer_core: bool = False,
+        porosity_curves: Optional[Sequence[str]] = None,
     ):
         self.method = _normalize_perm_method(method)
         self.fallback_method = _normalize_perm_method(fallback_method)
         self.min_core_points = int(min_core_points)
         self.use_peer_core = bool(use_peer_core)
+        #: Porosity curve preference, in order (default: PHIE then PHIT).
+        self.porosity_curves = list(porosity_curves) if porosity_curves else ["PHIE", "PHIT"]
 
     def _calculate_empirical(
         self,
@@ -833,7 +836,7 @@ class PermeabilityModule:
         if finite_count == 0:
             raise ValueError(f"{empirical_method} permeability produced no finite samples")
 
-        _, phi_source, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+        _, phi_source, _ = get_curve_data_depthwise(well, self.porosity_curves)
         input_curves = [phi_source or "PHIE"]
         method_metadata: Dict[str, Any] = {}
         if empirical_method == "lith_vcl":
@@ -890,12 +893,12 @@ class PermeabilityModule:
     ) -> PermeabilityResult:
         """Calculate same-well/peer core-corrected PHIE_CC and PERM_CC only."""
         if phi is None:
-            phi, porosity_curve, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+            phi, porosity_curve, _ = get_curve_data_depthwise(well, self.porosity_curves)
             if phi is None:
                 raise ValueError("PHIE or PHIT with finite samples required")
             phi = np.asarray(phi, dtype=float)
         else:
-            porosity_curve = _resolve_porosity_curve_name(well) if get_curve(well, ["PHIE", "PHIT"]) is not None else "PHIE"
+            porosity_curve = _resolve_porosity_curve_name(well) if get_curve(well, self.porosity_curves) is not None else "PHIE"
             phi = np.asarray(phi, dtype=float)
 
         phi_corecal = np.full_like(phi, np.nan, dtype=float)
@@ -984,12 +987,12 @@ class PermeabilityModule:
     ) -> PermeabilityResult:
         """Calculate permeability."""
         if phi is None:
-            phi, porosity_curve, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+            phi, porosity_curve, _ = get_curve_data_depthwise(well, self.porosity_curves)
             if phi is None:
                 raise ValueError("PHIE or PHIT with finite samples required")
             phi = np.asarray(phi, dtype=float)
         else:
-            porosity_curve = _resolve_porosity_curve_name(well) if get_curve(well, ["PHIE", "PHIT"]) is not None else "PHIE"
+            porosity_curve = _resolve_porosity_curve_name(well) if get_curve(well, self.porosity_curves) is not None else "PHIE"
             phi = np.asarray(phi, dtype=float)
 
         if self.method in {"timur", "coates", "wyllie_rose", "lith_vcl"}:

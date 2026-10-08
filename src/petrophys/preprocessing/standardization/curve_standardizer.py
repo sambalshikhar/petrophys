@@ -275,11 +275,16 @@ class CurveStandardizer:
         self,
         rename_curves: bool = True,
         convert_units: bool = True,
-        preserve_originals: bool = False
+        preserve_originals: bool = False,
+        relabel_equivalent_units: bool = True,
     ):
         self.rename_curves = rename_curves
         self.convert_units = convert_units
         self.preserve_originals = preserve_originals
+        #: Rewrite a curve's unit label to the standard one even when the two
+        #: are equivalent (conversion factor 1), e.g. ``m3/m3`` to ``v/v``.
+        #: When False such labels are left as the source wrote them.
+        self.relabel_equivalent_units = relabel_equivalent_units
 
         # Custom aliases (in addition to default)
         self._custom_aliases: Dict[str, List[str]] = {}
@@ -378,7 +383,9 @@ class CurveStandardizer:
                     if factor is not None:
                         if factor != 1.0:
                             new_curve._data = new_curve._data * factor
-                        new_curve.unit = standard_unit
+                            new_curve.unit = standard_unit
+                        elif self.relabel_equivalent_units:
+                            new_curve.unit = standard_unit
 
             _screen_standard_curve_values(new_curve, standard_name, curve.unit)
 
@@ -576,7 +583,8 @@ def standardize_curves(
     well: "Well",
     rename_curves: bool = True,
     convert_units: bool = True,
-    preserve_originals: bool = False
+    preserve_originals: bool = False,
+    relabel_equivalent_units: bool = True,
 ) -> "Well":
     """
     Standardize all curves in a well.
@@ -607,6 +615,7 @@ def standardize_curves(
     standardizer = CurveStandardizer(
         rename_curves=rename_curves,
         convert_units=convert_units,
-        preserve_originals=preserve_originals
+        preserve_originals=preserve_originals,
+        relabel_equivalent_units=relabel_equivalent_units,
     )
     return standardizer.standardize(well)

@@ -121,13 +121,24 @@ class SaturationModule:
         m: float = DefaultParameters.ARCHIE_M,
         n: float = DefaultParameters.ARCHIE_N,
         model: str = "auto",
-        vcl_cutoff: float = 0.3
+        vcl_cutoff: float = 0.3,
+        sxo_quicklook_fallback: str = "per_sample",
+        depthwise_curve_merge: bool = True,
     ):
         self.a = a
         self.m = m
         self.n = n
         self.model = model.lower()
         self.vcl_cutoff = vcl_cutoff
+        #: How the quick-look ``SW**0.2`` relation stands in for the
+        #: invaded-zone Archie SXO. ``"per_sample"`` fills every sample whose
+        #: Archie SXO is not finite. ``"whole_curve"`` uses it only where the
+        #: invaded-zone inputs are missing altogether, leaving individual
+        #: non-finite Archie samples as NaN.
+        self.sxo_quicklook_fallback = str(sxo_quicklook_fallback)
+        #: Fill a curve's missing samples from the next candidate curve. When
+        #: False the first candidate curve present is used as it stands.
+        self.depthwise_curve_merge = bool(depthwise_curve_merge)
 
     def calculate(
         self,
@@ -194,7 +205,16 @@ class SaturationModule:
         # Get required curves
         rt_data, rt_mnemonic, rt_meta = get_curve_data_depthwise(well, ["RDEP", "RT"])
         rxo_existing = get_curve(well, ["RSHA", "RXO", "RESS"], require_finite=False)
-        rxo_data, rxo_mnemonic, rxo_meta = get_curve_data_depthwise(well, ["RSHA", "RXO", "RESS"])
+        if self.depthwise_curve_merge:
+            rxo_data, rxo_mnemonic, rxo_meta = get_curve_data_depthwise(well, ["RSHA", "RXO", "RESS"])
+        elif rxo_existing is None:
+            rxo_data, rxo_mnemonic, rxo_meta = None, None, {}
+        else:
+            rxo_data = np.asarray(rxo_existing.data, dtype=float)
+            rxo_mnemonic = rxo_existing.mnemonic
+            rxo_meta = {"source_counts": {rxo_mnemonic: int(np.count_nonzero(np.isfinite(rxo_data)))}}
+            if not np.any(np.isfinite(rxo_data)):
+                rxo_data = None
 
         # Get VCL and effective porosity. PHIE_CC is preferred when present so
         # saturation honors same-well core-corrected porosity.
@@ -252,6 +272,7 @@ class SaturationModule:
         sxo_method_counts: Dict[str, int] = {}
         sw_clipped = np.clip(np.asarray(sw, dtype=float), 0.0, 1.0) if sw is not None else None
         fallback_sxo = np.power(sw_clipped, 0.2) if sw_clipped is not None else None
+        per_sample_fallback = self.sxo_quicklook_fallback != "whole_curve"
         finite_fallback = (
             np.isfinite(fallback_sxo)
             if fallback_sxo is not None
@@ -263,13 +284,13 @@ class SaturationModule:
             archie_sxo = calculate_sxo(rxo_data, rmf, phie, self.a, self.m, self.n)
             archie_sxo = np.clip(np.asarray(archie_sxo, dtype=float), 0.0, 1.0)
             finite_archie = np.isfinite(archie_sxo)
-            if fallback_sxo is not None:
+            if fallback_sxo is not None and per_sample_fallback:
                 sxo = np.where(finite_archie, archie_sxo, fallback_sxo)
             else:
                 sxo = np.where(finite_archie, archie_sxo, np.nan)
             finite_sw = np.isfinite(sw_clipped) if sw_clipped is not None else np.zeros(well.n_samples, dtype=bool)
             sxo = np.where(finite_sw & np.isfinite(sxo), np.maximum(sxo, sw_clipped), sxo)
-            use_fallback = ~finite_archie & finite_fallback
+            use_fallback = ~finite_archie & finite_fallback & per_sample_fallback
             if np.any(finite_archie):
                 sxo_method_counts["archie_rxo_rmf"] = int(np.count_nonzero(finite_archie))
             if np.any(use_fallback):

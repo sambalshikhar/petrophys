@@ -192,6 +192,7 @@ def _field_choices() -> Dict[str, Sequence[str]]:
         "lithology_source": workflow._LITHOLOGY_SOURCES,
         "hc_type": workflow._HC_TYPES,
         "swirr_flag_phi_cl": workflow._SWIRR_FLAG_PHI_CL,
+        "calculation_profile": workflow._CALCULATION_PROFILES,
         "mineral_solver_version": workflow._MINERAL_SOLVER_VERSIONS,
         "gr_method": GR_VCL_METHODS,
         "perm_method": PERMEABILITY_METHODS,
