@@ -523,7 +523,9 @@ class DynamicWorkflowConfig:
     # -- Dual-water parameters -----------------------------------------------
     #: Bound-water resistivity, ohm.m.
     rwb: Optional[float] = None
-    #: Clay (shale) porosity, v/v.
+    #: Clay (shale) porosity, v/v. A value given here is used as it stands. Left
+    #: at the default, it is derived from the well's shale samples where they
+    #: support it, and the default is the last resort.
     phi_cl: float = 0.15
 
     # -- Hydrocarbon correction ----------------------------------------------
@@ -570,6 +572,30 @@ class DynamicWorkflowConfig:
     #: behind SWIRR_APP in the GeoLink benchmark context generated on
     #: 2026-05-01. The reported PHIE and SW are unchanged.
     swirr_flag_phi_cl: str = "workflow"
+    # -- Calculation profile -------------------------------------------------
+    #: ``"current"`` (default) or ``"benchmark"``. ``"benchmark"`` restores the
+    #: calculations that produced the interpreted LAS files of the GeoLink eval
+    #: package, so they can be regenerated from the raw logs:
+    #:
+    #: * clay porosity from the mean PHIT of every shale-lithology sample,
+    #:   rather than the neutron-density-averaged shale samples only;
+    #: * saturation, rock quality, net pay and BVW read PHIE and PERM rather
+    #:   than the core-corrected PHIE_CC and PERM_CC;
+    #: * one Archie coefficient set resolved from the lithology domain, rather
+    #:   than per-depth coefficients from the lithology log;
+    #: * MHI wherever SW and SXO are finite, without the invaded-zone gate;
+    #: * a duplicate BADHOLEFLAG curve alongside BAD_HOLE.
+    #:
+    #: The default reproduces the context package; see
+    #: ``scripts/generate_benchmark_context.py``.
+    calculation_profile: str = "current"
+    #: Reuse a RESFLAG or NET_RES curve already on the well as the reservoir
+    #: flag that picks the SWIRR_APP samples before permeability. False
+    #: (default) recomputes the flag from this run's cutoffs and warns that the
+    #: input flag was set aside, so an interpreted LAS fed back in cannot carry
+    #: an older run's cutoffs into Swirr and permeability. True keeps a supplied
+    #: flag, e.g. a vendor reservoir flag you mean to honour.
+    reuse_input_resflag: bool = False
     #: Offset wells (``Well`` objects) whose core data calibrate permeability.
     peer_wells: Optional[List[Any]] = None
     #: Formation intervals (``FormationTops``) for per-formation core
@@ -639,12 +665,14 @@ _LITHOLOGY_SOURCES = ("auto", "external", "vendor", "computed", "config")
 _HC_TYPES = ("oil", "gas")
 _SWIRR_FLAG_PHI_CL = ("workflow", "all_shale_phit")
 _MINERAL_SOLVER_VERSIONS = (1, 2)
+_CALCULATION_PROFILES = ("current", "benchmark")
 # Matrix sonic slowness (us/ft) used by the workflow where it differs from the
 # shared mineral table.
 _WORKFLOW_MATRIX_SLOWNESS = {"gypsum": 83.0}
 _BOOL_FIELDS = (
     "standardize_input", "rename_input_curves", "allow_default_rw",
     "mud_has_clay_or_kcl", "raise_on_error", "apply_hc_correction", "use_peer_core",
+    "reuse_input_resflag",
 )
 _POSITIVE_FIELDS = (
     "rw", "rmf_at_meas_temp", "rm", "rmf_salinity_ppm", "salinity_ppm", "td_ft",
@@ -721,6 +749,26 @@ def _validate_lithology(config: "DynamicWorkflowConfig", errors: List[str]) -> N
     errors.append(message)
 
 
+def _left_at_default(config: DynamicWorkflowConfig, field_name: str) -> bool:
+    """True when a setting is unset or still has its default value."""
+    import dataclasses
+
+    value = getattr(config, field_name, None)
+    if value is None:
+        return True
+    item = DynamicWorkflowConfig.__dataclass_fields__.get(field_name)
+    if item is None:
+        return False
+    if field_name == "matrix_type":
+        # The default (None) resolves to the domain's matrix when the config is made.
+        return value in ("sandstone", "auto")
+    if item.default is not dataclasses.MISSING:
+        return value == item.default
+    if item.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
+        return value == item.default_factory()  # type: ignore[misc]
+    return False
+
+
 def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     """Validate and normalize a :class:`DynamicWorkflowConfig` in place.
 
@@ -752,6 +800,7 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     _normalized_choice(config, "lithology_source", _LITHOLOGY_SOURCES, errors)
     _normalized_choice(config, "hc_type", _HC_TYPES, errors)
     _normalized_choice(config, "swirr_flag_phi_cl", _SWIRR_FLAG_PHI_CL, errors)
+    _normalized_choice(config, "calculation_profile", _CALCULATION_PROFILES, errors)
     version = config.mineral_solver_version
     if isinstance(version, (bool, np.bool_)) or not isinstance(version, (int, np.integer))             or int(version) not in _MINERAL_SOLVER_VERSIONS:
         errors.append(f"mineral_solver_version must be 1 or 2; got {version!r}")
@@ -1465,6 +1514,27 @@ class DynamicWorkflow:
             decisions=decisions,
         ))
 
+    @property
+    def _benchmark(self) -> bool:
+        """True when the eval-package interpreted-LAS calculations are selected."""
+        return self.config.calculation_profile == "benchmark"
+
+    def _phie_names(self, include_phit: bool = True) -> List[str]:
+        """Effective-porosity curve preference.
+
+        The benchmark reads PHIE alone: neither the core-corrected PHIE_CC nor
+        a PHIT fallback, so samples without PHIE stay unevaluated.
+        """
+        if self._benchmark:
+            return ["PHIE"]
+        names = ["PHIE_CC", "PHIE"]
+        return [*names, "PHIT"] if include_phit else names
+
+    def _perm_names(self, *extra: str) -> List[str]:
+        """Permeability curve preference; the benchmark ignores PERM_CC."""
+        names = ["PERM"] if self._benchmark else ["PERM_CC", "PERM"]
+        return [*names, *extra]
+
     def _select_formation_tops(
         self, well: "Well", context: Dict[str, Any], report: Dict[str, Any]
     ) -> List[str]:
@@ -1608,6 +1678,16 @@ class DynamicWorkflow:
     ) -> tuple[Any, Any, Any, Dict[str, Dict[str, Any]]]:
         """Build lithology-dependent Archie coefficients with config overrides."""
         from petrophys.model.constants import ArchieParameterDefaults
+
+        if self._benchmark:
+            # The eval package used one coefficient set for the whole well,
+            # resolved from the lithology domain rather than the lithology log.
+            defaults = ArchieParameterDefaults.get(self.config.matrix_type or self.config.lithology_domain)
+            a = float(self.config.a) if self.config.a is not None else float(defaults.a)
+            m = float(self.config.m) if self.config.m is not None else float(defaults.m)
+            n = float(self.config.n) if self.config.n is not None else float(defaults.n)
+            summary = {str(defaults.lithology).upper(): {"a": a, "m": m, "n": n, "samples": int(n_samples)}}
+            return a, m, n, summary
 
         if isinstance(lithology, np.ndarray):
             lithology_values = np.asarray(lithology, dtype=object)
@@ -2211,7 +2291,10 @@ class DynamicWorkflow:
         return True
 
     def _can_invasion(self, well: "Well") -> bool:
-        return (self._has_curve(well, "RSHA", "RESS", "RXO", "RMED", "RESM") and
+        shallow = ("RSHA", "RESS", "RXO")
+        # Without the medium/deep proxy the step needs a true shallow curve.
+        candidates = shallow if self._benchmark else (*shallow, "RMED", "RESM")
+        return (self._has_curve(well, *candidates) and
                 self._has_curve(well, "RDEP", "RT"))
 
     def _can_hc_correction(self, well: "Well") -> bool:
@@ -2317,7 +2400,8 @@ class DynamicWorkflow:
             return trace
 
         well.add_curve("TEMP", result.temperature, "degF", "Formation Temperature")
-        store_temperature_parameters(well, result)
+        # The eval package stored these values without unit or description.
+        store_temperature_parameters(well, result, with_metadata=not self._benchmark)
 
         self._result.temperature_gradient = result.gradient
         trace.method = result.source
@@ -2380,6 +2464,9 @@ class DynamicWorkflow:
 
         flags = generate_bad_hole_flags(well, bit_size=bit_size)
         well.add_curve("BAD_HOLE", flags["bad_hole"].astype(float), "", "Bad Hole Flag")
+        if self._benchmark:
+            # The eval package carried the flag twice, under both mnemonics.
+            well.add_curve("BADHOLEFLAG", flags["bad_hole"].astype(float), "", "Bad Hole Flag")
 
         n_bad = int(np.sum(flags["bad_hole"]))
         trace.output_curves = ["BAD_HOLE"]
@@ -3239,7 +3326,7 @@ class DynamicWorkflow:
             decisions.append("Rw heuristic methods skipped because Rmf is unavailable")
 
         rt_curve = get_curve(well, ["RDEP", "RT"])
-        phie_curve = get_curve(well, ["PHIE_CC", "PHIE"])
+        phie_curve = get_curve(well, self._phie_names(include_phit=False))
         vcl_curve = get_curve(well, ["VCL", "VCLAY"])
         if rt_curve is not None and phie_curve is not None and vcl_curve is not None:
             rdep = np.asarray(rt_curve.data, dtype=float)
@@ -3328,7 +3415,10 @@ class DynamicWorkflow:
         from petrophys.interpretation.electrical.invasion.invasion_module import InvasionModule
 
         trace = StepResult(step="invasion", success=True, method="rxo_rt_ratio")
-        invasion_module = InvasionModule()
+        invasion_module = InvasionModule(
+            medium_deep_proxy=not self._benchmark,
+            depthwise_curve_merge=not self._benchmark,
+        )
         result = invasion_module.analyze(well)
         well.add_curve("INVASION_RATIO", result.ratio, "", "Invasion Ratio Rxo/Rt")
         trace.input_curves = [
@@ -3481,6 +3571,34 @@ class DynamicWorkflow:
                 "phi_cl_basis_count": None,
                 "phi_cl_basis": "explicit_parameter",
             }
+
+        if not _left_at_default(self.config, "phi_cl"):
+            # Configured deliberately: a value derived from shale samples must
+            # not quietly replace it, as a LAS header value no longer does.
+            return {
+                "phi_cl": float(self.config.phi_cl),
+                "phi_cl_source": "config",
+                "phi_cl_basis_count": None,
+                "phi_cl_basis": "config",
+            }
+
+        if self._benchmark:
+            # The eval package took clay porosity from the mean PHIT of every
+            # shale-lithology sample, where today's resolution averages the
+            # neutron-density averaged shale samples only.
+            lithology = self._build_lithology_log(well)
+            phit_curve = well.get("PHIT")
+            basis = None if phit_curve is None else np.asarray(phit_curve.data, dtype=float)
+            if isinstance(lithology, np.ndarray) and basis is not None:
+                shale = np.asarray([_is_shale_group(item) for item in lithology], dtype=bool)
+                mask = shale & np.isfinite(basis)
+                if np.any(mask):
+                    return {
+                        "phi_cl": float(np.mean(basis[mask])),
+                        "phi_cl_source": "all_shale_phit",
+                        "phi_cl_basis": "all_shale_phit",
+                        "phi_cl_basis_count": int(np.count_nonzero(mask)),
+                    }
 
         def shale_control_mask() -> tuple[np.ndarray, str]:
             shale_mask = np.zeros(well.n_samples, dtype=bool)
@@ -3912,6 +4030,7 @@ class DynamicWorkflow:
             method=self.config.perm_method,
             fallback_method=self.config.perm_fallback_method,
             use_peer_core=self.config.use_peer_core,
+            porosity_curves=["PHIE"] if self._benchmark else None,
         )
         result = perm_module.calculate_core_correction(
             well,
@@ -3996,11 +4115,15 @@ class DynamicWorkflow:
 
         sw_module = CanonicalSaturationModule(
             a=a_value, m=m_value, n=n_value,
-            model=self.config.sw_model, vcl_cutoff=self._resolved_cutoff("vcl_cutoff")
+            model=self.config.sw_model, vcl_cutoff=self._resolved_cutoff("vcl_cutoff"),
+            sxo_quicklook_fallback="whole_curve" if self._benchmark else "per_sample",
+            depthwise_curve_merge=not self._benchmark,
         )
 
+        sat_phie, _, _ = get_curve_data_depthwise(well, self._phie_names(include_phit=False))
         result = sw_module.calculate(
-            well, rw=self._result.rw_computed, rcl=self._result.rcl_computed,
+            well, phie=sat_phie,
+            rw=self._result.rw_computed, rcl=self._result.rcl_computed,
             salinity=self.config.salinity_ppm, rmf=self._result.rmf_computed,
             lithology=lithology, cec=self.config.cec, b_coeff=self.config.b_coeff,
             rho_ma=self.config.rho_ma or 2.65, m_star=self.config.m_star,
@@ -4021,7 +4144,7 @@ class DynamicWorkflow:
 
         trace.method = result.model
         _, rt_source, _ = get_curve_data_depthwise(well, ["RDEP", "RT"])
-        _, phie_source, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE", "PHIT"])
+        _, phie_source, _ = get_curve_data_depthwise(well, self._phie_names())
         _, vcl_source, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY"])
         trace.input_curves = [
             source for source in (source_sw_source, rt_source, phie_source, vcl_source) if source
@@ -4193,6 +4316,7 @@ class DynamicWorkflow:
             method=self.config.perm_method,
             fallback_method=self.config.perm_fallback_method,
             use_peer_core=self.config.use_peer_core,
+            porosity_curves=["PHIE"] if self._benchmark else None,
         )
         lithology = None
         if not self._has_curve(well, "LITHOLOGY_GEOLINK", "LITHO_CLASS", "LITHO"):
@@ -4399,27 +4523,43 @@ class DynamicWorkflow:
 
     def _ensure_resflag_for_swirr(self, well: "Well") -> Optional[Dict[str, Any]]:
         """Create RESFLAG before permeability so Swirr uses workflow net-reservoir logic."""
-        resflag_curve = get_curve(well, ["RESFLAG"])
-        if resflag_curve is not None:
-            data = np.asarray(resflag_curve.data, dtype=float)
-            return {
-                "source_curve": "RESFLAG",
-                "created": False,
-                "reservoir_samples": int(np.nansum(data > 0.5)),
-            }
+        supplied = [
+            name for name in ("RESFLAG", "NET_RES")
+            if get_curve(well, [name]) is not None
+        ]
+        if supplied and not self.config.reuse_input_resflag:
+            # An interpreted LAS carries the previous run's flag, whose cutoffs
+            # may differ from this run's. Leave the curves alone but compute the
+            # Swirr flag from this run's cutoffs, and say so.
+            message = (
+                f"{', '.join(supplied)} was already on the well; the reservoir flag behind "
+                "SWIRR_APP was recomputed from this run's cutoffs. Set "
+                "reuse_input_resflag=True to pick Swirr from the supplied flag."
+            )
+            if self._result is not None and message not in self._result.warnings:
+                self._result.warnings.append(message)
+        elif supplied:
+            resflag_curve = get_curve(well, ["RESFLAG"])
+            if resflag_curve is not None:
+                data = np.asarray(resflag_curve.data, dtype=float)
+                return {
+                    "source_curve": "RESFLAG",
+                    "created": False,
+                    "reservoir_samples": int(np.nansum(data > 0.5)),
+                }
 
-        net_res_curve = get_curve(well, ["NET_RES"])
-        if net_res_curve is not None:
-            data = np.asarray(net_res_curve.data, dtype=float)
-            well.add_curve("RESFLAG", data, "", "Reservoir Flag")
-            return {
-                "source_curve": "NET_RES",
-                "created": True,
-                "vcl_curve": "existing_NET_RES",
-                "phie_curve": "existing_NET_RES",
-                "sw_curve": "existing_NET_RES",
-                "reservoir_samples": int(np.nansum(data > 0.5)),
-            }
+            net_res_curve = get_curve(well, ["NET_RES"])
+            if net_res_curve is not None:
+                data = np.asarray(net_res_curve.data, dtype=float)
+                well.add_curve("RESFLAG", data, "", "Reservoir Flag")
+                return {
+                    "source_curve": "NET_RES",
+                    "created": True,
+                    "vcl_curve": "existing_NET_RES",
+                    "phie_curve": "existing_NET_RES",
+                    "sw_curve": "existing_NET_RES",
+                    "reservoir_samples": int(np.nansum(data > 0.5)),
+                }
 
         if not self._has_curve(well, "PHIE") or not self._has_curve(well, "SW", "SWA", "SWT-LOG"):
             return None
@@ -4473,8 +4613,8 @@ class DynamicWorkflow:
 
         trace = StepResult(step="rock_quality", success=True, method="RQI_FZI_phi_z")
         rq_module = RockQualityModule()
-        perm, perm_source, _ = get_curve_data_depthwise(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])
-        phie, phie_source, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE", "PHIT"])
+        perm, perm_source, _ = get_curve_data_depthwise(well, self._perm_names("PERM_CORE", "PERM_TIMUR"))
+        phie, phie_source, _ = get_curve_data_depthwise(well, self._phie_names())
         result = rq_module.calculate(well, perm=perm, phi_e=phie)
         rq_module.add_to_well(well, result)
         trace.input_curves = [source for source in (perm_source, phie_source) if source]
@@ -4488,7 +4628,7 @@ class DynamicWorkflow:
     def _step_bvw(self, well: "Well") -> StepResult:
         from petrophys.evaluation.bvw.bvw_module import calculate_bvw
 
-        phie, phie_source, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE", "PHIT"])
+        phie, phie_source, _ = get_curve_data_depthwise(well, self._phie_names())
         sw_curve = self._first_curve(well, "SW", "SWA", "SWT-LOG")
         sw = sw_curve.data
         bvw = calculate_bvw(phie, sw)
@@ -4508,11 +4648,17 @@ class DynamicWorkflow:
         mhi_module = MhiModule()
         trace = StepResult(step="mhi", success=True, method="moveable_HC_index")
         trace.input_curves = [sw_curve.mnemonic, sxo_curve.mnemonic]
-        diagnostic_mask = mhi_module.diagnostic_sxo_mask(
-            well,
-            sxo=sxo_curve.data,
-            sw=sw_curve.data,
-        )
+        if self._benchmark:
+            # The eval package wrote MHI wherever SW and SXO were finite.
+            diagnostic_mask = np.isfinite(np.asarray(sxo_curve.data, dtype=float)) & np.isfinite(
+                np.asarray(sw_curve.data, dtype=float)
+            )
+        else:
+            diagnostic_mask = mhi_module.diagnostic_sxo_mask(
+                well,
+                sxo=sxo_curve.data,
+                sw=sw_curve.data,
+            )
         diagnostic_samples = int(np.count_nonzero(diagnostic_mask))
         trace.parameters = {
             "diagnostic_sxo_samples": diagnostic_samples,
@@ -4527,7 +4673,12 @@ class DynamicWorkflow:
             )
             return trace
 
-        mhi = mhi_module.calculate(well, sxo=sxo_curve.data, sw=sw_curve.data)
+        if self._benchmark:
+            from petrophys.evaluation.mhi.mhi_module import calculate_mhi
+
+            mhi = np.asarray(calculate_mhi(sxo_curve.data, sw_curve.data), dtype=float)
+        else:
+            mhi = mhi_module.calculate(well, sxo=sxo_curve.data, sw=sw_curve.data)
         well.add_curve("MHI", mhi, "", "Moveable Hydrocarbon Index")
 
         trace.output_curves = ["MHI"]
@@ -4551,7 +4702,7 @@ class DynamicWorkflow:
             lithology=lithology,
         )
         vcl, vcl_source, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
-        phie, phie_source, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE", "PHIT"])
+        phie, phie_source, _ = get_curve_data_depthwise(well, self._phie_names())
         sw, sw_source, _ = get_curve_data_depthwise(well, ["SW", "SWA", "SWT-LOG"])
         result = np_module.calculate(well, vcl=vcl, phie=phie, sw=sw)
         np_module.add_to_well(well, result)
@@ -4568,7 +4719,7 @@ class DynamicWorkflow:
         seal_flag[valid_vcl] = (vcl_data[valid_vcl] >= 0.8).astype(float)
         well.add_curve("SEALFLAG", seal_flag, "", "Seal Flag")
 
-        hc_result = HydrocarbonAnalysis().analyze(well, add_curves=True)
+        hc_result = HydrocarbonAnalysis(porosity_curves=self._phie_names()).analyze(well, add_curves=True)
 
         trace.input_curves = [source for source in (vcl_source, phie_source, sw_source) if source]
         trace.output_curves = ["NET_ROCK", "NET_RES", "NET_PAY", "RESFLAG", "SEALFLAG"]

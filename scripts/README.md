@@ -38,3 +38,34 @@ It reads the raw LAS files from the sibling `eval` folder and, by default, the
 NPD tops workbook and lithology codebook next to `eval_processed`. Reruns are
 byte-identical. ELECTROFACIES labels cannot be recovered (the original clustering was
 unseeded).
+
+`--from-raw` runs the whole package from the raw logs instead: it interprets
+them into `<output-dir>/processed_las`, then builds the context from those
+files.
+
+The archived package is not one run: 30 wells were interpreted in April, while
+`15_9-17` and `34_10-23` were reprocessed ten days later with changed
+calculations. `--las-profile` sets the profile for every well and
+`--well-profile` names the exceptions, so one command covers the package:
+
+```
+python scripts/generate_benchmark_context.py --from-raw \
+  --input-dir PATH/eval --output-dir NEW_DIR \
+  --well-profile 15_9-17 current --well-profile 34_10-23 current
+```
+
+The context step asks for `reuse_input_resflag=True`, because the package
+picked SWIRR_APP from the reservoir flag already on the interpreted LAS rather
+than recomputing it, which is no longer the default.
+
+Checked against the archived package: 29 of the 32 wells reproduce every number
+and every note. `16_10-4` matches numerically but orders two entries of one note
+list differently, and `15_9-17` and `34_10-23` reproduce every number except the
+SO statistics, which the later run added, plus some note wording.
+
+The interpreted LAS files are byte-identical to `eval_processed` for 25 wells.
+Four more (`15_9-13`, `30_6-5`, `34_10-21`, `35_9-2`) differ only in the field
+name in the LAS header, where a non-ASCII character such as the `Ø` of
+`OSEBERG ØST` does not survive the read/write round trip; their contexts are
+unaffected. `16_10-4` also keeps PHIT and PHI_SEC, which the original export
+dropped.

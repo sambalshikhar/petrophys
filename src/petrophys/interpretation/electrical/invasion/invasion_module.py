@@ -63,10 +63,18 @@ class InvasionModule:
     def __init__(
         self,
         rxo_curve: str = "RSHA",
-        rt_curve: str = "RDEP"
+        rt_curve: str = "RDEP",
+        medium_deep_proxy: bool = True,
+        depthwise_curve_merge: bool = True,
     ):
         self.rxo_curve = rxo_curve
         self.rt_curve = rt_curve
+        #: Fill samples without a flushed/shallow curve from the medium/deep
+        #: separation. When False those samples stay NaN.
+        self.medium_deep_proxy = medium_deep_proxy
+        #: Fill a curve's missing samples from the next candidate curve. When
+        #: False the first candidate curve present is used as it stands.
+        self.depthwise_curve_merge = depthwise_curve_merge
 
     def analyze(self, well: "Well") -> InvasionResult:
         """
@@ -86,9 +94,20 @@ class InvasionModule:
         # medium/deep separation as a fallback proxy indicator where
         # flushed/shallow curves are absent or non-finite at a depth sample.
         shallow_candidates = list(dict.fromkeys([self.rxo_curve, "RXO", "RESS", "RSHA"]))
-        medium_candidates = ["RMED", "RESM"]
+        medium_candidates = ["RMED", "RESM"] if self.medium_deep_proxy else []
         ratio_candidates = list(dict.fromkeys([*shallow_candidates, *medium_candidates]))
-        rxo_data, rxo_name, rxo_meta = get_curve_data_depthwise(well, ratio_candidates)
+        if self.depthwise_curve_merge:
+            rxo_data, rxo_name, rxo_meta = get_curve_data_depthwise(well, ratio_candidates)
+        else:
+            _single = get_curve(well, ratio_candidates, require_finite=False)
+            if _single is None:
+                rxo_data, rxo_name, rxo_meta = None, None, {}
+            else:
+                rxo_data = np.asarray(_single.data, dtype=float)
+                rxo_name = _single.mnemonic
+                rxo_meta = {"source_counts": {rxo_name: int(np.count_nonzero(np.isfinite(rxo_data)))}}
+                if not np.any(np.isfinite(rxo_data)):
+                    rxo_data = None
         shallow_data, _, shallow_meta = get_curve_data_depthwise(well, shallow_candidates)
         medium_data, _, medium_meta = get_curve_data_depthwise(well, medium_candidates)
         rt_data, rt_name, rt_meta = get_curve_data_depthwise(well, [self.rt_curve, "RT", "RDEP"])

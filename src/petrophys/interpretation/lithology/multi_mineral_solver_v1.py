@@ -2,7 +2,7 @@
 Multi-mineral solver, version 1.
 
 Version 1 is the original solver, used by the dynamic workflow's clastic
-mineral step and by the benchmark calculation profile. VCL and PHIE are taken as fixed inputs
+mineral step. VCL and PHIE are taken as fixed inputs
 and moved to the right-hand side of the tool-response equations, the mineral
 volumes are solved by non-negative least squares, and an absolute closure gate
 rejects samples whose solved mineral total misses the available rock volume

@@ -257,7 +257,11 @@ def export_las(
         )
 
     # Write file
-    las.write(str(filepath), version=version, **kwargs)
+    # lasio would open the file with the platform's locale encoding, which
+    # writes non-ASCII header text (e.g. a field name like OSEBERG OST) in a
+    # single-byte code page. Write UTF-8, as the LAS files we read use.
+    with open(filepath, "w", encoding="utf-8") as handle:
+        las.write(handle, version=version, **kwargs)
 
 
 def export_csv(

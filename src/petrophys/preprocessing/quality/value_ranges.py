@@ -120,7 +120,7 @@ def rule_for_curve(
 ) -> Optional[tuple[str, ValueRangeRule]]:
     """Return the canonical range rule for a curve mnemonic.
 
-    ``rules`` replaces :data:`VALUE_RANGE_RULES` (for example the benchmark-profile set).
+    ``rules`` replaces :data:`VALUE_RANGE_RULES` (for example the context-export set).
     """
     upper = str(mnemonic or "").upper()
     table = VALUE_RANGE_RULES if rules is None else rules
