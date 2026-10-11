@@ -687,6 +687,7 @@ The rest of the reference documents what these calls are built from.""",
                         title="Zone and formation summaries",
                         groups=[
                             ("Zones", "calculate_zone_summary summarize_zones ZoneSummary"),
+                            ("Curve statistics", "curve_statistics percentile_key"),
                             (
                                 "Formations",
                                 "analyze_formations run_formation_analysis "

@@ -5855,36 +5855,12 @@ def _round_stat(value: float, decimals: int = 4) -> int | float:
 
 
 def _curve_statistics_payload(data: np.ndarray) -> Optional[dict[str, float]]:
-    arr = _normalize_numeric_array(data)
-    finite = arr[np.isfinite(arr)]
-    if finite.size == 0:
+    from petrophys.evaluation.summaries.statistics import STATISTICS, curve_statistics
+
+    stats = curve_statistics(_normalize_numeric_array(data))
+    if stats is None:
         return None
-
-    positive = finite[finite > 0]
-    rounded = np.round(finite, 4)
-    unique, counts = np.unique(rounded, return_counts=True)
-    mode_value = float(unique[int(np.argmax(counts))]) if unique.size else float(finite[0])
-
-    if positive.size:
-        geometric_mean = float(np.exp(np.nanmean(np.log(positive))))
-        harmonic_mean = float(positive.size / np.sum(1.0 / positive))
-    else:
-        geometric_mean = 0.0
-        harmonic_mean = 0.0
-
-    third_power_average = float(np.cbrt(np.nanmean(np.power(finite, 3))))
-
-    return {
-        "minimum": _round_stat(np.nanmin(finite)),
-        "maximum": _round_stat(np.nanmax(finite)),
-        "arithmetic_mean": _round_stat(np.nanmean(finite)),
-        "geometric_mean": _round_stat(geometric_mean),
-        "harmonic_mean": _round_stat(harmonic_mean),
-        "third_power_average": _round_stat(third_power_average),
-        "median": _round_stat(np.nanmedian(finite)),
-        "mode": _round_stat(mode_value),
-        "standard_deviation": _round_stat(np.nanstd(finite)),
-    }
+    return {name: _round_stat(stats[name]) for name in STATISTICS}
 
 
 def _reference_statistics_curve_key(mnemonic: str, well: "Well") -> Optional[str]:
