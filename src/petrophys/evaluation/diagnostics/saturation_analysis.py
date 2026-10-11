@@ -14,6 +14,7 @@ from petrophys._internal.analysis_helpers import (
     get_curve_data,
 )
 from petrophys.model.classifications import MhiClassification
+from petrophys.evaluation.diagnostics.bands import Bands
 from petrophys.evaluation.mhi.mhi_module import calculate_mhi
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,11 @@ class SaturationAnalysis:
     """Saturation, fluid-contact, and gas-indicator analysis."""
 
     CATEGORY_KEY = "SATURATION_AND_FLUID_DISTRIBUTION"
+    # The one-curve classes of the sections below (Bands: base label, then each step in order).
+    WATER_SATURATION_BANDS = Bands("WATER_BEARING", (("<", 0.60, "FAIR_HC_SATURATION"), ("<", 0.40, "GOOD_HC_SATURATION"),
+                                                     ("<", 0.20, "EXCELLENT_HC_SATURATION")))
+    BVW_BANDS = Bands("UNDETERMINED", (("<", 0.10, "FAIR_MOVEABLE_HC"), ("<", 0.06, "GOOD_MOVEABLE_HC"),
+                                       ("<", 0.03, "EXCELLENT_MOVEABLE_HC")))
 
     def analyze(
         self,
@@ -64,19 +70,11 @@ class SaturationAnalysis:
 
         water_sat_labels = np.full(n_samples, "NO_SATURATION_DATA", dtype=object)
         if sw is not None:
-            valid = np.isfinite(sw)
-            water_sat_labels[valid] = "WATER_BEARING"
-            water_sat_labels[valid & (sw < 0.60)] = "FAIR_HC_SATURATION"
-            water_sat_labels[valid & (sw < 0.40)] = "GOOD_HC_SATURATION"
-            water_sat_labels[valid & (sw < 0.20)] = "EXCELLENT_HC_SATURATION"
+            water_sat_labels = self.WATER_SATURATION_BANDS.classify(sw, missing="NO_SATURATION_DATA")
 
         bvw_labels = np.full(n_samples, "NO_BVW_DATA", dtype=object)
         if bvw is not None:
-            valid = np.isfinite(bvw)
-            bvw_labels[valid] = "UNDETERMINED"
-            bvw_labels[valid & (bvw < 0.10)] = "FAIR_MOVEABLE_HC"
-            bvw_labels[valid & (bvw < 0.06)] = "GOOD_MOVEABLE_HC"
-            bvw_labels[valid & (bvw < 0.03)] = "EXCELLENT_MOVEABLE_HC"
+            bvw_labels = self.BVW_BANDS.classify(bvw, missing="NO_BVW_DATA")
 
         invasion_ratio = np.full(n_samples, np.nan, dtype=float)
         movability_labels = np.full(n_samples, "NO_INVASION_DATA", dtype=object)
