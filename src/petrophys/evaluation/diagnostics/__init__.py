@@ -6,6 +6,7 @@ sections, derived curves, and metadata aligned with the reference
 petrophysical QC / interpretation workflow.
 """
 
+from petrophys.evaluation.diagnostics.bands import Bands, bands_of
 from petrophys.evaluation.diagnostics.hydrocarbon_analysis import HydrocarbonAnalysis
 from petrophys.evaluation.diagnostics.lithology_analysis import LithologyAnalysis
 from petrophys.evaluation.diagnostics.porosity_analysis import PorosityAnalysis
@@ -14,6 +15,8 @@ from petrophys.evaluation.diagnostics.saturation_analysis import SaturationAnaly
 from petrophys.evaluation.diagnostics.numerical_statistical_analysis import NumericalStatisticalAnalysis
 
 __all__ = [
+    "Bands",
+    "bands_of",
     "HydrocarbonAnalysis",
     "LithologyAnalysis",
     "PorosityAnalysis",

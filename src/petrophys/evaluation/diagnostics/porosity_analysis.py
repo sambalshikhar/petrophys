@@ -13,6 +13,7 @@ from petrophys._internal.analysis_helpers import (
     format_curve_source,
     get_curve_data,
 )
+from petrophys.evaluation.diagnostics.bands import Bands
 from petrophys.evaluation.rock_quality.rock_quality_module import RockQualityModule
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,9 @@ class PorosityAnalysis:
     """Porosity and pore-system classification analysis."""
 
     CATEGORY_KEY = "POROSITY_AND_PORE_SYSTEMS"
+    # The one-curve classes of total_porosity_quality_distribution (Bands: base label, then each step in order).
+    TOTAL_POROSITY_BANDS = Bands("POOR_POROSITY", ((">", 0.06, "FAIR_POROSITY"), (">", 0.12, "GOOD_POROSITY"),
+                                                   (">", 0.20, "EXCELLENT_POROSITY")))
 
     def analyze(
         self,
@@ -71,12 +75,8 @@ class PorosityAnalysis:
                 pass
 
         porosity_source = self._first_valid_porosity(phit, phid, phis, phin)
-        total_labels = np.full(n_samples, "NO_POROSITY_DATA", dtype=object)
         valid_phi = np.isfinite(porosity_source)
-        total_labels[valid_phi] = "POOR_POROSITY"
-        total_labels[valid_phi & (porosity_source > 0.06)] = "FAIR_POROSITY"
-        total_labels[valid_phi & (porosity_source > 0.12)] = "GOOD_POROSITY"
-        total_labels[valid_phi & (porosity_source > 0.20)] = "EXCELLENT_POROSITY"
+        total_labels = self.TOTAL_POROSITY_BANDS.classify(porosity_source, valid_phi, missing="NO_POROSITY_DATA")
 
         ds_separation = np.full(n_samples, np.nan, dtype=float)
         pore_labels = np.full(n_samples, "UNDETERMINED_PORE_TYPE", dtype=object)

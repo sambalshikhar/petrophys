@@ -14,6 +14,7 @@ from petrophys._internal.analysis_helpers import (
     format_curve_source,
     get_curve_data,
 )
+from petrophys.evaluation.diagnostics.bands import Bands
 from petrophys.evaluation.rock_quality.rock_quality_module import RockQualityModule
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,13 @@ class PermeabilityAnalysis:
     """Permeability distribution and flow-unit analysis."""
 
     CATEGORY_KEY = "PERMEABILITY_AND_FLOW_UNITS"
+    # The one-curve classes of the sections below (Bands: base label, then each step in order).
+    DISTRIBUTION_BANDS = Bands("POOR_PERMEABILITY", ((">", 1.0, "FAIR_PERMEABILITY"), (">", 10.0, "GOOD_PERMEABILITY"),
+                                                     (">", 100.0, "VERY_GOOD_PERMEABILITY"),
+                                                     (">", 1000.0, "EXCELLENT_PERMEABILITY")))
+    FLOW_UNIT_BANDS = Bands("MICRO_PORES", ((">=", 0.5, "MESO_PORES"), (">=", 2.0, "MACRO_PORES"), (">=", 5.0, "MEGA_PORES")))
+    VARIATION_BANDS = Bands("SHALE_DOMINATED", (("<=", 0.50, "MIXED_LITHOLOGY"), ("<", 0.20, "CLEAN_RESERVOIR")))
+    INVASION_BANDS = Bands("MINIMAL_INVASION", (("<", 0.8, "CONDUCTIVE_INVASION"), (">", 1.2, "RESISTIVE_INVASION")))
 
     def analyze(
         self,
@@ -72,36 +80,22 @@ class PermeabilityAnalysis:
 
         distribution_labels = np.full(n_samples, "NO_DATA", dtype=object)
         if perm is not None:
-            valid = np.isfinite(perm)
-            distribution_labels[valid] = "POOR_PERMEABILITY"
-            distribution_labels[valid & (perm > 1.0)] = "FAIR_PERMEABILITY"
-            distribution_labels[valid & (perm > 10.0)] = "GOOD_PERMEABILITY"
-            distribution_labels[valid & (perm > 100.0)] = "VERY_GOOD_PERMEABILITY"
-            distribution_labels[valid & (perm > 1000.0)] = "EXCELLENT_PERMEABILITY"
+            distribution_labels = self.DISTRIBUTION_BANDS.classify(perm, missing="NO_DATA")
 
         flow_unit_labels = np.full(n_samples, "NO_DATA", dtype=object)
         if fzi is not None:
-            valid = np.isfinite(fzi)
-            flow_unit_labels[valid] = "MICRO_PORES"
-            flow_unit_labels[valid & (fzi >= 0.5)] = "MESO_PORES"
-            flow_unit_labels[valid & (fzi >= 2.0)] = "MACRO_PORES"
-            flow_unit_labels[valid & (fzi >= 5.0)] = "MEGA_PORES"
+            flow_unit_labels = self.FLOW_UNIT_BANDS.classify(fzi, missing="NO_DATA")
 
         variation_labels = np.full(n_samples, "NO_DATA", dtype=object)
         if vsh is not None:
-            valid = np.isfinite(vsh)
-            variation_labels[valid] = "SHALE_DOMINATED"
-            variation_labels[valid & (vsh <= 0.50)] = "MIXED_LITHOLOGY"
-            variation_labels[valid & (vsh < 0.20)] = "CLEAN_RESERVOIR"
+            variation_labels = self.VARIATION_BANDS.classify(vsh, missing="NO_DATA")
 
         invasion_labels = np.full(n_samples, "NO_DATA", dtype=object)
         ratio = np.full(n_samples, np.nan, dtype=float)
         if rxo is not None and rdep is not None:
             valid = np.isfinite(rxo) & np.isfinite(rdep) & (rdep > 0.0)
             ratio[valid] = rxo[valid] / rdep[valid]
-            invasion_labels[valid] = "MINIMAL_INVASION"
-            invasion_labels[valid & (ratio < 0.8)] = "CONDUCTIVE_INVASION"
-            invasion_labels[valid & (ratio > 1.2)] = "RESISTIVE_INVASION"
+            invasion_labels = self.INVASION_BANDS.classify(ratio, valid, missing="NO_DATA")
             derived_curves["RXO_RDEP_RATIO"] = DerivedCurve(
                 ratio,
                 "",
