@@ -11,6 +11,12 @@ from petrophys.evaluation.net_pay.cutoffs import (
     Cutoffs, STANDARD_CUTOFFS, default_cutoffs, standard_cutoffs,
 )
 from petrophys.evaluation.net_pay.pay_summary import PaySummary, summarize_pay
+from petrophys.evaluation.net_pay.screening import (
+    cutoff_attrition,
+    grade_interval,
+    lithology_in,
+    majority_label,
+)
 from petrophys.evaluation.net_pay.flags import (
     DEFAULT_HYDROCARBON_FLUIDS,
     DEFAULT_NON_PAY_FLUIDS,
@@ -34,4 +40,8 @@ __all__ = [
     "add_volumetric_pay_flag",
     "DEFAULT_HYDROCARBON_FLUIDS",
     "DEFAULT_NON_PAY_FLUIDS",
+    "grade_interval",
+    "cutoff_attrition",
+    "lithology_in",
+    "majority_label",
 ]

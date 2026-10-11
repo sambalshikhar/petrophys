@@ -651,6 +651,10 @@ The rest of the reference documents what these calls are built from.""",
                         groups=[
                             ("Net pay of a well", "calculate_net_pay NetPayModule NetPayResult"),
                             ("Pay summaries", "summarize_pay PaySummary"),
+                            (
+                                "Screening",
+                                "grade_interval cutoff_attrition lithology_in majority_label",
+                            ),
                             ("Cutoffs", "standard_cutoffs default_cutoffs Cutoffs"),
                             (
                                 "Flags",
