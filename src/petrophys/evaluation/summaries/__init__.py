@@ -17,6 +17,10 @@ from petrophys.evaluation.summaries.averages import (
     calculate_pay_averages,
     calculate_weighted_averages,
 )
+from petrophys.evaluation.summaries.statistics import (
+    curve_statistics,
+    percentile_key,
+)
 from petrophys.evaluation.volumetrics.hydrocarbon_pore_volume import (
     HCPVResult,
     calculate_hcpv,
@@ -33,6 +37,9 @@ from petrophys.evaluation.summaries.formation_analysis import (
 )
 
 __all__ = [
+    # Curve statistics
+    "curve_statistics",
+    "percentile_key",
     # Zone summary
     "ZoneSummary",
     "calculate_zone_summary",
