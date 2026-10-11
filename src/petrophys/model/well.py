@@ -580,16 +580,44 @@ class Well:
             mask &= self._depth >= top
         if bottom is not None:
             mask &= self._depth <= bottom
+        return self.select(mask)
+
+    def select(self, index: Any) -> "Well":
+        """
+        Extract the samples selected by a slice, boolean mask or index array.
+
+        Every curve is selected the same way (:meth:`Curve.select`); the
+        header, parameters and results are copied. Use it for a set of samples
+        that is not one depth range, e.g. a lithology group.
+
+        Parameters
+        ----------
+        index : slice, array of bool or array of int
+            The samples to keep, over the well's depth index.
+
+        Returns
+        -------
+        Well
+            New Well with the selected samples
+
+        Examples
+        --------
+        >>> sand = well.select(well.get("VCL").data < 0.3)    # doctest: +SKIP
+        """
+        if self._depth is None:
+            raise ValueError("Well has no depth data")
+        if isinstance(index, np.ndarray) and index.dtype == bool and index.shape != self._depth.shape:
+            raise ValueError(f"mask has {index.shape[0]} samples, the well {self._depth.shape[0]}")
 
         new_well = Well(name=self.name)
-        new_well._depth = self._depth[mask]
+        new_well._depth = self._depth[index]
         new_well._depth_unit = self._depth_unit
         new_well.header = copy.deepcopy(self.header)
         new_well._parameters = copy.deepcopy(self._parameters)
         new_well._results = copy.deepcopy(self._results)
 
         for mnemonic, curve in self._curves.items():
-            new_well._curves[mnemonic] = curve.select(mask)
+            new_well._curves[mnemonic] = curve.select(index)
 
         return new_well
 
