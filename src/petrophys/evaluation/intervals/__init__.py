@@ -25,6 +25,9 @@ from petrophys.model.formation_tops import FormationTops, label_depths
 # Flags to intervals
 from petrophys.evaluation.intervals.flag_intervals import flag_intervals
 
+# Vertical stacking patterns of zones
+from petrophys.evaluation.intervals.sequence import MIN_STEP, stacking_pattern
+
 # Per-interval analysis
 from petrophys.evaluation.intervals.analyzer import (
     IntervalSummary,
@@ -45,6 +48,9 @@ __all__ = [
     "label_depths",
     # Flags to intervals
     "flag_intervals",
+    # Stacking patterns
+    "MIN_STEP",
+    "stacking_pattern",
     # Analysis
     "IntervalSummary",
     "IntervalAnalyzer",
