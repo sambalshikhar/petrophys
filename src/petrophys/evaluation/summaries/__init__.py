@@ -21,6 +21,12 @@ from petrophys.evaluation.summaries.statistics import (
     curve_statistics,
     percentile_key,
 )
+from petrophys.evaluation.summaries.ranking import (
+    HIGHER_IS_BETTER,
+    LOWER_IS_BETTER,
+    best_and_weakest,
+    property_direction,
+)
 from petrophys.evaluation.volumetrics.hydrocarbon_pore_volume import (
     HCPVResult,
     calculate_hcpv,
@@ -39,6 +45,11 @@ from petrophys.evaluation.summaries.formation_analysis import (
 __all__ = [
     # Curve statistics
     "curve_statistics",
+    # Zone ranking
+    "HIGHER_IS_BETTER",
+    "LOWER_IS_BETTER",
+    "best_and_weakest",
+    "property_direction",
     "percentile_key",
     # Zone summary
     "ZoneSummary",
