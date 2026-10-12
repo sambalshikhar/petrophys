@@ -173,6 +173,78 @@ def test_package_context_bytes_match_direct_computed_export(context_well, tmp_pa
         assert path.read_bytes() == (actual / relative).read_bytes(), relative
 
 
+@pytest.mark.parametrize("layout", ["formation_lithology", "category_formation_lithology"])
+def test_daydream_dlis_context_package(tmp_path, layout):
+    """Real DLIS input reaches interpretation and both package serializers."""
+    pytest.importorskip("dlisio")
+    from petrophys.datasets import integration_fixture
+
+    source = Path(integration_fixture("daydream1_deep_pex_aps_ppc_ecs.dlis"))
+    if not source.exists() or source.stat().st_size < 1024:
+        pytest.skip("Daydream DLIS fixture unavailable; run git lfs pull")
+    output = tmp_path / layout
+    records = pp.export_context(
+        source.parent, output, layout=layout, pattern=source.name,
+        reader_options={
+            "step": 0.1524,
+            "channels": ["GR", "RHOB", "NPHI", "RDEP", "RXO", "BS"],
+        },
+        max_bytes=5_000_000,
+    )
+    assert records and all(record.success for record in records)
+    assert all(Path(record.source_file) == source for record in records)
+    contexts = [json.loads(Path(record.json_file).read_text(encoding="utf-8"))
+                for record in records]
+    assert all("analysis_results" in context for context in contexts)
+    assert all("PHIE" in json.dumps(context) for context in contexts)
+    if layout == "category_formation_lithology":
+        assert {path.name for path in output.iterdir() if path.is_dir()} >= {
+            "hydrocarbon", "lithology", "numerical", "permeability", "porosity", "saturation",
+        }
+
+
+def test_raw_dlis_curve_lookup_uses_same_reader_options(monkeypatch, tmp_path, context_well):
+    import petrophys.api as api
+
+    path = tmp_path / "raw.dlis"
+    path.touch()
+    calls = []
+
+    def read(source, **options):
+        calls.append((source, options))
+        return context_well
+
+    monkeypatch.setattr(api, "read", read)
+    found = reference._raw_curve_lookup(tmp_path, "*.dlis", False, {"step": 0.1524})
+    assert calls == [(path, {"step": 0.1524})]
+    assert "GR" in found["raw"]
+
+
+def test_cli_dlis_package_reader_options(tmp_path, monkeypatch):
+    from petrophys.reporting import context_cli
+
+    captured = {}
+
+    def export(data, output, **options):
+        captured.update(options)
+        return []
+
+    monkeypatch.setattr(context_cli, "export_context", export)
+    assert main([str(tmp_path), str(tmp_path / "out"), "--layout",
+                 "category_formation_lithology", "--pattern", "*.dlis",
+                 "--dlis-step", "0.1524"]) == 0
+    assert captured["pattern"] == "*.dlis"
+    assert captured["reader_options"] == {"step": 0.1524}
+
+
+@pytest.mark.parametrize("step", ["0", "-1", "nan", "inf"])
+def test_cli_rejects_invalid_dlis_step(tmp_path, step):
+    with pytest.raises(SystemExit) as exc:
+        main([str(tmp_path), str(tmp_path / "out"), "--layout",
+              "category_formation_lithology", "--dlis-step", step])
+    assert exc.value.code == 2
+
+
 def test_package_can_run_without_formations(context_well, tmp_path):
     from petrophys.io import export_las
 

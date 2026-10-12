@@ -2560,8 +2560,9 @@ def _read_context_input_well(
     lithology_file: Optional[str | Path] = None,
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
     lithology_domain: Optional[str] = None,
+    reader_options: Optional[dict[str, Any]] = None,
 ):
-    """Read one LAS and build its workflow configuration.
+    """Read one well file and build its workflow configuration.
 
     The configuration is ``workflow_config`` (default: the workflow defaults)
     with the optional lithology intervals and domain applied; LAS header
@@ -2570,8 +2571,9 @@ def _read_context_input_well(
     import dataclasses
 
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
+    from petrophys.api import read
 
-    well = read_las(file_path)
+    well = read(file_path, **(reader_options or {}))
     well = standardize_curves(well, rename_curves=True, convert_units=True)
     config = workflow_config if workflow_config is not None else DynamicWorkflowConfig()
     options: dict[str, Any] = {}
@@ -7587,10 +7589,11 @@ def export_reference_json_work_package_by_formation_lithology(
     workflow_config: Optional["DynamicWorkflowConfig"] = None,
     lithology_file: Optional[str | Path] = None,
     lithology_domain: Optional[str] = None,
+    reader_options: Optional[dict[str, Any]] = None,
 ) -> List[ExampleFormatExportResult]:
     """Write reference-format contexts per formation and lithology group.
 
-    Each well is read with its LAS metadata and optional lithology intervals,
+    Each well is read with its metadata and optional lithology intervals,
     interpreted as a whole well and written to
     ``<output_dir>/<well>/<well>.las``. Each formation is
     then interpreted on its own and split into lithology groups: runs of
@@ -7607,7 +7610,7 @@ def export_reference_json_work_package_by_formation_lithology(
     Parameters
     ----------
     input_dir : str or Path
-        Folder of LAS files.
+        Folder of well files (LAS or DLIS; tabular logs need reader_options).
     output_dir : str or Path
         Folder for the per-well packages; created if needed.
     tops_file : str or Path, optional
@@ -7637,6 +7640,10 @@ def export_reference_json_work_package_by_formation_lithology(
         Per-depth lithology intervals for the wells.
     lithology_domain : str, optional
         Override the broad domain while retaining per-well LAS settings.
+    reader_options : dict, optional
+        Options passed to petrophys.read, e.g. {"step": 0.1524} for DLIS.
+        Select DLIS files with pattern="*.dlis". Defaults preserve the reader's
+        native settings; tabular inputs require an explicit depth_unit.
 
     Returns
     -------
@@ -7678,6 +7685,7 @@ def export_reference_json_work_package_by_formation_lithology(
                 lithology_file=lithology_file,
                 workflow_config=workflow_config,
                 lithology_domain=lithology_domain,
+                reader_options=reader_options,
             )
             formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
 
@@ -7851,8 +7859,12 @@ def export_reference_json_work_package_by_category_formation_lithology(
     lithology_file: Optional[str | Path] = None,
     lithology_domain: Optional[str] = None,
     raw_input_dir: Optional[str | Path] = None,
+    reader_options: Optional[dict[str, Any]] = None,
 ) -> List[ExampleFormatExportResult]:
-    """Generate category contexts from LAS and optional geology inputs.
+    """Generate category contexts from well files and optional geology inputs.
+
+    Use pattern="*.dlis" for DLIS. reader_options are passed to petrophys.read
+    for both context inputs and optional raw inputs (e.g. DLIS step/channels).
 
     ``scripts/generate_benchmark_context.py`` runs it to reproduce the GeoLink
     eval context benchmark, with ``calculation_profile="benchmark"``: every
@@ -7869,7 +7881,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
     files = _filter_input_files_by_well_names(files, well_names)
     raw_context_dir = Path(raw_input_dir) if raw_input_dir is not None else _raw_input_dir_for_processed(input_path)
-    raw_curves_by_stem = _raw_curve_lookup(raw_context_dir, pattern, recursive)
+    raw_curves_by_stem = _raw_curve_lookup(raw_context_dir, pattern, recursive, reader_options)
     tops_by_well = (
         _load_excel_formation_segments(tops_file, **(tops_options or {}))
         if tops_file is not None
@@ -7890,6 +7902,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 lithology_file=lithology_file,
                 workflow_config=workflow_config,
                 lithology_domain=lithology_domain,
+                reader_options=reader_options,
             )
             formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
             fallback_warnings: list[str] = []
@@ -8175,8 +8188,10 @@ def _raw_curve_lookup(
     raw_input_dir: Optional[str | Path],
     pattern: str,
     recursive: bool,
+    reader_options: Optional[dict[str, Any]] = None,
 ) -> dict[str, set[str]]:
-    """Return standardized raw LAS curve names keyed by LAS stem."""
+    """Return standardized raw curve names keyed by well-file stem."""
+    from petrophys.api import read
     if raw_input_dir is None:
         return {}
 
@@ -8188,7 +8203,7 @@ def _raw_curve_lookup(
     lookup: dict[str, set[str]] = {}
     for file_path in files:
         try:
-            raw_well = read_las(file_path)
+            raw_well = read(file_path, **(reader_options or {}))
             raw_well = standardize_curves(raw_well, rename_curves=True, convert_units=True)
             lookup[file_path.stem.lower()] = set(raw_well.curves)
         except Exception:
