@@ -13,13 +13,16 @@ LAS files, then the context from those. Both outputs land under the output
 folder.
 
 The archived package mixes two interpretation runs: 30 wells were interpreted
-in April, and 15_9-17 and 34_10-23 ten days later with changed calculations.
-``--las-profile`` sets the profile for every well and ``--well-profile`` names
-the exceptions, so one command can reproduce the whole package:
+in April, and 15_9-17 and 34_10-23 ten days later with changed calculations,
+which also wrote the context. The calculation profiles "benchmark" and
+"benchmark_rerun" keep those two sets of calculations fixed while the library's
+default calculations change. ``--las-profile`` sets the profile for every well
+and ``--well-profile`` names the exceptions, so one command can reproduce the
+whole package:
 
     python scripts/generate_benchmark_context.py --from-raw \
       --input-dir PATH/eval --output-dir NEW_DIR \
-      --well-profile 15_9-17 current --well-profile 34_10-23 current
+      --well-profile 15_9-17 benchmark_rerun --well-profile 34_10-23 benchmark_rerun
 
 ELECTROFACIES labels come from k-means clustering, which was unseeded when the
 benchmark was made, so they cannot be recovered. The script fixes the string-hash seed, so
@@ -50,6 +53,9 @@ from petrophys.workflow import DynamicWorkflowConfig  # noqa: E402
 from petrophys.workflow.zoned_batch import (  # noqa: E402
     process_las_directory_with_workflow,
 )
+
+
+_PROFILES = ("benchmark", "benchmark_rerun", "current")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -103,12 +109,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--las-profile",
-        choices=("benchmark", "current"),
+        choices=_PROFILES,
         default="benchmark",
         help=(
             "Calculation profile for the --from-raw interpretation step. The "
             "archived package mixes two runs: 30 wells need 'benchmark', while "
-            "15_9-17 and 34_10-23 were reprocessed later and need 'current'."
+            "15_9-17 and 34_10-23 were reprocessed later and need 'benchmark_rerun'."
+        ),
+    )
+    parser.add_argument(
+        "--context-profile",
+        choices=_PROFILES,
+        default="benchmark_rerun",
+        help=(
+            "Calculation profile for the context step. The package's context was "
+            "written with the 'benchmark_rerun' calculations."
         ),
     )
     parser.add_argument(
@@ -120,7 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help=(
             "Interpret one well with a different profile than --las-profile. "
-            "Repeat per well, e.g. --well-profile 15_9-17 current."
+            "Repeat per well, e.g. --well-profile 15_9-17 benchmark_rerun."
         ),
     )
     parser.add_argument(
@@ -157,10 +172,10 @@ def _normalize_well(name: str) -> str:
 def _wells_by_profile(args) -> dict:
     """Group the selected wells by the profile that should interpret them."""
     overrides = {_normalize_well(well): profile for well, profile in args.well_profiles}
-    unknown = sorted(set(overrides.values()) - {"benchmark", "current"})
+    unknown = sorted(set(overrides.values()) - set(_PROFILES))
     if unknown:
         raise SystemExit(
-            f"--well-profile accepts 'benchmark' or 'current'; got {', '.join(unknown)}"
+            f"--well-profile accepts {', '.join(_PROFILES)}; got {', '.join(unknown)}"
         )
     pattern = args.pattern
     files = sorted(
@@ -224,7 +239,9 @@ def main() -> int:
     results = export_reference_json_work_package_by_category_formation_lithology(
         # The package picked SWIRR_APP from the reservoir flag already on the
         # interpreted LAS, which is no longer the default.
-        workflow_config=DynamicWorkflowConfig(reuse_input_resflag=True),
+        workflow_config=DynamicWorkflowConfig(
+            calculation_profile=args.context_profile, reuse_input_resflag=True
+        ),
         input_dir=context_input_dir,
         output_dir=args.output_dir,
         tops_file=args.tops_file,

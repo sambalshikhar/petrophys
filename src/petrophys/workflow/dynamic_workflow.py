@@ -573,21 +573,24 @@ class DynamicWorkflowConfig:
     #: 2026-05-01. The reported PHIE and SW are unchanged.
     swirr_flag_phi_cl: str = "workflow"
     # -- Calculation profile -------------------------------------------------
-    #: ``"current"`` (default) or ``"benchmark"``. ``"benchmark"`` restores the
-    #: calculations that produced the interpreted LAS files of the GeoLink eval
-    #: package, so they can be regenerated from the raw logs:
+    #: Which calculations run. ``"current"`` (default) is the maintained
+    #: interpretation. The two benchmark profiles keep the calculations behind
+    #: the GeoLink eval package fixed, so the package can be regenerated from the
+    #: raw logs exactly (see ``scripts/generate_benchmark_context.py``):
     #:
-    #: * clay porosity from the mean PHIT of every shale-lithology sample,
-    #:   rather than the neutron-density-averaged shale samples only;
-    #: * saturation, rock quality, net pay and BVW read PHIE and PERM rather
-    #:   than the core-corrected PHIE_CC and PERM_CC;
-    #: * one Archie coefficient set resolved from the lithology domain, rather
-    #:   than per-depth coefficients from the lithology log;
-    #: * MHI wherever SW and SXO are finite, without the invaded-zone gate;
-    #: * a duplicate BADHOLEFLAG curve alongside BAD_HOLE.
+    #: * ``"benchmark_rerun"``: the calculations that re-interpreted 15_9-17 and
+    #:   34_10-23 and wrote the package's context.
+    #: * ``"benchmark"``: the calculations that interpreted the other 30 wells.
+    #:   On top of ``"benchmark_rerun"``:
     #:
-    #: The default reproduces the context package; see
-    #: ``scripts/generate_benchmark_context.py``.
+    #:   * clay porosity from the mean PHIT of every shale-lithology sample,
+    #:     rather than the neutron-density-averaged shale samples only;
+    #:   * saturation, rock quality, net pay and BVW read PHIE and PERM rather
+    #:     than the core-corrected PHIE_CC and PERM_CC;
+    #:   * one Archie coefficient set resolved from the lithology domain, rather
+    #:     than per-depth coefficients from the lithology log;
+    #:   * MHI wherever SW and SXO are finite, without the invaded-zone gate;
+    #:   * a duplicate BADHOLEFLAG curve alongside BAD_HOLE.
     calculation_profile: str = "current"
     #: Reuse a RESFLAG or NET_RES curve already on the well as the reservoir
     #: flag that picks the SWIRR_APP samples before permeability. False
@@ -665,7 +668,8 @@ _LITHOLOGY_SOURCES = ("auto", "external", "vendor", "computed", "config")
 _HC_TYPES = ("oil", "gas")
 _SWIRR_FLAG_PHI_CL = ("workflow", "all_shale_phit")
 _MINERAL_SOLVER_VERSIONS = (1, 2)
-_CALCULATION_PROFILES = ("current", "benchmark")
+_BENCHMARK_PROFILES = ("benchmark", "benchmark_rerun")
+_CALCULATION_PROFILES = ("current", *_BENCHMARK_PROFILES)
 # Matrix sonic slowness (us/ft) used by the workflow where it differs from the
 # shared mineral table.
 _WORKFLOW_MATRIX_SLOWNESS = {"gypsum": 83.0}
@@ -1518,6 +1522,11 @@ class DynamicWorkflow:
     def _benchmark(self) -> bool:
         """True when the eval-package interpreted-LAS calculations are selected."""
         return self.config.calculation_profile == "benchmark"
+
+    @property
+    def _reproducing_benchmark(self) -> bool:
+        """True for either benchmark profile: keep the eval package's calculations."""
+        return self.config.calculation_profile in _BENCHMARK_PROFILES
 
     def _phie_names(self, include_phit: bool = True) -> List[str]:
         """Effective-porosity curve preference.
