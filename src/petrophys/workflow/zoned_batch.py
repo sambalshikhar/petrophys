@@ -20,6 +20,7 @@ from petrophys.io import export_las, read_las
 from petrophys.model.units import temperature_to_fahrenheit
 from petrophys.preprocessing.standardization import standardize_curves
 from petrophys.workflow.dynamic_workflow import (
+    _BENCHMARK_PROFILES,
     DynamicWorkflowConfig,
     DynamicWorkflowResult,
     _left_at_default,
@@ -240,6 +241,11 @@ def _clone_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowCon
 def _is_benchmark_profile(config: Optional[DynamicWorkflowConfig]) -> bool:
     """True when this batch reproduces the eval package's interpreted LAS."""
     return getattr(config, "calculation_profile", "current") == "benchmark"
+
+
+def _reproduces_benchmark(config: Optional[DynamicWorkflowConfig]) -> bool:
+    """True when this batch runs either benchmark profile."""
+    return getattr(config, "calculation_profile", "current") in _BENCHMARK_PROFILES
 
 
 def _prepare_batch_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowConfig:
