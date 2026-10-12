@@ -10,13 +10,23 @@ from dataclasses import dataclass
 import numpy as np
 
 from petrophys.interpretation.electrical.invasion.invasion_classification import (
-    classify_invasion,
     InvasionType,
 )
 from petrophys._internal.analysis_helpers import get_curve, get_curve_data_depthwise
+from petrophys.model.class_tables import CLASS_TABLES, Bands
+from petrophys.model.classifications import InvasionClassification
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
+
+#: Flushed-zone and shallow resistivity curves the Rxo/Rt ratio reads, in order
+#: of preference: the flushed-zone RXO (a microresistivity reading of the
+#: flushed zone), then the shallow RSHA and RESS, which read deeper, into the
+#: invaded zone.
+SHALLOW_RESISTIVITY_CURVES = ("RXO", "RSHA", "RESS")
+#: Medium resistivity curves that stand in for the shallow reading, as a
+#: medium/deep proxy, where no flushed-zone or shallow reading exists.
+MEDIUM_RESISTIVITY_CURVES = ("RMED", "RESM")
 
 
 @dataclass
@@ -49,9 +59,16 @@ class InvasionModule:
     Parameters
     ----------
     rxo_curve : str, optional
-        Name of shallow resistivity curve
+        The flushed-zone or shallow resistivity curve read first; the others
+        of :data:`SHALLOW_RESISTIVITY_CURVES` (RXO, RSHA, RESS) follow in that
+        order. Default RXO, the flushed-zone reading.
     rt_curve : str, optional
         Name of deep resistivity curve
+    class_bands : Bands, optional
+        The Rxo/Rt classes behind the ``conductive_percent``,
+        ``minimal_percent`` and ``resistive_percent`` statistics, labelled
+        CONDUCTIVE_INVASION, MINIMAL_INVASION and RESISTIVE_INVASION. Default:
+        the canonical table, ``CLASS_TABLES["RXO_RT"]``.
 
     Examples
     --------
@@ -62,10 +79,11 @@ class InvasionModule:
 
     def __init__(
         self,
-        rxo_curve: str = "RSHA",
+        rxo_curve: str = "RXO",
         rt_curve: str = "RDEP",
         medium_deep_proxy: bool = True,
         depthwise_curve_merge: bool = True,
+        class_bands: Optional[Bands] = None,
     ):
         self.rxo_curve = rxo_curve
         self.rt_curve = rt_curve
@@ -75,6 +93,17 @@ class InvasionModule:
         #: Fill a curve's missing samples from the next candidate curve. When
         #: False the first candidate curve present is used as it stands.
         self.depthwise_curve_merge = depthwise_curve_merge
+        self.class_bands = CLASS_TABLES["RXO_RT"].bands if class_bands is None else class_bands
+
+    @property
+    def shallow_curves(self) -> list:
+        """The flushed-zone and shallow resistivity curves read, in order of preference."""
+        return list(dict.fromkeys([self.rxo_curve, *SHALLOW_RESISTIVITY_CURVES]))
+
+    @property
+    def medium_curves(self) -> list:
+        """The medium-resistivity proxy curves read after them (none without the proxy)."""
+        return list(MEDIUM_RESISTIVITY_CURVES) if self.medium_deep_proxy else []
 
     def analyze(self, well: "Well") -> InvasionResult:
         """
@@ -93,8 +122,8 @@ class InvasionModule:
         # Get resistivity curves. Prefer true flushed/shallow curves, then use
         # medium/deep separation as a fallback proxy indicator where
         # flushed/shallow curves are absent or non-finite at a depth sample.
-        shallow_candidates = list(dict.fromkeys([self.rxo_curve, "RXO", "RESS", "RSHA"]))
-        medium_candidates = ["RMED", "RESM"] if self.medium_deep_proxy else []
+        shallow_candidates = self.shallow_curves
+        medium_candidates = self.medium_curves
         ratio_candidates = list(dict.fromkeys([*shallow_candidates, *medium_candidates]))
         if self.depthwise_curve_merge:
             rxo_data, rxo_name, rxo_meta = get_curve_data_depthwise(well, ratio_candidates)
@@ -140,8 +169,12 @@ class InvasionModule:
         raw_ratio = np.full(rxo_data.shape, np.nan, dtype=float)
         raw_ratio[core_valid] = rxo_data[core_valid] / rt_data[core_valid]
 
-        # Classify
-        classification = classify_invasion(ratio)
+        # Classify with the module's Rxo/Rt classes (the canonical table unless
+        # class_bands says otherwise).
+        ratio_classes = self.class_bands.classify(ratio)
+        classification = np.full(ratio_classes.shape, None, dtype=object)
+        for member in InvasionClassification:
+            classification[ratio_classes == member.name] = member
 
         # Calculate statistics
         finite_ratio = np.isfinite(ratio)
@@ -155,9 +188,9 @@ class InvasionModule:
             "min_ratio": float(np.min(valid_ratio)) if len(valid_ratio) > 0 else np.nan,
             "max_ratio": float(np.max(valid_ratio)) if len(valid_ratio) > 0 else np.nan,
             "valid_percent": float(valid_count / sample_count * 100),
-            "conductive_percent": float(np.sum(finite_ratio & (ratio < 0.8)) / percent_count * 100),
-            "minimal_percent": float(np.sum(finite_ratio & (ratio >= 0.8) & (ratio <= 1.2)) / percent_count * 100),
-            "resistive_percent": float(np.sum(finite_ratio & (ratio > 1.2)) / percent_count * 100),
+            "conductive_percent": float(np.sum(ratio_classes == "CONDUCTIVE_INVASION") / percent_count * 100),
+            "minimal_percent": float(np.sum(ratio_classes == "MINIMAL_INVASION") / percent_count * 100),
+            "resistive_percent": float(np.sum(ratio_classes == "RESISTIVE_INVASION") / percent_count * 100),
             "total_samples": int(ratio.size),
             "valid_samples": valid_count,
             "nan_samples": int(ratio.size - valid_count),

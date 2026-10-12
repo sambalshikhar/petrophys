@@ -30,7 +30,7 @@ from petrophys.mcp.serialize import (
     well_summary,
     workflow_summary,
 )
-from petrophys.mcp.session import Session, SessionError
+from petrophys.mcp.session import Session, SessionError, default_calculation_profile
 
 try:
     from mcp.server.mcpserver import Image, MCPServer
@@ -174,6 +174,7 @@ def create_server(
     roots: Optional[Sequence[str | Path]] = None,
     *,
     session: Optional[Session] = None,
+    calculation_profile: Optional[str] = None,
 ) -> MCPServer:
     """Build the Petrophys MCP server.
 
@@ -185,16 +186,30 @@ def create_server(
         Bundled sample wells are always readable.
     session : Session, optional
         Existing session to serve (mainly for tests).
+    calculation_profile : str, optional
+        Calculation profile of interpretations whose settings do not set
+        ``calculation_profile``, e.g. ``"benchmark"`` to pin an
+        evaluation harness to the eval package's calculations. Defaults to
+        ``PETROPHYS_CALCULATION_PROFILE``, else the library default
+        (``"current"``). A profile given in a tool's settings wins. The
+        environment variable is read here, by the MCP server only; library
+        calls such as :func:`petrophys.interpret` ignore it.
 
     Returns
     -------
     MCPServer
         Call ``.run()`` to serve over stdio.
+
+    Raises
+    ------
+    ValueError
+        If the calculation profile is not valid.
     """
     import petrophys as pp
     from petrophys.mcp import catalog, reports
     from petrophys.version import __version__
 
+    default_profile = default_calculation_profile(calculation_profile)
     state = session or Session(roots=[Path(root) for root in roots or []])
     server = _PetrophysServer(
         "petrophys",
@@ -283,10 +298,12 @@ def create_server(
 
     def prepare_settings(settings: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         if settings is None:
-            return {}
+            settings = {}
         if not isinstance(settings, dict):
             raise ToolError("settings must be a JSON object such as {'rw': 0.07}.")
         prepared = dict(settings)
+        if default_profile is not None:
+            prepared.setdefault("calculation_profile", default_profile)
         for name in _PATH_SETTINGS:
             if isinstance(prepared.get(name), str):
                 prepared[name] = str(state.resolve_path(prepared[name]))
@@ -575,9 +592,14 @@ def create_server(
           'carbonate' for carbonates); matrix_type: auto|sandstone|limestone|dolomite
           (default sandstone in the clastic domain, auto in the others).
         - sw_model: auto|archie|simandoux|indonesia|dual_water|waxman_smits;
-          a, m, n: Archie parameters (default by lithology).
-        - vcl_cutoff, phie_cutoff, sw_cutoff (v/v): net-pay cutoffs; defaults
-          VCL < 0.3, SW < 0.7, PHIE > 0.08 (0.045 in carbonate).
+          a, m, n: Archie parameters (default by lithology). dual_water needs
+          rwb (ohm.m), waxman_smits cec (meq/100 g) and b_coeff; ask the user,
+          as they are not estimated.
+        - vcl_cutoff, phie_cutoff, sw_cutoff (v/v): net-pay cutoffs; defaults by
+          lithology family: clastic VCL < 0.40, PHIE > 0.08, SW < 0.60;
+          carbonate VCL < 0.30, PHIE > 0.045, SW < 0.70. Evaporite and bad-hole
+          samples are not net reservoir or pay (the benchmark calculation
+          profile keeps VCL < 0.3, SW < 0.7 and counts them).
         - gr_min, gr_max (API): GR clean/shale (default 20/100).
         - apply_hc_correction, hc_type: oil|gas; skip_steps: e.g. ['permeability'].
         Use run_workflow for a recipe with given methods (e.g. a quick look) and

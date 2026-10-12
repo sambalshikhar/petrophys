@@ -45,6 +45,10 @@ def generate_net_flags(
     """
     Generate net rock, reservoir, and pay flags.
 
+    Net rock is ``VCL < vcl_cutoff``; net reservoir adds
+    ``PHIE > phie_cutoff`` and net pay adds ``Sw < sw_cutoff``. A sample
+    exactly at a cutoff, or with a missing (NaN) value, fails that test.
+
     Parameters
     ----------
     vcl : np.ndarray

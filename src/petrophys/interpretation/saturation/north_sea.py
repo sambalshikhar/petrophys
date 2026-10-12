@@ -1,22 +1,16 @@
 """
 North Sea shaly-sand water saturation equation.
 
-This module implements a common North Sea shaly-sand form:
-
-    Sw^n / Rt = phi^m / (a * Rw) + Vsh^exp / Rtsh
-
-Rearranged:
-
-    Sw^n = Rt * (phi^m / (a * Rw) + Vsh^exp / Rtsh)
-
-Some workflows instead express the shale term on the conductivity side:
+This module implements a shaly-sand form in which the shale conducts in
+parallel with the water-filled pores:
 
     1 / Rt = (phi^m / (a * Rw)) * Sw^n + Vsh^exp / Rtsh
 
-For practical petrophysical use, the latter is the more common/logical form
-for shaly-sand correction, so this implementation solves:
+solved as
 
-    1 / Rt = (phi^m / (a * Rw)) * Sw^n + Vsh^exp / Rtsh
+    Sw^n = (1 / Rt - Vsh^exp / Rtsh) * a * Rw / phi^m
+
+with Sw = 0 where the shale term alone exceeds 1 / Rt.
 """
 
 from typing import Union

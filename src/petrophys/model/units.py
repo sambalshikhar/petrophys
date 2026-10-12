@@ -187,24 +187,23 @@ class UnitConverter:
         value : float or np.ndarray
             Temperature value(s) to convert
         from_unit : str
-            Source unit ("F", "C", "K")
+            Source unit: any label :func:`temperature_unit` recognizes, such
+            as "F", "degC" or "K"
         to_unit : str
-            Target unit ("F", "C", "K")
+            Target unit, likewise
 
         Returns
         -------
         float or np.ndarray
             Converted temperature value(s)
-        """
-        from_unit = from_unit.upper()
-        to_unit = to_unit.upper()
 
-        for unit in (from_unit, to_unit):
-            if unit not in ("F", "C", "K"):
-                raise ValueError(
-                    f"Unrecognized temperature unit '{unit}'. "
-                    "Supported units: C, F, K"
-                )
+        Raises
+        ------
+        ValueError
+            If either unit is not a recognized temperature unit.
+        """
+        from_unit = temperature_unit(from_unit, strict=True)
+        to_unit = temperature_unit(to_unit, strict=True)
 
         # First convert to Celsius
         if from_unit == "F":
@@ -430,12 +429,14 @@ def normalize_depth_unit(
     return text
 
 
-def temperature_unit(unit: Optional[str]) -> Optional[str]:
+def temperature_unit(unit: Optional[str], *, strict: bool = False) -> Optional[str]:
     """Classify a temperature unit label as ``"F"``, ``"C"``, ``"K"`` or None.
 
     Units are matched on whole words, so labels such as ``"deg C (from log)"``
     or ``"Celsius (ref)"`` are read as Celsius even though they contain the
-    letter ``f``. Labels naming more than one scale, or none, return None.
+    letter ``f``. Labels naming more than one scale, or none, return None, or
+    raise ``ValueError`` when ``strict`` is True (for unit arguments, where
+    guessing a scale would silently convert with the wrong one).
 
     Examples
     --------
@@ -457,7 +458,12 @@ def temperature_unit(unit: Optional[str]) -> Optional[str]:
         scales.add("C")
     if words & {"k", "degk", "kelvin"}:
         scales.add("K")
-    return scales.pop() if len(scales) == 1 else None
+    scale = scales.pop() if len(scales) == 1 else None
+    if scale is None and strict:
+        raise ValueError(
+            f"Unrecognized temperature unit {unit!r}; use F (degF), C (degC) or K."
+        )
+    return scale
 
 
 def temperature_to_fahrenheit(value: float, unit: Optional[str]) -> float:

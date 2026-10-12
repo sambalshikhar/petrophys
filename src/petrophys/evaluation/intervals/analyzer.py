@@ -37,7 +37,10 @@ class IntervalSummary:
     avg_phit : float
         Mean PHIT over entire interval
     dominant_lithology : str
-        Most common lithology in the interval (from LITHO_CLASS curve)
+        Most common lithology in the interval: the label of the lithology
+        intervals the interpretation selected (``LITHO_CLASS``), else the
+        lithology group of the lithology codes (e.g. ``"sandstone"``), else
+        the most common value of a ``LITHOLOGY`` or ``LITH`` curve
     data_coverage_pct : float
         Percentage of samples with valid RHOB data
     """
@@ -321,17 +324,51 @@ def _curve_mean(well, curve_name: str, mask: np.ndarray) -> float:
     return float(np.mean(valid)) if len(valid) > 0 else np.nan
 
 
+def _most_common(values) -> object:
+    """Most common value that is not None or NaN, or None."""
+    from collections import Counter
+
+    valid = [v for v in values if v is not None and str(v) != "nan"]
+    return Counter(valid).most_common(1)[0][0] if valid else None
+
+
 def _dominant_lithology(well, mask: np.ndarray) -> str:
-    """Find most common lithology value in the interval."""
-    for curve_name in ("LITHO_CLASS", "LITHOLOGY", "LITH"):
+    """Find the most common lithology in the interval.
+
+    Lithology intervals the interpretation selected (``LITHO_CLASS``) give
+    their labels. The lithology code curve, ``LITHOLOGY_GEOLINK`` or another
+    lithology-code curve as :func:`petrophys.interpret` reads it, gives the
+    lithology group of each code, as the interpretation groups them. Otherwise
+    the most common value of a ``LITHOLOGY`` or ``LITH`` curve is returned.
+    """
+    from petrophys.interpretation.lithology.matrix_inference import find_lithology_code_curve
+
+    curve = well.get("LITHO_CLASS")
+    if curve is not None:
+        value = _most_common(curve.data[mask])
+        if value is not None:
+            labels = curve.metadata.custom.get("category_labels") or {}
+            return labels.get(int(value), value) if float(value).is_integer() else value
+
+    code_curve = find_lithology_code_curve(well)
+    curve = well.get(code_curve) if code_curve is not None else None
+    if curve is not None:
+        from petrophys.workflow.dynamic_workflow import (
+            _CURRENT_GROUND_TRUTH_CODE_TO_GROUP,
+            _group_array_from_numeric_codes,
+        )
+
+        mapping = curve.metadata.custom.get("category_groups") or _CURRENT_GROUND_TRUTH_CODE_TO_GROUP
+        group = _most_common(_group_array_from_numeric_codes(np.asarray(curve.data, dtype=float)[mask], mapping))
+        if group is not None:
+            return str(group)
+
+    for curve_name in ("LITHOLOGY", "LITH"):
         curve = well.get(curve_name)
         if curve is not None:
-            data = curve.data[mask]
-            # Handle object/string arrays
-            valid = [v for v in data if v is not None and str(v) != "nan"]
-            if valid:
-                from collections import Counter
-                return Counter(valid).most_common(1)[0][0]
+            value = _most_common(curve.data[mask])
+            if value is not None:
+                return value
     return ""
 
 

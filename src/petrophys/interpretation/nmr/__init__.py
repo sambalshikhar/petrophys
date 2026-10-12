@@ -18,8 +18,9 @@ Typical workflow::
     df = nmr.to_dataframe()              # export all results
 
 Default T2 bin centres: [4, 8, 16, 32, 64, 128, 256, 512] ms.
-Default T2 cutoff: 32 ms (clastics).  Use T2_CUTOFF_CARBONATE = 92 ms
-for carbonates.
+Default T2 cutoff: 33 ms (clastics).  Use T2_CUTOFF_CARBONATE = 92 ms
+for carbonates.  The bin that straddles the cutoff is split by log-T2
+width; pass ``partial_bins=False`` to count whole bins by their centre.
 """
 
 from petrophys.interpretation.nmr.nmr_data import (
@@ -35,6 +36,7 @@ from petrophys.interpretation.nmr.permeability import (
     t2lm_from_bins,
     bvi_from_bins,
     ffi_from_bins,
+    t2_fraction_below_cutoff,
 )
 
 __all__ = [
@@ -52,4 +54,5 @@ __all__ = [
     "t2lm_from_bins",
     "bvi_from_bins",
     "ffi_from_bins",
+    "t2_fraction_below_cutoff",
 ]

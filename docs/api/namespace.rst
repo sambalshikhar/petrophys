@@ -104,20 +104,48 @@ Requires the ``ml`` extra (Python 3.11+).
 Classification and diagnostics
 ------------------------------
 
-Interval classes and summary analyses used by reports and the
-:func:`pp.run_comprehensive_analysis <petrophys.workflow.run_comprehensive_analysis>`
-report:
-:class:`~petrophys.model.VclClassification`,
-:class:`~petrophys.model.PorosityClassification`,
-:class:`~petrophys.model.HcSaturationClassification`,
-:class:`~petrophys.model.PermeabilityClassification`,
-:class:`~petrophys.model.RQIClassification`,
-:class:`~petrophys.model.MhiClassification`,
-:class:`~petrophys.model.InvasionClassification`,
-:class:`~petrophys.evaluation.diagnostics.HydrocarbonAnalysis`,
-:class:`~petrophys.evaluation.diagnostics.LithologyAnalysis`,
-:class:`~petrophys.evaluation.diagnostics.PorosityAnalysis`,
-:class:`~petrophys.evaluation.diagnostics.PermeabilityAnalysis`,
-:class:`~petrophys.evaluation.diagnostics.SaturationAnalysis`,
-:class:`~petrophys.evaluation.diagnostics.NumericalStatisticalAnalysis` and
-:class:`~petrophys.preprocessing.quality.WellboreQC`.
+Each property is graded into classes by one canonical table.
+:data:`CLASS_TABLES <petrophys.model.CLASS_TABLES>`, in ``petrophys.model``
+rather than ``pp``, holds the tables of clay volume, porosity, permeability,
+water saturation, BVW, RQI, FZI, MHI, Rxo/Rt and reservoir quality, each with
+the unit of its values, the label of a sample without a value (such as
+``NO_VCL_DATA``) and the source of its edges. A one-curve table is a
+:class:`~petrophys.model.ClassTable` built on :class:`~petrophys.model.Bands`.
+Reservoir quality is a :class:`~petrophys.model.ReservoirQualityTable`, whose
+grades (:class:`~petrophys.model.ReservoirGrade`) test effective porosity,
+permeability and clay volume with limits per lithology family.
+:class:`~petrophys.model.TwoCurveClassTable` and
+:class:`~petrophys.model.TwoCurveBands` grade from two curves; no canonical
+table uses them.
+
+.. list-table::
+   :widths: 38 62
+
+   * - :class:`pp.VclClassification <petrophys.model.VclClassification>`,
+       :class:`pp.PorosityClassification <petrophys.model.PorosityClassification>`,
+       :class:`pp.HcSaturationClassification <petrophys.model.HcSaturationClassification>`,
+       :class:`pp.PermeabilityClassification <petrophys.model.PermeabilityClassification>`,
+       :class:`pp.RQIClassification <petrophys.model.RQIClassification>`,
+       :class:`pp.MhiClassification <petrophys.model.MhiClassification>`,
+       :class:`pp.InvasionClassification <petrophys.model.InvasionClassification>`
+     - Class enumerations. Each classifies through its canonical table, as
+       the analyzers do by default; a value that is not finite gets None
+   * - :class:`pp.HydrocarbonAnalysis <petrophys.evaluation.diagnostics.HydrocarbonAnalysis>`,
+       :class:`pp.LithologyAnalysis <petrophys.evaluation.diagnostics.LithologyAnalysis>`,
+       :class:`pp.PorosityAnalysis <petrophys.evaluation.diagnostics.PorosityAnalysis>`,
+       :class:`pp.PermeabilityAnalysis <petrophys.evaluation.diagnostics.PermeabilityAnalysis>`,
+       :class:`pp.SaturationAnalysis <petrophys.evaluation.diagnostics.SaturationAnalysis>`
+     - Category analyses of an interpreted well. ``class_tables="current"``
+       (default) classifies with the canonical tables; ``"benchmark"`` keeps
+       the tables and texts of the GeoLink eval package. All but the
+       saturation analysis grade reservoir quality with the limits of
+       ``lithology_family`` (``"clastic"``, ``"carbonate"`` or a lithology,
+       for every sample or one per sample); without it, every sample is graded
+       as clastic rock
+   * - :class:`pp.NumericalStatisticalAnalysis <petrophys.evaluation.diagnostics.NumericalStatisticalAnalysis>`
+     - Numerical and statistical data-quality analysis
+   * - :class:`pp.WellboreQC <petrophys.preprocessing.quality.WellboreQC>`
+     - Bad-hole detection from caliper roughness, with DRHO as a fallback
+   * - :func:`pp.run_comprehensive_analysis <petrophys.workflow.run_comprehensive_analysis>`
+     - Runs all of these analyses on a well and, by default, stores the
+       results on it; passes on ``class_tables`` and ``lithology_family``

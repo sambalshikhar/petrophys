@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Union, Optional, Tuple
 import warnings
 import numpy as np
 
-from petrophys.model.units import UnitConverter, core_saturation_to_fraction
+from petrophys.model.units import UnitConverter, core_saturation_to_fraction, temperature_unit
 from petrophys.preprocessing.standardization.alias_map import (
     get_standard_mnemonic,
     get_standard_unit,
@@ -143,6 +143,16 @@ def get_conversion_factor(from_unit: str, to_unit: str) -> Optional[float]:
     return None
 
 
+def _converts_temperature(from_unit: str, to_unit: str) -> bool:
+    """True when both units are temperature scales and differ, e.g. degC and F.
+
+    Temperature scales are offset from each other, so they have no
+    conversion factor in :data:`UNIT_CONVERSIONS`.
+    """
+    source, target = temperature_unit(from_unit), temperature_unit(to_unit)
+    return source is not None and target is not None and source != target
+
+
 def convert_units(
     data: Union[float, np.ndarray],
     from_unit: str,
@@ -172,6 +182,8 @@ def convert_units(
     """
     factor = get_conversion_factor(from_unit, to_unit)
     if factor is None:
+        if _converts_temperature(from_unit, to_unit):
+            return UnitConverter.temperature(data, from_unit, to_unit)
         raise ValueError(
             f"No conversion available from {from_unit} to {to_unit}"
         )
@@ -210,9 +222,13 @@ def convert_curve_units(
 
     factor = get_conversion_factor(curve.unit, to_unit)
     if factor is None:
-        raise ValueError(
-            f"Cannot convert {curve.mnemonic} from {curve.unit} to {to_unit}"
-        )
+        if not _converts_temperature(curve.unit, to_unit):
+            raise ValueError(
+                f"Cannot convert {curve.mnemonic} from {curve.unit} to {to_unit}"
+            )
+        curve._data = UnitConverter.temperature(curve._data, curve.unit, to_unit)
+        curve.unit = to_unit
+        return curve
 
     curve._data = curve._data * factor
     curve.unit = to_unit

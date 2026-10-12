@@ -10,13 +10,22 @@ rejects samples whose solved mineral total misses the available rock volume
 flagged, so mineral volumes are only reported where the logs, VCL, and PHIE
 agree.
 
+The equations carry different units (v/v, g/cm³, b/cm³, μs/ft), so each row is
+divided by its nominal one-sigma uncertainty (:data:`ROW_UNCERTAINTY`) before
+the solve: every residual is then measured in units of tool error, the
+weighted least squares of Mayer and Sibbit (1980, SPE 9341) and Quirein et al.
+(1986, SPWLA 27th Symposium). Solved unscaled (``row_uncertainty=None``), the
+sonic and U rows dominate the fit and the closure gate rejects most samples
+whose logs agree to within tool precision.
+
 Version 2 (:class:`~petrophys.interpretation.lithology.MultiMineralSolver`)
 solves porosity jointly with the minerals (or constrains it with core
 porosity), so the mineral result does not depend on a pre-computed PHIE, and
 reports underdetermined samples instead of gating them.
 """
 
-from typing import Dict, Optional, Tuple, Union
+from types import MappingProxyType
+from typing import Dict, Mapping, Optional, Tuple, Union
 
 import numpy as np
 from scipy.optimize import nnls
@@ -37,6 +46,17 @@ _V1_ENDPOINTS: Dict[str, Dict[str, float]] = {
 
 CLOSURE_TOLERANCE = 0.05
 
+# Nominal one-sigma uncertainty of each equation row, in the row's own unit.
+# The unity (closure) row is weighted most strongly: the 0.05 closure gate is
+# five of its sigmas.
+ROW_UNCERTAINTY: Mapping[str, float] = MappingProxyType({
+    "unity": 0.01,  # v/v
+    "rhob":  0.02,  # g/cm³
+    "nphi":  0.02,  # v/v
+    "u":     0.5,   # b/cm³
+    "dt":    2.0,   # μs/ft
+})
+
 
 def _get_endpoints(name: str) -> Dict[str, float]:
     """Return endpoint dict with density, nphi, pef, u, dt for a mineral/fluid."""
@@ -50,6 +70,25 @@ def _get_endpoints(name: str) -> Dict[str, float]:
         "u":       p["u"],
         "dt":      p["slowness"],
     }
+
+
+def _row_uncertainty(
+    row_uncertainty: Optional[Mapping[str, float]],
+) -> Optional[Dict[str, float]]:
+    """Merge user row uncertainties over :data:`ROW_UNCERTAINTY`; None stays None."""
+    if row_uncertainty is None:
+        return None
+    unknown = sorted(set(row_uncertainty) - set(ROW_UNCERTAINTY))
+    if unknown:
+        raise ValueError(
+            f"row_uncertainty keys must be among {', '.join(ROW_UNCERTAINTY)}; got {', '.join(unknown)}"
+        )
+    merged = {**ROW_UNCERTAINTY, **row_uncertainty}
+    for row, sigma in merged.items():
+        number = isinstance(sigma, (int, float, np.integer, np.floating)) and not isinstance(sigma, bool)
+        if not (number and np.isfinite(sigma) and sigma > 0):
+            raise ValueError(f"row_uncertainty[{row!r}] must be a positive number; got {sigma!r}")
+    return {row: float(sigma) for row, sigma in merged.items()}
 
 
 def _constrain_mineral_fractions(
@@ -74,14 +113,14 @@ class MultiMineralSolverV1:
     every equation before solving for the mineral volumes.
 
     The active mineral set and equations are determined per depth from curve
-    availability:
+    availability::
 
         PEF available              -> 4 minerals (quartz, calcite, dolomite,
                                       anhydrite) + PEF row (+ DTC if present)
         PEF absent, DTC available  -> 4 minerals + DTC row
         Neither available          -> 3 minerals, RHOB + NPHI only
 
-    Tool Response Equations (linear mixing):
+    Tool Response Equations (linear mixing)::
 
         Unity:   V1 + V2 + ... + Vn         = 1    - Vcl - φe
         Density: V1·ρ1 + V2·ρ2 + ... + Vn·ρn = ρlog - Vcl·ρcl - φe·ρfl
@@ -89,10 +128,11 @@ class MultiMineralSolverV1:
         U:       V1·U1 + V2·U2 + ... + Vn·Un = Ulog - Vcl·Ucl - φe·Ufl
         Sonic:   V1·D1 + V2·D2 + ... + Vn·Dn = Dlog - Vcl·Dcl - φe·Dfl
 
-    where U = PEF × ρ. When the solved total differs from ``1 - Vcl - φe`` by
-    more than 0.05 the sample is not solved: its mineral volumes are NaN and
-    ``qc_flag`` is set. Otherwise volumes are clipped and scaled to close on
-    the available rock volume.
+    where U = PEF × ρ. Each row is divided by its ``row_uncertainty`` before
+    the non-negative least-squares solve. When the solved total differs from
+    ``1 - Vcl - φe`` by more than 0.05 the sample is not solved: its mineral
+    volumes are NaN and ``qc_flag`` is set. Otherwise volumes are clipped and
+    scaled to close on the available rock volume.
 
     Parameters
     ----------
@@ -106,6 +146,12 @@ class MultiMineralSolverV1:
         Clay endpoint name (default: "clay").
     fluid : str, optional
         Pore-fluid endpoint name (default: "water").
+    row_uncertainty : mapping or None, optional
+        One-sigma uncertainty of each equation row, keyed ``unity`` (v/v),
+        ``rhob`` (g/cm³), ``nphi`` (v/v), ``u`` (b/cm³) and ``dt`` (μs/ft).
+        Rows are divided by these values before the solve; keys left out keep
+        :data:`ROW_UNCERTAINTY` (0.01, 0.02, 0.02, 0.5, 2.0). None solves the
+        rows unscaled, the calculation behind the GeoLink benchmark profile.
 
     Examples
     --------
@@ -121,6 +167,7 @@ class MultiMineralSolverV1:
         minerals_no_pef: Optional[list] = None,
         clay_mineral: str = "clay",
         fluid: str = "water",
+        row_uncertainty: Optional[Mapping[str, float]] = ROW_UNCERTAINTY,
     ):
         if minerals is None:
             minerals = ["quartz", "calcite", "dolomite", "anhydrite"]
@@ -131,6 +178,7 @@ class MultiMineralSolverV1:
         self.minerals_no_pef = minerals_no_pef
         self.clay_mineral    = clay_mineral
         self.fluid           = fluid
+        self.row_uncertainty = _row_uncertainty(row_uncertainty)
 
         all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef))
         self.mineral_props = {m: _get_endpoints(m) for m in all_minerals}
@@ -158,21 +206,26 @@ class MultiMineralSolverV1:
         fl = self.fluid_props
         cl = self.clay_props
 
-        A_rows, b_rows = [], []
+        A_rows, b_rows, row_names = [], [], []
 
-        def add_row(mineral_vals, cl_val, fl_val, log_val):
+        def add_row(row, mineral_vals, cl_val, fl_val, log_val):
             A_rows.append(mineral_vals)
             b_rows.append(log_val - vcl * cl_val - phie * fl_val)
+            row_names.append(row)
 
-        add_row([1.0] * len(active_minerals), cl_val=1.0, fl_val=1.0, log_val=1.0)
-        add_row([mi["density"] for mi in m], cl_val=cl["density"], fl_val=fl["density"], log_val=rhob)
-        add_row([mi["nphi"] for mi in m], cl_val=cl["nphi"], fl_val=fl["nphi"], log_val=nphi)
+        add_row("unity", [1.0] * len(active_minerals), cl_val=1.0, fl_val=1.0, log_val=1.0)
+        add_row("rhob", [mi["density"] for mi in m], cl_val=cl["density"], fl_val=fl["density"], log_val=rhob)
+        add_row("nphi", [mi["nphi"] for mi in m], cl_val=cl["nphi"], fl_val=fl["nphi"], log_val=nphi)
         if pef is not None:
-            add_row([mi["u"] for mi in m], cl_val=cl["u"], fl_val=fl["u"], log_val=pef * rhob)
+            add_row("u", [mi["u"] for mi in m], cl_val=cl["u"], fl_val=fl["u"], log_val=pef * rhob)
         if dt is not None:
-            add_row([mi["dt"] for mi in m], cl_val=cl["dt"], fl_val=fl["dt"], log_val=dt)
+            add_row("dt", [mi["dt"] for mi in m], cl_val=cl["dt"], fl_val=fl["dt"], log_val=dt)
 
-        x, _ = nnls(np.array(A_rows), np.array(b_rows))
+        A, b = np.array(A_rows), np.array(b_rows)
+        if self.row_uncertainty is not None:
+            weights = 1.0 / np.array([self.row_uncertainty[row] for row in row_names])
+            A, b = A * weights[:, None], b * weights
+        x, _ = nnls(A, b)
 
         available_fraction = 1.0 - vcl - phie
         if abs(x.sum() - available_fraction) > CLOSURE_TOLERANCE:

@@ -98,6 +98,7 @@ def build_app(
     token: Optional[str] = None,
     allowed_hosts: Sequence[str] = (),
     stateless: bool = False,
+    calculation_profile: Optional[str] = None,
 ) -> Any:
     """Build the ASGI application for an HTTP deployment.
 
@@ -122,6 +123,9 @@ def build_app(
         Serve each request without a session (for load-balanced deployments).
         Loaded wells and interpretations then do not persist between calls,
         so keep it off unless a proxy cannot keep sessions.
+    calculation_profile : str, optional
+        Calculation profile of interpretations whose settings do not set one
+        (see :func:`petrophys.mcp.server.create_server`).
 
     Returns
     -------
@@ -132,7 +136,7 @@ def build_app(
     from petrophys.mcp.server import create_server
     from petrophys.version import __version__
 
-    server = create_server(roots)
+    server = create_server(roots, calculation_profile=calculation_profile)
     if allowed_hosts:
         security = TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
@@ -167,10 +171,12 @@ def serve(
     allowed_hosts: Sequence[str] = (),
     stateless: bool = False,
     log_level: str = "warning",
+    calculation_profile: Optional[str] = None,
 ) -> None:
     """Run the HTTP server until interrupted (see :func:`build_app`)."""
     import uvicorn
 
     app = build_app(roots, transport=transport, path=path, host=host, token=token,
-                    allowed_hosts=allowed_hosts, stateless=stateless)
+                    allowed_hosts=allowed_hosts, stateless=stateless,
+                    calculation_profile=calculation_profile)
     uvicorn.run(app, host=host, port=port, log_level=log_level)

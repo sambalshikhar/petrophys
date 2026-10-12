@@ -12,7 +12,9 @@ from petrophys.model.constants import DefaultParameters
 
 #: Curriculum-standard net-pay cutoffs by lithology family. Pass a set into a
 #: workflow config (``**STANDARD_CUTOFFS["clastic"]``) or leave the config
-#: cutoffs unset to have them resolved from the well lithology automatically.
+#: cutoffs unset to have them resolved from each sample's lithology family
+#: automatically (:func:`cutoff_family`). The benchmark calculation profile
+#: uses VCL < 0.3 and SW < 0.7 for unset cutoffs instead.
 STANDARD_CUTOFFS = {
     "clastic": {
         "vcl_cutoff": DefaultParameters.VCL_CUTOFF_CLASTIC,

@@ -127,16 +127,61 @@ def t2lm_from_bins(
         )
 
 
+def t2_fraction_below_cutoff(
+    t2_centers: np.ndarray,
+    cutoff_ms: Array,
+) -> np.ndarray:
+    """
+    Fraction of each T2 bin below the cutoff, interpolated in log T2.
+
+    Each bin spans the log-T2 interval between the geometric means of its
+    centre and its neighbours' (the outer bins extend as far beyond their
+    centre as inward), so a cutoff inside a bin splits that bin by log-T2
+    width and the partition changes continuously with the cutoff. A single
+    bin counts whole, by its centre.
+
+    Parameters
+    ----------
+    t2_centers : np.ndarray
+        T2 bin centres (ms), increasing.
+    cutoff_ms : float or np.ndarray
+        T2 cutoff (ms), or one cutoff per depth.
+
+    Returns
+    -------
+    np.ndarray
+        Shape (n_bins,), or (n_depth, n_bins) for per-depth cutoffs.
+
+    Examples
+    --------
+    >>> t2 = np.array([4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0])
+    >>> np.round(t2_fraction_below_cutoff(t2, 33.0), 3)[2:5].tolist()
+    [1.0, 0.544, 0.0]
+    """
+    log_t2 = np.log(np.asarray(t2_centers, dtype=float))
+    log_cut = np.log(np.asarray(cutoff_ms, dtype=float))[..., None]
+    if log_t2.size < 2:
+        return np.where(log_t2 < log_cut, 1.0, 0.0)
+    edges = (log_t2[:-1] + log_t2[1:]) / 2.0
+    lower = np.concatenate([[2.0 * log_t2[0] - edges[0]], edges])
+    upper = np.concatenate([edges, [2.0 * log_t2[-1] - edges[-1]]])
+    with np.errstate(invalid="ignore"):
+        return np.clip((log_cut - lower) / (upper - lower), 0.0, 1.0)
+
+
 def bvi_from_bins(
     bins: np.ndarray,
     t2_centers: np.ndarray,
-    cutoff_ms: float = 32.0,
+    cutoff_ms: float = 33.0,
     min_bin_coverage: float = 1.0,
+    partial_bins: bool = True,
 ) -> np.ndarray:
     """
     Bulk Volume Irreducible from T2 bins at a given cutoff.
 
-    Sums all bins with T2 centre **< cutoff_ms**.
+    Sums the bins below ``cutoff_ms``; the bin that straddles the cutoff
+    counts with the part of its log-T2 width below it
+    (:func:`t2_fraction_below_cutoff`).
 
     Parameters
     ----------
@@ -145,7 +190,11 @@ def bvi_from_bins(
     t2_centers : np.ndarray
         T2 bin centres (ms).
     cutoff_ms : float
-        T2 cutoff (ms).  Default 32 ms (clastics).
+        T2 cutoff (ms).  Default 33 ms, the sandstone value (Coates, Xiao and
+        Prammer, 1999).
+    partial_bins : bool
+        ``False`` counts whole bins with centre **< cutoff_ms**, the split
+        some vendor summaries use.
 
     Returns
     -------
@@ -153,43 +202,53 @@ def bvi_from_bins(
         BVI (pu).
     """
     t2c  = np.asarray(t2_centers, dtype=float)
-    mask = t2c < cutoff_ms
-    return _sum_selected_bins(bins, mask, min_bin_coverage)
+    if partial_bins:
+        weights = t2_fraction_below_cutoff(t2c, float(cutoff_ms))
+    else:
+        weights = (t2c < cutoff_ms).astype(float)
+    return _sum_selected_bins(bins, weights, min_bin_coverage)
 
 
 def ffi_from_bins(
     bins: np.ndarray,
     t2_centers: np.ndarray,
-    cutoff_ms: float = 32.0,
+    cutoff_ms: float = 33.0,
     min_bin_coverage: float = 1.0,
+    partial_bins: bool = True,
 ) -> np.ndarray:
     """
     Free Fluid Index from T2 bins at a given cutoff.
 
-    Sums all bins with T2 centre **>= cutoff_ms**.
+    Sums the bins above ``cutoff_ms``, the complement of
+    :func:`bvi_from_bins`; ``partial_bins=False`` counts whole bins with
+    centre **>= cutoff_ms**.
     """
     t2c  = np.asarray(t2_centers, dtype=float)
-    mask = t2c >= cutoff_ms
-    return _sum_selected_bins(bins, mask, min_bin_coverage)
+    if partial_bins:
+        weights = 1.0 - t2_fraction_below_cutoff(t2c, float(cutoff_ms))
+    else:
+        weights = (t2c >= cutoff_ms).astype(float)
+    return _sum_selected_bins(bins, weights, min_bin_coverage)
 
 
 def _sum_selected_bins(
     bins: np.ndarray,
-    mask: np.ndarray,
+    weights: np.ndarray,
     min_bin_coverage: float,
 ) -> np.ndarray:
-    """Sum selected bins without interpreting missing distributions as zero."""
+    """Sum the weighted part of each bin without interpreting missing distributions as zero."""
     values = np.atleast_2d(np.asarray(bins, dtype=float))
-    selected = np.asarray(mask, dtype=bool)
-    if selected.ndim != 1 or values.shape[1] != selected.size:
+    weight = np.asarray(weights, dtype=float)
+    if weight.ndim != 1 or values.shape[1] != weight.size:
         raise ValueError("bin mask length must match the number of bin columns")
     if not 0.0 <= min_bin_coverage <= 1.0:
         raise ValueError("min_bin_coverage must be between 0 and 1")
+    selected = weight > 0.0
     selected_count = int(np.count_nonzero(selected))
     if selected_count == 0:
         return np.zeros(values.shape[0], dtype=float)
     subset = values[:, selected]
     coverage = np.count_nonzero(np.isfinite(subset), axis=1) / selected_count
-    result = np.nansum(subset, axis=1)
+    result = np.nansum(subset * weight[selected], axis=1)
     result[coverage < min_bin_coverage] = np.nan
     return result

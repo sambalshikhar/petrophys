@@ -1173,8 +1173,15 @@ def _curve_has_finite_values(well: "Well", curve_name: str) -> bool:
     return bool(np.any(np.isfinite(data)))
 
 
-def _is_geolink_well(well: "Well") -> bool:
-    return well.get("LITHOLOGY_GEOLINK") is not None
+def _lithology_code_curve(well: "Well") -> Optional[str]:
+    """The well's lithology code curve, read with the GeoLink codes; None without one.
+
+    ``LITHOLOGY_GEOLINK``, or another lithology-code curve as
+    :func:`petrophys.interpret` reads it.
+    """
+    from petrophys.interpretation.lithology.matrix_inference import find_lithology_code_curve
+
+    return find_lithology_code_curve(well)
 
 
 @_styled_plot
@@ -1190,6 +1197,7 @@ def create_adaptive_log_viewer_template(
     then adds generic tracks for unfamiliar mnemonics so arbitrary LAS files
     still produce useful plots.
     """
+    code_curve = _lithology_code_curve(well)
     template = LogViewerTemplate(
         name="adaptive",
         tracks=[
@@ -1253,7 +1261,7 @@ def create_adaptive_log_viewer_template(
             track_type="lithology",
             curves=[
                 _adaptive_spec(
-                    "LITHOLOGY_GEOLINK",
+                    code_curve or "LITHOLOGY_GEOLINK",
                     "Lithology",
                     color="#000000",
                     fill_alpha=0.85,
@@ -1336,7 +1344,7 @@ def create_adaptive_log_viewer_template(
         left=0.01,
         right=10000,
     )
-    if not _is_geolink_well(well):
+    if code_curve is None:
         add_track(
             "MINERAL VOLUMES",
             [
@@ -1613,6 +1621,8 @@ class LogViewer:
         #: Plotted copy of the input well, with standard units and canonical
         #: curve aliases (e.g. GR for GR_EDTC); the caller's well is unchanged.
         self.well = _display_well(well)
+        # The lithology code curve, labelled with the GeoLink codes.
+        self._code_curve = _lithology_code_curve(self.well)
         self.formation_import_report = {}
         self.suppressed_formation_labels = []
         self.omitted_tracks = []
@@ -2362,7 +2372,9 @@ class LogViewer:
         top: float,
         bottom: float,
     ) -> None:
-        specs = track.curves or [LogCurveSpec("LITHOLOGY_GEOLINK", display_name="Lithology")]
+        specs = track.curves or [
+            LogCurveSpec(getattr(self, "_code_curve", None) or "LITHOLOGY_GEOLINK", display_name="Lithology")
+        ]
         spec = specs[0]
         beds = []
         if self.lithology_intervals is not None:
@@ -3494,7 +3506,11 @@ class LogViewer:
                 return self.lithology_mapping[key]
 
         upper_curve = str(curve_name or "").upper()
-        use_geolink_defaults = "GEOLINK" in upper_curve or upper_curve in {"LITHOLOGY", "ROCK_TYPE"}
+        use_geolink_defaults = (
+            "GEOLINK" in upper_curve
+            or upper_curve in {"LITHOLOGY", "ROCK_TYPE"}
+            or upper_curve == getattr(self, "_code_curve", None)
+        )
         if use_geolink_defaults:
             geolink_mapping = _default_geolink_lithology_mapping()
             for key in (numeric, code, float(code)):

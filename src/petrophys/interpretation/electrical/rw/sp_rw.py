@@ -66,10 +66,14 @@ def rw_from_ssp(
 ) -> Union[float, np.ndarray]:
     """
     Calculate Rw from static spontaneous potential (SSP).
+
+    ``temp_unit`` is "F", "C", "K" or a label such as "degC"; unknown labels
+    raise ``ValueError``.
     """
-    if temp_unit.upper() == "C":
-        from petrophys.model.units import UnitConverter
-        temperature = UnitConverter.celsius_to_fahrenheit(temperature)
+    from petrophys.model.units import UnitConverter, temperature_unit
+
+    if temperature_unit(temp_unit, strict=True) != "F":
+        temperature = UnitConverter.temperature(temperature, temp_unit, "F")
 
     k = 61 + 0.133 * temperature
     rw = rmf / np.power(10, -ssp / k)
@@ -109,7 +113,7 @@ def rw_from_sp(
     temperature : float or np.ndarray
         Formation temperature
     temp_unit : str, optional
-        Temperature unit
+        Temperature unit: "F", "C", "K" or a label such as "degC"
 
     Returns
     -------

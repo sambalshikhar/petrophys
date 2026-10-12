@@ -9,6 +9,11 @@ from typing import Union
 import numpy as np
 
 
+#: Highest plausible whole-rock cation exchange capacity, meq/100 g: that of
+#: pure smectite (montmorillonite, 80-150 meq/100 g; Grim, 1968).
+MAX_CEC_MEQ_PER_100G = 150.0
+
+
 def _waxman_smits_scalar(
     phi_t: float,
     ct: float,
@@ -82,8 +87,14 @@ def waxman_smits(
     Convergence is typically reached in 3-5 iterations.
 
     Note: the first-order approximation (setting Sw=1 in the clay term)
-    over-estimates clay conductivity and gives a pessimistically high Sw
-    in hydrocarbon-bearing intervals; the iterative form corrects this.
+    under-estimates the clay conductivity (B*Qv instead of B*Qv/Sw), so it
+    leaves too much of Ct to the water term and gives a pessimistically high
+    Sw in hydrocarbon-bearing intervals; the iterative form corrects this.
+
+    The equation is that of Waxman and Smits (1968), "Electrical
+    conductivities in oil-bearing shaly sands", SPE Journal 8(2). Sw is the
+    total-porosity saturation Swt; ``Swe = 1 - (phi_t / phi_e) * (1 - Swt)``
+    puts it on an effective-porosity basis.
 
     Parameters
     ----------
@@ -99,7 +110,11 @@ def waxman_smits(
     rho_ma : float
         Matrix density (g/cc)
     b_coeff : float
-        Equivalent conductance of clay counter-ions (temperature-dependent)
+        Equivalent conductance of clay counter-ions B, (S/m)/(meq/cm3), i.e.
+        with Rw in ohm.m and Qv in meq/cm3 of pore volume. At 25 degC,
+        B = 4.6 * [1 - 0.6 * exp(-0.77 / Rw)] (Waxman and Smits, 1968), about
+        1.8 in fresh water rising to 4.6 in brine; it increases with
+        temperature (Waxman and Thomas, 1974).
     m_star : float
         Intrinsic cementation exponent from SCAL (default: 2.0)
     n : float

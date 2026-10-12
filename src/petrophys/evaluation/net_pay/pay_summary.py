@@ -14,7 +14,7 @@ from typing import Optional
 
 import numpy as np
 
-from petrophys._internal.analysis_helpers import depth_step_array, get_curve_data_depthwise
+from petrophys._internal.analysis_helpers import cell_thickness, get_curve_data_depthwise
 from petrophys.evaluation.net_pay.cutoffs import standard_cutoffs
 from petrophys.evaluation.net_pay.flags import generate_net_flags
 
@@ -50,8 +50,9 @@ class PaySummary:
     n_samples, n_pay_samples : int
         Samples in the window and in net pay.
     vcl_cutoff, phie_cutoff, sw_cutoff : float
-        Cutoffs applied (net rock: VCL <= cutoff; net reservoir: also
-        PHIE >= cutoff; net pay: also Sw <= cutoff).
+        Cutoffs applied (net rock: VCL < cutoff; net reservoir: also
+        PHIE > cutoff; net pay: also Sw < cutoff). A sample exactly at a
+        cutoff fails that test.
     depth_unit : str
         Unit of the thicknesses.
     net_reservoir, net_pay : numpy.ndarray of bool
@@ -121,7 +122,7 @@ def resolve_windowed_inputs(well, depth, arrays, top=None, bottom=None, depth_un
 
     ``arrays`` maps a label to ``(values_or_None, curve_names)``. Returns
     ``(depth, {label: array}, dz, depth_unit, window_mask)`` with every array
-    restricted to the window; ``dz`` holds each sample's depth increment.
+    restricted to the window; ``dz`` holds each sample's cell thickness.
     """
     if depth is None:
         if well is None or well.depth is None:
@@ -137,7 +138,7 @@ def resolve_windowed_inputs(well, depth, arrays, top=None, bottom=None, depth_un
     }
     if top is not None and bottom is not None and float(top) > float(bottom):
         raise ValueError(f"top ({top}) must not be below bottom ({bottom})")
-    dz = depth_step_array(depth)
+    dz = cell_thickness(depth)
     window = np.isfinite(depth)
     if top is not None:
         window &= depth >= float(top)
@@ -227,11 +228,19 @@ def summarize_pay(
     """Net pay, net-to-gross, pay averages and hydrocarbon pore thickness.
 
     Flags follow :func:`~petrophys.evaluation.net_pay.generate_net_flags`:
-    net rock is ``VCL <= vcl_cutoff``, net reservoir adds
-    ``PHIE >= phie_cutoff`` and net pay adds ``Sw <= sw_cutoff``. Samples
-    with a missing input fail the test that needs it. Each sample counts
+    net rock is ``VCL < vcl_cutoff``, net reservoir adds
+    ``PHIE > phie_cutoff`` and net pay adds ``Sw < sw_cutoff``. A sample
+    exactly at a cutoff fails that test, and samples with a missing input
+    fail the test that needs it. Each sample counts
     with its own depth increment, so irregular sampling and gaps are handled
     as in :func:`~petrophys.evaluation.summaries.calculate_net_gross`.
+
+    The flags are recomputed from the curves with one cutoff set and no
+    exclusions, so they are not an interpretation's ``NET_PAY``:
+    :func:`petrophys.interpret` takes each sample's lithology-family cutoffs
+    and leaves evaporite, coal, halite recognised on the logs and bad-hole
+    samples out. Summarize an interpretation's own flags with
+    ``result.summary(top, bottom)`` or ``result.formation_summary()``.
 
     Parameters
     ----------

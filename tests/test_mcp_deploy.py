@@ -14,6 +14,7 @@ pytest.importorskip("mcp")
 
 from petrophys.mcp import cli  # noqa: E402
 from petrophys.mcp.http import TOKEN_ENV_VAR, build_app, is_loopback  # noqa: E402
+from petrophys.mcp.session import PROFILE_ENV_VAR  # noqa: E402
 
 
 def _free_port():
@@ -76,6 +77,44 @@ def test_bare_root_argument_still_serves_stdio(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "_serve", lambda args: seen.update(vars(args)) or 0)
     assert cli.main(["--root", str(tmp_path)]) == 0
     assert seen["transport"] == "stdio" and seen["root"] == [str(tmp_path)]
+
+
+def test_serve_pins_a_calculation_profile(monkeypatch, capsys, tmp_path):
+    from petrophys.mcp import server
+
+    seen = {}
+
+    class _Server:
+        def run(self):
+            seen["ran"] = True
+
+    def create_server(roots=None, **options):
+        seen.update(options)
+        return _Server()
+
+    monkeypatch.setattr(server, "create_server", create_server)
+    monkeypatch.delenv(PROFILE_ENV_VAR, raising=False)
+    assert cli.main(["serve", "--root", str(tmp_path), "--calculation-profile", "benchmark"]) == 0
+    assert seen == {"calculation_profile": "benchmark", "ran": True}
+
+    seen.clear()
+    monkeypatch.setenv(PROFILE_ENV_VAR, "BENCHMARK")
+    assert cli.main(["--root", str(tmp_path)]) == 0
+    assert seen["calculation_profile"] == "benchmark"
+
+    monkeypatch.setenv(PROFILE_ENV_VAR, "benchmark_rerun")
+    assert cli.main(["serve", "--root", str(tmp_path)]) == 2
+    assert f"{PROFILE_ENV_VAR}='benchmark_rerun' is not a calculation profile" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        cli.main(["serve", "--calculation-profile", "benchmark_rerun"])
+
+    monkeypatch.setenv(PROFILE_ENV_VAR, "may2026")
+    assert cli.main(["serve", "--root", str(tmp_path)]) == 2
+    assert f"{PROFILE_ENV_VAR}='may2026' is not a calculation profile" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        cli.main(["serve", "--calculation-profile", "may2026"])
+    checks = {label: (ok, detail) for ok, label, detail in cli.run_checks([str(tmp_path)])}
+    assert checks["calculation profile"][0] is False
 
 
 @pytest.mark.parametrize("client", cli.CLIENTS)

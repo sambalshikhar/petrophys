@@ -6,7 +6,7 @@ from typing import Optional
 
 import numpy as np
 
-from petrophys._internal.analysis_helpers import depth_step_array
+from petrophys._internal.analysis_helpers import cell_half_lengths
 
 
 def flag_intervals(
@@ -19,10 +19,12 @@ def flag_intervals(
     """List the depth intervals where a flag is set.
 
     Consecutive flagged samples form one interval. Each interval spans the
-    full cells of its samples: from half a sample step above the first
-    flagged sample to half a step below the last, so a single flagged sample
-    has the thickness of one sample step and the thicknesses of contiguous
-    intervals add up to the flagged thickness.
+    full cells of its samples: from halfway to the sample above the first
+    flagged sample to halfway to the sample below the last (next to a data
+    gap, the half step on the other side), so a single flagged sample has the
+    thickness of one sample step, a change of sampling rate is followed
+    exactly, and the thicknesses of contiguous intervals add up to the
+    flagged thickness.
 
     Parameters
     ----------
@@ -36,8 +38,9 @@ def flag_intervals(
     max_gap : float, optional
         Largest distance, in depth units, between two flagged sample depths
         that still joins them into one interval; unflagged samples inside a
-        bridged gap are included in the interval. Defaults to 1.5 median
-        sample steps, which joins only adjacent samples.
+        bridged gap are included in the interval. By default only
+        neighbouring samples whose cells touch are joined: no unflagged
+        sample and no data gap lies between them.
     min_thickness : float, default 0.0
         Drop intervals thinner than this (depth units).
 
@@ -93,24 +96,25 @@ def flag_intervals(
     order = np.argsort(depth[finite], kind="stable")
     sorted_depth = depth[finite][order]
     sorted_flag = flagged[finite][order]
-    dz = depth_step_array(sorted_depth)
-    if max_gap is None:
-        positive = np.diff(sorted_depth)
-        positive = positive[positive > 0]
-        max_gap = 1.5 * float(np.median(positive)) if positive.size else 0.0
-    max_gap = float(max_gap)
-    if not np.isfinite(max_gap) or max_gap < 0:
-        raise ValueError("max_gap must be a non-negative number")
-
+    half_above, half_below = cell_half_lengths(sorted_depth)
     index = np.flatnonzero(sorted_flag)
-    breaks = np.flatnonzero(np.diff(sorted_depth[index]) > max_gap)
+    if max_gap is None:
+        cell_top = sorted_depth - half_above
+        cell_bottom = sorted_depth + half_below
+        touching = cell_top[index[1:]] - cell_bottom[index[:-1]] <= 1e-6
+        breaks = np.flatnonzero(~((np.diff(index) == 1) & touching))
+    else:
+        max_gap = float(max_gap)
+        if not np.isfinite(max_gap) or max_gap < 0:
+            raise ValueError("max_gap must be a non-negative number")
+        breaks = np.flatnonzero(np.diff(sorted_depth[index]) > max_gap)
     starts = np.r_[0, breaks + 1]
     stops = np.r_[breaks, index.size - 1]
     rows = []
     for start, stop in zip(starts, stops):
         first, last = index[start], index[stop]
-        top = sorted_depth[first] - 0.5 * dz[first]
-        bottom = sorted_depth[last] + 0.5 * dz[last]
+        top = sorted_depth[first] - half_above[first]
+        bottom = sorted_depth[last] + half_below[last]
         if bottom - top < min_thickness:
             continue
         rows.append({

@@ -7,10 +7,15 @@ Design doc equations:
 
     Step 2 — Corrected NPHI:
         NPHI_HC = NPHI + phi_N_prelim * (1 - Sxo) * (1 - NeuHyHI)
+
+NeuHyHI is the hydrocarbon hydrogen index: DefaultParameters.OIL_HYDROGEN_INDEX
+(1.0, so oil leaves the neutron unchanged) or GAS_HYDROGEN_INDEX.
 """
 
 from typing import Union, Optional
 import numpy as np
+
+from petrophys.model.constants import DefaultParameters
 
 
 def correct_neutron_hc(
@@ -48,7 +53,11 @@ def correct_neutron_hc(
     float or np.ndarray
         HC-corrected neutron porosity
     """
-    neu_hy_hi = 0.3 if hc_type.lower() == "gas" else 0.8
+    neu_hy_hi = (
+        DefaultParameters.GAS_HYDROGEN_INDEX
+        if hc_type.lower() == "gas"
+        else DefaultParameters.OIL_HYDROGEN_INDEX
+    )
 
     if vcl is not None:
         # Design doc approach with preliminary porosity

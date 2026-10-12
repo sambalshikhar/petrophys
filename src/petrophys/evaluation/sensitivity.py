@@ -144,7 +144,10 @@ def cutoff_sensitivity(
     ...                           vcl_cutoffs=[0.2, 0.4], sw_cutoffs=[0.5, 0.7])
     >>> net = grid.pivot(index="vcl_cutoff", columns="sw_cutoff", values="net_pay_thickness")
     >>> net.to_dict("index")    # rows: VCL cutoff; columns: Sw cutoff
-    {0.2: {0.5: 4.0, 0.7: 6.0}, 0.4: {0.5: 5.0, 0.7: 8.0}}
+    {0.2: {0.5: 3.0, 0.7: 5.0}, 0.4: {0.5: 4.0, 0.7: 7.0}}
+
+    The cutoffs are strict, so the samples at VCL = 0.2 and at Sw = 0.5 or
+    0.7 fail the matching cutoff.
     """
     import pandas as pd
 

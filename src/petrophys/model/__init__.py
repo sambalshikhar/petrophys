@@ -7,6 +7,7 @@ This module provides:
 - DataType: Enumeration for data type classification
 - Units: Unit conversion utilities
 - Constants: Matrix and fluid properties tables
+- Class tables: the canonical classes of each petrophysical property
 """
 
 from petrophys.model.core import CoreData
@@ -23,6 +24,15 @@ from petrophys.model.intervals import (
 from petrophys.model.well import Well
 from petrophys.model.curve import Curve
 from petrophys.model.data_types import DataType
+from petrophys.model.class_tables import (
+    CLASS_TABLES,
+    Bands,
+    ClassTable,
+    ReservoirGrade,
+    ReservoirQualityTable,
+    TwoCurveBands,
+    TwoCurveClassTable,
+)
 from petrophys.model.classifications import (
     VclClassification,
     InvasionClassification,
@@ -51,6 +61,13 @@ __all__ = [
     "PermeabilityClassification",
     "RQIClassification",
     "MhiClassification",
+    "CLASS_TABLES",
+    "ClassTable",
+    "TwoCurveClassTable",
+    "Bands",
+    "TwoCurveBands",
+    "ReservoirQualityTable",
+    "ReservoirGrade",
     "UnitConverter",
     "UnitRegistry",
     "MatrixProperties",

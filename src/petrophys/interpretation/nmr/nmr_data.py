@@ -7,8 +7,9 @@ Bulk Volume Irreducible (MBVI), as produced by Halliburton MRIL-Prime
 and similar tools.
 
 T2 bin centres default to [4, 8, 16, 32, 64, 128, 256, 512] ms with
-a default T2 cutoff of 32 ms (clastic); bins with T2 < cutoff sum to
-MBVI, bins with T2 >= cutoff sum to MFFI.
+a default T2 cutoff of 33 ms (clastic); the bins below the cutoff sum to
+MBVI and those above it to MFFI, and the bin that straddles the cutoff is
+split by log-T2 width.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from petrophys._internal.statistics import finite_min_max
+from petrophys.interpretation.nmr.permeability import t2_fraction_below_cutoff
 
 try:
     import pandas as pd
@@ -41,9 +43,12 @@ DEFAULT_T2_CENTERS = np.array([4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0])
 # Standard CSV column names for the 8 bins
 DEFAULT_BIN_COLS = ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"]
 
-# T2 cutoff defaults (ms)
-T2_CUTOFF_CLASTIC = 32.0  # Gulf of Mexico clastics (matches bin boundary)
-T2_CUTOFF_CARBONATE = 92.0  # Carbonates
+# T2 cutoff defaults (ms): sandstones and carbonates (Coates, Xiao and
+# Prammer, 1999, NMR Logging Principles and Applications). 33 ms falls inside
+# the 32 ms bin of DEFAULT_T2_CENTERS, whose log-T2 boundaries are 22.6 and
+# 45.3 ms.
+T2_CUTOFF_CLASTIC = 33.0
+T2_CUTOFF_CARBONATE = 92.0
 
 CMR_MPHI_ALIASES = ("TCMR", "CMR_TOT", "CMR_TOTAL", "CMRPHI", "NMRP", "PHINMR")
 CMR_MFFI_ALIASES = ("CMFF", "CMR_FFI", "NMR_FFI", "FFI")
@@ -130,7 +135,7 @@ class NMRData:
     t2_centers : np.ndarray
         T2 bin centre times (ms).  Default: [4, 8, 16, 32, 64, 128, 256, 512] ms.
     t2_cutoff : float
-        T2 cutoff separating MBVI from MFFI (ms).  Default: 32 ms.
+        T2 cutoff separating MBVI from MFFI (ms).  Default: 33 ms.
     metadata : dict
         Source file info, well name, etc.
 
@@ -603,42 +608,38 @@ class NMRData:
         self,
         cutoff_ms: Optional[float] = None,
         min_bin_coverage: float = 1.0,
+        partial_bins: bool = True,
     ) -> np.ndarray:
         """
-        Bulk Volume Irreducible from T2 bins (bins with T2 < cutoff).
+        Bulk Volume Irreducible from T2 bins (the bins below the cutoff).
+
+        The bin that straddles the cutoff counts with the part of its log-T2
+        width below it (``t2_fraction_below_cutoff``).
 
         Parameters
         ----------
         cutoff_ms : float, optional
             T2 cutoff (ms).  Defaults to ``self.t2_cutoff``.
+        partial_bins : bool
+            ``False`` counts whole bins with centre < cutoff, the split some
+            vendor summaries use.
         """
         if not self.has_bins:
             raise ValueError("T2 bin data required for bvi_from_bins()")
-        cutoff = cutoff_ms
-        if cutoff is None:
-            cutoff = (
-                self.t2_cutoff_curve
-                if self.t2_cutoff_curve is not None
-                else self.t2_cutoff
-            )
-        if np.isscalar(cutoff):
-            return self._sum_bin_mask(
-                self.t2_centers < float(cutoff), min_bin_coverage
-            )
-
-        cutoff_arr = np.asarray(cutoff, dtype=float)
-        if cutoff_arr.shape != (self.n_samples,):
-            raise ValueError("Per-depth T2 cutoff must match the number of samples")
-        mask = self.t2_centers[None, :] < cutoff_arr[:, None]
-        return self._sum_bin_mask(mask, min_bin_coverage)
+        weights = self._bin_fraction_below(cutoff_ms, partial_bins)
+        return self._sum_bin_mask(weights, min_bin_coverage)
 
     def ffi_from_bins(
         self,
         cutoff_ms: Optional[float] = None,
         min_bin_coverage: float = 1.0,
+        partial_bins: bool = True,
     ) -> np.ndarray:
         """
-        Free Fluid Index from T2 bins (bins with T2 >= cutoff).
+        Free Fluid Index from T2 bins (the bins above the cutoff).
+
+        The complement of :meth:`bvi_from_bins`; ``partial_bins=False`` counts
+        whole bins with centre >= cutoff.
 
         Parameters
         ----------
@@ -647,6 +648,15 @@ class NMRData:
         """
         if not self.has_bins:
             raise ValueError("T2 bin data required for ffi_from_bins()")
+        weights = 1.0 - self._bin_fraction_below(cutoff_ms, partial_bins)
+        return self._sum_bin_mask(weights, min_bin_coverage)
+
+    def _bin_fraction_below(
+        self,
+        cutoff_ms: Optional[float],
+        partial_bins: bool,
+    ) -> np.ndarray:
+        """Fraction of each bin below the cutoff, fixed or per depth."""
         cutoff = cutoff_ms
         if cutoff is None:
             cutoff = (
@@ -655,31 +665,33 @@ class NMRData:
                 else self.t2_cutoff
             )
         if np.isscalar(cutoff):
-            return self._sum_bin_mask(
-                self.t2_centers >= float(cutoff), min_bin_coverage
-            )
-
-        cutoff_arr = np.asarray(cutoff, dtype=float)
-        if cutoff_arr.shape != (self.n_samples,):
-            raise ValueError("Per-depth T2 cutoff must match the number of samples")
-        mask = self.t2_centers[None, :] >= cutoff_arr[:, None]
-        return self._sum_bin_mask(mask, min_bin_coverage)
+            cutoff_arr = np.asarray(float(cutoff))
+        else:
+            cutoff_arr = np.asarray(cutoff, dtype=float)
+            if cutoff_arr.shape != (self.n_samples,):
+                raise ValueError("Per-depth T2 cutoff must match the number of samples")
+        if partial_bins:
+            return t2_fraction_below_cutoff(self.t2_centers, cutoff_arr)
+        with np.errstate(invalid="ignore"):
+            below = self.t2_centers < cutoff_arr[..., None]
+        return np.where(np.isnan(cutoff_arr[..., None]), np.nan, below.astype(float))
 
     def _sum_bin_mask(
         self,
         mask: np.ndarray,
         min_bin_coverage: float,
     ) -> np.ndarray:
-        """Sum fixed or per-depth bin masks with explicit completeness rules."""
+        """Sum the weighted part of each bin (fixed or per depth) with explicit completeness rules."""
         if not 0.0 <= min_bin_coverage <= 1.0:
             raise ValueError("min_bin_coverage must be between 0 and 1")
-        selected = np.asarray(mask, dtype=bool)
-        if selected.ndim == 1:
-            if selected.shape != (self.n_bins,):
+        weights = np.asarray(mask, dtype=float)
+        if weights.ndim == 1:
+            if weights.shape != (self.n_bins,):
                 raise ValueError("T2 bin mask must match t2_centers")
-            selected = np.broadcast_to(selected, self.bins.shape)
-        elif selected.shape != self.bins.shape:
+            weights = np.broadcast_to(weights, self.bins.shape)
+        elif weights.shape != self.bins.shape:
             raise ValueError("Per-depth T2 bin mask must match bins shape")
+        selected = weights > 0.0
 
         selected_count = np.count_nonzero(selected, axis=1)
         finite_count = np.count_nonzero(selected & np.isfinite(self.bins), axis=1)
@@ -689,7 +701,7 @@ class NMRData:
             out=np.ones(self.n_samples, dtype=float),
             where=selected_count > 0,
         )
-        result = np.nansum(np.where(selected, self.bins, np.nan), axis=1)
+        result = np.nansum(np.where(selected, weights * self.bins, np.nan), axis=1)
         result[selected_count == 0] = 0.0
         result[coverage < min_bin_coverage] = np.nan
         return result

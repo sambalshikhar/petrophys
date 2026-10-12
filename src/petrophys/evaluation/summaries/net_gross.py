@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from petrophys._internal.analysis_helpers import (
-    depth_step_array,
+    cell_thickness,
     resolve_well_depth_range,
     well_depth_array,
 )
@@ -69,7 +69,7 @@ def calculate_net_gross(
 
     # Get depth mask
     mask = (depth >= top_depth) & (depth <= bottom_depth)
-    sample_thickness = depth_step_array(depth)
+    sample_thickness = cell_thickness(depth)
     gross_thickness = float(np.sum(sample_thickness[mask]))
     if gross_thickness <= 0 and np.any(mask):
         gross_thickness = abs(bottom_depth - top_depth)

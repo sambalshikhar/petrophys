@@ -211,11 +211,12 @@ def calibrate_coates(
     Calibrate Timur-Coates parameters against core permeability.
 
     **Fixed exponents** (default, ``fit_exponents=False``)
-        Only the constant *c* is fitted (a=4, b=2 fixed).  Closed-form:
+        Only the constant *c* is fitted (a=4, b=2 fixed).  Solving
+        :math:`k = (\\phi/c)^a (FFI/BVI)^b` for *c* at each core point and
+        averaging in log space gives the closed form:
 
         .. math::
-            \\log_{10} c = \\frac{1}{4}
-            \\left(
+            \\log_{10} c = \\operatorname{mean}\\left(
                 \\log_{10} \\phi + \\frac{b}{a} \\log_{10}\\!\\frac{FFI}{BVI}
                 - \\frac{1}{a} \\log_{10} k_{core}
             \\right)

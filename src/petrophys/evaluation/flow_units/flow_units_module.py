@@ -128,8 +128,14 @@ def assign_flow_units(
 
     Returns
     -------
-    (labels, unit_mean_fzi, boundaries)
-        ``labels`` is 1..n_units for finite FZI, 0 where FZI is not finite.
+    labels : numpy.ndarray
+        Unit of each sample, 1..n_units; 0 where FZI is missing or not
+        positive.
+    unit_mean_fzi : numpy.ndarray
+        Geometric mean FZI of each unit.
+    boundaries : numpy.ndarray
+        FZI boundaries between adjacent units: the sorted cutoffs, or the
+        geometric midpoints between the k-means unit centres.
     """
     fzi = np.asarray(fzi, dtype=float)
     labels = np.zeros(fzi.shape, dtype=int)

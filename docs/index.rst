@@ -20,8 +20,9 @@ From measurements to decisions
 
 Petrophys keeps the scientific calculations accessible as independent Python
 functions while also providing an input-aware workflow for complete wells.
-Recognized curve aliases and units are standardized before interpretation;
-every executed, skipped, or warning-producing step is recorded in the result.
+By default, recognized curve aliases and units are standardized and
+implausible values screened before interpretation; every executed, skipped, or
+warning-producing step is recorded in the result.
 
 .. figure:: _static/petrophys-heimdal-formation.png
    :alt: Multi-track Petrophys interpretation of the 15/9-17 Heimdal Formation

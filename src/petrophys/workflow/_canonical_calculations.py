@@ -1,4 +1,10 @@
-"""Canonical saturation calculations.
+"""Canonical saturation calculations of the benchmark calculation profile.
+
+The ``"benchmark"`` calculation profile reproduces the GeoLink eval package,
+whose shaly-sand saturation used the Indonesia and Dual Water variants below.
+They are not the published equations: the ``"current"`` profile uses
+:func:`~petrophys.interpretation.saturation.indonesia` (Poupon and Leveaux,
+1971) and :func:`~petrophys.interpretation.saturation.dual_water` instead.
 
 The canonical mineral inversion is
 :class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`.
@@ -16,7 +22,18 @@ CALCULATION_REVISION = "canonical"
 
 
 def canonical_indonesia(rt, rw, phi, vcl, rcl, a=1.0, m=2.0, n=2.0):
-    """Calculate Indonesia water saturation in the canonical operation order."""
+    """Indonesia variant of the benchmark profile, with Sw on the sand term only.
+
+    Solves ``1/sqrt(Rt) = Vcl^(1-Vcl/2)/sqrt(Rcl) + phi^(m/2)/sqrt(a*Rw) * Sw^(n/2)``:
+    the clay term carries no ``Sw^(n/2)``, so it is subtracted from
+    ``1/sqrt(Rt)`` and Sw is 0 wherever the clay term alone reaches
+    ``1/sqrt(Rt)``. This is the Nigeria-Schlumberger form with shale exponent
+    ``1 - Vcl/2``, not the Indonesia equation of Poupon and Leveaux (1971),
+    which multiplies both terms by ``Sw^(n/2)``
+    (:func:`~petrophys.interpretation.saturation.indonesia`). In shaly rock it
+    gives a lower Sw: 0.069 against 0.275 at Rt=10, Rw=0.05, phi=0.2, Vcl=0.3,
+    Rcl=2 and a=1, m=n=2.
+    """
     rt = np.asarray(rt, dtype=float)
     phi = np.asarray(phi, dtype=float)
     rt = np.where(rt <= 0, 1e-10, rt)
@@ -38,7 +55,14 @@ def canonical_indonesia(rt, rw, phi, vcl, rcl, a=1.0, m=2.0, n=2.0):
 
 
 def canonical_dual_water(phi_t, rt, rw, rwb, vcl, phi_cl, a=1.0, m=2.0, n=2.0):
-    """Calculate Dual Water saturation in the canonical operation order."""
+    """Dual Water variant of the benchmark profile.
+
+    :func:`~petrophys.interpretation.saturation.dual_water` with the apparent
+    water resistivity mixed from the raw bound-water saturation
+    ``Swb = Vcl * phi_cl / phi_t``, which exceeds 1 where
+    ``Vcl * phi_cl > phi_t``; Swb is capped below 1 only for the final
+    ``(Swt - Swb) / (1 - Swb)``.
+    """
     phi_bw = vcl * phi_cl
     phi_t_safe = np.where(phi_t <= 0, 1e-10, phi_t)
     swb = phi_bw / phi_t_safe
@@ -49,7 +73,17 @@ def canonical_dual_water(phi_t, rt, rw, rwb, vcl, phi_cl, a=1.0, m=2.0, n=2.0):
 
 
 class CanonicalSaturationModule(SaturationModule):
-    """Use canonical Indonesia and Dual Water equations within current routing."""
+    """Saturation routing of the benchmark profile.
+
+    :class:`~petrophys.interpretation.saturation.SaturationModule` with the
+    Indonesia and Dual Water variants of this module. Dual Water takes
+    Rwb = 0.3 Rw when no Rwb is given, and Waxman-Smits returns the
+    total-porosity Sw with CEC in meq/g.
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.update(rwb_fallback=0.3, effective_waxman_smits=False)
+        super().__init__(*args, **kwargs)
 
     def _run_model(
         self,
@@ -72,6 +106,7 @@ class CanonicalSaturationModule(SaturationModule):
         a_value=None,
         m_value=None,
         n_value=None,
+        clip_counts=None,
     ):
         a_value = self.a if a_value is None else a_value
         m_value = self.m if m_value is None else m_value
@@ -106,4 +141,5 @@ class CanonicalSaturationModule(SaturationModule):
             a_value,
             m_value,
             n_value,
+            clip_counts=clip_counts,
         )

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional
 
 import numpy as np
 
+from petrophys._internal.analysis_helpers import cell_thickness
 from petrophys._internal.serialization import curve_statistics, depth_mask, json_object
 
 if TYPE_CHECKING:
@@ -36,16 +37,23 @@ def curve_results(well: "Well", names: Iterable[str], mask: np.ndarray) -> Dict[
     return results
 
 
-def net_thickness(well: "Well", mask: np.ndarray) -> Dict[str, Any]:
-    """Thickness flagged by each net flag over ``mask``, rounded to 0.01 depth units."""
+def net_thickness(well: "Well", mask: np.ndarray, cells: bool = True) -> Dict[str, Any]:
+    """Thickness flagged by each net flag over ``mask``, rounded to 0.01 depth units.
+
+    Each flagged sample counts with its midpoint cell from the actual depths,
+    or, with ``cells=False`` (the benchmark calculation profile), with the
+    well's depth step, as the net-pay trace counts it.
+    """
     thickness: Dict[str, Any] = {"depth_unit": well.depth_unit}
+    if well.step is None:
+        return thickness
+    cell = cell_thickness(well.depth)[mask] if cells else None
     for flag in NET_FLAGS:
         curve = well.get(flag)
-        if curve is not None and well.step is not None:
-            values = np.asarray(curve.data, dtype=float)[mask]
-            thickness[flag.lower()] = round(
-                float(np.count_nonzero(values == 1) * abs(float(well.step))), 2
-            )
+        if curve is not None:
+            flagged = np.asarray(curve.data, dtype=float)[mask] == 1
+            total = np.sum(cell[flagged]) if cells else np.count_nonzero(flagged) * abs(float(well.step))
+            thickness[flag.lower()] = round(float(total), 2)
     return thickness
 
 
@@ -56,7 +64,7 @@ def summarize_result(
 ) -> Dict[str, Any]:
     """Summarize an interpretation; see :meth:`DynamicWorkflowResult.summary`."""
     from petrophys.version import __version__
-    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
+    from petrophys.workflow.dynamic_workflow import _BENCHMARK_PROFILES, DynamicWorkflowConfig
 
     well = result.well
     mask = depth_mask(well.depth, top, bottom)
@@ -80,7 +88,9 @@ def summarize_result(
         "settings_used": settings,
         "summary_interval": {"top": top, "bottom": bottom, "depth_unit": well.depth_unit},
         "key_results": curve_results(well, SUMMARY_CURVES, mask),
-        "net_thickness": net_thickness(well, mask),
+        "net_thickness": net_thickness(
+            well, mask, cells=result.config.calculation_profile not in _BENCHMARK_PROFILES
+        ),
         "executed_steps": [
             {"name": step.step, "method": step.method, "success": step.success}
             for step in result.steps_executed

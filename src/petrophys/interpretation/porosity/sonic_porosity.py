@@ -2,7 +2,8 @@
 Sonic porosity calculation.
 
 This module provides sonic-derived porosity using the
-Wyllie time-average equation.
+Wyllie time-average equation. The Raymer-Hunt-Gardner transform is not
+implemented.
 """
 
 from typing import Union
@@ -74,7 +75,7 @@ def sonic_porosity(
     Returns
     -------
     float or np.ndarray
-        Sonic porosity
+        Sonic porosity, (Wyllie porosity) / Cp limited to 0-0.5
     """
     matrix_slowness = {
         "sandstone": 55.5,
@@ -84,11 +85,12 @@ def sonic_porosity(
     }
 
     dtc_matrix = matrix_slowness.get(matrix.lower(), 55.5)
-    phis = wyllie_time_average(dtc, dtc_matrix, dtc_fluid)
-
-    # Apply compaction correction
-    if compaction_factor != 1.0:
-        phis = phis / compaction_factor
+    # The compaction factor Cp divides the time-average porosity (Hilchie,
+    # 1978). Scaling the fluid-matrix slowness contrast by Cp does that before
+    # the 0-0.5 limits, so uncompacted rock is not capped at 0.5 / Cp.
+    phis = wyllie_time_average(
+        dtc, dtc_matrix, dtc_matrix + compaction_factor * (dtc_fluid - dtc_matrix)
+    )
 
     return phis
 

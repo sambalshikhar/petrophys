@@ -31,3 +31,12 @@ def test_bands_of():
     assert bands_of(SaturationAnalysis, "BVW_BANDS").edges == (0.03, 0.06, 0.10)
     with pytest.raises(ValueError, match="no Bands named"):
         bands_of(SaturationAnalysis, "NOPE")
+
+
+def test_porosity_analysis_without_any_porosity_curve():
+    from petrophys.model.well import Well
+    well = Well("NO-POROSITY")
+    well.add_curve("DEPT", np.arange(1000.0, 1003.0), "m", "Depth")
+    well.add_curve("GR", np.array([40.0, 80.0, 120.0]), "API", "Gamma Ray")
+    result = PorosityAnalysis().analyze(well, add_curves=False)
+    assert result is not None

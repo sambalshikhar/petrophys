@@ -93,7 +93,9 @@ def config_schema() -> List[Dict[str, Any]]:
         ``group`` (the section it belongs to, such as ``"Formation water"``),
         ``type`` (as written in the source), ``default`` (JSON-serializable),
         ``description`` and, for settings with a fixed set of values,
-        ``choices``.
+        ``choices``. Settings whose default (None) depends on
+        ``calculation_profile`` also list ``profile_defaults``, the value
+        each profile uses; None there means the description's rule applies.
 
     Examples
     --------
@@ -102,6 +104,8 @@ def config_schema() -> List[Dict[str, Any]]:
     >>> rw["description"].startswith("Formation water resistivity")
     True
     """
+    from petrophys.workflow import dynamic_workflow as workflow
+
     descriptions = _field_comments(DynamicWorkflowConfig)
     groups = _field_groups(DynamicWorkflowConfig)
     choices = _field_choices()
@@ -123,6 +127,12 @@ def config_schema() -> List[Dict[str, Any]]:
         }
         if item.name in choices:
             entry["choices"] = list(choices[item.name])
+        if item.name in workflow._PROFILE_DEFAULTS:
+            current, benchmark = workflow._PROFILE_DEFAULTS[item.name]
+            entry["profile_defaults"] = {
+                profile: benchmark if profile in workflow._BENCHMARK_PROFILES else current
+                for profile in workflow._CALCULATION_PROFILES
+            }
         schema.append(entry)
     return schema
 
@@ -194,6 +204,7 @@ def _field_choices() -> Dict[str, Sequence[str]]:
         "swirr_flag_phi_cl": workflow._SWIRR_FLAG_PHI_CL,
         "calculation_profile": workflow._CALCULATION_PROFILES,
         "mineral_solver_version": workflow._MINERAL_SOLVER_VERSIONS,
+        "carbonate_calibration": workflow._CARBONATE_CALIBRATIONS,
         "gr_method": GR_VCL_METHODS,
         "perm_method": PERMEABILITY_METHODS,
         "perm_fallback_method": tuple(m for m in PERMEABILITY_METHODS if m != "auto"),

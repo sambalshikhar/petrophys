@@ -5,9 +5,9 @@ dropped: on real data a single bad PEF curve produced confidently-wrong answers,
 while the two sources below agreed with vendor ground truth):
 
   0. Vendor lithology log  -- a per-sample lithology-code curve in the LAS
-       (e.g. LITHOLOGY_GEOLINK), decoded via LITHOLOGY_CODE_CLASS. Read up front,
-       so it can drive the N-D VCL clean line, porosity matrix, Sw routing and
-       net-pay cutoffs for the whole run.
+       (e.g. LITHOLOGY_GEOLINK; see :func:`lithology_code_curve`), decoded via
+       LITHOLOGY_CODE_CLASS. Read up front, so it can drive the N-D VCL clean
+       line, porosity matrix, Sw routing and net-pay cutoffs for the whole run.
   1. Core-porosity matrix density -- apparent matrix density from CORE porosity
        (PHIE_CC/CPOR), rho_ma = (RHOB - phi*rho_fl)/(1 - phi). Knowing the true
        porosity pins the matrix and breaks the quartz/calcite degeneracy WITHOUT
@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 import warnings
 
 import numpy as np
@@ -64,6 +64,13 @@ LITHOLOGY_CODE_CLASS: Dict[int, str] = {
     32: "evaporite", 33: "evaporite", 34: "evaporite",
     35: "clastic", 36: "clastic",                        # aeolian sst / arkose
 }
+
+#: The GeoLink/Kingdom lithology code curve.
+GEOLINK_LITHOLOGY_CURVE = "LITHOLOGY_GEOLINK"
+
+#: Key of the ``_geology_context`` well parameter under which the dynamic
+#: workflow records the lithology code curve it read (None when it found none).
+CODE_CURVE_RECORD = "lithology_code_curve"
 
 # Known curve names that hold a vendor lithology-code log. The detector also
 # falls back to a name pattern (*LITH*/*FACIES*) validated as a code log, so this
@@ -208,9 +215,117 @@ def _find_vendor_lithology_codes(well) -> Optional[np.ndarray]:
     return None
 
 
-def resolve_from_lithology_log(well, warn: bool = True) -> Optional[LithologyResolution]:
-    """Tier 0: classify from a vendor per-sample lithology-code log, if present."""
-    codes = _find_vendor_lithology_codes(well)
+def _finite_curve(well, name: str):
+    """The curve ``name`` of ``well`` when it has a finite sample, else None."""
+    curve = well.get(name)
+    if curve is None or getattr(curve, "data", None) is None:
+        return None
+    try:
+        data = np.asarray(curve.data, dtype=float)
+    except (TypeError, ValueError):
+        return None
+    return curve if bool(np.any(np.isfinite(data))) else None
+
+
+def lithology_code_curve(
+    well, explicit: Optional[str] = None, allow_aliases: bool = True,
+) -> Optional[Tuple[str, Any]]:
+    """Find the per-sample lithology code curve of a well.
+
+    The curve is, in this order:
+
+    1. ``explicit``, a curve the caller names, when it has a finite sample;
+    2. ``LITHOLOGY_GEOLINK`` with a finite sample, read as it stands;
+    3. with ``allow_aliases``, the first other lithology-code mnemonic
+       (``LITHOLOGY``, ``LITHOFACIES``, ``FACIES``, ``LITH_CODE``, ...) whose
+       curve holds lithology codes: 20 or more finite samples, whole numbers
+       from 0 to 99 with at most 50 distinct values, half or more of the
+       samples GeoLink codes.
+
+    No other name pattern is tried, so the workflow's computed ``LITHO`` and
+    ``LITHO_CLASS`` and the ``GT_*`` group curves are never found. Whatever
+    the curve is called, its codes are decoded with the GeoLink/Kingdom code
+    table (:data:`LITHOLOGY_CODE_CLASS`).
+
+    Returns
+    -------
+    tuple or None
+        ``(mnemonic, curve)``, the mnemonic in capitals as the well keys it,
+        or None when no curve qualifies.
+    """
+    if explicit is not None and str(explicit).strip():
+        name = str(explicit).strip().upper()
+        curve = _finite_curve(well, name)
+        if curve is not None:
+            return name, curve
+    curve = _finite_curve(well, GEOLINK_LITHOLOGY_CURVE)
+    if curve is not None:
+        return GEOLINK_LITHOLOGY_CURVE, curve
+    if allow_aliases:
+        for alias in _VENDOR_LITHOLOGY_ALIASES:
+            if alias == GEOLINK_LITHOLOGY_CURVE:
+                continue
+            curve = well.get(alias)
+            if curve is not None and _validate_lithology_codes(well, alias) is not None:
+                return alias, curve
+    return None
+
+
+def _recorded_code_curve(well) -> Tuple[bool, Optional[str]]:
+    """Whether the workflow recorded ``well``'s lithology code curve, and its mnemonic."""
+    get_parameter = getattr(well, "get_parameter", None)
+    context = get_parameter("_geology_context") if callable(get_parameter) else None
+    if not isinstance(context, dict) or CODE_CURVE_RECORD not in context:
+        return False, None
+    name = context[CODE_CURVE_RECORD]
+    return True, (str(name) if name else None)
+
+
+def interpreted_lithology_code_curve(well) -> str:
+    """Mnemonic of the lithology code curve the interpretation of ``well`` read.
+
+    The dynamic workflow records its curve (:func:`lithology_code_curve`) on
+    the wells it interprets under the ``"current"`` calculation profile, or
+    with ``lithology_curve`` set, and slices of the well keep the record.
+    Without a record, or when the run found no code curve, this is
+    ``LITHOLOGY_GEOLINK``, the only curve the benchmark profile reads.
+    """
+    return _recorded_code_curve(well)[1] or GEOLINK_LITHOLOGY_CURVE
+
+
+def find_lithology_code_curve(well) -> Optional[str]:
+    """Mnemonic of the lithology code curve to read on ``well``, or None.
+
+    The curve the interpretation of the well recorded, when it carries a
+    record (see :func:`interpreted_lithology_code_curve`); otherwise
+    :func:`lithology_code_curve` with the lithology-code mnemonics.
+    """
+    recorded, name = _recorded_code_curve(well)
+    if recorded:
+        return name
+    found = lithology_code_curve(well)
+    return found[0] if found else None
+
+
+def resolve_from_lithology_log(
+    well, warn: bool = True, code_curve: Optional[str] = None,
+) -> Optional[LithologyResolution]:
+    """Tier 0: classify from a vendor per-sample lithology-code log, if present.
+
+    ``code_curve`` names the curve to classify. Without it, a well the dynamic
+    workflow interpreted is classified from the code curve the run recorded
+    (none when it found none), and any other well from the first curve that
+    holds lithology codes among the lithology-code mnemonics and then any name
+    containing LITH or FACIES.
+    """
+    if code_curve is None:
+        recorded, code_curve = _recorded_code_curve(well)
+        if recorded and code_curve is None:
+            return None
+    if code_curve is None:
+        codes = _find_vendor_lithology_codes(well)
+    else:
+        codes = _validate_lithology_codes(well, code_curve)
     if codes is None or codes.size < _MIN_SAMPLES:
         return None
     classes = [LITHOLOGY_CODE_CLASS.get(int(c), "other") for c in codes]

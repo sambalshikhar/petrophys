@@ -252,10 +252,16 @@ def interpret(
 ) -> "DynamicWorkflowResult":
     """Run the full petrophysical interpretation on one well.
 
-    The workflow checks which curves and parameters are available and runs
-    every step it can (clay volume, porosity, water saturation, permeability,
-    net pay, ...). Steps that cannot run are skipped with a recorded reason
-    rather than filled with invented defaults.
+    The workflow standardizes vendor mnemonics and units, checks which curves
+    and parameters are available and runs every step it can (clay volume,
+    porosity, water saturation, permeability, net pay, ...). Steps that cannot
+    run are skipped with a recorded reason. Where a step has to assume a value
+    (a default Rw, a 30 C/km temperature gradient, ...), the trace records it
+    and ``result.warnings`` says so; no bit size is assumed. The benchmark
+    calculation profile (``calculation_profile``) keeps the eval package's
+    behaviour instead: no standardization, an 8.5 in bit size where the well
+    records none, and of these assumptions only the default Rw is warned
+    about.
 
     Parameters
     ----------
@@ -300,6 +306,8 @@ def interpret(
     'interpreted'
     """
     from petrophys.workflow.dynamic_workflow import (
+        _BENCHMARK_PROFILES,
+        _PROFILE_DEFAULTS,
         DynamicWorkflowConfig,
         run_dynamic_workflow,
     )
@@ -325,7 +333,10 @@ def interpret(
         if not inplace:
             well = deepcopy(well)
 
-    metadata_options, _ = _extract_global_parameter_overrides(well)
+    profile = str(
+        options.get("calculation_profile", getattr(config, "calculation_profile", "current"))
+    ).strip().lower()
+    metadata_options, _ = _extract_global_parameter_overrides(well, calculation_profile=profile)
     # These values have native LAS routes in DynamicWorkflow. Leaving them on
     # the well preserves source provenance (for example, ``las.RW`` instead of
     # ``config.rw``) and lets each step apply its own unit/reference handling.
@@ -348,6 +359,9 @@ def interpret(
             name: value
             for name, value in metadata_options.items()
             if getattr(config, name, None) is None
+            # Under the benchmark profile an unset cutoff already holds its
+            # profile default (VCL 0.3, SW 0.7), which a header does not replace.
+            and not (profile in _BENCHMARK_PROFILES and name in _PROFILE_DEFAULTS)
         }
         settings.update(options)
         if "lithology_domain" in settings and "lithology" not in settings:

@@ -14,7 +14,6 @@ from petrophys.interpretation.temperature.temp_corrections import (
     correct_resistivity_temperature,
     arps_equation,
 )
-from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -150,7 +149,8 @@ class RmfModule:
         well : Well
             Well object with header info and temperature curve
         temperature_curve : str
-            Name of temperature curve
+            Name of temperature curve; a degC or K unit label is converted
+            to degF
 
         Returns
         -------
@@ -165,18 +165,10 @@ class RmfModule:
         if rmf_surface is None and rm_surface is None:
             raise ValueError("No Rmf or Rm in well header")
 
-        # Get formation temperature
-        temp_formation, _, _ = get_curve_data_depthwise(well, [temperature_curve, "TEMP", "TMPC"])
-        if temp_formation is not None:
-            pass
-        else:
-            try:
-                from petrophys.interpretation.temperature import calculate_temperature_profile
+        # Get formation temperature (degF), from the curve's own unit label
+        from petrophys.interpretation.temperature.temp_profile import _formation_temperature_f
 
-                temp_formation = calculate_temperature_profile(well).temperature
-            except Exception:
-                # Use BHT as constant when no depth is available for a profile
-                temp_formation = well.header.bht or 150.0
+        temp_formation = _formation_temperature_f(well, [temperature_curve, "TEMP", "TMPC"])
 
         return self.calculate(
             rmf_surface=rmf_surface,

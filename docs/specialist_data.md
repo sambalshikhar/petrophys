@@ -16,10 +16,14 @@ NMR, spectral gamma, core, saturation-height and borehole-image data each have t
 :tags: [remove-cell]
 
 %matplotlib inline
+import textwrap
 import warnings
 
 import matplotlib.pyplot as plt
 
+# Warnings wrapped and without file paths.
+warnings.formatwarning = lambda message, category, *args, **kwargs: textwrap.fill(
+    f"{category.__name__}: {message}", 88, subsequent_indent="    ") + "\n"
 # 30/6-5 labels its percent core saturations (SWC, SOC) as fractions; Petrophys
 # converts them to v/v and warns. The page explains this once, in the text.
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
@@ -45,6 +49,7 @@ plt.show()
 ```
 
 {class}`~petrophys.interpretation.nmr.NMRData` loads the same file to compute bound fluid (`MPHI - MFFI`), irreducible saturation and permeability.
+The default T2 cutoff is 33 ms, the sandstone value (92 ms for carbonates; Coates, Xiao and Prammer, 1999). With T2 bins, the bin that straddles the cutoff counts with the part of its log-T2 width below it; `partial_bins=False` counts whole bins instead, as some vendor summaries do.
 
 ```{code-cell} python
 nmr = NMRData.from_las(pp.sample("daydream1_cmr"),
@@ -187,6 +192,7 @@ Core saturation stays calibration evidence; it does not replace the log Sw curve
 ## Saturation-height: HW-3
 
 A Leverett J-function fitted to porosity, permeability and log Sw predicts Sw from height above the free-water level (FWL). HW-3 covers only the Kharaib-2 carbonate. Its FWL is assumed 20 ft below the deepest valid sample, not picked from pressures.
+HW-3 has no TVD curve, so `saturation_height_from_logs` takes the depth index as true vertical depth and warns that this holds for a vertical well only; for a deviated well, pass `tvd_curve`.
 
 ```{code-cell} python
 from petrophys.interpretation.saturation.height import (
@@ -331,8 +337,10 @@ pressure reference and reservoir selection remain necessary for either mode.
 
 Pressure alone does not determine a saturation-height function. Capillary-pressure
 or rock-property calibration and fluid properties are still required.
-`saturation_height_from_logs` accepts `fwl_depth` as an input on a matching datum
-and units; neither of these contacts applies to the separate HW-3 example.
+`saturation_height_from_logs` takes `fwl_depth` in the unit of the well's depth
+index, or of `tvd_curve` when one is given, and on the same datum; it converts
+heights in metres to feet for the capillary relation itself. Neither of these
+contacts applies to the separate HW-3 example.
 
 Sonic saturation (`petrophys.interpretation.saturation.sonic`) estimates Sw without resistivity, by Gassmann substitution, and says when the fluid effect is undetectable.
 

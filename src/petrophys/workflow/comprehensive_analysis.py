@@ -24,15 +24,27 @@ def run_comprehensive_analysis(
     well: "Well",
     add_curves: bool = True,
     store_results: bool = True,
+    class_tables: str = "current",
+    lithology_family=None,
 ) -> ComprehensiveAnalysisResult:
-    """Run all document-aligned analysis categories."""
+    """Run all document-aligned analysis categories.
+
+    ``class_tables`` is passed to the diagnostics analyzers: ``"current"``
+    (default) classifies with the canonical tables of
+    :data:`~petrophys.model.class_tables.CLASS_TABLES`, so a property gets the
+    same class in every category; ``"benchmark"`` keeps the GeoLink eval
+    package's tables. ``lithology_family`` (``"clastic"``, ``"carbonate"`` or
+    a lithology, for every sample or one per sample; default clastic) selects
+    the limits of the reservoir-quality table under ``"current"``.
+    """
+    graded = {"class_tables": class_tables, "lithology_family": lithology_family}
     qc = WellboreQC().analyze(well, add_curves=add_curves)
     numerical = NumericalStatisticalAnalysis().analyze(well, add_curves=add_curves)
-    lithology = LithologyAnalysis().analyze(well, add_curves=add_curves)
-    porosity = PorosityAnalysis().analyze(well, add_curves=add_curves)
-    permeability = PermeabilityAnalysis().analyze(well, add_curves=add_curves)
-    saturation = SaturationAnalysis().analyze(well, add_curves=add_curves)
-    hydrocarbon = HydrocarbonAnalysis().analyze(well, add_curves=add_curves)
+    lithology = LithologyAnalysis(**graded).analyze(well, add_curves=add_curves)
+    porosity = PorosityAnalysis(**graded).analyze(well, add_curves=add_curves)
+    permeability = PermeabilityAnalysis(**graded).analyze(well, add_curves=add_curves)
+    saturation = SaturationAnalysis(class_tables=class_tables).analyze(well, add_curves=add_curves)
+    hydrocarbon = HydrocarbonAnalysis(**graded).analyze(well, add_curves=add_curves)
 
     result = ComprehensiveAnalysisResult(
         categories={

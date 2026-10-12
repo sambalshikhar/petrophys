@@ -43,10 +43,14 @@ print("30/6-5 interpreted:", result.status, "|", len(result.steps_executed), "st
 | --- | --- |
 | Lithology domain | The mineral model for the whole run: `clastic`, `carbonate`, `evaporite` or `auto` (`lithology_domain`). Not a per-depth label. |
 | Lithology intervals | Optional per-depth rock labels from a table. They override labels in the LAS and from the mineral solve. |
+| Lithology code curve | A per-sample curve of lithology codes in the LAS: the curve named by `lithology_curve`, else `LITHOLOGY_GEOLINK`, else a curve under another lithology-code name such as `LITHOLOGY` or `FACIES`. Its codes are decoded with the GeoLink/Kingdom code table; see {doc}`input_templates`. |
 | Formations | Optional named depth intervals (groups, formations, members) for summaries, plots and core calibration. |
 | Rw | Formation-water resistivity in ohm.m, at a stated temperature (`rw_meas_temp_f`). The workflow corrects it to formation temperature. |
-| Cutoffs | Limits on clay volume, porosity and water saturation (`vcl_cutoff`, `phie_cutoff`, `sw_cutoff`). |
-| Net rock, reservoir, pay | Samples passing the clay cutoff; then also the porosity cutoff; then also the saturation cutoff. |
+| Cutoffs | Limits on clay volume, porosity and water saturation (`vcl_cutoff`, `phie_cutoff`, `sw_cutoff`). Left unset, each sample takes the standard of its lithology family, clastic or carbonate. |
+| Net rock, reservoir, pay | Samples passing the clay cutoff; then also the porosity cutoff; then also the saturation cutoff. Evaporite, coal, halite recognized on the logs and bad-hole samples are never net reservoir or pay. |
+| Bad hole | `BAD_HOLE` = 1: the caliper reads more than 1.5 in over the bit size, the bit is larger than 17.5 in, or the absolute density correction DRHO is above 0.15 g/cm3. The caliper and bit-size tests run only where a bit size is known; see {doc}`data_quality`. |
+| Class tables | The classes each property is graded into, such as `CLEAN_FORMATION` for clay volume or `GOOD_RESERVOIR` for reservoir quality, with a `NO_*_DATA` label where a value is missing: `CLASS_TABLES` in `petrophys.model`. Context labels and the diagnostics analyzers use them; see {doc}`context`. |
+| Calculation profile | Which calculations a run uses (`calculation_profile`): `"current"` (the default), or `"benchmark"`, which keeps the calculations of the GeoLink eval context package; see {ref}`calculation profiles <calculation-profiles>`. |
 | Trace | The record of a run: each step's status, method, inputs, outputs, parameters and decisions. |
 | Context | A compact JSON summary of an interpreted well for LLMs and other tools; see {doc}`context`. |
 

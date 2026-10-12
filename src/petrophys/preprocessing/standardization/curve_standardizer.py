@@ -18,10 +18,13 @@ from petrophys.preprocessing.standardization.alias_map import (
     ALIAS_MAP,
 )
 from petrophys.preprocessing.standardization.unit_converter import (
+    _converts_temperature,
     convert_curve_units,
+    convert_units,
     standardize_units,
     get_conversion_factor,
 )
+from petrophys.model.units import UnitConverter, temperature_unit
 
 if TYPE_CHECKING:
     from petrophys.model.curve import Curve
@@ -78,6 +81,10 @@ CURVE_PLAUSIBLE_RANGES = {
     "SEALFLAG": (0.0, 1.0),
     "CROSSOVER_FLAG": (0.0, 1.0),
 }
+
+#: Curves whose plausible range above is in degF; a curve labelled in another
+#: temperature scale is screened against the range converted to that scale.
+TEMPERATURE_CURVES = {"TEMP", "TMPC"}
 
 POROSITY_FRACTION_CURVES = {
     "NPHI",
@@ -191,17 +198,35 @@ def _unit_scale_hint(values: np.ndarray, low: float, high: float) -> str:
     return ""
 
 
+def _range_screening_message(mnemonic: str, report: Dict[str, Any]) -> str:
+    """Warning text for a curve whose range screening removed most samples."""
+    message = (
+        f"{mnemonic}: {report['masked']} of {report['finite']} samples are outside the "
+        f"plausible {report['standard_curve']} range {report['low']:g} to {report['high']:g} "
+        f"{report['unit'] or ''}".rstrip()
+        + " and were removed"
+    )
+    if report["hint"]:
+        message += f"; {report['hint']}, check the unit label {report['source_unit']!r}"
+    return message + "."
+
+
 def _screen_standard_curve_values(
-    curve: "Curve", standard_name: str, source_unit: Optional[str] = None
+    curve: "Curve",
+    standard_name: str,
+    source_unit: Optional[str] = None,
+    plausible_ranges: Optional[Dict[str, tuple]] = None,
 ) -> "Curve":
     """Mask physically implausible standardized curve values.
 
     Masked samples are recorded in ``curve.metadata.custom["range_screening"]``.
     When most samples are implausible, which usually means a wrong unit
     label, a :class:`~petrophys.exceptions.DataQualityWarning` is raised.
+    ``plausible_ranges`` replaces :data:`CURVE_PLAUSIBLE_RANGES`.
     """
     name = standard_name.upper()
-    limits = CURVE_PLAUSIBLE_RANGES.get(name)
+    ranges = CURVE_PLAUSIBLE_RANGES if plausible_ranges is None else plausible_ranges
+    limits = ranges.get(name)
     if limits is None:
         return curve
 
@@ -210,6 +235,9 @@ def _screen_standard_curve_values(
     data = _maybe_convert_percent_porosity(data, name)
 
     low, high = limits
+    scale = temperature_unit(curve.unit) if name in TEMPERATURE_CURVES else None
+    if scale in ("C", "K"):
+        low, high = (float(UnitConverter.temperature(limit, "F", scale)) for limit in limits)
     finite = np.isfinite(data)
     invalid = finite & ((data < low) | (data > high))
     if np.any(invalid):
@@ -232,14 +260,9 @@ def _screen_standard_curve_values(
         }
         curve.metadata.custom["range_screening"] = report
         if masked / total >= RANGE_SCREENING_WARNING_FRACTION:
-            message = (
-                f"{curve.mnemonic}: {masked} of {total} samples are outside the "
-                f"plausible {name} range {low:g} to {high:g} {curve.unit or ''}".rstrip()
-                + " and were removed"
+            warnings.warn(
+                _range_screening_message(curve.mnemonic, report), DataQualityWarning, stacklevel=4
             )
-            if hint:
-                message += f"; {hint}, check the unit label {report['source_unit']!r}"
-            warnings.warn(message + ".", DataQualityWarning, stacklevel=4)
         data[invalid] = np.nan
         curve._data = data
     elif not np.array_equal(curve.data, data):
@@ -264,6 +287,10 @@ class CurveStandardizer:
         Whether to convert to standard units (default: True)
     preserve_originals : bool, optional
         Keep original curves with _ORIG suffix (default: False)
+    plausible_ranges : dict, optional
+        ``{standard mnemonic: (low, high)}`` limits of the implausible-value
+        screening, in the standard units; default
+        :data:`CURVE_PLAUSIBLE_RANGES`.
 
     Examples
     --------
@@ -277,10 +304,12 @@ class CurveStandardizer:
         convert_units: bool = True,
         preserve_originals: bool = False,
         relabel_equivalent_units: bool = True,
+        plausible_ranges: Optional[Dict[str, tuple]] = None,
     ):
         self.rename_curves = rename_curves
         self.convert_units = convert_units
         self.preserve_originals = preserve_originals
+        self.plausible_ranges = plausible_ranges
         #: Rewrite a curve's unit label to the standard one even when the two
         #: are equivalent (conversion factor 1), e.g. ``m3/m3`` to ``v/v``.
         #: When False such labels are left as the source wrote them.
@@ -386,8 +415,13 @@ class CurveStandardizer:
                             new_curve.unit = standard_unit
                         elif self.relabel_equivalent_units:
                             new_curve.unit = standard_unit
+                    elif _converts_temperature(curve.unit, standard_unit):
+                        # e.g. degC to F. Labels of the standard scale, such
+                        # as degF, are left as written.
+                        new_curve._data = convert_units(new_curve._data, curve.unit, standard_unit)
+                        new_curve.unit = standard_unit
 
-            _screen_standard_curve_values(new_curve, standard_name, curve.unit)
+            _screen_standard_curve_values(new_curve, standard_name, curve.unit, self.plausible_ranges)
 
             # Handle duplicate standard names: the incoming curve replaces the
             # occupant only with a higher source priority (DLIS channel
@@ -465,8 +499,11 @@ class CurveStandardizer:
                     if factor != 1.0:
                         new_curve._data = new_curve._data * factor
                     new_curve.unit = standard_unit
+                elif _converts_temperature(curve.unit, standard_unit):
+                    new_curve._data = convert_units(new_curve._data, curve.unit, standard_unit)
+                    new_curve.unit = standard_unit
 
-        _screen_standard_curve_values(new_curve, standard_name, curve.unit)
+        _screen_standard_curve_values(new_curve, standard_name, curve.unit, self.plausible_ranges)
 
         return new_curve
 
@@ -569,7 +606,7 @@ class CurveStandardizer:
                 standard_unit = get_standard_unit(standard)
                 if standard_unit and curve.unit.lower() != standard_unit.lower():
                     factor = get_conversion_factor(curve.unit, standard_unit)
-                    if factor is not None:
+                    if factor is not None or _converts_temperature(curve.unit, standard_unit):
                         report["unit_conversions"].append({
                             "curve": mnemonic,
                             "from_unit": curve.unit,
@@ -585,6 +622,7 @@ def standardize_curves(
     convert_units: bool = True,
     preserve_originals: bool = False,
     relabel_equivalent_units: bool = True,
+    plausible_ranges: Optional[Dict[str, tuple]] = None,
 ) -> "Well":
     """
     Standardize all curves in a well.
@@ -601,6 +639,9 @@ def standardize_curves(
         Convert to standard units (default: True)
     preserve_originals : bool, optional
         Keep original curves (default: False)
+    plausible_ranges : dict, optional
+        Limits of the implausible-value screening; default
+        :data:`CURVE_PLAUSIBLE_RANGES`.
 
     Returns
     -------
@@ -617,5 +658,6 @@ def standardize_curves(
         convert_units=convert_units,
         preserve_originals=preserve_originals,
         relabel_equivalent_units=relabel_equivalent_units,
+        plausible_ranges=plausible_ranges,
     )
     return standardizer.standardize(well)

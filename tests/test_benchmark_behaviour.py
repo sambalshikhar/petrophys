@@ -14,6 +14,7 @@ from petrophys.preprocessing.quality.bad_hole.flag_generator import generate_bad
 from petrophys.preprocessing.standardization import standardize_curves
 from petrophys.reporting import reference_export
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
+from petrophys.workflow.dynamic_workflow import _profile_setting
 from petrophys.workflow.zoned_batch import run_dynamic_workflow_with_zones
 
 
@@ -49,12 +50,14 @@ def _step(result, name):
 
 
 def test_defaults():
-    config = DynamicWorkflowConfig()
+    config = DynamicWorkflowConfig(calculation_profile="benchmark")
 
     assert (config.gr_min, config.gr_max) == (None, None)
     assert config.matrix_type == "sandstone"
-    assert (config.vcl_cutoff, config.sw_cutoff, config.phie_cutoff) == (0.3, 0.7, None)
-    assert config.standardize_input is False
+    # Left unset, the profile-dependent settings take the eval package's values.
+    assert (config.vcl_cutoff, config.sw_cutoff, config.phie_cutoff) == (None, None, None)
+    assert (_profile_setting(config, "vcl_cutoff"), _profile_setting(config, "sw_cutoff")) == (0.3, 0.7)
+    assert _profile_setting(config, "standardize_input") is False
     assert config.mineral_solver_version == 1
 
 
@@ -96,7 +99,7 @@ def test_washout_needs_a_caliper_and_ignores_pad_calipers():
 
 
 def test_an_8_5_in_bit_size_is_assumed_without_one():
-    params = _step(_run(), "bad_hole").parameters
+    params = _step(_run(calculation_profile="benchmark"), "bad_hole").parameters
 
     assert (params["bit_size_source"], params["bit_size_used"]) == ("fallback_8.5", 8.5)
 

@@ -140,23 +140,104 @@ pd.DataFrame([{"setting": name, "default": repr(schema[name]["default"]),
               for name in used_most]).style.hide(axis="index")
 ```
 
+Net-pay cutoffs left unset take the standard of each sample's lithology family: clastic VCL < 0.40, PHIE > 0.08 and SW < 0.60; carbonate VCL < 0.30, PHIE > 0.045 and SW < 0.70.
+Evaporite, coal, halite recognized on the logs and bad-hole samples are never net reservoir or net pay.
+{doc}`data_quality` shows where to read both in the trace, and why a whole-well total can include marginal pay in shallow sections: read net pay per formation or over the reservoir interval.
+
+(calculation-profiles)=
+## Calculation profiles
+
+`calculation_profile` chooses which calculations run.
+`"current"`, the default, is the interpretation these pages describe.
+`"benchmark"` keeps the calculations that made the GeoLink eval context package, so that the package can be regenerated exactly from the raw LAS files; use it for that, or to compare against the package, not for new interpretations.
+
+The package was made in two runs with different calculations.
+Under `"benchmark"`, interpreting a well uses the calculations of the main run, except for 15/9-17 and 34/10-23, which get those of the re-run; a well is recognized by its UWI or WELL header and, in the zoned batch runner, by its file name.
+Writing context uses the re-run's calculations for every well.
+`result.to_trace_dict()["config"]["benchmark_calculations"]` says which a well got: `"main_run"` or `"rerun"`.
+
+The main differences from `"current"`:
+
+| | `"current"` (default) | `"benchmark"` |
+|---|---|---|
+| Input curves | standard names and units; implausible values screened | read as delivered |
+| Lithology code curve | one curve gives the vendor lithology, the matrix and the per-depth lithology groups: `lithology_curve`, else `LITHOLOGY_GEOLINK`, else a curve under a lithology-code name | vendor lithology and matrix from the first code curve under a lithology-code name or any name containing LITH or FACIES; per-depth groups from `LITHOLOGY_GEOLINK` alone |
+| Bad hole | caliper washout and large-hole tests only where a bit size is known (BS curve, else a 3-36 in header value); elsewhere an absolute DRHO above 0.15 g/cm3 alone, with a warning | an 8.5 in bit assumed where the well records none, without a warning; DRHO tested only in a well with a caliper |
+| Clay volume | minimum of VCL_GR and VCL_ND, on the matrix's neutron-density clean line and a clay point from the well's shales; VCL_SP reported | minimum of VCL_GR, VCL_SP and VCL_ND, on the limestone clean line and a fixed clay point (2.62 g/cm3, 0.38) |
+| Shaly-sand saturation | Indonesia as published by Poupon and Leveaux (1971); Dual Water only with a measured `rwb`; Waxman-Smits `cec` in meq/100 g | an Indonesia variant; Dual Water with Rwb = 0.3 Rw when none is given; `cec` passed on as given |
+| Oil-based mud | no SXO or MHI, and no Rw from the SP or Rxo/Rt | computed as for water-based mud |
+| Invasion ratio (Rxo/Rt) | the flushed-zone RXO first, then the shallow RSHA and RESS, then RMED or RESM as a proxy | RSHA first, then RXO and RESS |
+| Net-pay cutoffs left unset | per lithology family | VCL < 0.3 and SW < 0.7 |
+| Evaporite, coal and bad hole | never net reservoir or pay | can be net pay |
+| Class labels in context and in the workflow's hydrocarbon analysis | one canonical table per property ({py:data}`CLASS_TABLES <petrophys.model.CLASS_TABLES>`), so a property gets the same class in every category; reservoir quality from PHIE, PERM and VCL with the limits of each sample's lithology family | the eval package's tables, which differ by category |
+| Context after the value-range QC | PHI_NORM, RQI, FZI, BVW and PHI_Z recomputed from the curves left; depths and bad-hole intervals given with their unit | the eval package's values; no depth unit |
+| Assumed values (Rw temperature, temperature gradient) | reported in `result.warnings` | not reported |
+
+The `calculation_profile` entry of {doc}`api/settings` lists every difference.
+A setting you give explicitly is used under either profile; these settings take their default from the profile when left unset (`None` under `"current"` means the lithology-family standard):
+
+```{code-cell} python
+profiled = [{"setting": item["name"],
+             **{profile: repr(value) for profile, value in item["profile_defaults"].items()}}
+            for item in config_schema() if "profile_defaults" in item]
+pd.DataFrame(profiled).style.hide(axis="index")
+```
+
+`carbonate_calibration`, too, resolves to `"generic"` under `"current"` and to `"costa"` under `"benchmark"`.
+From a source checkout, one command regenerates the whole package from the raw LAS files:
+
+```bash
+python scripts/generate_benchmark_context.py --from-raw --input-dir PATH/eval --output-dir NEW_DIR
+```
+
+{doc}`context` shows how to export context with the package's calculations from Python, and {doc}`mcp` how to pin an MCP server to them.
+The library reads no environment variable for the profile: `pp.interpret` and `pp.export_context` use `"current"` unless their settings say otherwise, and `petrophys-context` always does.
+
+## Clay volume
+
+`pp.interpret` takes VCL as the minimum of the gamma-ray and neutron-density indicators, VCL_GR and VCL_ND.
+VCL_ND is measured from the neutron-density clean line of the run's matrix, to a clay point picked in the well's good-hole shales: the median RHOB and NPHI of 20 or more shale-lithology samples, else of the samples with VCL_GR above 0.9, else (2.62 g/cm3, 0.38).
+One median over the whole log is lighter than the shales of a deep reservoir where shallow, undercompacted shale dominates, so set `nd_clay` from a crossplot of the interval you evaluate.
+A clay point less than 0.10 v/v of neutron above the clean line leaves VCL_ND out of VCL, with a warning.
+
+VCL_SP is reported, and joins the minimum only when you set both SP baselines: `sp_min`, the shale baseline, and `sp_max`, the clean-sand line.
+Both are constant lines over the whole log, so set them only for an SP without baseline drift, such as a drift-corrected SP.
+Equal baselines are rejected, and a warning flags baselines whose order contradicts the SP polarity (read from the SP and GR, and taken as normal where they do not show it).
+
+## Water saturation
+
+With `sw_model="auto"` (the default), saturation is routed per sample.
+Samples with VCL below `sw_routing_vcl_cutoff` (by default `vcl_cutoff`, or 0.3 when that is unset) get Archie; the same clay volume bounds the samples SWIRR_APP is picked from.
+With `vcl_cutoff` unset, routing switches at 0.3 while clastic net rock extends to VCL 0.40, so net rock with 0.3-0.4 clay gets a shaly-sand equation.
+In shaly rock, carbonate samples get Dual Water when the bound-water resistivity `rwb` is given; Rwb is never estimated.
+All other shaly samples get Waxman-Smits when `cec` (meq/100 g) and `b_coeff` ((S/m)/(meq/cm3)) are given, Simandoux when `salinity_ppm` is at least 20,000 ppm, and otherwise Indonesia, the published equation of Poupon and Leveaux (1971).
+`sw_model="dual_water"` without `rwb`, or `"waxman_smits"` without `cec` and `b_coeff`, fails the saturation step with a message naming the missing input.
+With oil-based mud (`mud_type="OBM"`), no SXO or MHI is computed and Rw is not estimated from the SP or Rxo/Rt.
+
 ## Lithology domain
 
-`lithology_domain` picks the mineral solver and keeps the automatic matrix within its family. It defaults to `clastic`: set `carbonate` for carbonate wells. It is not a per-depth rock label: lithology intervals from {doc}`input_templates` supply those, and take precedence over computed labels.
+`lithology_domain` picks the mineral solver and keeps the automatic matrix within its family. It defaults to `clastic`: set `carbonate` for carbonate wells. It is not a per-depth rock label: lithology intervals from {doc}`input_templates` supply those, else a lithology code curve in the LAS, and both take precedence over computed labels.
 
 | Domain | Mineral solver | Needs |
 |---|---|---|
-| `clastic` (default) | canonical multi-mineral solve with a closure gate; sandstone matrix | RHOB, NPHI, VCL (PEF or DTC add information) |
-| `carbonate` | COSTA method: illite from GR, then a bounded calcite-dolomite solve; limestone or dolomite matrix | RHOB, GR, PHIT or PHIE |
+| `clastic` (default) | multi-mineral solve ({class}`~petrophys.interpretation.lithology.MultiMineralSolverV1`): each tool equation weighted by its nominal uncertainty, and samples whose mineral total misses the available rock volume by more than 0.05 left unsolved; sandstone matrix | RHOB, NPHI, PEF or DTC, VCL, PHIE |
+| `carbonate` | calcite and dolomite from bulk density and closure, with clay from VCL at `rho_cl` and pore fluid `rho_fl`; `carbonate_calibration="costa"` applies the COSTA field calibration instead (illite from GR, a 1.19 g/cm3 brine); limestone or dolomite matrix | RHOB, VCL (GR for `costa`), PHIE or PHIT |
 | `auto` | resolved from attached or embedded geology; falls back to clastic with a warning | |
 
 If the data point to a carbonate while the domain is `clastic`, the run keeps the sandstone matrix and warns you to set `lithology_domain="carbonate"`.
 
+The lithology code curve is the curve `lithology_curve` names, else `LITHOLOGY_GEOLINK`, else the first curve under a lithology-code name (`LITHOLOGY`, `LITHOFACIES`, `FACIES`, `LITH_CODE`, `ROCK_TYPE`, ...) whose values pass the code checks in {doc}`input_templates`.
+That one curve gives the vendor lithology, the `"auto"` matrix and the per-depth lithology groups, and its codes are decoded with the GeoLink/Kingdom code table whatever the curve is called.
+`result.warnings` names a curve other than `LITHOLOGY_GEOLINK`; if it holds other codes, pass `lithology_source="computed"` or lithology intervals.
+
+The carbonate solve uses bulk density alone, so its calcite-dolomite split depends on the pore-fluid density `rho_fl` (1.0 g/cm3 by default) and on the matrix density behind the porosity.
+On HW-3 the generic defaults put almost every sample at the dolomite end member; set `rho_fl` for your brine, and use the field calibration on COSTA wells.
 Here the clastic run on 30/6-5 is set against a carbonate run on the COSTA well HW-3:
 
 ```{code-cell} python
-# Rw comes from the LAS header.
-hw3 = pp.interpret(pp.read(pp.sample("HW-3")), lithology_domain="carbonate")
+# Rw comes from the LAS header; COSTA wells take the field's own calibration.
+hw3 = pp.interpret(pp.read(pp.sample("HW-3")), lithology_domain="carbonate",
+                   carbonate_calibration="costa")
 
 def lithology_step(run):
     return next(record for record in run.steps_executed if record.step == "lithology")
@@ -168,7 +249,7 @@ for name, run in {"30/6-5": result, "HW-3": hw3}.items():
                  "solved": f"{step.parameters['multi_mineral_solved_samples']} of "
                            f"{step.parameters['multi_mineral_total_samples']}",
                  "outputs": ", ".join(step.output_curves)})
-print("HW-3 illite:", lithology_step(hw3).parameters["illite_equation"])
+print("HW-3 illite:", lithology_step(hw3).parameters["clay_source"])
 pd.DataFrame(rows).style.hide(axis="index")
 ```
 
@@ -199,8 +280,8 @@ fig.tight_layout()
 plt.show()
 ```
 
-The carbonate solve runs sample by sample: about 1 s on a 200-sample COSTA interval, but about 10 minutes on 20,000 samples. Run it on carbonate intervals, not whole wells.
-Where the logs cannot constrain a solve, mineral volumes are NaN and QC-flagged; closure alone does not prove a mineral model right.
+The carbonate solve is closed-form over whole arrays, through the apparent matrix density (Clavier and Rust, 1976), so a whole well takes well under a second; the benchmark calculation profile keeps the COSTA notebooks' sample-by-sample solve, which takes about a second on a COSTA interval but minutes on a whole well.
+Where the solved volumes miss RHOB by more than 0.02 g/cm3 (an apparent matrix density outside calcite-dolomite, such as quartz, anhydrite or bad hole), mineral volumes are NaN and QC-flagged; closure alone does not prove a mineral model right.
 
 ## Zoned and batch runs
 
@@ -221,7 +302,8 @@ with tempfile.TemporaryDirectory() as folder:
         shutil.copy(pp.sample(name), incoming)
     batch = process_las_directory_with_workflow(
         incoming, Path(folder, "interpreted"),
-        config=pp.DynamicWorkflowConfig(lithology_domain="carbonate"))
+        config=pp.DynamicWorkflowConfig(lithology_domain="carbonate",
+                                        carbonate_calibration="costa"))
     written = sorted(p.relative_to(folder).as_posix() for p in Path(folder).rglob("*.*"))
 
 print("\n".join(written))

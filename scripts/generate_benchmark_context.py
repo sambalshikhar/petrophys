@@ -10,26 +10,27 @@ from the processed LAS files (eval_processed), the raw LAS files next to them
 With ``--from-raw`` the input folder holds the raw LAS files instead, and the
 script runs the whole package from them: first the interpreted ("processed")
 LAS files, then the context from those. Both outputs land under the output
-folder.
+folder. This one command reproduces the whole package:
 
-The archived package mixes two interpretation runs: 30 wells were interpreted
-in April, and 15_9-17 and 34_10-23 ten days later with changed calculations,
-which also wrote the context. The calculation profiles "benchmark" and
-"benchmark_rerun" keep those two sets of calculations fixed while the library's
-default calculations change. ``--las-profile`` sets the profile for every well
-and ``--well-profile`` names the exceptions, so one command can reproduce the
-whole package:
+    python scripts/generate_benchmark_context.py --from-raw --input-dir PATH/eval --output-dir NEW_DIR
 
-    python scripts/generate_benchmark_context.py --from-raw \
-      --input-dir PATH/eval --output-dir NEW_DIR \
-      --well-profile 15_9-17 benchmark_rerun --well-profile 34_10-23 benchmark_rerun
+The package was made in two runs with different calculations: its main run
+interpreted 30 of the 32 wells, and a re-run interpreted 15_9-17 and 34_10-23
+and wrote the context of every well. The "benchmark" calculation profile, the
+default of ``--calculation-profile``, keeps both sets of calculations fixed
+while the library's default calculations change: it interprets 15_9-17 and
+34_10-23 with the re-run's calculations and the other wells with the main
+run's, and writes the context of every well with the re-run's.
+``--calculation-profile current`` runs both steps with the library's current
+calculations instead.
 
 ELECTROFACIES labels come from k-means clustering, which was unseeded when the
 benchmark was made, so they cannot be recovered. The script fixes the string-hash seed, so
 reruns write byte-identical files.
 
-petrophys-context and petrophys.export_context run the same calculations; this
-script adds the eval-package defaults (raw LAS folder, NPD tops and codebook).
+petrophys-context and petrophys.export_context run the same context exporter;
+this script adds the eval package's inputs (raw LAS folder, NPD tops and
+codebook) and its calculation profile.
 """
 
 from __future__ import annotations
@@ -55,7 +56,11 @@ from petrophys.workflow.zoned_batch import (  # noqa: E402
 )
 
 
-_PROFILES = ("benchmark", "benchmark_rerun", "current")
+#: The command that reproduces the whole package from the raw LAS files.
+REPRODUCE_COMMAND = (
+    "python scripts/generate_benchmark_context.py --from-raw "
+    "--input-dir PATH/eval --output-dir NEW_DIR"
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,7 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Regenerate the GeoLink eval context benchmark: category-first JSON by well, "
             "formation, and lithology group."
-        )
+        ),
+        epilog=f"Reproduce the whole package from the raw LAS files:\n  {REPRODUCE_COMMAND}",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--input-dir",
@@ -108,34 +115,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Limit processing to a specific well name or LAS stem. Repeat for multiple wells.",
     )
     parser.add_argument(
-        "--las-profile",
-        choices=_PROFILES,
+        "--calculation-profile",
+        choices=("benchmark", "current"),
         default="benchmark",
         help=(
-            "Calculation profile for the --from-raw interpretation step. The "
-            "archived package mixes two runs: 30 wells need 'benchmark', while "
-            "15_9-17 and 34_10-23 were reprocessed later and need 'benchmark_rerun'."
-        ),
-    )
-    parser.add_argument(
-        "--context-profile",
-        choices=_PROFILES,
-        default="benchmark_rerun",
-        help=(
-            "Calculation profile for the context step. The package's context was "
-            "written with the 'benchmark_rerun' calculations."
-        ),
-    )
-    parser.add_argument(
-        "--well-profile",
-        nargs=2,
-        action="append",
-        metavar=("WELL", "PROFILE"),
-        dest="well_profiles",
-        default=[],
-        help=(
-            "Interpret one well with a different profile than --las-profile. "
-            "Repeat per well, e.g. --well-profile 15_9-17 benchmark_rerun."
+            "Calculation profile of both steps (default: benchmark). 'benchmark' "
+            "interprets 15_9-17 and 34_10-23 with the eval package's re-run "
+            "calculations and the other wells with its main run's, and writes the "
+            "context of every well with the re-run's, as the package was made; "
+            "'current' uses the library's current calculations."
         ),
     )
     parser.add_argument(
@@ -165,35 +153,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _normalize_well(name: str) -> str:
-    return str(name).strip().lower().replace("/", "_")
-
-
-def _wells_by_profile(args) -> dict:
-    """Group the selected wells by the profile that should interpret them."""
-    overrides = {_normalize_well(well): profile for well, profile in args.well_profiles}
-    unknown = sorted(set(overrides.values()) - set(_PROFILES))
-    if unknown:
-        raise SystemExit(
-            f"--well-profile accepts {', '.join(_PROFILES)}; got {', '.join(unknown)}"
-        )
-    pattern = args.pattern
-    files = sorted(
-        args.input_dir.rglob(pattern) if args.recursive else args.input_dir.glob(pattern)
-    )
-    wanted = {_normalize_well(name) for name in (args.well_names or [])}
-    groups: dict = {}
-    for item in files:
-        stem = _normalize_well(item.stem)
-        if wanted and stem not in wanted:
-            continue
-        groups.setdefault(overrides.get(stem, args.las_profile), []).append(item.stem)
-    missing = sorted(set(overrides) - {_normalize_well(s) for g in groups.values() for s in g})
-    if missing:
-        raise SystemExit(f"--well-profile names wells not in {args.input_dir}: {', '.join(missing)}")
-    return groups
-
-
 def _rerun_with_fixed_hash_seed() -> None:
     """Re-run under PYTHONHASHSEED=0 so set iteration, and therefore list order, is stable."""
     if os.environ.get("PYTHONHASHSEED") != "0":
@@ -214,19 +173,15 @@ def main() -> int:
     processed_dir = None
     if args.from_raw:
         processed_dir = Path(args.output_dir) / "processed_las"
-        batch = []
-        for profile, wells in _wells_by_profile(args).items():
-            batch.extend(
-                process_las_directory_with_workflow(
-                    input_dir=args.input_dir,
-                    output_dir=processed_dir,
-                    pattern=args.pattern,
-                    recursive=args.recursive,
-                    config=DynamicWorkflowConfig(calculation_profile=profile),
-                    well_names=wells,
-                )
-            )
-            print(f"Interpreted LAS: {processed_dir}  ({profile}: {len(wells)} well(s))")
+        batch = process_las_directory_with_workflow(
+            input_dir=args.input_dir,
+            output_dir=processed_dir,
+            pattern=args.pattern,
+            recursive=args.recursive,
+            config=DynamicWorkflowConfig(calculation_profile=args.calculation_profile),
+            well_names=args.well_names,
+        )
+        print(f"Interpreted LAS: {processed_dir}  ({args.calculation_profile})")
         failed_wells = [item.source_file for item in batch if not item.success]
         print(f"  wells: {len(batch)}  written: {len(batch) - len(failed_wells)}")
         for source in failed_wells:
@@ -238,9 +193,9 @@ def main() -> int:
 
     results = export_reference_json_work_package_by_category_formation_lithology(
         # The package picked SWIRR_APP from the reservoir flag already on the
-        # interpreted LAS, which is no longer the default.
+        # interpreted LAS; the library default recomputes the flag.
         workflow_config=DynamicWorkflowConfig(
-            calculation_profile=args.context_profile, reuse_input_resflag=True
+            calculation_profile=args.calculation_profile, reuse_input_resflag=True
         ),
         input_dir=context_input_dir,
         output_dir=args.output_dir,
@@ -261,6 +216,7 @@ def main() -> int:
 
     if processed_dir is not None:
         print(f"Raw LAS:        {args.input_dir}")
+    print(f"Profile:        {args.calculation_profile}")
     print(f"Input LAS:      {context_input_dir}")
     print(f"Tops file:      {args.tops_file}")
     print(f"Output root:    {args.output_dir}")

@@ -16,6 +16,12 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 
+from petrophys._internal.analysis_helpers import get_curve
+from petrophys.interpretation.electrical.rw.salinity_rw import NACL_PER_CHLORIDE, brine_density
+from petrophys.interpretation.lithology.matrix_inference import (
+    GEOLINK_LITHOLOGY_CURVE,
+    interpreted_lithology_code_curve,
+)
 from petrophys.io import export_las, read_las
 from petrophys.model.units import temperature_to_fahrenheit
 from petrophys.preprocessing.standardization import standardize_curves
@@ -24,6 +30,8 @@ from petrophys.workflow.dynamic_workflow import (
     DynamicWorkflowConfig,
     DynamicWorkflowResult,
     _left_at_default,
+    _rerun_calculations,
+    _uses_rerun_calculations,
     run_dynamic_workflow,
 )
 
@@ -43,9 +51,11 @@ PARAMETER_ALIASES: dict[str, str] = {
     "RWT": "rw_meas_temp_f",
     "RMF": "rmf_at_meas_temp",
     "RMFT": "rmf_meas_temp_f",
+    "MFST": "rmf_meas_temp_f",
     "RM": "rm",
     "RMT": "rm_meas_temp_f",
-    "CLFL": "rmf_salinity_ppm",
+    "MST": "rm_meas_temp_f",
+    "CLFL": "rmf_chlorides_mg_l",
     "BHT": "bht_f",
     "TD": "td_ft",
     "SAL": "salinity_ppm",
@@ -63,7 +73,6 @@ PARAMETER_ALIASES: dict[str, str] = {
     "B_COEFF": "b_coeff",
     "BCOEFF": "b_coeff",
     "RWB": "rwb",
-    "PNSH": "phi_cl",
     "MUDTYPE": "mud_type",
     "MUD_TYPE": "mud_type",
     "MUD": "mud_type",
@@ -93,6 +102,26 @@ PARAMETER_ALIASES: dict[str, str] = {
     "PHIE_CUTOFF": "phie_cutoff",
     "SW_CUTOFF": "sw_cutoff",
 }
+
+#: Header parameters the benchmark profile reads differently: CLFL (mud-filtrate
+#: chlorides) as NaCl-equivalent salinity, the mud-sample temperatures MFST and
+#: MST not at all, and PNSH as the clay porosity phi_cl.
+_BENCHMARK_PARAMETER_ALIASES: dict[str, Optional[str]] = {
+    "CLFL": "rmf_salinity_ppm",
+    "MFST": None,
+    "MST": None,
+    "PNSH": "phi_cl",
+}
+
+#: Header parameters the "current" calculations read from the well itself, not
+#: as settings. PNSH ("Neutron Shale") is the neutron log's reading in shale:
+#: DynamicWorkflow turns it, with RBSH ("Shale Density"), into a clay porosity.
+_READ_FROM_WELL_PARAMETERS = {"PNSH"}
+
+#: Header parameters used only when their setting has no other source: the
+#: mud-sample temperatures MFST and MST yield to RMFT and RMT, as in
+#: DynamicWorkflow, whatever the header order.
+_FALLBACK_PARAMETERS = {"MFST", "MST"}
 
 DIRECT_INTERVAL_METADATA: set[str] = set()
 AUDIT_TARGET_CURVES = [
@@ -238,13 +267,8 @@ def _clone_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowCon
     return copy.deepcopy(config) if config is not None else DynamicWorkflowConfig()
 
 
-def _is_benchmark_profile(config: Optional[DynamicWorkflowConfig]) -> bool:
-    """True when this batch reproduces the eval package's interpreted LAS."""
-    return getattr(config, "calculation_profile", "current") == "benchmark"
-
-
 def _reproduces_benchmark(config: Optional[DynamicWorkflowConfig]) -> bool:
-    """True when this batch runs either benchmark profile."""
+    """True when this batch runs the benchmark profile."""
     return getattr(config, "calculation_profile", "current") in _BENCHMARK_PROFILES
 
 
@@ -305,6 +329,39 @@ def _salinity_to_ppm(value: float, unit: str) -> float:
         return float(value) * 1000.0
     if "%" in text and "/" not in text:
         return float(value) * 10000.0
+    return float(value)
+
+
+def _chlorides_to_mg_per_l(value: float, unit: str) -> float:
+    """Chloride concentration in mg/l from a header value such as CLFL.
+
+    Mud reports give filtrate chlorides in mg/l (API RP 13B-1), which is how a
+    value without a unit is read. Per-weight units (ppm, kppm, %) are converted
+    with the density of the NaCl solution that holds that much chloride.
+    """
+    text = (unit or "").strip().lower()
+    if "kppm" in text or "ppk" in text:
+        chlorides_ppm = float(value) * 1000.0
+    elif "ppm" in text:
+        chlorides_ppm = float(value)
+    elif "%" in text and "/" not in text:
+        chlorides_ppm = float(value) * 10000.0
+    elif "g/l" in text and "mg" not in text:
+        return float(value) * 1000.0
+    else:
+        return float(value)
+    return chlorides_ppm * brine_density(NACL_PER_CHLORIDE * chlorides_ppm)
+
+
+def _cec_to_meq_per_100g(value: float, unit: str) -> float:
+    """A header CEC in meq/100 g, the unit of the ``cec`` setting.
+
+    A value labelled meq/g is multiplied by 100; meq/100 g, the unit labs
+    report, and a value without a unit are taken as they stand.
+    """
+    text = "".join((unit or "").lower().split())
+    if text in {"meq/g", "meq/gm"}:
+        return float(value) * 100.0
     return float(value)
 
 
@@ -487,6 +544,9 @@ def _finalize_export_curves(
         curve = well.get(name)
         if curve is None:
             continue
+        if getattr(curve.metadata, "custom", {}).get("in_vcl") is False:
+            # An indicator the workflow reported without letting it set VCL.
+            continue
         data = np.asarray(curve.data, dtype=float)
         if data.shape[0] != well.n_samples:
             continue
@@ -519,7 +579,7 @@ def _finalize_export_curves(
         "LITHO" not in original_curves
         and (
             not retain_computed_lithology
-            or well.get("LITHOLOGY_GEOLINK") is not None
+            or well.get(interpreted_lithology_code_curve(well)) is not None
         )
     ):
         well.remove_curve("LITHO")
@@ -553,9 +613,15 @@ def _apply_parameter_alias(
     overrides: Dict[str, Any],
     injected_parameters: Dict[str, Any],
     unmapped_parameters: List[str],
+    *,
+    calculation_profile: str = "current",
 ) -> None:
     key = base_name.upper()
     target = PARAMETER_ALIASES.get(key)
+    if calculation_profile in _BENCHMARK_PROFILES:
+        target = _BENCHMARK_PARAMETER_ALIASES.get(key, target)
+    elif key in _READ_FROM_WELL_PARAMETERS:
+        return
 
     if key in DIRECT_INTERVAL_METADATA:
         try:
@@ -567,6 +633,9 @@ def _apply_parameter_alias(
     if target is None:
         if key not in DEPTH_TOP_KEYS and key not in DEPTH_BOTTOM_KEYS:
             unmapped_parameters.append(base_name)
+        return
+
+    if key in _FALLBACK_PARAMETERS and target in overrides:
         return
 
     if target in {
@@ -596,11 +665,17 @@ def _apply_parameter_alias(
         overrides[target] = _depth_to_ft(numeric_value, unit)
     elif target in {"salinity_ppm", "rmf_salinity_ppm"}:
         overrides[target] = _salinity_to_ppm(numeric_value, unit)
+    elif target == "rmf_chlorides_mg_l":
+        overrides[target] = _chlorides_to_mg_per_l(numeric_value, unit)
+    elif target == "cec" and calculation_profile not in _BENCHMARK_PROFILES:
+        overrides[target] = _cec_to_meq_per_100g(numeric_value, unit)
     else:
         overrides[target] = numeric_value
 
 
-def _extract_global_parameter_overrides(well: "Well") -> tuple[Dict[str, Any], List[str]]:
+def _extract_global_parameter_overrides(
+    well: "Well", *, calculation_profile: str = "current"
+) -> tuple[Dict[str, Any], List[str]]:
     overrides: Dict[str, Any] = {}
     unmapped: List[str] = []
 
@@ -612,12 +687,17 @@ def _extract_global_parameter_overrides(well: "Well") -> tuple[Dict[str, Any], L
         if ZONE_VALUE_RE.match(key):
             continue
         unit = _parameter_text(well, f"{key}__UNIT")
-        _apply_parameter_alias(key, value, unit, overrides, {}, unmapped)
+        _apply_parameter_alias(
+            key, value, unit, overrides, {}, unmapped,
+            calculation_profile=calculation_profile,
+        )
 
     return overrides, sorted(set(unmapped))
 
 
-def extract_zoned_parameters(well: "Well") -> List[ZonedParameterInterval]:
+def extract_zoned_parameters(
+    well: "Well", *, calculation_profile: str = "current"
+) -> List[ZonedParameterInterval]:
     """Read depth zones from ``<NAME>_Z<n>`` LAS header parameters.
 
     A zone needs a top (``TOP_Z1``, ``ZTOP_Z1`` or ``TOP_DEPTH_Z1``) and a
@@ -628,6 +708,10 @@ def extract_zoned_parameters(well: "Well") -> List[ZonedParameterInterval]:
     ----------
     well : Well
         Well whose LAS header parameters define the zones.
+    calculation_profile : str, default "current"
+        :attr:`DynamicWorkflowConfig.calculation_profile` the settings are
+        for; the benchmark profile reads CLFL as NaCl-equivalent salinity,
+        ignores MFST and MST, and takes a CEC in meq/g without conversion.
 
     Returns
     -------
@@ -682,6 +766,7 @@ def extract_zoned_parameters(well: "Well") -> List[ZonedParameterInterval]:
                 overrides,
                 injected_parameters,
                 unmapped,
+                calculation_profile=calculation_profile,
             )
 
         zones.append(
@@ -725,8 +810,11 @@ def run_dynamic_workflow_with_zones(
     ZonedWorkflowRunResult
         Whole-well and per-zone results, zones, and parameter mapping notes.
     """
-    zones = extract_zoned_parameters(well)
-    global_overrides, global_unmapped = _extract_global_parameter_overrides(well)
+    profile = getattr(config, "calculation_profile", "current")
+    zones = extract_zoned_parameters(well, calculation_profile=profile)
+    global_overrides, global_unmapped = _extract_global_parameter_overrides(
+        well, calculation_profile=profile
+    )
     zoned_default_overrides, zoned_default_injected, zoned_default_notes = _derive_default_values_from_zones(zones)
 
     base_config = _prepare_batch_config(config)
@@ -757,6 +845,8 @@ def run_dynamic_workflow_with_zones(
         base_config.td_ft = _depth_to_ft(well.bottom, well.depth_unit)
 
     base_result = run_dynamic_workflow(well, base_config)
+    well_nd_clay = _well_nd_clay_point(base_config, base_result)
+    well_code_curve = _well_lithology_code_curve(base_config, well)
     zone_results: List[DynamicWorkflowResult] = []
     warnings = list(zoned_default_notes)
     warnings.extend(override_notes)
@@ -770,6 +860,14 @@ def run_dynamic_workflow_with_zones(
         for field_name, value in zone.config_overrides.items():
             _set_config_value(interval_config, field_name, value)
         _derive_sw_model(zone.config_overrides, interval_config)
+        if well_nd_clay is not None and interval_config.nd_clay is None:
+            interval_config.nd_clay = well_nd_clay
+        if (
+            well_code_curve is not None
+            and interval_config.lithology_curve is None
+            and get_curve(interval_well, [well_code_curve]) is not None
+        ):
+            interval_config.lithology_curve = well_code_curve
 
         if interval_config.td_ft is None:
             interval_config.td_ft = _depth_to_ft(zone.bottom, well.depth_unit)
@@ -795,6 +893,40 @@ def run_dynamic_workflow_with_zones(
         zoned_default_overrides=zoned_default_overrides,
         zoned_default_injected=zoned_default_injected,
     )
+
+
+def _well_nd_clay_point(
+    config: DynamicWorkflowConfig, result: DynamicWorkflowResult
+) -> Optional[tuple]:
+    """The whole-well N-D clay point that the zone runs reuse (``"current"`` only).
+
+    Header zones often bracket a reservoir with few shales, where a pick of
+    its own would fall back to the default point or rest on a handful of
+    samples; the zones take the base run's pick instead, valid or not, so
+    their VCL_ND follows the whole-well decision. None when the config sets
+    ``nd_clay`` (the zones inherit it) or the base run picked no point.
+    """
+    if _reproduces_benchmark(config) or config.nd_clay is not None:
+        return None
+    step = next((item for item in result.steps_executed if item.step == "vclay"), None)
+    picked = step.parameters.get("nd_clay_picked") if step is not None else None
+    return tuple(picked) if picked else None
+
+
+def _well_lithology_code_curve(config: DynamicWorkflowConfig, well: "Well") -> Optional[str]:
+    """The base run's lithology code curve that the zone runs read by name (``"current"`` only).
+
+    Under ``"current"`` a curve other than ``LITHOLOGY_GEOLINK`` is read as
+    the lithology code log once its codes pass the code-log checks on the
+    whole well; a zone may hold too few samples to pass them on its own, so
+    the zones name the base run's curve and the well keeps one code curve.
+    None under the benchmark profile, when the config names the curve (the
+    zones inherit it), and for ``LITHOLOGY_GEOLINK``, which every run reads.
+    """
+    if _reproduces_benchmark(config) or config.lithology_curve is not None:
+        return None
+    name = interpreted_lithology_code_curve(well)
+    return None if name == GEOLINK_LITHOLOGY_CURVE else name
 
 
 def _json_safe(value: Any) -> Any:
@@ -1013,7 +1145,7 @@ def _lithology_group_summaries_for_log(
     well: "Well",
     curve_names: Iterable[str],
 ) -> List[Dict[str, Any]]:
-    lith_curve = well.get("LITHOLOGY_GEOLINK") or well.get("LITHO")
+    lith_curve = well.get(interpreted_lithology_code_curve(well)) or well.get("LITHO")
     if lith_curve is None:
         return []
 
@@ -1235,6 +1367,44 @@ def _write_json_log(
     return str(json_path)
 
 
+def _interpret_las_file(
+    file_path: Path, config: Optional[DynamicWorkflowConfig]
+) -> tuple[ZonedWorkflowRunResult, set[str]]:
+    """Read, standardize and interpret one LAS file of a batch, ready for export.
+
+    Under the benchmark profile the file gets the calculations of the eval
+    package's re-run when its UWI, WELL header or file name names one of the
+    package's re-run wells, and otherwise those of its main run (see
+    :attr:`DynamicWorkflowConfig.calculation_profile`), once for the file.
+
+    Returns
+    -------
+    tuple
+        The zoned workflow result and the curve names the standardized input
+        held.
+    """
+    well = read_las(file_path)
+    rerun = _uses_rerun_calculations(well, file_stem=file_path.stem)
+    main_run = _reproduces_benchmark(config) and not rerun
+    well = standardize_curves(
+        well,
+        rename_curves=True,
+        convert_units=True,
+        # The main run's interpreted LAS kept the source's own label where the
+        # standard unit is equivalent (e.g. m3/m3, gAPI).
+        relabel_equivalent_units=not main_run,
+    )
+    input_curves = set(well.curves)
+    with _rerun_calculations(rerun):
+        workflow_result = run_dynamic_workflow_with_zones(well, config=config)
+    _finalize_export_curves(
+        workflow_result.well,
+        input_curves,
+        drop_redundant_porosity=main_run,
+    )
+    return workflow_result, input_curves
+
+
 def process_las_directory_with_workflow(
     input_dir: str | Path,
     output_dir: str | Path,
@@ -1260,7 +1430,9 @@ def process_las_directory_with_workflow(
     recursive : bool, default False
         Also search subfolders.
     config : DynamicWorkflowConfig, optional
-        Base settings for every well.
+        Base settings for every well. Under ``calculation_profile="benchmark"``
+        the eval package's two re-run wells, recognized by their UWI, WELL
+        header or file name, get the re-run's calculations.
     well_names : sequence of str, optional
         Only interpret files whose name (without extension) matches one of
         these well names.
@@ -1299,22 +1471,7 @@ def process_las_directory_with_workflow(
         export_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            well = read_las(file_path)
-            well = standardize_curves(
-                well,
-                rename_curves=True,
-                convert_units=True,
-                # The benchmark profile keeps the source's own label where the
-                # standard unit is equivalent (e.g. m3/m3, gAPI).
-                relabel_equivalent_units=not _is_benchmark_profile(config),
-            )
-            input_curves = set(well.curves)
-            workflow_result = run_dynamic_workflow_with_zones(well, config=config)
-            _finalize_export_curves(
-                workflow_result.well,
-                input_curves,
-                drop_redundant_porosity=_is_benchmark_profile(config),
-            )
+            workflow_result, input_curves = _interpret_las_file(file_path, config)
             export_las(workflow_result.well, export_path)
 
             computed_curves = sorted(set(workflow_result.well.curves) - input_curves)
@@ -1400,22 +1557,7 @@ def write_workflow_json_traces_directory(
     for file_path in files:
         relative_path = file_path.relative_to(input_path)
         try:
-            well = read_las(file_path)
-            well = standardize_curves(
-                well,
-                rename_curves=True,
-                convert_units=True,
-                # The benchmark profile keeps the source's own label where the
-                # standard unit is equivalent (e.g. m3/m3, gAPI).
-                relabel_equivalent_units=not _is_benchmark_profile(config),
-            )
-            input_curves = set(well.curves)
-            workflow_result = run_dynamic_workflow_with_zones(well, config=config)
-            _finalize_export_curves(
-                workflow_result.well,
-                input_curves,
-                drop_redundant_porosity=_is_benchmark_profile(config),
-            )
+            workflow_result, input_curves = _interpret_las_file(file_path, config)
 
             computed_curves = sorted(set(workflow_result.well.curves) - input_curves)
             warnings = list(workflow_result.warnings)

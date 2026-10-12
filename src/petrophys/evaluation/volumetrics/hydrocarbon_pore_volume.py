@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING, Optional, Dict
 from dataclasses import dataclass
 import numpy as np
 
+from petrophys.model.units import normalize_depth_unit
 from petrophys._internal.analysis_helpers import (
-    depth_step_array,
+    cell_thickness,
     resolve_well_depth_range,
     well_depth_array,
 )
@@ -250,16 +251,23 @@ def calculate_hcpv_from_well(
     """
     Calculate HCPV using well log data.
 
+    Net pay is the thickness of the samples flagged by ``NET_PAY`` (midpoint
+    cells from the actual depths), converted from the well's depth unit to
+    feet. Over net pay, porosity is thickness-weighted and water saturation
+    pore-volume weighted (by PHIE * h), so that
+    ``net_pay_ft * avg_porosity * (1 - avg_sw)`` is the sum of
+    ``PHIE * (1 - SW) * h``, the hydrocarbon pore thickness.
+
     Parameters
     ----------
     well : Well
-        Well object with computed curves
+        Well object with ``NET_PAY``, ``PHIE`` and ``SW`` curves
     area_acres : float
         Drainage area in acres
     top_depth : float, optional
-        Top depth
+        Top depth, in the well's depth unit
     bottom_depth : float, optional
-        Bottom depth
+        Bottom depth, in the well's depth unit
     bo : float
         Oil formation volume factor
     bg : float
@@ -269,21 +277,30 @@ def calculate_hcpv_from_well(
     -------
     HCPVResult
         HCPV results
+
+    Raises
+    ------
+    ValueError
+        If ``NET_PAY``, ``PHIE`` or ``SW`` is missing, or net pay has no
+        finite PHIE and SW.
     """
     depth = well_depth_array(well)
     top_depth, bottom_depth = resolve_well_depth_range(well, top_depth, bottom_depth)
+    missing = [name for name in ("NET_PAY", "PHIE", "SW") if well.get(name) is None]
+    if missing:
+        raise ValueError(
+            f"calculate_hcpv_from_well needs {', '.join(missing)} on the well; "
+            "run the interpretation first"
+        )
 
     # Get pay mask
     mask = (depth >= top_depth) & (depth <= bottom_depth)
+    pay_mask = mask & (np.asarray(well.get("NET_PAY").data, dtype=float) > 0.5)
 
-    net_pay = well.get("NET_PAY")
-    if net_pay is not None:
-        pay_mask = mask & (net_pay.data > 0.5)
-    else:
-        pay_mask = mask
-
-    # Calculate net pay thickness
-    net_pay_ft = float(np.sum(depth_step_array(depth)[pay_mask]))
+    # Net pay thickness in feet for the field-unit volumes
+    feet_per_unit = 1.0 / 0.3048 if normalize_depth_unit(well.depth_unit, strict=False) == "m" else 1.0
+    thickness_ft = cell_thickness(depth) * feet_per_unit
+    net_pay_ft = float(np.sum(thickness_ft[pay_mask]))
     if net_pay_ft <= 0.0:
         return calculate_hcpv(
             area_acres=area_acres,
@@ -294,21 +311,19 @@ def calculate_hcpv_from_well(
             bg=bg
         )
 
-    # Get average properties over pay
-    phie = well.get("PHIE")
-    sw = well.get("SW")
-
-    if phie is not None:
-        phie_data = phie.data[pay_mask]
-        avg_porosity = float(np.nanmean(phie_data)) if np.any(np.isfinite(phie_data)) else np.nan
+    # Thickness-weighted porosity and pore-volume-weighted Sw over pay
+    phie = np.asarray(well.get("PHIE").data, dtype=float)
+    sw = np.asarray(well.get("SW").data, dtype=float)
+    valid = pay_mask & np.isfinite(phie) & np.isfinite(sw)
+    if not np.any(valid):
+        raise ValueError("Net pay has no samples with finite PHIE and SW")
+    h = thickness_ft[valid]
+    pore_ft = phie[valid] * h
+    avg_porosity = float(np.sum(pore_ft) / np.sum(h))
+    if np.sum(pore_ft) > 0.0:
+        avg_sw = float(np.sum(sw[valid] * pore_ft) / np.sum(pore_ft))
     else:
-        avg_porosity = 0.15  # Default
-
-    if sw is not None:
-        sw_data = sw.data[pay_mask]
-        avg_sw = float(np.nanmean(sw_data)) if np.any(np.isfinite(sw_data)) else np.nan
-    else:
-        avg_sw = 0.3  # Default
+        avg_sw = float(np.sum(sw[valid] * h) / np.sum(h))
 
     return calculate_hcpv(
         area_acres=area_acres,

@@ -22,9 +22,9 @@ import pandas as pd
 
 pd.set_option("display.max_colwidth", None)  # show table text in full
 
-# 30/6-5 stores core saturation in percent under a "frac" label. Petrophys
-# converts it and warns whenever it standardizes the curves (explained below).
-# Only that message is hidden.
+# 30/6-5 stores core saturation in percent under a "frac" label. pp.interpret
+# converts it for its core calibration and warns (explained below). Only that
+# message is hidden.
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
 ```
 
@@ -66,7 +66,7 @@ except ValueError as error:
 
 `check` lists every input of every step, counting the curves that earlier steps add.
 Here the Rw step is left out on purpose.
-(Plots and `pp.interpret` warn that this well's core saturation is stored in percent and convert it; this page hides that one notice.)
+(`pp.interpret` warns that this well's core saturation is stored in percent, and converts it for its core calibration; this page hides that one notice.)
 
 ```{code-cell} python
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
@@ -248,14 +248,17 @@ The two combine: `steps.interpret()` puts the automatic workflow inside your own
 | `porosity` | Density, neutron-density, neutron or sonic porosity | `PHIT`, `PHIE` |
 | `formation_water`, `mud_filtrate` | Rw and Rmf at formation temperature | `RW`, `RMF` |
 | `saturation` | Archie or a shaly-sand model | `SW`, `SXO` |
-| `permeability` | Timur, Coates, Wyllie-Rose or core-calibrated | `PERM` |
+| `permeability` | Timur, Coates, Wyllie-Rose (`k = 62500 PHIE^6 / Swirr^2`, the Morris-Biggs oil constant) or core-calibrated | `PERM` |
 | `rock_quality`, `bvw`, `mhi` | RQI and FZI, bulk volume water, moveable hydrocarbons | `RQI`, `FZI`, `BVW`, `MHI` |
-| `net_pay` | Cutoff flags | `NET_ROCK`, `NET_RES`, `NET_PAY` |
+| `net_pay` | Cutoff flags, with each sample's lithology-family cutoffs where none is given; evaporite, coal, halite recognized on the logs and bad-hole samples are not net reservoir or pay (`exclude_non_reservoir=False` applies the cutoffs alone) | `NET_ROCK`, `NET_RES`, `NET_PAY` |
 | `spectral_gamma` | K-Th-U standardization and ratios | as available |
 | `interpret` | The whole of `pp.interpret` | `VCL`, `PHIE`, `SW`, `PERM`, ... |
 | `formation_summary` | Per-formation table | `run.artifacts[...]` |
 
 Parameters and defaults are in the API reference: {mod}`petrophys.workflow.steps`.
+
+`steps.net_pay` leaves out the same samples as `pp.interpret`.
+{func}`~petrophys.evaluation.net_pay.summarize_pay` and {func}`~petrophys.evaluation.net_pay.calculate_net_pay` recompute the flags from the curves with one cutoff set and no exclusions, so their totals can differ from a run's `NET_PAY`: summarize a run's own flags with `run.summary()` or the `formation_summary` step.
 
 ## Go deeper
 

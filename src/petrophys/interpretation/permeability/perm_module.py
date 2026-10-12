@@ -15,7 +15,11 @@ from petrophys.interpretation.core_analysis.calibration import (
 )
 from petrophys.model.constants import DefaultParameters
 from petrophys.interpretation.permeability.timur import timur
-from petrophys.interpretation.permeability.coates_denoo import coates_denoo, wyllie_rose
+from petrophys.interpretation.permeability.coates_denoo import (
+    WYLLIE_ROSE_PRESETS,
+    coates_denoo,
+    wyllie_rose,
+)
 from petrophys.interpretation.permeability.lith_vcl import (
     DEFAULT_MAX_PERM_MD,
     lith_vcl_parameter_labels,
@@ -27,6 +31,13 @@ if TYPE_CHECKING:
     from petrophys.model.well import Well
 
 PERMEABILITY_MAX_MD = DEFAULT_MAX_PERM_MD
+
+#: Fewest core-log porosity pairs a gated core porosity correction may rest on
+#: (see ``PermeabilityModule(min_porosity_r_squared=...)``). With 8 pairs an r^2
+#: of 0.5 is the 5% significance level of the correlation: t = r sqrt(n - 2) /
+#: sqrt(1 - r^2) = sqrt(6) = 2.45, the two-sided 5% point of Student's t with 6
+#: degrees of freedom.
+CORE_POROSITY_MIN_POINTS = 8
 
 SWIRR_EXPLICIT_CURVES = ("SWIRR", "SWI", "SWIR")
 NMR_SWIRR_CURVES = ("SWIRR_NMR", "NMR_SWIRR", "SWIRR_CMR", "CMR_SWIRR")
@@ -411,15 +422,56 @@ def _resolve_porosity_curve_name(well: "Well") -> str:
     raise ValueError("PHIE or PHIT with finite samples required")
 
 
+def _core_porosity_curve_name(well: "Well", preferred: Optional[str] = None) -> str:
+    """The log porosity curve a core porosity correction is fitted to and applied on.
+
+    ``preferred`` when the well has it with finite samples, else PHIE, else PHIT.
+    """
+    if preferred and get_curve(well, [preferred]) is not None:
+        return preferred
+    return _resolve_porosity_curve_name(well)
+
+
+def _porosity_correction_rejection(correction: PorosityCorrection, min_r_squared: float) -> Optional[str]:
+    """Why a core porosity correction fails the quality gate, or None when it passes.
+
+    The correction is an ordinary least-squares line of core porosity on log
+    porosity. Scatter in the log flattens such a line towards the mean core
+    porosity (regression dilution; Frost and Thompson, 2000), and the flattened
+    line hands its intercept to tight rock, so a fit is rejected when it rests
+    on fewer than ``CORE_POROSITY_MIN_POINTS`` pairs, when its slope is not
+    positive (core porosity cannot fall as log porosity rises) or when it
+    explains less than ``min_r_squared`` of the core porosity variance.
+    """
+    if correction.n_points < CORE_POROSITY_MIN_POINTS:
+        return "too_few_porosity_points"
+    if not correction.A > 0.0:
+        return "non_positive_porosity_slope"
+    if not correction.r_squared >= min_r_squared:
+        return "low_porosity_r_squared"
+    return None
+
+
 def _resolve_lithology_input(
     well: "Well",
     lithology: Optional[Union[str, np.ndarray]] = None,
+    lithology_curve: Optional[str] = None,
 ) -> tuple[Optional[Union[str, np.ndarray]], str]:
-    """Resolve the best available lithology input curve for permeability."""
+    """Resolve the best available lithology input curve for permeability.
+
+    ``lithology_curve`` names the lithology code curve read first; None reads
+    the well's own (``LITHOLOGY_GEOLINK``, or another lithology-code curve as
+    :func:`~petrophys.interpretation.lithology.matrix_inference.find_lithology_code_curve`
+    finds it).
+    """
     if lithology is not None:
         return lithology, "provided_lithology"
 
-    lith_curve = get_curve(well, ["LITHOLOGY_GEOLINK"])
+    if lithology_curve is None:
+        from petrophys.interpretation.lithology.matrix_inference import find_lithology_code_curve
+
+        lithology_curve = find_lithology_code_curve(well)
+    lith_curve = get_curve(well, [lithology_curve]) if lithology_curve else None
     if lith_curve is not None:
         try:
             return np.asarray(lith_curve.data, dtype=float), lith_curve.mnemonic
@@ -449,6 +501,7 @@ def _resolve_lith_vcl_inputs(
     well: "Well",
     phi: np.ndarray,
     lithology: Optional[Union[str, np.ndarray]] = None,
+    lithology_curve: Optional[str] = None,
 ) -> tuple[np.ndarray, np.ndarray, Optional[Union[str, np.ndarray]], Dict[str, Any]]:
     """Resolve PHIT, VCL, and lithology inputs for lith_vcl permeability."""
     phit, phit_source, _ = get_curve_data_depthwise(well, ["PHIT"])
@@ -463,7 +516,9 @@ def _resolve_lith_vcl_inputs(
         raise ValueError("VCL or VCLAY with finite samples required for lith_vcl permeability")
     vcl = np.asarray(vcl, dtype=float)
 
-    lith, lith_source = _resolve_lithology_input(well, lithology=lithology)
+    lith, lith_source = _resolve_lithology_input(
+        well, lithology=lithology, lithology_curve=lithology_curve
+    )
     if lith_source == "not_available":
         lith_source = "default_sandstone"
 
@@ -518,14 +573,19 @@ def _fit_core_perm_model(
     formation_name: Optional[str] = None,
     min_core_points: int = 3,
     rejected_models: Optional[List[Dict[str, Any]]] = None,
+    porosity_curve: Optional[str] = None,
+    min_porosity_r_squared: Optional[float] = None,
 ) -> Optional[CorePermModel]:
     """
     Fit a core-derived porosity correction and poro-perm transform.
 
     If ``formation_name`` is provided, the fit is limited to that formation
-    interval using the supplied ``formation_tops``.
+    interval using the supplied ``formation_tops``. ``porosity_curve`` is the
+    log porosity the correction is fitted to (default: PHIE, else PHIT). With
+    ``min_porosity_r_squared`` a porosity correction that fails the quality
+    gate of :func:`_porosity_correction_rejection` rejects the whole model.
     """
-    porosity_curve = _resolve_porosity_curve_name(source_well)
+    porosity_curve = _core_porosity_curve_name(source_well, porosity_curve)
     top = None
     bottom = None
 
@@ -589,6 +649,22 @@ def _fit_core_perm_model(
         )
         return None
 
+    if min_porosity_r_squared is not None:
+        reason = _porosity_correction_rejection(correction, min_porosity_r_squared)
+        if reason is not None:
+            _reject(
+                reason,
+                input_curve=porosity_curve,
+                porosity_correction={"A": correction.A, "B": correction.B},
+                r_squared=correction.r_squared,
+                n_porosity_points=correction.n_points,
+                min_r_squared=min_porosity_r_squared,
+                min_porosity_points=CORE_POROSITY_MIN_POINTS,
+                core_porosity_curve=core.metadata.get("core_porosity_curve"),
+                core_permeability_curve=core.metadata.get("core_permeability_curve"),
+            )
+            return None
+
     if transform.n_points < min_core_points:
         _reject(
             "too_few_core_points",
@@ -610,6 +686,21 @@ def _fit_core_perm_model(
         core_porosity_curve=core.metadata.get("core_porosity_curve"),
         core_permeability_curve=core.metadata.get("core_permeability_curve"),
     )
+
+
+def _porosity_fit_summary(model: CorePermModel) -> Dict[str, Any]:
+    """The porosity correction of a core model with its fit statistics."""
+    correction = model.porosity_correction
+    return {
+        "source_well": model.source_well,
+        "source_formation": model.source_formation,
+        "source_type": model.source_type,
+        "input_curve": model.input_curve,
+        "A": correction.A,
+        "B": correction.B,
+        "r_squared": correction.r_squared,
+        "n_points": correction.n_points,
+    }
 
 
 def _model_rank(model: CorePermModel) -> tuple[float, float, float]:
@@ -642,9 +733,11 @@ def _build_same_well_core_prediction(
     min_core_points: int = 3,
     include_global: bool = True,
     rejected_models: Optional[List[Dict[str, Any]]] = None,
+    porosity_curve: Optional[str] = None,
+    min_porosity_r_squared: Optional[float] = None,
 ) -> tuple[np.ndarray, np.ndarray, List[CorePermModel]]:
     """Build same-well core-calibrated porosity and permeability."""
-    porosity_curve = _resolve_porosity_curve_name(well)
+    porosity_curve = _core_porosity_curve_name(well, porosity_curve)
     phi_input = np.asarray(well.get(porosity_curve).data, dtype=float)
     depth = np.asarray(well.depth, dtype=float)
 
@@ -661,6 +754,8 @@ def _build_same_well_core_prediction(
                 formation_name=interval.name,
                 min_core_points=min_core_points,
                 rejected_models=rejected_models,
+                porosity_curve=porosity_curve,
+                min_porosity_r_squared=min_porosity_r_squared,
             )
             if model is None:
                 continue
@@ -677,6 +772,8 @@ def _build_same_well_core_prediction(
             formation_name=None,
             min_core_points=min_core_points,
             rejected_models=rejected_models,
+            porosity_curve=porosity_curve,
+            min_porosity_r_squared=min_porosity_r_squared,
         )
         if model is not None:
             _apply_core_model(phi_input, unresolved, model, phi_corecal, perm_core)
@@ -691,6 +788,8 @@ def _build_peer_core_prediction(
     formation_tops: Optional[Any] = None,
     min_core_points: int = 3,
     rejected_models: Optional[List[Dict[str, Any]]] = None,
+    porosity_curve: Optional[str] = None,
+    min_porosity_r_squared: Optional[float] = None,
 ) -> tuple[np.ndarray, np.ndarray, List[CorePermModel]]:
     """
     Build permeability from peer wells in the same field and formation.
@@ -698,8 +797,7 @@ def _build_peer_core_prediction(
     This requires ``FormationTops`` on the target well and on candidate peer
     wells (stored on each well as ``well.set_parameter("formation_tops", tops)``).
     """
-    porosity_curve = _resolve_porosity_curve_name(well)
-    phi_input = np.asarray(well.get(porosity_curve).data, dtype=float)
+    phi_input = np.asarray(well.get(_core_porosity_curve_name(well, porosity_curve)).data, dtype=float)
     depth = np.asarray(well.depth, dtype=float)
     phi_corecal = np.full_like(phi_input, np.nan, dtype=float)
     perm_core = np.full_like(phi_input, np.nan, dtype=float)
@@ -733,6 +831,8 @@ def _build_peer_core_prediction(
                 formation_name=interval.name,
                 min_core_points=min_core_points,
                 rejected_models=rejected_models,
+                porosity_curve=porosity_curve,
+                min_porosity_r_squared=min_porosity_r_squared,
             )
             if model is None:
                 continue
@@ -780,7 +880,39 @@ def _auto_empirical_methods(fallback_method: str) -> List[str]:
 
 
 class PermeabilityModule:
-    """Permeability estimation module."""
+    """Permeability estimation module.
+
+    Parameters
+    ----------
+    method : str, optional
+        ``"auto"`` (core calibration where possible, empirical elsewhere),
+        ``"timur"``, ``"coates"``, ``"wyllie_rose"`` or ``"lith_vcl"``.
+    fallback_method : str, optional
+        Empirical method where core cannot calibrate.
+    min_core_points : int, optional
+        Fewest matched core points of a poro-perm transform.
+    use_peer_core : bool, optional
+        Calibrate with core from same-field peer wells.
+    porosity_curves : sequence of str, optional
+        Porosity curve preference, in order (default: PHIE then PHIT).
+    core_porosity_curve : str, optional
+        Log porosity curve the core porosity correction is fitted to and
+        applied on, when the well has it, e.g. ``"PHIT"``: helium porosity of
+        cleaned, oven-dried plugs includes the pore space of the clay-bound
+        water (API RP 40, 1998). Default: PHIE, else PHIT.
+    min_porosity_r_squared : float, optional
+        Quality gate for the core porosity correction. When set, a fit with a
+        lower r^2, a slope that is not positive, or fewer than
+        ``CORE_POROSITY_MIN_POINTS`` core-log pairs is rejected with its
+        poro-perm transform and listed with the reason in
+        ``metadata["core_rejected_models"]``, so no corrected porosity or
+        permeability comes from it. Default None: every fit is used.
+    lithology_curve : str, optional
+        Lithology code curve that ``"lith_vcl"`` reads when ``calculate`` is
+        given no lithology. Default: the well's lithology code curve,
+        ``LITHOLOGY_GEOLINK`` or another lithology-code curve as
+        :func:`petrophys.interpret` reads it.
+    """
 
     def __init__(
         self,
@@ -789,6 +921,9 @@ class PermeabilityModule:
         min_core_points: int = 3,
         use_peer_core: bool = False,
         porosity_curves: Optional[Sequence[str]] = None,
+        core_porosity_curve: Optional[str] = None,
+        min_porosity_r_squared: Optional[float] = None,
+        lithology_curve: Optional[str] = None,
     ):
         self.method = _normalize_perm_method(method)
         self.fallback_method = _normalize_perm_method(fallback_method)
@@ -796,6 +931,31 @@ class PermeabilityModule:
         self.use_peer_core = bool(use_peer_core)
         #: Porosity curve preference, in order (default: PHIE then PHIT).
         self.porosity_curves = list(porosity_curves) if porosity_curves else ["PHIE", "PHIT"]
+        #: Log porosity the core porosity correction is fitted to (None: PHIE, else PHIT).
+        self.core_porosity_curve = core_porosity_curve
+        #: Minimum r^2 of a core porosity correction (None: no quality gate).
+        self.min_porosity_r_squared = min_porosity_r_squared
+        #: Lithology code curve read by lith_vcl (None: the well's own).
+        self.lithology_curve = lithology_curve
+
+    def _core_options(self) -> Dict[str, Any]:
+        """Core-model fitting options shared by every core calibration route."""
+        return {
+            "min_core_points": self.min_core_points,
+            "porosity_curve": self.core_porosity_curve,
+            "min_porosity_r_squared": self.min_porosity_r_squared,
+        }
+
+    def _core_input_porosity(self, well: "Well", phi: np.ndarray) -> np.ndarray:
+        """Porosity the same-well global core model is applied on.
+
+        ``phi`` unless ``core_porosity_curve`` is set; then the curve the model
+        was fitted to.
+        """
+        if self.core_porosity_curve is None:
+            return phi
+        curve = well.get(_core_porosity_curve_name(well, self.core_porosity_curve))
+        return np.asarray(curve.data, dtype=float)
 
     def _calculate_empirical(
         self,
@@ -825,7 +985,9 @@ class PermeabilityModule:
                 swi, swi_source, bvw_irr, swi_metadata = _resolve_swirr_details(well, phi=phi)
             perm = wyllie_rose(phi, swi)
         elif empirical_method == "lith_vcl":
-            phit, vcl, lith, lith_metadata = _resolve_lith_vcl_inputs(well, phi, lithology=lithology)
+            phit, vcl, lith, lith_metadata = _resolve_lith_vcl_inputs(
+                well, phi, lithology=lithology, lithology_curve=self.lithology_curve
+            )
             perm = lith_vcl_permeability(phit, vcl, lith)
             swi_metadata = {"source": "not_required", "reason": "lith_vcl permeability does not use Swirr"}
         else:
@@ -857,6 +1019,16 @@ class PermeabilityModule:
                 swi_metadata.get("input_curves")
                 or [swi_metadata.get("source_curve") or "SWIRR/SW"]
             )
+        if empirical_method == "wyllie_rose":
+            # Morris and Biggs (1967) medium-gravity oil: sqrt(k) = 250 phi^3 / Swirr.
+            p, q, r = WYLLIE_ROSE_PRESETS["morris_biggs_oil"]
+            method_metadata = {
+                "equation": f"{p:g} * PHIE^{q:g} / SWIRR^{r:g}",
+                "preset": "morris_biggs_oil",
+                "coefficient": p,
+                "porosity_exponent": q,
+                "swirr_exponent": r,
+            }
 
         if empirical_method == "coates" and swi_source != "user":
             input_curves.extend(
@@ -908,9 +1080,9 @@ class PermeabilityModule:
         same_well_phi, same_well_perm, same_well_models = _build_same_well_core_prediction(
             well,
             formation_tops=formation_tops,
-            min_core_points=self.min_core_points,
             include_global=False,
             rejected_models=core_rejected_models,
+            **self._core_options(),
         )
         same_mask = np.isfinite(same_well_perm)
         if np.any(same_mask):
@@ -924,8 +1096,8 @@ class PermeabilityModule:
                 well,
                 peer_wells=peer_wells,
                 formation_tops=formation_tops,
-                min_core_points=self.min_core_points,
                 rejected_models=core_rejected_models,
+                **self._core_options(),
             )
             peer_mask = unresolved & np.isfinite(peer_perm)
             if np.any(peer_mask):
@@ -938,11 +1110,12 @@ class PermeabilityModule:
                 well,
                 formation_tops=None,
                 formation_name=None,
-                min_core_points=self.min_core_points,
                 rejected_models=core_rejected_models,
+                **self._core_options(),
             )
             if same_well_global is not None:
-                phi_global, perm_global = same_well_global.predict(phi[unresolved])
+                core_phi = self._core_input_porosity(well, phi)
+                phi_global, perm_global = same_well_global.predict(core_phi[unresolved])
                 phi_corecal[unresolved] = phi_global
                 perm_core[unresolved] = perm_global
                 same_well_models.append(same_well_global)
@@ -958,6 +1131,7 @@ class PermeabilityModule:
             ),
             "porosity_curve": porosity_curve,
             "core_models": [_serialize_core_model(model) for model in core_models],
+            "core_porosity_fits": [_porosity_fit_summary(model) for model in core_models],
             "core_sections_count": int(np.count_nonzero(np.isfinite(perm_core))),
             "phi_corecal": phi_corecal if np.any(np.isfinite(phi_corecal)) else None,
             "perm_core": perm_core if np.any(np.isfinite(perm_core)) else None,
@@ -1031,9 +1205,9 @@ class PermeabilityModule:
         same_well_phi, same_well_perm, same_well_models = _build_same_well_core_prediction(
             well,
             formation_tops=formation_tops,
-            min_core_points=self.min_core_points,
             include_global=False,
             rejected_models=core_rejected_models,
+            **self._core_options(),
         )
         same_mask = np.isfinite(same_well_perm)
         if np.any(same_mask):
@@ -1050,8 +1224,8 @@ class PermeabilityModule:
                 well,
                 peer_wells=peer_wells,
                 formation_tops=formation_tops,
-                min_core_points=self.min_core_points,
                 rejected_models=core_rejected_models,
+                **self._core_options(),
             )
             peer_mask = unresolved & np.isfinite(peer_perm)
             if np.any(peer_mask):
@@ -1065,11 +1239,12 @@ class PermeabilityModule:
                 well,
                 formation_tops=None,
                 formation_name=None,
-                min_core_points=self.min_core_points,
                 rejected_models=core_rejected_models,
+                **self._core_options(),
             )
             if same_well_global is not None:
-                phi_global, perm_global = same_well_global.predict(phi[unresolved])
+                core_phi = self._core_input_porosity(well, phi)
+                phi_global, perm_global = same_well_global.predict(core_phi[unresolved])
                 phi_corecal[unresolved] = phi_global
                 perm_core[unresolved] = perm_global
                 perm[unresolved] = perm_global
@@ -1093,6 +1268,7 @@ class PermeabilityModule:
             ),
             "porosity_curve": porosity_curve,
             "core_models": [_serialize_core_model(model) for model in core_models],
+            "core_porosity_fits": [_porosity_fit_summary(model) for model in core_models],
             "core_sections_count": int(np.count_nonzero(np.isfinite(perm_core))),
             "phi_corecal": phi_corecal if np.any(np.isfinite(phi_corecal)) else None,
             "perm_core": perm_core if np.any(np.isfinite(perm_core)) else None,

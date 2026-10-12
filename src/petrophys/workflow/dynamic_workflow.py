@@ -20,7 +20,9 @@ Pipeline execution order:
     Module 11: Net Pay
 """
 
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
+from contextlib import contextmanager
+from contextvars import ContextVar
 import dataclasses
 from dataclasses import dataclass, field
 from enum import Enum
@@ -29,12 +31,18 @@ import numpy as np
 from pathlib import Path
 import re
 from petrophys.model.well import Well
+from petrophys.model.class_tables import Bands
 from petrophys.model.data_types import DataType
-from petrophys.model.units import temperature_to_fahrenheit
+from petrophys.model.units import UnitConverter, temperature_to_fahrenheit, temperature_unit
 from petrophys._internal.analysis_helpers import (
     curve_source_mnemonic,
     get_curve,
     get_curve_data_depthwise,
+    interval_strings,
+)
+from petrophys.preprocessing.quality.bad_hole.flag_generator import (
+    _known_bit_size,
+    _plausible_bit_size,
 )
 import pandas as pd
 from petrophys.io import ascii_reader, las_reader
@@ -230,6 +238,241 @@ LITHOLOGY_GROUP_TO_MATRIX = {
     "coal": "coal",
 }
 
+# The "current" calculations regroup a few GeoLink codes; the benchmark profile
+# keeps GROUND_TRUTH_CODE_TO_GROUP. Code 10 is "Porous Limestone" in the Kingdom
+# lithology codebook ("Calcareous Sandstone" is only its display pattern) and
+# logs as a carbonate; code 26, "Gap", records no lithology. The potash salts
+# get their own matrix endpoints: sylvite and carnallite read lighter than
+# halite on the density log, and the hydrated salts read high on the neutron
+# log. Lithology intervals may also name gypsum.
+_CURRENT_GROUND_TRUTH_CODE_TO_GROUP = {
+    **GROUND_TRUTH_CODE_TO_GROUP,
+    10: "limestone",
+    26: None,
+    27: "sylvinite",
+    32: "polyhalite",
+    33: "carnallite",
+    34: "kainite",
+}
+
+_CURRENT_LITHOLOGY_GROUP_TO_MATRIX = {
+    **LITHOLOGY_GROUP_TO_MATRIX,
+    "gypsum": "gypsum",
+    "sylvinite": "sylvite",
+    "polyhalite": "polyhalite",
+    "carnallite": "carnallite",
+    "kainite": "kainite",
+}
+
+#: Lithology groups that are evaporites (halite and other salts, anhydrite,
+#: gypsum). A "current" run never counts them as net reservoir or net pay.
+EVAPORITE_LITHOLOGY_GROUPS = frozenset({
+    "evaporite", "halite", "salt", "anhydrite", "gypsum",
+    "sylvinite", "carnallite", "kainite", "polyhalite",
+})
+
+#: Other lithology groups that a "current" run never counts as net reservoir
+#: or net pay. Coal logs a bulk density of 1.2-1.8 g/cm3 and a high
+#: resistivity (Asquith and Krygowski, 2004), so it passes the porosity and
+#: saturation cutoffs although it holds no movable hydrocarbon. The igneous,
+#: metamorphic and chert groups stay in: fractured basement and porous tuff
+#: or spiculite can be reservoirs.
+NON_RESERVOIR_LITHOLOGY_GROUPS = frozenset({"coal"})
+
+
+def _halite_log_signature(well: "Well") -> np.ndarray:
+    """Samples whose logs read like halite (rock salt).
+
+    Halite logs a bulk density of 2.03 g/cm3, a neutron porosity of about
+    zero, a photoelectric factor of 4.65 b/e and a slowness of 67 us/ft, has
+    almost no radioactivity (Schlumberger, *Log Interpretation Charts*,
+    1989) and almost no conductivity. A sample reads like halite with RHOB
+    1.95-2.15 g/cm3, GR below 15 API, and a deep resistivity above
+    500 ohm.m or, where none is logged, a caliper more than 0.5 in under the
+    bit size (salt creeps into the hole). Where they are logged, NPHI must
+    not exceed 0.05 and PEF must lie between 4.0 and 5.5 b/e, which rules
+    out porous clean sandstone or limestone of the same bulk density.
+    """
+    def data(*names: str) -> np.ndarray:
+        values, _, _ = get_curve_data_depthwise(well, list(names))
+        if values is None:
+            return np.full(well.n_samples, np.nan)
+        return np.asarray(values, dtype=float)
+
+    rhob, gr, rt = data("RHOB"), data("GR", "SGR", "HSGR"), data("RDEP", "RT")
+    nphi, pef, cali = data("NPHI"), data("PEF"), data("CALI", "CAL")
+    bit_size = _known_bit_size(well)
+    with np.errstate(invalid="ignore"):
+        halite = (rhob >= 1.95) & (rhob <= 2.15) & (gr < 15.0)
+        halite &= (rt > 500.0) | (~np.isfinite(rt) & (cali < bit_size - 0.5))
+        halite &= ~(nphi > 0.05) & ~((pef < 4.0) | (pef > 5.5))
+    return halite
+
+
+def _group_mask(lithology: Union[str, np.ndarray], groups: frozenset, n_samples: int) -> np.ndarray:
+    """Samples whose per-depth lithology group is one of ``groups``."""
+    if not isinstance(lithology, np.ndarray) or lithology.shape != (n_samples,):
+        return np.zeros(n_samples, dtype=bool)
+    return np.array([_coerce_lithology_group(group) in groups for group in lithology], dtype=bool)
+
+
+def _log_halite(well: "Well", lithology: Union[str, np.ndarray]) -> np.ndarray:
+    """Halite read from the logs (:func:`_halite_log_signature`) where no
+    lithology group already calls the sample an evaporite."""
+    evaporite = _group_mask(lithology, EVAPORITE_LITHOLOGY_GROUPS, well.n_samples)
+    return _halite_log_signature(well) & ~evaporite
+
+
+def _non_reservoir_samples(well: "Well", lithology: Union[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    """Samples kept out of net reservoir and net pay under ``"current"``, by kind.
+
+    * ``evaporite``: per-depth lithology groups in
+      :data:`EVAPORITE_LITHOLOGY_GROUPS`. Salt, anhydrite and gypsum have no
+      effective porosity or permeability; they seal reservoirs rather than
+      form them (Warren, 2006). Porosity computed with a sandstone or
+      limestone matrix still passes the cutoffs there: halite reads
+      2.03 g/cm3 on the density log (Schlumberger chartbook), an apparent
+      density porosity of 0.38 on a 2.65 g/cm3 matrix with 1.0 g/cm3 water,
+      and its high resistivity gives a low Sw. The lithology domain alone
+      never excludes samples. On a GeoLink code log the evaporites are the
+      halite and anhydrite groups and the potash salts; code 26, "Gap",
+      records no lithology and has no group.
+    * ``coal``: per-depth lithology groups in
+      :data:`NON_RESERVOIR_LITHOLOGY_GROUPS`.
+    * ``halite_log_signature``: samples that no lithology group calls an
+      evaporite but whose logs read like halite
+      (:func:`_halite_log_signature`), such as salt below the end of a
+      lithology log.
+    * ``bad_hole``: samples with ``BAD_HOLE`` = 1 (washout or large hole).
+      There the density pad loses contact with the borehole wall, so bulk
+      density and neutron porosity, and the PHIE and Sw built on them, are
+      unreliable (Asquith and Krygowski, 2004). The ``"current"`` bad-hole
+      step assumes no bit size: where none is known, BAD_HOLE comes from
+      ``|DRHO|`` > 0.15 g/cm3 alone.
+    """
+    n_samples = well.n_samples
+    excluded: Dict[str, np.ndarray] = {}
+    for kind, mask in (
+        ("evaporite", _group_mask(lithology, EVAPORITE_LITHOLOGY_GROUPS, n_samples)),
+        ("coal", _group_mask(lithology, NON_RESERVOIR_LITHOLOGY_GROUPS, n_samples)),
+        ("halite_log_signature", _log_halite(well, lithology)),
+    ):
+        if mask.any():
+            excluded[kind] = mask
+    bad_hole = well.get("BAD_HOLE")
+    if bad_hole is not None:
+        data = np.asarray(bad_hole.data, dtype=float)
+        flagged = np.isfinite(data) & (data > 0.5)
+        if flagged.any():
+            excluded["bad_hole"] = flagged
+    return excluded
+
+
+def _cutoff_families(lithology: Union[str, np.ndarray], fallback: str) -> Union[str, np.ndarray]:
+    """Lithology family that sets each sample's net-pay cutoffs.
+
+    Limestone, chalk, dolomite and marl groups take the carbonate standards
+    and every other group the clastic ones
+    (:func:`~petrophys.evaluation.net_pay.cutoffs.cutoff_family`); samples
+    without a lithology group take the family ``fallback``.
+    """
+    from petrophys.evaluation.net_pay.cutoffs import cutoff_family
+
+    if not isinstance(lithology, np.ndarray):
+        return cutoff_family(lithology) if lithology else fallback
+    families: Dict[Any, str] = {}
+    for group in lithology:
+        if group not in families:
+            name = _coerce_lithology_group(group)
+            families[group] = cutoff_family(name) if name else fallback
+    return np.array([families[group] for group in lithology], dtype=object)
+
+
+def _net_flags_by_family(
+    well: "Well",
+    families: Union[str, np.ndarray],
+    vcl: Optional[np.ndarray],
+    phie: np.ndarray,
+    sw: np.ndarray,
+    explicit: Dict[str, Optional[float]],
+    excluded_masks: Dict[str, np.ndarray],
+) -> Tuple[Any, Any, Dict[str, Any]]:
+    """Net flags from each sample's family cutoffs, less the non-reservoir samples.
+
+    A cutoff in ``explicit`` applies to every sample; one left as None takes
+    the standard (:data:`~petrophys.evaluation.STANDARD_CUTOFFS`) of the
+    sample's family in ``families``. The samples in ``excluded_masks``
+    (:func:`_non_reservoir_samples`) are then removed from net reservoir and
+    net pay; net rock keeps them.
+
+    Returns
+    -------
+    tuple
+        The :class:`~petrophys.evaluation.net_pay.NetPayModule`, its
+        ``NetPayResult`` and a dict with the resolved ``cutoffs``, their
+        ``cutoff_source``, ``cutoffs_by_family`` (with sample counts) and,
+        per excluded kind, the samples flagged and the net-reservoir and
+        net-pay samples removed (``excluded``).
+    """
+    from petrophys.evaluation.net_pay.cutoffs import standard_cutoffs
+    from petrophys.evaluation.net_pay.net_pay_module import NetPayModule
+
+    module = NetPayModule(**explicit, lithology=families)
+    result = module.calculate(well, vcl=vcl, phie=phie, sw=sw)
+
+    family_array = np.broadcast_to(np.asarray(families, dtype=str), (well.n_samples,))
+    names, counts = np.unique(family_array, return_counts=True)
+    by_family: Dict[str, Dict[str, Any]] = {}
+    for index in np.argsort(-counts, kind="stable"):  # most samples first
+        standard = standard_cutoffs(str(names[index]))
+        item: Dict[str, Any] = {
+            key: float(value if value is not None else standard[key])
+            for key, value in explicit.items()
+        }
+        item["samples"] = int(counts[index])
+        by_family[str(names[index])] = item
+    cutoffs = {
+        key: _scalar_or_lithology_dependent([item[key] for item in by_family.values()])
+        for key in explicit
+    }
+    source = {
+        key: "config" if value is not None else "lithology_family_standard"
+        for key, value in explicit.items()
+    }
+
+    excluded: Dict[str, Dict[str, int]] = {}
+    usable = np.ones(well.n_samples, dtype=bool)
+    for kind, mask in excluded_masks.items():
+        removed = mask & usable
+        excluded[kind] = {
+            "samples": int(np.count_nonzero(mask)),
+            "net_reservoir_samples_removed": int(np.count_nonzero(result.net_reservoir & removed)),
+            "net_pay_samples_removed": int(np.count_nonzero(result.net_pay & removed)),
+        }
+        usable &= ~mask
+    if excluded:
+        result = module.calculate(well, vcl=vcl, phie=phie, sw=sw, quality_mask=usable)
+    details = {
+        "cutoffs": cutoffs,
+        "cutoff_source": source,
+        "cutoffs_by_family": by_family,
+        "excluded": excluded,
+    }
+    return module, result, details
+
+
+def _interval_text(well: "Well", mask: np.ndarray, limit: int = 3) -> str:
+    """The first ``limit`` depth intervals where ``mask`` holds, as text."""
+    labels = np.where(np.asarray(mask, dtype=bool), "in", "")
+    intervals = [
+        text.strip()
+        for text in interval_strings(well.depth, labels, well.depth_unit or "").get("in", [])
+    ]
+    text = ", ".join(intervals[:limit])
+    if len(intervals) > limit:
+        text += f" and {len(intervals) - limit} more intervals"
+    return text
+
 
 def _representative_finite_value(values: Any) -> Optional[float]:
     """Return the modal finite value, falling back to median."""
@@ -280,6 +523,47 @@ def _finite_unique_numeric(values: Any) -> list[float]:
     if finite.size == 0:
         return []
     return sorted(float(value) for value in np.unique(np.round(finite, 6)))
+
+
+def _family_cutoff_text(by_family: Dict[str, Dict[str, Any]], key: str) -> str:
+    """A net-pay cutoff for the trace: ``0.4``, or ``0.4 clastic, 0.3 carbonate``."""
+    values = {family: item[key] for family, item in by_family.items()}
+    if len(set(values.values())) == 1:
+        return f"{next(iter(values.values())):g}"
+    return ", ".join(f"{value:g} {family}" for family, value in values.items())
+
+
+def _net_pay_detail_decisions(
+    source: Dict[str, str],
+    by_family: Dict[str, Dict[str, Any]],
+    excluded: Dict[str, Dict[str, Any]],
+) -> List[str]:
+    """Trace lines: where the net-pay cutoffs came from, and the samples left out."""
+    lines = []
+    standard = [key for key, origin in source.items() if origin != "config"]
+    if standard:
+        lines.append(
+            f"{', '.join(standard)} not set: lithology-family standards (STANDARD_CUTOFFS) for "
+            + ", ".join(f"{item['samples']} {family} samples" for family, item in by_family.items())
+        )
+    reasons = {
+        "evaporite": "Evaporite lithology (salt, anhydrite, gypsum) is not reservoir rock",
+        "coal": "Coal is not reservoir rock (low density and high resistivity pass the cutoffs)",
+        "halite_log_signature": (
+            "Halite on the logs where no lithology group calls the rock an evaporite (RHOB "
+            "1.95-2.15 g/cm3, GR < 15 API, RT > 500 ohm.m or, without RT, CALI < BS - 0.5 in; "
+            "NPHI <= 0.05 and PEF 4.0-5.5 where logged)"
+        ),
+        "bad_hole": "Bad hole (BAD_HOLE = 1): density, neutron, PHIE and SW are unreliable",
+    }
+    for kind, item in excluded.items():
+        unit = item["depth_unit"]
+        lines.append(
+            f"{reasons.get(kind, kind)}: {item['samples']} samples left out of NET_RES and "
+            f"NET_PAY, removing {item['net_reservoir_removed']:.1f} {unit} of net reservoir and "
+            f"{item['net_pay_removed']:.1f} {unit} of net pay"
+        )
+    return lines
 
 
 def _scalar_or_lithology_dependent(values: Any) -> Any:
@@ -415,35 +699,54 @@ class DynamicWorkflowConfig:
     """
 
     # -- Input handling ------------------------------------------------------
-    #: Standardize curve aliases and units before interpretation.
-    standardize_input: bool = False
+    #: Standardize curve aliases and units before interpretation: vendor
+    #: mnemonics get canonical aliases, units such as kg/m3 or percent
+    #: porosity are converted and implausible values are screened, with a
+    #: warning. None (default) means True under the ``"current"`` calculation
+    #: profile and False under the benchmark profile.
+    standardize_input: Optional[bool] = None
     #: Rename vendor mnemonics to canonical names instead of adding aliases.
     rename_input_curves: bool = False
     #: Use a 0.05 ohm.m default Rw when no Rw source is found (the warnings
     #: say so). When False, saturation is not computed without an Rw source.
     allow_default_rw: bool = True
     # -- Temperature ---------------------------------------------------------
-    #: Surface (mean annual) temperature, degF.
+    #: Surface (mean annual) temperature, degF, at depth 0 of the linear
+    #: temperature profile (offshore, the sea surface rather than the seabed).
     surface_temp_f: float = 68.0
-    #: Bottom-hole temperature, degF. Defaults to the LAS header BHT.
+    #: Bottom-hole temperature, degF. Defaults to the LAS header BHT. It is
+    #: taken as the static formation temperature at TD, with no correction for
+    #: mud circulation (such as a Horner plot).
     bht_f: Optional[float] = None
     #: Total depth for the BHT, in feet. Defaults to the deepest sample.
     td_ft: Optional[float] = None
 
     # -- Mud properties ------------------------------------------------------
-    #: ``"WBM"`` (water-based) or ``"OBM"`` (oil-based) mud.
+    #: ``"WBM"`` (water-based) or ``"OBM"`` (oil-based) mud. With oil-based mud
+    #: no SXO or MHI is computed, and Rw is not estimated from the SP or Rxo/Rt:
+    #: they need a conductive water-based filtrate (the benchmark profile
+    #: computes them).
     mud_type: str = "WBM"
     #: The mud contains clay or KCl, which disables SP-based Rw estimation.
     mud_has_clay_or_kcl: bool = False
     #: Mud-filtrate resistivity Rmf at ``rmf_meas_temp_f``, ohm.m.
     rmf_at_meas_temp: Optional[float] = None
-    #: Temperature at which ``rmf_at_meas_temp`` was measured, degF.
+    #: Temperature at which ``rmf_at_meas_temp`` was measured, degF. Left at
+    #: the default, the LAS header RMFT is used, or else MFST (mud filtrate
+    #: sample temperature), which the benchmark profile does not read.
     rmf_meas_temp_f: float = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
     #: Mud-filtrate salinity, ppm NaCl equivalent (alternative to Rmf).
     rmf_salinity_ppm: Optional[float] = None
+    #: Mud-filtrate chlorides (Cl-), mg/l, as on the mud report and the LAS
+    #: header CLFL. Without Rmf or ``rmf_salinity_ppm``, Rmf comes from its NaCl
+    #: equivalent: Cl x 58.44/35.45, divided by the brine density to give ppm
+    #: by weight. The benchmark profile reads CLFL as ``rmf_salinity_ppm``.
+    rmf_chlorides_mg_l: Optional[float] = None
     #: Mud resistivity Rm at ``rm_meas_temp_f``, ohm.m (Rmf is derived from it).
     rm: Optional[float] = None
-    #: Temperature at which ``rm`` was measured, degF.
+    #: Temperature at which ``rm`` was measured, degF. Left at the default, the
+    #: LAS header RMT is used, or else MST (mud sample temperature), which the
+    #: benchmark profile does not read.
     rm_meas_temp_f: float = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
     #: ``"fresh"`` or ``"salt"`` mud, which sets the Rm-to-Rmf factor.
     mud_water: str = "fresh"
@@ -493,14 +796,42 @@ class DynamicWorkflowConfig:
     #: Lithology source: ``"auto"``, ``"external"`` (intervals),
     #: ``"vendor"`` (lithology curve), ``"computed"`` or ``"config"``.
     lithology_source: str = "auto"
+    #: Mnemonic of the per-sample lithology code curve, e.g. ``"FACIES"``. The
+    #: same curve is the vendor lithology that ``lithology_source`` selects,
+    #: resolves an ``"auto"`` matrix and gives the per-depth lithology groups,
+    #: and its codes are decoded with the GeoLink/Kingdom code table of
+    #: ``LITHOLOGY_GEOLINK``. None (default) reads ``LITHOLOGY_GEOLINK``. Under
+    #: ``"current"``, with ``lithology_source`` ``"auto"`` or ``"vendor"``, a
+    #: well without it is read from the first lithology-code mnemonic
+    #: (``LITHOLOGY``, ``LITHOFACIES``, ``FACIES``, ``LITH_CODE``,
+    #: ``ROCK_TYPE``, ...) whose curve holds lithology codes: 20 or more finite
+    #: whole numbers from 0 to 99, at most 50 distinct, half or more of them
+    #: GeoLink codes. A warning names a curve other than ``LITHOLOGY_GEOLINK``,
+    #: and a curve set here that has no finite samples. Unless this is set, the
+    #: benchmark profile takes its per-depth lithology groups from
+    #: ``LITHOLOGY_GEOLINK`` alone (see ``calculation_profile``).
+    lithology_curve: Optional[str] = None
     #: Mineral solver for the clastic mineral step. ``1`` (default) is
     #: :class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`, the
-    #: original solver: VCL and PHIE are fixed inputs and samples that fail the
-    #: 0.05 closure gate are left unsolved. ``2`` is
+    #: original solver: VCL and PHIE are fixed inputs, each equation row is
+    #: weighted by its nominal tool uncertainty (unweighted under the benchmark
+    #: profile), and samples that fail the 0.05 closure gate are left
+    #: unsolved. ``2`` is
     #: :class:`~petrophys.interpretation.lithology.MultiMineralSolver`, which
     #: solves porosity jointly with the minerals. The carbonate domain uses its
-    #: own GR-illite solver either way.
+    #: own calcite-dolomite solve (``carbonate_calibration``) either way.
     mineral_solver_version: int = 1
+    #: Calibration of the carbonate-domain mineral solve, which takes calcite
+    #: and dolomite from bulk density and closure. ``"generic"``: clay volume
+    #: from VCL with density ``rho_cl``, effective porosity, pore fluid
+    #: ``rho_fl``, calcite 2.71 and dolomite 2.87 g/cm3. ``"costa"``: the COSTA
+    #: field calibration, illite from GR (``-0.0424035 + 0.00562239 * GR``),
+    #: total porosity, a 1.19 g/cm3 brine and a 2.847 g/cm3 dolomite. Default:
+    #: ``"generic"``; ``"costa"`` under the benchmark profile. Both read the
+    #: porosity step's PHIE or PHIT, computed with the ``matrix_type`` density,
+    #: so the calcite-dolomite split largely follows ``matrix_type`` where that
+    #: porosity is density-derived.
+    carbonate_calibration: Optional[str] = None
     #: Raise on the first failed step instead of recording it and continuing.
     raise_on_error: bool = False
 
@@ -513,33 +844,59 @@ class DynamicWorkflowConfig:
     n: Optional[float] = None
 
     # -- Waxman-Smits parameters ---------------------------------------------
-    #: Cation exchange capacity, meq/100 g.
+    #: Cation exchange capacity, meq/100 g (0 to 150; pure smectite is 80-150).
+    #: Waxman-Smits runs only with ``cec`` and ``b_coeff``, from lab data or the
+    #: LAS header, where a CEC in MEQ/G is converted; neither is estimated. A
+    #: value under 1 gets a warning, as meq/g values look like that. The
+    #: benchmark profile passes ``cec`` to the solver as meq/g.
     cec: Optional[float] = None
-    #: Equivalent counter-ion conductance B.
+    #: Equivalent counter-ion conductance B, (S/m)/(meq/cm3): at 25 degC
+    #: 4.6 * (1 - 0.6 * exp(-0.77 / Rw)) (Waxman and Smits, 1968), and higher at
+    #: reservoir temperature.
     b_coeff: Optional[float] = None
     #: Waxman-Smits cementation exponent m*.
     m_star: float = 2.0
 
     # -- Dual-water parameters -----------------------------------------------
-    #: Bound-water resistivity, ohm.m.
+    #: Bound-water resistivity, ohm.m, from lab data or the LAS header. Dual
+    #: Water runs only with it: ``sw_model="auto"`` gives shaly carbonate
+    #: samples without it the clastic routing (Waxman-Smits with ``cec`` and
+    #: ``b_coeff``, Simandoux at a ``salinity_ppm`` of 20000 or more, otherwise
+    #: Indonesia), and ``sw_model="dual_water"`` stops with an error. Rwb is not
+    #: estimated (the benchmark profile takes 0.3 Rw).
     rwb: Optional[float] = None
     #: Clay (shale) porosity, v/v. A value given here is used as it stands. Left
     #: at the default, it is derived from the well's shale samples where they
-    #: support it, and the default is the last resort.
+    #: support it, and the default is the last resort. Under ``"current"`` a LAS
+    #: header shale point, PNSH (the neutron log's reading in shale) with RBSH
+    #: (shale density), comes before the shale samples; PNSH alone is not a
+    #: clay porosity and is not used. The derived value is one number for the
+    #: whole well: it does not follow the compaction of shale with depth, and
+    #: samples without a neutron reading get the neutron-density value.
     phi_cl: float = 0.15
 
     # -- Hydrocarbon correction ----------------------------------------------
     #: Apply the neutron-density hydrocarbon correction (opt-in).
     apply_hc_correction: bool = False
-    #: Hydrocarbon type for the correction: ``"oil"`` or ``"gas"``.
+    #: Hydrocarbon type, ``"oil"`` or ``"gas"``: the fluid of the
+    #: neutron-density hydrocarbon correction and, under ``"current"``, the PHIT
+    #: rule in neutron-density crossover (PHID > PHIN + 0.05): the
+    #: root-mean-square of PHID and PHIN (Gaymard and Poupon, 1968) for gas,
+    #: density porosity for oil.
     hc_type: str = "oil"
 
     # -- Net-pay cutoffs (None: lithology-family standards) --------------------
-    #: Maximum clay volume for net rock, v/v.
-    vcl_cutoff: Optional[float] = 0.3
-    #: Maximum water saturation for net pay, v/v.
-    sw_cutoff: Optional[float] = 0.7
-    #: Minimum effective porosity for net reservoir, v/v.
+    #: Maximum clay volume for net rock, v/v. Unset, each sample takes the
+    #: standard of its lithology family (``STANDARD_CUTOFFS``: 0.40 clastic,
+    #: 0.30 carbonate); the benchmark profile uses 0.3. Unless
+    #: ``sw_routing_vcl_cutoff`` is set, saturation switches to a shaly-sand
+    #: model above this clay volume, or above 0.3 when it is unset.
+    vcl_cutoff: Optional[float] = None
+    #: Maximum water saturation for net pay, v/v. Unset: 0.60 clastic, 0.70
+    #: carbonate; 0.7 under the benchmark profile.
+    sw_cutoff: Optional[float] = None
+    #: Minimum effective porosity for net reservoir, v/v. Unset: 0.08 clastic,
+    #: 0.045 carbonate.
     phie_cutoff: Optional[float] = None
 
     # -- Gamma-ray clay volume ----------------------------------------------
@@ -552,10 +909,36 @@ class DynamicWorkflowConfig:
     gr_method: str = "linear"
 
     # -- SP clay volume (None: picked from the log) --------------------------
-    #: Clean (static) SP baseline, mV.
+    #: Shale SP baseline, mV: the line of least SP deflection. None picks P95
+    #: of the SP log. With a normal SP, where sands deflect negative, it is the
+    #: higher of the two baselines.
     sp_min: Optional[float] = None
-    #: Shale SP baseline, mV.
+    #: Clean-sand SP line (static SP), mV: the line of greatest deflection.
+    #: None picks P5 of the SP log. VCL_SP joins the minimum-of-indicators VCL
+    #: only when both ``sp_min`` and ``sp_max`` are set. Both are constant
+    #: lines applied over the whole log, so set them only for an SP without
+    #: baseline drift (e.g. a drift-corrected SP): lines picked in one interval
+    #: of a drifting SP misread every other interval, and the minimum takes
+    #: that reading. Without them VCL_SP is reported and only fills depths with
+    #: no GR or neutron-density value. A warning flags user baselines whose
+    #: order contradicts the SP polarity; the automatic P5/P95 picks assume a
+    #: normal SP and are not checked. The benchmark profile always puts VCL_SP
+    #: in the minimum.
     sp_max: Optional[float] = None
+
+    # -- Neutron-density clay volume -----------------------------------------
+    #: Clay point of VCL_ND, ``(RHOB g/cm3, NPHI v/v)``. None (default) picks
+    #: it under ``"current"`` in the well's good-hole shales: the median of 20
+    #: or more shale-lithology samples, else of the VCL_GR > 0.9 samples, else
+    #: (2.62, 0.38). The pick is one median over the whole log, so where
+    #: shallow, undercompacted shale dominates it the point is lighter than
+    #: the shales of a deeper reservoir; set the point from a crossplot of the
+    #: interval you evaluate. A point less than 0.10 v/v of neutron above the
+    #: clean line leaves VCL_ND out of VCL, with a warning. VCL_ND is measured
+    #: from the clean line of the run's matrix at every depth, carbonate beds
+    #: of a clastic well included. Zoned runs give every zone the whole-well
+    #: point. The benchmark profile uses (2.62, 0.38) and ignores this setting.
+    nd_clay: Optional[Tuple[float, float]] = None
 
     # -- Permeability --------------------------------------------------------
     #: ``"auto"``, ``"timur"``, ``"coates"``, ``"wyllie_rose"`` or ``"lith_vcl"``.
@@ -574,23 +957,119 @@ class DynamicWorkflowConfig:
     swirr_flag_phi_cl: str = "workflow"
     # -- Calculation profile -------------------------------------------------
     #: Which calculations run. ``"current"`` (default) is the maintained
-    #: interpretation. The two benchmark profiles keep the calculations behind
-    #: the GeoLink eval package fixed, so the package can be regenerated from the
-    #: raw logs exactly (see ``scripts/generate_benchmark_context.py``):
+    #: interpretation. ``"benchmark"`` keeps the calculations behind the GeoLink
+    #: eval package fixed, so the package can be regenerated from the raw logs
+    #: exactly (see ``scripts/generate_benchmark_context.py``). The package was
+    #: made in two runs with different calculations: its main run interpreted
+    #: 30 of the 32 wells, and a re-run interpreted 15/9-17 and 34/10-23 and
+    #: wrote the context of every well. Under ``"benchmark"``:
     #:
-    #: * ``"benchmark_rerun"``: the calculations that re-interpreted 15_9-17 and
-    #:   34_10-23 and wrote the package's context.
-    #: * ``"benchmark"``: the calculations that interpreted the other 30 wells.
-    #:   On top of ``"benchmark_rerun"``:
+    #: * interpreting a well (``petrophys.interpret``, ``run_dynamic_workflow``,
+    #:   ``DynamicWorkflow``, the zoned batch runner, the MCP server) uses the
+    #:   main run's calculations, except for 15/9-17 and 34/10-23, which get the
+    #:   re-run's. Either well is recognized by its UWI, then its WELL header
+    #:   and, in the zoned batch runner, its LAS file name, compared without
+    #:   case, with ``/`` and ``_`` alike and surrounding spaces ignored, and
+    #:   otherwise exactly (``"15/9-17 A"`` is another well). The workflow trace
+    #:   names the calculations a well got in ``benchmark_calculations``:
+    #:   ``"main_run"`` or ``"rerun"``;
+    #: * writing context (the exporters in ``petrophys.reporting``, which
+    #:   ``petrophys.export_context`` and the context scripts run) uses the
+    #:   re-run's calculations for every well.
     #:
-    #:   * clay porosity from the mean PHIT of every shale-lithology sample,
-    #:     rather than the neutron-density-averaged shale samples only;
-    #:   * saturation, rock quality, net pay and BVW read PHIE and PERM rather
-    #:     than the core-corrected PHIE_CC and PERM_CC;
-    #:   * one Archie coefficient set resolved from the lithology domain, rather
-    #:     than per-depth coefficients from the lithology log;
-    #:   * MHI wherever SW and SXO are finite, without the invaded-zone gate;
-    #:   * a duplicate BADHOLEFLAG curve alongside BAD_HOLE.
+    #: Where the re-run's calculations differ from ``"current"``:
+    #:
+    #: * input curves are not standardized or screened for implausible values
+    #:   (vendor mnemonics and units as read);
+    #: * the vendor lithology and an ``"auto"`` matrix come from the first
+    #:   curve that holds lithology codes under a lithology-code mnemonic or
+    #:   any name containing LITH or FACIES, and the per-depth lithology groups
+    #:   from ``LITHOLOGY_GEOLINK`` alone (``"current"`` reads one curve for
+    #:   all three; see ``lithology_curve``);
+    #: * VCL takes the minimum with SP picked on whole-log baselines, the
+    #:   limestone neutron-density clean line and a fixed (2.62, 0.38) clay
+    #:   point, and VCL_ND also outside the neutron-density triangle;
+    #: * evaporites use grain densities as density-porosity endpoints, clay
+    #:   porosity comes from shale samples on the shale matrix, gas crossover
+    #:   takes density porosity whatever ``hc_type``, the LAS PNSH header (the
+    #:   neutron log's shale reading) is the clay porosity, GeoLink code 10
+    #:   counts as sandstone, code 26 ("Gap") as an evaporite and the potash
+    #:   codes 27 and 32-34 as halite, and coal and the gypsum group keep
+    #:   slowness 250 and 83 us/ft;
+    #: * the same-well core porosity correction is fitted to PHIE and applied
+    #:   whatever its fit quality (``"current"`` fits it to PHIT, takes the
+    #:   clay-bound part off again and applies it only when it passes a quality
+    #:   gate);
+    #: * header CLFL is read as NaCl salinity without the chloride conversion,
+    #:   temperature curves are read as degF whatever their unit, and the
+    #:   MFST/MST headers are not read;
+    #: * the version 1 mineral rows are solved unweighted, and the carbonate
+    #:   domain applies the COSTA calibration sample by sample (SLSQP);
+    #: * saturation uses an Indonesia variant with Sw^(n/2) on the sand term
+    #:   only, Dual Water without the bound-water cap and with Rwb = 0.3 Rw
+    #:   when none is given, Waxman-Smits with CEC passed on as given and the
+    #:   total-porosity Sw, both reading the log PHIT alongside PHIE_CC, and
+    #:   SXO, MHI and the SP and Rxo/Rt estimates of Rw also for oil-based mud;
+    #: * unset net-pay cutoffs are VCL < 0.3 and SW < 0.7 (the carbonate PHIE
+    #:   cutoff only where a sample is labelled ``"carbonate"``), and bad-hole,
+    #:   evaporite and coal samples and halite known only from its log response
+    #:   can be net reservoir and pay and are among the samples SWIRR_APP is
+    #:   picked from;
+    #: * bad hole: the caliper washout test assumes an 8.5 in bit where the
+    #:   well has no BS curve and no header bit size, a header bit size is used
+    #:   whatever its value and never fills gaps in a BS curve, and the DRHO
+    #:   test runs only on a well with a caliper (``"current"`` runs the
+    #:   caliper washout and large-hole tests only where a bit size is known,
+    #:   and the DRHO test wherever DRHO is logged);
+    #: * the invasion ratio reads the shallow RSHA first, then RXO and RESS
+    #:   (``"current"`` reads the flushed-zone RXO first, then RSHA and RESS,
+    #:   and records the curves in the trace);
+    #: * the diagnostics analyzers (the context categories and the workflow's
+    #:   hydrocarbon analysis) classify with the eval package's class tables
+    #:   rather than the canonical ones of
+    #:   :data:`~petrophys.model.class_tables.CLASS_TABLES`: clean rock below
+    #:   VCL 0.20 in the permeability context but 0.25 in the porosity one, an
+    #:   Rxo/Rt fallback of 0.7/1.3 in saturation, FZI as micro to mega pores,
+    #:   reservoir grades that differ by category, none with a porosity floor
+    #:   per lithology family (the canonical grades test effective porosity,
+    #:   permeability and clay volume with the limits of each sample's
+    #:   lithology family), a sample without MHI as MINIMAL_MOVEABLE_HC, and the
+    #:   invasion statistics from a frozen copy of the 0.8/1.2 table;
+    #: * assumed values (bit size, Rw temperature, temperature gradient,
+    #:   Swirr) raise no warning, and ``result.to_las()`` lists no warnings in
+    #:   ``~Other``;
+    #: * ``result.summary()`` counts net thickness as samples times the depth
+    #:   step, as the trace does, rather than each sample's depth cell;
+    #: * after a context export's value-range QC, a segment with no porosity or
+    #:   no permeability left keeps the PHI_NORM, RQI and FZI computed before
+    #:   the QC (and its BVW when no porosity is left), PHI_Z is not recomputed,
+    #:   and formation and group depths, bad-hole intervals and the KH note
+    #:   carry no depth unit.
+    #:
+    #: The main run's calculations differ further:
+    #:
+    #: * clay porosity from the mean PHIT of every shale-lithology sample,
+    #:   rather than the neutron-density-averaged shale samples only;
+    #: * the Rw estimate, saturation, rock quality, net pay and BVW read PHIE
+    #:   and PERM rather than the core-corrected PHIE_CC and PERM_CC, and where
+    #:   PHIE is missing no step falls back to PHIT, permeability and its core
+    #:   correction included;
+    #: * one Archie coefficient set resolved from the lithology domain, rather
+    #:   than per-depth coefficients from the lithology log;
+    #: * the SXO quick-look relation only as a whole-curve fallback, and the
+    #:   invasion ratio from the first flushed-zone or shallow resistivity
+    #:   present (RSHA, then RXO, then RESS), without the medium-resistivity
+    #:   proxy; neither fills the gaps of that curve from the next one;
+    #: * MHI wherever SW and SXO are finite, without the invaded-zone gate;
+    #: * a duplicate BADHOLEFLAG curve alongside BAD_HOLE, and the temperature
+    #:   profile's parameters without unit or description;
+    #: * the zoned batch runner's interpreted LAS keeps the source's unit labels
+    #:   where the standard unit is equivalent (e.g. m3/m3, gAPI) and leaves out
+    #:   PHIT and PHI_SEC where they only repeat PHIS and zero.
+    #:
+    #: The library reads no environment variable for this setting; only the
+    #: MCP server takes a default from ``petrophys-mcp --calculation-profile``
+    #: or ``PETROPHYS_CALCULATION_PROFILE``.
     calculation_profile: str = "current"
     #: Reuse a RESFLAG or NET_RES curve already on the well as the reservoir
     #: flag that picks the SWIRR_APP samples before permeability. False
@@ -612,6 +1091,16 @@ class DynamicWorkflowConfig:
     #: ``"archie"``, ``"simandoux"``, ``"indonesia"``, ``"dual_water"``,
     #: ``"waxman_smits"``, ``"north_sea"``, ``"nigeria_schlumberger"``.
     sw_model: str = "auto"
+    #: Clay volume, v/v, from which ``sw_model="auto"`` uses a shaly-sand
+    #: equation rather than Archie. None (default) uses ``vcl_cutoff``, or 0.3
+    #: when that is unset. Unset net-pay cutoffs resolve per lithology family
+    #: under ``"current"`` (clastic VCL < 0.40), so net rock with 0.3-0.4 clay
+    #: gets the shaly-sand equations; under the benchmark profile (VCL < 0.3)
+    #: every net-rock sample is evaluated with Archie. A lower value, e.g. 0.15,
+    #: also applies the shaly-sand equations to moderately shaly reservoir rock.
+    #: Under ``"current"`` the SWIRR_APP samples are picked below the same clay
+    #: volume.
+    sw_routing_vcl_cutoff: Optional[float] = None
     #: Shale resistivity, ohm.m. Defaults to the computed clay resistivity.
     rtsh: Optional[float] = None
     #: Shale exponent of the North Sea model.
@@ -668,26 +1157,98 @@ _LITHOLOGY_SOURCES = ("auto", "external", "vendor", "computed", "config")
 _HC_TYPES = ("oil", "gas")
 _SWIRR_FLAG_PHI_CL = ("workflow", "all_shale_phit")
 _MINERAL_SOLVER_VERSIONS = (1, 2)
-_BENCHMARK_PROFILES = ("benchmark", "benchmark_rerun")
+_CARBONATE_CALIBRATIONS = ("generic", "costa")
+#: Profiles that keep the eval package's calculations (see
+#: DynamicWorkflowConfig.calculation_profile).
+_BENCHMARK_PROFILES = ("benchmark",)
 _CALCULATION_PROFILES = ("current", *_BENCHMARK_PROFILES)
-# Matrix sonic slowness (us/ft) used by the workflow where it differs from the
-# shared mineral table.
-_WORKFLOW_MATRIX_SLOWNESS = {"gypsum": 83.0}
+#: The eval package's wells that its re-run interpreted, as compared by
+#: :func:`_normalized_well_name`. The benchmark profile gives them the re-run's
+#: calculations.
+_RERUN_WELLS = frozenset({"15_9-17", "34_10-23"})
+#: True inside :func:`_rerun_calculations`: the benchmark profile then gives
+#: every well the calculations of the eval package's re-run.
+_RERUN_CALCULATIONS_REQUESTED: ContextVar[bool] = ContextVar(
+    "petrophys_rerun_calculations_requested", default=False
+)
+#: Settings whose default depends on ``calculation_profile``, as (default under
+#: ``"current"``, default under the benchmark profile). A setting left as None
+#: takes the default of its profile; a value set explicitly always wins. Unset
+#: net-pay cutoffs stay None under ``"current"``: net pay resolves them per
+#: lithology family.
+_PROFILE_DEFAULTS: Dict[str, Tuple[Any, Any]] = {
+    "standardize_input": (True, False),
+    "vcl_cutoff": (None, 0.3),
+    "sw_cutoff": (None, 0.7),
+}
+#: Rxo/Rt classes behind the invasion step's conductive, minimal and resistive
+#: percentages under the benchmark profile: the eval package's table, a frozen
+#: copy kept apart from the canonical CLASS_TABLES["RXO_RT"].
+_BENCHMARK_INVASION_BANDS = Bands(
+    "MINIMAL_INVASION", (("<", 0.8, "CONDUCTIVE_INVASION"), (">", 1.2, "RESISTIVE_INVASION"))
+)
+#: The curve the invasion ratio reads first under the benchmark profile: the
+#: shallow RSHA, then RXO and RESS. "current" reads the flushed-zone RXO first.
+_BENCHMARK_RXO_CURVE = "RSHA"
+# Matrix slowness (us/ft) that the benchmark profile uses in place of the
+# shared mineral table's chartbook values: coal 250 (table 120) everywhere, and
+# gypsum 83 (table 52.5) for the gypsum lithology group.
+_BENCHMARK_SLOWNESS = {"coal": 250.0}
+_BENCHMARK_GROUP_SLOWNESS = {**_BENCHMARK_SLOWNESS, "gypsum": 83.0}
+#: Limits the "current" profile adds to the standardizer's implausible-value
+#: screening (CURVE_PLAUSIBLE_RANGES). No rock matrix is faster than
+#: 38.5 us/ft (dolomite, 23,000-26,000 ft/s; calcite 43.5-47.6, anhydrite 50,
+#: quartz 51-55.5 us/ft: Schlumberger, 1989), so a lower compressional
+#: slowness is a unit or scale error. A formation's static SP lies within
+#: about 200 mV of the shale baseline; readings beyond +/-500 mV (the
+#: library's value-range rule for SP) come from the tool or the recording.
+_CURRENT_RANGE_LIMITS = {"DTC": (38.5, 300.0), "SP": (-500.0, 500.0)}
 _BOOL_FIELDS = (
     "standardize_input", "rename_input_curves", "allow_default_rw",
     "mud_has_clay_or_kcl", "raise_on_error", "apply_hc_correction", "use_peer_core",
     "reuse_input_resflag",
 )
 _POSITIVE_FIELDS = (
-    "rw", "rmf_at_meas_temp", "rm", "rmf_salinity_ppm", "salinity_ppm", "td_ft",
+    "rw", "rmf_at_meas_temp", "rm", "rmf_salinity_ppm", "rmf_chlorides_mg_l", "salinity_ppm", "td_ft",
     "rho_ma", "rho_fl", "rho_cl", "dt_ma", "dt_fl", "a", "m", "n", "m_star",
     "rwb", "rtsh", "vsh_exp", "shale_exp", "b_coeff",
 )
-_FRACTION_FIELDS = ("vcl_cutoff", "sw_cutoff", "phie_cutoff", "swirr", "phi_cl")
+_FRACTION_FIELDS = (
+    "vcl_cutoff", "sw_cutoff", "phie_cutoff", "swirr", "phi_cl", "sw_routing_vcl_cutoff",
+)
 _FINITE_FIELDS = (
     "surface_temp_f", "bht_f", "rmf_meas_temp_f", "rm_meas_temp_f",
     "rw_meas_temp_f", "nphi_ma", "gr_min", "gr_max", "sp_min", "sp_max", "cec",
 )
+
+
+#: Least r^2 of a same-well core porosity correction that the "current"
+#: calculations apply: the log porosity must explain at least half of the core
+#: porosity variance. A poorer least-squares line is mostly scatter, flattened
+#: towards the mean core porosity, and gives porosity to tight rock. With the
+#: minimum of 8 core-log pairs (perm_module.CORE_POROSITY_MIN_POINTS) it is also
+#: the 5% significance level of the correlation.
+_CORE_POROSITY_MIN_R_SQUARED = 0.5
+
+#: Why the current profile writes no SXO or MHI for oil-based mud.
+_OBM_FLUSHED_ZONE_NOTE = (
+    "mud_type='OBM' (SXO and MHI describe flushing by a conductive water-based "
+    "filtrate; the 200 ohm.m RMF written for oil-based mud is a placeholder)"
+)
+
+
+def _cec_range_error(cec: Any) -> Optional[str]:
+    """Message for a CEC (meq/100 g) outside the plausible whole-rock range."""
+    from petrophys.interpretation.saturation.waxman_smits import MAX_CEC_MEQ_PER_100G
+
+    if isinstance(cec, (bool, np.bool_)) or not isinstance(cec, (int, float, np.integer, np.floating)):
+        return None
+    if not np.isfinite(cec) or 0.0 <= cec <= MAX_CEC_MEQ_PER_100G:
+        return None
+    return (
+        f"cec must be between 0 and {MAX_CEC_MEQ_PER_100G:g} meq/100 g "
+        f"(pure smectite is 80-150 meq/100 g); got {cec!r}"
+    )
 
 
 def _choice_error(name: str, value: Any, choices: Sequence[str]) -> str:
@@ -753,13 +1314,105 @@ def _validate_lithology(config: "DynamicWorkflowConfig", errors: List[str]) -> N
     errors.append(message)
 
 
+def _validate_lithology_curve(config: "DynamicWorkflowConfig", errors: List[str]) -> None:
+    """Accept the mnemonic of an input lithology code curve, in capitals."""
+    from petrophys.interpretation.lithology.matrix_inference import _COMPUTED_LITHOLOGY_CURVES
+
+    value = config.lithology_curve
+    if not isinstance(value, str) or not value.strip():
+        errors.append(f"lithology_curve must be a curve mnemonic; got {value!r}")
+        return
+    name = value.strip().upper()
+    if name in _COMPUTED_LITHOLOGY_CURVES or name.startswith("GT_"):
+        errors.append(
+            f"lithology_curve={value!r} is a curve the workflow computes; "
+            "name the lithology code curve of the input logs"
+        )
+        return
+    config.lithology_curve = name
+
+
+def _normalized_well_name(name: Any) -> str:
+    """A well name as the benchmark routing compares it.
+
+    Case and surrounding spaces are ignored and ``/`` reads as ``_``; the rest
+    must match, so ``"15/9-17 A"`` is not ``"15_9-17"``.
+    """
+    return str(name).strip().lower().replace("/", "_")
+
+
+def _is_rerun_well(well: "Well", file_stem: Optional[str] = None) -> bool:
+    """True when ``well`` is one of the two wells the eval package's re-run interpreted.
+
+    The well's UWI is checked, then its WELL header, then ``file_stem``, the
+    LAS file name the zoned batch runner read it from; any of them naming
+    15/9-17 or 34/10-23 (:func:`_normalized_well_name`) identifies the well.
+    """
+    header = getattr(well, "header", None)
+    if isinstance(header, dict):
+        uwi = header.get("UWI", header.get("uwi"))
+        name = header.get("WELL", header.get("well_name"))
+    else:
+        uwi, name = getattr(header, "uwi", None), getattr(well, "name", None)
+    return any(
+        _normalized_well_name(item) in _RERUN_WELLS
+        for item in (uwi, name, file_stem)
+        if item is not None
+    )
+
+
+@contextmanager
+def _rerun_calculations(enabled: bool = True) -> Iterator[None]:
+    """Give every benchmark run inside the block the calculations of the eval package's re-run.
+
+    The context exporters enter it around their workflow runs, as the re-run
+    wrote the package's context; the zoned batch runner enters it for a re-run
+    well it recognized, which its file name alone may identify. With
+    ``enabled=False`` it does nothing, and each well keeps its own calculations.
+    """
+    if not enabled:
+        yield
+        return
+    token = _RERUN_CALCULATIONS_REQUESTED.set(True)
+    try:
+        yield
+    finally:
+        _RERUN_CALCULATIONS_REQUESTED.reset(token)
+
+
+def _uses_rerun_calculations(well: "Well", file_stem: Optional[str] = None) -> bool:
+    """True when a benchmark run of ``well`` gets the calculations of the eval package's re-run.
+
+    That is inside :func:`_rerun_calculations`, or for one of the package's
+    re-run wells (:func:`_is_rerun_well`); every other benchmark run gets the
+    calculations of the package's main run.
+    """
+    return _RERUN_CALCULATIONS_REQUESTED.get() or _is_rerun_well(well, file_stem)
+
+
+def _profile_setting(config: DynamicWorkflowConfig, field_name: str) -> Any:
+    """A setting's value, with its calculation-profile default when left as None."""
+    value = getattr(config, field_name)
+    if value is None and field_name in _PROFILE_DEFAULTS:
+        current, benchmark = _PROFILE_DEFAULTS[field_name]
+        value = benchmark if config.calculation_profile in _BENCHMARK_PROFILES else current
+    return value
+
+
 def _left_at_default(config: DynamicWorkflowConfig, field_name: str) -> bool:
-    """True when a setting is unset or still has its default value."""
+    """True when a setting is unset or still has its default value.
+
+    Under the benchmark profile a setting of :data:`_PROFILE_DEFAULTS` that
+    holds its benchmark value (e.g. ``vcl_cutoff=0.3``) also counts as left
+    at the default, as the eval package's calculations treat it.
+    """
     import dataclasses
 
     value = getattr(config, field_name, None)
     if value is None:
         return True
+    if field_name in _PROFILE_DEFAULTS and config.calculation_profile in _BENCHMARK_PROFILES:
+        return value == _PROFILE_DEFAULTS[field_name][1]
     item = DynamicWorkflowConfig.__dataclass_fields__.get(field_name)
     if item is None:
         return False
@@ -802,6 +1455,8 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     _validate_lithology(config, errors)
     config.lithology_domain = config.lithology
     _normalized_choice(config, "lithology_source", _LITHOLOGY_SOURCES, errors)
+    if config.lithology_curve is not None:
+        _validate_lithology_curve(config, errors)
     _normalized_choice(config, "hc_type", _HC_TYPES, errors)
     _normalized_choice(config, "swirr_flag_phi_cl", _SWIRR_FLAG_PHI_CL, errors)
     _normalized_choice(config, "calculation_profile", _CALCULATION_PROFILES, errors)
@@ -810,6 +1465,8 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
         errors.append(f"mineral_solver_version must be 1 or 2; got {version!r}")
     else:
         config.mineral_solver_version = int(version)
+    if config.carbonate_calibration is not None:
+        _normalized_choice(config, "carbonate_calibration", _CARBONATE_CALIBRATIONS, errors)
     _normalized_choice(config, "gr_method", GR_VCL_METHODS, errors)
     _normalized_choice(
         config, "perm_method", PERMEABILITY_METHODS, errors,
@@ -839,6 +1496,8 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
 
     for name in _BOOL_FIELDS:
         value = getattr(config, name)
+        if value is None and name in _PROFILE_DEFAULTS:
+            continue  # the calculation profile's default applies
         if not isinstance(value, (bool, np.bool_)):
             errors.append(f"{name} must be True or False; got {value!r}")
 
@@ -866,8 +1525,32 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
             errors.append(f"{name} must be a fraction between 0 and 1; got {value!r}")
     if config.gr_min is not None and config.gr_max is not None and config.gr_min >= config.gr_max:
         errors.append(f"gr_min ({config.gr_min}) must be less than gr_max ({config.gr_max})")
+    if (
+        config.calculation_profile == "current"
+        and config.sp_min is not None
+        and config.sp_min == config.sp_max
+    ):
+        errors.append(
+            f"sp_min (shale baseline) and sp_max (clean-sand line) must differ; both are {config.sp_min}"
+        )
+    if config.nd_clay is not None:
+        try:
+            density, neutron = (float(value) for value in config.nd_clay)
+        except (TypeError, ValueError):
+            density = neutron = float("nan")
+        if 1.0 <= density <= 3.5 and -0.15 <= neutron <= 1.0:
+            config.nd_clay = (density, neutron)
+        else:
+            errors.append(
+                "nd_clay must be (RHOB, NPHI) with RHOB 1.0-3.5 g/cm3 and NPHI -0.15-1.0 v/v; "
+                f"got {config.nd_clay!r}"
+            )
     if config.lithology_csv is not None and config.lithology_intervals is not None:
         errors.append("Supply lithology_csv or lithology_intervals, not both.")
+    if config.calculation_profile == "current":
+        cec_error = _cec_range_error(config.cec)
+        if cec_error:
+            errors.append(cec_error)
 
     if errors:
         raise ValueError(
@@ -941,6 +1624,11 @@ class DynamicWorkflowResult:
     rmf_computed: Optional[Union[float, np.ndarray]] = None
     rcl_computed: Optional[float] = None
     temperature_gradient: Optional[float] = None
+    # The eval package's calculations a benchmark run gave the well, "main_run"
+    # or "rerun" (None under "current"); the trace reports them.
+    _benchmark_calculations: Optional[str] = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     @property
     def has_usable_interpretation(self) -> bool:
@@ -1117,10 +1805,24 @@ class DynamicWorkflowResult:
                 "rcl": _json_safe_trace_value(self.rcl_computed),
                 "temperature_gradient": _json_safe_trace_value(self.temperature_gradient),
             },
-            "config": _json_safe_trace_value(vars(self.config)),
+            "config": _json_safe_trace_value(self._trace_settings()),
             "steps": [step.to_dict() for step in self.steps_executed],
             "curve_summaries": _curve_summaries_for_trace(self.well, include_curves),
         }
+
+    def _trace_settings(self) -> Dict[str, Any]:
+        """The run's settings as the trace reports them.
+
+        Settings left unset show the default of the run's calculation profile.
+        A benchmark run adds ``benchmark_calculations`` after
+        ``calculation_profile``: the eval package's calculations the well got.
+        """
+        settings: Dict[str, Any] = {}
+        for name in vars(self.config):
+            settings[name] = _profile_setting(self.config, name)
+            if name == "calculation_profile" and self._benchmark_calculations is not None:
+                settings["benchmark_calculations"] = self._benchmark_calculations
+        return settings
 
     def to_json(
         self,
@@ -1278,7 +1980,8 @@ class DynamicWorkflowResult:
 
         The ``~Params`` section keeps the source file's header values and adds
         :meth:`provenance_parameters` (``PP_*``); ``~Other`` lists executed and
-        skipped steps. Use :meth:`to_json` for the complete trace.
+        skipped steps and, under the ``"current"`` calculation profile, the
+        run's warnings. Use :meth:`to_json` for the complete trace.
 
         Parameters
         ----------
@@ -1300,6 +2003,8 @@ class DynamicWorkflowResult:
         for name in self.steps_skipped:
             reason = self.specific_steps_skipped.get(name)
             lines.append(f"Skipped {name}" + (f": {reason}" if reason else ""))
+        if self.config.calculation_profile not in _BENCHMARK_PROFILES:
+            lines.extend(f"Warning: {warning}" for warning in self.warnings)
         output = Path(path)
         output.parent.mkdir(parents=True, exist_ok=True)
         export_las(
@@ -1417,10 +2122,31 @@ class DynamicWorkflow:
         self._lithology_resolution = None
         self._selected_lithology_source = "auto"
         self._external_lithology = None
+        # The run's lithology code curve and the well it was found on
+        # (_lithology_code_curve).
+        self._code_curve: Optional[str] = None
+        self._code_curve_well: Optional["Well"] = None
+        # Whether the run gives the well the eval package's re-run calculations;
+        # resolved per run by _start_result.
+        self._rerun_selected = False
+
+    def _start_result(self, well: "Well") -> DynamicWorkflowResult:
+        """Open the result of a run on ``well``, resolving its benchmark calculations.
+
+        Under the benchmark profile the well gets the calculations of the eval
+        package's re-run or of its main run (:func:`_uses_rerun_calculations`),
+        once for the whole run; the result records which for the trace.
+        """
+        self._rerun_selected = _uses_rerun_calculations(well)
+        result = DynamicWorkflowResult(well=well, config=self.config)
+        if self._reproducing_benchmark:
+            result._benchmark_calculations = "rerun" if self._rerun_selected else "main_run"
+        return result
 
     def _prepare_input_context(self, well: "Well") -> None:
         from petrophys.io import read_lithology_intervals
         from petrophys.interpretation.lithology.matrix_inference import (
+            CODE_CURVE_RECORD,
             resolve_from_lithology_log,
         )
 
@@ -1430,19 +2156,35 @@ class DynamicWorkflow:
         if self.config.lithology_csv is not None and self.config.lithology_intervals is not None:
             raise ValueError("Supply lithology_csv or lithology_intervals, not both.")
         context = dict(well.get_parameter("_geology_context") or {})
+        if CODE_CURVE_RECORD in context:
+            # Each run records the code curve it reads; an earlier run's
+            # record must not steer this one.
+            del context[CODE_CURVE_RECORD]
+            well.set_parameter("_geology_context", dict(context))
+        self._code_curve_well = None
+        code_curve = self._lithology_code_curve(well)
         source = self.config.lithology_intervals
         if source is None:
             source = self.config.lithology_csv
         if source is None:
             source = context.get("lithology")
-        vendor_available = self._has_curve(well, "LITHOLOGY_GEOLINK") or resolve_from_lithology_log(well, warn=False) is not None
+        if self._eval_lithology_detection:
+            vendor_available = self._has_curve(well, "LITHOLOGY_GEOLINK") or resolve_from_lithology_log(well, warn=False) is not None
+        else:
+            vendor_available = code_curve is not None
         selected = policy
         if policy == "auto":
             selected = "external" if source is not None else ("vendor" if vendor_available else "computed")
         if selected == "external" and source is None:
             raise ValueError("lithology_source='external' requires lithology_intervals or lithology_csv.")
         if selected == "vendor" and not vendor_available:
-            raise ValueError("lithology_source='vendor' requires a recognized vendor lithology curve.")
+            if self._eval_lithology_detection:
+                raise ValueError("lithology_source='vendor' requires a recognized vendor lithology curve.")
+            raise ValueError(
+                "lithology_source='vendor' requires a recognized vendor lithology curve: "
+                "LITHOLOGY_GEOLINK, a lithology-code mnemonic such as LITHOLOGY or FACIES "
+                "that holds lithology codes, or the curve named by lithology_curve."
+            )
         if selected == "config" and (
             self.config.matrix_type == "auto" or self.config.lithology == "auto"
         ):
@@ -1451,6 +2193,10 @@ class DynamicWorkflow:
         self._external_lithology = None
         report = {"requested_source": policy, "selected_source": selected,
                   "external_available": source is not None, "vendor_available": vendor_available}
+        if not self._eval_lithology_detection:
+            report["vendor_curve"] = code_curve
+            context[CODE_CURVE_RECORD] = code_curve
+            self._warn_code_curve(code_curve)
         output_curves = []
         if selected == "external":
             table = read_lithology_intervals(source, well=well)
@@ -1465,13 +2211,16 @@ class DynamicWorkflow:
                 "chalk": "limestone", "carbonate": "limestone", "carb": "limestone",
                 "marl": "limestone", "marlstone": "limestone", "lime": "limestone", "ls": "limestone",
                 "dolo": "dolomite", "salt": "halite",
+                # Potash: sylvite (KCl) and the sylvite-halite rock sylvinite.
+                "sylvite": "sylvinite", "sylvine": "sylvinite",
+                "potash": "sylvinite", "potash salt": "sylvinite",
             }
             unknown = set()
             category_groups = {}
             for row in table.itertuples():
                 key = str(row.lithology).strip().lower()
                 group = aliases.get(key, key)
-                if group not in LITHOLOGY_GROUP_TO_MATRIX:
+                if group not in self._group_to_matrix:
                     unknown.add(row.lithology)
                     group = None
                 mask = (well.depth >= row.top) & (well.depth < row.bottom)
@@ -1519,14 +2268,138 @@ class DynamicWorkflow:
         ))
 
     @property
+    def _eval_lithology_detection(self) -> bool:
+        """True when vendor lithology is found as the eval package's calculations found it.
+
+        That is the benchmark profile without ``lithology_curve``: the vendor
+        lithology and its matrix come from any curve named as a lithology code
+        log, the per-depth lithology groups from ``LITHOLOGY_GEOLINK`` alone.
+        Otherwise one curve, :meth:`_lithology_code_curve`, serves all three.
+        """
+        return self._reproducing_benchmark and self.config.lithology_curve is None
+
+    def _lithology_code_curve(self, well: "Well") -> Optional[str]:
+        """Mnemonic of the run's lithology code curve, or None; found once per run.
+
+        It is ``lithology_curve``, else ``LITHOLOGY_GEOLINK``, else (under
+        ``"current"``, with ``lithology_source`` ``"auto"`` or ``"vendor"``) a
+        curve of another lithology-code mnemonic that holds lithology codes
+        (:func:`~petrophys.interpretation.lithology.matrix_inference.lithology_code_curve`).
+        """
+        if self._code_curve_well is not well:
+            from petrophys.interpretation.lithology.matrix_inference import lithology_code_curve
+
+            found = lithology_code_curve(
+                well,
+                explicit=self.config.lithology_curve,
+                allow_aliases=(
+                    not self._reproducing_benchmark
+                    and self.config.lithology_source in {"auto", "vendor"}
+                ),
+            )
+            self._code_curve = found[0] if found else None
+            self._code_curve_well = well
+        return self._code_curve
+
+    def _warn_code_curve(self, code_curve: Optional[str]) -> None:
+        """Say which curve the lithology codes are read from, when it is not LITHOLOGY_GEOLINK."""
+        requested = self.config.lithology_curve
+        if requested is not None and code_curve != requested:
+            instead = f"{code_curve} is read instead" if code_curve else "no lithology code curve is read"
+            self._result.warnings.append(
+                f"lithology_curve={requested!r}: the well has no such curve with finite samples; {instead}."
+            )
+        if code_curve is not None and code_curve != "LITHOLOGY_GEOLINK":
+            note = (
+                f"Lithology codes are read from {code_curve} and decoded with the GeoLink/Kingdom "
+                "lithology code table, as LITHOLOGY_GEOLINK codes are."
+            )
+            if code_curve != requested:
+                note += (
+                    " If the curve holds other codes, pass lithology_source='computed' or "
+                    "lithology intervals."
+                )
+            self._result.warnings.append(note)
+
+    def _vendor_lithology_resolution(self, well: "Well"):
+        """Lithology and matrix from the run's lithology code curve, or None without one."""
+        from petrophys.interpretation.lithology.matrix_inference import resolve_from_lithology_log
+
+        if self._eval_lithology_detection:
+            return resolve_from_lithology_log(well, warn=False)
+        code_curve = self._lithology_code_curve(well)
+        if code_curve is None:
+            return None
+        return resolve_from_lithology_log(well, warn=False, code_curve=code_curve)
+
+    @property
     def _benchmark(self) -> bool:
-        """True when the eval-package interpreted-LAS calculations are selected."""
-        return self.config.calculation_profile == "benchmark"
+        """True when the run uses the calculations of the eval package's main run.
+
+        That is the benchmark profile for a well other than the package's two
+        re-run wells, outside a context export (:func:`_uses_rerun_calculations`).
+        It gates what the main run did beyond the re-run's calculations.
+        """
+        return self._reproducing_benchmark and not self._rerun_selected
 
     @property
     def _reproducing_benchmark(self) -> bool:
-        """True for either benchmark profile: keep the eval package's calculations."""
+        """True under the benchmark profile: keep the eval package's calculations.
+
+        It gates what the package's main run and re-run share; :attr:`_benchmark`
+        gates what only the main run did.
+        """
         return self.config.calculation_profile in _BENCHMARK_PROFILES
+
+    @property
+    def _carbonate_calibration(self) -> str:
+        """Carbonate mineral calibration: the setting, else the profile's default."""
+        if self.config.carbonate_calibration is not None:
+            return self.config.carbonate_calibration
+        return "costa" if self._reproducing_benchmark else "generic"
+
+    @property
+    def _crossover_gas_method(self) -> str:
+        """PHIT rule in neutron-density crossover (PHID > PHIN + 0.05).
+
+        The root-mean-square of PHID and PHIN (Gaymard and Poupon, 1968) is a
+        gas-zone approximation, so ``"current"`` applies it only when
+        ``hc_type`` is ``"gas"``. Oil hardly moves the neutron log, so in an
+        oil well the crossover comes from the matrix or shale endpoints, and
+        PHIT is density porosity there, as under the benchmark profile.
+        """
+        if not self._reproducing_benchmark and str(self.config.hc_type).lower() == "gas":
+            return "rms"
+        return "density"
+
+    @property
+    def _group_to_matrix(self) -> Dict[str, str]:
+        """Lithology group -> MatrixProperties key for this calculation profile."""
+        if self._reproducing_benchmark:
+            return LITHOLOGY_GROUP_TO_MATRIX
+        return _CURRENT_LITHOLOGY_GROUP_TO_MATRIX
+
+    @property
+    def _skips_flushed_zone(self) -> bool:
+        """True when SXO and MHI are not computed: oil-based mud, current profile.
+
+        Oil-based filtrate does not conduct, so the RMF written for it is a
+        placeholder; the invaded-zone Archie SXO, the SW^(1/5) quick-look and
+        MHI = SW/SXO all describe flushing by a water-based filtrate.
+        """
+        return not self._reproducing_benchmark and str(self.config.mud_type).upper() == "OBM"
+
+    def _setting(self, name: str) -> Any:
+        """Config value, or the calculation profile's default when it is unset."""
+        return _profile_setting(self.config, name)
+
+    def _warn_assumed(self, message: str) -> None:
+        """Report an assumed, ignored or missing value in ``result.warnings``
+        (``"current"`` runs only)."""
+        if self._reproducing_benchmark or self._result is None:
+            return
+        if message not in self._result.warnings:
+            self._result.warnings.append(message)
 
     def _phie_names(self, include_phit: bool = True) -> List[str]:
         """Effective-porosity curve preference.
@@ -1543,6 +2416,77 @@ class DynamicWorkflow:
         """Permeability curve preference; the benchmark ignores PERM_CC."""
         names = ["PERM"] if self._benchmark else ["PERM_CC", "PERM"]
         return [*names, *extra]
+
+    def _core_calibration_options(self) -> Dict[str, Any]:
+        """PermeabilityModule options for the same-well core porosity correction.
+
+        Under "current" core porosity is fitted to the log PHIT: helium porosity
+        of cleaned, oven-dried plugs includes the pore space of the clay-bound
+        water (API RP 40, 1998; Bush and Jenkins, 1970), so it is total
+        porosity. A fit that rests on few pairs, has a slope that is not
+        positive or an r^2 below ``_CORE_POROSITY_MIN_R_SQUARED`` is not used.
+        The benchmark profile fits core porosity to PHIE and uses every fit.
+        """
+        if self._reproducing_benchmark:
+            return {}
+        return {
+            "core_porosity_curve": "PHIT",
+            "min_porosity_r_squared": _CORE_POROSITY_MIN_R_SQUARED,
+        }
+
+    def _effective_core_porosity(self, well: "Well", phit_cc: np.ndarray) -> np.ndarray:
+        """PHIE_CC from core-corrected total porosity (``"current"``).
+
+        ``PHIE_CC = PHIT_CC - (PHIT - PHIE)``, within 0 and ``PHIT_CC``: the
+        clay-bound porosity that the porosity step took off PHIT is taken off
+        the core-corrected PHIT_CC too. Without both PHIT and PHIE there is no
+        clay-bound porosity to take off, and the input is returned as it is.
+        """
+        phit_cc = np.asarray(phit_cc, dtype=float)
+        phit, _, _ = get_curve_data_depthwise(well, ["PHIT"])
+        phie, _, _ = get_curve_data_depthwise(well, ["PHIE"])
+        if phit is None or phie is None:
+            return phit_cc
+        with np.errstate(invalid="ignore"):
+            bound = np.clip(phit - phie, 0.0, None)
+            return np.clip(phit_cc - bound, 0.0, phit_cc)
+
+    def _core_porosity_decisions(self, metadata: Dict[str, Any], phie_cc_written: bool) -> List[str]:
+        """Trace lines for the "current" core porosity correction and its gate."""
+        decisions = []
+        fits = metadata.get("core_porosity_fits") or []
+        for fit in fits:
+            sign = "-" if fit["B"] < 0 else "+"
+            decisions.append(
+                f"Core porosity correction ({fit.get('source_formation') or 'all depths'}): "
+                f"{fit['input_curve']}_CC = {fit['A']:.3f} * {fit['input_curve']} {sign} "
+                f"{abs(fit['B']):.3f} (n={fit['n_points']}, r^2={fit['r_squared']:.2f})"
+            )
+        if phie_cc_written and fits and all(fit["input_curve"] == "PHIT" for fit in fits):
+            decisions.append(
+                "PHIE_CC = PHIT_CC - (PHIT - PHIE), within 0 and PHIT_CC: plug helium "
+                "porosity is total porosity, so the clay-bound part is taken off again"
+            )
+        reasons = {
+            "too_few_porosity_points": lambda item: (
+                f"{item['n_porosity_points']} core-log pairs, fewer than {item['min_porosity_points']}"
+            ),
+            "non_positive_porosity_slope": lambda item: (
+                f"slope {item['porosity_correction']['A']:.3f} is not positive"
+            ),
+            "low_porosity_r_squared": lambda item: (
+                f"r^2 {item['r_squared']:.2f} is below {item['min_r_squared']:g}"
+            ),
+        }
+        for item in metadata.get("core_rejected_models") or []:
+            explain = reasons.get(item.get("reason"))
+            if explain is None:
+                continue
+            decisions.append(
+                f"Core porosity correction ({item.get('source_formation') or 'all depths'}) "
+                f"not used: {explain(item)}; no PHIE_CC or PERM_CC from that fit"
+            )
+        return decisions
 
     def _select_formation_tops(
         self, well: "Well", context: Dict[str, Any], report: Dict[str, Any]
@@ -1586,11 +2530,8 @@ class DynamicWorkflow:
 
     def _resolve_lithology_domain(self, well: "Well") -> str:
         """Record the metadata-selected lithology domain for this run."""
-        from petrophys.interpretation.lithology.matrix_inference import (
-            resolve_from_lithology_log,
-        )
         self._lithology_resolution = (
-            resolve_from_lithology_log(well, warn=False)
+            self._vendor_lithology_resolution(well)
             if self._selected_lithology_source in {"auto", "vendor"} else None
         )
         if self._result is not None:
@@ -1659,7 +2600,13 @@ class DynamicWorkflow:
             )
 
     def _resolved_cutoff(self, key: str):
-        """Config cutoff if set, else the lithology-family standard."""
+        """The config cutoff, else 0.3 (VCL) or 0.7 (SW).
+
+        Without ``sw_routing_vcl_cutoff`` the VCL value is the clay volume
+        above which saturation switches from Archie to a shaly-sand model
+        (:meth:`_routing_vcl_cutoff`). Net pay resolves unset cutoffs
+        separately (:meth:`_current_net_flags`).
+        """
         value = getattr(self.config, key)
         if value is not None:
             return value
@@ -1669,16 +2616,54 @@ class DynamicWorkflow:
         from petrophys.evaluation.net_pay.cutoffs import standard_cutoffs
         return standard_cutoffs(self.config.lithology)[key]
 
-    def _cutoff_argument(self, key: str):
-        """Value passed to a module, preserving historical None semantics."""
-        value = getattr(self.config, key)
-        if value is not None:
-            return value
-        if key == "vcl_cutoff":
-            return 0.3
-        if key == "sw_cutoff":
-            return 0.7
-        return None
+    def _routing_vcl_cutoff(self) -> float:
+        """Clay volume above which ``sw_model="auto"`` uses a shaly-sand equation.
+
+        ``sw_routing_vcl_cutoff`` when set, else :meth:`_resolved_cutoff`.
+        Saturation routing and the SWIRR_APP sample pick both use it.
+        """
+        if self.config.sw_routing_vcl_cutoff is not None:
+            return self.config.sw_routing_vcl_cutoff
+        return self._resolved_cutoff("vcl_cutoff")
+
+    def _cutoff_families(self, lithology: Union[str, np.ndarray]) -> Union[str, np.ndarray]:
+        """Lithology family of each sample's net-pay cutoffs (:func:`_cutoff_families`);
+        samples without a lithology group take the family of the run's lithology."""
+        from petrophys.evaluation.net_pay.cutoffs import cutoff_family
+
+        return _cutoff_families(lithology, cutoff_family(self.config.lithology))
+
+    def _current_net_flags(
+        self,
+        well: "Well",
+        lithology: Union[str, np.ndarray],
+        vcl: Optional[np.ndarray],
+        phie: np.ndarray,
+        sw: np.ndarray,
+        vcl_cutoff: Optional[float] = None,
+        phie_cutoff: Optional[float] = None,
+    ) -> Tuple[Any, Any, Dict[str, Any]]:
+        """Net flags of a ``"current"`` run and the details behind them.
+
+        A cutoff set in the config applies to every sample. An unset one takes
+        the standard (:data:`~petrophys.evaluation.STANDARD_CUTOFFS`) of the
+        sample's lithology family (:meth:`_cutoff_families`). Evaporite, coal,
+        log-identified halite and bad-hole samples are then removed from net
+        reservoir and net pay (:func:`_non_reservoir_samples`); net rock keeps
+        them. ``vcl_cutoff`` and ``phie_cutoff``, when given, replace the clay
+        and porosity cutoffs. See :func:`_net_flags_by_family` for the result.
+        """
+        explicit = {
+            "vcl_cutoff": self.config.vcl_cutoff if vcl_cutoff is None else vcl_cutoff,
+            "phie_cutoff": self.config.phie_cutoff if phie_cutoff is None else phie_cutoff,
+            "sw_cutoff": self.config.sw_cutoff,
+        }
+        return _net_flags_by_family(
+            well,
+            self._cutoff_families(lithology),
+            vcl, phie, sw, explicit,
+            _non_reservoir_samples(well, lithology),
+        )
 
     def _archie_coefficients_for_lithology(
         self,
@@ -1770,7 +2755,7 @@ class DynamicWorkflow:
         """
         Execute only the specified workflow steps, in pipeline order.
         """
-        self._result = DynamicWorkflowResult(well=well, config=self.config)
+        self._result = self._start_result(well)
         self._lithology_log = None
         self._lithology_source = "config"
         self._computed_lithology_written = False
@@ -1849,7 +2834,7 @@ class DynamicWorkflow:
         self._auto_matrix = str(self.config.matrix_type).strip().lower() == "auto"
         self._auto_lith = str(self.config.lithology).strip().lower() == "auto"
 
-        self._result = DynamicWorkflowResult(well=well, config=self.config)
+        self._result = self._start_result(well)
         self._lithology_log = None
         self._lithology_source = "config"
         self._computed_lithology_written = False
@@ -1866,7 +2851,7 @@ class DynamicWorkflow:
         # pipeline still exposes this step for discovery and selected-step runs.
         normalization_done = False
         if (
-            self.config.standardize_input
+            self._setting("standardize_input")
             and WorkflowStep.NORMALIZATION.value not in self.config.skip_steps
         ):
             try:
@@ -1898,7 +2883,7 @@ class DynamicWorkflow:
         self._lithology_pending = self._auto_matrix or self._auto_lith
         if self._lithology_pending:
             from petrophys.interpretation.lithology.matrix_inference import (
-                resolve_from_lithology_log, resolve_from_core_matrix,
+                resolve_from_core_matrix,
             )
             rho_hc = {"oil": 0.8, "gas": 0.25, "condensate": 0.5}.get(
                 str(self.config.hc_type).lower(), 0.8
@@ -1912,7 +2897,7 @@ class DynamicWorkflow:
                 dolomite = int(sum(value == "dolomite" for value in groups))
                 res = _finalize(clastic, carbonate, dolomite, "external_lithology", clastic + carbonate + dolomite, False)
             elif self._selected_lithology_source == "vendor":
-                res = resolve_from_lithology_log(well, warn=False)
+                res = self._vendor_lithology_resolution(well)
             elif self._selected_lithology_source != "config":
                 res = resolve_from_core_matrix(well, rho_hc=rho_hc, warn=False)
             if res is not None:
@@ -1970,8 +2955,25 @@ class DynamicWorkflow:
             self._apply_lithology_resolution(
                 resolve_from_minerals(well, warn=False) or _default(warn=False)
             )
+            if not self._reproducing_benchmark:
+                self._warn_provisional_clean_line()
 
         return self._result
+
+    def _warn_provisional_clean_line(self) -> None:
+        """Warn when VCL_ND used another clean line than the matrix resolved late in the run."""
+        from petrophys.interpretation.clay_volume.nd_method import nd_clean_line
+
+        step = next((item for item in self._result.steps_executed if item.step == "vclay"), None)
+        if step is None or not step.success or not step.parameters.get("use_nd"):
+            return
+        used, resolved = step.parameters.get("nd_matrix"), self._vcl_nd_matrix()
+        if nd_clean_line(used) != nd_clean_line(resolved):
+            self._result.warnings.append(
+                f"The matrix was resolved ({self.config.matrix_type}) only after the clay-volume step, "
+                f"which measured VCL_ND from the provisional {used} clean line. Set "
+                f"matrix_type='{self.config.matrix_type}' to measure it from the {resolved} line."
+            )
 
     @staticmethod
     def _input_validation_error(well: "Well") -> Optional[str]:
@@ -2029,17 +3031,27 @@ class DynamicWorkflow:
         if step is WorkflowStep.TEMPERATURE:
             return "The well has no depth index"
         if step is WorkflowStep.BAD_HOLE:
-            return "Needs a caliper (CALI) or density-correction (DRHO) curve"
+            if self._reproducing_benchmark:
+                return "Needs a caliper (CALI) or density-correction (DRHO) curve"
+            return (
+                "Needs a density-correction (DRHO) curve, or a caliper (CALI) and a bit size "
+                "(BS curve or a 3-36 in header bit size)"
+            )
         if step is WorkflowStep.VCLAY:
             return "Needs a gamma-ray curve, an SP curve, or neutron and density curves"
         if step is WorkflowStep.RCL:
             missing = self._missing(well, deep_res, ("clay volume (VCL)", "VCL", "VCLAY"))
         elif step is WorkflowStep.LITHOLOGY:
             if self.config.lithology_domain == "carbonate":
+                clay = (
+                    ("gamma ray (GR)", "GR", "CGR", "SGR")
+                    if self._carbonate_calibration == "costa"
+                    else ("clay volume (VCL)", "VCL", "VCLAY", "VSH")
+                )
                 missing = self._missing(
                     well,
                     ("bulk density (RHOB)", "RHOB"),
-                    ("gamma ray (GR)", "GR", "CGR", "SGR"),
+                    clay,
                     ("porosity (PHIT/PHIE)", "PHIT", "PHIE"),
                 )
             else:
@@ -2062,6 +3074,12 @@ class DynamicWorkflow:
                 "petrophys.interpretation.geochemistry.interpret_elemental_spectroscopy directly"
             )
         elif step is WorkflowStep.RMF:
+            if not self._reproducing_benchmark:
+                return (
+                    "No mud-filtrate resistivity source: set mud_type='OBM', rmf_at_meas_temp, "
+                    "rmf_salinity_ppm, rmf_chlorides_mg_l or rm, or provide RMF, CLFL or RM "
+                    "in the LAS header"
+                )
             return (
                 "No mud-filtrate resistivity source: set mud_type='OBM', rmf_at_meas_temp, "
                 "rmf_salinity_ppm or rm, or provide RMF/RM in the LAS header"
@@ -2100,6 +3118,8 @@ class DynamicWorkflow:
         elif step in (WorkflowStep.BVW, WorkflowStep.NET_PAY):
             missing = self._missing(well, porosity, saturation)
         elif step is WorkflowStep.MHI:
+            if self._skips_flushed_zone:
+                return _OBM_FLUSHED_ZONE_NOTE
             missing = self._missing(well, saturation)
             if not self._has_sxo_curve(well):
                 missing.append("flushed-zone saturation (SXO)")
@@ -2108,7 +3128,7 @@ class DynamicWorkflow:
         return "Required usable curves or parameters are unavailable"
 
     def _can_normalization(self, well: "Well") -> bool:
-        return bool(self.config.standardize_input)
+        return bool(self._setting("standardize_input"))
 
     def _step_normalization(self, well: "Well") -> StepResult:
         """Standardize aliases and physical units before interpretation."""
@@ -2125,10 +3145,20 @@ class DynamicWorkflow:
             for name in well.curves
             if well.get(name) is not None
         }
+        from petrophys.preprocessing.standardization.curve_standardizer import (
+            CURVE_PLAUSIBLE_RANGES,
+            RANGE_SCREENING_WARNING_FRACTION,
+            _range_screening_message,
+        )
+
         standardize_curves(
             well,
             rename_curves=self.config.rename_input_curves,
             convert_units=True,
+            plausible_ranges=(
+                None if self._reproducing_benchmark
+                else {**CURVE_PLAUSIBLE_RANGES, **_CURRENT_RANGE_LIMITS}
+            ),
         )
         rename_map = dict(well.get_parameter("_rename_map") or {})
         working_aliases = {}
@@ -2147,10 +3177,6 @@ class DynamicWorkflow:
                     "to": after_unit,
                 }
 
-        from petrophys.preprocessing.standardization.curve_standardizer import (
-            RANGE_SCREENING_WARNING_FRACTION,
-        )
-
         range_screening = {
             name: dict(curve.metadata.custom["range_screening"])
             for name in well.curves
@@ -2158,7 +3184,13 @@ class DynamicWorkflow:
             if "range_screening" in curve.metadata.custom
         }
         for name, item in range_screening.items():
-            if item["fraction"] >= RANGE_SCREENING_WARNING_FRACTION:
+            if item["fraction"] < RANGE_SCREENING_WARNING_FRACTION:
+                continue
+            if not self._reproducing_benchmark:
+                # The standardizer's own warning text, so a caller that also
+                # captures its DataQualityWarning sees one message.
+                self._result.warnings.append(_range_screening_message(name, item))
+            else:
                 message = (
                     f"{name}: {item['masked']} of {item['finite']} samples were outside the "
                     f"plausible {item['standard_curve']} range {item['low']:g}-{item['high']:g} "
@@ -2239,7 +3271,12 @@ class DynamicWorkflow:
         )
 
     def _can_bad_hole(self, well: "Well") -> bool:
-        return self._has_curve(well, "CALI", "CAL") or self._has_curve(well, "DRHO")
+        if self._reproducing_benchmark:
+            return self._has_curve(well, "CALI", "CAL") or self._has_curve(well, "DRHO")
+        # Without a bit size a caliper cannot be tested for washout.
+        return self._has_curve(well, "DRHO") or (
+            self._has_curve(well, "CALI", "CAL") and bool(np.isfinite(_known_bit_size(well)).any())
+        )
 
     def _can_vclay(self, well: "Well") -> bool:
         # Accept the GR family: a CGR/SGR-only well still supports GR-based VCL.
@@ -2260,9 +3297,10 @@ class DynamicWorkflow:
 
     def _can_lithology(self, well: "Well") -> bool:
         if self.config.lithology_domain == "carbonate":
+            clay = ("GR", "CGR", "SGR") if self._carbonate_calibration == "costa" else ("VCL", "VCLAY", "VSH")
             return (
                 self._has_curve(well, "RHOB")
-                and self._has_curve(well, "GR", "CGR", "SGR")
+                and self._has_curve(well, *clay)
                 and self._has_curve(well, "PHIT", "PHIE")
             )
         return (
@@ -2284,6 +3322,7 @@ class DynamicWorkflow:
             str(self.config.mud_type).upper() == "OBM"
             or self.config.rmf_at_meas_temp is not None
             or self.config.rmf_salinity_ppm is not None
+            or self.config.rmf_chlorides_mg_l is not None
             or self.config.rm is not None
             or well.header.rmf is not None
             or well.header.rm is not None
@@ -2329,7 +3368,11 @@ class DynamicWorkflow:
     def _can_saturation(self, well: "Well") -> bool:
         has_porosity = self._has_curve(well, "PHIE_CC", "PHIE")
         can_compute_sw = self._has_curve(well, "RDEP", "RT") and self._result.rw_computed is not None
-        can_compute_sxo = self._has_curve(well, "RSHA", "RXO", "RESS") and self._result.rmf_computed is not None
+        can_compute_sxo = (
+            self._has_curve(well, "RSHA", "RXO", "RESS")
+            and self._result.rmf_computed is not None
+            and not self._skips_flushed_zone
+        )
         return has_porosity and (can_compute_sw or can_compute_sxo)
 
     def _can_permeability(self, well: "Well") -> bool:
@@ -2345,6 +3388,8 @@ class DynamicWorkflow:
         return self._has_curve(well, "PHIE_CC", "PHIE", "PHIT") and self._has_curve(well, "SW", "SWA", "SWT-LOG")
 
     def _can_mhi(self, well: "Well") -> bool:
+        if self._skips_flushed_zone:
+            return False
         return self._has_curve(well, "SW", "SWA", "SWT-LOG") and self._has_sxo_curve(well)
 
     def _can_net_pay(self, well: "Well") -> bool:
@@ -2424,6 +3469,10 @@ class DynamicWorkflow:
 
         if result.source == "fallback_geothermal_gradient":
             trace.decisions.append("No BHT temperature anchor found -> using fallback 30 C/km geothermal gradient")
+            self._warn_assumed(
+                "No bottom-hole temperature (bht_f or header BHT): temperatures follow an assumed "
+                "30 C/km gradient, which sets the Rw and Rmf temperature corrections."
+            )
         else:
             trace.decisions.append("Temperature profile anchored to BHT metadata/input")
         trace.decisions.append(
@@ -2446,6 +3495,18 @@ class DynamicWorkflow:
         rhob = get_curve(well, ["RHOB"])
         pef = get_curve(well, ["PEF"])
 
+        if cali is not None: inputs.append(curve_source_mnemonic(cali) or cali.mnemonic)
+        if bs_curve is not None: inputs.append(curve_source_mnemonic(bs_curve) or "BS")
+        if drho is not None: inputs.append(curve_source_mnemonic(drho) or "DRHO")
+        if rhob is not None: inputs.append(curve_source_mnemonic(rhob) or "RHOB")
+        if pef is not None: inputs.append(curve_source_mnemonic(pef) or "PEF")
+        trace.input_curves = inputs
+        if not self._reproducing_benchmark:
+            return self._flag_bad_hole_where_bit_size_known(well, trace)
+
+        # The eval package's rule: the BS curve as logged, else the header bit
+        # size whatever its value, else an assumed 8.5 in bit; |DRHO| only
+        # together with the caliper test.
         if bs_curve is not None:
             bs = np.asarray(bs_curve.data, dtype=float)
             bit_size = bs
@@ -2456,20 +3517,13 @@ class DynamicWorkflow:
         else:
             header_bit_size = getattr(well.header, "bit_size", None)
             if header_bit_size is None:
-                # No BS curve or header bit size: assume 8.5 in.
                 representative_bit_size = 8.5
                 bit_size_source = "fallback_8.5"
             else:
                 representative_bit_size = float(header_bit_size)
                 bit_size_source = "well_header"
             bit_size = representative_bit_size
-            bit_size_unique_values = [float(representative_bit_size)] if representative_bit_size is not None else []
-        if cali is not None: inputs.append(curve_source_mnemonic(cali) or cali.mnemonic)
-        if bs_curve is not None: inputs.append(curve_source_mnemonic(bs_curve) or "BS")
-        if drho is not None: inputs.append(curve_source_mnemonic(drho) or "DRHO")
-        if rhob is not None: inputs.append(curve_source_mnemonic(rhob) or "RHOB")
-        if pef is not None: inputs.append(curve_source_mnemonic(pef) or "PEF")
-        trace.input_curves = inputs
+            bit_size_unique_values = [float(representative_bit_size)]
 
         flags = generate_bad_hole_flags(well, bit_size=bit_size)
         well.add_curve("BAD_HOLE", flags["bad_hole"].astype(float), "", "Bad Hole Flag")
@@ -2483,9 +3537,96 @@ class DynamicWorkflow:
         trace.parameters["bit_size_source"] = bit_size_source
         trace.parameters["bit_size_unique_values"] = bit_size_unique_values
         trace.parameters["bit_size_depth_dependent"] = bs_curve is not None and len(bit_size_unique_values) > 1
-        if bit_size is None:
-            trace.decisions.append("No BS curve or header bit size found; CALI-BS and large-hole criteria skipped")
         trace.decisions.append(f"{n_bad} bad-hole samples flagged out of {len(flags['bad_hole'])}")
+        return trace
+
+    def _flag_bad_hole_where_bit_size_known(self, well: "Well", trace: StepResult) -> StepResult:
+        """BAD_HOLE under ``"current"``, which assumes no bit size.
+
+        The caliper washout test (CALI - BS > 1.5 in) and the large-hole test
+        (BS > 17.5 in) run at the samples whose bit size is known: the BS
+        curve, else a header bit size of 3-36 in.
+        ``|DRHO|`` > 0.15 g/cm3 flags washout at every sample with a DRHO
+        reading, so where no bit size is known BAD_HOLE flags DRHO alone. A
+        sample with neither test is not assessed and stays 0; the trace says
+        how many, and a warning says where a caliper reading has no bit size.
+        """
+        from petrophys.model.constants import DefaultParameters
+        from petrophys.preprocessing.quality.bad_hole.flag_generator import generate_bad_hole_flags
+
+        n_samples = well.n_samples
+        logged_bs, _, _ = get_curve_data_depthwise(well, ["BS"])
+        from_curve = np.zeros(n_samples, dtype=bool) if logged_bs is None else np.isfinite(logged_bs)
+        header_bit_size = getattr(well.header, "bit_size", None)
+        if (
+            header_bit_size is not None
+            and _plausible_bit_size(header_bit_size) is None
+            and not from_curve.all()
+        ):
+            # A null (-999.25) or millimetre header value would flag the
+            # whole hole as washout.
+            message = (
+                f"Header bit size {header_bit_size} is not a hole size in inches (3-36 in): "
+                "a null value or another unit, so it is ignored."
+            )
+            trace.decisions.append(message)
+            self._warn_assumed(message)
+
+        bit_size = _known_bit_size(well)
+        known = np.isfinite(bit_size)
+        cali, _, _ = get_curve_data_depthwise(well, ["CALI", "CAL"])
+        drho, _, _ = get_curve_data_depthwise(well, ["DRHO"])
+        has_cali = np.zeros(n_samples, dtype=bool) if cali is None else np.isfinite(cali)
+        has_drho = np.zeros(n_samples, dtype=bool) if drho is None else np.isfinite(drho)
+        caliper_test = has_cali & known
+        flags = generate_bad_hole_flags(well, bit_size=bit_size, drho_alone=True)
+        bad_hole = np.asarray(flags["bad_hole"], dtype=bool)
+        assessed = caliper_test | has_drho | np.asarray(flags["large_hole"], dtype=bool)
+
+        unique_values = sorted({float(value) for value in np.round(bit_size[known], 4)})
+        if not from_curve.any():
+            source = "well_header" if known.any() else "none"
+        elif (known & ~from_curve).any():
+            source = "BS_curve_and_well_header"
+        else:
+            source = "BS_curve_depth_by_depth"
+        trace.parameters["bit_size_used"] = _representative_finite_value(bit_size)
+        trace.parameters["bit_size_source"] = source
+        trace.parameters["bit_size_unique_values"] = unique_values
+        trace.parameters["bit_size_depth_dependent"] = len(unique_values) > 1
+        trace.parameters["no_bit_size_samples"] = int(np.count_nonzero(~known))
+        trace.parameters["caliper_test_samples"] = int(np.count_nonzero(caliper_test))
+        trace.parameters["not_assessed_samples"] = int(np.count_nonzero(~assessed))
+
+        if not assessed.any():
+            trace.decisions.append(
+                "Bad hole not assessed: no DRHO reading and no caliper reading with a bit size "
+                "(BS curve or header), so BAD_HOLE is not written"
+            )
+            return trace
+        drho_test = f"|DRHO| > {DefaultParameters.DRHO_THRESHOLD:g} g/cm3"
+        untested = has_cali & ~known
+        if untested.any():
+            where = _interval_text(well, untested)
+            message = (
+                f"No bit size (BS curve or header) at {int(np.count_nonzero(untested))} samples "
+                "with a caliper reading" + (f" ({where})" if where else "") + ": the caliper "
+                f"washout test (CALI - BS > {DefaultParameters.CALI_BS_THRESHOLD:g} in) and the "
+                f"large-hole test (BS > {DefaultParameters.LARGE_HOLE_BS:g} in) do not run there, "
+                f"and BAD_HOLE there flags only {drho_test}."
+            )
+            trace.decisions.append(message)
+            self._warn_assumed(message)
+        elif not has_cali.any():
+            trace.decisions.append(f"No caliper reading: washout is {drho_test} alone")
+        if not assessed.all():
+            trace.decisions.append(
+                f"Bad hole not assessed at {int(np.count_nonzero(~assessed))} samples with neither "
+                "a DRHO reading nor a caliper reading with a bit size; BAD_HOLE is 0 there"
+            )
+        well.add_curve("BAD_HOLE", bad_hole.astype(float), "", "Bad Hole Flag")
+        trace.output_curves = ["BAD_HOLE"]
+        trace.decisions.append(f"{int(np.count_nonzero(bad_hole))} bad-hole samples flagged out of {n_samples}")
         return trace
 
     def _step_spectral_gamma(self, well: "Well") -> StepResult:
@@ -2573,7 +3714,7 @@ class DynamicWorkflow:
         """Return a formation-temperature array in Fahrenheit."""
         temp_curve = well.get("TEMP")
         if temp_curve is not None:
-            temp = np.asarray(temp_curve.data, dtype=float)
+            temp = self._temperature_curve_f(temp_curve)
             if temp.size == well.n_samples:
                 return temp
 
@@ -2603,6 +3744,17 @@ class DynamicWorkflow:
         avg_temp = self._get_avg_formation_temp(well)
         return np.full(well.n_samples, avg_temp, dtype=float)
 
+    def _temperature_curve_f(self, curve: Any) -> np.ndarray:
+        """Temperature curve values in degF.
+
+        A curve labelled in degC or K is converted; the benchmark profile reads
+        the values as degF whatever the label.
+        """
+        values = np.asarray(curve.data, dtype=float)
+        if not self._reproducing_benchmark and temperature_unit(curve.unit) in ("C", "K"):
+            values = UnitConverter.temperature(values, curve.unit, "F")
+        return values
+
     def _reference_temperature(self, temp_profile: np.ndarray) -> float:
         """Choose a reference temperature for scalar resistivity inputs."""
         finite = temp_profile[np.isfinite(temp_profile)]
@@ -2610,9 +3762,162 @@ class DynamicWorkflow:
             return 150.0
         return float(np.nanmedian(finite))
 
+    def _vcl_nd_matrix(self) -> str:
+        """Matrix whose neutron-density clean line VCL_ND is measured from."""
+        from petrophys.interpretation.clay_volume.nd_method import nd_clean_line
+
+        matrix = str(self.config.matrix_type or "auto").strip().lower()
+        if matrix == "auto":
+            # Not resolved yet (the run settles it after the mineral solve):
+            # the domain's own matrix, else sandstone, the matrix the porosity
+            # step and the run's default resolution use for an unresolved
+            # "auto". The end of the run warns when the resolved matrix has
+            # another clean line.
+            domain = str(self.config.lithology_domain).strip().lower()
+            matrix = _DOMAIN_MATRICES.get(domain, ("sandstone",))[0]
+        if nd_clean_line(matrix) == nd_clean_line("limestone"):
+            # Calcite, and matrices without a clean line of their own.
+            return "limestone"
+        return matrix
+
+    def _nd_clay_point(
+        self, well: "Well", vcl_gr: Optional[np.ndarray], matrix: str
+    ) -> tuple:
+        """The neutron-density clay point of VCL_ND, and whether VCL_ND joins VCL.
+
+        ``nd_clay`` when set; otherwise the median RHOB and NPHI of the well's
+        good-hole shale samples: the shale-lithology samples when a lithology
+        log flags at least 20 with both logs, else the samples with VCL_GR
+        above 0.9, the shale control behind the clay porosity and Rcl.
+        Bad-hole samples are left out, since washouts read low density and
+        high neutron. With fewer than 20 samples on both bases the default
+        point (2.62 g/cm3, 0.38) is kept. A point, set or picked, less than
+        0.10 v/v of neutron above the clean line cannot tell shale from clean
+        rock: VCL_ND is then computed on the default point, reported, and left
+        out of VCL (``nd_in_vcl`` False).
+
+        The pick is one median over the whole log, so where most VCL_GR > 0.9
+        samples are shallow, undercompacted shale, the point is lighter than
+        the shales of a deeper reservoir section; ``nd_clay_depth_range``
+        gives the depths of the picked samples.
+
+        Returns
+        -------
+        tuple
+            ``((rhob, nphi), info)``: the point VCL_ND is computed on and the
+            trace parameters.
+        """
+        from petrophys.interpretation.clay_volume.nd_method import ND_CLAY_POINT, nd_clay_separation
+
+        info: Dict[str, Any] = {
+            "nd_clay_source": "default",
+            "nd_clay_basis": None,
+            "nd_clay_samples": 0,
+            "nd_clay_depth_range": None,
+            "nd_clay_picked": None,
+            "nd_clay_fallback_reason": None,
+            "nd_in_vcl": True,
+        }
+        if self.config.nd_clay is not None:
+            point = (float(self.config.nd_clay[0]), float(self.config.nd_clay[1]))
+            info.update(nd_clay_source="config", nd_clay_basis="nd_clay")
+        else:
+            candidates = []
+            lithology = self._build_lithology_log(well)
+            if isinstance(lithology, np.ndarray):
+                flags = np.asarray([_is_shale_group(item) for item in lithology], dtype=bool)
+                candidates.append((flags, "lithology_shale", "shale-lithology"))
+            if vcl_gr is not None:
+                values = np.asarray(vcl_gr, dtype=float)
+                candidates.append((np.isfinite(values) & (values > 0.9), "vcl_gr_gt_0.9", "VCL_GR > 0.9"))
+            if not candidates:
+                info["nd_clay_fallback_reason"] = "no shale lithology or gamma-ray clay volume to pick shale samples from"
+                return ND_CLAY_POINT, info
+            usable = np.ones(well.n_samples, dtype=bool)
+            bad_hole = well.get("BAD_HOLE")
+            if bad_hole is not None:
+                usable &= ~(np.asarray(bad_hole.data, dtype=float) > 0.5)
+            nphi, _, _ = get_curve_data_depthwise(well, ["NPHI", "PHIN"])
+            rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
+            usable &= np.isfinite(nphi) & np.isfinite(rhob)
+            reasons = []
+            for shale, basis, label in candidates:
+                picked = shale & usable
+                count = int(np.count_nonzero(picked))
+                info.update(nd_clay_basis=basis, nd_clay_samples=count)
+                if count >= 20:
+                    break
+                reasons.append(f"{count} good-hole {label} samples have neutron and density; 20 are needed")
+            info["nd_clay_fallback_reason"] = "; ".join(reasons) or None
+            if count < 20:
+                return ND_CLAY_POINT, info
+            point = (float(np.median(rhob[picked])), float(np.median(nphi[picked])))
+            depth = np.asarray(well.depth, dtype=float)[picked]
+            info.update(
+                nd_clay_source="shale_samples",
+                nd_clay_depth_range=[float(depth.min()), float(depth.max())],
+            )
+        info["nd_clay_picked"] = list(point)
+        separation = nd_clay_separation(point[0], point[1], matrix)
+        if separation < 0.10:
+            info.update(
+                nd_clay_source="default",
+                nd_in_vcl=False,
+                nd_clay_fallback_reason=(
+                    f"the clay point ({point[0]:.3f} g/cm3, {point[1]:.3f} v/v) lies "
+                    f"{separation:.3f} v/v above the {matrix} clean line, less than the 0.10 needed"
+                ),
+            )
+            return ND_CLAY_POINT, info
+        return point, info
+
+    def _check_sp_baselines(
+        self, well: "Well", gr_curve: Any, sp_min: float, sp_max: float, decisions: List[str]
+    ) -> str:
+        """Check the order of the SP baselines against the SP polarity.
+
+        A normal SP (Rmf > Rw) reads higher in shales, so its shale baseline
+        ``sp_min`` lies above the clean-sand line ``sp_max``; a reversed SP
+        the other way round. An SP whose polarity the logs do not show clearly
+        is taken as normal, the usual case. A contradicting order is warned
+        about and the values are still used as given.
+
+        Returns
+        -------
+        str
+            ``"normal"``, ``"reversed"`` or ``"unclear"``.
+        """
+        from petrophys.interpretation.clay_volume.sp_method import sp_polarity
+
+        sp_curve = get_curve(well, ["SP"])
+        polarity = 0
+        if sp_curve is not None and gr_curve is not None and well.depth is not None:
+            unit = str(getattr(well, "depth_unit", "") or "").strip().lower()
+            window = 100.0 if unit in {"ft", "feet", "foot", "f"} else 30.0
+            polarity = sp_polarity(sp_curve.data, gr_curve.data, well.depth, window=window)
+        label = {1: "normal", -1: "reversed", 0: "unclear"}[polarity]
+        reversed_sp = polarity < 0
+        consistent = sp_min < sp_max if reversed_sp else sp_min > sp_max
+        decisions.append(
+            f"SP polarity: {label}" + (" (taken as normal)" if polarity == 0 else "")
+            + f"; the baselines' order {'matches' if consistent else 'contradicts'} it"
+        )
+        if not consistent:
+            kind = "reversed" if reversed_sp else "normal"
+            evidence = "as the SP and GR show" if polarity else "assumed: the logs do not show the polarity clearly"
+            relation = "equals" if sp_max == sp_min else ("lies above" if sp_max > sp_min else "lies below")
+            self._result.warnings.append(
+                "sp_min is the shale baseline and sp_max the clean-sand line, which lies "
+                f"{'above' if reversed_sp else 'below'} the shale baseline for a {kind} SP "
+                f"({evidence}). Here sp_max={sp_max:g} mV {relation} sp_min={sp_min:g} mV, so "
+                "VCL_SP is inverted, high in clean sand and low in shale: check whether the two "
+                "values are swapped."
+            )
+        return label
+
     def _step_vclay(self, well: "Well") -> StepResult:
         from petrophys.interpretation.clay_volume.vcl_module import VclModule
-        from petrophys.interpretation.clay_volume.nd_method import nd_clean_line
+        from petrophys.interpretation.clay_volume.nd_method import ND_CLAY_POINT, nd_clean_line
 
         trace = StepResult(step="vclay", success=True)
         decisions = []
@@ -2666,16 +3971,36 @@ class DynamicWorkflow:
         decisions.append(f"SP method: {'enabled' if use_sp else 'disabled'}"
                         + (f" (mud has clay/KCl)" if self.config.mud_has_clay_or_kcl else ""))
         decisions.append(f"N-D method: {'enabled' if use_nd else 'disabled (missing NPHI or RHOB)'}")
-        if use_sp and sp_max is not None and sp_min is not None:
+        sp_baselines = use_sp and sp_max is not None and sp_min is not None
+        if sp_baselines and self._reproducing_benchmark:
             decisions.append(f"SP_clean = {sp_max:.1f} ({sp_max_source}, P5 of SP)")
             decisions.append(f"SP_shale = {sp_min:.1f} ({sp_min_source}, P95 of SP)")
+        elif sp_baselines:
+            decisions.append(
+                f"SP_clean = {sp_max:.1f} ({'user' if sp_max_source == 'user' else 'auto, P5 of SP'})"
+            )
+            decisions.append(
+                f"SP_shale = {sp_min:.1f} ({'user' if sp_min_source == 'user' else 'auto, P95 of SP'})"
+            )
 
         # Select the lowest valid clay estimate from the available methods at
         # each depth, consistent with the workflow's VCL convention.
         vcl_combine = "min"
-        # The canonical context calculation uses the fixed limestone N-D clean
-        # line while the downstream porosity matrix remains configurable.
-        vcl_matrix = "limestone"
+        sp_in_vcl = use_sp
+        polarity = None
+        if self._reproducing_benchmark:
+            # The canonical context calculation uses the fixed limestone N-D clean
+            # line while the downstream porosity matrix remains configurable.
+            vcl_matrix = "limestone"
+        else:
+            vcl_matrix = self._vcl_nd_matrix()
+            if sp_baselines and "user" in (sp_min_source, sp_max_source):
+                polarity = self._check_sp_baselines(well, gr_curve, sp_min, sp_max, decisions)
+            # Baselines picked over the whole log mostly measure the SP baseline
+            # drift (Schlumberger, 1989), so only user-set baselines put SP in
+            # the minimum; otherwise VCL_SP is reported and fills only depths
+            # that have no GR or N-D value.
+            sp_in_vcl = use_sp and sp_min_source == sp_max_source == "user"
         vcl_module = VclModule(
             gr_min=gr_min, gr_max=gr_max,
             gr_method=self.config.gr_method,
@@ -2684,9 +4009,40 @@ class DynamicWorkflow:
             matrix=vcl_matrix,
             combine=vcl_combine,
             rho_fl=self.config.rho_fl,
+            sp_fallback_only=not sp_in_vcl,
+            nd_triangle_only=not self._reproducing_benchmark,
         )
         curve_mapping = {"gr": gr_curve_name} if gr_curve_name else None
         result = vcl_module.calculate(well, curves=curve_mapping)
+        nd_clay = ND_CLAY_POINT
+        nd_clay_info: Dict[str, Any] = {}
+        nd_in_vcl = use_nd
+        if not self._reproducing_benchmark and result.vcl_nd is not None:
+            nd_clay, nd_clay_info = self._nd_clay_point(well, result.vcl_gr, vcl_matrix)
+            reason = nd_clay_info["nd_clay_fallback_reason"]
+            if nd_clay_info["nd_clay_source"] != "default":
+                vcl_module.nd_clay = nd_clay
+                result = vcl_module.calculate(well, curves=curve_mapping)
+            elif not nd_clay_info["nd_in_vcl"] and (result.vcl_gr is not None or result.vcl_sp is not None):
+                # The well's clay point lies on the clean line, so neutron-density
+                # cannot separate clay here: VCL_ND is reported only.
+                reported_nd = result.vcl_nd
+                vcl_module.use_nd = False
+                result = vcl_module.calculate(well, curves=curve_mapping)
+                result.vcl_nd = reported_nd
+                nd_in_vcl = False
+                self._result.warnings.append(
+                    f"VCL_ND is reported but left out of VCL: {reason}, so neutron-density cannot "
+                    "tell shale from clean rock in this well. Check the NPHI and RHOB logs (units, "
+                    "environmental corrections)."
+                )
+            elif not nd_clay_info["nd_in_vcl"]:
+                nd_clay_info["nd_in_vcl"] = True
+                self._result.warnings.append(
+                    "VCL comes from VCL_ND alone, on the default clay point (2.62 g/cm3, 0.38), "
+                    f"because {reason}. Check the NPHI and RHOB logs (units, environmental "
+                    "corrections)."
+                )
         if result.gr_min_used is not None:
             decisions.append(
                 f"Applied GR endpoints: {result.gr_min_used:g} to {result.gr_max_used:g} API"
@@ -2710,18 +4066,83 @@ class DynamicWorkflow:
             well.add_curve("VCL_SP", result.vcl_sp, unit="v/v", description="VCL from SP")
             well.add_curve("VCLSP", result.vcl_sp, unit="v/v", description="VCL from SP")
             outputs.extend(["VCL_SP", "VCLSP"])
+            if not sp_in_vcl:
+                # Reported only: keeps it out of the VCL an export recombines.
+                for name in ("VCL_SP", "VCLSP"):
+                    well.get(name).metadata.custom["in_vcl"] = False
         if result.vcl_nd is not None:
             well.add_curve("VCL_ND", result.vcl_nd, unit="v/v", description="VCL from N-D")
             well.add_curve("VCLND", result.vcl_nd, unit="v/v", description="VCL from N-D")
             outputs.extend(["VCL_ND", "VCLND"])
-
-        decisions.append("Final VCL = min(available methods), range: "
-                         f"{np.nanmin(result.vcl):.3f} - {np.nanmax(result.vcl):.3f}")
-        decisions.append("Canonical limestone N-D endpoints used")
+            if not nd_in_vcl:
+                # Reported only: keeps it out of the VCL an export recombines.
+                for name in ("VCL_ND", "VCLND"):
+                    well.get(name).metadata.custom["in_vcl"] = False
 
         nd_clean1_density, nd_clean1_neutron, nd_clean2_density, nd_clean2_neutron = (
             nd_clean_line(vcl_matrix)
         )
+        vcl_range = f"{np.nanmin(result.vcl):.3f} - {np.nanmax(result.vcl):.3f}"
+        if self._reproducing_benchmark:
+            decisions.append(f"Final VCL = min(available methods), range: {vcl_range}")
+            decisions.append("Canonical limestone N-D endpoints used")
+        else:
+            combined = [
+                name for name, values in (("GR", result.vcl_gr), ("SP", result.vcl_sp), ("ND", result.vcl_nd))
+                if values is not None and (name != "SP" or sp_in_vcl) and (name != "ND" or nd_in_vcl)
+            ] or ["SP"]
+            rule = f"min({', '.join(combined)})" if len(combined) > 1 else f"VCL_{combined[0]}"
+            decisions.append(f"Final VCL = {rule} at each depth, range: {vcl_range}")
+            if result.vcl_sp is not None and not sp_in_vcl:
+                decisions.append(
+                    "VCL_SP is reported but left out of the minimum: SP baselines picked over "
+                    "the whole log mostly measure SP baseline drift, so it only fills depths with "
+                    "no GR or N-D value. Set both sp_min and sp_max to include it; they apply to "
+                    "the whole log, so only for an SP without baseline drift"
+                )
+            if result.vcl_nd is not None:
+                decisions.append(
+                    f"N-D clean line ({vcl_matrix}): RHOB {nd_clean1_density:.2f} g/cm3 at NPHI "
+                    f"{nd_clean1_neutron:.2f} to RHOB {nd_clean2_density:.2f} g/cm3 at NPHI "
+                    f"{nd_clean2_neutron:.2f}"
+                )
+                source = nd_clay_info.get("nd_clay_source")
+                if source == "shale_samples":
+                    picked = (
+                        "shale-lithology" if nd_clay_info["nd_clay_basis"] == "lithology_shale"
+                        else "VCL_GR > 0.9"
+                    )
+                    top, bottom = nd_clay_info["nd_clay_depth_range"]
+                    decisions.append(
+                        f"N-D clay point: RHOB {nd_clay[0]:.3f} g/cm3, NPHI {nd_clay[1]:.3f}, the "
+                        f"median of {nd_clay_info['nd_clay_samples']} good-hole {picked} samples "
+                        f"at {top:g}-{bottom:g} {well.depth_unit or 'm'}"
+                        + (f" ({nd_clay_info['nd_clay_fallback_reason']})" if nd_clay_info["nd_clay_fallback_reason"] else "")
+                    )
+                elif source == "config":
+                    decisions.append(f"N-D clay point: RHOB {nd_clay[0]:.3f} g/cm3, NPHI {nd_clay[1]:.3f} (nd_clay)")
+                elif nd_in_vcl:
+                    decisions.append(
+                        f"N-D clay point: default RHOB {nd_clay[0]:.2f} g/cm3, NPHI {nd_clay[1]:.2f} "
+                        f"({nd_clay_info.get('nd_clay_fallback_reason')})"
+                    )
+                else:
+                    decisions.append(
+                        f"N-D clay point: default RHOB {nd_clay[0]:.2f} g/cm3, NPHI {nd_clay[1]:.2f} for the "
+                        f"reported VCL_ND, which stays out of VCL ({nd_clay_info['nd_clay_fallback_reason']})"
+                    )
+                nphi, _, _ = get_curve_data_depthwise(well, ["NPHI", "PHIN"])
+                rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
+                limit = max(nd_clean2_neutron, nd_clay[1])
+                with np.errstate(invalid="ignore"):
+                    outside = int(np.count_nonzero(np.isfinite(rhob) & (np.asarray(nphi, dtype=float) > limit)))
+                nd_clay_info["nd_outside_triangle_samples"] = outside
+                if outside:
+                    decisions.append(
+                        f"VCL_ND undefined at {outside} samples with NPHI above {limit:.3f}, beyond the "
+                        "clean line's end point and the clay point (outside the neutron-density "
+                        "triangle); VCL there comes from the other indicators"
+                    )
 
         trace.method = self.config.gr_method
         trace.input_curves = inputs
@@ -2740,12 +4161,18 @@ class DynamicWorkflow:
             "nd_clean1_neutron": nd_clean1_neutron,
             "nd_clean2_density": nd_clean2_density,
             "nd_clean2_neutron": nd_clean2_neutron,
-            "nd_clay_density": 2.62,
-            "nd_clay_neutron": 0.38,
+            "nd_clay_density": nd_clay[0],
+            "nd_clay_neutron": nd_clay[1],
             "active_vcl_source": "workflow_calculation",
             "computed_vcl_curve": "VCL",
             "lithology_domain": self.config.lithology_domain,
         }
+        if not self._reproducing_benchmark:
+            trace.parameters.update({
+                "sp_in_vcl": sp_in_vcl if use_sp else None,
+                "sp_polarity": polarity,
+                **nd_clay_info,
+            })
         trace.decisions = decisions
         return trace
 
@@ -2827,8 +4254,13 @@ class DynamicWorkflow:
         if self._has_curve(well, "DTC"):
             trace.input_curves.append("DTC")
 
-        costa_carbonate = self.config.lithology_domain == "carbonate"
-        if costa_carbonate:
+        carbonate = self.config.lithology_domain == "carbonate"
+        # The COSTA calibration writes its GR-derived illite as VILL; under the
+        # benchmark profile it keeps the notebooks' per-sample SLSQP solve.
+        costa_carbonate = carbonate and self._carbonate_calibration == "costa"
+        notebook_costa = costa_carbonate and self._reproducing_benchmark
+        weighted_rows = None
+        if notebook_costa:
             from petrophys.interpretation.lithology.costa_carbonate import (
                 ILLITE_GR_INTERCEPT,
                 ILLITE_GR_SLOPE,
@@ -2842,9 +4274,32 @@ class DynamicWorkflow:
                 "illite_gr_slope": ILLITE_GR_SLOPE,
                 "illite_equation": "VOL_ILLITE = -0.0424035 + 0.00562239 * GR",
             })
+        elif carbonate:
+            from petrophys.interpretation.lithology.carbonate_minerals import (
+                solve_carbonate_minerals,
+            )
+
+            if costa_carbonate:
+                result = solve_carbonate_minerals(well, "costa")
+            else:
+                result = solve_carbonate_minerals(
+                    well, "generic", rho_fluid=self.config.rho_fl, rho_clay=self.config.rho_cl
+                )
+            selection = dict(result.mineral_selection)
+            trace.method = selection.pop("method")
+            selection.pop("lithology_domain")
+            clay_curves = ["GR"] if costa_carbonate else str(selection["clay_source"]).split("+")
+            trace.input_curves = ["RHOB", *clay_curves, *str(selection["porosity_curve"]).split("+")]
+            trace.parameters.update(selection)
         else:
             solver_version = self.config.mineral_solver_version
-            litho_module = LithologyModule(lithology="auto", solver_version=solver_version)
+            # The benchmark profile solves the version 1 rows unweighted.
+            unweighted = solver_version == 1 and self._reproducing_benchmark
+            litho_module = LithologyModule(
+                lithology="auto",
+                solver_version=solver_version,
+                solver_options={"row_uncertainty": None} if unweighted else None,
+            )
             if solver_version == 1:
                 if nphi_curve is None:
                     raise ValueError(
@@ -2854,16 +4309,19 @@ class DynamicWorkflow:
 
                 trace.method = "canonical_multi_mineral_solver"
                 trace.parameters["equation_revision"] = CALCULATION_REVISION
+                weighted_rows = litho_module.solver.row_uncertainty
+                if weighted_rows is not None:
+                    trace.parameters["row_uncertainty"] = dict(weighted_rows)
             else:
                 trace.method = "multi_mineral_solver"
             trace.parameters["mineral_solver_version"] = solver_version
             result = litho_module.calculate(well)
+        code_curve_available = self._lithology_code_curve(well) is not None
         input_lithology_available = self._selected_lithology_source == "external" or (
-            self._selected_lithology_source == "vendor"
-            and self._has_curve(well, "LITHOLOGY_GEOLINK")
+            self._selected_lithology_source == "vendor" and code_curve_available
         )
         if self._selected_lithology_source == "auto":
-            input_lithology_available = self._has_curve(well, "LITHOLOGY_GEOLINK") or self.config.lithology_csv is not None
+            input_lithology_available = code_curve_available or self.config.lithology_csv is not None
         write_lithology_code = not input_lithology_available
         well.add_curve("VQUAR", result.v_quartz, "v/v", "Quartz Volume")
         well.add_curve("VCALC", result.v_calcite, "v/v", "Calcite Volume")
@@ -2908,19 +4366,57 @@ class DynamicWorkflow:
             trace.decisions.append(
                 "Input lithology was available -> mineral volumes computed, LITHO not inferred or overwritten"
             )
-        trace.decisions.append("PEF screened for plausibility; DTC used when PEF is absent or invalid")
+        if not carbonate or notebook_costa:
+            # The clastic solvers read PEF and DTC; the benchmark profile's
+            # COSTA trace also carries this line.
+            trace.decisions.append("PEF screened for plausibility; DTC used when PEF is absent or invalid")
         if result.reduced_qc_fallback is not None and np.any(result.reduced_qc_fallback):
             trace.decisions.append(
                 "Underdetermined samples used fixed PHIE with a reduced quartz-calcite inversion"
             )
-        if not costa_carbonate:
+        if not carbonate:
             trace.decisions.append(
                 "Canonical clastic inversion uses the preserved equation set and closure gate"
             )
-        if costa_carbonate:
+        if weighted_rows is not None:
+            units = {"unity": "v/v", "rhob": "g/cm3", "nphi": "v/v", "u": "b/cm3", "dt": "us/ft"}
+            trace.decisions.append(
+                "Equation rows weighted by nominal one-sigma tool uncertainty: "
+                + ", ".join(f"{row} {sigma:g} {units[row]}" for row, sigma in weighted_rows.items())
+            )
+        if notebook_costa:
             trace.decisions.append(
                 "Carbonate domain selected the COSTA GR-illite plus calcite/dolomite inversion"
             )
+        elif carbonate:
+            clay = (
+                f"illite {trace.parameters['clay_source']}" if costa_carbonate
+                else f"clay = {trace.parameters['clay_source']} at {trace.parameters['clay_density']:g} g/cm3"
+            )
+            trace.decisions.append(
+                f"Carbonate domain ({trace.parameters['carbonate_calibration']} calibration): "
+                f"calcite and dolomite from RHOB and closure with {clay}, "
+                f"{trace.parameters['porosity_curve']} porosity and "
+                f"{trace.parameters['fluid_density']:g} g/cm3 pore fluid; samples whose RHOB "
+                f"misfit exceeds {trace.parameters['density_tolerance']:g} g/cm3 are left unsolved"
+            )
+            # A porosity computed with an assumed matrix density carries that
+            # matrix into the split, so say which density it was.
+            porosity = str(trace.parameters["porosity_curve"])
+            porosity_step = next(
+                (step for step in reversed(self._result.steps_executed)
+                 if step.step == "porosity" and step.success),
+                None,
+            )
+            if porosity_step is not None and set(porosity.split("+")) <= set(porosity_step.output_curves):
+                low = porosity_step.parameters.get("rho_ma_min")
+                high = porosity_step.parameters.get("rho_ma_max")
+                if low is not None and high is not None:
+                    rho_ma = f"{low:g}" if low == high else f"{low:g}-{high:g}"
+                    trace.decisions.append(
+                        f"{porosity} was computed in the porosity step with rho_ma {rho_ma} g/cm3, "
+                        "so the calcite-dolomite split is not independent of that matrix choice"
+                    )
         trace.decisions.append(
             f"Multi-mineral solved {int(np.count_nonzero(result.solved))}/{well.n_samples} samples; "
             f"QC flagged {int(np.count_nonzero(result.qc_flag))}"
@@ -2929,7 +4425,12 @@ class DynamicWorkflow:
 
     def _step_rmf(self, well: "Well") -> StepResult:
         from petrophys.interpretation.electrical.rmf.rmf_module import RmfModule
-        from petrophys.interpretation.electrical.rw.salinity_rw import rw_from_salinity
+        from petrophys.interpretation.electrical.rw.salinity_rw import (
+            NACL_PER_CHLORIDE,
+            brine_density,
+            chlorides_to_nacl_ppm,
+            rw_from_salinity,
+        )
         from petrophys.interpretation.temperature import correct_resistivity_temperature
 
         trace = StepResult(step="rmf", success=True)
@@ -2977,6 +4478,9 @@ class DynamicWorkflow:
         if rmf_meas_temp_f == DEFAULT_RESISTIVITY_REFERENCE_TEMP_F and well.header.rm_temp is not None:
             rmf_meas_temp_f = float(well.header.rm_temp)
         metadata_rmf_temp_f = _parameter_temperature_f(well, "RMFT")
+        if metadata_rmf_temp_f is None and not self._reproducing_benchmark:
+            # MFST: the mud filtrate sample temperature of standard log headers.
+            metadata_rmf_temp_f = _parameter_temperature_f(well, "MFST")
         if metadata_rmf_temp_f is not None and rmf_meas_temp_f == DEFAULT_RESISTIVITY_REFERENCE_TEMP_F:
             rmf_meas_temp_f = metadata_rmf_temp_f
 
@@ -2994,6 +4498,9 @@ class DynamicWorkflow:
         if rm_meas_temp_f == DEFAULT_RESISTIVITY_REFERENCE_TEMP_F and well.header.rm_temp is not None:
             rm_meas_temp_f = float(well.header.rm_temp)
         metadata_rm_temp_f = _parameter_temperature_f(well, "RMT")
+        if metadata_rm_temp_f is None and not self._reproducing_benchmark:
+            # MST: the mud sample temperature of standard log headers.
+            metadata_rm_temp_f = _parameter_temperature_f(well, "MST")
         if metadata_rm_temp_f is not None and rm_meas_temp_f == DEFAULT_RESISTIVITY_REFERENCE_TEMP_F:
             rm_meas_temp_f = metadata_rm_temp_f
 
@@ -3068,8 +4575,10 @@ class DynamicWorkflow:
                 temp_measured=rmf_meas_temp_f,
                 temp_formation=temp_profile,
             )
+            # The benchmark profile fills rmf_salinity_ppm from the CLFL header.
+            source = "CLFL salinity" if self._reproducing_benchmark else "mud-filtrate salinity"
             decisions.append(
-                f"Rmf from CLFL salinity: {self.config.rmf_salinity_ppm:.0f} ppm -> "
+                f"Rmf from {source}: {self.config.rmf_salinity_ppm:.0f} ppm -> "
                 f"{rmf_at_meas_temp:.4f} ohm.m @ {rmf_meas_temp_f:.0f}F and then along the temperature profile"
             )
             return _finalize_rmf(
@@ -3079,6 +4588,37 @@ class DynamicWorkflow:
                     "mud_filtrate_salinity_ppm": self.config.rmf_salinity_ppm,
                     "rmf_at_measured_temp": rmf_at_meas_temp,
                     "measured_temp_f": rmf_meas_temp_f,
+                },
+            )
+
+        if self.config.rmf_chlorides_mg_l is not None:
+            # Mud reports titrate filtrate chlorides in mg/l; Bateman and Konen
+            # (1977) take NaCl ppm by weight. Count the chloride as NaCl and
+            # divide by the brine density (McCain, 1991).
+            chlorides = float(self.config.rmf_chlorides_mg_l)
+            salinity_ppm = chlorides_to_nacl_ppm(chlorides)
+            density = brine_density(salinity_ppm)
+            rmf_75f = float(rw_from_salinity(salinity_ppm, DEFAULT_RESISTIVITY_REFERENCE_TEMP_F))
+            result = RmfModule().calculate(
+                rmf_surface=rmf_75f,
+                temp_measured=DEFAULT_RESISTIVITY_REFERENCE_TEMP_F,
+                temp_formation=temp_profile,
+            )
+            decisions.append(
+                f"Rmf from mud-filtrate chlorides {chlorides:.0f} mg/l: NaCl equivalent "
+                f"{chlorides * NACL_PER_CHLORIDE:.0f} mg/l (Cl x 58.44/35.45) = {salinity_ppm:.0f} ppm "
+                f"at a brine density of {density:.4f} g/cm3 -> {rmf_75f:.4f} ohm.m @ "
+                f"{DEFAULT_RESISTIVITY_REFERENCE_TEMP_F:.0f}F and then along the temperature profile"
+            )
+            return _finalize_rmf(
+                "mud_filtrate_chlorides_conversion",
+                result.rmf,
+                {
+                    "mud_filtrate_chlorides_mg_l": chlorides,
+                    "mud_filtrate_salinity_ppm": salinity_ppm,
+                    "brine_density_g_cm3": density,
+                    "rmf_at_measured_temp": rmf_75f,
+                    "measured_temp_f": DEFAULT_RESISTIVITY_REFERENCE_TEMP_F,
                 },
             )
         rm_input = self.config.rm if self.config.rm is not None else las_rm
@@ -3173,6 +4713,10 @@ class DynamicWorkflow:
             decisions.append(
                 f"Rw input {self.config.rw:.4f} ohm.m used assumed reference temperature {reference_temp:.1f}F and was corrected along the temperature profile"
             )
+            self._warn_assumed(
+                f"Rw {self.config.rw:g} ohm.m was given without rw_meas_temp_f: it is taken at the "
+                f"median formation temperature, {reference_temp:.1f} degF."
+            )
             return _finalize_rw(
                 "user_provided_assumed_reference_temperature",
                 rw_curve,
@@ -3210,6 +4754,10 @@ class DynamicWorkflow:
             decisions.append(
                 f"Rw from LAS metadata used assumed reference temperature {reference_temp:.1f}F and was corrected along the temperature profile"
             )
+            self._warn_assumed(
+                f"Header RW {float(las_rw):g} ohm.m has no RWT: it is taken at the median formation "
+                f"temperature, {reference_temp:.1f} degF. Pass rw and rw_meas_temp_f to use another value."
+            )
             return _finalize_rw(
                 "las_metadata_assumed_reference_temperature",
                 rw_curve,
@@ -3235,7 +4783,16 @@ class DynamicWorkflow:
                 },
             )
 
-        if self._result.rmf_computed is not None:
+        if self._skips_flushed_zone:
+            # An SP needs a conductive mud column, and the Rxo/Rt ratio a
+            # water-based filtrate of known resistivity (Schlumberger, 1989,
+            # Log Interpretation Principles/Applications).
+            decisions.append(
+                "Rw SP and Rxo/Rt methods skipped: mud_type='OBM' (an SP needs a conductive "
+                "mud and Rxo/Rt a water-based filtrate; the 200 ohm.m RMF written for "
+                "oil-based mud is a placeholder)"
+            )
+        elif self._result.rmf_computed is not None:
             rmf_curve = np.asarray(self._result.rmf_computed, dtype=float)
             if rmf_curve.ndim == 0:
                 rmf_curve = np.full(well.n_samples, float(rmf_curve), dtype=float)
@@ -3368,6 +4925,11 @@ class DynamicWorkflow:
                     "using lithology-dependent Archie coefficients, "
                     "then depth-wise temperature correction"
                 )
+                self._warn_assumed(
+                    f"Rw {rw_value:.4g} ohm.m at {rwa_reference_temp:.1f} degF is estimated from the "
+                    "logs (P5 of apparent Rw over clean samples), which assumes some of them are "
+                    "water-bearing. Pass rw and rw_meas_temp_f if Rw is known."
+                )
                 return _finalize_rw(
                     "rwa_clean_wet_p5",
                     rw_curve,
@@ -3425,8 +4987,10 @@ class DynamicWorkflow:
 
         trace = StepResult(step="invasion", success=True, method="rxo_rt_ratio")
         invasion_module = InvasionModule(
+            rxo_curve=_BENCHMARK_RXO_CURVE if self._reproducing_benchmark else "RXO",
             medium_deep_proxy=not self._benchmark,
             depthwise_curve_merge=not self._benchmark,
+            class_bands=_BENCHMARK_INVASION_BANDS if self._reproducing_benchmark else None,
         )
         result = invasion_module.analyze(well)
         well.add_curve("INVASION_RATIO", result.ratio, "", "Invasion Ratio Rxo/Rt")
@@ -3439,6 +5003,20 @@ class DynamicWorkflow:
         ]
         trace.output_curves = ["INVASION_RATIO"]
         trace.parameters = dict(result.statistics)
+        if not self._reproducing_benchmark:
+            # The curves the ratio read, so the trace says which resistivity stands for Rxo.
+            trace.parameters["rxo_curve_order"] = [*invasion_module.shallow_curves, *invasion_module.medium_curves]
+            used = [
+                f"{name} at {count}"
+                for name, count in (result.statistics.get("rxo_source_counts") or {}).items()
+            ]
+            used_text = ", ".join(used[:-1]) + (" and " if len(used) > 1 else "") + (used[-1] if used else "no")
+            proxy = invasion_module.medium_curves
+            trace.decisions.append(
+                f"INVASION_RATIO reads {used_text} samples over {result.statistics.get('rt_curve')}; curve "
+                f"preference {', '.join(invasion_module.shallow_curves)}"
+                + (f", then the {'/'.join(proxy)} medium/deep proxy" if proxy else "")
+            )
         rejected = int(result.statistics.get("nan_samples") or 0)
         total = int(result.statistics.get("total_samples") or len(result.ratio))
         if result.statistics.get("fallback_proxy_used"):
@@ -3467,7 +5045,11 @@ class DynamicWorkflow:
         rho_ma_source = "user"
         if rho_ma is None:
             try:
-                rho_ma = MatrixProperties.get(self.config.matrix_type).density
+                rho_ma = (
+                    MatrixProperties.get_density(self.config.matrix_type)
+                    if self._reproducing_benchmark
+                    else MatrixProperties.get_log_density(self.config.matrix_type)
+                )
                 rho_ma_source = f"MatrixProperties[{self.config.matrix_type}]"
             except KeyError:
                 rho_ma = 2.65
@@ -3493,13 +5075,35 @@ class DynamicWorkflow:
     def _resolve_matrix_arrays(self, well: "Well") -> Dict[str, Any]:
         from petrophys.model.constants import MatrixProperties
 
+        benchmark = self._reproducing_benchmark
+
+        def density_endpoint(props) -> float:
+            # Density porosity takes the apparent log density where one is
+            # tabulated (evaporites); the benchmark profile keeps grain density.
+            if benchmark or props.log_density is None:
+                return float(props.density)
+            return float(props.log_density)
+
+        def slowness_endpoint(props, matrix_key, group: bool) -> float:
+            # The benchmark profile keeps the eval package's coal slowness and
+            # gypsum-group slowness.
+            if benchmark:
+                kept = _BENCHMARK_GROUP_SLOWNESS if group else _BENCHMARK_SLOWNESS
+                return float(kept.get(matrix_key, props.slowness))
+            return float(props.slowness)
+
+        fallback_key = self.config.matrix_type
         try:
             fallback_props = MatrixProperties.get(self.config.matrix_type)
         except KeyError:
             fallback_props = MatrixProperties.get("sandstone")
+            fallback_key = "sandstone"
 
-        fallback_rho_ma = float(self.config.rho_ma if self.config.rho_ma is not None else fallback_props.density)
-        fallback_dt_ma = float(self.config.dt_ma if self.config.dt_ma is not None else fallback_props.slowness)
+        fallback_rho_ma = float(self.config.rho_ma if self.config.rho_ma is not None else density_endpoint(fallback_props))
+        fallback_dt_ma = float(
+            self.config.dt_ma if self.config.dt_ma is not None
+            else slowness_endpoint(fallback_props, fallback_key, group=False)
+        )
         fallback_nphi_ma = float(self.config.nphi_ma if self.config.nphi_ma is not None else fallback_props.nphi)
 
         rho_ma = np.full(well.n_samples, fallback_rho_ma, dtype=float)
@@ -3510,6 +5114,7 @@ class DynamicWorkflow:
         matrix_groups_used: List[str] = []
         matrix_mode = "constant"
         matrix_source = f"config_or_default[{self.config.matrix_type}]"
+        shale_mask = np.zeros(well.n_samples, dtype=bool)
 
         lithology = self._build_lithology_log(well)
         if isinstance(lithology, np.ndarray):
@@ -3521,7 +5126,7 @@ class DynamicWorkflow:
             )
             for raw_group in valid_groups:
                 group = _coerce_lithology_group(raw_group)
-                matrix_key = LITHOLOGY_GROUP_TO_MATRIX.get(group or "", self.config.matrix_type)
+                matrix_key = self._group_to_matrix.get(group or "", self.config.matrix_type)
                 try:
                     props = MatrixProperties.get(matrix_key)
                 except KeyError:
@@ -3531,18 +5136,45 @@ class DynamicWorkflow:
                 mask = np.asarray([item == raw_group for item in lithology], dtype=bool)
                 if not np.any(mask):
                     continue
+                if _is_shale_group(group):
+                    shale_mask |= mask
 
-                rho_ma[mask] = float(props.density)
-                dt_ma[mask] = float(_WORKFLOW_MATRIX_SLOWNESS.get(matrix_key, props.slowness))
+                rho_ma[mask] = density_endpoint(props)
+                dt_ma[mask] = slowness_endpoint(props, matrix_key, group=True)
                 nphi_ma[mask] = float(props.nphi)
                 matrix_groups_used.append(str(raw_group).upper())
                 matrix_endpoints.append(
                     {
                         "lithology_group": str(raw_group).upper(),
                         "matrix_key": matrix_key,
-                        "rho_ma": float(props.density),
+                        "rho_ma": float(rho_ma[mask][0]),
                         "dt_ma": float(dt_ma[mask][0]),
                         "nphi_ma": float(props.nphi),
+                    }
+                )
+
+        halite_samples = 0
+        if not benchmark:
+            # Halite on the logs where no lithology group calls the sample an
+            # evaporite takes the halite endpoints, so its density porosity
+            # reads about zero rather than 0.38 on a sandstone matrix.
+            halite = _log_halite(well, lithology)
+            halite_samples = int(np.count_nonzero(halite))
+            if halite_samples:
+                props = MatrixProperties.get("halite")
+                rho_ma[halite] = density_endpoint(props)
+                dt_ma[halite] = slowness_endpoint(props, "halite", group=True)
+                nphi_ma[halite] = float(props.nphi)
+                shale_mask &= ~halite
+                matrix_mode = "lithology_dependent"
+                matrix_endpoints.append(
+                    {
+                        "lithology_group": "HALITE (LOG SIGNATURE)",
+                        "matrix_key": "halite",
+                        "rho_ma": density_endpoint(props),
+                        "dt_ma": slowness_endpoint(props, "halite", group=True),
+                        "nphi_ma": float(props.nphi),
+                        "samples": halite_samples,
                     }
                 )
 
@@ -3557,6 +5189,14 @@ class DynamicWorkflow:
             "fallback_rho_ma": fallback_rho_ma,
             "fallback_dt_ma": fallback_dt_ma,
             "fallback_nphi_ma": fallback_nphi_ma,
+            # Samples of shale lithology groups and the configured matrix's
+            # endpoints, the basis of the clay porosity under "current".
+            "shale_mask": shale_mask,
+            "reservoir_matrix": fallback_key,
+            "reservoir_rho_ma": density_endpoint(fallback_props),
+            "reservoir_nphi_ma": float(fallback_props.nphi),
+            "lithology_log": isinstance(lithology, np.ndarray),
+            "halite_log_samples": halite_samples,
         }
 
     def _resolve_phi_cl(
@@ -3566,30 +5206,63 @@ class DynamicWorkflow:
         porosity_basis: Optional[np.ndarray] = None,
         porosity_basis_name: Optional[str] = None,
         porosity_basis_valid_mask: Optional[np.ndarray] = None,
+        basis_matrix: Optional[str] = None,
+        matrix_info: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        explicit_phi_cl = _parameter_float(well, "PNSH")
-        explicit_source = "LAS PNSH parameter"
-        if explicit_phi_cl is None:
-            explicit_phi_cl = _constant_zoned_parameter(well, "PNSH")
-            explicit_source = "zoned LAS PNSH fallback"
+        """Clay porosity for PHIE = PHIT - VCL * phi_cl, and where it came from.
 
-        if explicit_phi_cl is not None:
-            return {
-                "phi_cl": float(explicit_phi_cl),
-                "phi_cl_source": explicit_source,
-                "phi_cl_basis_count": None,
-                "phi_cl_basis": "explicit_parameter",
-            }
+        ``basis_matrix`` names the matrix whose endpoints the shale samples in
+        ``porosity_basis`` were computed on, when that differs from their own
+        lithology's endpoints. ``matrix_info`` is the porosity step's
+        :meth:`_resolve_matrix_arrays` result, if at hand.
+
+        Under ``"current"`` a configured ``phi_cl`` comes first, then a LAS
+        header shale point (:meth:`_header_shale_point_phi_cl`), then the
+        well's shale samples, then the configured default. The benchmark
+        profile takes the LAS PNSH header itself as ``phi_cl``, ahead of
+        everything else.
+
+        The result is one value for the whole well. It does not follow the
+        compaction of shale porosity with depth, so where shale porosity
+        changes down the well PHIE is too low in some intervals and too high
+        in others, by VCL times the difference. Samples without a neutron
+        reading (PHIT = PHID) get the neutron-density value; a shale's density
+        porosity is usually the lower of the two, so they are over-corrected by
+        VCL times the difference. A well without a neutron log uses the
+        configured default.
+        """
+        if self._reproducing_benchmark:
+            explicit_phi_cl = _parameter_float(well, "PNSH")
+            explicit_source = "LAS PNSH parameter"
+            if explicit_phi_cl is None:
+                explicit_phi_cl = _constant_zoned_parameter(well, "PNSH")
+                explicit_source = "zoned LAS PNSH fallback"
+
+            if explicit_phi_cl is not None:
+                return {
+                    "phi_cl": float(explicit_phi_cl),
+                    "phi_cl_source": explicit_source,
+                    "phi_cl_basis_count": None,
+                    "phi_cl_basis": "explicit_parameter",
+                }
 
         if not _left_at_default(self.config, "phi_cl"):
-            # Configured deliberately: a value derived from shale samples must
-            # not quietly replace it, as a LAS header value no longer does.
+            # Configured deliberately: a value derived from shale samples or,
+            # under "current", from the LAS header must not quietly replace it.
             return {
                 "phi_cl": float(self.config.phi_cl),
                 "phi_cl_source": "config",
                 "phi_cl_basis_count": None,
                 "phi_cl_basis": "config",
             }
+
+        header_note: Optional[str] = None
+        if not self._reproducing_benchmark:
+            header = self._header_shale_point_phi_cl(well, matrix_info)
+            if header is not None and "phi_cl" in header:
+                return header
+            if header is not None:
+                header_note = header["phi_cl_header_note"]
 
         if self._benchmark:
             # The eval package took clay porosity from the mean PHIT of every
@@ -3648,28 +5321,96 @@ class DynamicWorkflow:
             phi_cl = float(np.clip(np.nanmean(porosity[valid_mask]), 0.0, 0.6))
             label_clean = str(label or "porosity").lower()
             source = f"{basis}_average_{label_clean}_nd"
-            return {
+            if basis_matrix is not None:
+                source += "_on_reservoir_matrix"
+            info = {
                 "phi_cl": phi_cl,
                 "phi_cl_source": source,
                 "phi_cl_basis_count": int(np.count_nonzero(valid_mask)),
                 "phi_cl_basis": source,
                 "phi_cl_fallback_reason": None,
             }
+            if basis_matrix is not None:
+                info["phi_cl_matrix"] = basis_matrix
+            return info
 
         preferred = from_porosity(
             porosity_basis,
             porosity_basis_name or "porosity",
             porosity_basis_valid_mask,
         )
-        if preferred is not None:
-            return preferred
+        if preferred is None:
+            preferred = {
+                "phi_cl": float(self.config.phi_cl),
+                "phi_cl_source": "config_or_default",
+                "phi_cl_basis_count": None,
+                "phi_cl_basis": "config_or_default",
+                "phi_cl_fallback_reason": fallback_reason or "no usable neutron-density averaged PHIT shale-control samples",
+            }
+        if header_note is not None:
+            preferred["phi_cl_header_note"] = header_note
+        return preferred
 
+    def _header_shale_point_phi_cl(
+        self, well: "Well", matrix_info: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Clay porosity from the LAS header's neutron-density shale point (``"current"``).
+
+        PNSH ("Neutron Shale") and RBSH ("Shale Density") are the neutron and
+        density log readings in shale, beside the matrix (RHMA, PNMA) and fluid
+        (RBFL) points of the same parameter set. On the endpoints of the
+        reservoir PHIT they give the shale's PHIT by the porosity step's
+        neutron-density rule, and that is the clay porosity of
+        PHIE = PHIT - VCL * phi_cl (Asquith and Krygowski, 2004). Returns None
+        without PNSH; without a usable RBSH, a ``phi_cl_header_note`` saying
+        why PNSH was set aside instead of a ``phi_cl``.
+        """
+        from petrophys.interpretation.porosity.density_porosity import density_porosity
+        from petrophys.interpretation.porosity.neutron_porosity import neutron_porosity
+        from petrophys.interpretation.porosity.total_porosity import total_porosity
+
+        pnsh, source = _parameter_float(well, "PNSH"), "LAS"
+        if pnsh is None:
+            pnsh, source = _constant_zoned_parameter(well, "PNSH"), "zoned LAS"
+        if pnsh is None:
+            return None
+        rbsh = _parameter_float(well, "RBSH")
+        if rbsh is None:
+            rbsh = _constant_zoned_parameter(well, "RBSH")
+        if rbsh is None or not (0.0 <= pnsh < 1.0 and 1.0 < rbsh < 3.0):
+            reason = (
+                "and there is no RBSH (shale density) to complete the shale point"
+                if rbsh is None
+                else f"and with RBSH = {rbsh:g} the pair is not a v/v and g/cm3 shale point"
+            )
+            return {
+                "phi_cl_header_note": (
+                    f"{source} PNSH = {pnsh:g} set aside: it is the neutron log's reading "
+                    f"in shale, not clay porosity, {reason}"
+                )
+            }
+        if matrix_info is None:
+            matrix_info = self._resolve_matrix_arrays(well)
+        # The endpoints of the reservoir PHIT: the configured matrix's values
+        # where a lithology log sets endpoints per group, else the constant
+        # (configured or LAS header) endpoints.
+        if matrix_info["matrix_mode"] == "lithology_dependent":
+            rho_ma, nphi_ma = matrix_info["reservoir_rho_ma"], matrix_info["reservoir_nphi_ma"]
+        else:
+            rho_ma, nphi_ma = matrix_info["fallback_rho_ma"], matrix_info["fallback_nphi_ma"]
+        phid = density_porosity(rbsh, rho_ma, self.config.rho_fl)
+        phin = float(neutron_porosity(pnsh, nphi_matrix=nphi_ma))
+        phi_cl = float(total_porosity(phin, phid, gas_method=self._crossover_gas_method))
         return {
-            "phi_cl": float(self.config.phi_cl),
-            "phi_cl_source": "config_or_default",
+            "phi_cl": phi_cl,
+            "phi_cl_source": f"{source} PNSH and RBSH shale point",
+            "phi_cl_basis": "header_shale_point_nd",
             "phi_cl_basis_count": None,
-            "phi_cl_basis": "config_or_default",
-            "phi_cl_fallback_reason": fallback_reason or "no usable neutron-density averaged PHIT shale-control samples",
+            "phi_cl_fallback_reason": None,
+            "phi_cl_shale_point": {
+                "PNSH": pnsh, "RBSH": rbsh, "PHIN": phin, "PHID": phid,
+                "rho_ma": float(rho_ma), "nphi_ma": float(nphi_ma), "rho_fl": float(self.config.rho_fl),
+            },
         }
 
     def _step_porosity_refinement(self, well: "Well") -> StepResult:
@@ -3710,13 +5451,23 @@ class DynamicWorkflow:
             decisions.append(
                 "Refinement pass after inferred LITHO: porosity curves recomputed using computed lithology matrix endpoints"
             )
-        elif matrix_info["matrix_mode"] == "lithology_dependent":
+        elif matrix_info["matrix_mode"] == "lithology_dependent" and matrix_info["lithology_log"]:
             decisions.append(
                 "Initial porosity pass used an available lithology log for matrix endpoints"
             )
         else:
             decisions.append(
                 "Initial porosity pass used configured matrix endpoints; it will be refined if the workflow infers LITHO"
+            )
+        if matrix_info["halite_log_samples"]:
+            halite = next(
+                item for item in matrix_info["matrix_endpoints"] if item["lithology_group"] == "HALITE (LOG SIGNATURE)"
+            )
+            decisions.append(
+                f"{matrix_info['halite_log_samples']} samples read as halite on the logs (RHOB 1.95-2.15 g/cm3, "
+                "GR < 15 API, RT > 500 ohm.m or an under-gauge hole) where no lithology group calls them an "
+                f"evaporite: halite endpoints rho_ma {halite['rho_ma']:g} g/cm3, nphi_ma {halite['nphi_ma']:g}, "
+                f"dt_ma {halite['dt_ma']:g} us/ft"
             )
 
         phin = None
@@ -3792,7 +5543,8 @@ class DynamicWorkflow:
             decisions.append("PHIS reused from existing well curve")
 
         if phid is not None and phin is not None:
-            phit = total_porosity(phin, phid)
+            gas_method = self._crossover_gas_method
+            phit = total_porosity(phin, phid, gas_method=gas_method)
             phie_basis = phit
             phie_basis_name = "PHIT"
             phit_method = "adaptive_nd"
@@ -3807,7 +5559,7 @@ class DynamicWorkflow:
             phit_arr = np.asarray(phit, dtype=float)
             phit_source_counts = {
                 "density_from_missing_phin": int(np.count_nonzero(density_missing_phin)),
-                "density_from_gas_crossover": int(np.count_nonzero(density_gas)),
+                f"{gas_method}_from_gas_crossover": int(np.count_nonzero(density_gas)),
                 "weighted_nd": int(np.count_nonzero(weighted_nd)),
                 "neutron_from_missing_phid": int(np.count_nonzero(neutron_missing_phid)),
                 "nan": int(np.count_nonzero(~np.isfinite(phit_arr))),
@@ -3899,12 +5651,48 @@ class DynamicWorkflow:
                     f"({apparent_info['source']}) because {apparent_info['reason']}"
                 )
 
+        phi_cl_basis = phie_basis
+        phi_cl_basis_mask = phit_nd_average_mask if phie_basis_name == "PHIT" else None
+        phi_cl_matrix = None
+        shale_mask = matrix_info["shale_mask"]
+        if (
+            not self._reproducing_benchmark
+            and phit_method == "adaptive_nd"
+            and rhob_curve is not None
+            and nphi_curve is not None
+            and np.any(shale_mask)
+        ):
+            # Under linear mixing, PHIT = PHIE + VCL * (the shale's PHIT on the
+            # same matrix and fluid endpoints), the shale correction of
+            # Asquith and Krygowski (2004). phi_cl is therefore the shale's
+            # PHIT on the reservoir rock's endpoints, not on the wet-shale point
+            # of the shale groups' own PHIT, averaged over the shale samples
+            # recomputed on the configured matrix.
+            basis_phid = density_porosity(
+                rhob_curve.data,
+                np.where(shale_mask, matrix_info["reservoir_rho_ma"], rho_ma),
+                self.config.rho_fl,
+            )
+            basis_phin = neutron_porosity(
+                nphi_curve.data,
+                nphi_matrix=np.where(shale_mask, matrix_info["reservoir_nphi_ma"], nphi_ma),
+            )
+            phi_cl_basis = total_porosity(basis_phin, basis_phid)
+            phi_cl_basis_mask = (
+                np.isfinite(basis_phid)
+                & np.isfinite(basis_phin)
+                & ~(basis_phid > basis_phin + 0.05)
+            )
+            phi_cl_matrix = matrix_info["reservoir_matrix"]
+
         phi_cl_info = self._resolve_phi_cl(
             well,
             vcl_curve,
-            porosity_basis=phie_basis,
+            porosity_basis=phi_cl_basis,
             porosity_basis_name=phie_basis_name,
-            porosity_basis_valid_mask=phit_nd_average_mask if phie_basis_name == "PHIT" else None,
+            porosity_basis_valid_mask=phi_cl_basis_mask,
+            basis_matrix=phi_cl_matrix,
+            matrix_info=matrix_info,
         )
         phi_cl = float(phi_cl_info["phi_cl"])
 
@@ -3964,11 +5752,26 @@ class DynamicWorkflow:
                 )
             else:
                 decisions.append(f"{phie_output} = {phie_basis_name} (no clay curve available)")
+            if phi_cl_info.get("phi_cl_matrix"):
+                decisions.append(
+                    "phi_cl averaged over the shale samples recomputed on the "
+                    f"{phi_cl_info['phi_cl_matrix']} matrix endpoints of the PHIT it corrects"
+                )
             if phi_cl_info.get("phi_cl_source") == "config_or_default" and phi_cl_info.get("phi_cl_fallback_reason"):
                 decisions.append(
                     "phi_cl fallback used because "
                     + str(phi_cl_info["phi_cl_fallback_reason"])
                 )
+            point = phi_cl_info.get("phi_cl_shale_point")
+            if point:
+                decisions.append(
+                    f"phi_cl is the PHIT of the LAS shale point PNSH {point['PNSH']:g}, "
+                    f"RBSH {point['RBSH']:g} g/cm3 on the reservoir endpoints (rho_ma "
+                    f"{point['rho_ma']:g}, nphi_ma {point['nphi_ma']:g}, rho_fl {point['rho_fl']:g}): "
+                    f"PHID {point['PHID']:.3f}, PHIN {point['PHIN']:.3f}"
+                )
+            if phi_cl_info.get("phi_cl_header_note"):
+                decisions.append(str(phi_cl_info["phi_cl_header_note"]))
 
         if phis is not None and phit is not None:
             phi_sec = secondary_porosity(phis, phit)
@@ -4014,6 +5817,11 @@ class DynamicWorkflow:
                 else None
             ),
         }
+        if "phi_cl_matrix" in phi_cl_info:
+            trace.parameters["phi_cl_matrix"] = phi_cl_info["phi_cl_matrix"]
+        for key in ("phi_cl_shale_point", "phi_cl_header_note"):
+            if key in phi_cl_info:
+                trace.parameters[key] = phi_cl_info[key]
         trace.decisions = decisions
         self._last_phit_nd_average_mask = phit_nd_average_mask
         self._last_phi_cl_info = phi_cl_info
@@ -4040,6 +5848,7 @@ class DynamicWorkflow:
             fallback_method=self.config.perm_fallback_method,
             use_peer_core=self.config.use_peer_core,
             porosity_curves=["PHIE"] if self._benchmark else None,
+            **self._core_calibration_options(),
         )
         result = perm_module.calculate_core_correction(
             well,
@@ -4049,6 +5858,8 @@ class DynamicWorkflow:
 
         phi_corecal = result.metadata.get("phi_corecal")
         perm_core = result.metadata.get("perm_core")
+        if phi_corecal is not None and not self._reproducing_benchmark:
+            phi_corecal = self._effective_core_porosity(well, phi_corecal)
         if phi_corecal is not None:
             well.add_curve(
                 "PHIE_CC",
@@ -4091,15 +5902,84 @@ class DynamicWorkflow:
                 f"core_phi={model.get('core_porosity_curve') or 'unknown'}, "
                 f"core_perm={model.get('core_permeability_curve') or 'unknown'})"
             )
+        if not self._reproducing_benchmark:
+            # Core porosity is fitted to PHIT, and PHIT - PHIE is taken off again.
+            trace.input_curves = [name for name in ("PHIT", "PHIE") if get_curve(well, [name]) is not None]
+            trace.parameters["core_porosity_fits"] = result.metadata.get("core_porosity_fits")
+            trace.parameters["core_porosity_min_r_squared"] = _CORE_POROSITY_MIN_R_SQUARED
+            decisions.extend(self._core_porosity_decisions(result.metadata, "PHIE_CC" in outputs))
         trace.decisions = decisions
         return trace
 
+    def _paired_total_porosity(
+        self, well: "Well", phie_selected: Optional[np.ndarray]
+    ) -> tuple[Optional[np.ndarray], str]:
+        """Total porosity on the basis of the effective porosity SW is paired with.
+
+        ``PHIE_sel + (PHIT - PHIE)``: the clay-bound porosity of the porosity
+        step added to the selected effective porosity, e.g. a core-corrected
+        PHIE_CC, so that Waxman-Smits and Dual Water read only clay-bound
+        water, not the core correction, in PHIT - PHIE_sel. It is PHIT where
+        PHIE itself is selected or the bound porosity is unknown. Returns the
+        array (None without PHIT or PHIE: the saturation module reads PHIT) and
+        a label for the trace.
+        """
+        phit, _, _ = get_curve_data_depthwise(well, ["PHIT"])
+        phie, _, _ = get_curve_data_depthwise(well, ["PHIE"])
+        if phie_selected is None or phit is None or phie is None:
+            return None, "PHIT"
+        with np.errstate(invalid="ignore"):
+            paired = phie_selected + np.clip(phit - phie, 0.0, None)
+        shifted = (phie_selected != phie) & np.isfinite(paired)
+        if not np.any(shifted):
+            return phit, "PHIT"
+        return np.where(shifted, paired, phit), "PHIE_CC + (PHIT - PHIE) where PHIE_CC is used, else PHIT"
+
+    def _shaly_sand_cec(self) -> Optional[float]:
+        """Check the inputs of an explicit shaly-sand model; return CEC in meq/g.
+
+        Dual Water needs a supplied Rwb and Waxman-Smits a supplied CEC and B;
+        none of them is estimated. An explicit request without them stops the
+        step rather than writing an SW labelled with a model that did not run.
+        """
+        model = self.config.sw_model
+        if model == "dual_water" and self.config.rwb is None:
+            raise ValueError(
+                "sw_model='dual_water' needs the bound-water resistivity rwb (ohm.m), from "
+                "lab data or an RWB LAS header parameter; it is not estimated. "
+                "sw_model='auto' uses Dual Water only where rwb is given."
+            )
+        if model == "waxman_smits" and (self.config.cec is None or self.config.b_coeff is None):
+            raise ValueError(
+                "sw_model='waxman_smits' needs cec (meq/100 g) and b_coeff, from lab data or "
+                "CEC and B_COEFF LAS header parameters; they are not estimated."
+            )
+        if self.config.cec is None:
+            return None
+        cec_error = _cec_range_error(self.config.cec)
+        if cec_error:
+            raise ValueError(cec_error)
+        cec = float(self.config.cec)
+        if 0.0 < cec < 1.0:
+            # Under 1 meq/100 g is a clean sand, while the same number in meq/g
+            # is a typical shaly sand: the likelier reading is a unit slip.
+            message = (
+                f"cec={cec:g} meq/100 g is a clean-sand value; a meq/g value must be "
+                "multiplied by 100"
+            )
+            if message not in self._result.warnings:
+                self._result.warnings.append(message)
+        # Lab CEC is reported in meq/100 g; waxman_smits() takes meq/g.
+        return cec / 100.0
+
     def _step_saturation(self, well: "Well") -> StepResult:
+        from petrophys.interpretation.saturation.sw_module import SaturationModule
         from petrophys.workflow._canonical_calculations import (
             CanonicalSaturationModule,
         )
 
         trace = StepResult(step="saturation", success=True)
+        cec = self.config.cec if self._reproducing_benchmark else self._shaly_sand_cec()
         lithology = self._build_lithology_log(well)
         a_value, m_value, n_value, archie_summary = self._archie_coefficients_for_lithology(
             lithology,
@@ -4107,34 +5987,52 @@ class DynamicWorkflow:
         )
 
         vcl_curve = get_curve(well, ["VCL", "VCLAY"])
-        phit_curve_for_phi_cl = get_curve(well, ["PHIT"])
-        phi_cl_info = self._resolve_phi_cl(
-            well,
-            vcl_curve,
-            porosity_basis=phit_curve_for_phi_cl.data if phit_curve_for_phi_cl is not None else None,
-            porosity_basis_name="PHIT" if phit_curve_for_phi_cl is not None else None,
-            porosity_basis_valid_mask=(
-                self._last_phit_nd_average_mask
-                if phit_curve_for_phi_cl is not None
-                and getattr(self, "_last_phit_nd_average_mask", None) is not None
-                else None
-            ),
-        )
+        if not self._reproducing_benchmark and self._last_phi_cl_info is not None:
+            # Dual Water takes the clay porosity of the PHIE it is paired with.
+            phi_cl_info = self._last_phi_cl_info
+        else:
+            phit_curve_for_phi_cl = get_curve(well, ["PHIT"])
+            phi_cl_info = self._resolve_phi_cl(
+                well,
+                vcl_curve,
+                porosity_basis=phit_curve_for_phi_cl.data if phit_curve_for_phi_cl is not None else None,
+                porosity_basis_name="PHIT" if phit_curve_for_phi_cl is not None else None,
+                porosity_basis_valid_mask=(
+                    self._last_phit_nd_average_mask
+                    if phit_curve_for_phi_cl is not None
+                    and getattr(self, "_last_phit_nd_average_mask", None) is not None
+                    else None
+                ),
+            )
         phi_cl = float(phi_cl_info["phi_cl"])
 
-        sw_module = CanonicalSaturationModule(
+        routing_cutoff = self._routing_vcl_cutoff()
+        module_options = dict(
             a=a_value, m=m_value, n=n_value,
-            model=self.config.sw_model, vcl_cutoff=self._resolved_cutoff("vcl_cutoff"),
+            model=self.config.sw_model, vcl_cutoff=routing_cutoff,
             sxo_quicklook_fallback="whole_curve" if self._benchmark else "per_sample",
             depthwise_curve_merge=not self._benchmark,
         )
+        if self._reproducing_benchmark:
+            sw_module = CanonicalSaturationModule(**module_options)
+        else:
+            # The published equations. Waxman-Smits Sw goes on the effective
+            # basis, as BVW and net pay pair SW with PHIE.
+            sw_module = SaturationModule(
+                **module_options, rwb_fallback=None, effective_waxman_smits=True
+            )
+        flushed_zone = not self._skips_flushed_zone
 
         sat_phie, _, _ = get_curve_data_depthwise(well, self._phie_names(include_phit=False))
+        sat_phit, sat_phit_basis = None, "PHIT"
+        if not self._reproducing_benchmark:
+            sat_phit, sat_phit_basis = self._paired_total_porosity(well, sat_phie)
         result = sw_module.calculate(
-            well, phie=sat_phie,
+            well, phie=sat_phie, phit=sat_phit,
             rw=self._result.rw_computed, rcl=self._result.rcl_computed,
-            salinity=self.config.salinity_ppm, rmf=self._result.rmf_computed,
-            lithology=lithology, cec=self.config.cec, b_coeff=self.config.b_coeff,
+            salinity=self.config.salinity_ppm,
+            rmf=self._result.rmf_computed if flushed_zone else None,
+            lithology=lithology, cec=cec, b_coeff=self.config.b_coeff,
             rho_ma=self.config.rho_ma or 2.65, m_star=self.config.m_star,
             rwb=self.config.rwb, phi_cl=phi_cl,
             rtsh=self.config.rtsh, vsh_exp=self.config.vsh_exp,
@@ -4147,7 +6045,11 @@ class DynamicWorkflow:
         source_sw_mask = np.zeros(well.n_samples, dtype=bool)
         well.add_curve("SW", computed_sw, "v/v", f"Water Saturation ({result.model})")
         outputs = ["SW"]
-        if result.sxo is not None:
+        sxo_method, sxo_reason = result.sxo_method, result.sxo_reason
+        sxo_method_counts = result.sxo_method_counts or {}
+        if not flushed_zone:
+            sxo_method, sxo_reason, sxo_method_counts = None, _OBM_FLUSHED_ZONE_NOTE, {}
+        elif result.sxo is not None:
             well.add_curve("SXO", result.sxo, "v/v", "Flushed Zone Water Saturation")
             outputs.append("SXO")
 
@@ -4197,11 +6099,11 @@ class DynamicWorkflow:
             "rtsh": self.config.rtsh if self.config.rtsh is not None else self._result.rcl_computed,
             "vsh_exp": self.config.vsh_exp,
             "shale_exp": self.config.shale_exp,
-            "vcl_cutoff_for_routing": self._resolved_cutoff("vcl_cutoff"),
+            "vcl_cutoff_for_routing": routing_cutoff,
             "lithology_type": self.config.lithology if isinstance(lithology, str) else "per-depth array",
-            "sxo_method": result.sxo_method,
-            "sxo_reason": result.sxo_reason,
-            "sxo_method_counts": result.sxo_method_counts or {},
+            "sxo_method": sxo_method,
+            "sxo_reason": sxo_reason,
+            "sxo_method_counts": sxo_method_counts,
             "sxo_input_sources": result.sxo_input_sources or {},
             "source_sw_curve": source_sw_source,
             "source_sw_samples_used": int(np.count_nonzero(source_sw_mask)),
@@ -4212,14 +6114,67 @@ class DynamicWorkflow:
         if self._result.rmf_computed is not None:
             trace.parameters["rmf_min"] = float(np.nanmin(np.asarray(self._result.rmf_computed, dtype=float)))
             trace.parameters["rmf_max"] = float(np.nanmax(np.asarray(self._result.rmf_computed, dtype=float)))
+        # Shaly carbonate without Rwb takes the clastic routing: model -> samples.
+        fallbacks = {
+            route.split("->", 1)[1]: count
+            for route, count in (result.fallback_counts or {}).items()
+            if route.startswith("dual_water->")
+        }
+        if not self._reproducing_benchmark:
+            trace.parameters.update({
+                "shaly_sand_equations": "published",
+                "sw_model_fallback_counts": result.fallback_counts or {},
+                "cec_meq_per_g": cec,
+                "waxman_smits_sw_basis": "effective",
+                "total_porosity_basis": sat_phit_basis,
+                "waxman_smits_clipped_to_zero": result.waxman_smits_clipped_to_zero,
+            })
         trace.decisions.append(f"Model selected: {result.model}")
-        trace.decisions.append("Canonical Indonesia and Dual Water equations used")
+        if self._reproducing_benchmark:
+            trace.decisions.append("Canonical Indonesia and Dual Water equations used")
+        else:
+            used = result.model_counts or {}
+            if "indonesia" in used:
+                trace.decisions.append(
+                    "Indonesia equation of Poupon and Leveaux (1971): 1/sqrt(Rt) = "
+                    "[VCL^(1-VCL/2)/sqrt(Rcl) + PHIE^(m/2)/sqrt(a*Rw)] * Sw^(n/2)"
+                )
+            if "dual_water" in used:
+                trace.decisions.append(
+                    "Dual Water in the wet-zone form of Clavier, Coates and Dumanoir (1984), "
+                    f"Rwb = {self.config.rwb:g} ohm.m"
+                )
+            if "waxman_smits" in used:
+                trace.decisions.append(
+                    f"Waxman-Smits (1968) with CEC = {self.config.cec:g} meq/100 g ({cec:g} meq/g) "
+                    f"and B = {self.config.b_coeff:g} (S/m)/(meq/cm3); its total-porosity Swt is "
+                    "reported on the effective basis, SW = 1 - (PHIT/PHIE) * (1 - Swt)"
+                    + ("" if sat_phit_basis == "PHIT" else f", with PHIT = {sat_phit_basis}")
+                )
+                clipped = result.waxman_smits_clipped_to_zero
+                if clipped:
+                    trace.decisions.append(
+                        f"Waxman-Smits: {clipped} samples with Swt below the bound-water fraction "
+                        "(PHIT - PHIE)/PHIT were set to SW = 0: the resistivity leaves less water "
+                        "than the clay-bound water of the porosity model there (a well-wide CEC "
+                        "gives tight rock a large Qv)"
+                    )
         if self.config.sw_model == "auto":
             trace.decisions.append("Auto-routing: depth-by-depth model selection based on VCLAY and lithology")
             if result.model_counts:
                 trace.decisions.append(
                     "Depth routing counts: "
                     + ", ".join(f"{model}={count}" for model, count in result.model_counts.items())
+                )
+            if fallbacks:
+                names = {"indonesia": "Indonesia", "simandoux": "Simandoux", "waxman_smits": "Waxman-Smits"}
+                routed = "; ".join(
+                    f"{count} shaly carbonate samples used the {names.get(model, model)} equation"
+                    for model, count in fallbacks.items()
+                )
+                trace.decisions.append(
+                    f"Dual Water needs a supplied Rwb, which is not estimated: {routed} "
+                    "(set rwb to use Dual Water)"
                 )
         trace.decisions.append(
             "Archie coefficients from lithology"
@@ -4230,16 +6185,17 @@ class DynamicWorkflow:
                 f"SW uses source input {source_sw_source} for {int(np.count_nonzero(source_sw_mask))} finite samples; "
                 "Archie fills remaining samples where inputs are finite"
             )
-        else:
+        elif self._reproducing_benchmark or set(result.model_counts or {}) <= {"archie"}:
             trace.decisions.append("No finite source SW input was available; SW is Archie-computed where inputs are finite")
-        trace.decisions.append(
-            f"Dual Water phi_cl = {phi_cl:.3f} from {phi_cl_info['phi_cl_source']}"
-        )
-        if phi_cl_info.get("phi_cl_source") == "config_or_default" and phi_cl_info.get("phi_cl_fallback_reason"):
+        if self._reproducing_benchmark or "dual_water" in (result.model_counts or {}):
             trace.decisions.append(
-                "Dual Water phi_cl fallback used because "
-                + str(phi_cl_info["phi_cl_fallback_reason"])
+                f"Dual Water phi_cl = {phi_cl:.3f} from {phi_cl_info['phi_cl_source']}"
             )
+            if phi_cl_info.get("phi_cl_source") == "config_or_default" and phi_cl_info.get("phi_cl_fallback_reason"):
+                trace.decisions.append(
+                    "Dual Water phi_cl fallback used because "
+                    + str(phi_cl_info["phi_cl_fallback_reason"])
+                )
         if trace.parameters["rw_min"] is not None and trace.parameters["rw_max"] is not None:
             trace.decisions.append(
                 f"Rw range = {trace.parameters['rw_min']:.4f} to {trace.parameters['rw_max']:.4f}, Rcl = {self._result.rcl_computed}"
@@ -4248,10 +6204,10 @@ class DynamicWorkflow:
             trace.decisions.append(
                 f"Rw unavailable for SW; Rcl = {self._result.rcl_computed}"
             )
-        if result.sxo_method == "archie_rxo_rmf":
+        if sxo_method == "archie_rxo_rmf":
             trace.decisions.append("SXO from Archie invaded-zone equation using RSHA/RXO/RESS and RMF")
-        elif result.sxo_method == "archie_rxo_rmf+fifth_root_quicklook":
-            counts = result.sxo_method_counts or {}
+        elif sxo_method == "archie_rxo_rmf+fifth_root_quicklook":
+            counts = sxo_method_counts
             count_text = (
                 " ("
                 + ", ".join(f"{method}={count}" for method, count in counts.items())
@@ -4263,10 +6219,12 @@ class DynamicWorkflow:
                 "SXO = SW^(1/5) elsewhere"
                 + count_text
             )
-        elif result.sxo_method == "fifth_root_quicklook":
+        elif sxo_method == "fifth_root_quicklook":
             trace.decisions.append(
-                f"SXO fallback: SXO = SW^(1/5) because {result.sxo_reason}"
+                f"SXO fallback: SXO = SW^(1/5) because {sxo_reason}"
             )
+        elif not flushed_zone:
+            trace.decisions.append(f"SXO not computed: {sxo_reason}")
         if np.any(np.isfinite(computed_sw)):
             trace.decisions.append(
                 f"Sw range: {np.nanmin(computed_sw):.3f} - {np.nanmax(computed_sw):.3f}"
@@ -4321,14 +6279,17 @@ class DynamicWorkflow:
                 "PHIE_CC/PERM_CC are rewritten only when the current same-well core model is fitted"
             )
 
+        code_curve = self._lithology_code_curve(well)
         perm_module = PermeabilityModule(
             method=self.config.perm_method,
             fallback_method=self.config.perm_fallback_method,
             use_peer_core=self.config.use_peer_core,
             porosity_curves=["PHIE"] if self._benchmark else None,
+            lithology_curve=code_curve or "LITHOLOGY_GEOLINK",
+            **self._core_calibration_options(),
         )
         lithology = None
-        if not self._has_curve(well, "LITHOLOGY_GEOLINK", "LITHO_CLASS", "LITHO"):
+        if code_curve is None and not self._has_curve(well, "LITHO_CLASS", "LITHO"):
             lithology = self._build_lithology_log(well)
 
         result = perm_module.calculate(
@@ -4347,6 +6308,8 @@ class DynamicWorkflow:
         outputs.append("PERM")
         phi_corecal = result.metadata.get("phi_corecal")
         perm_core = result.metadata.get("perm_core")
+        if phi_corecal is not None and not self._reproducing_benchmark:
+            phi_corecal = self._effective_core_porosity(well, phi_corecal)
         if phi_corecal is not None:
             well.add_curve(
                 "PHIE_CC",
@@ -4426,6 +6389,9 @@ class DynamicWorkflow:
                 f"core_phi={model.get('core_porosity_curve') or 'unknown'}, "
                 f"core_perm={model.get('core_permeability_curve') or 'unknown'})"
             )
+        if not self._reproducing_benchmark:
+            trace.parameters["core_porosity_fits"] = result.metadata.get("core_porosity_fits")
+            decisions.extend(self._core_porosity_decisions(result.metadata, "PHIE_CC" in outputs))
         if np.isscalar(result.swi_used):
             trace.parameters["swirr"] = float(result.swi_used)
             if result.swi_source == "hc_mask_p5":
@@ -4443,6 +6409,10 @@ class DynamicWorkflow:
                     decisions.append(f"SWIRR_APP = 0.200 fallback because {reason}")
                 else:
                     decisions.append("SWIRR_APP = 0.200 fallback")
+                self._warn_assumed(
+                    "Irreducible water saturation assumed 0.20 (none could be picked from the "
+                    "logs): PERM, RQI and FZI rest on that value."
+                )
             else:
                 decisions.append(f"Swirr = {float(result.swi_used):.3f} ({result.swi_source})")
         elif isinstance(result.swi_used, np.ndarray):
@@ -4470,6 +6440,11 @@ class DynamicWorkflow:
             decisions.append(
                 "Timur empirical permeability: "
                 "k = 0.136 * (100 * PHIE)^4.4 / (100 * SWIRR)^2"
+            )
+        elif empirical_method == "wyllie_rose":
+            decisions.append(
+                "Wyllie-Rose empirical permeability (Morris-Biggs oil constant): "
+                "k = 62500 * PHIE^6 / SWIRR^2"
             )
         if result.metadata.get("empirical_error") and empirical_method == "lith_vcl":
             decisions.append(f"Earlier empirical method failed before lith_vcl: {result.metadata['empirical_error']}")
@@ -4581,19 +6556,41 @@ class DynamicWorkflow:
         vcl = np.asarray(vcl_curve.data, dtype=float) if vcl_curve is not None else None
 
         lithology = self._build_lithology_log(well)
-        np_module = NetPayModule(
-            vcl_cutoff=self._cutoff_argument("vcl_cutoff"),
-            phie_cutoff=self._cutoff_argument("phie_cutoff"),
-            sw_cutoff=self._cutoff_argument("sw_cutoff"),
-            lithology=lithology,
-        )
         flag_phie, flag_phie_details = self._swirr_flag_phie(well, vcl, phie_curve)
-        result = np_module.calculate(
-            well,
-            vcl=vcl,
-            phie=flag_phie,
-            sw=np.asarray(sw_curve.data, dtype=float),
-        )
+        sw = np.asarray(sw_curve.data, dtype=float)
+        if self._reproducing_benchmark:
+            cutoffs = {
+                "vcl_cutoff": self._setting("vcl_cutoff"),
+                "phie_cutoff": self.config.phie_cutoff,
+                "sw_cutoff": self._setting("sw_cutoff"),
+            }
+            result = NetPayModule(**cutoffs, lithology=lithology).calculate(
+                well, vcl=vcl, phie=flag_phie, sw=sw
+            )
+        else:
+            from petrophys.model.constants import DefaultParameters
+
+            # Swirr is picked in clean, porous rock: below the saturation-routing
+            # clay cutoff, where log Sw depends least on the shaly-sand model,
+            # and above the clastic porosity standard in every lithology, so
+            # tight water-bearing rock with a high resistivity does not pass as
+            # hydrocarbon-bearing. The non-reservoir samples (evaporite, coal,
+            # halite on the logs, bad hole) are left out as in net reservoir.
+            _, result, details = self._current_net_flags(
+                well, lithology, vcl, flag_phie, sw,
+                vcl_cutoff=self._routing_vcl_cutoff(),
+                phie_cutoff=(
+                    self.config.phie_cutoff
+                    if self.config.phie_cutoff is not None
+                    else DefaultParameters.PHIE_CUTOFF_CLASTIC
+                ),
+            )
+            cutoffs = {
+                **details["cutoffs"],
+                "excluded_samples": {
+                    kind: item["samples"] for kind, item in details["excluded"].items()
+                },
+            }
         resflag = result.net_reservoir.astype(float)
         well.add_curve("RESFLAG", resflag, "", "Reservoir Flag")
 
@@ -4611,9 +6608,7 @@ class DynamicWorkflow:
             "vcl_curve": vcl_curve.mnemonic if vcl_curve is not None else "implicit_0",
             "phie_curve": phie_label,
             "sw_curve": sw_curve.mnemonic,
-            "vcl_cutoff": self.config.vcl_cutoff,
-            "phie_cutoff": self.config.phie_cutoff,
-            "sw_cutoff": self.config.sw_cutoff,
+            **cutoffs,
             "reservoir_samples": int(np.nansum(resflag > 0.5)),
         }
 
@@ -4704,16 +6699,20 @@ class DynamicWorkflow:
         trace = StepResult(step="net_pay", success=True, method="cutoff_flags")
         lithology = self._build_lithology_log(well)
 
-        np_module = NetPayModule(
-            vcl_cutoff=self.config.vcl_cutoff,
-            phie_cutoff=self.config.phie_cutoff,
-            sw_cutoff=self.config.sw_cutoff,
-            lithology=lithology,
-        )
         vcl, vcl_source, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
         phie, phie_source, _ = get_curve_data_depthwise(well, self._phie_names())
         sw, sw_source, _ = get_curve_data_depthwise(well, ["SW", "SWA", "SWT-LOG"])
-        result = np_module.calculate(well, vcl=vcl, phie=phie, sw=sw)
+        details: Optional[Dict[str, Any]] = None
+        if self._reproducing_benchmark:
+            np_module = NetPayModule(
+                vcl_cutoff=self._setting("vcl_cutoff"),
+                phie_cutoff=self.config.phie_cutoff,
+                sw_cutoff=self._setting("sw_cutoff"),
+                lithology=lithology,
+            )
+            result = np_module.calculate(well, vcl=vcl, phie=phie, sw=sw)
+        else:
+            np_module, result, details = self._current_net_flags(well, lithology, vcl, phie, sw)
         np_module.add_to_well(well, result)
 
         well.add_curve("RESFLAG", result.net_reservoir.astype(float), "", "Reservoir Flag")
@@ -4728,19 +6727,34 @@ class DynamicWorkflow:
         seal_flag[valid_vcl] = (vcl_data[valid_vcl] >= 0.8).astype(float)
         well.add_curve("SEALFLAG", seal_flag, "", "Seal Flag")
 
-        hc_result = HydrocarbonAnalysis(porosity_curves=self._phie_names()).analyze(well, add_curves=True)
+        hc_result = HydrocarbonAnalysis(
+            porosity_curves=self._phie_names(),
+            class_tables="benchmark" if self._reproducing_benchmark else "current",
+            # Each sample's reservoir-quality limits come from its lithology
+            # family, as its net-pay cutoffs do.
+            lithology_family=None if self._reproducing_benchmark else self._cutoff_families(lithology),
+        ).analyze(well, add_curves=True)
 
         trace.input_curves = [source for source in (vcl_source, phie_source, sw_source) if source]
         trace.output_curves = ["NET_ROCK", "NET_RES", "NET_PAY", "RESFLAG", "SEALFLAG"]
         if well.get("CROSSOVER_FLAG") is not None:
             trace.output_curves.append("CROSSOVER_FLAG")
-        trace.parameters = {
-            "vcl_cutoff": self.config.vcl_cutoff,
-            "phie_cutoff": self.config.phie_cutoff,
-            "sw_cutoff": self.config.sw_cutoff,
-            "lithology": self.config.lithology if isinstance(lithology, str) else "per-depth",
-            "seal_vcl_cutoff": 0.8,
-        }
+        if details is None:
+            trace.parameters = {
+                "vcl_cutoff": self._setting("vcl_cutoff"),
+                "phie_cutoff": self.config.phie_cutoff,
+                "sw_cutoff": self._setting("sw_cutoff"),
+                "lithology": self.config.lithology if isinstance(lithology, str) else "per-depth",
+                "seal_vcl_cutoff": 0.8,
+            }
+        else:
+            trace.parameters = {
+                **details["cutoffs"],
+                "lithology": self.config.lithology if isinstance(lithology, str) else "per-depth",
+                "seal_vcl_cutoff": 0.8,
+                "cutoff_source": details["cutoff_source"],
+                "cutoffs_by_family": details["cutoffs_by_family"],
+            }
         n_rock = int(np.nansum(well.get("NET_ROCK").data > 0.5)) if well.get("NET_ROCK") else 0
         n_res = int(np.nansum(well.get("NET_RES").data > 0.5)) if well.get("NET_RES") else 0
         n_pay = int(np.nansum(well.get("NET_PAY").data > 0.5)) if well.get("NET_PAY") else 0
@@ -4748,18 +6762,40 @@ class DynamicWorkflow:
         # Thicknesses are in the well's own depth unit (ft for the COSTA wells).
         step_len = abs(float(well.step)) if well.step else 0.15
         unit = well.depth_unit or "m"
-        trace.decisions.append(f"NET_ROCK: VCL < {self.config.vcl_cutoff} -> {n_rock} samples ({n_rock*step_len:.1f} {unit})")
-        if self.config.phie_cutoff is not None:
-            phie_cutoff_text = f"{self.config.phie_cutoff}"
-        else:
-            from petrophys.model.constants import DefaultParameters
+        if details is None:
+            vcl_cutoff_text = f"{self._setting('vcl_cutoff')}"
+            if self.config.phie_cutoff is not None:
+                phie_cutoff_text = f"{self.config.phie_cutoff}"
+            else:
+                from petrophys.model.constants import DefaultParameters
 
-            phie_cutoff_text = (
-                f"{DefaultParameters.PHIE_CUTOFF_CLASTIC} "
-                f"({DefaultParameters.PHIE_CUTOFF_CARBONATE} where carbonate)"
+                phie_cutoff_text = (
+                    f"{DefaultParameters.PHIE_CUTOFF_CLASTIC} "
+                    f"({DefaultParameters.PHIE_CUTOFF_CARBONATE} where carbonate)"
+                )
+            sw_cutoff_text = f"{self._setting('sw_cutoff')}"
+        else:
+            vcl_cutoff_text, phie_cutoff_text, sw_cutoff_text = (
+                _family_cutoff_text(details["cutoffs_by_family"], key)
+                for key in ("vcl_cutoff", "phie_cutoff", "sw_cutoff")
             )
+        trace.decisions.append(f"NET_ROCK: VCL < {vcl_cutoff_text} -> {n_rock} samples ({n_rock*step_len:.1f} {unit})")
         trace.decisions.append(f"NET_RES:  + {phie_source} > {phie_cutoff_text} -> {n_res} samples ({n_res*step_len:.1f} {unit})")
-        trace.decisions.append(f"NET_PAY:  + {sw_source} < {self.config.sw_cutoff} -> {n_pay} samples ({n_pay*step_len:.1f} {unit})")
+        trace.decisions.append(f"NET_PAY:  + {sw_source} < {sw_cutoff_text} -> {n_pay} samples ({n_pay*step_len:.1f} {unit})")
+        if details is not None:
+            excluded = {
+                kind: {
+                    **item,
+                    "net_reservoir_removed": round(item["net_reservoir_samples_removed"] * step_len, 2),
+                    "net_pay_removed": round(item["net_pay_samples_removed"] * step_len, 2),
+                    "depth_unit": unit,
+                }
+                for kind, item in details["excluded"].items()
+            }
+            trace.parameters["excluded_from_net_reservoir_and_pay"] = excluded
+            trace.decisions.extend(
+                _net_pay_detail_decisions(details["cutoff_source"], details["cutoffs_by_family"], excluded)
+            )
         trace.decisions.append(f"SEALFLAG: VCL >= 0.8 -> {n_seal} samples ({n_seal*step_len:.1f} {unit})")
         if well.get("CROSSOVER_FLAG") is not None:
             n_crossover = int(np.nansum(np.asarray(well.get("CROSSOVER_FLAG").data, dtype=float) > 0.5))
@@ -4809,14 +6845,25 @@ class DynamicWorkflow:
         if self._selected_lithology_source == "config":
             self._lithology_source = "config"
             return self.config.lithology
-        gt_curve = get_curve(well, ["LITHOLOGY_GEOLINK"])
+        code_curve = self._lithology_code_curve(well)
+        gt_curve = get_curve(well, [code_curve]) if code_curve is not None else None
         if self._selected_lithology_source not in {"auto", "vendor"}:
             gt_curve = None
         if gt_curve is not None:
             try:
                 gt_data = np.asarray(gt_curve.data, dtype=float)
-                self._lithology_log = _group_array_from_numeric_codes(gt_data, GROUND_TRUTH_CODE_TO_GROUP)
-                self._lithology_source = "ground_truth_lithology_geolink"
+                if self._reproducing_benchmark:
+                    mapping = GROUND_TRUTH_CODE_TO_GROUP
+                else:
+                    mapping = _CURRENT_GROUND_TRUTH_CODE_TO_GROUP
+                    # Recorded so reports rebuild the groups this run used.
+                    gt_curve.metadata.custom["category_groups"] = dict(mapping)
+                self._lithology_log = _group_array_from_numeric_codes(gt_data, mapping)
+                self._lithology_source = (
+                    "ground_truth_lithology_geolink"
+                    if code_curve == "LITHOLOGY_GEOLINK"
+                    else f"vendor_lithology_log[{code_curve}]"
+                )
                 return self._lithology_log
             except (TypeError, ValueError):
                 pass
@@ -4828,7 +6875,7 @@ class DynamicWorkflow:
         """Get average formation temperature."""
         temp = get_curve(well, ["TEMP"])
         if temp is not None:
-            return float(np.nanmean(temp.data))
+            return float(np.nanmean(self._temperature_curve_f(temp)))
 
         surface_temp_f = (
             self.config.surface_temp_f

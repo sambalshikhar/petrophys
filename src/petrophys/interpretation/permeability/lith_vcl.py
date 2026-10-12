@@ -50,7 +50,8 @@ def lith_vcl_permeability(
     The transform is:
         perm = 10 ** min(4.5, slope * PHIT * (1 - VCL * 1.2) + intercept)
 
-    Values are returned only where ``VCL > 0`` and ``PHIT > 0.001``.
+    Values are returned only where ``VCL >= 0`` and ``PHIT > 0.001``, so
+    clean rock (VCL = 0) gets the full lithology transform.
     Unknown lithology falls back to sandstone parameters.
     Finite permeability values are capped to ``max_perm`` when provided.
     """
@@ -71,7 +72,7 @@ def lith_vcl_permeability(
         slope[idx], intercept[idx], _ = _parameters_for_lithology(value)
 
     exponent = slope * phit_b * (1.0 - vcl_b * permvclscalar) + intercept
-    valid = np.isfinite(phit_b) & np.isfinite(vcl_b) & (vcl_b > 0.0) & (phit_b > 0.001)
+    valid = np.isfinite(phit_b) & np.isfinite(vcl_b) & (vcl_b >= 0.0) & (phit_b > 0.001)
 
     perm = np.full(phit_b.shape, np.nan, dtype=float)
     perm[valid] = np.power(10.0, np.minimum(4.5, exponent[valid]))

@@ -5,7 +5,7 @@ This module provides functions to generate individual quality flags
 for various bad hole conditions.
 """
 
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 import numpy as np
 
 from petrophys.model.constants import DefaultParameters
@@ -13,6 +13,35 @@ from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
+
+
+def _plausible_bit_size(value: Any) -> Optional[float]:
+    """A header bit size in inches, or None when it cannot be one.
+
+    Bits run from about 3 in (slim hole) to 36 in (conductor hole); values
+    outside 3-36 in are a null such as -999.25 or another unit, such as a
+    12.25 in bit written as 311.15 mm.
+    """
+    try:
+        size = float(value)
+    except (TypeError, ValueError):
+        return None
+    return size if 3.0 <= size <= 36.0 else None
+
+
+def _known_bit_size(well: "Well") -> np.ndarray:
+    """The bit size of every sample in inches, NaN where the well records none.
+
+    The BS curve where it has a value, else the header bit size when it is a
+    hole size in inches (:func:`_plausible_bit_size`). No size is assumed.
+    """
+    bit_size, _, _ = get_curve_data_depthwise(well, ["BS"])
+    if bit_size is None:
+        bit_size = np.full(well.n_samples, np.nan)
+    header = _plausible_bit_size(getattr(well.header, "bit_size", None))
+    if header is not None:
+        bit_size = np.where(np.isfinite(bit_size), bit_size, header)
+    return np.asarray(bit_size, dtype=float)
 
 
 def generate_washout_flag(
@@ -144,6 +173,8 @@ def generate_bad_hole_flags(
     pef_max: float = DefaultParameters.PEF_MAX,
     pef_min: float = DefaultParameters.PEF_MIN,
     large_hole_threshold: float = DefaultParameters.LARGE_HOLE_BS,
+    *,
+    drho_alone: bool = False,
 ) -> dict:
     """
     Generate all bad hole flags for a well.
@@ -167,6 +198,10 @@ def generate_bad_hole_flags(
         Minimum valid PEF
     large_hole_threshold : float, optional
         Large hole BS threshold
+    drho_alone : bool, default False
+        Also flag washout from ``|DRHO|`` alone when the caliper test cannot
+        run: the well has no caliper curve, or no bit size. By default
+        ``|DRHO|`` is tested only when the well has both.
 
     Returns
     -------
@@ -202,12 +237,15 @@ def generate_bad_hole_flags(
             bit_size = float(np.nanmedian(finite)) if finite.size else None
 
     # Generate washout flag: (CALI - BS) or |DRHO| over threshold, evaluated
-    # where both a caliper and a bit size are available.
+    # where both a caliper and a bit size are available; with drho_alone,
+    # |DRHO| over threshold also without them.
     cali, _, _ = get_curve_data_depthwise(well, ["CALI", "CAL"])
     drho, _, _ = get_curve_data_depthwise(well, ["DRHO"])
 
     if cali is not None and bit_size is not None:
         flags["washout"] = generate_washout_flag(cali, bit_size, drho, cali_threshold, drho_threshold)
+    elif drho_alone and drho is not None:
+        flags["washout"] = np.abs(drho) > drho_threshold
 
     # Generate large hole flag
     if bit_size is not None:

@@ -14,8 +14,16 @@ from petrophys._internal.analysis_helpers import (
     format_curve_source,
     get_curve_data,
 )
+from petrophys.evaluation.diagnostics._tables import (
+    class_table_set,
+    reservoir_quality,
+    reservoir_quality_text,
+    rxo_rt_ratio,
+    sample_families,
+)
 from petrophys.evaluation.diagnostics.bands import Bands
 from petrophys.evaluation.rock_quality.rock_quality_module import RockQualityModule
+from petrophys.model.class_tables import CLASS_TABLES
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -23,10 +31,30 @@ if TYPE_CHECKING:
 
 
 class PermeabilityAnalysis:
-    """Permeability distribution and flow-unit analysis."""
+    """Permeability distribution and flow-unit analysis.
+
+    Parameters
+    ----------
+    class_tables : {"current", "benchmark"}, default "current"
+        ``"current"`` grades permeability (the canonical PERM table with its two
+        lowest classes merged), FZI (global hydraulic elements), clay volume and
+        Rxo/Rt with the canonical tables of
+        :data:`~petrophys.model.class_tables.CLASS_TABLES`, classifies the
+        workflow's INVASION_RATIO when the well has one, and interprets the
+        reservoir with the reservoir-quality table (effective porosity,
+        permeability and clay volume). ``"benchmark"`` keeps the GeoLink eval
+        package's classes and texts: the class attributes below and the inline
+        rules.
+    lithology_family : str or sequence of str, optional
+        Lithology family (``"clastic"``, ``"carbonate"``) or lithology of every
+        sample, or one per sample, whose limits the reservoir-quality table
+        applies under ``"current"``. None (default): clastic.
+    """
 
     CATEGORY_KEY = "PERMEABILITY_AND_FLOW_UNITS"
-    # The one-curve classes of the sections below (Bands: base label, then each step in order).
+    # The benchmark's one-curve classes of the sections below (Bands: base label,
+    # then each step in order). An analyzer with the "current" class tables holds
+    # the canonical tables under the same names.
     DISTRIBUTION_BANDS = Bands("POOR_PERMEABILITY", ((">", 1.0, "FAIR_PERMEABILITY"), (">", 10.0, "GOOD_PERMEABILITY"),
                                                      (">", 100.0, "VERY_GOOD_PERMEABILITY"),
                                                      (">", 1000.0, "EXCELLENT_PERMEABILITY")))
@@ -34,11 +62,22 @@ class PermeabilityAnalysis:
     VARIATION_BANDS = Bands("SHALE_DOMINATED", (("<=", 0.50, "MIXED_LITHOLOGY"), ("<", 0.20, "CLEAN_RESERVOIR")))
     INVASION_BANDS = Bands("MINIMAL_INVASION", (("<", 0.8, "CONDUCTIVE_INVASION"), (">", 1.2, "RESISTIVE_INVASION")))
 
+    def __init__(self, class_tables: str = "current", lithology_family=None):
+        self.class_tables = class_table_set(class_tables)
+        self.lithology_family = lithology_family
+        if self.class_tables == "current":
+            # The permeability classes keep one class at or below 1 mD.
+            self.DISTRIBUTION_BANDS = CLASS_TABLES["PERM"].bands.without_edges(0.1)
+            self.FLOW_UNIT_BANDS = CLASS_TABLES["FZI"].bands
+            self.VARIATION_BANDS = CLASS_TABLES["VCL"].bands
+            self.INVASION_BANDS = CLASS_TABLES["RXO_RT"].bands
+
     def analyze(
         self,
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
+        benchmark = self.class_tables == "benchmark"
         n_samples = well.n_samples
         perm, perm_source = get_curve_data(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])
         fzi, fzi_source = get_curve_data(well, ["FZI"])
@@ -78,35 +117,54 @@ class PermeabilityAnalysis:
             except Exception:
                 pass
 
-        distribution_labels = np.full(n_samples, "NO_DATA", dtype=object)
+        if benchmark:
+            missing = {"PERM": "NO_DATA", "FZI": "NO_DATA", "VCL": "NO_DATA", "RXO_RT": "NO_DATA"}
+        else:
+            missing = {name: CLASS_TABLES[name].missing for name in ("PERM", "FZI", "VCL", "RXO_RT")}
+
+        distribution_labels = np.full(n_samples, missing["PERM"], dtype=object)
         if perm is not None:
-            distribution_labels = self.DISTRIBUTION_BANDS.classify(perm, missing="NO_DATA")
+            distribution_labels = self.DISTRIBUTION_BANDS.classify(perm, missing=missing["PERM"])
 
-        flow_unit_labels = np.full(n_samples, "NO_DATA", dtype=object)
+        flow_unit_labels = np.full(n_samples, missing["FZI"], dtype=object)
         if fzi is not None:
-            flow_unit_labels = self.FLOW_UNIT_BANDS.classify(fzi, missing="NO_DATA")
+            flow_unit_labels = self.FLOW_UNIT_BANDS.classify(fzi, missing=missing["FZI"])
 
-        variation_labels = np.full(n_samples, "NO_DATA", dtype=object)
+        variation_labels = np.full(n_samples, missing["VCL"], dtype=object)
         if vsh is not None:
-            variation_labels = self.VARIATION_BANDS.classify(vsh, missing="NO_DATA")
+            variation_labels = self.VARIATION_BANDS.classify(vsh, missing=missing["VCL"])
 
-        invasion_labels = np.full(n_samples, "NO_DATA", dtype=object)
-        ratio = np.full(n_samples, np.nan, dtype=float)
-        if rxo is not None and rdep is not None:
-            valid = np.isfinite(rxo) & np.isfinite(rdep) & (rdep > 0.0)
-            ratio[valid] = rxo[valid] / rdep[valid]
-            invasion_labels = self.INVASION_BANDS.classify(ratio, valid, missing="NO_DATA")
-            derived_curves["RXO_RDEP_RATIO"] = DerivedCurve(
-                ratio,
-                "",
-                "Flushed-to-deep resistivity ratio",
-            )
+        invasion_labels = np.full(n_samples, missing["RXO_RT"], dtype=object)
+        if benchmark:
+            ratio = np.full(n_samples, np.nan, dtype=float)
+            if rxo is not None and rdep is not None:
+                valid = np.isfinite(rxo) & np.isfinite(rdep) & (rdep > 0.0)
+                ratio[valid] = rxo[valid] / rdep[valid]
+                invasion_labels = self.INVASION_BANDS.classify(ratio, valid, missing=missing["RXO_RT"])
+                derived_curves["RXO_RDEP_RATIO"] = DerivedCurve(
+                    ratio,
+                    "",
+                    "Flushed-to-deep resistivity ratio",
+                )
+        else:
+            ratio, invasion_source_text = rxo_rt_ratio(well)
+            if ratio is not None:
+                invasion_labels = self.INVASION_BANDS.classify(ratio, missing=missing["RXO_RT"])
+                derived_curves["RXO_RDEP_RATIO"] = DerivedCurve(
+                    ratio,
+                    "",
+                    f"Flushed-to-deep resistivity ratio ({invasion_source_text})",
+                )
 
-        overall_labels = np.full(n_samples, "TIGHT_FORMATION", dtype=object)
-        overall_labels[distribution_labels == "FAIR_PERMEABILITY"] = "MARGINAL_RESERVOIR"
-        overall_labels[distribution_labels == "GOOD_PERMEABILITY"] = "GOOD_RESERVOIR"
-        overall_labels[distribution_labels == "VERY_GOOD_PERMEABILITY"] = "VERY_GOOD_RESERVOIR"
-        overall_labels[distribution_labels == "EXCELLENT_PERMEABILITY"] = "EXCELLENT_RESERVOIR"
+        if benchmark:
+            overall_labels = np.full(n_samples, "TIGHT_FORMATION", dtype=object)
+            overall_labels[distribution_labels == "FAIR_PERMEABILITY"] = "MARGINAL_RESERVOIR"
+            overall_labels[distribution_labels == "GOOD_PERMEABILITY"] = "GOOD_RESERVOIR"
+            overall_labels[distribution_labels == "VERY_GOOD_PERMEABILITY"] = "VERY_GOOD_RESERVOIR"
+            overall_labels[distribution_labels == "EXCELLENT_PERMEABILITY"] = "EXCELLENT_RESERVOIR"
+        else:
+            families = sample_families(self.lithology_family, n_samples)
+            overall_labels, quality_clay_source = reservoir_quality(well, phie, perm, families)
 
         if perm is not None:
             kh = np.clip(perm * depth_step_array(well.depth), 0.001, None)
@@ -142,8 +200,57 @@ class PermeabilityAnalysis:
 
         metadata = {}
         if mhi is not None:
-            metadata["mhi_confirmation"] = {
-                "high_mhi_samples": int(np.count_nonzero(np.isfinite(mhi) & (mhi > 0.3)))
+            if benchmark:
+                metadata["mhi_confirmation"] = {
+                    "high_mhi_samples": int(np.count_nonzero(np.isfinite(mhi) & (mhi > 0.3)))
+                }
+            else:
+                # Samples in each MHI class (CLASS_TABLES["MHI"]).
+                mhi_classes = CLASS_TABLES["MHI"].classify(mhi)
+                metadata["mhi_confirmation"] = {
+                    label: int(np.count_nonzero(mhi_classes == label)) for label in CLASS_TABLES["MHI"].labels
+                }
+
+        if benchmark:
+            texts = {
+                "distribution": (
+                    "EXCELLENT > 1000 mD; VERY_GOOD >100-1000 mD; GOOD >10-100 mD; "
+                    "FAIR >1-10 mD; POOR <=1 mD."
+                ),
+                "flow_unit": "MEGA_PORES >=5; MACRO_PORES >=2 to <5; MESO_PORES >=0.5 to <2; MICRO_PORES <0.5.",
+                "variation": "CLEAN_RESERVOIR < 0.20; MIXED_LITHOLOGY 0.20-0.50; SHALE_DOMINATED > 0.50.",
+                "invasion_methodology": (
+                    f"Uses {invasion_source_text}; flushed/shallow priority is RXO, RSHA, RESS and "
+                    "deep-resistivity priority is RDEP, RT."
+                ),
+                "invasion": "CONDUCTIVE_INVASION < 0.8; MINIMAL_INVASION 0.8-1.2; RESISTIVE_INVASION > 1.2.",
+                "overall_description": "Reservoir interpretation mapped from permeability class.",
+                "overall_methodology": f"Direct mapping from permeability classes derived from {perm_source_text}.",
+                "overall": (
+                    "EXCELLENT_RESERVOIR, VERY_GOOD_RESERVOIR, GOOD_RESERVOIR, "
+                    "MARGINAL_RESERVOIR, otherwise TIGHT_FORMATION."
+                ),
+            }
+        else:
+            texts = {
+                "distribution": (
+                    "The PERM table with VERY_POOR_PERMEABILITY merged into POOR_PERMEABILITY: "
+                    + CLASS_TABLES["PERM"].describe(self.DISTRIBUTION_BANDS)
+                ),
+                "flow_unit": f"Global hydraulic elements: {CLASS_TABLES['FZI'].describe()}",
+                "variation": CLASS_TABLES["VCL"].describe(),
+                "invasion_methodology": (
+                    f"Uses {invasion_source_text}: the workflow's INVASION_RATIO when present, otherwise "
+                    "flushed/shallow resistivity (RXO, RSHA, RESS) over deep resistivity (RDEP, RT)."
+                ),
+                "invasion": CLASS_TABLES["RXO_RT"].describe(),
+                "overall_description": "Reservoir quality from effective porosity, permeability and clay volume.",
+                "overall_methodology": (
+                    f"Uses effective porosity={phie_source_text}, permeability={perm_source_text} and clay "
+                    f"volume={format_curve_source(quality_clay_source)}, with the limits of each sample's "
+                    "lithology family."
+                ),
+                "overall": reservoir_quality_text(families),
             }
 
         result = CategoryAnalysisResult(
@@ -157,10 +264,7 @@ class PermeabilityAnalysis:
                         f"Uses {perm_source_text}; priority is PERM_CC, then PERM, PERM_CORE, PERM_TIMUR. "
                         "Thresholds are applied to the selected depth-wise permeability curve."
                     ),
-                    calculation_thresholds=(
-                        "EXCELLENT > 1000 mD; VERY_GOOD >100-1000 mD; GOOD >10-100 mD; "
-                        "FAIR >1-10 mD; POOR <=1 mD."
-                    ),
+                    calculation_thresholds=texts["distribution"],
                 ),
                 "flow_unit_classification_system": build_section(
                     well,
@@ -170,41 +274,28 @@ class PermeabilityAnalysis:
                         f"Uses {format_curve_source(fzi_source, 'FZI derived when possible')} classes "
                         f"with {format_curve_source(rqi_source, 'RQI derived when possible')} as supplementary context."
                     ),
-                    calculation_thresholds=(
-                        "MEGA_PORES >=5; MACRO_PORES >=2 to <5; MESO_PORES >=0.5 to <2; MICRO_PORES <0.5."
-                    ),
+                    calculation_thresholds=texts["flow_unit"],
                 ),
                 "permeability_variation_controls": build_section(
                     well,
                     variation_labels,
                     description="Geological permeability controls from shale content.",
                     methodology=f"Uses {vsh_source_text}; priority is VSH, then VCL, VCLAY.",
-                    calculation_thresholds=(
-                        "CLEAN_RESERVOIR < 0.20; MIXED_LITHOLOGY 0.20-0.50; SHALE_DOMINATED > 0.50."
-                    ),
+                    calculation_thresholds=texts["variation"],
                 ),
                 "invasion_profile_permeability_indicators": build_section(
                     well,
                     invasion_labels,
                     description="Permeability clues from invasion behavior.",
-                    methodology=(
-                        f"Uses {invasion_source_text}; flushed/shallow priority is RXO, RSHA, RESS and "
-                        "deep-resistivity priority is RDEP, RT."
-                    ),
-                    calculation_thresholds=(
-                        "CONDUCTIVE_INVASION < 0.8; MINIMAL_INVASION 0.8-1.2; "
-                        "RESISTIVE_INVASION > 1.2."
-                    ),
+                    methodology=texts["invasion_methodology"],
+                    calculation_thresholds=texts["invasion"],
                 ),
                 "overall_permeability_interpretation": build_section(
                     well,
                     overall_labels,
-                    description="Reservoir interpretation mapped from permeability class.",
-                    methodology=f"Direct mapping from permeability classes derived from {perm_source_text}.",
-                    calculation_thresholds=(
-                        "EXCELLENT_RESERVOIR, VERY_GOOD_RESERVOIR, GOOD_RESERVOIR, "
-                        "MARGINAL_RESERVOIR, otherwise TIGHT_FORMATION."
-                    ),
+                    description=texts["overall_description"],
+                    methodology=texts["overall_methodology"],
+                    calculation_thresholds=texts["overall"],
                 ),
             },
             derived_curves=derived_curves,

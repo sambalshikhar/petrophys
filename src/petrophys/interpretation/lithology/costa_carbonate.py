@@ -1,4 +1,10 @@
-"""Carbonate mineral inversion used by the published COSTA notebooks."""
+"""Carbonate mineral inversion used by the published COSTA notebooks.
+
+The workflow runs this per-sample solve under the benchmark calculation
+profile. :func:`~petrophys.interpretation.lithology.carbonate_minerals.solve_carbonate_minerals`
+with ``calibration="costa"`` solves the same equations in closed form for a
+whole well.
+"""
 
 from __future__ import annotations
 

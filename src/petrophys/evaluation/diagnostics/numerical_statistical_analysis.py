@@ -20,6 +20,7 @@ from petrophys._internal.analysis_helpers import (
     get_curve_data,
 )
 from petrophys.evaluation.net_pay.net_pay_module import NetPayModule
+from petrophys.interpretation.lithology.matrix_inference import interpreted_lithology_code_curve
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -239,9 +240,13 @@ class NumericalStatisticalAnalysis:
             pp = (1000.0 * 9.81 * np.abs(depth_m) / 1e6) + seawater
         valid_sh = np.isfinite(poisson_ratio) & np.isfinite(sv) & np.isfinite(pp) & (poisson_ratio < 0.999)
         sh_min[valid_sh] = ((poisson_ratio[valid_sh] / (1.0 - poisson_ratio[valid_sh])) * (sv[valid_sh] - pp[valid_sh])) + pp[valid_sh]
-        derived_curves["S_V"] = DerivedCurve(sv, "MPa", "Overburden stress")
+        derived_curves["S_V"] = DerivedCurve(
+            sv, "MPa", "Overburden stress increment from the top of the analysed interval"
+        )
         derived_curves["PP_HYDROSTATIC"] = DerivedCurve(pp, "MPa", "Hydrostatic pore pressure")
-        derived_curves["SH_MIN"] = DerivedCurve(sh_min, "MPa", "Minimum horizontal stress")
+        derived_curves["SH_MIN"] = DerivedCurve(
+            sh_min, "MPa", "Minimum horizontal stress from the S_V increment, not absolute"
+        )
 
         geomech_labels = np.full(n_samples, "NO_GEOMECH_DATA", dtype=object)
         geomech_count = np.sum(
@@ -383,6 +388,8 @@ class NumericalStatisticalAnalysis:
             "KV_CORE",
             "SWC",
             "SOC",
+            # The lithology code curve holds categories, not measurements.
+            interpreted_lithology_code_curve(well),
         }
         return [name for name in well.curves if name.upper() not in excluded]
 

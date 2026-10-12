@@ -13,30 +13,65 @@ from petrophys._internal.analysis_helpers import (
     format_curve_source,
     get_curve_data,
 )
-from petrophys.model.classifications import MhiClassification
+from petrophys.evaluation.diagnostics._tables import class_table_set, rxo_rt_ratio
 from petrophys.evaluation.diagnostics.bands import Bands
 from petrophys.evaluation.mhi.mhi_module import calculate_mhi
+from petrophys.model.class_tables import CLASS_TABLES
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
 
+# Water-saturation classes of a stable hydrocarbon zone, under the "current"
+# class tables.
+_STABLE_HC_CLASSES = ("EXCELLENT_HC_SATURATION", "GOOD_HC_SATURATION")
+# BVW classes of an excellent hydrocarbon zone, under the "current" class tables.
+_EXCELLENT_ZONE_BVW_CLASSES = ("VERY_LOW_BVW", "LOW_BVW")
+
 
 class SaturationAnalysis:
-    """Saturation, fluid-contact, and gas-indicator analysis."""
+    """Saturation, fluid-contact, and gas-indicator analysis.
+
+    Parameters
+    ----------
+    class_tables : {"current", "benchmark"}, default "current"
+        ``"current"`` grades water saturation, BVW, MHI and Rxo/Rt with the
+        canonical tables of :data:`~petrophys.model.class_tables.CLASS_TABLES`
+        (a sample without MHI is NO_MHI_DATA; the invasion fallback classifies
+        the workflow's INVASION_RATIO when the well has one) and places the
+        stable contact zones on the water-saturation classes. ``"benchmark"``
+        keeps the GeoLink eval package's classes and texts: the class
+        attributes below, with every sample without MHI labelled
+        MINIMAL_MOVEABLE_HC as the package was.
+    """
 
     CATEGORY_KEY = "SATURATION_AND_FLUID_DISTRIBUTION"
-    # The one-curve classes of the sections below (Bands: base label, then each step in order).
+    # The benchmark's one-curve classes of the sections below (Bands: base label,
+    # then each step in order). An analyzer with the "current" class tables holds
+    # the canonical tables under the same names.
     WATER_SATURATION_BANDS = Bands("WATER_BEARING", (("<", 0.60, "FAIR_HC_SATURATION"), ("<", 0.40, "GOOD_HC_SATURATION"),
                                                      ("<", 0.20, "EXCELLENT_HC_SATURATION")))
     BVW_BANDS = Bands("UNDETERMINED", (("<", 0.10, "FAIR_MOVEABLE_HC"), ("<", 0.06, "GOOD_MOVEABLE_HC"),
                                        ("<", 0.03, "EXCELLENT_MOVEABLE_HC")))
+    MHI_BANDS = Bands("HIGH_MOVEABLE_HC", ((">=", 0.5, "MODERATE_MOVEABLE_HC"), (">=", 0.7, "LOW_MOVEABLE_HC"),
+                                           (">=", 0.9, "MINIMAL_MOVEABLE_HC")))
+    # Fallback of the movability section without MHI, on RXO / RDEP where RDEP > 0.1.
+    INVASION_BANDS = Bands("MINIMAL_INVASION", (("<", 0.7, "CONDUCTIVE_INVASION"), (">", 1.3, "RESISTIVE_INVASION")))
+
+    def __init__(self, class_tables: str = "current"):
+        self.class_tables = class_table_set(class_tables)
+        if self.class_tables == "current":
+            self.WATER_SATURATION_BANDS = CLASS_TABLES["SW"].bands
+            self.BVW_BANDS = CLASS_TABLES["BVW"].bands
+            self.MHI_BANDS = CLASS_TABLES["MHI"].bands
+            self.INVASION_BANDS = CLASS_TABLES["RXO_RT"].bands
 
     def analyze(
         self,
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
+        benchmark = self.class_tables == "benchmark"
         n_samples = well.n_samples
         sw, sw_source = get_curve_data(well, ["SWA", "SW", "SWT-LOG"])
         sxo, sxo_source = get_curve_data(well, ["SWXOA", "SXO", "SXO-LOG"])
@@ -78,23 +113,36 @@ class SaturationAnalysis:
 
         invasion_ratio = np.full(n_samples, np.nan, dtype=float)
         movability_labels = np.full(n_samples, "NO_INVASION_DATA", dtype=object)
+        movability_source_text = (
+            f"invasion ratio {format_curve_source(rxo_source)} / {format_curve_source(rdep_source)}"
+        )
         if mhi is not None:
-            mhi_classes = MhiClassification.classify(mhi)
-            movability_labels[:] = "MINIMAL_MOVEABLE_HC"
-            movability_labels[mhi_classes == MhiClassification.LOW_MOVEABLE_HC] = "LOW_MOVEABLE_HC"
-            movability_labels[mhi_classes == MhiClassification.MODERATE_MOVEABLE_HC] = "MODERATE_MOVEABLE_HC"
-            movability_labels[mhi_classes == MhiClassification.HIGH_MOVEABLE_HC] = "HIGH_MOVEABLE_HC"
-        elif rxo is not None and rdep is not None:
-            valid = np.isfinite(rxo) & np.isfinite(rdep) & (rdep > 0.1)
-            invasion_ratio[valid] = rxo[valid] / rdep[valid]
-            movability_labels[valid] = "MINIMAL_INVASION"
-            movability_labels[valid & (invasion_ratio < 0.7)] = "CONDUCTIVE_INVASION"
-            movability_labels[valid & (invasion_ratio > 1.3)] = "RESISTIVE_INVASION"
-            derived_curves["SEPARATION_RATIO"] = DerivedCurve(
-                invasion_ratio,
-                "",
-                "Invasion separation ratio RXO / RDEP",
-            )
+            if benchmark:
+                # As the package: a sample without MHI counts as MINIMAL_MOVEABLE_HC.
+                movability_labels = self.MHI_BANDS.classify(mhi, ~np.isnan(mhi), missing="MINIMAL_MOVEABLE_HC")
+            else:
+                movability_labels = self.MHI_BANDS.classify(mhi, missing=CLASS_TABLES["MHI"].missing)
+        elif benchmark:
+            if rxo is not None and rdep is not None:
+                valid = np.isfinite(rxo) & np.isfinite(rdep) & (rdep > 0.1)
+                invasion_ratio[valid] = rxo[valid] / rdep[valid]
+                movability_labels = self.INVASION_BANDS.classify(invasion_ratio, valid, missing="NO_INVASION_DATA")
+                derived_curves["SEPARATION_RATIO"] = DerivedCurve(
+                    invasion_ratio,
+                    "",
+                    "Invasion separation ratio RXO / RDEP",
+                )
+        else:
+            ratio, ratio_source_text = rxo_rt_ratio(well)
+            movability_source_text = f"Rxo/Rt ratio {ratio_source_text}"
+            if ratio is not None:
+                invasion_ratio = ratio
+                movability_labels = self.INVASION_BANDS.classify(ratio, missing=CLASS_TABLES["RXO_RT"].missing)
+                derived_curves["SEPARATION_RATIO"] = DerivedCurve(
+                    invasion_ratio,
+                    "",
+                    f"Invasion separation ratio ({ratio_source_text})",
+                )
 
         contact_labels = np.full(n_samples, "NO_CONTACT_INDICATORS", dtype=object)
         if sw is not None and phit is not None and n_samples > 0:
@@ -104,17 +152,23 @@ class SaturationAnalysis:
             sw_change = sw - prev_sw
             phit_change = np.abs(phit - prev_phi)
 
-            stable_hc = valid & (sw < 0.4)
-            stable_water = valid & (sw > 0.6)
+            if benchmark:
+                hydrocarbon = sw < 0.4
+                water = sw > 0.6
+            else:
+                hydrocarbon = np.isin(water_sat_labels, _STABLE_HC_CLASSES)
+                water = water_sat_labels == "WATER_BEARING"
+            stable_hc = valid & hydrocarbon
+            stable_water = valid & water
             contact_labels[stable_hc] = "STABLE_HC_ZONE"
             contact_labels[stable_water] = "STABLE_WATER_ZONE"
             contact_labels[valid & (sw_change > 0.1) & (phit_change < 0.05)] = "TRANSITION_ZONE"
             contact_labels[valid & (sw_change > 0.2) & (phit_change < 0.05)] = "POTENTIAL_CONTACT_ZONE"
 
             if valid[0]:
-                if sw[0] < 0.4:
+                if hydrocarbon[0]:
                     contact_labels[0] = "STABLE_HC_ZONE"
-                elif sw[0] > 0.6:
+                elif water[0]:
                     contact_labels[0] = "STABLE_WATER_ZONE"
                 else:
                     contact_labels[0] = "TRANSITION_ZONE"
@@ -163,16 +217,73 @@ class SaturationAnalysis:
             fallback_mask = gas_labels == "NO_GAS_INDICATORS"
             gas_labels[fallback_mask & np.isfinite(dtc) & np.isfinite(sw) & (dtc > 120.0) & (sw < 0.5)] = "SONIC_GAS_EFFECT"
 
+        excellent_zone_bvw = (
+            ["EXCELLENT_MOVEABLE_HC", "GOOD_MOVEABLE_HC"] if benchmark else list(_EXCELLENT_ZONE_BVW_CLASSES)
+        )
         integrated_labels = np.full(n_samples, "UNDETERMINED", dtype=object)
         integrated_labels[water_sat_labels == "WATER_BEARING"] = "WATER_ZONE"
         integrated_labels[water_sat_labels == "FAIR_HC_SATURATION"] = "MARGINAL_HC_ZONE"
         integrated_labels[np.isin(water_sat_labels, ["GOOD_HC_SATURATION", "EXCELLENT_HC_SATURATION"])] = "GOOD_HC_ZONE"
         integrated_labels[
             (water_sat_labels == "EXCELLENT_HC_SATURATION")
-            & np.isin(bvw_labels, ["EXCELLENT_MOVEABLE_HC", "GOOD_MOVEABLE_HC"])
+            & np.isin(bvw_labels, excellent_zone_bvw)
         ] = "EXCELLENT_HC_ZONE"
         integrated_labels[gas_labels == "MODERATE_GAS_EFFECT"] = "POSSIBLE_GAS_ZONE"
         integrated_labels[gas_labels == "STRONG_GAS_EFFECT"] = "GAS_ZONE"
+
+        if benchmark:
+            texts = {
+                "water": "EXCELLENT < 0.20; GOOD 0.20-0.40; FAIR 0.40-0.60; WATER_BEARING >= 0.60.",
+                "bvw_description": "Moveable hydrocarbon interpretation from BVW.",
+                "bvw": "EXCELLENT < 0.03; GOOD 0.03-0.06; FAIR 0.06-0.10; UNDETERMINED >= 0.10.",
+                "movability_methodology": (
+                    f"Prefers MHI={format_curve_source(mhi_source)}. If MHI is unavailable, uses "
+                    f"{movability_source_text}."
+                ),
+                "movability": (
+                    "MHI bands: HIGH_MOVEABLE_HC <0.5, MODERATE 0.5-0.7, LOW 0.7-0.9, MINIMAL >=0.9. "
+                    "Fallback invasion bands: conductive <0.7, minimal 0.7-1.3, resistive >1.3."
+                ),
+                "contacts": (
+                    "POTENTIAL_CONTACT_ZONE: dSw > 0.2 and dPHIT < 0.05; "
+                    "TRANSITION_ZONE: dSw > 0.1 and dPHIT < 0.05; "
+                    "STABLE_HC_ZONE: SW < 0.4; STABLE_WATER_ZONE: SW > 0.6."
+                ),
+                "integrated": (
+                    "GAS_ZONE, POSSIBLE_GAS_ZONE, EXCELLENT_HC_ZONE, GOOD_HC_ZONE, "
+                    "MARGINAL_HC_ZONE, WATER_ZONE, otherwise UNDETERMINED."
+                ),
+            }
+        else:
+            sw_ranges = {label: (lower, closed) for label, lower, closed, _, _ in CLASS_TABLES["SW"].bands.ranges()}
+            sw_upper = {label: (upper, closed) for label, _, _, upper, closed in CLASS_TABLES["SW"].bands.ranges()}
+            hc_limit, hc_closed = sw_upper[_STABLE_HC_CLASSES[-1]]
+            water_limit, water_closed = sw_ranges["WATER_BEARING"]
+            texts = {
+                "water": CLASS_TABLES["SW"].describe(),
+                "bvw_description": "Bulk volume water (effective porosity x water saturation) classes.",
+                "bvw": CLASS_TABLES["BVW"].describe(),
+                "movability_methodology": (
+                    f"Prefers MHI={format_curve_source(mhi_source)}. If MHI is unavailable, uses the "
+                    f"{movability_source_text}."
+                ),
+                "movability": (
+                    f"MHI classes: {CLASS_TABLES['MHI'].describe()} "
+                    f"Without MHI, Rxo/Rt classes: {CLASS_TABLES['RXO_RT'].describe()}"
+                ),
+                "contacts": (
+                    "POTENTIAL_CONTACT_ZONE: dSw > 0.2 and dPHIT < 0.05; "
+                    "TRANSITION_ZONE: dSw > 0.1 and dPHIT < 0.05; "
+                    f"STABLE_HC_ZONE: SW class {' or '.join(_STABLE_HC_CLASSES)} "
+                    f"(SW {'<=' if hc_closed else '<'} {hc_limit:g}); "
+                    f"STABLE_WATER_ZONE: SW class WATER_BEARING (SW {'>=' if water_closed else '>'} {water_limit:g})."
+                ),
+                "integrated": (
+                    "GAS_ZONE, POSSIBLE_GAS_ZONE, EXCELLENT_HC_ZONE (EXCELLENT_HC_SATURATION with "
+                    f"{' or '.join(_EXCELLENT_ZONE_BVW_CLASSES)}), GOOD_HC_ZONE, "
+                    "MARGINAL_HC_ZONE, WATER_ZONE, otherwise UNDETERMINED."
+                ),
+            }
 
         result = CategoryAnalysisResult(
             category_key=self.CATEGORY_KEY,
@@ -182,35 +293,24 @@ class SaturationAnalysis:
                     water_sat_labels,
                     description="Hydrocarbon saturation classes from water saturation.",
                     methodology=f"Uses {sw_source_text}; priority is SWA, then SW, SWT-LOG.",
-                    calculation_thresholds=(
-                        "EXCELLENT < 0.20; GOOD 0.20-0.40; FAIR 0.40-0.60; WATER_BEARING >= 0.60."
-                    ),
+                    calculation_thresholds=texts["water"],
                 ),
                 "bulk_volume_water_porosity_integration": build_section(
                     well,
                     bvw_labels,
-                    description="Moveable hydrocarbon interpretation from BVW.",
+                    description=texts["bvw_description"],
                     methodology=(
                         f"Uses {format_curve_source(bvw_source, 'computed BVW')} when present; otherwise BVW = "
                         f"selected effective porosity ({phie_source_text}) * water saturation ({sw_source_text})."
                     ),
-                    calculation_thresholds=(
-                        "EXCELLENT < 0.03; GOOD 0.03-0.06; FAIR 0.06-0.10; "
-                        "UNDETERMINED >= 0.10."
-                    ),
+                    calculation_thresholds=texts["bvw"],
                 ),
                 "hydrocarbon_movability_invasion_characteristics": build_section(
                     well,
                     movability_labels,
                     description="Movability from MHI or invasion fallback.",
-                    methodology=(
-                        f"Prefers MHI={format_curve_source(mhi_source)}. If MHI is unavailable, uses "
-                        f"invasion ratio {format_curve_source(rxo_source)} / {format_curve_source(rdep_source)}."
-                    ),
-                    calculation_thresholds=(
-                        "MHI bands: HIGH_MOVEABLE_HC <0.5, MODERATE 0.5-0.7, LOW 0.7-0.9, MINIMAL >=0.9. "
-                        "Fallback invasion bands: conductive <0.7, minimal 0.7-1.3, resistive >1.3."
-                    ),
+                    methodology=texts["movability_methodology"],
+                    calculation_thresholds=texts["movability"],
                 ),
                 "fluid_contact_detection_indicators": build_section(
                     well,
@@ -220,11 +320,7 @@ class SaturationAnalysis:
                         f"Compares per-sample changes in SW ({sw_source_text}) and selected porosity "
                         f"({phit_source_text}) relative to the previous depth."
                     ),
-                    calculation_thresholds=(
-                        "POTENTIAL_CONTACT_ZONE: dSw > 0.2 and dPHIT < 0.05; "
-                        "TRANSITION_ZONE: dSw > 0.1 and dPHIT < 0.05; "
-                        "STABLE_HC_ZONE: SW < 0.4; STABLE_WATER_ZONE: SW > 0.6."
-                    ),
+                    calculation_thresholds=texts["contacts"],
                 ),
                 "gas_indicator_analysis_methods": build_section(
                     well,
@@ -242,10 +338,7 @@ class SaturationAnalysis:
                     integrated_labels,
                     description="Integrated fluid-distribution interpretation.",
                     methodology="Combines water saturation, BVW, and gas-indicator sections.",
-                    calculation_thresholds=(
-                        "GAS_ZONE, POSSIBLE_GAS_ZONE, EXCELLENT_HC_ZONE, GOOD_HC_ZONE, "
-                        "MARGINAL_HC_ZONE, WATER_ZONE, otherwise UNDETERMINED."
-                    ),
+                    calculation_thresholds=texts["integrated"],
                 ),
             },
             derived_curves=derived_curves,

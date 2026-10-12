@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Optional, List, Dict, Union
 from dataclasses import dataclass, field
 import numpy as np
 
-from petrophys._internal.analysis_helpers import depth_step_array, well_depth_array
+from petrophys._internal.analysis_helpers import cell_thickness, well_depth_array
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -99,7 +99,7 @@ def calculate_zone_summary(
             n_pay_samples=0
         )
 
-    sample_thickness = depth_step_array(depth)
+    sample_thickness = cell_thickness(depth)
     gross_thickness = float(np.sum(sample_thickness[mask]))
     if gross_thickness <= 0:
         gross_thickness = abs(bottom_depth - top_depth)

@@ -106,6 +106,7 @@ def build_context(
         payload["analysis"] = reference._category_analysis_result(
             category,
             deepcopy(well),
+            result,
         ).to_dict()
     payload = json_object(payload)
     _encode(payload, max_bytes)
@@ -152,7 +153,9 @@ def export_context(
 
     Package layouts read LAS files, apply optional formation and lithology
     inputs, run the workflow, and write context JSON. They never read an older
-    context package or reuse archived numerical values.
+    context package or reuse archived numerical values. With a
+    ``workflow_config`` under the benchmark calculation profile, every well
+    gets the calculations of the eval package's re-run, which wrote its context.
     """
     _validate_limit(max_bytes, "max_bytes")
     _validate_limit(max_total_bytes, "max_total_bytes")

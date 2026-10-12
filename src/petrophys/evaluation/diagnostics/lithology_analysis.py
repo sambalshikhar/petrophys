@@ -14,6 +14,14 @@ from petrophys._internal.analysis_helpers import (
     format_curve_source,
     get_curve_data,
 )
+from petrophys.interpretation.lithology.matrix_inference import interpreted_lithology_code_curve
+from petrophys.evaluation.diagnostics._tables import (
+    class_table_set,
+    reservoir_quality,
+    reservoir_quality_text,
+    sample_families,
+)
+from petrophys.model.class_tables import CLASS_TABLES
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -75,6 +83,35 @@ GROUND_TRUTH_GROUPS = {
     "CHERT": {29},
 }
 
+#: GeoLink codes the "current" calculation profile names differently (see
+#: ``_CURRENT_GROUND_TRUTH_CODE_TO_GROUP`` in
+#: :mod:`petrophys.workflow.dynamic_workflow`): code 10 is "Porous Limestone"
+#: in the Kingdom lithology codebook ("Calcareous Sandstone" is only its display
+#: pattern), and code 26, "Gap", records no lithology (None).
+CURRENT_PROFILE_CODE_NAMES = {10: "Porous Limestone", 26: None}
+
+#: GROUND_TRUTH_GROUPS as the "current" calculation profile groups the codes:
+#: code 10 with limestone, and code 26 in no group.
+CURRENT_GROUND_TRUTH_GROUPS = {
+    group: (codes | {10}) if group == "LIMESTONE" else codes - {10, 26}
+    for group, codes in GROUND_TRUTH_GROUPS.items()
+}
+
+# Group names that the threshold text spells differently.
+_GROUP_TEXT_NAMES = {"CLASTIC_COARSE": "coarse clastic"}
+
+
+def _ground_truth_groups_text(groups) -> str:
+    """The code list of each lithology group, for the threshold text."""
+    parts = [
+        f"{_GROUP_TEXT_NAMES.get(group, group.lower().replace('_', ' '))} "
+        + "/".join(str(code) for code in sorted(codes))
+        for group, codes in groups.items()
+        if codes
+    ]
+    return "GT_{GROUP} for mapped codes: " + ", ".join(parts) + "; otherwise NO_LITHOLOGY_DATA."
+
+
 GROUP_CODES = {
     "NO_LITHOLOGY_DATA": 0,
     "LIMESTONE": 1,
@@ -93,6 +130,10 @@ GROUP_CODES = {
     "SPECIAL_LITHOLOGY": 14,
 }
 
+# Rock families whose samples the lithology-petrophysics section grades with
+# the reservoir-quality table, and their lithology groups ("current" class tables).
+_RESERVOIR_ROCKS = {"SANDSTONE": ("SANDSTONE",), "CARBONATE": ("LIMESTONE", "DOLOMITE")}
+
 COMPUTED_LITHO_GROUPS = {
     1: "SANDSTONE",
     2: "LIMESTONE",
@@ -105,17 +146,51 @@ COMPUTED_LITHO_GROUPS = {
 
 
 class LithologyAnalysis:
-    """Ground-truth and log-based lithology analysis."""
+    """Ground-truth and log-based lithology analysis.
+
+    The ground-truth codes are read from the lithology code curve the
+    interpretation of the well read: ``LITHOLOGY_GEOLINK``, or the curve the
+    dynamic workflow recorded on the well (another lithology-code curve that
+    a ``"current"`` run read, or the one ``lithology_curve`` named).
+
+    Parameters
+    ----------
+    ground_truth_groups : dict, optional
+        Lithology group -> set of ``LITHOLOGY_GEOLINK`` codes. Default
+        ``GROUND_TRUTH_GROUPS``; ``CURRENT_GROUND_TRUTH_GROUPS`` groups the
+        codes as the "current" calculation profile does.
+    class_tables : {"current", "benchmark"}, default "current"
+        ``"current"`` grades sandstone and carbonate samples with the
+        reservoir-quality table of
+        :data:`~petrophys.model.class_tables.CLASS_TABLES` (effective porosity,
+        permeability and clay volume, the classes the porosity, permeability
+        and hydrocarbon analyses give), and the overall interpretation takes
+        that class. ``"benchmark"`` keeps the GeoLink eval package's grades
+        (FAIR from porosity alone; GOOD and EXCELLENT also below a shale
+        volume) and texts.
+    lithology_family : str or sequence of str, optional
+        Lithology family (``"clastic"``, ``"carbonate"``) or lithology of every
+        sample, or one per sample, whose limits the reservoir-quality table
+        applies under ``"current"``. None (default): clastic.
+    """
 
     CATEGORY_KEY = "COMPREHENSIVE_LITHOLOGY_ANALYSIS"
+
+    def __init__(self, ground_truth_groups=None, class_tables: str = "current", lithology_family=None):
+        self.ground_truth_groups = (
+            GROUND_TRUTH_GROUPS if ground_truth_groups is None else ground_truth_groups
+        )
+        self.class_tables = class_table_set(class_tables)
+        self.lithology_family = lithology_family
 
     def analyze(
         self,
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
+        benchmark = self.class_tables == "benchmark"
         n_samples = well.n_samples
-        gt_codes, _ = get_curve_data(well, ["LITHOLOGY_GEOLINK"])
+        gt_codes, _ = get_curve_data(well, [interpreted_lithology_code_curve(well)])
         computed_litho, _ = get_curve_data(well, ["LITHO"])
         pef, _ = get_curve_data(well, ["PEF"])
         rhob, _ = get_curve_data(well, ["RHOB"])
@@ -131,7 +206,7 @@ class LithologyAnalysis:
         gt_groups = np.full(n_samples, "NO_LITHOLOGY_DATA", dtype=object)
         if gt_codes is not None:
             rounded = np.rint(gt_codes).astype(int)
-            for group_name, codes in GROUND_TRUTH_GROUPS.items():
+            for group_name, codes in self.ground_truth_groups.items():
                 gt_groups[np.isin(rounded, list(codes))] = group_name
 
         working_groups = gt_groups.copy()
@@ -195,36 +270,59 @@ class LithologyAnalysis:
         clay_labels[valid_clay & (composite_clay >= 0.33)] = "MODERATE_CLAY_INDICATION"
         clay_labels[valid_clay & (composite_clay >= 0.67)] = "HIGH_CLAY_INDICATION"
 
-        quality = np.full(n_samples, "POOR", dtype=object)
-        if phit is not None:
-            valid = np.isfinite(phit)
-            quality[valid] = "POOR"
-            excellent = valid & (phit > 0.15)
-            if perm is not None:
-                excellent &= np.isfinite(perm) & (perm > 10.0)
-            if vsh is not None:
-                excellent &= np.isfinite(vsh) & (vsh < 0.25)
-            good = valid & (phit > 0.10)
-            if perm is not None:
-                good &= np.isfinite(perm) & (perm > 1.0)
-            if vsh is not None:
-                good &= np.isfinite(vsh) & (vsh < 0.40)
-            fair = valid & (phit > 0.05)
-            quality[fair] = "FAIR"
-            quality[good] = "GOOD"
-            quality[excellent] = "EXCELLENT"
+        quality_table = CLASS_TABLES["RESERVOIR_QUALITY"]
+        if benchmark:
+            quality = np.full(n_samples, "POOR", dtype=object)
+            if phit is not None:
+                valid = np.isfinite(phit)
+                quality[valid] = "POOR"
+                excellent = valid & (phit > 0.15)
+                if perm is not None:
+                    excellent &= np.isfinite(perm) & (perm > 10.0)
+                if vsh is not None:
+                    excellent &= np.isfinite(vsh) & (vsh < 0.25)
+                good = valid & (phit > 0.10)
+                if perm is not None:
+                    good &= np.isfinite(perm) & (perm > 1.0)
+                if vsh is not None:
+                    good &= np.isfinite(vsh) & (vsh < 0.40)
+                fair = valid & (phit > 0.05)
+                quality[fair] = "FAIR"
+                quality[good] = "GOOD"
+                quality[excellent] = "EXCELLENT"
+            petro_methodology = (
+                f"Combines grouped lithology with selected porosity={porosity_source_text}, "
+                f"permeability={perm_source_text}, and shale volume={vsh_source_text}."
+            )
+        else:
+            families = sample_families(self.lithology_family, n_samples)
+            quality, quality_clay_source = reservoir_quality(well, phit, perm, families)
+            petro_methodology = (
+                f"Combines grouped lithology with the reservoir quality of selected porosity={porosity_source_text}, "
+                f"permeability={perm_source_text} and clay volume={format_curve_source(quality_clay_source)}, "
+                "with the limits of each sample's lithology family, and with shale "
+                f"volume={vsh_source_text} for shale samples."
+            )
 
         petro_labels = np.full(n_samples, "SPECIAL_LITHOLOGY", dtype=object)
         petro_labels[np.isin(working_groups, ["EVAPORITE", "HALITE", "ANHYDRITE"])] = "EVAPORITE_SEAL"
         if vsh is not None:
             petro_labels[(working_groups == "SHALE") & np.isfinite(vsh)] = "TYPICAL_SHALE"
             petro_labels[(working_groups == "SHALE") & np.isfinite(vsh) & (vsh <= 0.7)] = "SANDY_SHALE"
-        petro_labels[np.isin(working_groups, ["SANDSTONE"]) & np.isin(quality, ["FAIR", "POOR"])] = "TIGHT_SANDSTONE"
-        petro_labels[np.isin(working_groups, ["SANDSTONE"]) & (quality == "GOOD")] = "GOOD_SANDSTONE_RESERVOIR"
-        petro_labels[np.isin(working_groups, ["SANDSTONE"]) & (quality == "EXCELLENT")] = "EXCELLENT_SANDSTONE_RESERVOIR"
-        petro_labels[np.isin(working_groups, ["LIMESTONE", "DOLOMITE"]) & np.isin(quality, ["FAIR", "POOR"])] = "TIGHT_CARBONATE"
-        petro_labels[np.isin(working_groups, ["LIMESTONE", "DOLOMITE"]) & (quality == "GOOD")] = "GOOD_CARBONATE_RESERVOIR"
-        petro_labels[np.isin(working_groups, ["LIMESTONE", "DOLOMITE"]) & (quality == "EXCELLENT")] = "EXCELLENT_CARBONATE_RESERVOIR"
+        if benchmark:
+            petro_labels[np.isin(working_groups, ["SANDSTONE"]) & np.isin(quality, ["FAIR", "POOR"])] = "TIGHT_SANDSTONE"
+            petro_labels[np.isin(working_groups, ["SANDSTONE"]) & (quality == "GOOD")] = "GOOD_SANDSTONE_RESERVOIR"
+            petro_labels[np.isin(working_groups, ["SANDSTONE"]) & (quality == "EXCELLENT")] = "EXCELLENT_SANDSTONE_RESERVOIR"
+            petro_labels[np.isin(working_groups, ["LIMESTONE", "DOLOMITE"]) & np.isin(quality, ["FAIR", "POOR"])] = "TIGHT_CARBONATE"
+            petro_labels[np.isin(working_groups, ["LIMESTONE", "DOLOMITE"]) & (quality == "GOOD")] = "GOOD_CARBONATE_RESERVOIR"
+            petro_labels[np.isin(working_groups, ["LIMESTONE", "DOLOMITE"]) & (quality == "EXCELLENT")] = "EXCELLENT_CARBONATE_RESERVOIR"
+        else:
+            for rock, groups in _RESERVOIR_ROCKS.items():
+                in_rock = np.isin(working_groups, groups)
+                petro_labels[in_rock] = f"{rock}_NO_QUALITY_DATA"
+                petro_labels[in_rock & (quality == "NON_RESERVOIR")] = f"TIGHT_{rock}"
+                for grade in ("FAIR", "GOOD", "EXCELLENT"):
+                    petro_labels[in_rock & (quality == f"{grade}_RESERVOIR")] = f"{grade}_{rock}_RESERVOIR"
 
         gr_consistency = np.full(n_samples, np.nan, dtype=float)
         if gr is not None:
@@ -257,10 +355,18 @@ class LithologyAnalysis:
         consistency_labels[valid_consistency & (consistency_score >= 0.75)] = "EXCELLENT_LOG_LITHOLOGY_MATCH"
 
         overall_labels = np.full(n_samples, "UNDETERMINED", dtype=object)
-        overall_labels[np.char.find(petro_labels.astype(str), "SEAL") >= 0] = "SEAL_ROCK"
-        overall_labels[np.char.find(petro_labels.astype(str), "TIGHT") >= 0] = "TIGHT_FORMATION"
-        overall_labels[np.char.find(petro_labels.astype(str), "GOOD") >= 0] = "GOOD_RESERVOIR"
-        overall_labels[np.char.find(petro_labels.astype(str), "EXCELLENT") >= 0] = "EXCELLENT_RESERVOIR"
+        if benchmark:
+            overall_labels[np.char.find(petro_labels.astype(str), "SEAL") >= 0] = "SEAL_ROCK"
+            overall_labels[np.char.find(petro_labels.astype(str), "TIGHT") >= 0] = "TIGHT_FORMATION"
+            overall_labels[np.char.find(petro_labels.astype(str), "GOOD") >= 0] = "GOOD_RESERVOIR"
+            overall_labels[np.char.find(petro_labels.astype(str), "EXCELLENT") >= 0] = "EXCELLENT_RESERVOIR"
+        else:
+            overall_labels[petro_labels == "EVAPORITE_SEAL"] = "SEAL_ROCK"
+            reservoir_rock = (
+                np.isin(working_groups, [group for groups in _RESERVOIR_ROCKS.values() for group in groups])
+                & np.isin(quality, quality_table.labels)
+            )
+            overall_labels[reservoir_rock] = quality[reservoir_rock]
         overall_labels[(overall_labels == "UNDETERMINED") & valid_gt] = gt_distribution[(overall_labels == "UNDETERMINED") & valid_gt]
 
         strong_res_fraction = float(
@@ -298,12 +404,7 @@ class LithologyAnalysis:
                     gt_distribution,
                     description="Ground-truth lithology distribution from the lithology curve.",
                     methodology="Maps raw lithology codes to grouped lithology classes.",
-                    calculation_thresholds=(
-                        "GT_{GROUP} for mapped codes: limestone 9/11/12/13/16, dolomite 15, "
-                        "anhydrite 22, coal 18, calcareous shale 14, halite 21/27/32/33/34, "
-                        "sandstone 1/2/3/4/10/30/35, shale 7/8/25, silt 5/6, coarse clastic 17/31/36, "
-                        "evaporite 26, igneous 19/20/23/24/28, chert 29; otherwise NO_LITHOLOGY_DATA."
-                    ),
+                    calculation_thresholds=_ground_truth_groups_text(self.ground_truth_groups),
                 ),
                 "carbonate_analysis": build_section(
                     well,
@@ -329,14 +430,20 @@ class LithologyAnalysis:
                     well,
                     petro_labels,
                     description="Reservoir quality interpreted within lithology context.",
-                    methodology=(
-                        f"Combines grouped lithology with selected porosity={porosity_source_text}, "
-                        f"permeability={perm_source_text}, and shale volume={vsh_source_text}."
-                    ),
+                    methodology=petro_methodology,
                     calculation_thresholds=(
-                        "Quality base: FAIR when selected porosity >0.05, GOOD when >0.10, EXCELLENT when >0.15. "
-                        "When selected permeability is available, GOOD also requires >1 mD and EXCELLENT requires >10 mD. "
-                        "When shale volume is available, GOOD also requires <0.40 and EXCELLENT requires <0.25."
+                        (
+                            "Quality base: FAIR when selected porosity >0.05, GOOD when >0.10, EXCELLENT when >0.15. "
+                            "When selected permeability is available, GOOD also requires >1 mD and EXCELLENT requires >10 mD. "
+                            "When shale volume is available, GOOD also requires <0.40 and EXCELLENT requires <0.25."
+                        )
+                        if benchmark
+                        else (
+                            f"Sandstone and carbonate quality: {reservoir_quality_text(families)} "
+                            "TIGHT_{ROCK} for NON_RESERVOIR, {GRADE}_{ROCK}_RESERVOIR for FAIR, GOOD and "
+                            "EXCELLENT, {ROCK}_NO_QUALITY_DATA where effective porosity, permeability or clay "
+                            "volume is missing."
+                        )
                     ),
                 ),
                 "lithology_log_consistency": build_section(
@@ -359,9 +466,16 @@ class LithologyAnalysis:
                     description="Primary lithology interpretation hierarchy.",
                     methodology="Uses petrophysical lithology labels first, then falls back to mapped lithology.",
                     calculation_thresholds=(
-                        "SEAL_ROCK from EVAPORITE_SEAL; TIGHT_FORMATION from tight sandstone/carbonate; "
-                        "GOOD_RESERVOIR and EXCELLENT_RESERVOIR from good/excellent sandstone or carbonate; "
-                        "otherwise GT_{GROUP}."
+                        (
+                            "SEAL_ROCK from EVAPORITE_SEAL; TIGHT_FORMATION from tight sandstone/carbonate; "
+                            "GOOD_RESERVOIR and EXCELLENT_RESERVOIR from good/excellent sandstone or carbonate; "
+                            "otherwise GT_{GROUP}."
+                        )
+                        if benchmark
+                        else (
+                            "SEAL_ROCK from EVAPORITE_SEAL; sandstone and carbonate samples take their "
+                            f"reservoir-quality class ({', '.join(quality_table.labels)}); otherwise GT_{{GROUP}}."
+                        )
                     ),
                 ),
             },

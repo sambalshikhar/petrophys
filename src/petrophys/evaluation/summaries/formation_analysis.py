@@ -20,7 +20,7 @@ import csv
 from petrophys.evaluation.summaries.zone_summary import ZoneSummary, calculate_zone_summary
 from petrophys.model.intervals import Formation, IntervalKind
 from petrophys._internal.statistics import finite_min_max
-from petrophys._internal.analysis_helpers import depth_step_array
+from petrophys._internal.analysis_helpers import cell_thickness
 
 
 @dataclass
@@ -310,7 +310,7 @@ def analyze_formations(
             data_coverage_pct=coverage,
         ))
 
-    thickness = depth_step_array(depth)
+    thickness = cell_thickness(depth)
     net_pay = well.get(net_pay_curve)
     pay_mask = union_mask & (net_pay.data > 0.5) if net_pay is not None else np.zeros_like(union_mask)
     return FormationAnalysisResult(

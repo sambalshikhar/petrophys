@@ -1,26 +1,31 @@
 import numpy as np
+import pytest
 
 from petrophys import Well
+from petrophys.exceptions import DataQualityWarning
 from petrophys.preprocessing.standardization import standardize_curves
 from petrophys.preprocessing.standardization.alias_map import get_standard_mnemonic
 from petrophys.workflow import DynamicWorkflowConfig, run_dynamic_workflow
 import petrophys.workflow.zoned_batch as zoned_batch
 
 
-def _alias_override(base_name, value, unit=""):
+def _alias_override(base_name, value, unit="", profile="current"):
     overrides = {}
     injected = {}
     unmapped = []
     zoned_batch._apply_parameter_alias(
-        base_name, value, unit, overrides, injected, unmapped
+        base_name, value, unit, overrides, injected, unmapped,
+        calculation_profile=profile,
     )
     return overrides, injected, unmapped
 
 
 def test_parameter_aliases_convert_temperature_depth_salinity_and_booleans():
     cases = [
-        ("CLFL", 90.0, "kppm", "rmf_salinity_ppm", 90000.0),
-        ("CLFL", 90.0, "g/L", "rmf_salinity_ppm", 90000.0),
+        ("CLFL", 90.0, "g/L", "rmf_chlorides_mg_l", 90000.0),
+        ("CLFL", 30000.0, "mg/l", "rmf_chlorides_mg_l", 30000.0),
+        ("MFST", 20.0, "degC", "rmf_meas_temp_f", 68.0),
+        ("MST", 60.0, "degF", "rm_meas_temp_f", 60.0),
         ("SAL", 35.0, "g/l", "salinity_ppm", 35000.0),
         ("WATSAL", 35000.0, "mg/L", "salinity_ppm", 35000.0),
         ("WSAL", 3.5, "%", "salinity_ppm", 35000.0),
@@ -46,6 +51,16 @@ def test_parameter_aliases_convert_temperature_depth_salinity_and_booleans():
     overrides, _, unmapped = _alias_override("PP_DOMAIN", "carbonate")
     assert overrides["lithology_domain"] == "carbonate"
     assert unmapped == []
+
+
+def test_benchmark_profile_reads_clfl_as_salinity_and_skips_mud_sample_temperatures():
+    for unit in ("kppm", "g/L"):
+        overrides, _, unmapped = _alias_override("CLFL", 90.0, unit, "benchmark")
+        assert overrides == {"rmf_salinity_ppm": 90000.0}
+        assert unmapped == []
+    for name in ("MFST", "MST"):
+        overrides, _, unmapped = _alias_override(name, 20.0, "degC", "benchmark")
+        assert overrides == {} and unmapped == [name]
 
 
 def test_unknown_parameter_aliases_are_reported_as_unmapped():
@@ -78,7 +93,12 @@ def test_zoned_parameter_extraction_converts_depths_and_alias_units():
     zone = zones[0]
     assert np.isclose(zone.top, 328.084)
     assert np.isclose(zone.bottom, 984.252)
-    assert zone.config_overrides["rmf_salinity_ppm"] == 80000.0
+    # 80 kppm of chloride is 131,882 ppm NaCl; its brine (McCain 1991) weighs
+    # (62.368 + 0.438603*13.1882 + 1.60074e-3*13.1882**2) / 62.428 = 1.09616 g/cm3.
+    assert np.isclose(zone.config_overrides["rmf_chlorides_mg_l"], 80000.0 * 1.09616, rtol=1e-5)
+    assert "rmf_salinity_ppm" not in zone.config_overrides
+    benchmark = zoned_batch.extract_zoned_parameters(well, calculation_profile="benchmark")
+    assert benchmark[0].config_overrides["rmf_salinity_ppm"] == 80000.0
     assert zone.config_overrides["salinity_ppm"] == 35000.0
     assert zone.config_overrides["bht_f"] == 212.0
     assert zone.config_overrides["apply_hc_correction"] is True
@@ -291,3 +311,61 @@ def test_standardization_converts_percent_like_nphi_and_masks_outliers():
         np.array([0.20, 0.35, 0.55, np.nan]),
         equal_nan=True,
     )
+
+
+def _sonic_sp_well(dtc) -> Well:
+    well = Well("SONIC-SP")
+    well.depth = 1000.0 + 0.5 * np.arange(6)
+    well.depth_unit = "m"
+    well.add_curve("GR", np.full(6, 40.0), "API", "Gamma ray")
+    well.add_curve("DTC", np.asarray(dtc, dtype=float), "us/ft", "Compressional sonic")
+    well.add_curve("SP", np.array([-6183.0, 80.0, 75.0, 70.0, 60.0, 85.0]), "mV", "SP")
+    return well
+
+
+def test_current_interpretation_screens_impossible_sonic_and_sp():
+    # 20.9 us/ft is faster than any rock matrix (dolomite, the fastest, at
+    # 26,000 ft/s or 38.5 us/ft); 16/7-1 logs its salt at 20.9, 0.3048 times
+    # halite's 67 us/ft. An SP of -6183 mV is no formation potential. The
+    # "current" standardization removes both; the default screening, which the
+    # context export uses, keeps them.
+    dtc = [20.9, 20.9, 20.9, 20.9, 90.0, 100.0]
+    with pytest.warns(DataQualityWarning) as caught:
+        result = run_dynamic_workflow(_sonic_sp_well(dtc), DynamicWorkflowConfig(rw=0.05))
+
+    nan = np.nan
+    np.testing.assert_allclose(result.well["DTC"].data, [nan] * 4 + [90.0, 100.0], equal_nan=True)
+    np.testing.assert_allclose(result.well["SP"].data, [nan, 80.0, 75.0, 70.0, 60.0, 85.0], equal_nan=True)
+    # The workflow repeats the standardizer's warning word for word, so a
+    # caller that collects both, such as the MCP server, shows it once.
+    message = "DTC: 4 of 6 samples are outside the plausible DTC range 38.5 to 300 us/ft and were removed."
+    assert message in result.warnings
+    assert message in [str(item.message) for item in caught]
+    # Porosity runs on the sonic that is left.
+    phis = result.well["PHIS"].data
+    assert np.isnan(phis[:4]).all() and np.isfinite(phis[4:]).all()
+
+    default = standardize_curves(_sonic_sp_well(dtc), rename_curves=True, convert_units=True)
+    np.testing.assert_allclose(default["DTC"].data, dtc)
+    assert default["SP"].data[0] == -6183.0
+    benchmark = run_dynamic_workflow(_sonic_sp_well(dtc), DynamicWorkflowConfig(rw=0.05, calculation_profile="benchmark"))
+    np.testing.assert_allclose(benchmark.well["DTC"].data, dtc)
+
+
+def test_a_wholly_impossible_sonic_skips_porosity_without_errors():
+    with pytest.warns(DataQualityWarning, match="DTC: 6 of 6 samples"):
+        result = run_dynamic_workflow(_sonic_sp_well([20.9] * 6), DynamicWorkflowConfig(rw=0.05))
+    assert "porosity" in result.steps_skipped
+    assert not result.errors
+
+
+def test_the_mcp_summary_lists_a_range_screening_warning_once():
+    pytest.importorskip("mcp")
+    from petrophys.mcp.serialize import interpretation_summary
+
+    with pytest.warns(DataQualityWarning) as caught:
+        result = run_dynamic_workflow(_sonic_sp_well([20.9] * 4 + [90.0, 100.0]), DynamicWorkflowConfig(rw=0.05))
+    summary = interpretation_summary(
+        result, "interpretation-1", "SONIC-SP", captured_warnings=[str(item.message) for item in caught]
+    )
+    assert sum("outside the plausible DTC range" in warning for warning in summary["warnings"]) == 1
