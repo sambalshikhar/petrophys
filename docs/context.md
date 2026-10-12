@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory() as folder:
 
 ## Many wells: context packages
 
-A package reads a folder of LAS files, interprets each well and writes one JSON per well, formation and lithology group.
+A package reads a folder of well files, interprets each well and writes one JSON per well, formation and lithology group. LAS is selected by default; use `pattern="*.dlis"` for DLIS.
 Within a formation, a lithology group is a run of consecutive samples with one lithology, taken from the lithology code curve the interpretation read (`LITHOLOGY_GEOLINK` or another lithology-code curve; see {doc}`input_templates`) or from the lithology intervals it selected.
 Packages interpret as clastic unless told otherwise, so carbonate wells need the carbonate setting; COSTA wells also take the field's mineral calibration, `carbonate_calibration="costa"`, which writes the illite volume `VILL`. Here are two COSTA wells, labelled with their Kharaib-2 tops:
 
@@ -132,6 +132,44 @@ PHI_NORM, RQI, FZI and BVW are then recomputed from the porosity, permeability a
 | `"well"` (default) | one JSON for one well or result |
 | `"formation_lithology"` | `<well>/<formation>/<formation>_<group>.json`, plus the interpreted LAS |
 | `"category_formation_lithology"` | `<category>/<well>/<formation>/…_<category>.json` for hydrocarbon, lithology, numerical, permeability, porosity and saturation |
+
+## DLIS context packages
+
+DLIS uses the same interpretation and category exporters as LAS. For example,
+from a repository checkout, generate all six categories for the deep Daydream-1
+delivery:
+
+```python
+import petrophys as pp
+
+records = pp.export_context(
+    "src/petrophys/datasets/daydream",
+    "outputs/daydream_context",
+    layout="category_formation_lithology",
+    pattern="daydream1_deep_pex_aps_ppc_ecs.dlis",
+    reader_options={"step": 0.1524},
+)
+```
+
+The output directory must be new. `reader_options` are forwarded to `pp.read`;
+DLIS supports options such as `channels`, `logical_file`, `channel_preference`
+and `step`. The example explicitly merges channels onto a 0.1524 m grid;
+omitting `step` uses the reader's default finest grid, which can be much larger.
+The step is expressed in the target depth unit (metres by default).
+The `formation_lithology` layout also accepts DLIS.
+
+Pass `tops_file` and `lithology_file` just as for LAS to supply real formation
+and lithology intervals. Without matched tops, the exporter uses `WHOLE_WELL`;
+without lithology information, it records that absence. DLIS alone does not
+supply missing geological picks or core measurements.
+
+The corresponding command is:
+
+```bash
+petrophys-context src/petrophys/datasets/daydream outputs/daydream_context_cli \
+  --layout category_formation_lithology \
+  --pattern daydream1_deep_pex_aps_ppc_ecs.dlis --dlis-step 0.1524
+```
 
 ## Class labels
 

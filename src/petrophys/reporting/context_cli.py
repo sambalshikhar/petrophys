@@ -1,4 +1,4 @@
-"""Generate context by computing LAS data and optional geology inputs."""
+"""Generate context by interpreting well files and optional geology inputs."""
 
 from __future__ import annotations
 
@@ -19,6 +19,10 @@ def _path_from_env(name: str) -> Path | None:
 
 
 def _add_standard_inputs(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--dlis-step", type=float,
+        help="DLIS merged depth step in the target depth unit (metres by default)",
+    )
     parser.add_argument(
         "--lithology-domain",
         choices=("clastic", "carbonate", "evaporite", "auto"),
@@ -47,7 +51,7 @@ def _add_standard_inputs(parser: argparse.ArgumentParser) -> None:
 def build_package_parser(layout: str) -> argparse.ArgumentParser:
     """Build the parser shared by the historical script entry points."""
     parser = argparse.ArgumentParser(
-        description="Compute formation/lithology context packages from LAS files"
+        description="Compute formation/lithology context packages from LAS or DLIS files"
     )
     input_dir = _path_from_env("PETROPHYS_DATA_DIR")
     parser.add_argument(
@@ -63,13 +67,14 @@ def build_package_parser(layout: str) -> argparse.ArgumentParser:
     )
     _add_standard_inputs(parser)
     parser.add_argument("--well", dest="well_names", action="append", default=[])
-    parser.add_argument("--pattern", default="*.las")
+    parser.add_argument("--pattern", default="*.las", help="Input glob; use *.dlis for DLIS")
+    parser.add_argument("--depth-unit", choices=("m", "ft"), help="Required for tabular well logs")
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument(
         "--min-thickness",
         type=float,
         default=2.0,
-        help="Minimum lithology-group thickness in the LAS depth unit",
+        help="Minimum lithology-group thickness in the well depth unit",
     )
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))
     parser.add_argument("--tops-sheet", help="Explicit formation Excel sheet name")
@@ -98,6 +103,20 @@ def _package_options(args: argparse.Namespace) -> dict:
     }
     if args.lithology_domain is not None:
         options["lithology_domain"] = args.lithology_domain
+    reader_options = _reader_options(args)
+    if reader_options:
+        options["reader_options"] = reader_options
+    return options
+
+
+def _reader_options(args: argparse.Namespace) -> dict:
+    options = {}
+    if args.depth_unit:
+        options["depth_unit"] = args.depth_unit
+    if args.dlis_step is not None:
+        if not 0 < args.dlis_step < float("inf"):
+            raise ValueError("--dlis-step must be finite and positive")
+        options["step"] = args.dlis_step
     return options
 
 
@@ -123,7 +142,7 @@ def _single_well_result(args: argparse.Namespace):
     from petrophys.api import interpret, read
     from petrophys.workflow.zoned_batch import lithology_domain_from_metadata
 
-    reader_options = {"depth_unit": args.depth_unit} if args.depth_unit else {}
+    reader_options = _reader_options(args)
     well = read(
         args.input,
         formations=args.formations,
@@ -146,7 +165,7 @@ def _single_well_result(args: argparse.Namespace):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path, help="LAS file or directory")
+    parser.add_argument("input", type=Path, help="Well file (LAS, DLIS, CSV, TSV) or directory")
     parser.add_argument("output", type=Path, help="Output JSON file or new package directory")
     parser.add_argument(
         "--layout",
@@ -156,7 +175,7 @@ def main(argv=None) -> int:
     _add_standard_inputs(parser)
     parser.add_argument("--depth-unit", choices=("m", "ft"), help="Required for tabular well logs")
     parser.add_argument("--well", action="append", help="Package well filter; repeat for multiple wells")
-    parser.add_argument("--pattern", default="*.las")
+    parser.add_argument("--pattern", default="*.las", help="Input glob; use *.dlis for DLIS")
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--min-thickness", type=float, default=2.0)
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))
@@ -172,7 +191,7 @@ def main(argv=None) -> int:
     try:
         if args.layout == "well":
             if args.input.is_dir():
-                parser.error("layout=well requires one LAS file")
+                parser.error("layout=well requires one well file")
             if args.well or args.tops_rank or args.tops_sheet:
                 parser.error("--well and tops selection apply to package layouts")
             if args.lithology_codes is not None:
@@ -185,8 +204,6 @@ def main(argv=None) -> int:
                 overwrite=args.overwrite,
             )
         else:
-            if args.depth_unit:
-                parser.error("--depth-unit applies only to a single tabular well log")
             package_args = argparse.Namespace(
                 **vars(args),
                 input_dir=args.input,
