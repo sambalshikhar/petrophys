@@ -190,10 +190,9 @@ changed = ((changes["In the file"] != changes["Standard name"])
 changes[changed].style.hide(axis="index")
 ```
 
-The warnings are the core-saturation fix described above. Unknown mnemonics
-and units are kept, never guessed. `pp.interpret` keeps vendor names and adds
-the standard names beside them; set `rename_input_curves=True` to rename
-instead.
+Unknown mnemonics and units are kept, never guessed. `pp.interpret` keeps
+vendor names and adds the standard names beside them; set
+`rename_input_curves=True` to rename instead.
 
 ## Bundled samples
 

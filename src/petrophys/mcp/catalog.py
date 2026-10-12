@@ -19,7 +19,8 @@ COLLECTIONS: Dict[str, str] = {
     "costa": (
         "COSTA carbonate field, depth in ft; each file covers only the KHARAIB-2 "
         "reservoir interval; header RW/RWT and Archie A/M/N given; interpret with "
-        "lithology_domain='carbonate'"
+        "lithology_domain='carbonate' (carbonate_calibration='costa' applies the "
+        "field's GR-illite relation and 1.19 g/cm3 brine to the mineral volumes)"
     ),
     "kgs": "Kansas legacy LAS (Morgan No. 1-17), depth in ft",
     "daydream": "Daydream 1 (Australia) processed CMR/NMR summaries, depth in m",
@@ -160,14 +161,17 @@ _SHORT_CHOICES = {
 
 #: Defaults resolved at run time, stated where the schema default is None.
 _RUNTIME_DEFAULTS = {
-    "vcl_cutoff": "0.3",
-    "sw_cutoff": "0.7",
+    "standardize_input": "True (False under the benchmark calculation profile)",
+    "vcl_cutoff": "0.40 clastic, 0.30 carbonate samples (0.3 under the benchmark profile)",
+    "sw_cutoff": "0.60 clastic, 0.70 carbonate samples (0.7 under the benchmark profile)",
     "phie_cutoff": "0.08 clastic, 0.045 carbonate samples",
     "bht_f": "header BHT (converted to degF)",
     "td_ft": "header TD, else deepest sample",
     "rw": "header RW (at RWT; median formation temperature assumed when RWT is missing)",
     "a": "by lithology", "m": "by lithology", "n": "by lithology",
     "rho_ma": "from matrix_type",
+    "carbonate_calibration": "generic ('costa' under the benchmark profile)",
+    "nd_clay": "picked in the well's shales ((2.62, 0.38) under the benchmark profile)",
 }
 
 

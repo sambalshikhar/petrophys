@@ -16,17 +16,17 @@ def _saturation_well(vcl=0.6):
 
 
 @pytest.mark.parametrize(
-    "case_id,vcl,lithology,salinity,cec,b_coeff,expected_model",
+    "case_id,vcl,lithology,salinity,cec,b_coeff,rwb,expected_model",
     [
-        ("clean_clastic_uses_archie", 0.10, "clastic", None, None, None, "archie"),
-        ("shaly_clastic_high_salinity_uses_simandoux", 0.60, "clastic", 35000.0, None, None, "simandoux"),
-        ("shaly_clastic_low_salinity_uses_indonesia", 0.60, "clastic", 5000.0, None, None, "indonesia"),
-        ("shaly_carbonate_uses_dual_water", 0.60, "carbonate", None, None, None, "dual_water"),
-        ("shaly_clastic_cec_and_b_coeff_uses_waxman", 0.60, "clastic", None, 0.08, 4.0, "waxman_smits"),
-        ("shaly_clastic_cec_without_b_coeff_uses_salinity_route", 0.60, "clastic", 35000.0, 0.08, None, "simandoux"),
+        ("clean_clastic_uses_archie", 0.10, "clastic", None, None, None, None, "archie"),
+        ("shaly_clastic_high_salinity_uses_simandoux", 0.60, "clastic", 35000.0, None, None, None, "simandoux"),
+        ("shaly_clastic_low_salinity_uses_indonesia", 0.60, "clastic", 5000.0, None, None, None, "indonesia"),
+        ("shaly_carbonate_with_rwb_uses_dual_water", 0.60, "carbonate", None, None, None, 0.02, "dual_water"),
+        ("shaly_clastic_cec_and_b_coeff_uses_waxman", 0.60, "clastic", None, 0.08, 4.0, None, "waxman_smits"),
+        ("shaly_clastic_cec_without_b_coeff_uses_salinity_route", 0.60, "clastic", 35000.0, 0.08, None, None, "simandoux"),
     ],
 )
-def test_saturation_auto_model_selection_matrix(case_id, vcl, lithology, salinity, cec, b_coeff, expected_model):
+def test_saturation_auto_model_selection_matrix(case_id, vcl, lithology, salinity, cec, b_coeff, rwb, expected_model):
     well = _saturation_well(vcl=vcl)
 
     result = SaturationModule(model="auto").calculate(
@@ -37,11 +37,44 @@ def test_saturation_auto_model_selection_matrix(case_id, vcl, lithology, salinit
         lithology=lithology,
         cec=cec,
         b_coeff=b_coeff,
+        rwb=rwb,
     )
 
     assert result.model == expected_model
     assert result.model_counts == {expected_model: 4}
+    assert result.fallback_counts == {}
     assert np.isfinite(result.sw).all()
+
+
+@pytest.mark.parametrize(
+    "salinity,cec,b_coeff,expected_model",
+    [
+        (None, None, None, "indonesia"),
+        (5000.0, None, None, "indonesia"),
+        (35000.0, None, None, "simandoux"),
+        (None, 0.08, 4.0, "waxman_smits"),
+    ],
+)
+def test_shaly_carbonate_without_rwb_takes_the_clastic_routing(salinity, cec, b_coeff, expected_model):
+    # Rwb is not estimated, so Dual Water cannot run; the sample takes the
+    # model a shaly clastic sample with the same inputs would.
+    result = SaturationModule(model="auto").calculate(
+        _saturation_well(vcl=0.6), rw=0.05, rcl=5.0, salinity=salinity,
+        lithology="carbonate", cec=cec, b_coeff=b_coeff,
+    )
+
+    assert result.model_counts == {expected_model: 4}
+    assert result.fallback_counts == {f"dual_water->{expected_model}": 4}
+
+
+def test_saturation_module_guesses_rwb_only_when_told_to():
+    well = _saturation_well(vcl=0.6)
+    with pytest.raises(ValueError, match="rwb"):
+        SaturationModule(model="dual_water").calculate(well, rw=0.05, rcl=5.0)
+    # rwb_fallback=0.3 takes Rwb = 0.3 Rw, as the benchmark profile does.
+    guessed = SaturationModule(model="dual_water", rwb_fallback=0.3).calculate(well, rw=0.05, rcl=5.0)
+    supplied = SaturationModule(model="dual_water").calculate(well, rw=0.05, rcl=5.0, rwb=0.015)
+    np.testing.assert_allclose(guessed.sw, supplied.sw, rtol=1e-12)
 
 
 @pytest.mark.parametrize(

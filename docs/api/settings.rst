@@ -15,9 +15,12 @@ or as one config object:
    config = pp.DynamicWorkflowConfig(rw=0.07, rw_meas_temp_f=230)
    result = pp.interpret(well, config)
 
-A default of ``None`` means the value is taken from the data or from the
-standard for the lithology domain; the description says which. Invalid values
-raise ``ValueError`` before any calculation, naming the accepted values.
+A default of ``None`` means the value is taken from the data, from the
+standard for the lithology family, or from the calculation profile; the
+description says which, and the Default column adds the value a profile sets.
+``calculation_profile`` is ``"current"`` unless you are reproducing the GeoLink
+eval package (see :ref:`calculation-profiles`). Invalid values raise
+``ValueError`` before any calculation, naming the accepted values.
 ``result.summary()["settings_used"]`` shows the values a run actually used.
 
 This page is generated from the code. The same information is available as

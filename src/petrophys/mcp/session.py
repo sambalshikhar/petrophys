@@ -15,12 +15,55 @@ if TYPE_CHECKING:
 #: separated like ``PATH`` (``:`` on Linux/macOS, ``;`` on Windows).
 ROOTS_ENV_VAR = "PETROPHYS_MCP_ROOTS"
 
+#: Environment variable naming the calculation profile of the MCP server's
+#: interpretations whose settings do not set ``calculation_profile``. Only the
+#: MCP server reads it; the library (``petrophys.interpret``, the
+#: ``petrophys-context`` command, ``scripts/generate_benchmark_context.py``)
+#: takes ``calculation_profile`` from its own settings.
+PROFILE_ENV_VAR = "PETROPHYS_CALCULATION_PROFILE"
+
 #: Label used for the bundled sample data folder in messages.
 SAMPLES_LABEL = "<petrophys samples>"
 
 
 class SessionError(ValueError):
     """A request refers to an unknown object or a disallowed path."""
+
+
+def default_calculation_profile(value: Optional[str] = None) -> Optional[str]:
+    """MCP server-wide calculation profile: ``value``, else ``PETROPHYS_CALCULATION_PROFILE``.
+
+    An evaluation harness sets it to keep the MCP server's calculations fixed
+    (for example ``"benchmark"``); see
+    :attr:`~petrophys.workflow.DynamicWorkflowConfig.calculation_profile`.
+    The environment variable affects the MCP server only: library calls such
+    as :func:`petrophys.interpret` ignore it and use ``"current"`` unless
+    their settings say otherwise.
+
+    Returns
+    -------
+    str or None
+        The profile, or None when neither is set (interpretations then use
+        the library default, ``"current"``).
+
+    Raises
+    ------
+    ValueError
+        If the value is not a calculation profile.
+    """
+    from petrophys.workflow.dynamic_workflow import _CALCULATION_PROFILES
+
+    text = value if value is not None else os.environ.get(PROFILE_ENV_VAR, "")
+    key = str(text).strip().lower()
+    if not key:
+        return None
+    if key not in _CALCULATION_PROFILES:
+        source = "calculation_profile" if value is not None else PROFILE_ENV_VAR
+        raise ValueError(
+            f"{source}={text!r} is not a calculation profile; use one of: "
+            f"{', '.join(_CALCULATION_PROFILES)}"
+        )
+    return key
 
 
 @dataclass

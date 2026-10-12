@@ -417,9 +417,9 @@ def test_temperature_ignores_fmt_and_uses_fallback_without_bht(record_route):
 @pytest.mark.parametrize(
     "case_id,mutate,config,expected_sp,expected_nd",
     [
-        ("vclay_gr_sp_nd_enabled", lambda well: well, DynamicWorkflowConfig(), True, True),
-        ("vclay_sp_disabled_by_kcl_mud", lambda well: well, DynamicWorkflowConfig(mud_has_clay_or_kcl=True), False, True),
-        ("vclay_nd_disabled_when_missing_density_neutron", lambda well: _remove_curves(well, "NPHI", "RHOB"), DynamicWorkflowConfig(), True, False),
+        ("vclay_gr_sp_nd_enabled", lambda well: well, DynamicWorkflowConfig(calculation_profile="benchmark"), True, True),
+        ("vclay_sp_disabled_by_kcl_mud", lambda well: well, DynamicWorkflowConfig(mud_has_clay_or_kcl=True, calculation_profile="benchmark"), False, True),
+        ("vclay_nd_disabled_when_missing_density_neutron", lambda well: _remove_curves(well, "NPHI", "RHOB"), DynamicWorkflowConfig(calculation_profile="benchmark"), True, False),
     ],
 )
 def test_vclay_routing_by_available_methods(
@@ -439,6 +439,21 @@ def test_vclay_routing_by_available_methods(
     expected[valid] = np.nanmin(stacked[:, valid], axis=0)
     np.testing.assert_allclose(well.get("VCL").data, expected, equal_nan=True)
     assert any("min(available methods)" in decision for decision in step.decisions)
+
+
+def test_vclay_default_keeps_whole_log_sp_out_of_the_minimum(record_route):
+    well = _routing_well("VCL-CURRENT-SP")
+    result = _run(
+        "vclay_current_sp_reported", well, DynamicWorkflowConfig(), record_route,
+        focus_steps=["vclay"], curves=["VCL", "VCLGR", "VCLSP", "VCLND"],
+    )
+    step = _step_by_name(result, "vclay")
+
+    assert step.parameters["use_sp"] is True and step.parameters["sp_in_vcl"] is False
+    expected = np.fmin(well.get("VCLGR").data, well.get("VCLND").data)
+    np.testing.assert_allclose(well.get("VCL").data, expected)
+    assert well.get("VCLSP") is not None
+    assert any(decision.startswith("Final VCL = min(GR, ND)") for decision in step.decisions)
 
 
 def test_vclay_keeps_nan_where_all_methods_are_missing_without_runtime_warning():
@@ -464,7 +479,9 @@ def test_vclay_trace_reports_the_canonical_clean_line(record_route):
     result = _run(
         "vclay_sandstone_clean_line",
         well,
-        DynamicWorkflowConfig(matrix_type="sandstone", lithology="sandstone"),
+        DynamicWorkflowConfig(
+            matrix_type="sandstone", lithology="sandstone", calculation_profile="benchmark"
+        ),
         record_route,
         focus_steps=["vclay"],
         curves=["VCL", "VCLND"],
@@ -476,6 +493,25 @@ def test_vclay_trace_reports_the_canonical_clean_line(record_route):
     assert parameters["nd_clean1_neutron"] == pytest.approx(0.0)
     assert parameters["nd_clean2_density"] == pytest.approx(2.03)
     assert parameters["nd_clean2_neutron"] == pytest.approx(0.40)
+
+
+def test_vclay_trace_reports_the_clean_line_of_the_matrix(record_route):
+    well = _routing_well("VCL-MATRIX-CLEAN-LINE")
+    result = _run(
+        "vclay_matrix_clean_line",
+        well,
+        DynamicWorkflowConfig(matrix_type="sandstone", lithology="sandstone"),
+        record_route,
+        focus_steps=["vclay"],
+        curves=["VCL", "VCLND"],
+    )
+    parameters = _step_by_name(result, "vclay").parameters
+
+    assert parameters["nd_matrix"] == "sandstone"
+    assert parameters["nd_clean1_density"] == pytest.approx(2.65)
+    assert parameters["nd_clean1_neutron"] == pytest.approx(-0.02)
+    assert parameters["nd_clean2_density"] == pytest.approx(1.99)
+    assert parameters["nd_clean2_neutron"] == pytest.approx(0.38)
 
 
 @pytest.mark.parametrize("curve_to_keep", ["CALI", "CAL"])
@@ -535,24 +571,35 @@ def test_bad_hole_uses_depth_dependent_bs_curve(record_route):
     )
 
 
-def test_bad_hole_assumes_8_5_in_when_bs_missing(record_route):
+@pytest.mark.parametrize(
+    "profile, bit_size_used, bit_size_source",
+    [("current", None, "none"), ("benchmark", 8.5, "fallback_8.5")],
+)
+def test_bad_hole_without_bs(profile, bit_size_used, bit_size_source, record_route):
     well = _routing_well("BAD-HOLE-NO-BS")
     _remove_curves(well, "BS")
     well.header.bit_size = None
 
     result = _run(
-        "bad_hole_no_synthetic_bs",
+        f"bad_hole_no_synthetic_bs_{profile}",
         well,
-        DynamicWorkflowConfig(skip_steps=["vclay", "lithology", "porosity", "saturation"]),
+        DynamicWorkflowConfig(
+            skip_steps=["vclay", "lithology", "porosity", "saturation"],
+            calculation_profile=profile,
+        ),
         record_route,
         focus_steps=["bad_hole"],
         curves=["BAD_HOLE"],
     )
     step = _step_by_name(result, "bad_hole")
 
+    # "current" assumes no bit size and flags |DRHO| > 0.15 g/cm3 alone; the
+    # benchmark tests the caliper against an assumed 8.5 in bit. Both flag
+    # the 10.4-10.6 in washout, where DRHO reads 0.17-0.18 g/cm3.
     assert "BS" not in step.input_curves
-    assert step.parameters["bit_size_used"] == 8.5
-    assert step.parameters["bit_size_source"] == "fallback_8.5"
+    assert step.parameters["bit_size_used"] == bit_size_used
+    assert step.parameters["bit_size_source"] == bit_size_source
+    assert well["BAD_HOLE"].data.astype(int).tolist() == [0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0]
 
 
 @pytest.mark.parametrize(
@@ -829,7 +876,8 @@ def test_saturation_uses_lithology_specific_archie_coefficients(record_route):
     result = _run(
         "sw_limestone_archie",
         well,
-        DynamicWorkflowConfig(rw=0.05),
+        # Dual Water runs only with a supplied Rwb.
+        DynamicWorkflowConfig(rw=0.05, rwb=0.02),
         record_route,
         focus_steps=["saturation"],
         curves=["SW"],
@@ -941,11 +989,48 @@ def test_invasion_combines_partial_shallow_aliases_depthwise(record_route):
     )
     step = _step_by_name(result, "invasion")
 
-    assert step.input_curves == ["RDEP", "RSHA+RXO"]
-    assert step.parameters["rxo_curve"] == "RSHA+RXO"
-    assert step.parameters["rxo_source_counts"] == {"RSHA": 6, "RXO": 6}
+    # The flushed-zone RXO comes first; RSHA fills the samples where it is missing.
+    assert step.input_curves == ["RDEP", "RXO+RSHA"]
+    assert step.parameters["rxo_curve"] == "RXO+RSHA"
+    assert step.parameters["rxo_source_counts"] == {"RXO": 6, "RSHA": 6}
     assert step.parameters["valid_samples"] == well.n_samples
     assert np.isfinite(well.get("INVASION_RATIO").data).all()
+
+
+@pytest.mark.parametrize("profile", ["current", "benchmark"])
+def test_invasion_reads_the_flushed_zone_first_under_current(profile, record_route):
+    # RXO 40 -> 1.2, RSHA 42 -> 1.4 and RDEP 90 -> 2 ohm.m over 12 samples; RXO is missing at the third sample.
+    well = _routing_well(f"invasion_order_{profile}")
+    well.remove_curve("RESS")
+    well.get("RXO").data[2] = np.nan
+    rxo, rsha, rdep = (np.asarray(well.get(name).data, dtype=float).copy() for name in ("RXO", "RSHA", "RDEP"))
+
+    result = _run(
+        f"invasion_order_{profile}",
+        well,
+        DynamicWorkflowConfig(rw=0.05, calculation_profile=profile),
+        record_route,
+        focus_steps=["invasion"],
+        curves=["INVASION_RATIO"],
+    )
+    step = _step_by_name(result, "invasion")
+    ratio = np.asarray(well.get("INVASION_RATIO").data, dtype=float)
+
+    if profile == "current":
+        np.testing.assert_allclose(ratio[[0, 2, 11]], [40.0 / 90.0, rsha[2] / rdep[2], 1.2 / 2.0])
+        assert step.parameters["rxo_source_counts"] == {"RXO": 11, "RSHA": 1}
+        assert step.parameters["rxo_curve_order"] == ["RXO", "RSHA", "RESS", "RMED", "RESM"]
+        assert step.decisions[0] == (
+            "INVASION_RATIO reads RXO at 11 and RSHA at 1 samples over RDEP; curve preference RXO, RSHA, RESS, "
+            "then the RMED/RESM medium/deep proxy"
+        )
+    else:
+        # The eval package read RSHA first; the trace records nothing new.
+        np.testing.assert_allclose(ratio, rsha / rdep)
+        assert step.parameters["rxo_curve"] == "RSHA"
+        assert "rxo_curve_order" not in step.parameters
+        assert not any(decision.startswith("INVASION_RATIO reads") for decision in step.decisions)
+    assert np.isnan(rxo[2])
 
 
 def test_mhi_removes_existing_curve_when_sxo_is_only_quicklook_fallback(record_route):
@@ -1242,6 +1327,7 @@ def test_dual_water_uses_same_phi_cl_as_phie(record_route):
         well,
         DynamicWorkflowConfig(
             rw=0.05,
+            rwb=0.02,  # Dual Water runs only with a supplied Rwb
             sw_model="auto",
             lithology="carbonate",
             skip_steps=["vclay", "lithology"],
@@ -1344,9 +1430,29 @@ def test_saturation_skips_when_phie_is_unavailable_even_if_rhob_exists(record_ro
             "nmr_derived",
         ),
         (
+            # The benchmark profile counts the two washed-out samples, which
+            # take the hydrocarbon mask past its 10-sample minimum.
             "permeability_hc_mask_p5",
             lambda well: (
                 _remove_curves(well, "SWIRR", "SWI", "SWIR"),
+                well.add_curve("VCL", np.full(well.n_samples, 0.10), "v/v", "Clay Volume"),
+                well.add_curve("PHIE", np.full(well.n_samples, 0.18), "v/v", "Effective Porosity"),
+                well.add_curve("SW", np.linspace(0.18, 0.40, well.n_samples), "v/v", "Water Saturation"),
+                well.add_curve("RDEP", np.full(well.n_samples, 12.0), "ohm.m", "Deep Resistivity"),
+                well,
+            )[-1],
+            DynamicWorkflowConfig(
+                perm_method="timur", skip_steps=["vclay", "porosity", "saturation"],
+                calculation_profile="benchmark",
+            ),
+            "hc_mask_p5",
+        ),
+        (
+            # The current profile leaves bad-hole samples out of the mask; in
+            # gauge hole every sample counts.
+            "permeability_hc_mask_p5_gauge_hole",
+            lambda well: (
+                _remove_curves(well, "SWIRR", "SWI", "SWIR", "CALI", "CAL", "DRHO"),
                 well.add_curve("VCL", np.full(well.n_samples, 0.10), "v/v", "Clay Volume"),
                 well.add_curve("PHIE", np.full(well.n_samples, 0.18), "v/v", "Effective Porosity"),
                 well.add_curve("SW", np.linspace(0.18, 0.40, well.n_samples), "v/v", "Water Saturation"),

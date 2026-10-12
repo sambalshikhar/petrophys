@@ -9,7 +9,10 @@ from typing import Dict, Optional, NamedTuple
 from petrophys.model.constants import MatrixProperties, MineralProperties
 
 
-# Mineral properties for multi-mineral analysis
+# Mineral properties for multi-mineral analysis. "u" is PEF x density, the
+# convention of the solvers' log term (PEF x RHOB); chartbook U values use the
+# electron density instead (fresh water 0.398), as the RHOmaa-Umaa transform
+# in lithology_module does.
 MINERAL_PROPERTIES: Dict[str, Dict[str, float]] = {
     "quartz": {
         "density": 2.65,  # g/cm³
@@ -62,7 +65,7 @@ MINERAL_PROPERTIES: Dict[str, Dict[str, float]] = {
     },
     "coal": {
         "density": 1.35,
-        "slowness": 250.0,
+        "slowness": 120.0,  # bituminous coal (Schlumberger, 1972, Table 18-1)
         "nphi": 0.50,
         "pef": 0.2,
         "u": 0.27,
@@ -77,7 +80,7 @@ MINERAL_PROPERTIES: Dict[str, Dict[str, float]] = {
     "oil": {
         "density": 0.8,
         "slowness": 238.0,
-        "nphi": 0.8,
+        "nphi": 1.0,  # hydrogen index of a CH2 liquid at 0.8 g/cm³
         "pef": 0.12,
         "u": 0.10,
     },
@@ -89,11 +92,11 @@ MINERAL_PROPERTIES: Dict[str, Dict[str, float]] = {
         "u": 0.02,
     },
     "clay": {
-        "density": 2.65,   # g/cm³  — pure clay mineral (kaolinite-dominated)
+        "density": 2.65,   # g/cm³  — generic dry clay (illite/chlorite PEF; kaolinite reads ~1.8)
         "slowness": 80.0,  # μs/ft
         "nphi": 0.35,      # v/v    — high due to clay-bound water
         "pef": 3.7,        # b/e
-        "u": 9.71,         # b/cm³  (3.7 × 2.65)
+        "u": 9.81,         # b/cm³  (3.7 × 2.65)
     },
 }
 

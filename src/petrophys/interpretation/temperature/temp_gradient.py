@@ -9,7 +9,7 @@ from typing import Optional, Tuple, Union
 import numpy as np
 
 from petrophys.model.constants import DefaultParameters
-from petrophys.model.units import UnitConverter
+from petrophys.model.units import UnitConverter, temperature_unit
 
 
 def calculate_temperature_gradient(
@@ -34,7 +34,8 @@ def calculate_temperature_gradient(
     depth2 : float
         Depth at second point
     temp_unit : str, optional
-        Temperature unit ("F" or "C")
+        Temperature unit: "F", "C", "K" or a label such as "degC" (see
+        :func:`petrophys.model.units.temperature_unit`)
     depth_unit : str, optional
         Depth unit ("ft" or "m")
 
@@ -42,6 +43,11 @@ def calculate_temperature_gradient(
     -------
     float
         Temperature gradient in °F/100ft
+
+    Raises
+    ------
+    ValueError
+        If ``temp_unit`` is not a recognized temperature unit.
 
     Examples
     --------
@@ -52,9 +58,9 @@ def calculate_temperature_gradient(
     >>> print(f"Gradient: {gradient:.2f} °F/100ft")
     """
     # Convert to Fahrenheit and feet
-    if temp_unit.upper() == "C":
-        temp1 = UnitConverter.celsius_to_fahrenheit(temp1)
-        temp2 = UnitConverter.celsius_to_fahrenheit(temp2)
+    if temperature_unit(temp_unit, strict=True) != "F":
+        temp1 = UnitConverter.temperature(temp1, temp_unit, "F")
+        temp2 = UnitConverter.temperature(temp2, temp_unit, "F")
 
     if depth_unit.lower() == "m":
         depth1 = UnitConverter.meters_to_feet(depth1)
@@ -74,7 +80,7 @@ def calculate_temperature_gradient(
 def estimate_gradient_from_bht(
     bht: float,
     td: float,
-    surface_temp: float = DefaultParameters.SURFACE_TEMPERATURE_F,
+    surface_temp: Optional[float] = None,
     bht_unit: str = "F",
     depth_unit: str = "ft"
 ) -> float:
@@ -88,9 +94,10 @@ def estimate_gradient_from_bht(
     td : float
         Total depth
     surface_temp : float, optional
-        Surface temperature (default: 68°F)
+        Surface temperature, in ``bht_unit`` (default: 68°F)
     bht_unit : str, optional
-        BHT unit ("F" or "C")
+        Unit of ``bht`` and ``surface_temp`` ("F", "C", "K" or a label such
+        as "degC")
     depth_unit : str, optional
         Depth unit ("ft" or "m")
 
@@ -99,6 +106,10 @@ def estimate_gradient_from_bht(
     float
         Temperature gradient in °F/100ft
     """
+    if surface_temp is None:
+        surface_temp = DefaultParameters.SURFACE_TEMPERATURE_F
+        if temperature_unit(bht_unit, strict=True) != "F":
+            surface_temp = UnitConverter.temperature(surface_temp, "F", bht_unit)
     return calculate_temperature_gradient(
         temp1=surface_temp,
         depth1=0,

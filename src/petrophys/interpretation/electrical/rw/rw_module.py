@@ -152,7 +152,9 @@ class RwModule:
         sp_shale : float, optional
             Shale baseline SP
         temperature : float or np.ndarray, optional
-            Formation temperature
+            Formation temperature, degF. Defaults to the TEMP (or TMPC)
+            curve, converted from its unit label, then to a profile from the
+            header BHT.
 
         Returns
         -------
@@ -161,16 +163,9 @@ class RwModule:
         """
         # Get formation temperature
         if temperature is None:
-            temperature, _, _ = get_curve_data_depthwise(well, ["TEMP", "TMPC"])
-            if temperature is not None:
-                pass
-            else:
-                try:
-                    from petrophys.interpretation.temperature import calculate_temperature_profile
+            from petrophys.interpretation.temperature.temp_profile import _formation_temperature_f
 
-                    temperature = calculate_temperature_profile(well).temperature
-                except Exception:
-                    temperature = well.header.bht or 150.0
+            temperature = _formation_temperature_f(well, ["TEMP", "TMPC"])
 
         # Method selection
         method = self.method

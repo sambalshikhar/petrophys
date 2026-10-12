@@ -214,18 +214,23 @@ class GrainSizeData:
 
     def sorting_coefficient(self) -> np.ndarray:
         """
-        Folk & Ward (1957) inclusive graphic standard deviation (sorting).
+        Sorting as half the spread between the 13th and 87th percentiles, in phi.
+
+        ``(phi13 - phi87) / 2``. Folk and Ward's (1957) inclusive graphic
+        standard deviation needs phi5, phi16, phi84 and phi95, which these data
+        do not carry; for a normal distribution in phi this spread is 1.126
+        standard deviations, so divide by 1.126 before comparing with Folk and
+        Ward's classes (sigma in phi): < 0.35 very well sorted, 0.35–0.50 well
+        sorted, 0.50–0.71 moderately well sorted, 0.71–1.00 moderately sorted,
+        1.00–2.00 poorly sorted, 2.00–4.00 very poorly sorted, > 4.00
+        extremely poorly sorted.
 
         Requires d13 and d87. Returns NaN where either is missing.
 
         Returns
         -------
         np.ndarray
-            Sorting in phi units:
-            < 0.35  well sorted
-            0.35–0.5  moderately well sorted
-            0.5–0.71  moderately sorted
-            > 0.71  poorly sorted
+            Sorting in phi units.
         """
         if self.d13 is None or self.d87 is None:
             return np.full(self.n_samples, np.nan)
@@ -269,7 +274,11 @@ class GrainSizeData:
         .. math::
             k = \\frac{d_{50}^2 \\cdot \\phi^3}{180 \\cdot (1 - \\phi)^2}
 
-        where k is in mD and d₅₀ is in µm.
+        for packed spheres (Carman, 1937), with k in µm² when d₅₀ is in µm.
+        In mD, with 1 µm² = 1013.25 mD:
+
+        .. math::
+            k = 5.63 \\cdot \\frac{d_{50}^2 \\cdot \\phi^3}{(1 - \\phi)^2}
 
         Parameters
         ----------
@@ -285,7 +294,7 @@ class GrainSizeData:
 
         Notes
         -----
-        Conversion factor: 1 µm² ≈ 1013 mD, yielding the coefficient 5.63.
+        Conversion factor: 1 µm² = 1013.25 mD, so 1013.25 / 180 = 5.63.
         """
         phi = np.asarray(porosity, dtype=float)
         d = self.d50  # µm

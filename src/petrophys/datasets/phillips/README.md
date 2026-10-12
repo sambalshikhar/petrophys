@@ -36,8 +36,8 @@ nmr = NMRData.from_csv(
 )
 t2_ms, bin_porosity_pu = nmr.t2_distribution(0)
 t2lm_ms = nmr.t2_lm()
-bvi_pu = nmr.bvi_from_bins(cutoff_ms=32.0)
-ffi_pu = nmr.ffi_from_bins(cutoff_ms=32.0)
+bvi_pu = nmr.bvi_from_bins(cutoff_ms=32.0, partial_bins=False)
+ffi_pu = nmr.ffi_from_bins(cutoff_ms=32.0, partial_bins=False)
 ```
 
 The eight times come from the exponential terms in Craig's
@@ -45,7 +45,8 @@ The eight times come from the exponential terms in Craig's
 The CSV itself does not store an axis, units or a cutoff. Its amplitudes use the
 porosity-unit convention (pu). P1-P3 sum to the supplied MBVI and P4-P8 to MFFI
 within 0.002 pu rounding. Thus a sharp split **below 32 / at-or-above 32 ms**
-reproduces its supplied summaries. The upstream plot title says 33 ms; using
+reproduces its supplied summaries; ask for it with `partial_bins=False`, because
+by default the bin that straddles the cutoff is split by its log-T2 width. The upstream plot title says 33 ms; using
 33 as a strict cutoff on these discrete centres instead moves all of P4 to
 bound fluid. Do not equate that title with a cutoff curve in the file.
 

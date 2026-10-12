@@ -9,6 +9,7 @@ from petrophys.interpretation import (
     MultiMineralSolverV2,
 )
 from petrophys.interpretation.lithology import LithologyModule
+from petrophys.interpretation.lithology.multi_mineral_solver_v1 import ROW_UNCERTAINTY
 from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 from petrophys.workflow.schema import describe_setting
 
@@ -17,6 +18,8 @@ from petrophys.workflow.schema import describe_setting
 RHOB = 2.32
 NPHI = 0.184
 PEF = (0.8 * 4.8 + 0.2 * 0.36) / RHOB
+# DT = 0.8*55.5 + 0.2*189.0 for the same rock.
+DT = 82.2
 
 
 def test_versions_are_labelled():
@@ -106,3 +109,93 @@ def test_workflow_runs_the_selected_solver(version, method):
 
     assert step.method == method
     assert step.parameters["mineral_solver_version"] == version
+
+
+def test_v1_weights_rows_by_tool_uncertainty():
+    # The same quartz sample with the sonic reading 5 us/ft slow. Only quartz
+    # is active, so the solve is a one-unknown least squares,
+    # x = sum(w^2 a b) / sum(w^2 a^2), with rows a = (1, 2.65, -0.02, 4.8, 55.5)
+    # whose right-hand sides fit x = 0.8 except DT (+5 us/ft):
+    # unscaled (w = 1):  x = 0.8 + 55.5*5 / 3111.31 = 0.8892, closure miss 0.089 > 0.05;
+    # weighted (w = 1/sigma = 100, 50, 50, 2, 0.5):
+    #                    x = 0.8 + 0.25*55.5*5 / 28419.47 = 0.8024, closure miss 0.0024.
+    weighted = MultiMineralSolverV1().solve(RHOB, NPHI, vcl=0.0, phie=0.2, pef=PEF, dt=DT + 5.0)
+    unscaled = MultiMineralSolverV1(row_uncertainty=None).solve(
+        RHOB, NPHI, vcl=0.0, phie=0.2, pef=PEF, dt=DT + 5.0
+    )
+
+    assert weighted["solved"][0]
+    assert weighted["quartz"][0] == pytest.approx(0.8, abs=1e-6)
+    for mineral in ("calcite", "dolomite", "anhydrite"):
+        assert weighted[mineral][0] == pytest.approx(0.0, abs=1e-6)
+    assert not unscaled["solved"][0] and np.isnan(unscaled["quartz"][0])
+
+
+def test_v1_weighted_solve_matches_the_hand_computed_least_squares():
+    # Quartz only, sonic 5 us/ft fast: the one-unknown weighted least squares
+    # x = 0.8 + w_dt^2 * 55.5 * (-5) / sum(w^2 a^2) with sum(w^2 a^2) =
+    # 100^2*1 + 50^2*2.65^2 + 50^2*0.02^2 + 2^2*4.8^2 + 0.5^2*55.5^2 = 28419.4725.
+    # It stays below the 0.8 available, so it is reported as solved.
+    quartz_only = {"minerals": ["quartz"], "minerals_no_pef": ["quartz"]}
+    weighted = MultiMineralSolverV1(**quartz_only).solve(
+        RHOB, NPHI, vcl=0.0, phie=0.2, pef=PEF, dt=DT - 5.0
+    )
+    # Unscaled: x = 0.8 - 55.5*5 / 3111.3129 = 0.7108, a closure miss of 0.089.
+    unscaled = MultiMineralSolverV1(row_uncertainty=None, **quartz_only).solve(
+        RHOB, NPHI, vcl=0.0, phie=0.2, pef=PEF, dt=DT - 5.0
+    )
+
+    assert weighted["quartz"][0] == pytest.approx(0.8 - 0.25 * 55.5 * 5.0 / 28419.4725, abs=1e-9)
+    assert weighted["solved"][0]
+    assert np.isnan(unscaled["quartz"][0]) and not unscaled["solved"][0]
+
+
+def test_v1_weighted_and_unscaled_agree_on_consistent_logs():
+    for solver in (MultiMineralSolverV1(), MultiMineralSolverV1(row_uncertainty=None)):
+        result = solver.solve(RHOB, NPHI, vcl=0.0, phie=0.2, pef=PEF, dt=DT)
+        assert result["quartz"][0] == pytest.approx(0.8, abs=1e-6)
+
+
+def test_v1_row_uncertainty_defaults_and_validation():
+    assert MultiMineralSolverV1().row_uncertainty == dict(ROW_UNCERTAINTY)
+    assert dict(ROW_UNCERTAINTY) == {"unity": 0.01, "rhob": 0.02, "nphi": 0.02, "u": 0.5, "dt": 2.0}
+    assert MultiMineralSolverV1(row_uncertainty=None).row_uncertainty is None
+    merged = MultiMineralSolverV1(row_uncertainty={"rhob": 0.03}).row_uncertainty
+    assert merged == {**ROW_UNCERTAINTY, "rhob": 0.03}
+    with pytest.raises(ValueError, match="row_uncertainty keys"):
+        MultiMineralSolverV1(row_uncertainty={"pef": 0.1})
+    for bad in (0.0, -0.02, np.nan, True):
+        with pytest.raises(ValueError, match="positive number"):
+            MultiMineralSolverV1(row_uncertainty={"dt": bad})
+
+
+def test_lithology_module_passes_solver_options():
+    assert LithologyModule(solver_version=1).solver.row_uncertainty == dict(ROW_UNCERTAINTY)
+    unscaled = LithologyModule(solver_version=1, solver_options={"row_uncertainty": None})
+    assert unscaled.solver.row_uncertainty is None
+    assert LithologyModule(solver_options={"closure_tolerance": 0.1}).solver.closure_tolerance == 0.1
+
+
+@pytest.mark.parametrize("profile", ["current", "benchmark"])
+def test_workflow_weights_version_1_rows_only_under_current(profile):
+    well = _workflow_well()
+    well.add_curve("DTC", np.linspace(70.0, 115.0, well.n_samples), "us/ft", "Sonic")
+    config = DynamicWorkflowConfig(
+        standardize_input=False,
+        rw=0.05,
+        skip_steps=["temperature", "rmf", "invasion", "mhi"],
+        calculation_profile=profile,
+    )
+    result = DynamicWorkflow(config).run(well)
+    step = next(step for step in result.steps_executed if step.step == "lithology")
+    weighted = profile == "current"
+
+    expected = LithologyModule(
+        lithology="auto",
+        solver_version=1,
+        solver_options=None if weighted else {"row_uncertainty": None},
+    ).calculate(result.well)
+    np.testing.assert_array_equal(result.well.get("VQUAR").data, expected.v_quartz)
+    assert step.parameters["multi_mineral_solved_samples"] == int(np.count_nonzero(expected.solved))
+    assert ("row_uncertainty" in step.parameters) is weighted
+    assert any("tool uncertainty" in decision for decision in step.decisions) is weighted

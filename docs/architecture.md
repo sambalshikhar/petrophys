@@ -37,7 +37,7 @@ import petrophys
 
 roles = {
     "api": "The front door: pp.read, pp.interpret, pp.plot",
-    "model": "Data structures: wells, curves, core, formations, units",
+    "model": "Data structures: wells, curves, core, formations, units, class tables",
     "io": "Read and write LAS, DLIS, CSV, ASCII and Excel; geology and core tables",
     "preprocessing": "Standardization, normalization, quality control, imputation",
     "interpretation": "Physical properties from measurements",

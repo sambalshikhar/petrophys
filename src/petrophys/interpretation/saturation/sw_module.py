@@ -9,10 +9,11 @@ Decision flowchart::
 
     VCL < cutoff -> CLEAN -> Archie
     VCL >= cutoff -> SHALY:
-        Carbonate -> Dual Water
-        Clastic + CEC and B_COEFF available -> Waxman-Smits
-        Clastic + salinity >= 20 kppm -> Simandoux
-        Clastic + salinity < 20 kppm -> Indonesia
+        Carbonate with an Rwb -> Dual Water
+        Clastic, or carbonate without an Rwb:
+            CEC and B_COEFF available -> Waxman-Smits
+            salinity >= 20 kppm -> Simandoux
+            salinity < 20 kppm -> Indonesia
 
 Lithology can be a single string (applied globally) or a per-depth
 numpy array for interval-based lithology control.
@@ -41,6 +42,10 @@ from petrophys._internal.analysis_helpers import (
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
+
+
+#: Lithology labels that auto routing treats as carbonate.
+_CARBONATE_LITHOLOGIES = {"carbonate", "limestone", "dolomite", "calcite"}
 
 
 class SwModel(Enum):
@@ -77,6 +82,14 @@ class SaturationResult:
     model_counts: Optional[Dict[str, int]] = None
     sxo_method_counts: Optional[Dict[str, int]] = None
     sxo_input_sources: Optional[Dict[str, Dict[str, int]]] = None
+    #: Samples that auto routing gave another model because the preferred one
+    #: lacked an input, e.g. ``{"dual_water->indonesia": 12}`` for shaly
+    #: carbonate samples that had no Rwb and took the clastic routing.
+    fallback_counts: Optional[Dict[str, int]] = None
+    #: Waxman-Smits samples set to SW = 0 by the effective-basis conversion
+    #: (``effective_waxman_smits``) because their total-porosity Swt lies below
+    #: the bound-water fraction (PHIT - PHIE) / PHIT.
+    waxman_smits_clipped_to_zero: int = 0
 
 
 class SaturationModule:
@@ -87,10 +100,11 @@ class SaturationModule:
 
         VCL < vcl_cutoff  -> CLEAN -> Archie
         VCL >= vcl_cutoff -> SHALY:
-            Carbonate -> Dual Water
-            Clastic + CEC and B_COEFF available -> Waxman-Smits
-            Clastic + salinity >= 20 kppm -> Simandoux
-            Clastic + salinity < 20 kppm -> Indonesia
+            Carbonate with an Rwb -> Dual Water
+            Clastic, or carbonate without an Rwb:
+                CEC and B_COEFF available -> Waxman-Smits
+                salinity >= 20 kppm -> Simandoux
+                salinity < 20 kppm -> Indonesia
 
     Lithology may be a single string or a per-depth numpy array.
     When auto-routing is active, the clean/shaly decision is applied
@@ -108,6 +122,31 @@ class SaturationModule:
         Force specific model (default: "auto")
     vcl_cutoff : float, optional
         VCL threshold for clean vs shaly (default: 0.3)
+    rwb_fallback : float or None, optional
+        Bound-water resistivity Dual Water takes when no ``rwb`` is given, as
+        a multiple of Rw. Default None: Rwb is not estimated, so Dual Water
+        runs only with a supplied ``rwb``. Auto routing then gives shaly
+        carbonate samples without one the clastic routing (Waxman-Smits with
+        CEC and B, Simandoux at a salinity of 20 kppm or more, otherwise
+        Indonesia) and counts them in ``SaturationResult.fallback_counts``;
+        ``model="dual_water"`` raises ``ValueError``. A number takes
+        ``Rwb = rwb_fallback * Rw``, an assumption rather than a measurement;
+        the benchmark calculation profile of :func:`petrophys.interpret`
+        pins 0.3.
+    effective_waxman_smits : bool, optional
+        Report the Waxman-Smits saturation, which is solved on total
+        porosity, on the effective-porosity basis of the other models,
+        ``Swe = 1 - (PHIT / PHIE) * (1 - Swt)`` (Crain's Petrophysical
+        Handbook), so that SW can be paired with PHIE downstream. The
+        hydrocarbon pore volume ``PHIE * (1 - Swe) = PHIT * (1 - Swt)`` is
+        kept wherever Swt is at least the bound-water fraction
+        ``(PHIT - PHIE) / PHIT``. Below it the resistivity leaves less water
+        than the clay-bound water, the hydrocarbon volume would exceed PHIE,
+        and SW is clipped to 0; such samples are counted in
+        ``SaturationResult.waxman_smits_clipped_to_zero``. Pass ``phit`` on
+        the same basis as ``phie``. Default False (total-porosity Swt);
+        :func:`petrophys.interpret` uses True in its default ``"current"``
+        calculation profile.
 
     Examples
     --------
@@ -124,6 +163,8 @@ class SaturationModule:
         vcl_cutoff: float = 0.3,
         sxo_quicklook_fallback: str = "per_sample",
         depthwise_curve_merge: bool = True,
+        rwb_fallback: Optional[float] = None,
+        effective_waxman_smits: bool = False,
     ):
         self.a = a
         self.m = m
@@ -139,6 +180,11 @@ class SaturationModule:
         #: Fill a curve's missing samples from the next candidate curve. When
         #: False the first candidate curve present is used as it stands.
         self.depthwise_curve_merge = bool(depthwise_curve_merge)
+        #: Rwb as a multiple of Rw when Dual Water gets no ``rwb``; None
+        #: requires a supplied Rwb.
+        self.rwb_fallback = rwb_fallback
+        #: Convert the total-porosity Waxman-Smits Sw to the effective basis.
+        self.effective_waxman_smits = bool(effective_waxman_smits)
 
     def calculate(
         self,
@@ -181,19 +227,23 @@ class SaturationModule:
         phie : np.ndarray, optional
             Effective porosity
         phit : np.ndarray, optional
-            Total porosity (required for Dual Water / Waxman-Smits)
+            Total porosity (required for Dual Water / Waxman-Smits), on the
+            basis of ``phie``: PHIT - PHIE is read as clay-bound porosity.
+            Default: the PHIT curve, else ``phie``.
         lithology : str or np.ndarray, optional
             'clastic' or 'carbonate' globally, or per-depth array
         cec : float, optional
             Cation exchange capacity (for Waxman-Smits, meq/g)
         b_coeff : float, optional
-            Counter-ion conductance (for Waxman-Smits)
+            Equivalent counter-ion conductance B (for Waxman-Smits),
+            (S/m)/(meq/cm3)
         rho_ma : float, optional
             Matrix density (for Waxman-Smits, default: 2.65)
         m_star : float, optional
             Intrinsic cementation exponent (for Waxman-Smits, default: 2.0)
         rwb : float, optional
-            Bound water resistivity (for Dual Water)
+            Bound water resistivity (for Dual Water), ohm.m; see
+            ``rwb_fallback`` for what happens without it
         phi_cl : float, optional
             Clay porosity (for Dual Water, default from constants)
 
@@ -232,6 +282,8 @@ class SaturationModule:
             phit_data, _, _ = get_curve_data_depthwise(well, ["PHIT"])
             phit = phit_data if phit_data is not None else phie
 
+        fallback_counts: Dict[str, int] = {}
+        clip_counts: Dict[str, int] = {}
         if rt_data is None or rw is None:
             sw = np.full(well.n_samples, np.nan, dtype=float)
             model_name = "not_computed_missing_rt" if rt_data is None else "not_computed_missing_rw"
@@ -248,18 +300,19 @@ class SaturationModule:
                     lithology_array = np.asarray(lithology, dtype=object)
                 else:
                     lithology_array = np.full(rt_data.shape, lithology, dtype=object)
-                sw, model_name, model_counts = self._calculate_depth_routed(
+                sw, model_name, model_counts, fallback_counts = self._calculate_depth_routed(
                     rt_data, rw, rcl, salinity, vcl, phie, phit,
-                    lithology_array, cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
+                    lithology_array, cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp,
+                    clip_counts=clip_counts,
                 )
             else:
                 # Single model for entire well
                 model = self._select_model(vcl, salinity,
                                            lithology if isinstance(lithology, str) else "clastic",
-                                           cec, b_coeff)
+                                           cec, b_coeff, rwb)
                 sw = self._run_model(model, rt_data, rw, rcl, vcl, phie, phit,
                                      cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp,
-                                     self.a, self.m, self.n)
+                                     self.a, self.m, self.n, clip_counts=clip_counts)
                 model_name = model.value
                 model_counts = {model_name: int(rt_data.shape[0])}
 
@@ -329,6 +382,8 @@ class SaturationModule:
                 "rt": rt_meta.get("source_counts", {}),
                 "rxo": rxo_meta.get("source_counts", {}),
             },
+            fallback_counts=fallback_counts,
+            waxman_smits_clipped_to_zero=clip_counts.get(SwModel.WAXMAN_SMITS.value, 0),
         )
 
     @staticmethod
@@ -346,21 +401,29 @@ class SaturationModule:
         salinity: Optional[float],
         vcl: np.ndarray, phie: np.ndarray, phit: np.ndarray,
         lithology: np.ndarray,
-        cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp
+        cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp,
+        clip_counts: Optional[Dict[str, int]] = None,
     ):
         """Calculate Sw with sample-by-sample routing across depth."""
         sw = np.full_like(rt, np.nan)
         model_per_sample = np.empty(rt.shape, dtype=object)
+        fallback_counts: Dict[str, int] = {}
 
         for i in range(rt.shape[0]):
             lith_i = str(lithology[i]).lower() if lithology is not None else "clastic"
-            model_per_sample[i] = self._select_model_scalar(
+            model = self._select_model_scalar(
                 float(vcl[i]) if np.isfinite(vcl[i]) else np.nan,
                 salinity,
                 lith_i,
                 cec,
                 b_coeff,
-            ).value
+                rwb,
+            )
+            model_per_sample[i] = model.value
+            # Shaly carbonate leaves Dual Water only when it has no Rwb.
+            if lith_i in _CARBONATE_LITHOLOGIES and model not in (SwModel.ARCHIE, SwModel.DUAL_WATER):
+                route = f"dual_water->{model.value}"
+                fallback_counts[route] = fallback_counts.get(route, 0) + 1
 
         ordered_models = []
         for model_name in model_per_sample:
@@ -387,6 +450,7 @@ class SaturationModule:
                 self._segment_value(self.a, mask),
                 self._segment_value(self.m, mask),
                 self._segment_value(self.n, mask),
+                clip_counts=clip_counts,
             )
             sw[mask] = sw_segment
 
@@ -397,7 +461,7 @@ class SaturationModule:
             model_name: int(np.count_nonzero(model_per_sample == model_name))
             for model_name in ordered_models
         }
-        return sw, model_name, model_counts
+        return sw, model_name, model_counts, fallback_counts
 
     def _select_model_scalar(
         self,
@@ -406,6 +470,7 @@ class SaturationModule:
         lithology: str = "clastic",
         cec: Optional[float] = None,
         b_coeff: Optional[float] = None,
+        rwb: Optional[float] = None,
     ) -> SwModel:
         """Select saturation model for a single depth sample."""
         if self.model != "auto":
@@ -419,9 +484,10 @@ class SaturationModule:
 
         lithology = lithology.lower()
 
-        if lithology in {"carbonate", "limestone", "dolomite", "calcite"}:
+        if lithology in _CARBONATE_LITHOLOGIES and (rwb is not None or self.rwb_fallback is not None):
             return SwModel.DUAL_WATER
 
+        # Clastic, and carbonate without the Rwb that Dual Water needs.
         if cec is not None and b_coeff is not None:
             return SwModel.WAXMAN_SMITS
 
@@ -434,8 +500,13 @@ class SaturationModule:
         rt, rw, rcl, vcl, phie, phit,
         cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp,
         a_value=None, m_value=None, n_value=None,
+        clip_counts: Optional[Dict[str, int]] = None,
     ) -> np.ndarray:
-        """Run a specific Sw model."""
+        """Run a specific Sw model.
+
+        ``clip_counts``, when given, gets the number of Waxman-Smits samples
+        whose effective-basis SW was clipped to 0 under the model's name.
+        """
         a_value = self.a if a_value is None else a_value
         m_value = self.m if m_value is None else m_value
         n_value = self.n if n_value is None else n_value
@@ -462,17 +533,28 @@ class SaturationModule:
 
         elif model == SwModel.DUAL_WATER:
             if rwb is None:
-                rwb = rw * 0.3
+                if self.rwb_fallback is None:
+                    raise ValueError(
+                        "Dual Water needs the bound-water resistivity rwb (ohm.m), from lab "
+                        "data or the user; it is not estimated"
+                    )
+                rwb = rw * self.rwb_fallback
             return dual_water(
                 phit, rt, rw, rwb, vcl, phi_cl,
                 a_value, m_value, n_value
             )
 
         elif model == SwModel.WAXMAN_SMITS:
-            return waxman_smits(
+            sw_total = waxman_smits(
                 phit, rt, rw, cec, rho_ma, b_coeff,
                 m_star, n_value
             )
+            if self.effective_waxman_smits:
+                if clip_counts is not None:
+                    below = _below_bound_water(sw_total, phit, phie)
+                    clip_counts[model.value] = clip_counts.get(model.value, 0) + int(np.count_nonzero(below))
+                return _effective_from_total_sw(sw_total, phit, phie)
+            return sw_total
 
         else:
             return archie(rt, rw, phie, a_value, m_value, n_value)
@@ -484,6 +566,7 @@ class SaturationModule:
         lithology: str = "clastic",
         cec: Optional[float] = None,
         b_coeff: Optional[float] = None,
+        rwb: Optional[float] = None,
     ) -> SwModel:
         """
         Select saturation model based on formation properties.
@@ -491,16 +574,17 @@ class SaturationModule:
         Decision logic (from design doc flowchart):
         - VCL < cutoff -> Archie (clean)
         - VCL >= cutoff -> Shaly:
-          - Carbonate -> Dual Water
-          - Clastic + CEC and B_COEFF -> Waxman-Smits
-          - Clastic + salinity >= 20 kppm -> Simandoux
-          - Clastic + salinity < 20 kppm -> Indonesia
+          - Carbonate with an Rwb -> Dual Water
+          - Clastic, or carbonate without an Rwb:
+            - CEC and B_COEFF -> Waxman-Smits
+            - salinity >= 20 kppm -> Simandoux
+            - salinity < 20 kppm -> Indonesia
         """
         if self.model != "auto":
             return SwModel(self.model)
 
         mean_vcl = float(np.nanmean(vcl))
-        return self._select_model_scalar(mean_vcl, salinity, lithology, cec, b_coeff)
+        return self._select_model_scalar(mean_vcl, salinity, lithology, cec, b_coeff, rwb)
 
     def _estimate_rcl(self, rt: np.ndarray, vcl: np.ndarray) -> float:
         """Estimate clay resistivity from shale intervals."""
@@ -514,6 +598,42 @@ class SaturationModule:
             if np.isfinite(val):
                 return val
         return 5.0  # Default
+
+
+def _below_bound_water(swt, phit, phie) -> np.ndarray:
+    """True where Swt is below the bound-water fraction ``(PHIT - PHIE) / PHIT``.
+
+    There the effective-basis Sw of :func:`_effective_from_total_sw` would be
+    negative and is clipped to 0.
+    """
+    swt = np.asarray(swt, dtype=float)
+    phit = np.asarray(phit, dtype=float)
+    phie = np.asarray(phie, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        swe = 1.0 - (phit / phie) * (1.0 - swt)
+    return np.isfinite(swe) & (phie > 0.0) & (swe < 0.0)
+
+
+def _effective_from_total_sw(swt, phit, phie) -> np.ndarray:
+    """Effective-porosity Sw from a total-porosity Sw.
+
+    ``Swe = 1 - (PHIT / PHIE) * (1 - Swt)`` (Crain's Petrophysical Handbook):
+    the clay-bound water fills ``PHIT - PHIE``, so the hydrocarbon pore volume
+    ``PHIE * (1 - Swe) = PHIT * (1 - Swt)`` is the same on both bases wherever
+    Swt is at least the bound-water fraction ``(PHIT - PHIE) / PHIT``. Where
+    Swt is below it, the hydrocarbon volume would exceed PHIE and Swe is
+    clipped to 0 (see :func:`_below_bound_water`). Where PHIE is zero or
+    negative there is no effective pore space and Swe is 1; a missing Swt
+    (e.g. no deep resistivity) stays missing.
+    """
+    swt = np.asarray(swt, dtype=float)
+    phit = np.asarray(phit, dtype=float)
+    phie = np.asarray(phie, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        swe = 1.0 - (phit / phie) * (1.0 - swt)
+    no_effective_pores = np.isfinite(swt) & np.isfinite(phie) & (phie <= 0.0)
+    swe = np.where(no_effective_pores, 1.0, swe)
+    return np.clip(swe, 0.0, 1.0)
 
 
 def calculate_sw(
@@ -547,7 +667,21 @@ def calculate_sw(
     -------
     np.ndarray
         Water saturation
+
+    Notes
+    -----
+    Dual Water needs the bound-water resistivity ``rwb=`` (ohm.m), which is
+    not estimated: ``model="dual_water"`` without it raises ``ValueError``,
+    and auto routing gives shaly carbonate samples without it the clastic
+    routing, with a ``UserWarning`` that counts them.
     """
     module = SaturationModule(a=a, m=m, n=n, model=model)
     result = module.calculate(well, rw, **kwargs)
+    for route, count in (result.fallback_counts or {}).items():
+        warnings.warn(
+            f"{count} shaly carbonate samples used {route.split('->', 1)[1]} instead of "
+            "Dual Water, which needs rwb= (it is not estimated)",
+            UserWarning,
+            stacklevel=2,
+        )
     return result.sw

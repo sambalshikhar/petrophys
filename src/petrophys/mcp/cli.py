@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 from petrophys.mcp.http import TOKEN_ENV_VAR, generate_token, is_loopback
-from petrophys.mcp.session import ROOTS_ENV_VAR
+from petrophys.mcp.session import PROFILE_ENV_VAR, ROOTS_ENV_VAR, default_calculation_profile
 
 CLIENTS = ("claude-code", "claude-desktop", "cursor", "vscode", "openai", "codex")
 COMMANDS = ("serve", "config", "check")
@@ -35,6 +35,7 @@ def _add_root_argument(parser: argparse.ArgumentParser) -> None:
 
 def _parser() -> argparse.ArgumentParser:
     from petrophys.version import __version__
+    from petrophys.workflow.dynamic_workflow import _CALCULATION_PROFILES
 
     parser = argparse.ArgumentParser(
         prog="petrophys-mcp",
@@ -75,6 +76,13 @@ def _parser() -> argparse.ArgumentParser:
                        help="Allow listening on a non-local interface without a token. Not recommended.")
     serve.add_argument("--log-level", default="warning",
                        choices=("critical", "error", "warning", "info", "debug"))
+    serve.add_argument(
+        "--calculation-profile", choices=_CALCULATION_PROFILES, default=None,
+        help=f"Calculation profile of this server's interpretations whose settings do not set "
+             f"one. Defaults to ${PROFILE_ENV_VAR}, else 'current'. An evaluation harness can "
+             "pin 'benchmark' (the GeoLink eval package's calculations). Only the MCP "
+             f"server reads ${PROFILE_ENV_VAR}; petrophys.interpret and petrophys-context ignore it.",
+    )
     serve.set_defaults(transport="stdio")
 
     config = sub.add_parser("config", help="Print configuration for an MCP client.",
@@ -112,10 +120,15 @@ def _serve(args: argparse.Namespace) -> int:
     import matplotlib
 
     matplotlib.use("Agg")
+    try:
+        profile = default_calculation_profile(args.calculation_profile)
+    except ValueError as exc:
+        print(f"petrophys-mcp: {exc}", file=sys.stderr)
+        return 2
     if args.transport == "stdio":
         from petrophys.mcp.server import create_server
 
-        create_server(args.root or None).run()
+        create_server(args.root or None, calculation_profile=profile).run()
         return 0
 
     from petrophys.mcp.http import serve
@@ -140,9 +153,12 @@ def _serve(args: argparse.Namespace) -> int:
         print("  auth    : none (localhost only)", file=sys.stderr)
     print(f"  health  : http://{shown_host}:{args.port}/healthz", file=sys.stderr)
     print(f"  clients : petrophys-mcp config <client> --url {url}", file=sys.stderr)
+    if profile is not None:
+        print(f"  profile : calculation_profile={profile} unless a tool call sets another",
+              file=sys.stderr)
     serve(args.root or None, transport=args.transport, host=args.host, port=args.port,
           path=args.path, token=token or None, allowed_hosts=args.allowed_host,
-          stateless=args.stateless, log_level=args.log_level)
+          stateless=args.stateless, log_level=args.log_level, calculation_profile=profile)
     return 0
 
 
@@ -251,6 +267,11 @@ def run_checks(roots: Sequence[str] = (), url: Optional[str] = None,
             writable = "readable, NOT writable (exports will fail)"
         n_files = sum(1 for p in folder.iterdir() if p.suffix.lower() in {".las", ".dlis", ".csv", ".tsv"})
         results.append((True, f"folder {folder.resolve()}", f"{writable}; {n_files} well/table files"))
+    try:
+        profile = default_calculation_profile()
+        results.append((True, "calculation profile", profile or "current (library default)"))
+    except ValueError as exc:
+        results.append((False, "calculation profile", str(exc)))
 
     async def probe(target) -> str:
         from mcp import Client

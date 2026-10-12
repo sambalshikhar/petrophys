@@ -125,8 +125,8 @@ The rest of the reference documents what these calls are built from.""",
                 "Data model",
                 key="petrophys.model.Well petrophys.model.Curve "
                 "petrophys.model.FormationTops petrophys.model.CoreData",
-                description="Wells, curves, intervals, core data and reference "
-                "properties, and the depth utilities they use.",
+                description="Wells, curves, intervals, core data, reference "
+                "properties and class tables, and the depth utilities they use.",
                 sections=[
                     Section(
                         "petrophys.model",
@@ -145,11 +145,21 @@ The rest of the reference documents what these calls are built from.""",
                                 "MatrixProperties FluidProperties ArchieCoefficients "
                                 "ArchieParameterDefaults",
                             ),
+                            # CLASS_TABLES, the registry of these tables, is a
+                            # constant: the section lists it under Constants.
+                            (
+                                "Class tables",
+                                "ClassTable ReservoirQualityTable ReservoirGrade Bands",
+                            ),
                             (
                                 "Classifications",
                                 "VclClassification PorosityClassification "
                                 "HcSaturationClassification PermeabilityClassification "
                                 "RQIClassification MhiClassification InvasionClassification",
+                            ),
+                            (
+                                "Two-curve class tables, which no canonical table uses",
+                                "TwoCurveClassTable TwoCurveBands",
                             ),
                         ],
                     ),
@@ -197,7 +207,7 @@ The rest of the reference documents what these calls are built from.""",
         title="Preprocessing",
         card="Standardize mnemonics and units, screen value ranges and bad "
         "hole, normalize curves across wells and impute missing samples.",
-        intro="Prepare raw logs before interpretation. ``pp.interpret`` "
+        intro="Prepare raw logs before interpretation. By default ``pp.interpret`` "
         "standardizes curves and screens value ranges itself; the functions "
         "here let you run and inspect each step.",
         key="petrophys.preprocessing.standardization.standardize_curves "
@@ -337,6 +347,7 @@ The rest of the reference documents what these calls are built from.""",
                 sections=[
                     Section(
                         f"{INTERP}.lithology",
+                        title="Lithology",
                         groups=[
                             ("Lithology of a well", "calculate_lithology LithologyModule"),
                             (
@@ -353,7 +364,14 @@ The rest of the reference documents what these calls are built from.""",
                                 "build_lithology_log load_lithology_csv LithologyInterval",
                             ),
                         ],
-                    )
+                    ),
+                    Section(
+                        f"{INTERP}.lithology.carbonate_minerals",
+                        title="Carbonate minerals",
+                        description="Calcite and dolomite volumes from bulk density "
+                        "and closure: the carbonate-domain mineral step of "
+                        "``pp.interpret``.",
+                    ),
                 ],
             ),
             Page(
@@ -475,7 +493,7 @@ The rest of the reference documents what these calls are built from.""",
                         "calculate_permeability PermeabilityModule CorePermModel "
                         "classify_permeability",
                     ),
-                    ("Equations", "timur coates_denoo lith_vcl_permeability"),
+                    ("Equations", "timur coates_denoo wyllie_rose lith_vcl_permeability"),
                     (
                         "Irreducible water saturation",
                         "resolve_swirr estimate_hc_swirr estimate_swirr_app "
@@ -497,7 +515,8 @@ The rest of the reference documents what these calls are built from.""",
                             (
                                 "Pore volumes and permeability",
                                 "t2lm_from_bins bvi_from_bins ffi_from_bins "
-                                "sdr_permeability coates_permeability",
+                                "t2_fraction_below_cutoff sdr_permeability "
+                                "coates_permeability",
                             ),
                         ],
                     ),
@@ -1000,8 +1019,10 @@ CONSTANT_DOCS = {
     "porosity and PEF of common minerals.",
     f"{INTERP}.nmr.DEFAULT_T2_CENTERS": "T2 bin centres (ms) used when a "
     "distribution comes without its axis.",
-    f"{INTERP}.nmr.T2_CUTOFF_CLASTIC": "Default T2 cutoff for clastics (ms).",
-    f"{INTERP}.nmr.T2_CUTOFF_CARBONATE": "Default T2 cutoff for carbonates (ms).",
+    f"{INTERP}.nmr.T2_CUTOFF_CLASTIC": "Default T2 cutoff for sandstones (ms; Coates, "
+    "Xiao and Prammer, 1999).",
+    f"{INTERP}.nmr.T2_CUTOFF_CARBONATE": "Default T2 cutoff for carbonates (ms; Coates, "
+    "Xiao and Prammer, 1999).",
     f"{INTERP}.geochemistry.DEFAULT_API_COEFFICIENTS": "Gamma-ray API per percent "
     "potassium and per ppm thorium and uranium.",
     f"{INTERP}.geochemistry.ELEMENT_NAMES": "Element names keyed by chemical symbol.",
@@ -1310,6 +1331,25 @@ def _inherited_fields(cls: type) -> list[str]:
     return sorted(name for name in inherited - own if not name.startswith("_"))
 
 
+def _constant_aliases(documented: Iterable[Documented]) -> dict[str, str]:
+    """The paths of each constant in the submodules of its canonical module.
+
+    A constant has no ``__module__`` to name where it is defined, but
+    docstrings link to it there (``petrophys.model.class_tables.CLASS_TABLES``
+    for ``petrophys.model.CLASS_TABLES``). Values such as numbers and strings
+    are left out: two modules can hold the same small value by accident.
+    """
+    aliases: dict[str, str] = {}
+    for doc in documented:
+        if doc.kind != CONSTANT or isinstance(doc.obj, (bool, int, float, complex, str, bytes)):
+            continue
+        prefix = doc.module + "."
+        for module in sorted(name for name in list(sys.modules) if name.startswith(prefix)):
+            if getattr(sys.modules.get(module), doc.name, None) is doc.obj:
+                aliases.setdefault(f"{module}.{doc.name}", doc.canonical)
+    return aliases
+
+
 def _section_names(section: Section, leftovers: dict[str, list[str]]) -> list[str]:
     """The names a section lists: its ``names``, or every public name of its module."""
     exported = public_names(section.module)
@@ -1392,6 +1432,9 @@ def build_plan() -> ReferencePlan:
             real = f"{doc.obj.__module__}.{doc.obj.__qualname__}"
             if real not in documented:
                 aliases.setdefault(real, doc.canonical)
+    for path, canonical in _constant_aliases(documented.values()).items():
+        if path not in documented:
+            aliases.setdefault(path, canonical)
 
     writer = _Writer(documented, exports, leftovers)
     files = writer.write_all()

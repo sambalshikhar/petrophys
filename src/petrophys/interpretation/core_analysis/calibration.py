@@ -137,7 +137,7 @@ def core_data_from_well(
     gd_curves: Iterable[str] = ("GDEN", "CGD"),
     sw_curves: Iterable[str] = ("SWC", "CSW", "CSW-AMB", "CSW_AMB"),
     so_curves: Iterable[str] = ("SOC", "CSO", "CSO-AMB", "CSO_AMB"),
-    lithology_curves: Iterable[str] = ("LITHOLOGY_GEOLINK",),
+    lithology_curves: Optional[Iterable[str]] = None,
     top: Optional[float] = None,
     bottom: Optional[float] = None,
 ) -> CoreData:
@@ -154,6 +154,11 @@ def core_data_from_well(
     :func:`petrophys.model.units.core_saturation_to_fraction`); each conversion
     raises a ``UserWarning`` and is recorded in ``metadata["core_sw_normalization"]``
     and ``metadata["core_so_normalization"]``.
+
+    ``CoreData.lithology`` holds the codes of the first of ``lithology_curves``
+    on the well; by default, of the well's lithology code curve
+    (``LITHOLOGY_GEOLINK``, or another lithology-code curve as
+    :func:`petrophys.interpret` reads it).
     """
     if well.depth is None:
         raise ValueError("Well has no depth data")
@@ -185,6 +190,11 @@ def core_data_from_well(
         else:
             so = fractions
 
+    if lithology_curves is None:
+        from petrophys.interpretation.lithology.matrix_inference import find_lithology_code_curve
+
+        code_curve = find_lithology_code_curve(well)
+        lithology_curves = (code_curve,) if code_curve else ()
     lithology = None
     for name in lithology_curves:
         curve = well.get(name)

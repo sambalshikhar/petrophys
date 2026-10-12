@@ -79,6 +79,9 @@ class WorkflowConfig:
 
     # Saturation model
     saturation_model: str = "archie"  # archie, simandoux, indonesia, north_sea, nigeria_schlumberger
+    # Bound-water resistivity (ohm.m) for Dual Water, which runs only with it;
+    # it is not estimated.
+    rwb: Optional[float] = None
     rtsh: Optional[float] = None
     vsh_exp: float = 1.6
     shale_exp: float = 1.6
@@ -483,6 +486,7 @@ class StandardWorkflow:
             "model": self.config.saturation_model,
             "rw": rw, "a": self.config.a,
             "m": self.config.m, "n": self.config.n,
+            "rwb": self.config.rwb,
             "rtsh": self.config.rtsh,
             "vsh_exp": self.config.vsh_exp,
             "shale_exp": self.config.shale_exp,
@@ -497,6 +501,7 @@ class StandardWorkflow:
                 well,
                 rw=rw,
                 lithology=self.config.lithology,
+                rwb=self.config.rwb,
                 phi_cl=self.config.phi_cl,
                 rtsh=self.config.rtsh,
                 vsh_exp=self.config.vsh_exp,
@@ -512,6 +517,13 @@ class StandardWorkflow:
             trace.decisions.append(f"Sw ({self.config.saturation_model}): "
                                   f"a={self.config.a}, m={self.config.m}, n={self.config.n}, "
                                   f"Rw={rw:.4f}")
+            for route, count in (result.fallback_counts or {}).items():
+                message = (
+                    f"{count} shaly carbonate samples used {route.split('->', 1)[1]} instead of "
+                    "Dual Water, which needs rwb (it is not estimated)"
+                )
+                trace.decisions.append(message)
+                self.warnings.append(message)
         except Exception as e:
             self.warnings.append(f"Saturation calculation warning: {e}")
             trace.success = False
@@ -520,6 +532,7 @@ class StandardWorkflow:
 
     def _calculate_permeability(self, well: "Well") -> StepTrace:
         """Calculate permeability."""
+        from petrophys.interpretation.lithology.matrix_inference import find_lithology_code_curve
         from petrophys.interpretation.permeability import PermeabilityModule
 
         trace = StepTrace(step="permeability", method=self.config.perm_method)
@@ -539,7 +552,11 @@ class StandardWorkflow:
                 use_peer_core=self.config.use_peer_core,
             )
             lithology = None
-            if get_curve(well, ["LITHOLOGY_GEOLINK", "LITHO"]) is None and well.get("LITHO_CLASS") is None:
+            if (
+                find_lithology_code_curve(well) is None
+                and get_curve(well, ["LITHO"]) is None
+                and well.get("LITHO_CLASS") is None
+            ):
                 lithology = self.config.lithology
 
             result = perm_module.calculate(

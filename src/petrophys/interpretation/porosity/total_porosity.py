@@ -41,7 +41,8 @@ def nd_weighted_porosity(
 def total_porosity(
     nphi: Union[float, np.ndarray],
     phi_d: Union[float, np.ndarray],
-    method: str = "adaptive"
+    method: str = "adaptive",
+    gas_method: str = "rms",
 ) -> Union[float, np.ndarray]:
     """
     Calculate total porosity from neutron and density.
@@ -50,7 +51,12 @@ def total_porosity(
     neutron-density separation:
 
     - If phiD > phiN + 0.05 (density reads higher than neutron, a gas
-      effect): wD = 1, wN = 0, i.e. PHIT = phiD
+      effect): PHIT = sqrt((phiD**2 + phiN**2) / 2), the gas-zone
+      approximation of Gaymard and Poupon (1968), which balances the
+      density reading too high against the neutron reading too low. A
+      negative phiN counts as 0 there, so squaring cannot turn it into
+      porosity. ``gas_method="density"`` takes PHIT = phiD instead, which
+      overstates porosity in gas.
     - Else: PHIT = 0.6*phiD + 0.4*phiN (density-weighted shale-free average)
 
     Parameters
@@ -61,6 +67,8 @@ def total_porosity(
         Density porosity
     method : str, optional
         Method: "adaptive", "average", "rms"
+    gas_method : str, optional
+        Adaptive method in gas crossover: "rms" (default) or "density"
 
     Returns
     -------
@@ -71,12 +79,15 @@ def total_porosity(
     --------
     >>> phit = total_porosity(nphi_data, phid_data)
     """
+    if gas_method not in ("rms", "density"):
+        raise ValueError(f"gas_method must be 'rms' or 'density'; got {gas_method!r}")
+
     if method == "average":
         return (nphi + phi_d) / 2
 
     elif method == "rms":
-        # RMS average
-        return np.sqrt((nphi ** 2 + phi_d ** 2) / 2)
+        # RMS average; a negative neutron porosity counts as 0
+        return np.sqrt((np.clip(nphi, 0.0, None) ** 2 + phi_d ** 2) / 2)
 
     else:  # adaptive
         if isinstance(nphi, np.ndarray) or isinstance(phi_d, np.ndarray):
@@ -93,7 +104,12 @@ def total_porosity(
             gas_effect = both & (phid_arr > nphi_arr + 0.05)
             standard = both & ~gas_effect
 
-            phit[gas_effect] = phid_arr[gas_effect]
+            if gas_method == "rms":
+                phit[gas_effect] = np.sqrt(
+                    (phid_arr[gas_effect] ** 2 + np.clip(nphi_arr[gas_effect], 0.0, None) ** 2) / 2
+                )
+            else:
+                phit[gas_effect] = phid_arr[gas_effect]
             phit[standard] = 0.6 * phid_arr[standard] + 0.4 * nphi_arr[standard]
             phit[density_only] = phid_arr[density_only]
             phit[neutron_only] = nphi_arr[neutron_only]
@@ -102,7 +118,7 @@ def total_porosity(
             phid_finite = np.isfinite(phi_d)
             if nphi_finite and phid_finite:
                 if phi_d > nphi + 0.05:
-                    phit = phi_d
+                    phit = np.sqrt((phi_d ** 2 + max(nphi, 0.0) ** 2) / 2) if gas_method == "rms" else phi_d
                 else:
                     phit = 0.6 * phi_d + 0.4 * nphi
             elif phid_finite:

@@ -126,6 +126,21 @@ petrophys-mcp check --url https://<your-host>/mcp --token <TOKEN>
 
 Then ask, for example: *"Load the sample well 30_6-5, interpret it with Rw = 0.07 ohm.m at 230 degF, and summarize net pay in the Brent Group."*
 
+## Pin the calculations
+
+Interpretations use the library's `"current"` calculations unless the `settings` of a tool call set `calculation_profile`.
+An evaluation harness that must reproduce the GeoLink eval package can make `"benchmark"` the server's default ({ref}`calculation profiles <calculation-profiles>`):
+
+```bash
+petrophys-mcp serve --calculation-profile benchmark --root /path/to/wells
+PETROPHYS_CALCULATION_PROFILE=benchmark petrophys-mcp serve --root /path/to/wells   # the same
+```
+
+For a server that a client starts, set `PETROPHYS_CALCULATION_PROFILE` in the environment of the client's server entry.
+A `calculation_profile` in a tool call's settings still wins.
+Only the MCP server reads the variable: `pp.interpret` and `petrophys-context` ignore it.
+`petrophys-mcp check` reports the profile the variable sets, or `current`.
+
 ## A live session
 
 Each call below opens its own short connection, because an open connection cannot span notebook cells. The server keeps loaded wells between calls.
@@ -160,6 +175,16 @@ print(run["interpretation_id"], "|", run["status"], "|", run["resolved"])
 print("net thickness:", run["net_thickness"])
 print(len(run["skipped_steps"]), "skipped steps and", len(run["warnings"]),
       "warnings, each with a reason")
+```
+
+`assumptions` says in plain words what the numbers rest on, and `review_notes` what to confirm with the user; this run has no review notes.
+The net-pay lines give the cutoffs of each lithology family and the samples left out of net reservoir and pay (evaporite, coal, halite recognized by its log response, bad hole), with the net pay each removed over the whole well, not just the summary window:
+
+```{code-cell} python
+from textwrap import fill
+
+for line in run["assumptions"] + run["review_notes"]:
+    print(fill(f"- {line}", 88, subsequent_indent="  "))
 ```
 
 A bad setting fails before anything runs, with a message the model can act on:
@@ -201,7 +226,7 @@ Every response is compact JSON that carries the well's depth unit. Data-quality 
 |---|---|
 | Rw unknown | Rw rarely comes from logs alone. The server tells models to ask for it; give it, with its temperature, when you know it |
 | Reviewing an answer | ask the model to report `warnings` and `skipped_steps`: they show which results rest on assumptions |
-| Whole-well totals | ask for a reservoir window (`summary_top`/`summary_bottom`); shallow overburden can pass default cutoffs |
+| Whole-well totals | ask for a reservoir window (`summary_top`/`summary_bottom`) or per-formation results: one Rw serves the whole well, so shallow overburden with fresher water, where no lithology code applies, can still be flagged as marginal pay |
 | File access | keep `--root` to the folders the model may use; exports overwrite files of the same name there |
 | `The Petrophys MCP server needs the MCP SDK` | `pip install "petrophys[mcp]"` (Python 3.10+) |
 | `... is outside the folders this server may access` | add the folder with `--root` or `PETROPHYS_MCP_ROOTS` (`:`-separated on Linux and macOS, `;` on Windows) |

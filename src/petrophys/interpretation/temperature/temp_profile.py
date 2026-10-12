@@ -5,7 +5,7 @@ This module provides the TemperatureProfile class for computing
 formation temperature at any depth.
 """
 
-from typing import Any, Optional, Union
+from typing import Any, Optional, Sequence, Union
 from dataclasses import dataclass
 import numpy as np
 
@@ -93,6 +93,51 @@ def _metadata_temperature_f(well: "Well", name: str) -> Optional[float]:
     return None
 
 
+def temperature_curve_f(
+    well: "Well", names: Sequence[str] = ("TEMP", "TMPC")
+) -> Optional[np.ndarray]:
+    """Return formation temperature in degF from the well's temperature curves.
+
+    At each depth the first of ``names`` with a finite value is used. Each
+    curve is converted from its own unit label (``degC``, ``K``, ...); a curve
+    with no recognized temperature label is read as degF, the unit the
+    workflow writes ``TEMP`` in.
+
+    Returns
+    -------
+    numpy.ndarray or None
+        Temperature (degF) per sample, or None when none of the curves has data.
+    """
+    result = np.full(well.n_samples, np.nan, dtype=float)
+    for name in names:
+        curve = well.get(name)
+        if curve is None:
+            continue
+        data = np.asarray(curve.data, dtype=float)
+        if data.shape != result.shape:
+            continue
+        scale = temperature_unit(curve.unit)
+        if scale in ("C", "K"):
+            data = UnitConverter.temperature(data, scale, "F")
+        fill = ~np.isfinite(result) & np.isfinite(data)
+        result[fill] = data[fill]
+    return result if np.isfinite(result).any() else None
+
+
+def _formation_temperature_f(well: "Well", names: Sequence[str]) -> Union[float, np.ndarray]:
+    """Formation temperature (degF) from temperature curves, else a BHT profile."""
+    temperature = temperature_curve_f(well, names)
+    if temperature is not None:
+        return temperature
+    try:
+        return calculate_temperature_profile(well).temperature
+    except Exception:
+        # No depth for a profile: the header BHT itself, or a nominal 150 degF.
+        if well.header.bht is None:
+            return 150.0
+        return temperature_to_fahrenheit(well.header.bht, well.header.bht_unit)
+
+
 @dataclass
 class TemperatureResult:
     """
@@ -132,7 +177,9 @@ class TemperatureProfile:
     surface_temp : float, optional
         Surface temperature (default: 68°F)
     temp_unit : str, optional
-        Temperature unit ("F" or "C")
+        Unit of ``surface_temp``: "F", "C", "K" or a label such as "degC"
+        (see :func:`petrophys.model.units.temperature_unit`); unknown labels
+        raise ``ValueError``
 
     Examples
     --------
@@ -155,7 +202,7 @@ class TemperatureProfile:
         reference_temperature: Optional[float] = None,
         reference_depth: Optional[float] = None,
     ):
-        self.temp_unit = temperature_unit(temp_unit) or "F"
+        self.temp_unit = temperature_unit(temp_unit, strict=True)
         self.surface_temp = temperature_to_fahrenheit(surface_temp, temp_unit)
 
         self._gradient = gradient  # °F/100ft
@@ -186,6 +233,11 @@ class TemperatureProfile:
         """
         Create temperature profile from BHT and TD.
 
+        The profile is linear from ``surface_temp`` at depth 0 to ``bht`` at
+        ``td``: the BHT is taken as the static formation temperature (no
+        correction for mud circulation, such as a Horner plot) and the surface
+        temperature applies at depth 0, not at the seabed offshore.
+
         Parameters
         ----------
         bht : float
@@ -195,7 +247,8 @@ class TemperatureProfile:
         surface_temp : float, optional
             Surface temperature
         bht_unit : str, optional
-            BHT unit
+            BHT unit: "F", "C", "K" or a label such as "degC"; unknown labels
+            raise ``ValueError``
         depth_unit : str, optional
             Depth unit
 
@@ -205,7 +258,7 @@ class TemperatureProfile:
             Configured temperature profile
         """
         # Convert to standard units ("C", "degC", "deg C" ... are all Celsius)
-        bht = temperature_to_fahrenheit(bht, bht_unit)
+        bht = temperature_to_fahrenheit(bht, temperature_unit(bht_unit, strict=True))
 
         if surface_temp_unit is None:
             surface_temp_unit = (
@@ -213,7 +266,9 @@ class TemperatureProfile:
                 if surface_temp == DefaultParameters.SURFACE_TEMPERATURE_F
                 else bht_unit
             )
-        surface_temp = temperature_to_fahrenheit(surface_temp, surface_temp_unit)
+        surface_temp = temperature_to_fahrenheit(
+            surface_temp, temperature_unit(surface_temp_unit, strict=True)
+        )
 
         if depth_unit.lower() == "m":
             td = UnitConverter.meters_to_feet(td)
@@ -240,7 +295,9 @@ class TemperatureProfile:
         gradient = gradient_c_per_km_to_fahrenheit_per_100ft(gradient_c_per_km)
         return cls(
             gradient=gradient,
-            surface_temp=temperature_to_fahrenheit(surface_temp, surface_temp_unit),
+            surface_temp=temperature_to_fahrenheit(
+                surface_temp, temperature_unit(surface_temp_unit, strict=True)
+            ),
             source="fallback_geothermal_gradient",
         )
 
@@ -271,7 +328,8 @@ class TemperatureProfile:
         depth2 : float
             Second depth
         temp_unit : str, optional
-            Temperature unit
+            Temperature unit: "F", "C", "K" or a label such as "degC";
+            unknown labels raise ``ValueError``
         depth_unit : str, optional
             Depth unit
 
@@ -288,9 +346,9 @@ class TemperatureProfile:
         ref_depth = depth2
 
         # Calculate surface temp by extrapolation
-        if temp_unit.upper() == "C":
-            temp1 = UnitConverter.celsius_to_fahrenheit(temp1)
-            ref_temp = UnitConverter.celsius_to_fahrenheit(ref_temp)
+        if temperature_unit(temp_unit, strict=True) != "F":
+            temp1 = UnitConverter.temperature(temp1, temp_unit, "F")
+            ref_temp = UnitConverter.temperature(ref_temp, temp_unit, "F")
         if depth_unit.lower() == "m":
             depth1 = UnitConverter.meters_to_feet(depth1)
             ref_depth = UnitConverter.meters_to_feet(ref_depth)
@@ -424,13 +482,15 @@ def calculate_temperature_profile(
     well : Well
         Well object with depth data
     bht : float, optional
-        Bottom hole temperature (uses header if not provided)
+        Bottom hole temperature (uses header if not provided, with an
+        unlabelled header unit read as degF)
     surface_temp : float, optional
         Surface temperature
     gradient : float, optional
         Temperature gradient (calculated from BHT if not provided)
     bht_unit : str, optional
-        BHT unit
+        Unit of ``bht``: "F", "C", "K" or a label such as "degC"; unknown
+        labels raise ``ValueError``
 
     Returns
     -------
@@ -448,14 +508,11 @@ def calculate_temperature_profile(
 
     depth_unit = depth_unit or well.depth_unit
 
-    # Get BHT from header if not provided
-    if bht is None:
-        bht = well.header.bht
-        parameter_bht_unit = _parameter_text(well, "BHT__UNIT")
-        if parameter_bht_unit:
-            bht_unit = parameter_bht_unit
-        elif well.header.bht_unit:
-            bht_unit = well.header.bht_unit
+    # Get BHT from header if not provided. Header temperatures follow the LAS
+    # convention: an unlabelled or unrecognized unit is read as degF.
+    if bht is None and well.header.bht is not None:
+        unit = _parameter_text(well, "BHT__UNIT") or well.header.bht_unit
+        bht, bht_unit = temperature_to_fahrenheit(well.header.bht, unit), "F"
 
     metadata_bht = _metadata_temperature_f(well, "BHT")
     if bht is None and metadata_bht is not None:

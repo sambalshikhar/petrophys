@@ -76,7 +76,8 @@ with tempfile.TemporaryDirectory() as folder:
 ## Many wells: context packages
 
 A package reads a folder of LAS files, interprets each well and writes one JSON per well, formation and lithology group.
-Packages interpret as clastic unless told otherwise, so carbonate wells need the carbonate setting. Here are two COSTA wells, labelled with their Kharaib-2 tops:
+Within a formation, a lithology group is a run of consecutive samples with one lithology, taken from the lithology code curve the interpretation read (`LITHOLOGY_GEOLINK` or another lithology-code curve; see {doc}`input_templates`) or from the lithology intervals it selected.
+Packages interpret as clastic unless told otherwise, so carbonate wells need the carbonate setting; COSTA wells also take the field's mineral calibration, `carbonate_calibration="costa"`, which writes the illite volume `VILL`. Here are two COSTA wells, labelled with their Kharaib-2 tops:
 
 ```{code-cell} python
 import shutil
@@ -91,7 +92,8 @@ with tempfile.TemporaryDirectory() as folder:
         logs, package,
         layout="formation_lithology",
         tops_file=pp.sample("formations_costa"),
-        workflow_config=pp.DynamicWorkflowConfig(lithology_domain="carbonate"),
+        workflow_config=pp.DynamicWorkflowConfig(lithology_domain="carbonate",
+                                                 carbonate_calibration="costa"),
     )
     files = sorted(path for path in package.rglob("*") if path.is_file())
     for path in files:
@@ -121,11 +123,33 @@ for key, value in excerpt.items():
     print(fill(f'"{key}": {json.dumps(value)}', 88, subsequent_indent="    "))
 ```
 
+Depths are in the well's own unit, feet for HW-3: `formation_info` and `analysis_results.lithology_group_info` name it in `depth_unit`, and the bad-hole intervals in `analysis_results.BADHOLE_QC_CHECK` and the note on KH carry it too.
+The statistics are taken after the export's value-range QC, which sets values outside each curve's plausible range to null in every group.
+PHI_NORM, RQI, FZI and BVW are then recomputed from the porosity, permeability and saturation that remain, and PHI_Z is set to the recomputed PHI_NORM: each is null wherever the QC removed one of its inputs, so no value computed from a removed sample reaches the statistics.
+
 | Layout | Files |
 |---|---|
 | `"well"` (default) | one JSON for one well or result |
 | `"formation_lithology"` | `<well>/<formation>/<formation>_<group>.json`, plus the interpreted LAS |
 | `"category_formation_lithology"` | `<category>/<well>/<formation>/…_<category>.json` for hydrocarbon, lithology, numerical, permeability, porosity and saturation |
+
+## Class labels
+
+The analysis sections of a group file grade properties into classes, for example clay volume into `CLEAN_FORMATION`, `MODERATE_CLAY` and `SHALY_FORMATION`.
+Under the default `"current"` calculations, the classes of clay volume, porosity, permeability, water saturation, BVW, RQI, FZI, MHI, Rxo/Rt and reservoir quality come from one canonical table per property, {py:data}`CLASS_TABLES <petrophys.model.CLASS_TABLES>`, so a property gets the same class in every category file of a group.
+A sample without a value gets the table's `NO_*_DATA` label, never a class:
+
+```{code-cell} python
+from petrophys.model import CLASS_TABLES
+
+pd.DataFrame([{"table": name, "classes": table.describe()}
+              for name, table in CLASS_TABLES.items()]).style.hide(axis="index")
+```
+
+Reservoir quality grades effective porosity (PHIE_CC, else PHIE, else PHIT), permeability (PERM_CC, else PERM, PERM_CORE or PERM_TIMUR) and clay volume (VCL, else VCLAY, else VSH) together, with the limits of the lithology family of the group's lithology.
+Limestone, chalk, dolomite and marl are carbonate and every other rock is clastic; a compound name goes by its last rock word, so SANDY LIMESTONE is carbonate and CALCAREOUS SHALE clastic.
+A sample without lithology takes the family of the lithology domain of the run that interpreted it.
+A sample without effective porosity, permeability or clay volume is `NO_QUALITY_DATA`: it gets no grade, not even `NON_RESERVOIR`.
 
 ## From the command line
 
@@ -178,14 +202,35 @@ The standardized readers accept CSV, TSV, Excel and DataFrames; {doc}`input_temp
 | No formations | the logged interval is analyzed as `WHOLE_WELL` |
 | No lithology | embedded evidence or the mineral solver supplies it |
 | No core curves in LAS | core calibration is skipped and recorded in the trace |
-| Thin groups | groups thinner than `minimum_group_thickness` (default 2.0, in each LAS's own depth unit) are not written |
-| Carbonate wells | set `lithology_domain` to `carbonate` in LAS metadata, `workflow_config`, or the CLI flag |
+| Thin groups | groups thinner than `minimum_group_thickness` (default 2.0, in each LAS's own depth unit, which each file gives as `formation_info.depth_unit`) are not written |
+| Carbonate wells | set `lithology_domain` to `carbonate` in LAS metadata, `workflow_config`, or the CLI flag; for COSTA field wells, also `carbonate_calibration="costa"` in `workflow_config` |
+
+## The GeoLink eval package
+
+Context exported with default settings, by `pp.export_context`, `petrophys-context` or the MCP server, uses the `"current"` calculations.
+The GeoLink eval context package was made with the calculations that the `"benchmark"` calculation profile keeps ({ref}`calculation profiles <calculation-profiles>`).
+To export context with them from Python, pass
+
+```python
+workflow_config=pp.DynamicWorkflowConfig(calculation_profile="benchmark", reuse_input_resflag=True)
+```
+
+to `pp.export_context`.
+Every well is then interpreted with the calculations of the package's re-run, which wrote its context, and `reuse_input_resflag=True` keeps a reservoir flag (`RESFLAG` or `NET_RES`) already on an input well for the SWIRR_APP pick, as the package's context step did with its interpreted LAS files.
+Such context is the package's own: class labels that differ between categories, derived logs as the package computed them, and depths without a unit.
+`petrophys-context` has no profile option.
+
+From a source checkout, one command regenerates the whole package, interpreted LAS files and context, from the raw LAS files:
+
+```bash
+python scripts/generate_benchmark_context.py --from-raw --input-dir PATH/eval --output-dir NEW_DIR
+```
 
 ## Schema and size contracts
 
 | Contract | Value |
 |---|---|
-| Single-well schema | `1.0`: `schema_version`, `petrophys_version`, `context_kind`, `well`, `interpretation`, `geology` |
+| Single-well schema | `1.0`: `schema_version`, `petrophys_version`, `context_kind`, `well`, `interpretation`, `geology`, and `include_raw_traces_in_context`, always `false` |
 | Missing numbers | JSON `null`, never NaN |
 | `max_bytes` | 1,000,000 UTF-8 bytes per JSON document |
 | `max_total_bytes` | 50,000,000 bytes per package, ancillary files included |

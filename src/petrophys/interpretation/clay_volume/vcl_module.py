@@ -5,7 +5,7 @@ This module provides the VclModule class that combines multiple
 VCL methods and selects the minimum value.
 """
 
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Tuple, Union
 from dataclasses import dataclass
 import numpy as np
 
@@ -13,7 +13,7 @@ from petrophys.model.well import Well
 from petrophys.model.constants import DefaultParameters, MatrixProperties
 from petrophys.interpretation.clay_volume.gr_method import vcl_from_gr
 from petrophys.interpretation.clay_volume.sp_method import vcl_from_sp, should_use_sp
-from petrophys.interpretation.clay_volume.nd_method import vcl_from_nd, nd_clean_line
+from petrophys.interpretation.clay_volume.nd_method import ND_CLAY_POINT, vcl_from_nd, nd_clean_line
 from petrophys.interpretation.clay_volume.classification import classify_vcl
 from petrophys.interpretation.porosity.density_porosity import density_porosity
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
@@ -66,6 +66,27 @@ class VclModule:
         Whether to use SP method (default: True)
     use_nd : bool, optional
         Whether to use N-D method (default: True)
+    sp_max : float, optional
+        Clean-sand SP line (static SP), mV: the line of greatest deflection.
+    sp_min : float, optional
+        Shale SP baseline, mV. With ``sp_max`` left as None both lines are
+        picked from the log, P5 for ``sp_max`` and P95 for ``sp_min``; SP is
+        not used when only ``sp_min`` is missing.
+    sp_fallback_only : bool, optional
+        Keep VCL_SP out of the minimum (default: False). It is still computed
+        and returned, and fills only depths where neither GR nor N-D gives a
+        value. Use it when the SP baselines are picked over a drifting log.
+    nd_clay : tuple of float, optional
+        N-D clay point ``(RHOB, NPHI)``, e.g. from
+        :func:`~petrophys.interpretation.clay_volume.nd_method.nd_shale_point`.
+        Default: the :func:`~petrophys.interpretation.clay_volume.vcl_from_nd`
+        point (2.62 g/cm3, 0.38).
+    nd_triangle_only : bool, optional
+        Leave VCL_ND undefined (NaN) where NPHI exceeds both the clean line's
+        40 p.u. end point and the clay point (default: False). Such samples,
+        e.g. undercompacted mudstones at NPHI 0.45-0.55, lie outside the
+        triangle the three-point formula interpolates in and read as clean
+        rock there; the minimum then takes the other indicators.
 
     Examples
     --------
@@ -86,6 +107,9 @@ class VclModule:
         matrix: Optional[str] = None,
         combine: str = "min",
         rho_fl: float = DefaultParameters.FLUID_DENSITY,
+        sp_fallback_only: bool = False,
+        nd_clay: Optional[Tuple[float, float]] = None,
+        nd_triangle_only: bool = False,
     ):
         self.gr_min = gr_min
         self.gr_max = gr_max
@@ -104,6 +128,9 @@ class VclModule:
         #             invalidates N-D or N-D is unavailable; SP is a fallback.
         self.combine = str(combine or "min").strip().lower()
         self.rho_fl = rho_fl
+        self.sp_fallback_only = bool(sp_fallback_only)
+        self.nd_clay = nd_clay
+        self.nd_triangle_only = bool(nd_triangle_only)
 
     def _resolve_gr_baselines(self, gr_data: np.ndarray) -> tuple[float, float]:
         """
@@ -166,7 +193,7 @@ class VclModule:
         gas = np.zeros(n_samples, dtype=bool)
         if nd is not None and nphi_data is not None and rhob_data is not None:
             try:
-                rho_ma = MatrixProperties.get(self.matrix or "sandstone").density
+                rho_ma = MatrixProperties.get_log_density(self.matrix or "sandstone")
             except (KeyError, AttributeError):
                 rho_ma = 2.65
             phid = density_porosity(np.asarray(rhob_data, dtype=float), rho_ma, self.rho_fl)
@@ -273,11 +300,20 @@ class VclModule:
         rhob_data, _, _ = get_curve_data_depthwise(well, [rhob_name])
         if self.use_nd and nphi_data is not None and rhob_data is not None:
             den_cl1, neu_cl1, den_cl2, neu_cl2 = nd_clean_line(self.matrix)
+            clay_point = {}
+            if self.nd_clay is not None:
+                clay_point = {"den_clay": self.nd_clay[0], "neu_clay": self.nd_clay[1]}
             vcl_nd = vcl_from_nd(
                 nphi_data, rhob_data,
                 den_cl1=den_cl1, neu_cl1=neu_cl1,
                 den_cl2=den_cl2, neu_cl2=neu_cl2,
+                **clay_point,
             )
+            if self.nd_triangle_only:
+                neu_clay = self.nd_clay[1] if self.nd_clay is not None else ND_CLAY_POINT[1]
+                with np.errstate(invalid="ignore"):
+                    outside = np.asarray(nphi_data, dtype=float) > max(neu_cl2, neu_clay)
+                vcl_nd = np.where(outside, np.nan, vcl_nd)
             vcl_methods.append(vcl_nd)
             method_names.append("ND")
 
@@ -293,8 +329,13 @@ class VclModule:
                 n_samples, vcl_gr, vcl_sp, vcl_nd, nphi_data, rhob_data
             )
         else:
-            # Minimum of all available methods at each depth.
-            stacked = np.vstack(vcl_methods)
+            # Minimum of the available methods at each depth (SP left out when
+            # it is a fallback only).
+            in_min = [
+                (values, name) for values, name in zip(vcl_methods, method_names)
+                if not (self.sp_fallback_only and name == "SP")
+            ]
+            stacked = np.vstack([values for values, _ in in_min])
             valid_any = np.any(np.isfinite(stacked), axis=0)
             vcl_final = np.full(n_samples, np.nan, dtype=float)
             if np.any(valid_any):
@@ -303,13 +344,17 @@ class VclModule:
             # Track which method was used
             method_used = np.empty(n_samples, dtype=object)
             for i in range(n_samples):
-                values = [m[i] for m in vcl_methods]
-                valid = [(v, name) for v, name in zip(values, method_names) if not np.isnan(v)]
+                valid = [(values[i], name) for values, name in in_min if not np.isnan(values[i])]
                 if valid:
                     min_val, min_name = min(valid, key=lambda x: x[0])
                     method_used[i] = min_name
                 else:
                     method_used[i] = "NaN"
+
+            if self.sp_fallback_only and vcl_sp is not None:
+                fill = ~np.isfinite(vcl_final) & np.isfinite(vcl_sp)
+                vcl_final[fill] = vcl_sp[fill]
+                method_used[fill] = "SP"
 
         return VclResult(
             vcl=vcl_final,

@@ -14,7 +14,10 @@ US_PER_FOOT_TO_M_PER_SECOND = 304800.0
 
 @dataclass(frozen=True)
 class ElasticProperties:
-    """Elastic properties calculated from RHOB, DTC, and DTS."""
+    """Elastic properties calculated from RHOB, DTC, and DTS.
+
+    Each field is an array, or a float when every input was a scalar.
+    """
 
     vp_m_s: np.ndarray
     vs_m_s: np.ndarray
@@ -46,11 +49,13 @@ def calculate_elastic_properties(
 
     RHOB is expected in g/cc, DTC/DTS in us/ft. No shear-sonic fallback is
     applied; Vs-dependent properties remain NaN when DTS is unavailable.
+    Scalar inputs return scalar properties.
     """
 
     rhob = np.asarray(rhob_gcc, dtype=float)
     dtc = np.asarray(dtc_us_per_ft, dtype=float)
-    rhob, dtc = np.broadcast_arrays(rhob, dtc)
+    scalar_input = rhob.ndim == 0 and dtc.ndim == 0 and np.ndim(dts_us_per_ft) == 0
+    rhob, dtc = np.broadcast_arrays(np.atleast_1d(rhob), np.atleast_1d(dtc))
 
     vp = np.full(rhob.shape, np.nan, dtype=float)
     valid_vp = np.isfinite(dtc) & (dtc >= 20.0) & (dtc <= 300.0)
@@ -110,7 +115,7 @@ def calculate_elastic_properties(
             None,
         )
 
-    return ElasticProperties(
+    properties = dict(
         vp_m_s=vp,
         vs_m_s=vs,
         acoustic_impedance=acoustic_impedance,
@@ -120,3 +125,6 @@ def calculate_elastic_properties(
         bulk_mod_gpa=bulk_mod_gpa,
         young_mod_gpa=young_mod_gpa,
     )
+    if scalar_input:
+        properties = {name: float(values[0]) for name, values in properties.items()}
+    return ElasticProperties(**properties)

@@ -24,6 +24,9 @@ def indonesia(
 
     1/sqrt(Rt) = [ Vcl^(1-Vcl/2) / sqrt(Rcl) + φ^(m/2) / sqrt(a×Rw) ] × Sw^(n/2)
 
+    Poupon and Leveaux (1971), "Evaluation of water saturation in shaly
+    formations", SPWLA 12th Annual Logging Symposium.
+
     Parameters
     ----------
     rt : float or np.ndarray

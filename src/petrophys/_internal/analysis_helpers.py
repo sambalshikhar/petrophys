@@ -5,10 +5,12 @@ Shared helpers for interval-based analysis outputs.
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 
 from petrophys.model.data_types import DataType
 from petrophys.model.units import normalize_depth_unit
@@ -356,7 +358,9 @@ def depth_step_array(depth: np.ndarray, max_gap_factor: float = 3.0) -> np.ndarr
     A sample that follows a data gap would otherwise be credited the entire gap
     as its thickness (inflating zone/net-pay/HCPV thickness). Steps larger than
     ``max_gap_factor`` times the median sampling are capped to the median, so a
-    gap is not counted as a thick cell.
+    gap is not counted as a thick cell. The per-sample diagnostics (KH, S_V)
+    use this capped backward step; thickness sums use :func:`cell_thickness`,
+    which also integrates a change of sampling rate.
     """
     depth_arr = np.asarray(depth, dtype=float)
     if depth_arr.size == 0:
@@ -372,6 +376,66 @@ def depth_step_array(depth: np.ndarray, max_gap_factor: float = 3.0) -> np.ndarr
     if max_gap_factor and median_step > 0.0:
         dz[dz > max_gap_factor * median_step] = median_step
     return dz
+
+
+def cell_half_lengths(depth: np.ndarray, max_gap_factor: float = 3.0) -> tuple[np.ndarray, np.ndarray]:
+    """Half-cell lengths on the previous-sample and next-sample side of each sample.
+
+    Each sample owns the depth range halfway to each neighbour (midpoint
+    cells), so the cells tile the logged interval and a change of sampling
+    rate is integrated exactly. A step longer than ``max_gap_factor`` times
+    the typical sampling around it is a gap in the data. The typical sampling
+    is the larger of the medians of the three steps before and the three
+    steps after, so a new sampling rate sets its own scale. A gap is credited
+    to neither neighbour; a sample next to a gap, or at either end, mirrors its other
+    half-cell, and a sample with gaps on both sides gets the median regular
+    step. Depths may increase or decrease. A sample with a non-finite depth
+    gets no cell (0); with fewer than two finite depths the cells are
+    undefined (NaN).
+    """
+    depth_arr = np.asarray(depth, dtype=float).reshape(-1)
+    before = np.zeros(depth_arr.size, dtype=float)
+    after = np.zeros(depth_arr.size, dtype=float)
+    finite = np.flatnonzero(np.isfinite(depth_arr))
+    if finite.size < 2:
+        before[finite] = after[finite] = np.nan
+        return before, after
+
+    steps = np.abs(np.diff(depth_arr[finite]))
+    gap = np.zeros(steps.size, dtype=bool)
+    if max_gap_factor:
+        window = 3
+        positive = np.where(steps > 0.0, steps, np.nan)
+        padded = np.concatenate([np.full(window, np.nan), positive, np.full(window, np.nan)])
+        windows = sliding_window_view(padded, window)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN windows at the ends
+            reference = np.fmax(
+                np.nanmedian(windows[: steps.size], axis=1),
+                np.nanmedian(windows[window + 1:], axis=1),
+            )
+        gap = np.isfinite(reference) & (steps > max_gap_factor * reference)
+
+    half = np.where(gap, np.nan, steps / 2.0)
+    half_before = np.concatenate([[np.nan], half])
+    half_after = np.concatenate([half, [np.nan]])
+    half_before = np.where(np.isnan(half_before), half_after, half_before)
+    half_after = np.where(np.isnan(half_after), half_before, half_after)
+    regular = steps[~gap & (steps > 0.0)]
+    fill = float(np.median(regular)) / 2.0 if regular.size else 0.0
+    before[finite] = np.where(np.isnan(half_before), fill, half_before)
+    after[finite] = np.where(np.isnan(half_after), fill, half_after)
+    return before, after
+
+
+def cell_thickness(depth: np.ndarray, max_gap_factor: float = 3.0) -> np.ndarray:
+    """Per-sample thickness of the midpoint cells from :func:`cell_half_lengths`.
+
+    N regularly spaced samples sum to N steps; sampling-rate changes are
+    integrated from the actual depths, and data gaps are not counted.
+    """
+    before, after = cell_half_lengths(depth, max_gap_factor)
+    return before + after
 
 
 def depth_to_meters(depth: np.ndarray, depth_unit: str) -> np.ndarray:

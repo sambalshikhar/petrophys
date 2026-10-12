@@ -65,10 +65,45 @@ for source_relative, destination_relative in NOTEBOOK_GROUPS.items():
         copy_tutorial(notebook, target)
 
 # -- Generate the interpretation-settings table from the code ----------------
-def _setting_default(value):
-    if value is None:
-        return "``None``"
-    return f"``{value!r}``"
+def _setting_default(item):
+    """The default, and the value each calculation profile gives an unset setting."""
+    value = item["default"]
+    text = "``None``" if value is None else f"``{value!r}``"
+    by_profile = [
+        f"``{default!r}`` under ``{profile}``"
+        for profile, default in item.get("profile_defaults", {}).items()
+        if default is not None
+    ]
+    if by_profile:
+        text += " (" + "; ".join(by_profile) + ")"
+    return text
+
+
+def _setting_description(item):
+    """A setting's description as the lines of a table cell.
+
+    ``config_schema`` joins the ``#:`` comment lines of a setting with spaces,
+    so a blank comment line becomes a double space and a list item starts with
+    ``* ``. Paragraphs and lists are kept; other asterisks are escaped.
+    """
+    blocks = []
+    for paragraph in item["description"].split("  "):
+        paragraph = paragraph.strip()
+        if paragraph.startswith("* "):
+            blocks.append(["* " + entry.strip().replace("*", "\\*")
+                           for entry in paragraph[2:].split(" * ")])
+        elif paragraph:
+            blocks.append([paragraph.replace("*", "\\*")])
+    if item.get("choices"):
+        choices = "One of: " + ", ".join(f"``{c}``" for c in item["choices"]) + "."
+        if blocks and not blocks[-1][-1].startswith("* "):
+            blocks[-1][-1] += " " + choices
+        else:
+            blocks.append([choices])
+    lines = []
+    for block in blocks:
+        lines += ([""] if lines else []) + block
+    return lines or [" "]
 
 
 def write_settings_table():
@@ -83,11 +118,10 @@ def write_settings_table():
                   "   :widths: 26 16 58", "", "   * - Setting", "     - Default",
                   "     - Description"]
         for item in items:
-            description = item["description"].replace("*", "\\*") or " "
-            if item.get("choices"):
-                description += " One of: " + ", ".join(f"``{c}``" for c in item["choices"]) + "."
-            lines += [f"   * - ``{item['name']}``", f"     - {_setting_default(item['default'])}",
-                      f"     - {description}"]
+            first, *rest = _setting_description(item)
+            lines += [f"   * - ``{item['name']}``", f"     - {_setting_default(item)}",
+                      f"     - {first}"]
+            lines += [f"       {line}" if line else "" for line in rest]
         lines.append("")
     content = "\n".join(lines) + "\n"
     target = DOCS_DIR / "api" / "settings_table.inc"

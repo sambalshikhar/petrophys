@@ -485,8 +485,11 @@ def test_summary_over_a_window(well):
     inside = (depth >= BRENT[0]) & (depth <= BRENT[1])
     assert summary["key_results"]["SW"]["mean"] == pytest.approx(
         np.nanmean(run.well.get("SW").data[inside]))
-    pay = np.count_nonzero(run.well.get("NET_PAY").data[inside] == 1) * well.step
-    assert summary["net_thickness"]["net_pay"] == round(pay, 2)
+    from petrophys._internal.analysis_helpers import cell_thickness
+
+    cells = cell_thickness(well.depth)[inside]
+    pay = cells[run.well.get("NET_PAY").data[inside] == 1].sum()
+    assert summary["net_thickness"]["net_pay"] == round(float(pay), 2)
     assert summary["executed_steps"][0] == {"name": "clay_volume", "kind": "clay_volume",
                                             "method": "gr_linear", "success": True}
     json.dumps(summary)
@@ -793,7 +796,7 @@ def test_net_pay_permeability_rock_quality_and_bvw_match_the_modules(reference):
     for curve in ("NET_ROCK", "NET_RES", "NET_PAY", "PERM", "RQI", "FZI", "PHI_Z", "BVW"):
         base.remove_curve(curve)
     wf = Workflow("x", [
-        steps.net_pay(vcl_cutoff=0.35, phie_cutoff=0.1, sw_cutoff=0.6),
+        steps.net_pay(vcl_cutoff=0.35, phie_cutoff=0.1, sw_cutoff=0.6, exclude_non_reservoir=False),
         steps.permeability(method="timur", swirr=0.2),
         steps.rock_quality(),
         steps.bvw(),
@@ -804,6 +807,13 @@ def test_net_pay_permeability_rock_quality_and_bvw_match_the_modules(reference):
     pay = NetPayModule(0.35, 0.1, 0.6, "clastic").calculate(base, vcl=vcl, phie=phie, sw=sw)
     assert same(data.get("NET_PAY").data, pay.net_pay)
     assert same(data.get("NET_RES").data, pay.net_reservoir)
+    # By default net reservoir and pay also leave out the bad-hole and coal
+    # samples (GeoLink code 18), as petrophys.interpret does.
+    excluded = Workflow("y", [steps.net_pay(vcl_cutoff=0.35, phie_cutoff=0.1, sw_cutoff=0.6)]).run(base).well
+    usable = ~(base.get("BAD_HOLE").data == 1) & ~(base.get("LITHOLOGY_GEOLINK").data == 18)
+    pay = NetPayModule(0.35, 0.1, 0.6, "clastic").calculate(base, vcl=vcl, phie=phie, sw=sw, quality_mask=usable)
+    assert same(excluded.get("NET_PAY").data, pay.net_pay)
+    assert np.count_nonzero(excluded.get("NET_PAY").data) < np.count_nonzero(data.get("NET_PAY").data)
     perm = PermeabilityModule(method="timur").calculate(base, swi=0.2, phi=phie).perm
     assert same(data.get("PERM").data, perm)
     quality = RockQualityModule().calculate(base, perm=perm, phi_e=phie)

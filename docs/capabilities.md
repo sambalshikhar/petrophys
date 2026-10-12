@@ -69,7 +69,7 @@ def table(key, frame):
 :::{grid-item-card} Reading and QC
 ```{glue:figure} cap_qc
 ```
-Standard names and units, range checks, and bad-hole flags from caliper and bit size.
+Standard names and units, range checks, and bad-hole flags from caliper, bit size and density correction.
 
 `pp.read(path)` · `detect_washout(well)`
 +++
@@ -107,9 +107,9 @@ Neutron-density crossplot of the Brent reservoir, with matrix lines.
 :::{grid-item-card} Mineral volumes
 ```{glue:figure} cap_minerals
 ```
-The mineral solver splits the 15/9-14 chalk into calcite, quartz and porosity.
+The mineral solver splits the 15/9-14 chalk into porosity and mineral volumes, mostly calcite.
 
-`MultiMineralSolver().solve(...)` (run by `pp.interpret`)
+`MultiMineralSolverV1().solve(...)` (run by `pp.interpret`)
 +++
 {doc}`Tutorial 05: lithology and minerals <tutorials/part_a/05_lithology_and_mineral_solver>`
 :::
@@ -127,7 +127,7 @@ Check Rw and the Archie exponents against the Statfjord water leg.
 :::{grid-item-card} Water-saturation models
 ```{glue:figure} cap_sw
 ```
-Brent net pay under five saturation models, one setting apart.
+Brent net pay under four saturation models, one setting apart.
 
 `pp.interpret(well, sw_model="simandoux")`
 +++
@@ -421,7 +421,9 @@ pickett = create_pickett_plot(
 thumb("cap_pickett", pickett.fig)
 
 net_pay = {}
-for model in ["archie", "simandoux", "indonesia", "dual_water", "auto"]:
+# Dual Water needs a measured bound-water resistivity (rwb), and Waxman-Smits
+# needs CEC and B; Petrophys does not guess them, so they are left out here.
+for model in ["archie", "simandoux", "indonesia", "auto"]:
     run = pp.interpret(well, rw=0.07, rw_meas_temp_f=230, sw_model=model)
     net_pay[model] = run.summary(top=BRENT[0], bottom=BRENT[1])["net_thickness"]["net_pay"]
 print("Brent net pay (m):")
@@ -544,7 +546,8 @@ from petrophys.workflow import BatchProcessor
 # Seventeen COSTA wells, each covering the Kharaib-2 interval only.
 costa_tops = pp.sample("formations_costa")
 wells = [pp.read(pp.sample(name), formations=costa_tops) for name in pp.list_samples("costa")]
-batch = BatchProcessor(config=dict(lithology_domain="carbonate", vcl_cutoff=0.30, phie_cutoff=0.10, sw_cutoff=0.60))
+batch = BatchProcessor(config=dict(lithology_domain="carbonate", carbonate_calibration="costa",
+                                   vcl_cutoff=0.30, phie_cutoff=0.10, sw_cutoff=0.60))
 runs = batch.process_wells(wells)
 pay = {run.well_name: run.result.formation_summary().iloc[0]["Net Pay (ft)"] for run in runs}
 fig, ax = create_bar_comparison(list(pay), list(pay.values()), sort_by=0, figsize=THUMB,

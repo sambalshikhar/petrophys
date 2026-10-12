@@ -166,8 +166,21 @@ lithology
 
 ## Lithology codes
 
-A codebook names the codes of a lithology curve already in the LAS. It is not
-an interval file.
+A codebook names the codes of a lithology code curve already in the LAS. It is
+not an interval file.
+
+`pp.interpret` reads one code curve per well: the curve named by the
+`lithology_curve` setting, else `LITHOLOGY_GEOLINK`, else the first curve under
+a lithology-code name (`LITHOLOGY`, `LITHOFACIES`, `FACIES`, `LITH_CODE`,
+`ROCK_TYPE`, ...) whose values pass the code checks: 20 or more finite samples,
+whole numbers from 0 to 99 with at most 50 distinct values, and half or more of
+the samples GeoLink codes. Other curves whose names contain LITH or FACIES are
+not read. Whatever the curve is called, its codes are decoded with the
+GeoLink/Kingdom code table, and a warning says so for a curve other than
+`LITHOLOGY_GEOLINK`. `pp.interpret` takes no codebook: a codebook names the
+codes in plots and context. The benchmark calculation profile
+({ref}`calculation profiles <calculation-profiles>`) keeps the eval package's
+search unless `lithology_curve` is set.
 
 ```{code-cell} python
 pd.read_csv(pp.sample("lithology_codes_template"))
@@ -189,7 +202,7 @@ print(pp.read_lithology_codes(kingdom, label_column="Lithology Attribute"))
 | `Attribute` and `Lithology Attribute` both present | `Attribute` is used, with a warning if they differ; choose with `label_column` |
 | Duplicate codes, empty labels | Error |
 | Codes | Vendor-specific; the template's assignments are only examples |
-| Use | `pp.plot(well, lithology_mapping=codes)` |
+| Use | `pp.plot(well, lithology_mapping=codes)`; `lithology_mapping_file` in `pp.export_context` |
 
 ## LAS metadata and embedded core data
 
@@ -197,14 +210,37 @@ No separate well-parameter or core-measurement template is required. The
 workflow reads supported parameters such as Rw, its reference temperature,
 BHT, TD, Archie coefficients and zoned values from LAS metadata. Explicit
 Python settings take precedence, and documented defaults are used when a value
-is absent.
+is absent. The mud and formation-water parameters, and the settings they stand
+in for:
 
-`lithology_domain` defaults to `clastic`. Set it to `carbonate` for the
-COSTA mineral route or to `auto` when deliberate domain inference is wanted:
+| LAS parameter | Setting | How it is read |
+| --- | --- | --- |
+| `RW`, `RWT` | `rw`, `rw_meas_temp_f` | Rw in ohm.m at RWT; without RWT, Rw is taken at the well's median formation temperature, with a warning |
+| `RMF`, `RMFT` | `rmf_at_meas_temp`, `rmf_meas_temp_f` | `MFST`, the mud-filtrate sample temperature, stands in for a missing RMFT |
+| `RM`, `RMT` | `rm`, `rm_meas_temp_f` | `MST`, the mud sample temperature, stands in for a missing RMT |
+| `CLFL` | `rmf_chlorides_mg_l` | Mud-filtrate chlorides in mg/l (values in ppm, kppm or % are converted). Without an Rmf, Rmf comes from the NaCl equivalent, Cl x 58.44/35.45, divided by the brine density |
+| `BHT`, `TD` | `bht_f`, `td_ft` | BHT is taken as the static formation temperature at TD, with no correction for mud circulation |
+| `CEC` | `cec` | meq/100 g; a value labelled meq/g is multiplied by 100, and a value under 1 gets a warning, as meq/g values look like that |
+| `RWB` | `rwb` | Bound-water resistivity, ohm.m; Dual Water runs only with it |
+| `PNSH` with `RBSH` | `phi_cl` (`RBSH` also `rho_cl`) | The neutron reading and the density of shale give the clay porosity; PNSH alone is not used |
+
+Header temperatures labelled degC or K are converted; unlabelled ones are read
+as degF. The benchmark calculation profile ({ref}`calculation profiles
+<calculation-profiles>`) reads CLFL as NaCl salinity in ppm, ignores MFST and
+MST, and takes PNSH as the clay porosity.
+
+`lithology_domain` defaults to `clastic`. Set it to `carbonate` for carbonate
+wells: calcite and dolomite are then solved from bulk density, with clay from
+VCL, so the split depends on the pore-fluid density `rho_fl` (1.0 g/cm3 unless
+you set it for your brine). For the COSTA field wells,
+`carbonate_calibration="costa"` applies the field calibration instead (illite
+from GR, a 1.19 g/cm3 brine). Set `auto` when deliberate domain inference is
+wanted. A COSTA well with the field calibration:
 
 ```{code-cell} python
-carbonate = pp.interpret(pp.read(pp.sample("HW-3")), lithology_domain="carbonate")
-print(carbonate.config.lithology_domain)
+carbonate = pp.interpret(pp.read(pp.sample("HW-3")), lithology_domain="carbonate",
+                         carbonate_calibration="costa")
+print(carbonate.config.lithology_domain, carbonate.config.carbonate_calibration)
 ```
 
 In LAS metadata, use `PP_DOMAIN` or `LITHOLOGY_DOMAIN`. On the command line,

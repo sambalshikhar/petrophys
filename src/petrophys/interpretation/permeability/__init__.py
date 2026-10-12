@@ -16,7 +16,11 @@ from petrophys.interpretation.permeability.perm_module import (
     resolve_swirr,
 )
 from petrophys.interpretation.permeability.timur import timur
-from petrophys.interpretation.permeability.coates_denoo import coates_denoo
+from petrophys.interpretation.permeability.coates_denoo import (
+    WYLLIE_ROSE_PRESETS,
+    coates_denoo,
+    wyllie_rose,
+)
 from petrophys.interpretation.permeability.lith_vcl import lith_vcl_permeability
 from petrophys.interpretation.permeability.classification import classify_permeability
 from petrophys.interpretation.permeability.impermeable_flag import flag_impermeable
@@ -31,6 +35,8 @@ __all__ = [
     "resolve_swirr",
     "timur",
     "coates_denoo",
+    "wyllie_rose",
+    "WYLLIE_ROSE_PRESETS",
     "lith_vcl_permeability",
     "classify_permeability",
     "flag_impermeable",

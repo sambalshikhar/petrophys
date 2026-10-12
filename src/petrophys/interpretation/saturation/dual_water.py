@@ -28,12 +28,21 @@ def dual_water(
     water (Rwb).  Operates entirely on total porosity — effective
     porosity is not required and is not used in the derivation.
 
+    This is the wet-zone (Ro) form of the Dual Water model of Clavier,
+    Coates and Dumanoir (1984), "Theoretical and experimental bases for the
+    dual-water model for interpretation of shaly sands", SPE Journal 24(2),
+    as published in Crain's Petrophysical Handbook: the two waters are mixed
+    in the proportions of the water-filled rock, Archie's equation on total
+    porosity gives Swt, and the bound water is removed to give Swe. The full
+    model weights the bound water by Swb/Swt rather than Swb, so the two
+    agree in wet rock (Swt = 1) and differ in hydrocarbon-bearing rock.
+
     Equations
     ---------
     Bound water porosity:
         phi_bw = VCL * phi_cl
 
-    Bound water saturation:
+    Bound water saturation (capped at 0.999 where phi_bw >= phi_t):
         Swb = phi_bw / phi_t
 
     Apparent total water resistivity:
@@ -54,8 +63,7 @@ def dual_water(
     rw : float
         Free water resistivity (ohm.m)
     rwb : float
-        Bound water resistivity (ohm.m).
-        If unknown, a common approximation is rwb = 0.3 * rw.
+        Bound water resistivity (ohm.m), from lab data or the user.
     vcl : float or np.ndarray
         Volume of clay (fraction)
     phi_cl : float

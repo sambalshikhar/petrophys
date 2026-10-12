@@ -244,19 +244,23 @@ def test_module_selects_carbonate_from_core_without_well_name_rules():
     np.testing.assert_allclose(result.v_calcite, 0.8, atol=1e-7)
 
 
-def test_explicit_carbonate_setting_passes_through_workflow():
+@pytest.mark.parametrize('profile, method, illite', [
+    ('benchmark', 'costa_gr_illite_calcite_dolomite', True),
+    ('current', 'generic_calcite_dolomite_density_closure', False),
+])
+def test_explicit_carbonate_setting_passes_through_workflow(profile, method, illite):
     from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 
     well = _well_with_core_porosity(2.71)
     well.remove_curve('PHIE_CC')
     well.add_curve('NPHI', np.full(60, 0.2), 'v/v')
     result = DynamicWorkflow(DynamicWorkflowConfig(
-        lithology_domain='carbonate', matrix_type='limestone',
+        lithology_domain='carbonate', matrix_type='limestone', calculation_profile=profile,
     )).run(well)
     step = next(step for step in result.steps_executed if step.step == 'lithology')
-    assert step.method == 'costa_gr_illite_calcite_dolomite'
+    assert step.method == method
     assert step.parameters['lithology_domain'] == 'carbonate'
-    assert 'VILL' in step.output_curves
+    assert ('VILL' in step.output_curves) is illite
 
 
 def test_custom_mineral_set_is_preserved_for_a_carbonate_well():
@@ -269,15 +273,19 @@ def test_custom_mineral_set_is_preserved_for_a_carbonate_well():
     assert result.mineral_selection['reduced_minerals'] == ['quartz', 'calcite']
 
 
-def test_auto_resolution_selects_the_carbonate_domain_route():
+@pytest.mark.parametrize('profile, method', [
+    ('benchmark', 'costa_gr_illite_calcite_dolomite'),
+    ('current', 'generic_calcite_dolomite_density_closure'),
+])
+def test_auto_resolution_selects_the_carbonate_domain_route(profile, method):
     from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 
     well = _well_with_core_porosity(2.71)
     well['RHOB'].data[-20:] = 2.65 * 0.8 + 0.2
     well.add_curve('NPHI', np.full(60, 0.2), 'v/v')
     result = DynamicWorkflow(DynamicWorkflowConfig(
-        lithology_domain='auto', matrix_type='auto',
+        lithology_domain='auto', matrix_type='auto', calculation_profile=profile,
     )).run(well)
     step = next(step for step in result.steps_executed if step.step == 'lithology')
     assert result.config.lithology_domain == 'carbonate'
-    assert step.method == 'costa_gr_illite_calcite_dolomite'
+    assert step.method == method

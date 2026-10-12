@@ -8,7 +8,19 @@ measurements to formation temperature.
 from typing import Union
 import numpy as np
 
-from petrophys.model.units import UnitConverter
+from petrophys.model.units import UnitConverter, temperature_unit
+
+
+def _arps_scale(temp_unit: str, *temperatures):
+    """Return the Arps scale ("F" or "C") of ``temp_unit`` and the temperatures on it.
+
+    Arps' constant is defined on the Fahrenheit and Celsius scales, so Kelvin
+    temperatures are converted to Celsius. Unknown labels raise ``ValueError``.
+    """
+    scale = temperature_unit(temp_unit, strict=True)
+    if scale == "K":
+        return "C", tuple(UnitConverter.temperature(t, "K", "C") for t in temperatures)
+    return scale, temperatures
 
 
 def arps_equation(
@@ -20,10 +32,11 @@ def arps_equation(
     """
     Correct resistivity to formation temperature using Arps equation.
 
-    The Arps equation relates resistivity at different temperatures:
+    The Arps (1953) equation relates resistivity at different temperatures:
     R2 = R1 * (T1 + k) / (T2 + k)
 
-    where k = 6.77 for temperatures in °F (or 21.5 for °C)
+    where k = 6.77 for temperatures in °F (or 21.5 for °C); temperatures in
+    kelvin are converted to °C first.
 
     Parameters
     ----------
@@ -34,23 +47,29 @@ def arps_equation(
     t_formation : float or np.ndarray
         Formation temperature
     temp_unit : str, optional
-        Temperature unit ("F" or "C")
+        Temperature unit: "F", "C", "K" or a label such as "degC" (see
+        :func:`petrophys.model.units.temperature_unit`)
 
     Returns
     -------
     float or np.ndarray
         Resistivity corrected to formation temperature
 
+    Raises
+    ------
+    ValueError
+        If ``temp_unit`` is not a recognized temperature unit.
+
     Examples
     --------
     >>> # Correct Rmf from surface temp to formation temp
-    >>> rmf_formation = arps_equation(rmf_surface, t_surface=75, t_formation=150)
+    >>> rmf_surface = 0.85  # ohm.m at 75 degF
+    >>> round(arps_equation(rmf_surface, t_measured=75, t_formation=150), 4)
+    0.4434
     """
     # Arps constant
-    if temp_unit.upper() == "F":
-        k = 6.77
-    else:  # Celsius
-        k = 21.5
+    scale, (t_measured, t_formation) = _arps_scale(temp_unit, t_measured, t_formation)
+    k = 6.77 if scale == "F" else 21.5
 
     r_corrected = r_measured * (t_measured + k) / (t_formation + k)
     return r_corrected
@@ -75,7 +94,7 @@ def correct_resistivity_temperature(
     to_temp : float or np.ndarray
         Target temperature
     temp_unit : str, optional
-        Temperature unit ("F" or "C")
+        Temperature unit: "F", "C", "K" or a label such as "degC"
     method : str, optional
         Correction method ("arps" or "arp2")
 
@@ -94,10 +113,8 @@ def correct_resistivity_temperature(
         return arps_equation(resistivity, from_temp, to_temp, temp_unit)
     else:
         # Alternative Arp formula (slightly different constant)
-        if temp_unit.upper() == "F":
-            k = 7.0
-        else:
-            k = 21.0
+        scale, (from_temp, to_temp) = _arps_scale(temp_unit, from_temp, to_temp)
+        k = 7.0 if scale == "F" else 21.0
         return resistivity * (from_temp + k) / (to_temp + k)
 
 
@@ -156,8 +173,8 @@ def estimate_nacl_resistivity(
         Resistivity in ohm.m
     """
     # Convert to Fahrenheit
-    if temp_unit.upper() == "C":
-        temperature = UnitConverter.celsius_to_fahrenheit(temperature)
+    if temperature_unit(temp_unit, strict=True) != "F":
+        temperature = UnitConverter.temperature(temperature, temp_unit, "F")
 
     # Empirical formula (Schlumberger Gen-9)
     # Rw = (400000 / salinity_ppm) / (temperature + 6.77)

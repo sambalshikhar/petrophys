@@ -8,6 +8,88 @@ from salinity measurements.
 from typing import Union
 import numpy as np
 
+from petrophys.model.units import UnitConverter, temperature_unit
+
+#: Mass of NaCl per unit mass of chloride (molar masses 58.44 and 35.45 g/mol):
+#: a chloride concentration times this factor is its NaCl equivalent.
+NACL_PER_CHLORIDE = 58.44 / 35.45
+
+
+def brine_density(salinity_ppm: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+    """
+    Density of an NaCl brine at standard conditions (60 degF, 14.7 psia).
+
+    McCain (1991): rho = 62.368 + 0.438603 S + 1.60074e-3 S^2 lbm/ft3, with S
+    the dissolved solids in weight percent.
+
+    Parameters
+    ----------
+    salinity_ppm : float or np.ndarray
+        Salinity, ppm by weight (mg/kg)
+
+    Returns
+    -------
+    float or np.ndarray
+        Brine density, g/cm3
+    """
+    s = np.asarray(salinity_ppm, dtype=float) / 1.0e4
+    density = (62.368 + 0.438603 * s + 1.60074e-3 * s ** 2) / 62.428
+    return float(density) if density.ndim == 0 else density
+
+
+def salinity_mg_per_l_to_ppm(salinity_mg_l: float) -> float:
+    """
+    Convert a salinity in mg/l to ppm by weight.
+
+    ppm = (mg/l) / rho, with rho in g/cm3 from :func:`brine_density`. The
+    density depends on the ppm value itself, so the division is iterated.
+
+    Parameters
+    ----------
+    salinity_mg_l : float
+        Dissolved salt, mg per litre of solution
+
+    Returns
+    -------
+    float
+        Salinity, ppm by weight
+    """
+    concentration = float(salinity_mg_l)
+    ppm = concentration
+    for _ in range(50):
+        updated = concentration / brine_density(ppm)
+        if abs(updated - ppm) <= 1e-9 * max(abs(updated), 1.0):
+            return updated
+        ppm = updated
+    return ppm
+
+
+def chlorides_to_nacl_ppm(chlorides_mg_l: float) -> float:
+    """
+    NaCl-equivalent salinity of a chloride concentration.
+
+    Mud reports give filtrate chlorides (Cl-) in mg/l, titrated per API RP
+    13B-1; :func:`rw_from_salinity` and the resistivity charts take NaCl ppm
+    by weight. The chloride is counted as NaCl (x :data:`NACL_PER_CHLORIDE`,
+    about 1.65) and converted to ppm with :func:`salinity_mg_per_l_to_ppm`.
+
+    Parameters
+    ----------
+    chlorides_mg_l : float
+        Chloride ion concentration, mg/l
+
+    Returns
+    -------
+    float
+        Salinity, ppm NaCl equivalent
+
+    Examples
+    --------
+    >>> round(chlorides_to_nacl_ppm(30000.0))
+    47864
+    """
+    return salinity_mg_per_l_to_ppm(NACL_PER_CHLORIDE * float(chlorides_mg_l))
+
 
 def rw_from_salinity(
     salinity_ppm: Union[float, np.ndarray],
@@ -26,7 +108,8 @@ def rw_from_salinity(
     temperature : float or np.ndarray
         Temperature
     temp_unit : str, optional
-        Temperature unit
+        Temperature unit: "F", "C", "K" or a label such as "degC"; unknown
+        labels raise ``ValueError``
 
     Returns
     -------
@@ -34,9 +117,8 @@ def rw_from_salinity(
         Formation water resistivity (ohm.m)
     """
     # Convert to Fahrenheit
-    if temp_unit.upper() == "C":
-        from petrophys.model.units import UnitConverter
-        temperature = UnitConverter.celsius_to_fahrenheit(temperature)
+    if temperature_unit(temp_unit, strict=True) != "F":
+        temperature = UnitConverter.temperature(temperature, temp_unit, "F")
 
     # Handle zero or negative salinity
     if isinstance(salinity_ppm, np.ndarray):
@@ -72,7 +154,8 @@ def salinity_from_rw(
     temperature : float or np.ndarray
         Temperature
     temp_unit : str, optional
-        Temperature unit
+        Temperature unit: "F", "C", "K" or a label such as "degC"; unknown
+        labels raise ``ValueError``
 
     Returns
     -------
@@ -80,9 +163,8 @@ def salinity_from_rw(
         Salinity in ppm NaCl
     """
     # Convert to Fahrenheit
-    if temp_unit.upper() == "C":
-        from petrophys.model.units import UnitConverter
-        temperature = UnitConverter.celsius_to_fahrenheit(temperature)
+    if temperature_unit(temp_unit, strict=True) != "F":
+        temperature = UnitConverter.temperature(temperature, temp_unit, "F")
 
     # Correct Rw to 75°F
     rw_75 = rw * (temperature + 6.77) / (75 + 6.77)

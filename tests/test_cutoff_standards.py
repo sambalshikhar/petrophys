@@ -46,8 +46,15 @@ def test_netpay_module_per_depth_lithology_cutoffs():
 
 
 def test_dynamic_config_cutoff_defaults():
+    from petrophys.workflow.dynamic_workflow import _profile_setting
+
+    # Unset by default: "current" resolves them per lithology family, the
+    # benchmark profile to the eval package's VCL 0.3 and SW 0.7.
     cfg = DynamicWorkflowConfig()
-    assert (cfg.vcl_cutoff, cfg.sw_cutoff, cfg.phie_cutoff) == (0.3, 0.7, None)
+    assert (cfg.vcl_cutoff, cfg.sw_cutoff, cfg.phie_cutoff) == (None, None, None)
+    benchmark = DynamicWorkflowConfig(calculation_profile="benchmark")
+    resolved = tuple(_profile_setting(benchmark, key) for key in ("vcl_cutoff", "sw_cutoff", "phie_cutoff"))
+    assert resolved == (0.3, 0.7, None)
 
 
 def test_constants_match_standards():

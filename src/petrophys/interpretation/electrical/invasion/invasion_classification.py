@@ -5,7 +5,7 @@ This module provides classification of invasion profiles
 based on Rxo/Rt ratio.
 """
 
-from typing import Union
+from typing import Optional, Union
 from enum import Enum
 import numpy as np
 
@@ -35,7 +35,8 @@ def classify_invasion(
     InvasionClassification or np.ndarray
         Classification result
 
-    Classification thresholds:
+    Classification thresholds (``CLASS_TABLES["RXO_RT"]``; ``None`` where
+    the ratio is not finite):
     - CONDUCTIVE_INVASION: Ratio < 0.8
     - MINIMAL_INVASION: 0.8 ≤ Ratio ≤ 1.2
     - RESISTIVE_INVASION: Ratio > 1.2
@@ -43,7 +44,14 @@ def classify_invasion(
     return InvasionClassification.classify(ratio)
 
 
-def get_invasion_type(ratio: float) -> InvasionType:
+_INVASION_TYPES = {
+    InvasionClassification.CONDUCTIVE_INVASION: InvasionType.CONDUCTIVE,
+    InvasionClassification.MINIMAL_INVASION: InvasionType.MINIMAL,
+    InvasionClassification.RESISTIVE_INVASION: InvasionType.RESISTIVE,
+}
+
+
+def get_invasion_type(ratio: float) -> Optional[InvasionType]:
     """
     Get invasion type from ratio.
 
@@ -54,15 +62,11 @@ def get_invasion_type(ratio: float) -> InvasionType:
 
     Returns
     -------
-    InvasionType
-        Invasion type
+    InvasionType or None
+        Invasion type, from the classes of :func:`classify_invasion`; None
+        when the ratio is not finite
     """
-    if ratio < 0.8:
-        return InvasionType.CONDUCTIVE
-    elif ratio > 1.2:
-        return InvasionType.RESISTIVE
-    else:
-        return InvasionType.MINIMAL
+    return _INVASION_TYPES.get(classify_invasion(ratio))
 
 
 def interpret_invasion(ratio: float) -> str:
@@ -79,12 +83,15 @@ def interpret_invasion(ratio: float) -> str:
     str
         Interpretation text
     """
-    if ratio < 0.8:
+    invasion_type = get_invasion_type(ratio)
+    if invasion_type is None:
+        return "No valid Rxo/Rt ratio: the invasion profile cannot be interpreted."
+    if invasion_type is InvasionType.CONDUCTIVE:
         return (
             "Conductive invasion: Mud filtrate is more conductive than "
             "formation water. May indicate oil/gas in uninvaded zone."
         )
-    elif ratio > 1.2:
+    elif invasion_type is InvasionType.RESISTIVE:
         return (
             "Resistive invasion: Mud filtrate is more resistive than "
             "formation water. May indicate high salinity formation water."

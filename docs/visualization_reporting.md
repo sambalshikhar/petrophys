@@ -249,7 +249,9 @@ fig, ax = create_histogram_comparison(gr_by_well, density=True, xlabel="GR (API)
                                       title="GR by well", figsize=SMALL)
 place("histogram", fig)
 
-# Brent net pay as the cutoffs move; the interpreted curves stay fixed.
+# Brent net pay as the cutoffs move; the interpreted curves stay fixed. NetPayModule
+# applies the cutoffs alone, so the samples pp.interpret leaves out of NET_PAY
+# (bad hole, evaporite, coal, halite) count here.
 brent = geo.depth_slice(*BRENT)
 base = STANDARD_CUTOFFS["clastic"]
 def net_pay(**change):
@@ -276,7 +278,7 @@ fig, ax = create_heatmap(ntg, x=sw_cuts, y=vcl_cuts, cmap="RdYlGn", invert_yaxis
                          title="Brent net-to-gross", figsize=SMALL)
 place("heatmap", fig)
 print("Standard clastic cutoffs:", base)
-print(f"Brent net pay with them: {net_pay():.1f} m")
+print(f"Brent net pay with them, cutoffs alone: {net_pay():.1f} m")
 ```
 
 ::::{grid} 1 1 2 2

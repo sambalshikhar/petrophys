@@ -183,8 +183,9 @@ show_error(lambda: pp.interpret(well, rw=0.07, rw_temp_f=230))
 ## Interpret, summarize, export
 
 A CSV has no header, so there is no bottom-hole temperature or mud-filtrate
-resistivity. The trace says what was assumed or skipped. Supply the values with
-`bht_f` and `rmf_at_meas_temp`, or a well-parameters file.
+resistivity. The trace and `result.warnings` say what was assumed or skipped.
+Supply the values with `bht_f` and `rmf_at_meas_temp` (or the mud report's
+filtrate chlorides, `rmf_chlorides_mg_l`), or a well-parameters file.
 
 ```{code-cell} python
 result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
@@ -194,6 +195,8 @@ temperature = next(step for step in result.steps_executed if step.step == "tempe
 for label, text in [("temperature", temperature.decisions[0]),
                     ("rmf skipped", result.specific_steps_skipped["rmf"])]:
     print(fill(f"{label}: {text}", 88, subsequent_indent="    "))
+for message in result.warnings:
+    print(fill(f"warning: {message}", 88, subsequent_indent="    "))
 ```
 
 Attached formations organize the answer. Averages are over net-pay samples, so

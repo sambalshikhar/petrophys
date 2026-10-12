@@ -410,14 +410,36 @@ def _assumptions(result: Any) -> tuple[List[str], List[str]]:
     net_pay = _step(result, "net_pay")
     if net_pay is not None:
         parameters = net_pay.parameters or {}
-        phie_cutoff = parameters.get("phie_cutoff")
-        cutoffs = [
-            f"VCL < {parameters.get('vcl_cutoff')}",
-            f"PHIE > {phie_cutoff}" if phie_cutoff is not None else "PHIE > 0.08 (0.045 where carbonate)",
-            f"SW < {parameters.get('sw_cutoff')}",
-        ]
-        text = "Net-pay cutoffs: " + ", ".join(cutoffs)
+        by_family = parameters.get("cutoffs_by_family")
+        if by_family:
+            text = "Net-pay cutoffs: " + "; ".join(
+                f"{family} VCL < {item['vcl_cutoff']:g}, PHIE > {item['phie_cutoff']:g}, "
+                f"SW < {item['sw_cutoff']:g}"
+                for family, item in by_family.items()
+            )
+        else:
+            phie_cutoff = parameters.get("phie_cutoff")
+            cutoffs = [
+                f"VCL < {parameters.get('vcl_cutoff')}",
+                f"PHIE > {phie_cutoff}" if phie_cutoff is not None else "PHIE > 0.08 (0.045 where carbonate)",
+                f"SW < {parameters.get('sw_cutoff')}",
+            ]
+            text = "Net-pay cutoffs: " + ", ".join(cutoffs)
         items.append(text)
+        excluded = parameters.get("excluded_from_net_reservoir_and_pay") or {}
+        labels = {
+            "evaporite": "evaporite lithology",
+            "coal": "coal",
+            "halite_log_signature": "halite by its log response (no evaporite lithology code)",
+            "bad_hole": "bad hole",
+        }
+        removed = [
+            f"{labels.get(kind, kind)} ({item['net_pay_removed']:g} {item['depth_unit']} of "
+            "net pay removed, whole well)"
+            for kind, item in excluded.items()
+        ]
+        if removed:
+            items.append("Not net reservoir or pay: " + "; ".join(removed))
     return items, notes
 
 

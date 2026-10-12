@@ -48,20 +48,6 @@ viewer = pp.plot(
 viewer.show()
 ```
 
-:::{note}
-The two warnings are real: this LAS labels its core saturations `SWC` and `SOC`
-as fractions, but they hold percentages. Petrophys divides them by 100 and says
-so. The rest of this page hides only that message; see {ref}`core-saturation-units`.
-:::
-
-```{code-cell} python
-:tags: [hide-input]
-import warnings
-
-# Hide only the SWC/SOC unit message explained above; other warnings stay visible.
-warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
-```
-
 ## Interpret
 
 `pp.interpret` works on a copy of the well. Settings are keywords: here the
@@ -78,6 +64,23 @@ print("resolved:", result.config.matrix_type, "matrix,",
       result.config.lithology_domain, "domain")
 for message in result.warnings:
     print(fill(f"warning: {message}", 88, subsequent_indent="    "))
+```
+
+:::{note}
+These warnings are real: this LAS labels its core saturations `SWC` and `SOC`
+as fractions, but they hold percentages. Petrophys divides them by 100 for its
+core calibration and says so each time it reads them, so each message appears
+twice. They are Python warnings, not entries of `result.warnings`, which is
+empty for this run. The rest of this page hides only these warnings; see
+{ref}`core-saturation-units`.
+:::
+
+```{code-cell} python
+:tags: [hide-input]
+import warnings
+
+# Hide only the SWC/SOC unit message explained above; other warnings stay visible.
+warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
 ```
 
 | `result.status` | Meaning |
@@ -104,10 +107,14 @@ Without `rw`, the workflow uses the first source it finds:
 
 1. an `RW` value in the LAS header;
 2. a formation-water salinity, `salinity_ppm`;
-3. the SP or Rxo/Rt response, given a mud-filtrate resistivity;
-4. the apparent Rw of clean, wet rock.
+3. the SP or Rxo/Rt response, given a mud-filtrate resistivity (water-based mud
+   only);
+4. the apparent Rw of clean, wet rock, with a warning;
+5. a default of 0.05 ohm.m, with a warning (`allow_default_rw=False` turns it
+   off).
 
-Always give the temperature Rw was measured at; otherwise 75 degF is assumed.
+Always give the temperature Rw was measured at (`rw_meas_temp_f`); otherwise Rw
+is taken at the well's median formation temperature, with a warning.
 The 30/6-5 header gives `RW = 0.7` with no temperature, so this page passes its
 own value.
 :::
@@ -123,12 +130,16 @@ print(rw_step.decisions)
 ## Summarize the Brent reservoir
 
 The log starts in shallow, poorly consolidated rock that can pass the pay
-cutoffs (the clay, porosity and saturation limits). Summarize the interval you
+cutoffs (the clay, porosity and saturation limits). One Rw also serves the whole
+well, while shallow formation waters are usually fresher than the reservoir's,
+so shallow sections that no lithology code covers can be flagged as marginal
+pay; {doc}`data_quality` explains this limitation. Summarize the interval you
 are evaluating, not the whole well.
 
 ```{code-cell} python
+print("whole well:", result.summary()["net_thickness"])
 brent = result.summary(top=2841, bottom=2958)
-print(brent["net_thickness"])
+print("Brent:     ", brent["net_thickness"])
 
 stats = pd.DataFrame(brent["key_results"]).T
 stats[["p10", "median", "p90"]].astype(float).round(3).assign(unit=stats["unit"])

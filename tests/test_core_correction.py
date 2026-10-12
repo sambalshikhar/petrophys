@@ -30,6 +30,35 @@ def _core_well(core_phi: np.ndarray, core_perm: np.ndarray) -> Well:
     return well
 
 
+def _cored_well(core_phi_from_phit, n_core: int = 10) -> Well:
+    """PHIT 0.06-0.288 and PHIE = PHIT - 0.03 (0 in two shale samples), cored every other depth."""
+    n = 2 * n_core
+    well = Well("CORED")
+    well.depth = 1000.0 + 0.5 * np.arange(n)
+    well.depth_unit = "m"
+    phit = 0.06 + 0.012 * np.arange(n)
+    phie = phit - 0.03
+    phie[:2] = 0.0
+    core_idx = np.arange(0, n, 2)
+    phic = np.full(n, np.nan)
+    kh = np.full(n, np.nan)
+    phic[core_idx] = core_phi_from_phit(phit[core_idx])
+    kh[core_idx] = 10 ** (12.0 * phic[core_idx] - 2.0)
+    well.add_curve("PHIT", phit, "v/v", "Total porosity")
+    well.add_curve("PHIE", phie, "v/v", "Effective porosity")
+    well.add_curve("VCL", (phit - phie) / 0.15, "v/v", "Clay volume")
+    well.add_curve("SW", np.full(n, 0.35), "v/v", "Water saturation")
+    well.add_curve("RDEP", np.full(n, 10.0), "ohm.m", "Deep resistivity")
+    well.add_curve("RESFLAG", np.ones(n), "", "Reservoir flag")
+    well.add_curve("PHIC", phic, "v/v", "Core porosity")
+    well.add_curve("KH_CORE", kh, "mD", "Core permeability")
+    return well
+
+
+def _linear_core(phit):
+    return 1.1 * phit - 0.02
+
+
 def test_same_well_core_correction_is_used_when_core_pairs_are_available():
     phie = np.linspace(0.10, 0.28, 10)[[0, 2, 4, 6, 8]]
     core_phi = 1.1 * phie + 0.01
@@ -67,9 +96,7 @@ def test_same_well_core_correction_does_not_reject_on_fit_accuracy_metrics():
 
 
 def test_dynamic_workflow_rewrites_stale_core_curves_from_current_core_model():
-    core_phi = np.array([0.18, 0.11, 0.24, 0.13, 0.20])
-    core_perm = np.array([10.0, 300.0, 2.0, 80.0, 6.0])
-    well = _core_well(core_phi, core_perm)
+    well = _cored_well(_linear_core)
     well.add_curve("PHIE_CC", np.full(well.n_samples, 0.30), "v/v", "Stale core porosity")
     well.add_curve("PERM_CC", np.full(well.n_samples, 5000.0), "mD", "Stale core perm")
 
@@ -83,9 +110,7 @@ def test_dynamic_workflow_rewrites_stale_core_curves_from_current_core_model():
 
 
 def test_dynamic_workflow_builds_phie_cc_before_saturation():
-    core_phi = np.array([0.18, 0.20, 0.22, 0.24, 0.26])
-    core_perm = 10 ** (12.0 * core_phi - 2.0)
-    well = _core_well(core_phi, core_perm)
+    well = _cored_well(_linear_core)
 
     result = DynamicWorkflow(
         DynamicWorkflowConfig(
@@ -163,3 +188,140 @@ def test_poro_perm_transform_requires_two_valid_core_pairs():
 
     with pytest.raises(ValueError, match="At least two valid"):
         fit_poro_perm_transform(core)
+
+
+# -- Core porosity correction under the "current" and benchmark profile --------------
+
+
+def _core_step(result):
+    return next(step for step in result.steps_executed if step.step == "core_correction")
+
+
+def test_current_fits_core_porosity_to_phit_and_takes_the_bound_part_off_again():
+    # Plug helium porosity is total porosity: core = 1.1 PHIT - 0.02 exactly.
+    well = _cored_well(_linear_core)
+    phit = well.get("PHIT").data.copy()
+    phie = well.get("PHIE").data.copy()
+
+    result = DynamicWorkflow().run_selected_steps(well, [WorkflowStep.CORE_CORRECTION])
+    step = _core_step(result)
+
+    phit_cc = 1.1 * phit - 0.02
+    expected = np.clip(phit_cc - (phit - phie), 0.0, phit_cc)
+    np.testing.assert_allclose(result.well.get("PHIE_CC").data, expected, atol=1e-9)
+    # PHIT 0.24, PHIE 0.21: PHIT_CC = 1.1 * 0.24 - 0.02 = 0.244, PHIE_CC = 0.244 - 0.03.
+    assert result.well.get("PHIE_CC").data[15] == pytest.approx(0.214)
+    # Shale, PHIT 0.06 and PHIE 0: PHIT_CC = 0.046 is all clay-bound, so PHIE_CC = 0.
+    assert result.well.get("PHIE_CC").data[0] == pytest.approx(0.0)
+    # The poro-perm transform is fitted on PHIT_CC: log10(k) = 12 PHIT_CC - 2.
+    np.testing.assert_allclose(
+        result.well.get("PERM_CC").data, np.minimum(10 ** (12.0 * phit_cc - 2.0), 10000.0), rtol=1e-6
+    )
+    fit = step.parameters["core_porosity_fits"][0]
+    assert fit["input_curve"] == "PHIT"
+    assert (fit["A"], fit["B"], fit["r_squared"], fit["n_points"]) == pytest.approx((1.1, -0.02, 1.0, 10))
+    assert step.input_curves == ["PHIT", "PHIE"]
+    assert "Core porosity correction (all depths): PHIT_CC = 1.100 * PHIT - 0.020 (n=10, r^2=1.00)" in step.decisions
+    assert any(note.startswith("PHIE_CC = PHIT_CC - (PHIT - PHIE)") for note in step.decisions)
+
+
+def _noisy_core(phit):
+    # A weak trend under alternating scatter: positive slope, r^2 well below 0.5.
+    return 0.10 + 0.5 * phit + 0.08 * (-1.0) ** np.arange(phit.size)
+
+
+@pytest.mark.parametrize(
+    "core_phi, n_core, reason",
+    [
+        (lambda phit: 0.40 - phit, 10, "non_positive_porosity_slope"),
+        (_noisy_core, 10, "low_porosity_r_squared"),
+        (_linear_core, 5, "too_few_porosity_points"),
+    ],
+)
+def test_current_does_not_apply_an_unphysical_core_porosity_fit(core_phi, n_core, reason):
+    well = _cored_well(core_phi, n_core=n_core)
+    if reason == "low_porosity_r_squared":
+        cored = np.isfinite(well.get("PHIC").data)
+        x, y = well.get("PHIT").data[cored], well.get("PHIC").data[cored]
+        assert np.polyfit(x, y, 1)[0] > 0 and np.corrcoef(x, y)[0, 1] ** 2 < 0.5
+
+    result = DynamicWorkflow().run_selected_steps(well, [WorkflowStep.CORE_CORRECTION])
+    step = _core_step(result)
+
+    assert result.well.get("PHIE_CC") is None
+    assert result.well.get("PERM_CC") is None
+    rejected = step.parameters["core_rejected_models"]
+    assert [item["reason"] for item in rejected] == [reason]
+    assert rejected[0]["input_curve"] == "PHIT"
+    assert any(
+        note.startswith("Core porosity correction (all depths) not used: ") for note in step.decisions
+    )
+
+
+# The eval package's main run and its re-run (its re-run wells and context).
+@pytest.mark.parametrize("calculations", ["main_run", "rerun"])
+def test_benchmark_keeps_the_ungated_phie_core_fit(calculations):
+    from petrophys.workflow.dynamic_workflow import _rerun_calculations
+
+    # Core porosity falls as log porosity rises; the benchmark profile still applies the fit.
+    well = _cored_well(lambda phit: 0.40 - phit)
+    phie = well.get("PHIE").data.copy()
+    core = well.get("PHIC").data.copy()
+    valid = np.isfinite(core) & (core > 0.01) & (phie > 0.01)
+    a, b = np.polyfit(phie[valid], core[valid], 1)
+
+    with _rerun_calculations(calculations == "rerun"):
+        result = DynamicWorkflow(DynamicWorkflowConfig(calculation_profile="benchmark")).run_selected_steps(
+            well, [WorkflowStep.CORE_CORRECTION]
+        )
+    step = _core_step(result)
+
+    assert a < 0
+    np.testing.assert_allclose(result.well.get("PHIE_CC").data, np.clip(a * phie + b, 0.0, 0.5), atol=1e-9)
+    assert step.input_curves == ["PHIE"]
+    assert "core_porosity_fits" not in step.parameters
+    assert step.parameters["core_rejected_models"] == []
+    assert not any("Core porosity correction" in note for note in step.decisions)
+
+
+@pytest.mark.parametrize("profile", ["current", "benchmark"])
+def test_context_notes_name_the_porosity_the_core_correction_was_fitted_to(profile):
+    from petrophys.reporting.reference_export import _compact_curve_note
+    from petrophys.workflow.dynamic_workflow import _rerun_calculations
+
+    # The context export runs the benchmark profile with the re-run's calculations.
+    with _rerun_calculations():
+        result = DynamicWorkflow(DynamicWorkflowConfig(calculation_profile=profile)).run_selected_steps(
+            _cored_well(_linear_core), [WorkflowStep.CORE_CORRECTION]
+        )
+    step = _core_step(result)
+    phie_note = _compact_curve_note("PHIE_CC", "computed", "", step, result.well)
+    perm_note = _compact_curve_note("PERM_CC", "computed", "", step, result.well)
+    if profile == "current":
+        assert phie_note.startswith(
+            "PHIE_CC: same-well core porosity correction fitted to PHIT; "
+            "PHIT_CC=A*PHIT+B, PHIE_CC=clip(PHIT_CC-(PHIT-PHIE),0,PHIT_CC)."
+        )
+        assert "PERM_CC=10^(A2*PHIT_CC+B2)" in perm_note
+    else:
+        assert phie_note.startswith("PHIE_CC: same-well core porosity correction; PHIE_CC=A*PHIE+B")
+        assert "PERM_CC=10^(A2*PHIE_CC+B2)" in perm_note
+
+
+def test_permeability_module_core_porosity_options():
+    well = _cored_well(_linear_core)
+    phit = well.get("PHIT").data.copy()
+
+    gated = PermeabilityModule(core_porosity_curve="PHIT", min_porosity_r_squared=0.5)
+    result = gated.calculate_core_correction(well)
+    # The module returns the core-equivalent PHIT_CC; the workflow takes PHIT - PHIE off.
+    np.testing.assert_allclose(result.metadata["phi_corecal"], 1.1 * phit - 0.02, atol=1e-9)
+    assert result.metadata["core_models"][0]["input_curve"] == "PHIT"
+
+    # Without the options the correction is fitted to PHIE and every fit is used.
+    default = PermeabilityModule().calculate_core_correction(_cored_well(lambda phit: 0.40 - phit))
+    assert default.metadata["core_models"][0]["input_curve"] == "PHIE"
+    assert default.metadata["core_porosity_fits"][0]["A"] < 0
+    gated_result = gated.calculate_core_correction(_cored_well(lambda phit: 0.40 - phit))
+    assert gated_result.metadata["phi_corecal"] is None
+    assert gated_result.metadata["core_rejected_models"][0]["reason"] == "non_positive_porosity_slope"

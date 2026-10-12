@@ -479,13 +479,20 @@ def clay_volume(method: str = "gr", *, gr_clean: Optional[float] = None,
     ``"sp"``                      SP deflection between ``sp_clean`` and ``sp_shale``
     ``"neutron_density"``         Three-point neutron-density clay volume
     ``"minimum"``                 Lowest of the GR, SP and neutron-density
-                                  estimates available at each depth (the
-                                  :func:`petrophys.interpret` convention);
-                                  also writes ``VCL_GR``, ``VCL_SP``, ``VCL_ND``
+                                  estimates available at each depth (as in
+                                  the :func:`petrophys.interpret` benchmark
+                                  profile); also writes ``VCL_GR``,
+                                  ``VCL_SP``, ``VCL_ND``
     ============================  ==================================================
 
     Endpoints left as None are picked from the log (P5 and P95) and recorded
-    in the trace. Explicit endpoints are used exactly as given. Uses
+    in the trace. Explicit endpoints are used exactly as given. With the
+    defaults ``"minimum"`` reads low: SP endpoints picked over the whole log
+    mostly measure baseline drift, and in sandstone the limestone clean line
+    and the fixed clay point (2.62 g/cm3, 0.38) give a low VCL_ND.
+    :func:`petrophys.interpret` keeps such an SP out of the minimum and
+    picks the clay point in the well's shales; here, give ``sp_clean`` and
+    ``sp_shale`` only for a drift-free SP, and the matrix in ``nd_matrix``. Uses
     :func:`~petrophys.interpretation.clay_volume.vcl_linear` and the
     Larionov, Steiber and Clavier transforms,
     :func:`~petrophys.interpretation.clay_volume.vcl_from_sp` and
@@ -507,7 +514,8 @@ def clay_volume(method: str = "gr", *, gr_clean: Optional[float] = None,
         Clean (static SP) and shale SP baselines, mV. Default: P5 and P95.
     nd_matrix : {"sandstone", "limestone", "dolomite"}, optional
         Clean line of the neutron-density method. Default ``"limestone"``,
-        the :func:`petrophys.interpret` convention.
+        as in the benchmark profile of :func:`petrophys.interpret`; its
+        default profile uses the line of the resolved matrix.
     name : str, optional
         Step name; defaults to ``"clay_volume"``.
 
@@ -658,7 +666,8 @@ def porosity(method: str = "neutron_density", *, matrix: str = "sandstone",
              matrix_density: Optional[float] = None, matrix_neutron: Optional[float] = None,
              matrix_slowness: Optional[float] = None, fluid_density: float = 1.0,
              fluid_slowness: float = 189.0, clay_porosity: float = 0.15,
-             vcl_curve: Optional[str] = "VCL", name: Optional[str] = None) -> Step:
+             vcl_curve: Optional[str] = "VCL", hc_type: str = "oil",
+             name: Optional[str] = None) -> Step:
     """Total (``PHIT``) and effective (``PHIE``) porosity.
 
     =====================  ======================================================
@@ -666,8 +675,9 @@ def porosity(method: str = "neutron_density", *, matrix: str = "sandstone",
     =====================  ======================================================
     ``"density"``          ``PHID = (rho_ma - RHOB) / (rho_ma - rho_fl)``
     ``"neutron_density"``  Adaptive combination of ``PHID`` and the
-                           matrix-corrected neutron ``PHIN`` (density alone
-                           in gas crossover), as :func:`petrophys.interpret`
+                           matrix-corrected neutron ``PHIN`` (in crossover,
+                           their root-mean-square for gas and ``PHID`` for
+                           oil), as :func:`petrophys.interpret`
     ``"neutron"``          ``PHIN = NPHI - nphi_ma``
     ``"sonic"``            ``PHIS`` from the Wyllie time average
     =====================  ======================================================
@@ -689,7 +699,9 @@ def porosity(method: str = "neutron_density", *, matrix: str = "sandstone",
         ``"limestone"`` or ``"dolomite"``; see
         :meth:`petrophys.model.constants.MatrixProperties.names`.
     matrix_density : float, optional
-        Matrix density, g/cm3 (density methods).
+        Matrix density, g/cm3 (density methods). Defaults to the mineral's
+        apparent log density, which for evaporites differs from the grain
+        density (:meth:`~petrophys.model.constants.MatrixProperties.get_log_density`).
     matrix_neutron : float, optional
         Matrix neutron porosity, v/v (neutron methods).
     matrix_slowness : float, optional
@@ -703,6 +715,11 @@ def porosity(method: str = "neutron_density", *, matrix: str = "sandstone",
     vcl_curve : str or None, default "VCL"
         Clay volume curve for the ``PHIE`` correction; None writes
         ``PHIE = PHIT``.
+    hc_type : {"oil", "gas"}, default "oil"
+        Hydrocarbon type. Where ``PHID > PHIN + 0.05`` (crossover),
+        ``"neutron_density"`` takes ``PHIT = sqrt((PHID^2 + PHIN^2) / 2)``
+        (Gaymard and Poupon, 1968) for gas and ``PHIT = PHID`` for oil, whose
+        crossover comes from the matrix or shale endpoints rather than the fluid.
     name : str, optional
         Step name; defaults to ``"porosity"``.
 
@@ -738,6 +755,7 @@ def porosity(method: str = "neutron_density", *, matrix: str = "sandstone",
         "clay_porosity": check.number("clay_porosity", clay_porosity, optional=False,
                                       fraction=True),
         "vcl_curve": check.curve("vcl_curve", vcl_curve, optional=True),
+        "hc_type": check.choice("hc_type", hc_type, ("oil", "gas")),
     }
     uses = {"density": ("matrix_density",), "neutron": ("matrix_neutron",),
             "neutron_density": ("matrix_density", "matrix_neutron"),
@@ -774,7 +792,8 @@ def porosity(method: str = "neutron_density", *, matrix: str = "sandstone",
 def _run_porosity(ctx: _StepContext, *, method: str, matrix: str,
                   matrix_density: Optional[float], matrix_neutron: Optional[float],
                   matrix_slowness: Optional[float], fluid_density: float,
-                  fluid_slowness: float, clay_porosity: float, vcl_curve: Optional[str]) -> None:
+                  fluid_slowness: float, clay_porosity: float, vcl_curve: Optional[str],
+                  hc_type: str = "oil") -> None:
     from petrophys.interpretation.porosity.density_porosity import density_porosity
     from petrophys.interpretation.porosity.effective_porosity import effective_porosity
     from petrophys.interpretation.porosity.neutron_porosity import neutron_porosity
@@ -783,7 +802,7 @@ def _run_porosity(ctx: _StepContext, *, method: str, matrix: str,
     from petrophys.model.constants import MatrixProperties
 
     props = MatrixProperties.get(matrix)
-    rho_ma = float(matrix_density if matrix_density is not None else props.density)
+    rho_ma = float(matrix_density if matrix_density is not None else MatrixProperties.get_log_density(matrix))
     nphi_ma = float(matrix_neutron if matrix_neutron is not None else props.nphi)
     dt_ma = float(matrix_slowness if matrix_slowness is not None else props.slowness)
     phid: Any = None
@@ -813,8 +832,13 @@ def _run_porosity(ctx: _StepContext, *, method: str, matrix: str,
         ctx.decide(f"PHIS = ({ctx.curve_name(label)} - {dt_ma:g}) / ({float(fluid_slowness):g} - {dt_ma:g})")
         phit = phis
     elif method == "neutron_density":
-        phit = total_porosity(phin, phid)
-        ctx.decide("PHIT = adaptive neutron-density combination (density alone in gas crossover)")
+        gas = hc_type == "gas"
+        phit = total_porosity(phin, phid, gas_method="rms" if gas else "density")
+        ctx.decide(
+            "PHIT = adaptive neutron-density combination ("
+            + ("root-mean-square of PHID and PHIN" if gas else "PHID")
+            + f" in crossover, hc_type={hc_type!r})"
+        )
     else:
         phit = phid if method == "density" else phin
         ctx.decide(f"PHIT = {'PHID' if method == 'density' else 'PHIN'}")
@@ -1113,7 +1137,11 @@ def saturation(model: str = "archie", *, a: float = 1.0, m: float = 2.0, n: floa
     Reads deep resistivity (``RDEP`` or ``RT``), ``RW`` (from
     :func:`formation_water`) and effective porosity; shaly-sand models also
     read clay volume, and Dual Water and Waxman-Smits total porosity. Uses
-    the same equations and routing as :func:`petrophys.interpret`.
+    the same equations and routing as :func:`petrophys.interpret`: the
+    published Indonesia equation (Poupon and Leveaux, 1971), the wet-zone
+    Dual Water form of Clavier, Coates and Dumanoir (1984), and Waxman and
+    Smits (1968) with its total-porosity saturation Swt reported on the
+    effective basis, ``SW = 1 - (PHIT / PHIE) * (1 - Swt)``.
 
     ``SXO`` is calculated from shallow resistivity where ``RMF`` (from
     :func:`mud_filtrate`) and ``RSHA``/``RXO``/``RESS`` exist, and from the
@@ -1134,14 +1162,15 @@ def saturation(model: str = "archie", *, a: float = 1.0, m: float = 2.0, n: floa
        * - ``"nigeria_schlumberger"``
          - ``rcl``, ``shale_exp`` (1.6)
        * - ``"dual_water"``
-         - ``rwb`` (0.3 Rw), ``clay_porosity`` (0.15)
+         - ``rwb`` (required; not estimated), ``clay_porosity`` (0.15)
        * - ``"waxman_smits"``
          - ``cec`` and ``b_coeff`` (required), ``m_star`` (2.0),
            ``matrix_density`` (2.65); uses ``n``, not ``a`` and ``m``
        * - ``"auto"``
          - Archie where VCL < ``vcl_cutoff`` (0.3), else a shaly-sand model
            chosen per sample from ``lithology`` (clastic), ``salinity_ppm``,
-           ``cec`` and ``b_coeff``
+           ``cec`` and ``b_coeff``; carbonate samples use Dual Water with
+           ``rwb`` and the clastic routing without it
 
     A parameter that the chosen model does not use is an error.
 
@@ -1158,13 +1187,17 @@ def saturation(model: str = "archie", *, a: float = 1.0, m: float = 2.0, n: floa
     shale_exp : float, optional
         Shale exponent of the Nigeria-Schlumberger model.
     rwb : float, optional
-        Bound-water resistivity of the Dual Water model, ohm.m.
+        Bound-water resistivity of the Dual Water model, ohm.m, from lab data;
+        it is not estimated.
     clay_porosity : float, optional
         Clay porosity of the Dual Water model, v/v.
     cec : float, optional
-        Cation exchange capacity for Waxman-Smits, meq/100 g.
+        Cation exchange capacity for Waxman-Smits, meq/100 g (0 to 150),
+        converted to the meq/g of
+        :func:`~petrophys.interpretation.saturation.waxman_smits`.
     b_coeff : float, optional
-        Equivalent counter-ion conductance B for Waxman-Smits.
+        Equivalent counter-ion conductance B for Waxman-Smits,
+        (S/m)/(meq/cm3).
     m_star : float, optional
         Waxman-Smits cementation exponent.
     matrix_density : float, optional
@@ -1201,6 +1234,8 @@ def saturation(model: str = "archie", *, a: float = 1.0, m: float = 2.0, n: floa
     ValueError: Invalid steps.saturation() parameters:
       - rcl is not used by model='archie'; remove it
     """
+    from petrophys.interpretation.saturation.waxman_smits import MAX_CEC_MEQ_PER_100G
+
     check = _Params("steps.saturation()")
     model = check.choice("model", model, _SW_MODELS)
     options = {
@@ -1209,7 +1244,7 @@ def saturation(model: str = "archie", *, a: float = 1.0, m: float = 2.0, n: floa
         "shale_exp": check.number("shale_exp", shale_exp, positive=True),
         "rwb": check.number("rwb", rwb, positive=True),
         "clay_porosity": check.number("clay_porosity", clay_porosity, fraction=True),
-        "cec": check.number("cec", cec, minimum=0),
+        "cec": check.number("cec", cec, minimum=0, maximum=MAX_CEC_MEQ_PER_100G),
         "b_coeff": check.number("b_coeff", b_coeff, positive=True),
         "m_star": check.number("m_star", m_star, positive=True),
         "matrix_density": check.number("matrix_density", matrix_density, minimum=1.5, maximum=4.0),
@@ -1231,6 +1266,9 @@ def saturation(model: str = "archie", *, a: float = 1.0, m: float = 2.0, n: floa
         _unused(check, f"model={model!r}", options, _SW_MODEL_OPTIONS[model])
     if model == "waxman_smits" and (cec is None or b_coeff is None):
         check.add("model='waxman_smits' needs cec= (meq/100 g) and b_coeff=")
+    if model == "dual_water" and rwb is None:
+        check.add("model='dual_water' needs rwb= (bound-water resistivity, ohm.m); "
+                  "it is not estimated")
     check.raise_if_any()
 
     requirements = [
@@ -1259,7 +1297,7 @@ def _run_saturation(ctx: _StepContext, *, model: str, a: float, m: float, n: flo
                     vcl_cutoff: Optional[float], lithology: Optional[str], phie_curve: str,
                     phit_curve: str, vcl_curve: str) -> None:
     from petrophys.interpretation.clay_volume import RclModule
-    from petrophys.workflow._canonical_calculations import CanonicalSaturationModule
+    from petrophys.interpretation.saturation.sw_module import SaturationModule
 
     well = ctx.well
     phie = ctx.data(phie_curve)
@@ -1283,12 +1321,18 @@ def _run_saturation(ctx: _StepContext, *, model: str, a: float, m: float, n: flo
         else:
             ctx.decide(f"Rcl = {rcl_used:.2f} ohm.m (median RT where VCL > 0.9)")
     rmf = ctx.optional("RMF")
-    module = CanonicalSaturationModule(a=a, m=m, n=n, model=model,
-                                       vcl_cutoff=vcl_cutoff if vcl_cutoff is not None else 0.3)
+    if cec is not None and 0.0 < cec < 1.0:
+        ctx.warn(f"cec={cec:g} meq/100 g is a clean-sand value; a meq/g value must be "
+                 "multiplied by 100")
+    module = SaturationModule(a=a, m=m, n=n, model=model,
+                              vcl_cutoff=vcl_cutoff if vcl_cutoff is not None else 0.3,
+                              rwb_fallback=None, effective_waxman_smits=True)
     result = module.calculate(
         well, rw=rw, rcl=rcl_used, salinity=salinity_ppm,
         rmf=rmf[1] if rmf is not None else None, vcl=vcl, phie=phie, phit=phit,
-        lithology=lithology or "clastic", cec=cec, b_coeff=b_coeff,
+        lithology=lithology or "clastic",
+        # Lab CEC is reported in meq/100 g; waxman_smits() takes meq/g.
+        cec=cec / 100.0 if cec is not None else None, b_coeff=b_coeff,
         rho_ma=matrix_density if matrix_density is not None else 2.65,
         m_star=m_star if m_star is not None else 2.0, rwb=rwb,
         phi_cl=clay_porosity if clay_porosity is not None else 0.15,
@@ -1308,6 +1352,17 @@ def _run_saturation(ctx: _StepContext, *, model: str, a: float, m: float, n: flo
         ctx.decide(f"Routed per sample: {counts}")
     else:
         ctx.decide(f"{result.model} with a={a:g}, m={m:g}, n={n:g}")
+    names = {"indonesia": "Indonesia", "simandoux": "Simandoux", "waxman_smits": "Waxman-Smits"}
+    for route, count in (result.fallback_counts or {}).items():
+        model_used = route.split("->", 1)[1]
+        ctx.decide(f"{names.get(model_used, model_used)} for {count} shaly carbonate samples: "
+                   "Dual Water needs rwb=, which is not estimated")
+    if "waxman_smits" in (result.model_counts or {}):
+        ctx.decide(f"Waxman-Smits with CEC {cec:g} meq/100 g = {cec / 100.0:g} meq/g; "
+                   "SW = 1 - (PHIT/PHIE) * (1 - Swt) on the effective basis")
+        if result.waxman_smits_clipped_to_zero:
+            ctx.decide(f"Waxman-Smits: {result.waxman_smits_clipped_to_zero} samples with Swt below "
+                       "the bound-water fraction (PHIT - PHIE)/PHIT set to SW = 0")
     if np.any(np.isfinite(sw)):
         ctx.decide(f"SW {np.nanmin(sw):.3f}-{np.nanmax(sw):.3f}")
     else:
@@ -1330,7 +1385,9 @@ def permeability(method: str = "coates", *, swirr: Optional[float] = None,
     ==================  ===================================================
     ``"coates"``        ``k = 10000 PHIE^4 ((1 - Swirr) / Swirr)^2``
     ``"timur"``         ``k = 0.136 (100 PHIE)^4.4 / (100 Swirr)^2``
-    ``"wyllie_rose"``   Wyllie-Rose transform
+    ``"wyllie_rose"``   ``k = 62500 PHIE^6 / Swirr^2`` (Wyllie-Rose form
+                        with the Morris-Biggs oil constant,
+                        ``sqrt(k) = 250 PHIE^3 / Swirr``)
     ``"lith_vcl"``      Lithology- and clay-dependent transform
     ``"auto"``          Poro-perm transform fitted to same-well core
                         (``PHIC``/``KH_CORE``) where possible, the
@@ -1612,14 +1669,23 @@ def _run_mhi(ctx: _StepContext, *, sw_curve: str, sxo_curve: str) -> None:
 def net_pay(*, vcl_cutoff: Optional[float] = None, phie_cutoff: Optional[float] = None,
             sw_cutoff: Optional[float] = None, lithology: str = "clastic",
             vcl_curve: Optional[str] = "VCL", phie_curve: str = "PHIE", sw_curve: str = "SW",
-            name: Optional[str] = None) -> Step:
+            exclude_non_reservoir: bool = True, name: Optional[str] = None) -> Step:
     """Net rock, net reservoir and net pay flags.
 
     ``NET_ROCK`` where ``VCL < vcl_cutoff``; ``NET_RES`` where also
     ``PHIE > phie_cutoff``; ``NET_PAY`` where also ``SW < sw_cutoff``.
-    Cutoffs left as None take the standard values for ``lithology``
+    Cutoffs left as None take the standard values
     (:data:`petrophys.evaluation.STANDARD_CUTOFFS`: clastic 0.40 / 0.08 /
-    0.60, carbonate 0.30 / 0.045 / 0.70). Uses
+    0.60, carbonate 0.30 / 0.045 / 0.70) of each sample's lithology family,
+    as :func:`petrophys.interpret` takes them: with a lithology code log
+    (``LITHOLOGY_GEOLINK``, or another lithology-code curve as
+    :func:`petrophys.interpret` reads it, decoded with the same GeoLink
+    codes), limestone, chalk, dolomite and marl codes are carbonate and the
+    other codes clastic; samples without a code take ``lithology``. With
+    ``exclude_non_reservoir``, the samples :func:`petrophys.interpret` keeps
+    out of net reservoir and net pay leave them here too: evaporite and coal
+    codes, halite recognised on the logs (RHOB 1.95-2.15 g/cm3, GR < 15 API
+    and RT > 500 ohm.m), and ``BAD_HOLE`` = 1. Uses
     :class:`~petrophys.evaluation.NetPayModule`.
 
     Parameters
@@ -1631,13 +1697,18 @@ def net_pay(*, vcl_cutoff: Optional[float] = None, phie_cutoff: Optional[float] 
     sw_cutoff : float, optional
         Maximum water saturation of net pay, v/v.
     lithology : {"clastic", "carbonate"}, default "clastic"
-        Family whose standard cutoffs fill the ones not given.
+        Family whose standard cutoffs fill the ones not given, at samples
+        without a lithology code.
     vcl_curve : str or None, default "VCL"
         Clay volume curve; None applies no clay cutoff.
     phie_curve : str, default "PHIE"
         Effective porosity curve.
     sw_curve : str, default "SW"
         Water saturation curve.
+    exclude_non_reservoir : bool, default True
+        Leave non-reservoir samples (evaporite, coal, halite on the logs, bad
+        hole) out of net reservoir and net pay. False applies the cutoffs
+        alone.
     name : str, optional
         Step name; defaults to ``"net_pay"``.
 
@@ -1661,6 +1732,7 @@ def net_pay(*, vcl_cutoff: Optional[float] = None, phie_cutoff: Optional[float] 
         "vcl_curve": check.curve("vcl_curve", vcl_curve, optional=True),
         "phie_curve": check.required_curve("phie_curve", phie_curve),
         "sw_curve": check.required_curve("sw_curve", sw_curve),
+        "exclude_non_reservoir": check.flag("exclude_non_reservoir", exclude_non_reservoir),
     }
     if vcl_curve is None and vcl_cutoff is not None:
         check.add("vcl_cutoff needs a clay volume curve; remove it or set vcl_curve")
@@ -1682,33 +1754,63 @@ def net_pay(*, vcl_cutoff: Optional[float] = None, phie_cutoff: Optional[float] 
 
 def _run_net_pay(ctx: _StepContext, *, vcl_cutoff: Optional[float], phie_cutoff: Optional[float],
                  sw_cutoff: Optional[float], lithology: str, vcl_curve: Optional[str],
-                 phie_curve: str, sw_curve: str) -> None:
-    from petrophys.evaluation.net_pay import NetPayModule, standard_cutoffs
+                 phie_curve: str, sw_curve: str, exclude_non_reservoir: bool) -> None:
+    from petrophys._internal.analysis_helpers import get_curve
+    from petrophys.interpretation.lithology.matrix_inference import find_lithology_code_curve
+    from petrophys.workflow import dynamic_workflow as workflow
 
-    standard = standard_cutoffs(lithology)
-    cutoffs = {
-        "vcl_cutoff": vcl_cutoff if vcl_cutoff is not None else standard["vcl_cutoff"],
-        "phie_cutoff": phie_cutoff if phie_cutoff is not None else standard["phie_cutoff"],
-        "sw_cutoff": sw_cutoff if sw_cutoff is not None else standard["sw_cutoff"],
-    }
     well = ctx.well
+    # Per-sample lithology groups from the lithology code log, grouped as
+    # petrophys.interpret groups them; without one, ``lithology`` throughout.
+    code_curve = find_lithology_code_curve(well)
+    codes = get_curve(well, [code_curve]) if code_curve is not None else None
+    groups = lithology if codes is None else workflow._group_array_from_numeric_codes(
+        np.asarray(codes.data, dtype=float), workflow._CURRENT_GROUND_TRUTH_CODE_TO_GROUP
+    )
+    if codes is not None and code_curve != "LITHOLOGY_GEOLINK":
+        ctx.warn(
+            f"Lithology families from {code_curve}, decoded with the GeoLink/Kingdom "
+            "lithology code table, as LITHOLOGY_GEOLINK codes are."
+        )
+    excluded = {}
+    if exclude_non_reservoir:
+        excluded = workflow._non_reservoir_samples(well, groups)
     vcl = ctx.data(vcl_curve) if vcl_curve else np.zeros(well.n_samples)
-    module = NetPayModule(lithology=lithology, **cutoffs)
-    result = module.calculate(well, vcl=vcl, phie=ctx.data(phie_curve), sw=ctx.data(sw_curve))
+    explicit = {"vcl_cutoff": vcl_cutoff, "phie_cutoff": phie_cutoff, "sw_cutoff": sw_cutoff}
+    _, result, details = workflow._net_flags_by_family(
+        well, workflow._cutoff_families(groups, lithology), vcl,
+        ctx.data(phie_curve), ctx.data(sw_curve), explicit, excluded,
+    )
+    by_family = details["cutoffs_by_family"]
     ctx.trace.method = "cutoffs"
-    ctx.trace.parameters.update({f"{key}_used": value for key, value in cutoffs.items()})
+    ctx.trace.parameters.update({f"{key}_used": value for key, value in details["cutoffs"].items()})
+    ctx.trace.parameters["cutoffs_by_family"] = by_family
     step = abs(float(well.step)) if well.step else 0.0
     flags = (("NET_ROCK", result.net_rock, "Net rock flag"),
              ("NET_RES", result.net_reservoir, "Net reservoir flag"),
              ("NET_PAY", result.net_pay, "Net pay flag"))
-    tests = (f"{ctx.curve_name(vcl_curve)} < {cutoffs['vcl_cutoff']:g}" if vcl_curve
+    cutoff = {key: workflow._family_cutoff_text(by_family, key) for key in explicit}
+    tests = (f"{ctx.curve_name(vcl_curve)} < {cutoff['vcl_cutoff']}" if vcl_curve
              else "no clay cutoff",
-             f"+ {ctx.curve_name(phie_curve)} > {cutoffs['phie_cutoff']:g}",
-             f"+ {ctx.curve_name(sw_curve)} < {cutoffs['sw_cutoff']:g}")
+             f"+ {ctx.curve_name(phie_curve)} > {cutoff['phie_cutoff']}",
+             f"+ {ctx.curve_name(sw_curve)} < {cutoff['sw_cutoff']}")
     for (curve, flag, description), test in zip(flags, tests):
         ctx.add_curve(curve, np.asarray(flag, dtype=float), "", description)
         count = int(np.count_nonzero(flag))
         ctx.decide(f"{curve}: {test} -> {count} samples ({count * step:.1f} {well.depth_unit})")
+    if exclude_non_reservoir:
+        removed = {
+            kind: {
+                **item,
+                "net_reservoir_removed": round(item["net_reservoir_samples_removed"] * step, 2),
+                "net_pay_removed": round(item["net_pay_samples_removed"] * step, 2),
+                "depth_unit": well.depth_unit,
+            }
+            for kind, item in details["excluded"].items()
+        }
+        ctx.trace.parameters["excluded_from_net_reservoir_and_pay"] = removed
+        for line in workflow._net_pay_detail_decisions({}, by_family, removed):
+            ctx.decide(line)
 
 
 # --------------------------------------------------------------------------

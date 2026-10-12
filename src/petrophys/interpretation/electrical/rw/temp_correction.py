@@ -5,10 +5,11 @@ This module provides temperature correction utilities
 specifically for formation water resistivity.
 """
 
-from typing import Union
+from typing import Optional, Union
 import numpy as np
 
 from petrophys.interpretation.temperature.temp_corrections import arps_equation
+from petrophys.model.units import UnitConverter, temperature_unit
 
 
 def correct_rw_temperature(
@@ -42,7 +43,7 @@ def correct_rw_temperature(
 def rw_at_reference_temperature(
     rw: float,
     current_temp: float,
-    reference_temp: float = 75.0,
+    reference_temp: Optional[float] = None,
     temp_unit: str = "F"
 ) -> float:
     """
@@ -55,7 +56,7 @@ def rw_at_reference_temperature(
     current_temp : float
         Current temperature
     reference_temp : float, optional
-        Reference temperature (default: 75°F)
+        Reference temperature, in ``temp_unit`` (default: 75°F)
     temp_unit : str, optional
         Temperature unit
 
@@ -64,4 +65,8 @@ def rw_at_reference_temperature(
     float
         Rw at reference temperature
     """
+    if reference_temp is None:
+        reference_temp = 75.0
+        if temperature_unit(temp_unit, strict=True) != "F":
+            reference_temp = UnitConverter.temperature(reference_temp, "F", temp_unit)
     return correct_rw_temperature(rw, current_temp, reference_temp, temp_unit)

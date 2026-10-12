@@ -1,10 +1,24 @@
 """
-Coates-Denoo equation for permeability estimation.
+Coates-Denoo and Wyllie-Rose permeability from porosity and irreducible water saturation.
 """
 
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
+
+#: Published constants ``(P, Q, R)`` of the Wyllie-Rose family
+#: ``k = P * phi^Q / Swi^R``, with k in mD and phi and Swi as fractions (v/v).
+WYLLIE_ROSE_PRESETS = {
+    # Morris and Biggs (1967): sqrt(k) = C * phi^3 / Swi, with C = 250 for
+    # medium-gravity oil and C = 79 for dry gas.
+    "morris_biggs_oil": (62500.0, 6.0, 2.0),
+    "morris_biggs_gas": (6241.0, 6.0, 2.0),
+    # Tixier (1949): sqrt(k) = 250 * phi^3 / Swi.
+    "tixier": (62500.0, 6.0, 2.0),
+    # Timur (1968): k = 0.136 * phi^4.4 / Swi^2 with phi and Swi in percent,
+    # i.e. 0.136 * 100^2.4 = 8581 with fractions.
+    "timur": (8581.0, 4.4, 2.0),
+}
 
 
 def coates_denoo(
@@ -37,28 +51,70 @@ def coates_denoo(
 def wyllie_rose(
     phi: Union[float, np.ndarray],
     swi: Union[float, np.ndarray],
-    a: float = 250,
+    preset: str = "morris_biggs_oil",
+    *,
+    p: Optional[float] = None,
+    q: Optional[float] = None,
+    r: Optional[float] = None,
 ) -> Union[float, np.ndarray]:
     """
-    Wyllie-Rose permeability equation.
+    Permeability from the Wyllie and Rose (1950) family.
 
-    k = a * phi^3 / Swi^2
+    k = P * phi^Q / Swi^R
+
+    with k in mD and phi and Swi as fractions (v/v). The constants come from
+    ``preset`` (``WYLLIE_ROSE_PRESETS``); ``p``, ``q`` or ``r`` replace the
+    preset's value.
+
+    ====================  ======  ===  ===  ======================================
+    preset                P       Q    R    Published form (phi, Swi fractions)
+    ====================  ======  ===  ===  ======================================
+    ``morris_biggs_oil``  62500   6    2    sqrt(k) = 250 phi^3 / Swi, medium-gravity
+                                            oil (Morris and Biggs, 1967)
+    ``morris_biggs_gas``  6241    6    2    sqrt(k) = 79 phi^3 / Swi, dry gas
+                                            (Morris and Biggs, 1967)
+    ``tixier``            62500   6    2    sqrt(k) = 250 phi^3 / Swi (Tixier, 1949)
+    ``timur``             8581    4.4  2    k = 0.136 phi^4.4 / Swi^2 with phi and
+                                            Swi in percent (Timur, 1968)
+    ====================  ======  ===  ===  ======================================
+
+    The default is the Morris-Biggs oil constant, which is what
+    ``PermeabilityModule(method="wyllie_rose")`` uses.
 
     Parameters
     ----------
     phi : float or np.ndarray
-        Porosity (fraction)
+        Effective porosity (fraction)
     swi : float or np.ndarray
-        Irreducible water saturation
-    a : float
-        Constant (default: 250)
+        Irreducible water saturation (fraction)
+    preset : str
+        Name of the published constants (default: ``"morris_biggs_oil"``)
+    p, q, r : float, optional
+        Coefficient and porosity and Swi exponents replacing the preset's
 
     Returns
     -------
     float or np.ndarray
         Permeability (mD)
+
+    Examples
+    --------
+    >>> round(float(wyllie_rose(0.30, 0.25)), 1)
+    729.0
+    >>> round(float(wyllie_rose(0.30, 0.25, "morris_biggs_gas")), 1)
+    72.8
     """
+    if preset not in WYLLIE_ROSE_PRESETS:
+        raise ValueError(
+            f"Unknown Wyllie-Rose preset {preset!r}; use one of: "
+            f"{', '.join(WYLLIE_ROSE_PRESETS)}"
+        )
+    preset_p, preset_q, preset_r = WYLLIE_ROSE_PRESETS[preset]
+    p = preset_p if p is None else float(p)
+    q = preset_q if q is None else float(q)
+    r = preset_r if r is None else float(r)
+
     swi = np.where(swi <= 0, 0.01, swi) if isinstance(swi, np.ndarray) else max(swi, 0.01)
     phi = np.where(phi <= 0, 0.001, phi) if isinstance(phi, np.ndarray) else max(phi, 0.001)
 
-    return a * np.power(phi, 3) / np.power(swi, 2)
+    return p * np.power(phi, q) / np.power(swi, r)

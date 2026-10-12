@@ -21,7 +21,9 @@ def vcl_from_sp(
     VCL_SP = (SPmax - SP) / (SPmax - SPmin)
 
     Note: SP_max is the maximum SP deflection (clean sand)
-    and SP_min is the shale baseline.
+    and SP_min is the shale baseline. With a normal SP, where sands deflect
+    negative, SP_max is the more negative of the two values; with a reversed
+    SP it is the more positive one (see :func:`sp_polarity`).
 
     Parameters
     ----------
@@ -53,6 +55,72 @@ def vcl_from_sp(
 
     vcl = (sp_max - sp) / (sp_max - sp_min)
     return np.clip(vcl, 0, 1)
+
+
+def sp_polarity(
+    sp: np.ndarray,
+    gr: np.ndarray,
+    depth: np.ndarray,
+    window: float = 30.0,
+    min_correlation: float = 0.1,
+) -> int:
+    """Direction of the SP deflection in clean sands, read from the logs.
+
+    The static SP, ``SSP = -K log10(Rmf / Rw)``, is negative when the mud
+    filtrate is fresher than the formation water (Rmf > Rw): a normal SP,
+    which reads lower in sands than in shales and so rises with GR. With
+    Rmf < Rw the SP is reversed and falls with GR (Schlumberger, *Log
+    Interpretation Principles/Applications*, 1989).
+
+    The shale baseline drifts down most wells, so both curves are first
+    de-trended with a running median over ``window``; the sign of the Spearman
+    rank correlation of what is left gives the polarity.
+
+    Parameters
+    ----------
+    sp : np.ndarray
+        Spontaneous potential, mV.
+    gr : np.ndarray
+        Gamma ray, API, at the same samples.
+    depth : np.ndarray
+        Depth of each sample.
+    window : float
+        Running-median window, in depth units: longer than most beds and
+        shorter than the baseline drift (30 m, or 100 ft).
+    min_correlation : float
+        Smallest absolute rank correlation taken as a clear answer.
+
+    Returns
+    -------
+    int
+        ``1`` for a normal SP (the shale baseline lies above the clean-sand
+        line), ``-1`` for a reversed SP, ``0`` when the logs do not show it
+        clearly (fewer than 50 samples, a flat SP, or a weak correlation).
+    """
+    from scipy.ndimage import median_filter
+    from scipy.stats import spearmanr
+
+    sp_arr = np.asarray(sp, dtype=float)
+    gr_arr = np.asarray(gr, dtype=float)
+    depth_arr = np.asarray(depth, dtype=float)
+    valid = np.isfinite(sp_arr) & np.isfinite(gr_arr) & np.isfinite(depth_arr)
+    if np.count_nonzero(valid) < 50:
+        return 0
+    order = np.argsort(depth_arr[valid], kind="stable")
+    sp_valid = sp_arr[valid][order]
+    gr_valid = gr_arr[valid][order]
+    step = float(np.median(np.diff(depth_arr[valid][order])))
+    if not step > 0:
+        return 0
+    size = max(3, int(round(window / step)) | 1)
+    sp_residual = sp_valid - median_filter(sp_valid, size=size, mode="nearest")
+    gr_residual = gr_valid - median_filter(gr_valid, size=size, mode="nearest")
+    if np.ptp(sp_residual) == 0 or np.ptp(gr_residual) == 0:
+        return 0
+    rho = float(spearmanr(sp_residual, gr_residual)[0])
+    if not np.isfinite(rho) or abs(rho) < min_correlation:
+        return 0
+    return 1 if rho > 0 else -1
 
 
 def should_use_sp(

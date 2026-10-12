@@ -1,10 +1,17 @@
-"""The ``benchmark`` calculation profile: the GeoLink eval package's interpreted LAS.
+"""The ``benchmark`` calculation profile: the GeoLink eval package's calculations.
 
-The full reproduction needs the GeoLink LAS files and is verified outside the
-test suite with ``scripts/generate_benchmark_context.py --from-raw``. These
-tests pin the individual behaviours the profile switches, and that the default
-profile is unaffected.
+The package was made in a main run, which interpreted 30 of its 32 wells, and a
+re-run, which interpreted 15/9-17 and 34/10-23 and wrote the context of every
+well. The benchmark profile gives those two wells and the context export the
+re-run's calculations and every other well the main run's. The full
+reproduction needs the GeoLink LAS files and is verified outside the test suite
+with ``scripts/generate_benchmark_context.py --from-raw``. These tests pin the
+individual behaviours the profile switches, which well gets which calculations,
+and that the default profile is unaffected.
 """
+from pathlib import Path
+import runpy
+
 import numpy as np
 import pytest
 
@@ -50,6 +57,16 @@ def test_default_profile_and_validation():
     with pytest.raises(ValueError, match="calculation_profile"):
         DynamicWorkflowConfig(calculation_profile="may2026")
     assert describe_setting("calculation_profile")["choices"] == ["current", "benchmark"]
+
+
+def test_benchmark_rerun_is_not_a_profile():
+    """The re-run's calculations come with the wells and the context export, not a profile."""
+    from petrophys.mcp.session import default_calculation_profile
+
+    with pytest.raises(ValueError, match="use one of: current, benchmark .did you mean 'benchmark'"):
+        DynamicWorkflowConfig(calculation_profile="benchmark_rerun")
+    with pytest.raises(ValueError, match="not a calculation profile; use one of: current, benchmark$"):
+        default_calculation_profile("benchmark_rerun")
 
 
 def test_benchmark_duplicates_the_bad_hole_flag():
@@ -268,17 +285,169 @@ def test_configured_clay_porosity_is_not_replaced_by_a_derived_one():
     header value. Left at its default it is derived from the shale samples."""
     import petrophys as pp
 
-    def run(**settings):
-        result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230, **settings)
+    def run(uwi=None, **settings):
+        well = pp.read(pp.sample("30_6-5"))
+        if uwi is not None:
+            well.header.uwi = uwi
+        result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230, **settings)
         porosity = next(s for s in result.steps_executed if s.step == "porosity")
         phie = np.asarray(result.well.get("PHIE").data, dtype=float)
         return porosity.parameters, float(np.nanmean(phie))
 
     derived, derived_phie = run()
-    assert derived["phi_cl_source"] == "lithology_shale_average_phit_nd"
+    assert derived["phi_cl_source"] == "lithology_shale_average_phit_nd_on_reservoir_matrix"
+    # 30/6-5 gets the eval package's main-run calculations; under the UWI of
+    # 15/9-17, a re-run well, the same logs get the re-run's.
+    main_run, _ = run(calculation_profile="benchmark")
+    assert main_run["phi_cl_source"] == "all_shale_phit"
+    rerun, _ = run(uwi="15/9-17", calculation_profile="benchmark")
+    assert rerun["phi_cl_source"] == "lithology_shale_average_phit_nd"
 
     configured, configured_phie = run(phi_cl=0.25)
     assert configured["phi_cl"] == 0.25
     assert configured["phi_cl_source"] == "config"
     # A larger clay porosity removes more pore volume from PHIE.
     assert configured_phie < derived_phie
+
+
+# -- Which calculations a benchmark run gets ------------------------------------
+
+
+@pytest.mark.parametrize(
+    "uwi, name, calculations",
+    [
+        ("15/9-17", "PROFILE-TEST", "rerun"),  # the UWI names a re-run well
+        ("", "34/10-23", "rerun"),  # no UWI: the WELL header does
+        ("34/10-23", "34/10-23 Gullfaks Sor", "rerun"),
+        (" 15_9-17 ", "", "rerun"),  # "_" for "/", surrounding spaces ignored
+        ("15/9-17 A", "15/9-17 A", "main_run"),  # a sidetrack is another well
+        ("15/9-171", "34/10-2", "main_run"),
+        ("", "PROFILE-TEST", "main_run"),
+        ("", "", "main_run"),  # no UWI or WELL header
+    ],
+)
+def test_benchmark_gives_the_rerun_wells_the_rerun_calculations(uwi, name, calculations):
+    well = _well(name=name)
+    well.header.uwi = uwi
+    result = _run("benchmark", well)
+
+    settings = result.to_trace_dict()["config"]
+    assert settings["benchmark_calculations"] == calculations
+    names = list(settings)
+    assert names[names.index("calculation_profile") + 1] == "benchmark_calculations"
+    # The main run carried BAD_HOLE twice; the re-run did not.
+    assert (result.well.get("BADHOLEFLAG") is not None) == (calculations == "main_run")
+
+
+def test_well_names_compare_without_case_and_with_slash_as_underscore():
+    from petrophys.workflow.dynamic_workflow import _is_rerun_well, _normalized_well_name
+
+    assert _normalized_well_name("  16/2-11 A ") == "16_2-11 a"
+    assert _normalized_well_name("NO 15/9-17") == "no 15_9-17"
+    header_dict = Well()
+    header_dict.header = {"WELL": "15/9-17"}
+    assert _is_rerun_well(header_dict)
+    assert _is_rerun_well(Well("TEST"), file_stem="34_10-23")
+    assert not _is_rerun_well(Well("TEST"), file_stem="34_10-23 A")
+
+
+def test_current_traces_carry_no_benchmark_calculations():
+    well = _well(name="15/9-17")
+    settings = _run("current", well).to_trace_dict()["config"]
+
+    assert settings["calculation_profile"] == "current"
+    assert "benchmark_calculations" not in settings
+
+
+def test_batch_runner_recognizes_a_rerun_well_by_uwi_well_or_file_name(tmp_path):
+    from petrophys.io import export_las
+    from petrophys.workflow.zoned_batch import process_las_directory_with_workflow
+
+    source = tmp_path / "raw"
+    source.mkdir()
+    files = {
+        # file name: (UWI, WELL header)
+        "15_9-17": ("", "STEM-TEST"),  # only the file name names the well
+        "UWI-TEST": ("34/10-23", "UWI-TEST"),
+        "WELL-TEST": ("", "15/9-17"),
+        "15_9-17 A": ("15/9-17 A", "15/9-17 A"),  # a near miss
+        "34_10-23": ("", ""),  # no UWI or WELL header: the file name decides
+        "OTHER": ("", "OTHER"),
+    }
+    for stem, (uwi, name) in files.items():
+        well = _well(name=name)
+        well.header.uwi = uwi
+        export_las(well, source / f"{stem}.las")
+
+    config = DynamicWorkflowConfig(rw=0.05, calculation_profile="benchmark")
+    results = process_las_directory_with_workflow(source, tmp_path / "processed", config=config)
+
+    assert all(item.success for item in results), [item.errors for item in results]
+    calculations = {
+        Path(item.source_file).stem: item.result.base_result.to_trace_dict()["config"]["benchmark_calculations"]
+        for item in results
+    }
+    assert calculations == {
+        "15_9-17": "rerun", "UWI-TEST": "rerun", "WELL-TEST": "rerun", "34_10-23": "rerun",
+        "15_9-17 A": "main_run", "OTHER": "main_run",
+    }
+    for item in results:
+        main_run = calculations[Path(item.source_file).stem] == "main_run"
+        assert (item.result.well.get("BADHOLEFLAG") is not None) == main_run
+
+
+@pytest.mark.parametrize("layout", ["formation_lithology", "category_formation_lithology"])
+def test_context_export_gives_every_well_the_rerun_calculations(tmp_path, monkeypatch, layout):
+    import petrophys as pp
+    from petrophys.io import export_las
+    from petrophys.workflow import zoned_batch
+
+    source = tmp_path / "input"
+    source.mkdir()
+    well = _well(name="CONTEXT-TEST")
+    well.add_curve("LITHOLOGY_GEOLINK", np.ones(well.n_samples), "", "Lithology")
+    export_las(well, source / "CONTEXT-TEST.las")
+
+    runs = []
+    run_with_zones = zoned_batch.run_dynamic_workflow_with_zones
+
+    def recorded(well, config=None):
+        runs.append(run_with_zones(well, config))
+        return runs[-1]
+
+    monkeypatch.setattr(zoned_batch, "run_dynamic_workflow_with_zones", recorded)
+    config = DynamicWorkflowConfig(rw=0.05, calculation_profile="benchmark")
+    results = pp.export_context(source, tmp_path / "package", layout=layout, workflow_config=config)
+
+    assert results and all(item.success for item in results)
+    assert runs
+    for run in runs:
+        for result in (run.base_result, *run.zone_results):
+            assert result.to_trace_dict()["config"]["benchmark_calculations"] == "rerun"
+    # Outside the export the same well gets the main run's calculations.
+    alone = pp.interpret(pp.read(source / "CONTEXT-TEST.las"), config=config)
+    assert alone.to_trace_dict()["config"]["benchmark_calculations"] == "main_run"
+
+
+def test_generate_benchmark_context_takes_one_calculation_profile():
+    script = Path(__file__).resolve().parents[1] / "scripts" / "generate_benchmark_context.py"
+    namespace = runpy.run_path(str(script))
+    parser = namespace["build_parser"]()
+    required = ["--input-dir", "eval", "--output-dir", "out"]
+
+    assert parser.parse_args([*required, "--from-raw"]).calculation_profile == "benchmark"
+    assert parser.parse_args([*required, "--calculation-profile", "current"]).calculation_profile == "current"
+    for removed in (
+        ["--calculation-profile", "benchmark_rerun"],
+        ["--las-profile", "benchmark"],
+        ["--context-profile", "benchmark"],
+        ["--well-profile", "15_9-17", "benchmark"],
+    ):
+        with pytest.raises(SystemExit):
+            parser.parse_args([*required, *removed])
+    command = (
+        "python scripts/generate_benchmark_context.py --from-raw "
+        "--input-dir PATH/eval --output-dir NEW_DIR"
+    )
+    assert command in parser.format_help()
+    assert command in namespace["__doc__"]

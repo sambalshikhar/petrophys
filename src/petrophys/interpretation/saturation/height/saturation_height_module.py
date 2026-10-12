@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Union
+import warnings
 
 import numpy as np
 
@@ -22,6 +23,7 @@ from petrophys.interpretation.saturation.height.capillary import (
     leverett_j,
     pc_from_height,
 )
+from petrophys.model.units import normalize_depth_unit
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 
 if TYPE_CHECKING:
@@ -167,18 +169,47 @@ def saturation_height_from_logs(
     perm_curve=("PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"),
     phi_curve=("PHIE_CC", "PHIE", "PHIT"),
     depth_increases_down: bool = True,
+    tvd_curve: Optional[str] = None,
 ) -> np.ndarray:
     """Predict Sw vs depth from a fitted J-function model and an FWL depth.
 
-    Height above the FWL is ``fwl_depth - depth`` (so shallower = higher = drier).
-    Below the FWL height is clipped to 0 -> Sw = 1.
+    Height above the FWL is ``fwl_depth - depth`` (so shallower = higher = drier),
+    converted from the depth unit (m or ft) to ft for the field-unit capillary
+    relation Pc = 0.433 (SGw - SGhc) h. Below the FWL height is clipped to
+    0 -> Sw = 1.
+
+    Capillary height is vertical. ``depth`` is the ``tvd_curve`` when one is
+    named, in that curve's unit (the well's depth unit when the curve has
+    none). Otherwise it is the well's depth index, taken as true vertical
+    depth, which holds for a vertical well only; a warning says so.
+    ``fwl_depth`` must be in the same unit and on the same datum as that
+    depth.
     """
-    depth = np.asarray(well.depth if getattr(well, "depth", None) is not None else well._depth, dtype=float)
+    if tvd_curve is not None:
+        curve = well.get(tvd_curve)
+        if curve is None or not np.any(np.isfinite(np.asarray(curve.data, dtype=float))):
+            raise ValueError(f"TVD curve {tvd_curve!r} with finite samples is not on the well")
+        depth = np.asarray(curve.data, dtype=float)
+        unit = normalize_depth_unit(curve.unit, strict=False, default=well.depth_unit)
+        if unit not in ("m", "ft"):
+            unit = well.depth_unit
+    else:
+        warnings.warn(
+            "saturation_height_from_logs: no tvd_curve given, so the depth index is "
+            "taken as true vertical depth, which holds for a vertical well only. "
+            "Pass tvd_curve, on the datum of fwl_depth, for a deviated well.",
+            UserWarning,
+            stacklevel=2,
+        )
+        depth = np.asarray(well.depth if getattr(well, "depth", None) is not None else well._depth, dtype=float)
+        unit = well.depth_unit
     perm, _, _ = get_curve_data_depthwise(well, list(perm_curve))
     phi, _, _ = get_curve_data_depthwise(well, list(phi_curve))
     if perm is None or phi is None:
         raise ValueError("permeability and porosity curves are required")
     height = (fwl_depth - depth) if depth_increases_down else (depth - fwl_depth)
+    if unit == "m":
+        height = height / 0.3048
     height = np.clip(height, 0.0, None)
     sw = model.sw_from_height(height, perm, phi)
     return np.asarray(sw, dtype=float)

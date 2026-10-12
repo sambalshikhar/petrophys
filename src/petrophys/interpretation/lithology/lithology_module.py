@@ -85,6 +85,9 @@ class LithologyModule:
         solver that takes PHIE as a fixed input and leaves samples unsolved
         when the closure gate fails; the reduced-mineral selection above
         applies to version 2 only.
+    solver_options : dict, optional
+        Further keyword arguments for the solver class, e.g.
+        ``{"row_uncertainty": None}`` for the unscaled version 1 solve.
 
     Examples
     --------
@@ -112,6 +115,7 @@ class LithologyModule:
         include_clay: bool = True,
         lithology: str = "auto",
         solver_version: int = 2,
+        solver_options: Optional[dict] = None,
     ):
         self._custom_minerals = minerals is not None
         if lithology not in {"auto", "clastic", "carbonate"}:
@@ -125,8 +129,9 @@ class LithologyModule:
         self.minerals = minerals
         self.include_clay = include_clay
         self.solver_version = solver_version
+        self.solver_options = dict(solver_options or {})
         solver_class = MultiMineralSolverV1 if solver_version == 1 else MultiMineralSolver
-        self.solver = solver_class(minerals=minerals)
+        self.solver = solver_class(minerals=minerals, **self.solver_options)
 
     def _select_solver(self, well):
         """Choose a reduced mineral set from independent geological evidence."""
@@ -158,6 +163,7 @@ class LithologyModule:
             return MultiMineralSolver(
                 minerals=self.minerals,
                 minerals_no_pef=selection["reduced_minerals"],
+                **self.solver_options,
             ), selection
         return self.solver, selection
 

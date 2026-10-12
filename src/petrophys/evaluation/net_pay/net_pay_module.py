@@ -9,7 +9,7 @@ import numpy as np
 
 from petrophys.model.constants import DefaultParameters
 from petrophys.evaluation.net_pay.flags import generate_net_flags
-from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+from petrophys._internal.analysis_helpers import cell_thickness, get_curve_data_depthwise
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -43,6 +43,13 @@ class NetPayModule:
     with the local lithology.
 
     Only the family label ``"carbonate"`` selects the carbonate cutoffs.
+
+    The flags come from the cutoffs alone, with no samples left out unless a
+    ``quality_mask`` is given. :func:`petrophys.interpret` also takes each
+    sample's lithology-family cutoffs and leaves evaporite, coal, halite
+    recognised on the logs and bad-hole samples out of net reservoir and net
+    pay, so on an interpreted well these flags differ from its ``NET_PAY``;
+    summarize those with ``result.summary(top, bottom)``.
     """
 
     def __init__(
@@ -182,17 +189,23 @@ class NetPayModule:
             flags["net_reservoir"] = flags["net_reservoir"] & usable
             flags["net_pay"] = flags["net_pay"] & usable
 
-        step = well.step or 0.5
-        gross = well.n_samples * step
+        # Each sample counts with its midpoint cell from the actual depths, in
+        # the well's depth unit, so mixed sampling rates add up correctly.
+        n_flags = len(flags["net_pay"])
+        depth = well.depth
+        if depth is not None and len(depth) == n_flags:
+            dz = cell_thickness(depth)
+        else:
+            dz = np.full(n_flags, np.nan)
 
         return NetPayResult(
             net_rock=flags["net_rock"],
             net_reservoir=flags["net_reservoir"],
             net_pay=flags["net_pay"],
-            net_rock_thickness=float(np.sum(flags["net_rock"]) * step),
-            net_reservoir_thickness=float(np.sum(flags["net_reservoir"]) * step),
-            net_pay_thickness=float(np.sum(flags["net_pay"]) * step),
-            gross_thickness=gross,
+            net_rock_thickness=float(np.sum(dz[flags["net_rock"]])),
+            net_reservoir_thickness=float(np.sum(dz[flags["net_reservoir"]])),
+            net_pay_thickness=float(np.sum(dz[flags["net_pay"]])),
+            gross_thickness=float(np.sum(dz)),
         )
 
     def add_to_well(self, well: "Well", result: Optional[NetPayResult] = None) -> "Well":
@@ -222,14 +235,26 @@ def calculate_net_pay(
     ----------
     well : Well
         Well object
-    vcl_cutoff : float
-        VCL cutoff (default: 0.3)
+    vcl_cutoff : float, optional
+        Net rock is ``VCL < vcl_cutoff``. Default: the standard for
+        ``lithology``, 0.40 clastic or 0.30 carbonate.
     phie_cutoff : float, optional
-        PHIE cutoff (auto-selects by lithology if not provided)
-    sw_cutoff : float
-        Sw cutoff (default: 0.7)
+        Net reservoir adds ``PHIE > phie_cutoff``. Default: 0.08 clastic or
+        0.045 carbonate.
+    sw_cutoff : float, optional
+        Net pay adds ``Sw < sw_cutoff``. Default: 0.60 clastic or 0.70
+        carbonate.
     lithology : str or np.ndarray
-        'clastic' or 'carbonate', or per-depth array of these strings
+        'clastic' or 'carbonate', or per-depth array of these strings. Only
+        the label 'carbonate' selects the carbonate standards.
+
+    Notes
+    -----
+    The flags are recomputed with one cutoff set and no exclusions; they are
+    not an interpretation's ``NET_PAY``, which also leaves evaporite, coal,
+    log-identified halite and bad-hole samples out (see
+    :class:`NetPayModule`). Summarize those flags with
+    ``result.summary(top, bottom)``.
     """
     module = NetPayModule(vcl_cutoff, phie_cutoff, sw_cutoff, lithology)
     return module.calculate(well, **kwargs)
