@@ -295,6 +295,19 @@ def safe_divide(
     return result
 
 
+#: Private well parameter: the depth unit label the analyzers write after a
+#: depth interval in place of ``well.depth_unit``, e.g. ``"FT"`` as the source
+#: file labelled it. Set for the published context packages, whose intervals
+#: carried the source label.
+DEPTH_UNIT_LABEL_PARAMETER = "_DEPTH_UNIT_LABEL"
+
+
+def depth_unit_label(well: "Well") -> str:
+    """The depth unit label written after the well's depth intervals."""
+    label = well.get_parameter(DEPTH_UNIT_LABEL_PARAMETER) if hasattr(well, "get_parameter") else None
+    return str(label) if label else well.depth_unit
+
+
 def interval_strings(
     depth: np.ndarray,
     labels: np.ndarray,
@@ -348,7 +361,7 @@ def build_section(
         methodology=methodology,
         calculation_thresholds=calculation_thresholds,
         raw_labels=np.asarray(labels, dtype=object),
-        intervals=interval_strings(well.depth, labels, well.depth_unit),
+        intervals=interval_strings(well.depth, labels, depth_unit_label(well)),
     )
 
 

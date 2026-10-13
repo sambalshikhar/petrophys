@@ -1,0 +1,18 @@
+well,bht_f,rw_68f,saturation_method,vcl_method,phie_method
+HW-3,251.0,0.0682,"Archie; (m=2.03,\ n=2.00)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))","special case / poor match; best forced fit: (\phi_t=\mathrm{avg}(PHID_{dol},NPHI)), (\phi_e=\phi_t-VCL\cdot0.20)"
+HW-4,251.0,0.0698,"Archie; (m=2.01,\ n=2.03)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))","(\phi_t=\mathrm{RMS}(PHID_{ls},NPHI)); (\phi_e=\phi_t-VCL\cdot0.15)"
+HW-5,251.0,0.085,"Archie; (m=1.91,\ n=2.15)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))","(\phi_t=\mathrm{RMS}(PHID_{ls},NPHI)); (\phi_e=\phi_t-VCL\cdot0.15)"
+HW-6,251.0,0.0733,"Archie; (m=1.98,\ n=2.01)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))","(\phi_t=\mathrm{avg}(PHID_{ls},NPHI)); (\phi_e=\phi_t-VCL\cdot0.20)"
+HW-7,251.0,,not enough SW for Archie fit,"linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))",(\phi_t=NPHI); (\phi_e=\phi_t-VCL\cdot0.15)
+HW-8,251.0,,Archie fit unreliable / do not trust,"linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))","(\phi_t=\mathrm{RMS}(PHID_{ls},NPHI)); (\phi_e=\phi_t-VCL\cdot0.00)"
+HW-9,251.0,0.1349,"Archie; (m=2.04,\ n=1.92)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))","(\phi_t=\mathrm{avg}(PHID_{ls},NPHI)); (\phi_e=\phi_t-VCL\cdot0.20)"
+HW-10,251.0,0.1373,"Archie; (m=2.03,\ n=2.00)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))","(\phi_t=\mathrm{avg}(PHID_{ls},NPHI)); (\phi_e=\phi_t-VCL\cdot0.15)"
+HW-24,251.0,0.076,"Archie; (m=1.97,\ n=1.99)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))",(\phi_t=PHID_{ls}); (\phi_e=\phi_t-VCL\cdot0.00)
+HW-25,251.0,0.0778,"Archie; (m=1.97,\ n=1.98)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))",(\phi_t=PHID_{ls}); (\phi_e=\phi_t-VCL\cdot0.20)
+HW-26,251.0,0.0702,"Archie; (m=2.01,\ n=2.00)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))","(\phi_t=\mathrm{avg}(PHID_{ls},NPHI)); (\phi_e=\phi_t-VCL\cdot0.00)"
+HW-27,251.0,,not enough SW for Archie fit,"linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))",(\phi_t=PHID_{ss}); (\phi_e=\phi_t(1-VCL))
+HW-28,251.0,0.076,"Archie; (m=1.95,\ n=2.06)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))","(\phi_t=\mathrm{avg}(PHID_{ls},NPHI)); (\phi_e=\phi_t-VCL\cdot0.15)"
+HW-29,251.0,0.0847,"Archie; (m=1.94,\ n=1.96)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))","(\phi_t=\mathrm{avg}(PHID_{dol},NPHI)); (\phi_e=\phi_t-VCL\cdot0.20)"
+HW-30,251.0,0.069,"Archie; (m=2.02,\ n=2.00)","linear GR; (VCL=\mathrm{clip}((GR-20)/80,0,1))","(\phi_t=\mathrm{RMS}(PHID_{ls},NPHI)); (\phi_e=\phi_t(1-VCL))"
+HW-31,251.0,,no SW for Archie fit,"Larionov tertiary; (I_{GR}=\mathrm{clip}((GR-20)/80,0,1)), (VCL=0.083(2^{3.7I_{GR}}-1))","(\phi_t=\mathrm{RMS}(PHID_{ls},NPHI)); (\phi_e=\phi_t-VCL\cdot0.05)"
+HW-32,251.0,0.075,"Archie; (m=1.96,\ n=1.99)","Steiber; (I_{GR}=\mathrm{clip}((GR-20)/80,0,1)), (VCL=I_{GR}/(3-2I_{GR}))","(\phi_t=\mathrm{avg}(PHID_{ls},NPHI)); (\phi_e=\phi_t-VCL\cdot0.10)"

@@ -415,7 +415,8 @@ PRIMARY_LOGS_FOR_COMPLETENESS = [
 # from that list; the trailing entries here are the ones whose order is only
 # defined by this tuple, so keep them where they are.
 # Value-range rules applied to the context statistics (lower RMF bound 0.01;
-# no SP, SO or NMR rules).
+# no SP, SO or NMR rules). The Danish and COSTA packages were written with the
+# later rules of _DATASET_CONTEXT_VALUE_RANGE_RULES.
 _CONTEXT_VALUE_RANGE_RULES = {
     "RMF": ValueRangeRule(0.01, 10.0, "nan", ('RMF',)),
     "TEMP": ValueRangeRule(-5.0, 400.0, "nan", ('TEMP', 'TMPC')),
@@ -1247,6 +1248,8 @@ def _canonical_delivery_curve_name(curve: str) -> str:
     upper = curve.upper()
     if upper == "TMPC":
         return "TEMP"
+    if upper == "RSHAL" and _context_dataset() is not None:
+        return "RSHA"
     if upper == "PHI_Z":
         return "PHI_NORM"
     if upper == "SWA":
@@ -1335,12 +1338,13 @@ def _has_any_curve(well: "Well", candidates: Sequence[str]) -> bool:
 def _finite_input_status_text(well: "Well", specs: Sequence[tuple[str, Sequence[str]]]) -> str:
     parts: list[str] = []
     for label, candidates in specs:
+        later = _context_dataset() is not None
         if _has_finite_any_curve(well, candidates):
             status = "present"
         elif _has_any_curve(well, candidates):
-            status = "present/no finite samples"
+            status = "curve present but no finite samples in this segment" if later else "present/no finite samples"
         else:
-            status = "missing/no finite samples"
+            status = "missing in this segment" if later else "missing/no finite samples"
         parts.append(f"{label}={status}")
     return ", ".join(parts)
 
@@ -1646,6 +1650,94 @@ def _step_lookup(workflow_result) -> tuple[dict[str, Any], set[str]]:
     return step_results, skipped_steps
 
 
+def _dataset_sxo_missing_reason(well: "Well") -> str:
+    """Why SXO is missing from a segment, worded as the Danish and COSTA packages."""
+    shallow_present = _has_finite_any_curve(well, ("RSHA", "RXO", "RESS"))
+    rmf_present = _has_finite_curve(well, "RMF")
+    phie_present = _has_finite_any_curve(well, ("PHIE_CC", "PHIE"))
+    sw_present = _has_finite_any_curve(well, ("SW", "SWA", "SWT-LOG"))
+
+    direct_missing: list[str] = []
+    if not shallow_present:
+        if _has_any_curve(well, ("RSHA", "RXO", "RESS")):
+            direct_missing.append("RSHA/RXO/RESS curve present but no finite samples in this segment")
+        else:
+            direct_missing.append("RSHA/RXO/RESS missing in this segment")
+    if not rmf_present:
+        if _has_any_curve(well, ("RMF",)):
+            direct_missing.append("RMF curve present but no finite samples in this segment")
+        else:
+            direct_missing.append("RMF missing in this segment")
+    if not phie_present:
+        if _has_any_curve(well, ("PHIE_CC", "PHIE")):
+            direct_missing.append("PHIE_CC/PHIE curve present but no finite samples in this segment")
+        else:
+            direct_missing.append("PHIE_CC/PHIE missing in this segment")
+
+    if direct_missing:
+        if sw_present:
+            fallback_reason = "fifth-root fallback input SW was present, but SXO was not written"
+        elif _has_any_curve(well, ("SW", "SWA", "SWT-LOG")):
+            fallback_reason = "fifth-root fallback also unavailable because SW had no finite samples in this segment"
+        else:
+            fallback_reason = "fifth-root fallback also unavailable because SW was missing in this segment"
+        return "direct invaded-zone inputs unavailable: " + "; ".join(direct_missing) + "; " + fallback_reason
+
+    return "direct invaded-zone inputs were present, but no finite SXO values were produced after screening"
+
+
+def _dataset_sw_missing_reason(well: "Well") -> str:
+    """Why SW is missing from a segment, worded as the Danish and COSTA packages."""
+    missing_inputs: list[str] = []
+    nonfinite_inputs: list[str] = []
+    for label, candidates in (
+        ("RDEP or RT", ("RDEP", "RT")),
+        ("selected effective porosity", ("PHIE_CC", "PHIE")),
+        ("RW", ("RW",)),
+    ):
+        if _has_finite_any_curve(well, candidates):
+            continue
+        if _has_any_curve(well, candidates):
+            nonfinite_inputs.append(label)
+        else:
+            missing_inputs.append(label)
+    parts = []
+    if missing_inputs:
+        parts.append("missing " + ", ".join(missing_inputs))
+    if nonfinite_inputs:
+        parts.append("present but no finite samples in this segment: " + ", ".join(nonfinite_inputs))
+    if parts:
+        return "; ".join(parts)
+    return "no finite SW values were produced in this segment after saturation routing"
+
+
+def _primary_log_present(
+    well: "Well",
+    workflow_result,
+    name: str,
+    original_curves: set[str],
+) -> bool:
+    """Whether a primary log counts as present for a context's ``missing_primary_logs``.
+
+    The GeoLink main run's context counted only the input curves. The Danish
+    and COSTA packages also counted a primary log the segment holds finite
+    samples of (e.g. TEMP or RW the run wrote), and the Danish package counted
+    BS present when the bad-hole step used a bit size.
+    """
+    if _context_dataset() is None:
+        return name in original_curves
+    canonical = _canonical_delivery_curve_name(name)
+    if canonical in {_canonical_delivery_curve_name(str(curve)) for curve in original_curves}:
+        return True
+    if (
+        canonical == "BS"
+        and _context_dataset() == "danish"
+        and _bit_size_used_for_bad_hole(well, workflow_result) is not None
+    ):
+        return True
+    return _has_finite_any_curve(well, _target_curve_candidates(canonical))
+
+
 def _missing_curve_reason(
     curve: str,
     well: "Well",
@@ -1669,6 +1761,9 @@ def _missing_curve_reason(
         saturation_params = getattr(step_results.get("saturation"), "parameters", None) or {}
         if saturation_params.get("sxo_method") is None and saturation_params.get("sxo_reason"):
             return str(saturation_params["sxo_reason"])
+
+    if curve == "SXO" and _context_dataset() is not None:
+        return _dataset_sxo_missing_reason(well)
 
     if curve == "SXO":
         sw_present = _has_finite_curve(well, "SW")
@@ -1753,6 +1848,9 @@ def _missing_curve_reason(
             "PHIS": _has_finite_curve(well, "PHIS"),
         })
         return reason or "no finite PHI_SEC values were produced in this segment"
+
+    if curve == "SW" and _context_dataset() is not None:
+        return _dataset_sw_missing_reason(well)
 
     if curve == "SW":
         reason = missing_required({
@@ -2614,11 +2712,17 @@ def _run_context_workflow(well: "Well", config: "DynamicWorkflowConfig"):
     package's re-run, which wrote the package's context (see
     :attr:`~petrophys.workflow.DynamicWorkflowConfig.calculation_profile`).
     """
+    from petrophys._internal.analysis_helpers import DEPTH_UNIT_LABEL_PARAMETER
     from petrophys.workflow.dynamic_workflow import _rerun_calculations
     from petrophys.workflow.zoned_batch import run_dynamic_workflow_with_zones
 
     with _rerun_calculations():
-        return run_dynamic_workflow_with_zones(well, config)
+        result = run_dynamic_workflow_with_zones(well, config)
+    label = getattr(well, "_source_depth_unit_label", None)
+    if label and _reproduces_benchmark_context(result):
+        # The published packages wrote depth intervals with the source's label.
+        result.well.set_parameter(DEPTH_UNIT_LABEL_PARAMETER, label)
+    return result
 
 
 def _method_label(name: str) -> str:
@@ -3879,7 +3983,69 @@ def _rmf_curve_note(step: Any) -> str:
     return f"RMF: {method}; {arps}; RMF(T)={rmf_range or 'not recorded'}."
 
 
+def _dataset_rw_curve_note(step: Any, well: "Well") -> str:
+    """The RW note of the Danish and COSTA packages: Rw corrected directly with Arps."""
+    params = getattr(step, "parameters", {}) or {}
+    rw_range = _depth_profile_range_text([step], "rw_min", "rw_max", 4, "ohm.m")
+    method = getattr(step, "method", "")
+    arps_formula = "RW(T)=RWref*(Tref+6.77)/(TEMP+6.77)"
+    salinity_formula = _rw_temperature_formula_text()
+
+    if method == "rwa_clean_wet_p5":
+        coeff_text = _archie_coefficients_text(params, well).lstrip("; ")
+        return (
+            "RW: RWA clean-wet P5; "
+            "RWA=RDEP*PHIE^m/a, "
+            f"mask=VCL<{params.get('vcl_cutoff')} and PHIE>{params.get('phie_cutoff')}; "
+            f"P5 at reference temperature={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
+            f"Tref={_format_numeric(params.get('rwa_reference_temp_f'), 1)} F, "
+            f"samples={params.get('rwa_clean_wet_samples')}, "
+            + (f"{coeff_text}; " if coeff_text else "")
+            + f"{arps_formula}; RW(T)={rw_range}."
+        )
+    if method == "sp_clean_water":
+        rmf_range = _depth_profile_range_text([step], "rmf_min", "rmf_max", 4, "ohm.m")
+        return (
+            "RW: SP clean-water; SSP=SPclean-SPshale, K=61+0.133*TEMP(F), "
+            "RW=RMF(T)/10^(-SSP/K), clipped 0.01-10 ohm.m; "
+            f"SPclean={_format_numeric(params.get('sp_clean_mv'), 2)} mV, "
+            f"SPshale={_format_numeric(params.get('sp_shale_mv'), 2)} mV, "
+            f"SSP={_format_numeric(params.get('ssp_mv'), 2)} mV, RMF(T)={rmf_range}; RW(T)={rw_range}."
+        )
+    if method == "rxo_rt_clean_water":
+        return (
+            "RW: clean-water Rxo/Rt; RW_clean=RMF(T)*RT/RXO, then direct Arps temperature correction; "
+            f"samples={params.get('n_points')}, RWref={_format_numeric(params.get('rw_at_reference_temp'), 4)} ohm.m "
+            f"at Tref={_format_numeric(params.get('rw_reference_temp_f'), 1)} F, RW(T)={rw_range}."
+        )
+    if method == "salinity_conversion":
+        return (
+            f"RW: salinity conversion; salinity={_format_numeric(params.get('salinity_ppm'), 0)} ppm; "
+            f"{salinity_formula}; RW(T)={rw_range}."
+        )
+    if method in {"user_provided_temperature_profile_corrected", "las_metadata_temperature_profile_corrected"}:
+        source = "user input" if method.startswith("user") else "LAS metadata"
+        return (
+            f"RW: {source}; measured RW={_format_numeric(params.get('rw_at_measured_temp'), 4)} ohm.m "
+            f"at { _format_numeric(params.get('measured_temp_f'), 1)} F; {arps_formula}; RW(T)={rw_range}."
+        )
+    if method in {"user_provided_assumed_reference_temperature", "las_metadata_assumed_reference_temperature"}:
+        source = "user input" if method.startswith("user") else "LAS metadata"
+        return (
+            f"RW: {source}; RW={_format_numeric(params.get('rw'), 4)} ohm.m at reference "
+            f"{_format_numeric(params.get('reference_temp_f'), 1)} F; {arps_formula}; RW(T)={rw_range}."
+        )
+    if method == "default_fallback_profile":
+        return (
+            f"RW: default fallback; RW={_format_numeric(params.get('rw_default'), 4)} ohm.m at "
+            f"{_format_numeric(params.get('reference_temp_f'), 1)} F; {arps_formula}; RW(T)={rw_range}."
+        )
+    return f"RW: {method}; {arps_formula}; RW(T)={rw_range or 'not recorded'}."
+
+
 def _rw_curve_note(step: Any, well: "Well") -> str:
+    if _context_dataset() is not None:
+        return _dataset_rw_curve_note(step, well)
     params = getattr(step, "parameters", {}) or {}
     rw_range = _depth_profile_range_text([step], "rw_min", "rw_max", 4, "ohm.m")
     method = getattr(step, "method", "")
@@ -3982,6 +4148,19 @@ def _rejected_core_model_text(params: Mapping[str, Any]) -> str:
     return "; rejected model " + ", ".join(parts) if parts else ""
 
 
+def _context_dataset() -> Optional[str]:
+    """The published package being reproduced besides GeoLink's: "danish", "costa" or None.
+
+    Set by the Danish and COSTA context paths (see
+    :func:`petrophys.workflow.dynamic_workflow._dataset_calculations`). Those
+    packages were written by a later version of this exporter than the
+    GeoLink main run's context, whose notes differ where this module tests it.
+    """
+    from petrophys.workflow.dynamic_workflow import _DATASET_CALCULATIONS_REQUESTED
+
+    return _DATASET_CALCULATIONS_REQUESTED.get()
+
+
 def _reproduces_benchmark_context(workflow_result) -> bool:
     """True when the workflow behind a context ran the benchmark calculation profile."""
     from petrophys.workflow.zoned_batch import _reproduces_benchmark
@@ -4057,6 +4236,13 @@ def _compact_curve_note(
             inputs = _finite_input_status_text(
                 well,
                 [
+                    ("RSHA/RXO/RESS", ("RSHA", "RXO", "RESS")),
+                    ("RMF", ("RMF",)),
+                    ("PHIE_CC/PHIE", ("PHIE_CC", "PHIE")),
+                    ("SW", ("SW", "SWA", "SWT-LOG")),
+                ]
+                if _context_dataset() is not None
+                else [
                     ("SW", ("SW",)),
                     ("RSHA/RXO/RESS", ("RSHA", "RXO", "RESS")),
                     ("RMF", ("RMF",)),
@@ -6347,12 +6533,44 @@ def _add_reference_statistics_payload(
     stats[stat_key] = payload
 
 
-def _apply_value_range_qc_to_extra_curves(extra_derived_curves: Optional[dict[str, Any]]) -> list[dict[str, Any]]:
+def _dataset_context_value_range_rules() -> dict[str, ValueRangeRule]:
+    """The context value-range rules of the Danish and COSTA packages.
+
+    Those packages were written after the GeoLink main run's context: RMF is
+    kept down to 0.001 ohm.m and SO is clipped to 0-1 (after SW, in the
+    order of the rules then).
+    """
+    rules: dict[str, ValueRangeRule] = {}
+    for mnemonic, rule in _CONTEXT_VALUE_RANGE_RULES.items():
+        if mnemonic == "RMF":
+            rule = ValueRangeRule(0.001, 10.0, "nan", ("RMF",))
+        rules[mnemonic] = rule
+        if mnemonic == "SW":
+            rules["SO"] = ValueRangeRule(0.0, 1.0, "clip", ("SO",))
+    return rules
+
+
+_DATASET_CONTEXT_VALUE_RANGE_RULES = _dataset_context_value_range_rules()
+
+
+def _context_value_range_rules(workflow_result) -> dict[str, ValueRangeRule]:
+    """Value-range rules for a context of ``workflow_result``'s run."""
+    if _context_dataset() is not None and _reproduces_benchmark_context(workflow_result):
+        return _DATASET_CONTEXT_VALUE_RANGE_RULES
+    return _CONTEXT_VALUE_RANGE_RULES
+
+
+def _apply_value_range_qc_to_extra_curves(
+    extra_derived_curves: Optional[dict[str, Any]],
+    rules: Optional[dict[str, ValueRangeRule]] = None,
+) -> list[dict[str, Any]]:
     report: list[dict[str, Any]] = []
     for mnemonic, curve in (extra_derived_curves or {}).items():
         try:
             data = getattr(curve, "data", curve)
-            cleaned, item = clean_curve_values(mnemonic, data, rules=_CONTEXT_VALUE_RANGE_RULES)
+            cleaned, item = clean_curve_values(
+                mnemonic, data, rules=_CONTEXT_VALUE_RANGE_RULES if rules is None else rules
+            )
         except (TypeError, ValueError):
             continue
         if item is None:
@@ -6601,9 +6819,10 @@ def _build_reference_json_payload(
     extra_statistics_curves: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     well_name = _reference_well_name(source_file, well)
-    extra_qc_report = _apply_value_range_qc_to_extra_curves(extra_statistics_curves)
+    context_rules = _context_value_range_rules(workflow_result)
+    extra_qc_report = _apply_value_range_qc_to_extra_curves(extra_statistics_curves, context_rules)
     if hasattr(well, "get_parameter") and well.get_parameter(VALUE_RANGE_QC_PARAMETER) is None:
-        apply_value_range_qc(well, rules=_CONTEXT_VALUE_RANGE_RULES)
+        apply_value_range_qc(well, rules=context_rules)
     if extra_qc_report and hasattr(well, "get_parameter") and hasattr(well, "set_parameter"):
         base_report = list(well.get_parameter(VALUE_RANGE_QC_PARAMETER, []) or [])
         well.set_parameter(VALUE_RANGE_QC_PARAMETER, [*base_report, *extra_qc_report])
@@ -6649,7 +6868,7 @@ def _build_reference_json_payload(
             _display_curve_name(name)
             for name in PRIMARY_LOGS_FOR_COMPLETENESS
             if _canonical_delivery_curve_name(name) not in CORE_ONLY_CONTEXT_CURVES
-            and name not in original_curves
+            and not _primary_log_present(well, workflow_result, name, original_curves)
         ],
         "derived_log_computation_notes": computation_notes,
     }
@@ -7642,7 +7861,7 @@ def export_reference_json_work_package_by_formation_lithology(
         Override the broad domain while retaining per-well LAS settings.
     reader_options : dict, optional
         Options passed to petrophys.read, e.g. {"step": 0.1524} for DLIS.
-        Select DLIS files with pattern="*.dlis". Defaults preserve the reader's
+        Select DLIS files with ``pattern="*.dlis"``. Defaults preserve the reader's
         native settings; tabular inputs require an explicit depth_unit.
 
     Returns
@@ -7845,6 +8064,20 @@ def export_reference_json_work_package_by_formation_lithology(
     return results
 
 
+def _group_layout_for_file(
+    group_layout: Optional[Mapping[str, Sequence[Mapping[str, Any]]]],
+    file_path: Path,
+) -> Optional[Sequence[Mapping[str, Any]]]:
+    """The groups ``group_layout`` gives the well read from ``file_path``, else None."""
+    if not group_layout:
+        return None
+    wanted = file_path.stem.strip().casefold()
+    for well_key, groups in group_layout.items():
+        if str(well_key).strip().casefold() == wanted:
+            return groups
+    return None
+
+
 def export_reference_json_work_package_by_category_formation_lithology(
     input_dir: str | Path,
     output_dir: str | Path,
@@ -7860,11 +8093,22 @@ def export_reference_json_work_package_by_category_formation_lithology(
     lithology_domain: Optional[str] = None,
     raw_input_dir: Optional[str | Path] = None,
     reader_options: Optional[dict[str, Any]] = None,
+    group_layout: Optional[Mapping[str, Sequence[Mapping[str, Any]]]] = None,
 ) -> List[ExampleFormatExportResult]:
     """Generate category contexts from well files and optional geology inputs.
 
-    Use pattern="*.dlis" for DLIS. reader_options are passed to petrophys.read
+    Use ``pattern="*.dlis"`` for DLIS. reader_options are passed to petrophys.read
     for both context inputs and optional raw inputs (e.g. DLIS step/channels).
+
+    ``group_layout`` gives, per well (keyed by file stem, compared without
+    case), the formation/lithology groups to export instead of splitting the
+    well by its tops and lithology codes. Each group is a mapping with
+    ``formation_name``, ``formation_depth_info`` (``min_depth``,
+    ``max_depth``, ``thickness``), ``group_name``, ``lithology``,
+    ``start_depth`` and ``end_depth``, and optionally ``file_stem`` (default
+    ``"<formation_name>_<group_name>"``); the group's samples are those from
+    ``start_depth`` to ``end_depth``. A well missing from the layout is split
+    as usual.
 
     ``scripts/generate_benchmark_context.py`` runs it to reproduce the GeoLink
     eval context benchmark, with ``calculation_profile="benchmark"``: every
@@ -7940,6 +8184,98 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 )
                 continue
 
+            def export_group(
+                group_well: "Well",
+                formation_display_name: str,
+                formation_depth_info: Mapping[str, Any],
+                json_group_name: str,
+                json_lithology_name: str,
+                file_stem: str,
+            ) -> None:
+                """Write the category files of one formation/lithology group."""
+                apply_value_range_qc(group_well, rules=_context_value_range_rules(workflow_result))
+                if not _reproduces_benchmark_context(workflow_result):
+                    # The category analyzers read RQI, FZI and BVW and count
+                    # every curve's samples: recompute them after the QC.
+                    _synchronize_post_qc_dependent_curves(group_well)
+
+                # Every sample of the group shares its lithology, and with it the
+                # lithology family whose reservoir-quality limits apply.
+                group_families = (
+                    None
+                    if _reproduces_benchmark_context(workflow_result)
+                    else _context_lithology_families(group_well, workflow_result, lithology_mapping)
+                )
+                for category_name in CATEGORY_CONTEXT_SPECS:
+                    category_result = _category_analysis_result(
+                        category_name, group_well, workflow_result, lithology_family=group_families
+                    )
+                    derived_logs = _category_derived_logs_computed(
+                        category_name,
+                        group_well,
+                        workflow_result,
+                        raw_original_curves,
+                        category_result,
+                    )
+                    json_path = (
+                        output_path
+                        / category_name
+                        / _sanitize_path_component(file_path.stem)
+                        / _sanitize_path_component(formation_display_name)
+                        / f"{_sanitize_path_component(file_stem)}_{category_name}.json"
+                    )
+
+                    json_file = _write_reference_analysis_json_to_path(
+                        json_path,
+                        group_well,
+                        workflow_result,
+                        file_path,
+                        raw_original_curves,
+                        formation_name=formation_display_name,
+                        formation_depth_info=formation_depth_info,
+                        lithology_group_name=json_group_name,
+                        lithology_name=json_lithology_name,
+                        lithology_mapping=lithology_mapping,
+                        analysis_summary_override=category_result.to_dict(),
+                        derived_logs_override=derived_logs,
+                        status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
+                        include_derived_log_status=False,
+                        extra_statistics_curves=category_result.derived_curves,
+                    )
+                    result_warnings = [*warnings, *fallback_warnings]
+
+                    results.append(
+                        ExampleFormatExportResult(
+                            source_file=str(file_path),
+                            output_file=str(json_file),
+                            success=not errors,
+                            json_file=str(json_file),
+                            curves_exported=0,
+                            warnings=result_warnings,
+                            errors=errors,
+                        )
+                    )
+
+            well_layout = _group_layout_for_file(group_layout, file_path)
+            if well_layout is not None:
+                for group in well_layout:
+                    group_well = workflow_result.well.depth_slice(
+                        float(group["start_depth"]), float(group["end_depth"])
+                    )
+                    if group_well.n_samples == 0:
+                        continue
+                    formation_display_name = str(group["formation_name"])
+                    group_name = str(group["group_name"])
+                    export_group(
+                        group_well,
+                        formation_display_name,
+                        dict(group["formation_depth_info"]),
+                        group_name,
+                        str(group["lithology"]),
+                        str(group.get("file_stem") or f"{formation_display_name}_{group_name}"),
+                    )
+                continue
+
             if not formation_segments:
                 formation_segments = [
                     {
@@ -7979,7 +8315,6 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 if formation_well.n_samples == 0:
                     continue
 
-                formation_original_curves = raw_original_curves
                 formation_depth_info = _depth_summary(formation_well)
                 lithology_segments = _build_lithology_group_segments(
                     formation_well,
@@ -7992,11 +8327,6 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     group_well = _well_mask_slice(formation_well, lithology_segment["mask"])
                     if group_well.n_samples == 0:
                         continue
-                    apply_value_range_qc(group_well, rules=_CONTEXT_VALUE_RANGE_RULES)
-                    if not _reproduces_benchmark_context(workflow_result):
-                        # The category analyzers read RQI, FZI and BVW and count
-                        # every curve's samples: recompute them after the QC.
-                        _synchronize_post_qc_dependent_curves(group_well)
 
                     raw_group_name = str(lithology_segment["group_name"])
                     raw_lithology_name = str(lithology_segment["lithology"])
@@ -8013,63 +8343,14 @@ def export_reference_json_work_package_by_category_formation_lithology(
                             f"{file_stem}"
                             f"__{formation_depth_info['min_depth']:.1f}_{formation_depth_info['max_depth']:.1f}"
                         )
-
-                    # Every sample of the group shares its lithology, and with it the
-                    # lithology family whose reservoir-quality limits apply.
-                    group_families = (
-                        None
-                        if _reproduces_benchmark_context(workflow_result)
-                        else _context_lithology_families(group_well, workflow_result, lithology_mapping)
+                    export_group(
+                        group_well,
+                        formation_display_name,
+                        formation_depth_info,
+                        json_group_name,
+                        json_lithology_name,
+                        file_stem,
                     )
-                    for category_name in CATEGORY_CONTEXT_SPECS:
-                        category_result = _category_analysis_result(
-                            category_name, group_well, workflow_result, lithology_family=group_families
-                        )
-                        derived_logs = _category_derived_logs_computed(
-                            category_name,
-                            group_well,
-                            workflow_result,
-                            formation_original_curves,
-                            category_result,
-                        )
-                        json_path = (
-                            output_path
-                            / category_name
-                            / _sanitize_path_component(file_path.stem)
-                            / _sanitize_path_component(formation_display_name)
-                            / f"{_sanitize_path_component(file_stem)}_{category_name}.json"
-                        )
-
-                        json_file = _write_reference_analysis_json_to_path(
-                            json_path,
-                            group_well,
-                            workflow_result,
-                            file_path,
-                            formation_original_curves,
-                            formation_name=formation_display_name,
-                            formation_depth_info=formation_depth_info,
-                            lithology_group_name=json_group_name,
-                            lithology_name=json_lithology_name,
-                            lithology_mapping=lithology_mapping,
-                            analysis_summary_override=category_result.to_dict(),
-                            derived_logs_override=derived_logs,
-                            status_targets_override=CATEGORY_CONTEXT_SPECS[category_name]["targets"],
-                            include_derived_log_status=False,
-                            extra_statistics_curves=category_result.derived_curves,
-                        )
-                        result_warnings = [*warnings, *fallback_warnings]
-
-                        results.append(
-                            ExampleFormatExportResult(
-                                source_file=str(file_path),
-                                output_file=str(json_file),
-                                success=not errors,
-                                json_file=str(json_file),
-                                curves_exported=0,
-                                warnings=result_warnings,
-                                errors=errors,
-                            )
-                        )
         except Exception as exc:
             results.append(
                 ExampleFormatExportResult(

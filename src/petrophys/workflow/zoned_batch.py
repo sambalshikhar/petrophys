@@ -1384,19 +1384,24 @@ def _interpret_las_file(
         held.
     """
     well = read_las(file_path)
+    source_depth_label = getattr(well, "_source_depth_unit_label", None)
     rerun = _uses_rerun_calculations(well, file_stem=file_path.stem)
     main_run = _reproduces_benchmark(config) and not rerun
     well = standardize_curves(
         well,
         rename_curves=True,
         convert_units=True,
-        # The main run's interpreted LAS kept the source's own label where the
-        # standard unit is equivalent (e.g. m3/m3, gAPI).
-        relabel_equivalent_units=not main_run,
+        # The eval packages' interpreted LAS kept the source's own label where
+        # the standard unit is equivalent (e.g. m3/m3, gAPI).
+        relabel_equivalent_units=not _reproduces_benchmark(config),
     )
     input_curves = set(well.curves)
     with _rerun_calculations(rerun):
         workflow_result = run_dynamic_workflow_with_zones(well, config=config)
+    # The eval packages' interpreted LAS kept the source's depth unit label.
+    workflow_result.well._source_depth_unit_label = (
+        source_depth_label if _reproduces_benchmark(config) else None
+    )
     _finalize_export_curves(
         workflow_result.well,
         input_curves,
@@ -1472,7 +1477,12 @@ def process_las_directory_with_workflow(
 
         try:
             workflow_result, input_curves = _interpret_las_file(file_path, config)
-            export_las(workflow_result.well, export_path)
+            export_las(
+                workflow_result.well,
+                export_path,
+                depth_unit_label=getattr(workflow_result.well, "_source_depth_unit_label", None),
+                pad_header_by_bytes=_reproduces_benchmark(config),
+            )
 
             computed_curves = sorted(set(workflow_result.well.curves) - input_curves)
             warnings = list(workflow_result.warnings)

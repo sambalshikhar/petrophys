@@ -216,6 +216,8 @@ class LASReader:
             for curve in self._las.curves:
                 if curve.mnemonic == depth_curve:
                     well._depth_unit = _normalize_depth_unit(curve.unit)
+                    # The label as written, which the benchmark profile writes back.
+                    well._source_depth_unit_label = (curve.unit or "").strip()
                     break
             _warn_on_depth_issues(well._depth, self.filepath)
 

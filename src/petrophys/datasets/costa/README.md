@@ -19,6 +19,15 @@ The original MIT notice is retained in `../phillips/LICENSE-Craig-2022.txt`.
 Related HPMI data and fitted parameters are available as
 `sample("costa_core_pc")` and `sample("costa_thomeer_fits")`.
 
+`petrophys/_internal/data/costa_interpretation_parameters.csv` and
+`costa_reference_carbonate_volumes.csv` beside it hold the other inputs of the
+published COSTA context package: per well, the
+BHT, the Rw at 68 degF and the saturation, clay-volume and porosity methods
+used, and, by depth for 15 wells, calcite (`vlim`) and dolomite (`vdol`)
+volumes from an earlier interpretation of these logs, which the package took
+where available. `pp.export_context(None, out, layout="category_formation_lithology",
+context_profile="costa")` recomputes that package from these files.
+
 For the carbonate interpretation, pass `lithology_domain="carbonate"` in
 `DynamicWorkflowConfig`; the matrix is then resolved within the carbonate domain. Automatic mineral selection can
 also use interpreted lithology or core-constrained matrix density. Sparse or

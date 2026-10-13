@@ -21,6 +21,13 @@ from petrophys.io import (
 )
 from petrophys.io.lithology_reader import read_lithology_codes
 from petrophys.reporting.context import ContextSizeError, build_context, export_context
+from petrophys.reporting.context_profiles import (
+    ContextProfile,
+    describe_context_profile,
+    get_context_profile,
+    identify_context_profile,
+    list_context_profiles,
+)
 from petrophys.model.well import Well
 from petrophys.model.curve import Curve
 from petrophys.model.data_types import DataType
@@ -66,6 +73,11 @@ __all__ = [
     "build_context",
     "export_context",
     "ContextSizeError",
+    "ContextProfile",
+    "describe_context_profile",
+    "get_context_profile",
+    "identify_context_profile",
+    "list_context_profiles",
     "read_lithology_codes",
     "DynamicWorkflowConfig",
     "DynamicWorkflowResult",

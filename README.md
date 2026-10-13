@@ -319,6 +319,27 @@ server's interpretations the benchmark profile, e.g. for an evaluation harness;
 a profile in a tool call's settings still takes precedence. Only the MCP server
 reads that variable; `pp.interpret` and `petrophys-context` ignore it.
 
+The published COSTA and Danish context packages were made by pipelines of
+their own. A context profile runs that pipeline from the delivery's LAS files
+and computes the package with the calculations it used:
+
+```python
+pp.export_context(
+    None, "outputs/costa_context",  # None: the COSTA LAS bundled with petrophys
+    layout="category_formation_lithology", context_profile="costa",
+)
+```
+
+The Danish profile also takes its tops workbook and the GeoLink lithology
+codebook (`tops_file=`, `lithology_mapping_file=`). Use
+`pp.list_context_profiles()` and `pp.describe_context_profile("danish")` to
+inspect them. One script reproduces any of the three eval collections from a
+LAS file or folder, keeping the interpreted LAS as well:
+
+```bash
+python scripts/generate_benchmark_context.py --input-dir PATH/HW-31.las --output-dir outputs/HW-31
+```
+
 ## Individual calculations
 
 Every model is also a plain function on NumPy arrays or floats:

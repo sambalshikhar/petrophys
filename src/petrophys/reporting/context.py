@@ -147,22 +147,35 @@ def export_context(
     max_bytes: int = DEFAULT_MAX_BYTES,
     max_total_bytes: int = DEFAULT_MAX_TOTAL_BYTES,
     overwrite: bool = False,
+    context_profile: Optional[str] = None,
     **options: Any,
 ):
     """Write a well summary or a fully computed context package.
 
-    Package layouts read well files, apply optional formation and lithology
-    inputs, run the workflow, and write context JSON. They never read an older
-    context package or reuse archived numerical values. With a
+    Package layouts normally read well files, apply optional formation and
+    lithology inputs, run the workflow, and write context JSON. With a
     ``workflow_config`` under the benchmark calculation profile, every well
     gets the calculations of the eval package's re-run, which wrote its context.
     The default pattern is "*.las"; use pattern="*.dlis" for DLIS and
     reader_options={"step": 0.1524} to request a DLIS sampling step in metres.
+
+    ``context_profile="costa_v1"`` or ``"danish_v1"`` (aliases ``"costa"``,
+    ``"danish"``) computes that published package from the delivery's LAS
+    files with the package's own pipeline and calculations
+    (:mod:`petrophys.reporting.context_profiles`). ``data`` is then the
+    folder of the Danish raw LAS files, or of the COSTA LAS files (None for
+    the COSTA copies bundled with petrophys); the Danish profile also needs
+    ``tops_file`` (its formation tops workbook) and
+    ``lithology_mapping_file`` (the GeoLink lithology codebook). Context
+    profiles apply only to the ``category_formation_lithology`` layout, and
+    only the context JSON is written to ``output_path``.
     """
     _validate_limit(max_bytes, "max_bytes")
     _validate_limit(max_total_bytes, "max_total_bytes")
     output = Path(output_path)
     if layout == "well":
+        if context_profile is not None:
+            raise ValueError("context_profile applies only to category package exports")
         payload = build_context(data, max_bytes=max_bytes, **options)
         _write_bytes(output, _encode(payload, max_bytes), overwrite)
         return output
@@ -173,27 +186,50 @@ def export_context(
             "Unknown context layout; choose well, formation_lithology or "
             "category_formation_lithology"
         )
+    if context_profile is not None and layout != "category_formation_lithology":
+        raise ValueError(
+            "context_profile requires layout='category_formation_lithology'"
+        )
     if overwrite or output.exists():
         raise FileExistsError(
             "Package exports require a new output directory; existing "
             "packages are never overwritten"
         )
 
-    source = Path(data)
-    if not source.is_dir():
+    source = None if data is None and context_profile is not None else Path(data)
+    if source is not None and not source.is_dir():
         raise FileNotFoundError(f"Input well directory not found: {source}")
 
     from petrophys.reporting import reference_export as reference
 
-    exporter = (
-        reference.export_reference_json_work_package_by_formation_lithology
-        if layout == "formation_lithology"
-        else reference.export_reference_json_work_package_by_category_formation_lithology
-    )
+    exporter = None
+    if context_profile is None:
+        exporter = (
+            reference.export_reference_json_work_package_by_formation_lithology
+            if layout == "formation_lithology"
+            else reference.export_reference_json_work_package_by_category_formation_lithology
+        )
     output.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix=".petrophys-context-", dir=output.parent) as directory:
         staged = Path(directory) / "package"
-        results = exporter(input_dir=source, output_dir=staged, **options)
+        if context_profile is None:
+            results = exporter(input_dir=source, output_dir=staged, **options)
+        else:
+            from petrophys.reporting.context_profiles import export_context_profile
+
+            # The package's own pipeline fixes its formation layout, thickness
+            # rule and workflow settings; its inputs and well selection apply.
+            results = export_context_profile(
+                source,
+                staged,
+                context_profile=context_profile,
+                work_dir=Path(directory) / "work",
+                well_names=options.get("well_names"),
+                pattern=options.get("pattern", "*.las"),
+                recursive=options.get("recursive", False),
+                tops_file=options.get("tops_file"),
+                lithology_mapping_file=options.get("lithology_mapping_file"),
+            )
         if not results:
             raise ValueError(
                 "No context files generated; check well selection, formations, "
@@ -204,7 +240,8 @@ def export_context(
             errors = [error for item in failures for error in item.errors]
             raise ValueError("Context export failed: " + "; ".join(errors))
 
-        reference.write_reference_curve_name_mapping(staged)
+        if not (staged / "curve_name_mapping.json").exists():
+            reference.write_reference_curve_name_mapping(staged)
         total = 0
         for path in sorted(staged.rglob("*")):
             if not path.is_file():

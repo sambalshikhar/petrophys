@@ -437,6 +437,8 @@ def test_generate_benchmark_context_takes_one_calculation_profile():
 
     assert parser.parse_args([*required, "--from-raw"]).calculation_profile == "benchmark"
     assert parser.parse_args([*required, "--calculation-profile", "current"]).calculation_profile == "current"
+    assert parser.parse_args(required).dataset == "auto"
+    assert parser.parse_args([*required, "--dataset", "costa"]).dataset == "costa"
     for removed in (
         ["--calculation-profile", "benchmark_rerun"],
         ["--las-profile", "benchmark"],
@@ -451,3 +453,25 @@ def test_generate_benchmark_context_takes_one_calculation_profile():
     )
     assert command in parser.format_help()
     assert command in namespace["__doc__"]
+
+
+def test_one_context_script_auto_detects_a_costa_well(tmp_path):
+    script = Path(__file__).resolve().parents[1] / "scripts" / "generate_benchmark_context.py"
+    namespace = runpy.run_path(str(script))
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "petrophys"
+        / "datasets"
+        / "costa"
+        / "HW-31.las"
+    )
+    output = tmp_path / "context"
+
+    assert namespace["main"](
+        ["--input-dir", str(source), "--output-dir", str(output)]
+    ) == 0
+    context = [path for path in output.rglob("*.json") if "processed_las" not in path.parts]
+    assert len(context) == 25  # 24 category files and the curve-name mapping
+    assert not any("HW-32" in path.parts for path in context)
+    assert (output / "processed_las" / "HW-31.las").exists()

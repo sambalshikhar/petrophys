@@ -86,6 +86,8 @@ def export_las(
     *,
     extra_parameters: Optional[List[Dict[str, Any]]] = None,
     other: Optional[str] = None,
+    depth_unit_label: Optional[str] = None,
+    pad_header_by_bytes: bool = False,
     **kwargs
 ):
     """
@@ -109,6 +111,15 @@ def export_las(
         an interpretation used).
     other : str, optional
         Text appended to the ``~Other`` section.
+    depth_unit_label : str, optional
+        Depth unit label to write for DEPT, STRT, STOP and STEP instead of
+        ``well.depth_unit``, e.g. ``"FT"`` as a source file wrote it. It must
+        name the same unit.
+    pad_header_by_bytes : bool, default False
+        Pad the header columns by each text's UTF-8 byte length rather than
+        its character count, as the GeoLink eval package's interpreted LAS
+        were padded (a field name such as SLEIPNER OST with an O-slash then
+        widens its column by one). The bytes written are the same UTF-8.
     **kwargs
         Additional arguments passed to lasio's LASFile.write
         (e.g. ``fmt="%.8f"`` to control numeric precision)
@@ -125,6 +136,16 @@ def export_las(
         )
 
     filepath = Path(filepath)
+    depth_label = well.depth_unit
+    if depth_unit_label:
+        from petrophys.model.units import normalize_depth_unit
+
+        if normalize_depth_unit(depth_unit_label, strict=False) != well.depth_unit:
+            raise ValueError(
+                f"depth_unit_label {depth_unit_label!r} does not name the well's depth unit "
+                f"{well.depth_unit!r}"
+            )
+        depth_label = depth_unit_label
 
     # Create LAS file
     las = lasio.LASFile()
@@ -183,21 +204,21 @@ def export_las(
     if well.top is not None:
         las.well.STRT = lasio.HeaderItem(
             mnemonic="STRT",
-            unit=well.depth_unit,
+            unit=depth_label,
             value=well.top,
             descr="START DEPTH"
         )
     if well.bottom is not None:
         las.well.STOP = lasio.HeaderItem(
             mnemonic="STOP",
-            unit=well.depth_unit,
+            unit=depth_label,
             value=well.bottom,
             descr="STOP DEPTH"
         )
     if well.step is not None:
         las.well.STEP = lasio.HeaderItem(
             mnemonic="STEP",
-            unit=well.depth_unit,
+            unit=depth_label,
             value=well.step,
             descr="STEP"
         )
@@ -228,7 +249,7 @@ def export_las(
         las.append_curve(
             "DEPT",
             well.depth,
-            unit=well.depth_unit,
+            unit=depth_label,
             descr="DEPTH"
         )
 
@@ -260,6 +281,21 @@ def export_las(
     # lasio would open the file with the platform's locale encoding, which
     # writes non-ASCII header text (e.g. a field name like OSEBERG OST) in a
     # single-byte code page. Write UTF-8, as the LAS files we read use.
+    if pad_header_by_bytes:
+        # Each UTF-8 byte as one latin-1 character: lasio then pads by bytes,
+        # and writing latin-1 reproduces the UTF-8 bytes.
+        def as_bytes(text: Any) -> Any:
+            return text.encode("utf-8").decode("latin-1") if isinstance(text, str) else text
+
+        for section in (las.version, las.well, las.curves, las.params):
+            for item in section:
+                item.value = as_bytes(item.value)
+                item.descr = as_bytes(item.descr)
+                item.unit = as_bytes(item.unit)
+        las.other = as_bytes(las.other)
+        with open(filepath, "w", encoding="latin-1") as handle:
+            las.write(handle, version=version, **kwargs)
+        return
     with open(filepath, "w", encoding="utf-8") as handle:
         las.write(handle, version=version, **kwargs)
 

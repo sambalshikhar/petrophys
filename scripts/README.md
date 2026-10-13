@@ -30,9 +30,22 @@ tokens, and can target the in-process server, stdio, or a running HTTP server
 
 ## Eval context benchmark
 
-`generate_benchmark_context.py` regenerates the GeoLink eval context benchmark
-package (`context_json_category_all_wells_fm_gp_mb_core_no_metrics_phiecc_sat_latest`).
-One command reproduces the whole package from the raw LAS files:
+`generate_benchmark_context.py` is the single reproduction command for the
+GeoLink, COSTA, and Danish eval collections. Give it one LAS file or a folder;
+it identifies the collection by its well names. COSTA and Danish are computed
+by their own pipelines (`petrophys.reporting.context_profiles`), which write
+the interpreted LAS under `NEW_DIR/processed_las` (the Danish prepared LAS
+under `NEW_DIR/prepared_las`) and the context:
+
+```
+python scripts/generate_benchmark_context.py --input-dir PATH/costa_las_raw --output-dir NEW_DIR
+python scripts/generate_benchmark_context.py --input-dir PATH/danish/las \
+    --tops-file PATH/Danish_formation_tops_for_context.xlsx \
+    --lithology-mapping-file PATH/Litho_Nomenclature_Kingdom.xlsx --output-dir NEW_DIR
+```
+
+For GeoLink, the same script retains the benchmark calculation workflow. One
+command regenerates the whole GeoLink package from the raw LAS files:
 
 ```
 python scripts/generate_benchmark_context.py --from-raw --input-dir PATH/eval --output-dir NEW_DIR

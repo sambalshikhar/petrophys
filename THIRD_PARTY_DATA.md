@@ -22,6 +22,15 @@ Petrophys distributes a 17-well subset with selected/renamed curves and adapted
 LAS headers. These are benchmark inputs, not independently acquired field truth.
 Each file covers only the Kharaib-2 reservoir interval; `formations_costa.csv`
 records that interval (first to last logged sample) for every well.
+`src/petrophys/_internal/data/costa_interpretation_parameters.csv` (per-well
+BHT, Rw at 68 degF and the
+saturation, clay-volume and porosity methods) and
+`src/petrophys/_internal/data/costa_reference_carbonate_volumes.csv` (calcite
+and dolomite volumes of 15
+wells from an earlier interpretation of these logs) are the remaining inputs
+of the published COSTA context package, which the `costa` context profile
+recomputes. Both are derived from the COSTA logs and remain subject to the
+underlying COSTA attribution.
 For publications, also cite Costa Gomes, Geiger, and Arnold, *The Design of an
 Open-Source Carbonate Reservoir Model*, Petroleum Geoscience 28 (2022),
 [DOI 10.1144/petgeo2021-067](https://doi.org/10.1144/petgeo2021-067).
