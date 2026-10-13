@@ -417,9 +417,9 @@ def test_temperature_ignores_fmt_and_uses_fallback_without_bht(record_route):
 @pytest.mark.parametrize(
     "case_id,mutate,config,expected_sp,expected_nd",
     [
-        ("vclay_gr_sp_nd_enabled", lambda well: well, DynamicWorkflowConfig(calculation_profile="benchmark"), True, True),
-        ("vclay_sp_disabled_by_kcl_mud", lambda well: well, DynamicWorkflowConfig(mud_has_clay_or_kcl=True, calculation_profile="benchmark"), False, True),
-        ("vclay_nd_disabled_when_missing_density_neutron", lambda well: _remove_curves(well, "NPHI", "RHOB"), DynamicWorkflowConfig(calculation_profile="benchmark"), True, False),
+        ("vclay_gr_sp_nd_enabled", lambda well: well, DynamicWorkflowConfig(calculation_profile="geolink"), True, True),
+        ("vclay_sp_disabled_by_kcl_mud", lambda well: well, DynamicWorkflowConfig(mud_has_clay_or_kcl=True, calculation_profile="geolink"), False, True),
+        ("vclay_nd_disabled_when_missing_density_neutron", lambda well: _remove_curves(well, "NPHI", "RHOB"), DynamicWorkflowConfig(calculation_profile="geolink"), True, False),
     ],
 )
 def test_vclay_routing_by_available_methods(
@@ -480,7 +480,7 @@ def test_vclay_trace_reports_the_canonical_clean_line(record_route):
         "vclay_sandstone_clean_line",
         well,
         DynamicWorkflowConfig(
-            matrix_type="sandstone", lithology="sandstone", calculation_profile="benchmark"
+            matrix_type="sandstone", lithology="sandstone", calculation_profile="geolink"
         ),
         record_route,
         focus_steps=["vclay"],
@@ -573,7 +573,7 @@ def test_bad_hole_uses_depth_dependent_bs_curve(record_route):
 
 @pytest.mark.parametrize(
     "profile, bit_size_used, bit_size_source",
-    [("current", None, "none"), ("benchmark", 8.5, "fallback_8.5")],
+    [("current", None, "none"), ("geolink", 8.5, "fallback_8.5")],
 )
 def test_bad_hole_without_bs(profile, bit_size_used, bit_size_source, record_route):
     well = _routing_well("BAD-HOLE-NO-BS")
@@ -997,7 +997,7 @@ def test_invasion_combines_partial_shallow_aliases_depthwise(record_route):
     assert np.isfinite(well.get("INVASION_RATIO").data).all()
 
 
-@pytest.mark.parametrize("profile", ["current", "benchmark"])
+@pytest.mark.parametrize("profile", ["current", "geolink"])
 def test_invasion_reads_the_flushed_zone_first_under_current(profile, record_route):
     # RXO 40 -> 1.2, RSHA 42 -> 1.4 and RDEP 90 -> 2 ohm.m over 12 samples; RXO is missing at the third sample.
     well = _routing_well(f"invasion_order_{profile}")
@@ -1430,7 +1430,7 @@ def test_saturation_skips_when_phie_is_unavailable_even_if_rhob_exists(record_ro
             "nmr_derived",
         ),
         (
-            # The benchmark profile counts the two washed-out samples, which
+            # The "geolink" profile counts the two washed-out samples, which
             # take the hydrocarbon mask past its 10-sample minimum.
             "permeability_hc_mask_p5",
             lambda well: (
@@ -1443,7 +1443,7 @@ def test_saturation_skips_when_phie_is_unavailable_even_if_rhob_exists(record_ro
             )[-1],
             DynamicWorkflowConfig(
                 perm_method="timur", skip_steps=["vclay", "porosity", "saturation"],
-                calculation_profile="benchmark",
+                calculation_profile="geolink",
             ),
             "hc_mask_p5",
         ),

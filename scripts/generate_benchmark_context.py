@@ -8,7 +8,8 @@ from the processed LAS files (eval_processed), the raw LAS files next to them
 (eval), the NPD formation tops workbook, and the lithology codebook.
 
 With ``--from-raw`` the input folder holds the raw LAS files instead, and the
-script runs the whole package from them: first the interpreted ("processed")
+script runs the whole package from them with the ``geolink`` context profile
+(``petrophys.reporting.context_profiles``): first the interpreted ("processed")
 LAS files, then the context from those. Both outputs land under the output
 folder. This one command reproduces the whole package:
 
@@ -16,7 +17,7 @@ folder. This one command reproduces the whole package:
 
 The package was made in two runs with different calculations: its main run
 interpreted 30 of the 32 wells, and a re-run interpreted 15_9-17 and 34_10-23
-and wrote the context of every well. The "benchmark" calculation profile, the
+and wrote the context of every well. The "geolink" calculation profile, the
 default of ``--calculation-profile``, keeps both sets of calculations fixed
 while the library's default calculations change: it interprets 15_9-17 and
 34_10-23 with the re-run's calculations and the other wells with the main
@@ -74,16 +75,6 @@ REPRODUCE_COMMAND = (
     "python scripts/generate_benchmark_context.py --from-raw "
     "--input-dir PATH/eval --output-dir NEW_DIR"
 )
-
-
-GEOLINK_WELLS = {
-    "15_9-13", "15_9-15", "15_9-17", "15_9-18", "15_9-2", "15_9-23",
-    "15_9-4", "15_9-5", "15_9-7", "16_10-4", "16_2-11 a", "16_2-6",
-    "25_10-10", "25_10-8", "25_10-9", "25_11-19 s", "30_6-14", "30_6-5",
-    "31_4-4", "34_10-21", "34_10-23", "34_10-35", "34_11-2 s", "35_11-11",
-    "35_11-6", "35_11-7", "35_4-1", "35_8-1", "35_8-2", "35_9-2",
-    "35_9-7", "35_9-9",
-}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -147,10 +138,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--calculation-profile",
-        choices=("benchmark", "current"),
-        default="benchmark",
+        choices=("geolink", "current"),
+        default="geolink",
         help=(
-            "Calculation profile of both steps (default: benchmark). 'benchmark' "
+            "Calculation profile of both steps (default: benchmark). 'geolink' "
             "interprets 15_9-17 and 34_10-23 with the eval package's re-run "
             "calculations and the other wells with its main run's, and writes the "
             "context of every well with the re-run's, as the package was made; "
@@ -212,21 +203,6 @@ def _input_scope(
     return input_path.parent, well_names or [inferred], True
 
 
-def _candidate_well_keys(
-    input_path: Path,
-    input_dir: Path,
-    well_names: list[str],
-    pattern: str,
-    recursive: bool,
-) -> set[str]:
-    if well_names:
-        return {_well_key(name) for name in well_names}
-    if input_path.is_file():
-        return {_well_key(input_path.stem)}
-    iterator = input_dir.rglob(pattern) if recursive else input_dir.glob(pattern)
-    return {_well_key(path.stem) for path in iterator if path.is_file()}
-
-
 def _detect_dataset(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
@@ -244,11 +220,6 @@ def _detect_dataset(
     )
     if profile is not None:
         return profile.name.removesuffix("_v1")
-    keys = _candidate_well_keys(
-        input_path, input_dir, well_names, args.pattern, args.recursive
-    )
-    if keys and keys.issubset(GEOLINK_WELLS):
-        return "geolink"
     parser.error(
         "could not identify the eval collection. Use a recognized GeoLink, COSTA, "
         "or Danish LAS file, or set --dataset explicitly."
@@ -280,11 +251,17 @@ def _export_profile(
     input_dir: Path,
     well_names: list[str],
 ) -> int:
-    if args.calculation_profile != "benchmark":
+    if args.calculation_profile != "geolink":
         parser.error(f"the {dataset} package is computed with its own calculations; "
-                     "--calculation-profile applies to GeoLink")
+                     "--calculation-profile current applies to GeoLink only")
+    if args.min_thickness != 2.0 or args.raw_input_dir is not None:
+        parser.error(f"the {dataset} package fixes its grouping and inputs; "
+                     "drop --min-thickness and --raw-input-dir")
     tops_file = lithology_mapping_file = None
-    if dataset == "danish":
+    if dataset == "geolink":
+        tops_file = args.tops_file or input_dir.parent / "NPD stratigraphic picks north sea.xlsx"
+        lithology_mapping_file = args.lithology_mapping_file or input_dir.parent / "Litho_Nomenclature_Kingdom.xlsx"
+    elif dataset == "danish":
         tops_file = args.tops_file or _danish_tops_file(input_dir)
         lithology_mapping_file = args.lithology_mapping_file
         if tops_file is None or lithology_mapping_file is None:
@@ -329,6 +306,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if dataset in {"costa", "danish"}:
         return _export_profile(parser, args, dataset, input_dir, well_names)
+    from_raw = args.from_raw or (
+        single_file and not _looks_like_processed_geolink(input_path)
+    )
+    if from_raw and args.calculation_profile == "geolink":
+        return _export_profile(parser, args, dataset, input_dir, well_names)
+
+    # GeoLink context from the package's interpreted LAS (eval_processed), or
+    # the GeoLink inputs run with the current calculations.
 
     args.well_names = well_names
     args.input_dir = input_dir
@@ -340,9 +325,6 @@ def main(argv: list[str] | None = None) -> int:
     raw_input_dir = args.raw_input_dir
     context_input_dir = args.input_dir
     processed_dir = None
-    from_raw = args.from_raw or (
-        single_file and not _looks_like_processed_geolink(input_path)
-    )
     if from_raw:
         processed_dir = Path(args.output_dir) / "processed_las"
         batch = process_las_directory_with_workflow(

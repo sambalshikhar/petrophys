@@ -55,11 +55,11 @@ def test_parameter_aliases_convert_temperature_depth_salinity_and_booleans():
 
 def test_benchmark_profile_reads_clfl_as_salinity_and_skips_mud_sample_temperatures():
     for unit in ("kppm", "g/L"):
-        overrides, _, unmapped = _alias_override("CLFL", 90.0, unit, "benchmark")
+        overrides, _, unmapped = _alias_override("CLFL", 90.0, unit, "geolink")
         assert overrides == {"rmf_salinity_ppm": 90000.0}
         assert unmapped == []
     for name in ("MFST", "MST"):
-        overrides, _, unmapped = _alias_override(name, 20.0, "degC", "benchmark")
+        overrides, _, unmapped = _alias_override(name, 20.0, "degC", "geolink")
         assert overrides == {} and unmapped == [name]
 
 
@@ -97,7 +97,7 @@ def test_zoned_parameter_extraction_converts_depths_and_alias_units():
     # (62.368 + 0.438603*13.1882 + 1.60074e-3*13.1882**2) / 62.428 = 1.09616 g/cm3.
     assert np.isclose(zone.config_overrides["rmf_chlorides_mg_l"], 80000.0 * 1.09616, rtol=1e-5)
     assert "rmf_salinity_ppm" not in zone.config_overrides
-    benchmark = zoned_batch.extract_zoned_parameters(well, calculation_profile="benchmark")
+    benchmark = zoned_batch.extract_zoned_parameters(well, calculation_profile="geolink")
     assert benchmark[0].config_overrides["rmf_salinity_ppm"] == 80000.0
     assert zone.config_overrides["salinity_ppm"] == 35000.0
     assert zone.config_overrides["bht_f"] == 212.0
@@ -348,7 +348,7 @@ def test_current_interpretation_screens_impossible_sonic_and_sp():
     default = standardize_curves(_sonic_sp_well(dtc), rename_curves=True, convert_units=True)
     np.testing.assert_allclose(default["DTC"].data, dtc)
     assert default["SP"].data[0] == -6183.0
-    benchmark = run_dynamic_workflow(_sonic_sp_well(dtc), DynamicWorkflowConfig(rw=0.05, calculation_profile="benchmark"))
+    benchmark = run_dynamic_workflow(_sonic_sp_well(dtc), DynamicWorkflowConfig(rw=0.05, calculation_profile="geolink"))
     np.testing.assert_allclose(benchmark.well["DTC"].data, dtc)
 
 

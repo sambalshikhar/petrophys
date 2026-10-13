@@ -2,7 +2,7 @@
 
 The package was made in a main run, which interpreted 30 of its 32 wells, and a
 re-run, which interpreted 15/9-17 and 34/10-23 and wrote the context of every
-well. The benchmark profile gives those two wells and the context export the
+well. The "geolink" profile gives those two wells and the context export the
 re-run's calculations and every other well the main run's. The full
 reproduction needs the GeoLink LAS files and is verified outside the test suite
 with ``scripts/generate_benchmark_context.py --from-raw``. These tests pin the
@@ -53,25 +53,38 @@ def _step(result, name):
 
 def test_default_profile_and_validation():
     assert DynamicWorkflowConfig().calculation_profile == "current"
-    assert DynamicWorkflowConfig(calculation_profile="BENCHMARK").calculation_profile == "benchmark"
+    assert DynamicWorkflowConfig(calculation_profile="GEOLINK").calculation_profile == "geolink"
     with pytest.raises(ValueError, match="calculation_profile"):
         DynamicWorkflowConfig(calculation_profile="may2026")
-    assert describe_setting("calculation_profile")["choices"] == ["current", "benchmark"]
+    assert describe_setting("calculation_profile")["choices"] == ["current", "geolink"]
 
 
 def test_benchmark_rerun_is_not_a_profile():
     """The re-run's calculations come with the wells and the context export, not a profile."""
     from petrophys.mcp.session import default_calculation_profile
 
-    with pytest.raises(ValueError, match="use one of: current, benchmark .did you mean 'benchmark'"):
+    with pytest.raises(ValueError, match="'benchmark_rerun' is not valid; use one of: current, geolink$"):
         DynamicWorkflowConfig(calculation_profile="benchmark_rerun")
-    with pytest.raises(ValueError, match="not a calculation profile; use one of: current, benchmark$"):
+    with pytest.raises(ValueError, match="not a calculation profile; use one of: current, geolink$"):
         default_calculation_profile("benchmark_rerun")
+
+
+def test_the_former_benchmark_profile_points_to_geolink():
+    from petrophys.evaluation.diagnostics import PorosityAnalysis
+    from petrophys.mcp.session import default_calculation_profile
+
+    renamed = 'calculation_profile "benchmark" is now "geolink"'
+    with pytest.raises(ValueError, match=renamed):
+        DynamicWorkflowConfig(calculation_profile="benchmark")
+    with pytest.raises(ValueError, match=renamed):
+        default_calculation_profile("Benchmark")
+    with pytest.raises(ValueError, match='class_tables "benchmark" is now "geolink"'):
+        PorosityAnalysis(class_tables="benchmark")
 
 
 def test_benchmark_duplicates_the_bad_hole_flag():
     current = _run("current")
-    benchmark = _run("benchmark")
+    benchmark = _run("geolink")
 
     assert current.well.get("BADHOLEFLAG") is None
     flag = benchmark.well.get("BADHOLEFLAG")
@@ -91,7 +104,7 @@ def test_benchmark_takes_clay_porosity_from_every_shale_sample():
         return _step(_run(profile, well), "porosity").parameters
 
     current = phi_cl("current")
-    benchmark = phi_cl("benchmark")
+    benchmark = phi_cl("geolink")
 
     assert benchmark["phi_cl_source"] == "all_shale_phit"
     assert current["phi_cl_source"] != "all_shale_phit"
@@ -107,7 +120,7 @@ def test_benchmark_ignores_core_corrected_curves_downstream():
         return _step(result, "rock_quality").decisions[0]
 
     assert "PHIE_CC" in sources("current")
-    assert "PHIE_CC" not in sources("benchmark")
+    assert "PHIE_CC" not in sources("geolink")
 
 
 def test_benchmark_uses_one_archie_coefficient_set():
@@ -122,7 +135,7 @@ def test_benchmark_uses_one_archie_coefficient_set():
         )
         return _step(_run(profile, well), "saturation").parameters["a"]
 
-    assert archie("benchmark") == 0.81
+    assert archie("geolink") == 0.81
     assert archie("current") == "lithology_dependent"
 
 
@@ -174,7 +187,7 @@ def test_benchmark_keeps_mhi_without_the_invaded_zone_gate():
         curve = result.well.get("MHI")
         return None if curve is None else int(np.count_nonzero(np.isfinite(curve.data)))
 
-    benchmark, current = mhi("benchmark"), mhi("current")
+    benchmark, current = mhi("geolink"), mhi("current")
     assert benchmark is not None and current is not None
     assert benchmark >= current
 
@@ -190,7 +203,7 @@ def _core_well() -> Well:
     "profile, saturation, rock_quality, bvw",
     [
         ("current", "PHIE_CC", ["PERM_CC", "PHIE_CC"], "PHIE_CC"),
-        ("benchmark", "PHIE", ["PERM", "PHIE"], "PHIE"),
+        ("geolink", "PHIE", ["PERM", "PHIE"], "PHIE"),
     ],
 )
 def test_which_porosity_each_step_reads(profile, saturation, rock_quality, bvw):
@@ -298,9 +311,9 @@ def test_configured_clay_porosity_is_not_replaced_by_a_derived_one():
     assert derived["phi_cl_source"] == "lithology_shale_average_phit_nd_on_reservoir_matrix"
     # 30/6-5 gets the eval package's main-run calculations; under the UWI of
     # 15/9-17, a re-run well, the same logs get the re-run's.
-    main_run, _ = run(calculation_profile="benchmark")
+    main_run, _ = run(calculation_profile="geolink")
     assert main_run["phi_cl_source"] == "all_shale_phit"
-    rerun, _ = run(uwi="15/9-17", calculation_profile="benchmark")
+    rerun, _ = run(uwi="15/9-17", calculation_profile="geolink")
     assert rerun["phi_cl_source"] == "lithology_shale_average_phit_nd"
 
     configured, configured_phie = run(phi_cl=0.25)
@@ -329,7 +342,7 @@ def test_configured_clay_porosity_is_not_replaced_by_a_derived_one():
 def test_benchmark_gives_the_rerun_wells_the_rerun_calculations(uwi, name, calculations):
     well = _well(name=name)
     well.header.uwi = uwi
-    result = _run("benchmark", well)
+    result = _run("geolink", well)
 
     settings = result.to_trace_dict()["config"]
     assert settings["benchmark_calculations"] == calculations
@@ -379,7 +392,7 @@ def test_batch_runner_recognizes_a_rerun_well_by_uwi_well_or_file_name(tmp_path)
         well.header.uwi = uwi
         export_las(well, source / f"{stem}.las")
 
-    config = DynamicWorkflowConfig(rw=0.05, calculation_profile="benchmark")
+    config = DynamicWorkflowConfig(rw=0.05, calculation_profile="geolink")
     results = process_las_directory_with_workflow(source, tmp_path / "processed", config=config)
 
     assert all(item.success for item in results), [item.errors for item in results]
@@ -416,7 +429,7 @@ def test_context_export_gives_every_well_the_rerun_calculations(tmp_path, monkey
         return runs[-1]
 
     monkeypatch.setattr(zoned_batch, "run_dynamic_workflow_with_zones", recorded)
-    config = DynamicWorkflowConfig(rw=0.05, calculation_profile="benchmark")
+    config = DynamicWorkflowConfig(rw=0.05, calculation_profile="geolink")
     results = pp.export_context(source, tmp_path / "package", layout=layout, workflow_config=config)
 
     assert results and all(item.success for item in results)
@@ -435,15 +448,15 @@ def test_generate_benchmark_context_takes_one_calculation_profile():
     parser = namespace["build_parser"]()
     required = ["--input-dir", "eval", "--output-dir", "out"]
 
-    assert parser.parse_args([*required, "--from-raw"]).calculation_profile == "benchmark"
+    assert parser.parse_args([*required, "--from-raw"]).calculation_profile == "geolink"
     assert parser.parse_args([*required, "--calculation-profile", "current"]).calculation_profile == "current"
     assert parser.parse_args(required).dataset == "auto"
     assert parser.parse_args([*required, "--dataset", "costa"]).dataset == "costa"
     for removed in (
         ["--calculation-profile", "benchmark_rerun"],
-        ["--las-profile", "benchmark"],
-        ["--context-profile", "benchmark"],
-        ["--well-profile", "15_9-17", "benchmark"],
+        ["--las-profile", "geolink"],
+        ["--context-profile", "geolink"],
+        ["--well-profile", "15_9-17", "geolink"],
     ):
         with pytest.raises(SystemExit):
             parser.parse_args([*required, *removed])

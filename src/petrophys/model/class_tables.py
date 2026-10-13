@@ -463,7 +463,7 @@ class ReservoirQualityTable:
 def bands_of(analyzer, name: str) -> Bands:
     """The :class:`Bands` an analyzer publishes under ``name`` (e.g. ``"DISTRIBUTION_BANDS"``).
 
-    An analyzer class gives its benchmark table (the class attribute); an
+    An analyzer class gives its GeoLink package table (the class attribute); an
     analyzer instance gives the table it classifies with.
     """
     bands = getattr(analyzer, name, None)

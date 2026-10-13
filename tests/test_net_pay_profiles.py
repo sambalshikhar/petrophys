@@ -4,7 +4,7 @@ Under the default ``"current"`` profile, unset net-pay cutoffs take the
 standard of each sample's lithology family (STANDARD_CUTOFFS: clastic
 VCL < 0.40, PHIE > 0.08, SW < 0.60; carbonate VCL < 0.30, PHIE > 0.045,
 SW < 0.70), and evaporite and bad-hole samples are not net reservoir or pay.
-The benchmark profile keeps the eval package's VCL < 0.3, SW < 0.7 and counts
+The "geolink" profile keeps the eval package's VCL < 0.3, SW < 0.7 and counts
 every sample that passes. The expected flags below are worked by hand from
 those cutoffs; a sample exactly at a cutoff fails it.
 """
@@ -94,7 +94,7 @@ def test_unset_cutoffs_follow_each_samples_lithology_family():
 @pytest.mark.parametrize("calculations", ["main_run", "rerun"])
 def test_benchmark_keeps_the_eval_package_cutoffs(calculations):
     with _rerun_calculations(calculations == "rerun"):
-        flags, step = _net_pay(_mixed_well(), "benchmark")
+        flags, step = _net_pay(_mixed_well(), "geolink")
 
     # VCL < 0.3, PHIE > 0.08 (limestone is not the label "carbonate"), SW < 0.7.
     assert flags["NET_ROCK"] == [1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0]
@@ -132,7 +132,7 @@ def test_evaporite_and_bad_hole_samples_are_not_net_reservoir_or_pay():
         return _flag_well([0.1] * n, [0.2] * n, [0.2] * n, codes, bad_hole)
 
     current, step = _net_pay(well(), "current")
-    benchmark, _ = _net_pay(well(), "benchmark")
+    benchmark, _ = _net_pay(well(), "geolink")
 
     assert current["NET_ROCK"] == [1] * 8
     assert current["NET_RES"] == current["NET_PAY"] == [1, 0, 0, 1, 0, 0, 0, 1]
@@ -205,7 +205,7 @@ def test_evaporite_intervals_are_not_net_reservoir_or_pay():
 
 @pytest.mark.parametrize("profile, expected", [
     ("current", (True, None, None)),
-    ("benchmark", (False, 0.3, 0.7)),
+    ("geolink", (False, 0.3, 0.7)),
 ])
 def test_the_trace_shows_the_settings_each_profile_used(profile, expected):
     config = DynamicWorkflowConfig(calculation_profile=profile)
@@ -251,7 +251,7 @@ def _step(result, name):
 
 def test_swirr_is_picked_in_clean_reliable_net_reservoir():
     current = _step(_run("current"), "permeability").parameters["pre_permeability_resflag"]
-    benchmark = _step(_run("benchmark"), "permeability").parameters["pre_permeability_resflag"]
+    benchmark = _step(_run("geolink"), "permeability").parameters["pre_permeability_resflag"]
 
     # Net reservoir's PHIE cutoff and left-out samples, with the clean-rock
     # (saturation-routing) clay cutoff 0.3 rather than the 0.40 net-rock one.
@@ -263,7 +263,7 @@ def test_swirr_is_picked_in_clean_reliable_net_reservoir():
 
 def test_assumed_values_are_warned_about_under_current_only():
     current = _run("current", bit_size=None, drho=0.02)
-    benchmark = _run("benchmark", bit_size=None, drho=0.02)
+    benchmark = _run("geolink", bit_size=None, drho=0.02)
 
     # Neither well has a bit size. The benchmark assumes 8.5 in for the
     # caliper test and says nothing; "current" assumes none and says where
@@ -278,7 +278,7 @@ def test_assumed_values_are_warned_about_under_current_only():
     assert any("rw_meas_temp_f" in warning for warning in result.warnings)
     assert any("30 C/km" in warning for warning in result.warnings)
     quiet = DynamicWorkflow(
-        DynamicWorkflowConfig(rw=0.05, skip_steps=["rmf"], calculation_profile="benchmark")
+        DynamicWorkflowConfig(rw=0.05, skip_steps=["rmf"], calculation_profile="geolink")
     ).run(_logged_well())
     assert not any("rw_meas_temp_f" in w or "30 C/km" in w for w in quiet.warnings)
 
@@ -331,7 +331,7 @@ def test_without_a_bit_size_bad_hole_comes_from_drho_alone():
     assert _step(result, "bad_hole").parameters["caliper_test_samples"] == 8
     assert not result.warnings
 
-    well, result, _ = interpret(bit_size=None, profile="benchmark")
+    well, result, _ = interpret(bit_size=None, profile="geolink")
     assert well.get("BAD_HOLE").data.tolist() == [1.0] * n
     params = _step(result, "bad_hole").parameters
     assert (params["bit_size_source"], params["bit_size_used"]) == ("fallback_8.5", 8.5)
@@ -341,8 +341,8 @@ def test_without_a_bit_size_bad_hole_comes_from_drho_alone():
 
 def test_las_export_lists_warnings_under_current_only(tmp_path):
     current = _run("current", bit_size=None, drho=0.02)
-    benchmark = _run("benchmark", bit_size=None, drho=0.02)
-    # The benchmark profile keeps the eval package's ~Other section, warnings or not.
+    benchmark = _run("geolink", bit_size=None, drho=0.02)
+    # The "geolink" profile keeps the eval package's ~Other section, warnings or not.
     benchmark.warnings.append("Rw could not be determined. Using default 0.05 ohm.m")
 
     current_text = current.to_las(tmp_path / "current.las").read_text(encoding="utf-8")
@@ -353,7 +353,7 @@ def test_las_export_lists_warnings_under_current_only(tmp_path):
 
 def test_profile_defaults_resolve_in_one_place():
     current = DynamicWorkflowConfig()
-    benchmark = DynamicWorkflowConfig(calculation_profile="benchmark")
+    benchmark = DynamicWorkflowConfig(calculation_profile="geolink")
 
     assert (current.standardize_input, current.vcl_cutoff, current.sw_cutoff) == (None, None, None)
     assert _profile_setting(current, "standardize_input") is True
@@ -367,13 +367,13 @@ def test_profile_defaults_resolve_in_one_place():
     with pytest.raises(ValueError, match="standardize_input must be True or False"):
         DynamicWorkflowConfig(standardize_input="yes")
     assert describe_setting("standardize_input")["profile_defaults"] == {
-        "current": True, "benchmark": False,
+        "current": True, "geolink": False,
     }
-    assert describe_setting("vcl_cutoff")["profile_defaults"] == {"current": None, "benchmark": 0.3}
+    assert describe_setting("vcl_cutoff")["profile_defaults"] == {"current": None, "geolink": 0.3}
 
 
 def test_header_cutoffs_fill_settings_left_unset_under_every_profile():
-    for profile in ("current", "benchmark"):
+    for profile in ("current", "geolink"):
         well = _flag_well(VCL, PHIE, SW, CODES)
         well.set_parameter("VCL_CUTOFF", 0.25)
         config = DynamicWorkflowConfig(calculation_profile=profile)
@@ -399,7 +399,7 @@ def test_input_is_standardized_by_default_but_not_under_the_benchmark_profile():
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", pp.DataQualityWarning)
-        benchmark = pp.interpret(_kg_m3_density_well(), rw=0.07, calculation_profile="benchmark")
+        benchmark = pp.interpret(_kg_m3_density_well(), rw=0.07, calculation_profile="geolink")
     assert benchmark.specific_steps_skipped["normalization"] == "standardize_input=False"
 
 
@@ -483,7 +483,7 @@ def test_halite_on_the_logs_is_not_net_reservoir_or_pay():
         )
 
     current, step = _net_pay(well(), "current")
-    benchmark, _ = _net_pay(well(), "benchmark")
+    benchmark, _ = _net_pay(well(), "geolink")
 
     assert current["NET_PAY"] == [1, 0, 0, 0, 0, 0, 0, 1]
     assert benchmark["NET_PAY"] == [1] * n
@@ -527,7 +527,7 @@ def test_halite_on_the_logs_takes_the_halite_density_endpoint():
     )
     assert any(text.startswith("2 samples read as halite on the logs") for text in step.decisions)
 
-    phid, step = porosity("benchmark")
+    phid, step = porosity("geolink")
     np.testing.assert_allclose(phid, [0.2, 0.65 / 1.65, 0.65 / 1.65, 0.2], rtol=1e-9)
     assert step.parameters["matrix_endpoints"] == []
 
@@ -537,7 +537,7 @@ def test_coal_is_not_net_reservoir_or_pay():
     n = len(codes)
 
     current, step = _net_pay(_flag_well([0.1] * n, [0.3] * n, [0.1] * n, codes), "current")
-    benchmark, _ = _net_pay(_flag_well([0.1] * n, [0.3] * n, [0.1] * n, codes), "benchmark")
+    benchmark, _ = _net_pay(_flag_well([0.1] * n, [0.3] * n, [0.1] * n, codes), "geolink")
 
     assert current["NET_PAY"] == [1, 0, 0, 1]
     assert benchmark["NET_PAY"] == [1] * n
@@ -573,7 +573,7 @@ def test_an_implausible_header_bit_size_is_ignored(header_bit_size):
     assert any(warning.startswith(message) for warning in result.warnings)
     assert any(text.startswith(message) for text in _step(result, "bad_hole").decisions)
 
-    well, result = interpret("benchmark")
+    well, result = interpret("geolink")
     params = _step(result, "bad_hole").parameters
     assert (params["bit_size_source"], params["bit_size_used"]) == ("well_header", header_bit_size)
     assert well.get("BAD_HOLE").data.tolist() == [1.0] * n
@@ -587,7 +587,7 @@ def test_swirr_samples_follow_the_saturation_routing_clay_cutoff():
 
 
 def test_benchmark_keeps_a_configs_cutoffs_over_header_values():
-    # pp.interpret(config=...) under the benchmark profile: the unset cutoffs
+    # pp.interpret(config=...) under the "geolink" profile: the unset cutoffs
     # hold 0.3 and 0.7 there, which a header VCL_CUTOFF does not replace.
     def cutoff(config, **options):
         well = _flag_well(VCL, PHIE, SW, CODES)
@@ -595,12 +595,12 @@ def test_benchmark_keeps_a_configs_cutoffs_over_header_values():
         result = pp.interpret(well, config=config, **options)
         return _step(result, "net_pay").parameters["vcl_cutoff"]
 
-    assert cutoff(DynamicWorkflowConfig(calculation_profile="benchmark")) == 0.3
-    assert cutoff(DynamicWorkflowConfig(), calculation_profile="benchmark") == 0.3
+    assert cutoff(DynamicWorkflowConfig(calculation_profile="geolink")) == 0.3
+    assert cutoff(DynamicWorkflowConfig(), calculation_profile="geolink") == 0.3
     assert cutoff(DynamicWorkflowConfig()) == 0.25
 
     # In zoned batch runs a benchmark config's 0.3 counts as left at the default.
-    benchmark = DynamicWorkflowConfig(calculation_profile="benchmark", vcl_cutoff=0.3)
+    benchmark = DynamicWorkflowConfig(calculation_profile="geolink", vcl_cutoff=0.3)
     assert _left_at_default(benchmark, "vcl_cutoff")
     assert not _left_at_default(dataclasses.replace(benchmark, vcl_cutoff=0.25), "vcl_cutoff")
     assert not _left_at_default(DynamicWorkflowConfig(vcl_cutoff=0.3), "vcl_cutoff")
@@ -622,7 +622,7 @@ def test_summary_thickness_counts_samples_under_the_benchmark_profile():
         result = DynamicWorkflow(config).run_selected_steps(well, [WorkflowStep.NET_PAY])
         return result.summary()["net_thickness"]["net_pay"]
 
-    assert thickness("benchmark") == 2.5
+    assert thickness("geolink") == 2.5
     assert thickness("current") == 3.0
 
 

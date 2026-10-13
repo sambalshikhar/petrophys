@@ -35,14 +35,14 @@ class PermeabilityAnalysis:
 
     Parameters
     ----------
-    class_tables : {"current", "benchmark"}, default "current"
+    class_tables : {"current", "geolink"}, default "current"
         ``"current"`` grades permeability (the canonical PERM table with its two
         lowest classes merged), FZI (global hydraulic elements), clay volume and
         Rxo/Rt with the canonical tables of
         :data:`~petrophys.model.class_tables.CLASS_TABLES`, classifies the
         workflow's INVASION_RATIO when the well has one, and interprets the
         reservoir with the reservoir-quality table (effective porosity,
-        permeability and clay volume). ``"benchmark"`` keeps the GeoLink eval
+        permeability and clay volume). ``"geolink"`` keeps the GeoLink eval
         package's classes and texts: the class attributes below and the inline
         rules.
     lithology_family : str or sequence of str, optional
@@ -52,7 +52,7 @@ class PermeabilityAnalysis:
     """
 
     CATEGORY_KEY = "PERMEABILITY_AND_FLOW_UNITS"
-    # The benchmark's one-curve classes of the sections below (Bands: base label,
+    # The "geolink" profile's one-curve classes of the sections below (Bands: base label,
     # then each step in order). An analyzer with the "current" class tables holds
     # the canonical tables under the same names.
     DISTRIBUTION_BANDS = Bands("POOR_PERMEABILITY", ((">", 1.0, "FAIR_PERMEABILITY"), (">", 10.0, "GOOD_PERMEABILITY"),
@@ -77,7 +77,7 @@ class PermeabilityAnalysis:
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
-        benchmark = self.class_tables == "benchmark"
+        benchmark = self.class_tables == "geolink"
         n_samples = well.n_samples
         perm, perm_source = get_curve_data(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])
         fzi, fzi_source = get_curve_data(well, ["FZI"])

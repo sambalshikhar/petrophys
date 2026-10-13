@@ -50,7 +50,7 @@ def _step(result, name):
 
 
 def test_defaults():
-    config = DynamicWorkflowConfig(calculation_profile="benchmark")
+    config = DynamicWorkflowConfig(calculation_profile="geolink")
 
     assert (config.gr_min, config.gr_max) == (None, None)
     assert config.matrix_type == "sandstone"
@@ -99,7 +99,7 @@ def test_washout_needs_a_caliper_and_ignores_pad_calipers():
 
 
 def test_an_8_5_in_bit_size_is_assumed_without_one():
-    params = _step(_run(calculation_profile="benchmark"), "bad_hole").parameters
+    params = _step(_run(calculation_profile="geolink"), "bad_hole").parameters
 
     assert (params["bit_size_source"], params["bit_size_used"]) == ("fallback_8.5", 8.5)
 

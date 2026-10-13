@@ -217,7 +217,7 @@ def reproduce_danish_context(
         batch = process_las_directory_with_workflow(
             prepared_dir,
             processed_dir,
-            config=DynamicWorkflowConfig(calculation_profile="benchmark"),
+            config=DynamicWorkflowConfig(calculation_profile="geolink"),
             well_names=stems,
         )
         failed = [item for item in batch if not item.success]
@@ -233,7 +233,7 @@ def reproduce_danish_context(
             lithology_mapping_file=lithology_mapping_file,
             # The package picked SWIRR_APP from the reservoir flag already on
             # the interpreted LAS, as the GeoLink package did.
-            workflow_config=DynamicWorkflowConfig(calculation_profile="benchmark", reuse_input_resflag=True),
+            workflow_config=DynamicWorkflowConfig(calculation_profile="geolink", reuse_input_resflag=True),
             raw_input_dir=prepared_dir,
             group_layout=layout,
         )

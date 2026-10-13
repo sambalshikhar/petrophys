@@ -144,7 +144,7 @@ def costa_workflow_config():
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
 
     return DynamicWorkflowConfig(
-        calculation_profile="benchmark",
+        calculation_profile="geolink",
         surface_temp_f=_SURFACE_TEMP_F,
         lithology="carbonate",
         matrix_type="limestone",

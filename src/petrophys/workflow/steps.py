@@ -480,7 +480,7 @@ def clay_volume(method: str = "gr", *, gr_clean: Optional[float] = None,
     ``"neutron_density"``         Three-point neutron-density clay volume
     ``"minimum"``                 Lowest of the GR, SP and neutron-density
                                   estimates available at each depth (as in
-                                  the :func:`petrophys.interpret` benchmark
+                                  the :func:`petrophys.interpret` "geolink"
                                   profile); also writes ``VCL_GR``,
                                   ``VCL_SP``, ``VCL_ND``
     ============================  ==================================================
@@ -514,7 +514,7 @@ def clay_volume(method: str = "gr", *, gr_clean: Optional[float] = None,
         Clean (static SP) and shale SP baselines, mV. Default: P5 and P95.
     nd_matrix : {"sandstone", "limestone", "dolomite"}, optional
         Clean line of the neutron-density method. Default ``"limestone"``,
-        as in the benchmark profile of :func:`petrophys.interpret`; its
+        as in the "geolink" profile of :func:`petrophys.interpret`; its
         default profile uses the line of the resolved matrix.
     name : str, optional
         Step name; defaults to ``"clay_volume"``.

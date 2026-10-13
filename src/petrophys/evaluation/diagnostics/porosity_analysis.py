@@ -33,12 +33,12 @@ class PorosityAnalysis:
 
     Parameters
     ----------
-    class_tables : {"current", "benchmark"}, default "current"
+    class_tables : {"current", "geolink"}, default "current"
         ``"current"`` grades porosity, clay volume, RQI and FZI with their
         canonical tables (:data:`~petrophys.model.class_tables.CLASS_TABLES`)
         and flow-unit quality with the reservoir-quality table on effective
         porosity (PHIE_CC, PHIE, PHIT), permeability and clay volume (VCL,
-        VCLAY, VSH). ``"benchmark"`` keeps the GeoLink eval package's classes
+        VCLAY, VSH). ``"geolink"`` keeps the GeoLink eval package's classes
         and texts: the class attributes below and the inline flow-unit grades.
     lithology_family : str or sequence of str, optional
         Lithology family (``"clastic"``, ``"carbonate"``) or lithology of every
@@ -47,7 +47,7 @@ class PorosityAnalysis:
     """
 
     CATEGORY_KEY = "POROSITY_AND_PORE_SYSTEMS"
-    # The benchmark's one-curve classes of the sections below (Bands: base label,
+    # The "geolink" profile's one-curve classes of the sections below (Bands: base label,
     # then each step in order). An analyzer with the "current" class tables holds
     # the canonical tables under the same names.
     TOTAL_POROSITY_BANDS = Bands("POOR_POROSITY", ((">", 0.06, "FAIR_POROSITY"), (">", 0.12, "GOOD_POROSITY"),
@@ -70,7 +70,7 @@ class PorosityAnalysis:
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
-        benchmark = self.class_tables == "benchmark"
+        benchmark = self.class_tables == "geolink"
         n_samples = well.n_samples
         phit, phit_source = get_curve_data(well, ["PHIE_CC", "PHIT"])
         phid, phid_source = get_curve_data(well, ["PHID"])

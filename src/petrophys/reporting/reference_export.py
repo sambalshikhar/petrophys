@@ -1504,12 +1504,12 @@ def _derived_logs_computed(
 def _context_class_tables(workflow_result) -> str:
     """The diagnostics analyzers' class tables for a context.
 
-    ``"benchmark"`` (the eval package's tables) when the workflow behind the
-    context ran the benchmark profile, else ``"current"``, the canonical tables
+    ``"geolink"`` (the eval package's tables) when the workflow behind the
+    context ran the "geolink" profile, else ``"current"``, the canonical tables
     of :data:`~petrophys.model.class_tables.CLASS_TABLES`.
     """
     if workflow_result is not None and _reproduces_benchmark_context(workflow_result):
-        return "benchmark"
+        return "geolink"
     return "current"
 
 
@@ -2371,7 +2371,7 @@ def _curve_value_summary(well: "Well", curve: str) -> dict[str, Any]:
 def _invasion_ratio_rejection_details(well: "Well", workflow_result=None) -> Optional[dict[str, Any]]:
     """Why INVASION_RATIO samples of a context well are NaN.
 
-    Under the benchmark profile the inputs are the first shallow (RSHA, RXO,
+    Under the "geolink" profile the inputs are the first shallow (RSHA, RXO,
     RESS) and deep curve present; otherwise the curves the workflow's
     ``"current"`` ratio reads, sample by sample: RXO, RSHA and RESS, then the
     RMED/RESM proxy, over RDEP then RT.
@@ -2708,7 +2708,7 @@ def _formation_run_config(
 def _run_context_workflow(well: "Well", config: "DynamicWorkflowConfig"):
     """Interpret a well for a context with the zoned workflow runner.
 
-    Under the benchmark profile every well gets the calculations of the eval
+    Under the "geolink" profile every well gets the calculations of the eval
     package's re-run, which wrote the package's context (see
     :attr:`~petrophys.workflow.DynamicWorkflowConfig.calculation_profile`).
     """
@@ -2999,7 +2999,7 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
     large-hole tests run where the segment records a bit size (BS curve, else
     a 3-36 in header value), ``|DRHO|`` is tested wherever DRHO is logged, and
     ``no_bit_size_points`` and ``not_assessed_points`` count the samples
-    without a bit size and those that neither test reaches. The benchmark
+    without a bit size and those that neither test reaches. The "geolink"
     profile takes the bit size from the segment's BS curve, else the bad-hole
     step's trace, else the header.
     """
@@ -4162,7 +4162,7 @@ def _context_dataset() -> Optional[str]:
 
 
 def _reproduces_benchmark_context(workflow_result) -> bool:
-    """True when the workflow behind a context ran the benchmark calculation profile."""
+    """True when the workflow behind a context ran the "geolink" calculation profile."""
     from petrophys.workflow.zoned_batch import _reproduces_benchmark
 
     run = getattr(workflow_result, "base_result", workflow_result)
@@ -4177,7 +4177,7 @@ def _run_lithology_mapping(
 
     A "current" run names code 10 "Porous Limestone" and gives code 26, "Gap",
     no lithology (``None``), as its calculations treat them
-    (``CURRENT_PROFILE_CODE_NAMES``); the benchmark profile keeps the names of
+    (``CURRENT_PROFILE_CODE_NAMES``); the "geolink" profile keeps the names of
     the lithology workbook or ``GROUND_TRUTH_NAMES``.
     """
     from petrophys.evaluation.diagnostics.lithology_analysis import CURRENT_PROFILE_CODE_NAMES
@@ -7852,7 +7852,7 @@ def export_reference_json_work_package_by_formation_lithology(
         ``columns`` or ``sep``.
     workflow_config : DynamicWorkflowConfig, optional
         Interpretation settings (default: the workflow defaults). LAS header
-        parameters override them. Under ``calculation_profile="benchmark"``
+        parameters override them. Under ``calculation_profile="geolink"``
         every well gets the calculations of the eval package's re-run, which
         wrote its context.
     lithology_file : str or Path, optional
@@ -8111,7 +8111,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
     as usual.
 
     ``scripts/generate_benchmark_context.py`` runs it to reproduce the GeoLink
-    eval context benchmark, with ``calculation_profile="benchmark"``: every
+    eval context benchmark, with ``calculation_profile="geolink"``: every
     well then gets the calculations of the package's re-run, which wrote its
     context. Input curves are classified against the raw LAS files in
     ``raw_input_dir`` (default: the sibling of a ``*_processed`` input

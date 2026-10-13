@@ -89,9 +89,9 @@ def test_default_uses_the_single_canonical_route_for_embedded_lithology():
     result = pp.interpret(_workflow_well(True), rw=.07).raise_for_errors()
     assert "interpretation_profile" not in result.to_trace_dict()
     step = next(item for item in result.steps_executed if item.step == "net_pay")
-    # Sandstone and shale: the clastic standards; the benchmark profile keeps 0.3 / 0.7.
+    # Sandstone and shale: the clastic standards; the "geolink" profile keeps 0.3 / 0.7.
     assert (step.parameters["vcl_cutoff"], step.parameters["sw_cutoff"]) == (0.4, 0.6)
-    benchmark = pp.interpret(_workflow_well(True), rw=.07, calculation_profile="benchmark")
+    benchmark = pp.interpret(_workflow_well(True), rw=.07, calculation_profile="geolink")
     step = next(item for item in benchmark.raise_for_errors().steps_executed if item.step == "net_pay")
     assert (step.parameters["vcl_cutoff"], step.parameters["sw_cutoff"]) == (0.3, 0.7)
 

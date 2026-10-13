@@ -32,7 +32,7 @@ def run_comprehensive_analysis(
     ``class_tables`` is passed to the diagnostics analyzers: ``"current"``
     (default) classifies with the canonical tables of
     :data:`~petrophys.model.class_tables.CLASS_TABLES`, so a property gets the
-    same class in every category; ``"benchmark"`` keeps the GeoLink eval
+    same class in every category; ``"geolink"`` keeps the GeoLink eval
     package's tables. ``lithology_family`` (``"clastic"``, ``"carbonate"`` or
     a lithology, for every sample or one per sample; default clastic) selects
     the limits of the reservoir-quality table under ``"current"``.

@@ -34,7 +34,7 @@ def default_calculation_profile(value: Optional[str] = None) -> Optional[str]:
     """MCP server-wide calculation profile: ``value``, else ``PETROPHYS_CALCULATION_PROFILE``.
 
     An evaluation harness sets it to keep the MCP server's calculations fixed
-    (for example ``"benchmark"``); see
+    (for example ``"geolink"``); see
     :attr:`~petrophys.workflow.DynamicWorkflowConfig.calculation_profile`.
     The environment variable affects the MCP server only: library calls such
     as :func:`petrophys.interpret` ignore it and use ``"current"`` unless
@@ -51,12 +51,18 @@ def default_calculation_profile(value: Optional[str] = None) -> Optional[str]:
     ValueError
         If the value is not a calculation profile.
     """
-    from petrophys.workflow.dynamic_workflow import _CALCULATION_PROFILES
+    from petrophys.workflow.dynamic_workflow import (
+        _CALCULATION_PROFILES,
+        _RENAMED_PROFILE,
+        _RENAMED_PROFILE_MESSAGE,
+    )
 
     text = value if value is not None else os.environ.get(PROFILE_ENV_VAR, "")
     key = str(text).strip().lower()
     if not key:
         return None
+    if key == _RENAMED_PROFILE:
+        raise ValueError(_RENAMED_PROFILE_MESSAGE)
     if key not in _CALCULATION_PROFILES:
         source = "calculation_profile" if value is not None else PROFILE_ENV_VAR
         raise ValueError(

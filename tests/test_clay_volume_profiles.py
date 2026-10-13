@@ -1,9 +1,9 @@
-"""Clay volume in the default profile, and the benchmark profile kept as it was.
+"""Clay volume in the default profile, and the "geolink" profile kept as it was.
 
 The default ("current") profile measures VCL_ND from the clean line of the
 resolved matrix and a clay point picked in good-hole shales of the same well,
 and keeps an SP with whole-log baselines out of the minimum-of-indicators VCL.
-The benchmark profile keeps the limestone clean line, the fixed clay point
+The "geolink" profile keeps the limestone clean line, the fixed clay point
 (2.62 g/cm3, 0.38) and SP in the minimum, with the calculations of the eval
 package's main run and of its re-run alike. Expected values are worked by hand
 from the three-point neutron-density formula and the SP and GR indices.
@@ -20,7 +20,7 @@ from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 from petrophys.workflow.dynamic_workflow import DynamicWorkflowResult, StepResult, _rerun_calculations
 from petrophys.workflow.zoned_batch import _finalize_export_curves, run_dynamic_workflow_with_zones
 
-#: The calculation sets of the benchmark profile: the eval package's main run,
+#: The calculation sets of the "geolink" profile: the eval package's main run,
 #: and its re-run, which its re-run wells and its context export get.
 BENCHMARK_CALCULATIONS = ("main_run", "rerun")
 
@@ -188,9 +188,9 @@ def _run(well: Well, **settings):
 
 
 def _benchmark_run(well: Well, calculations: str, **settings):
-    """Run the benchmark profile with the main run's or the re-run's calculations."""
+    """Run the "geolink" profile with the main run's or the re-run's calculations."""
     with _rerun_calculations(calculations == "rerun"):
-        return _run(well, calculation_profile="benchmark", **settings)
+        return _run(well, calculation_profile="geolink", **settings)
 
 
 def test_current_uses_the_matrix_line_and_the_shale_point_of_the_well():
@@ -343,7 +343,7 @@ def test_swapped_sp_baselines_are_flagged():
 def test_equal_sp_baselines_are_rejected_in_the_default_profile():
     with pytest.raises(ValueError, match="sp_min .* must differ"):
         DynamicWorkflowConfig(sp_min=-20.0, sp_max=-20.0)
-    DynamicWorkflowConfig(sp_min=-20.0, sp_max=-20.0, calculation_profile="benchmark")
+    DynamicWorkflowConfig(sp_min=-20.0, sp_max=-20.0, calculation_profile="geolink")
 
 
 # ---------------------------------------------------------------------------
@@ -511,7 +511,7 @@ def test_zones_take_the_whole_well_clay_point():
 
     for calculations in BENCHMARK_CALCULATIONS:
         with _rerun_calculations(calculations == "rerun"):
-            _, result = zoned("benchmark")
+            _, result = zoned("geolink")
         assert result.zone_results[0].config.nd_clay is None
         zone = _step(result.zone_results[0], "vclay").parameters
         assert (zone["nd_clay_density"], zone["nd_clay_neutron"]) == (2.62, 0.38)

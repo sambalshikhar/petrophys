@@ -182,7 +182,7 @@ def test_costa_calibration_is_an_explicit_option():
 # A well of the eval package's main run, and 15/9-17, which its re-run interpreted.
 @pytest.mark.parametrize("well_name", ["CARBONATE-TEST", "15/9-17"])
 def test_benchmark_keeps_the_notebook_costa_route(well_name):
-    result, step = _run(well_name, calculation_profile="benchmark")
+    result, step = _run(well_name, calculation_profile="geolink")
     notebook = solve_costa_carbonate(result.well)
 
     assert step.method == "costa_gr_illite_calcite_dolomite"
@@ -205,7 +205,7 @@ def test_benchmark_keeps_the_notebook_costa_route(well_name):
 
 
 def test_generic_route_needs_vcl_and_costa_needs_gr():
-    for profile, runs in (("current", False), ("benchmark", True)):
+    for profile, runs in (("current", False), ("geolink", True)):
         config = DynamicWorkflowConfig(
             rw=0.05, skip_steps=["vclay"], lithology_domain="carbonate", calculation_profile=profile,
         )

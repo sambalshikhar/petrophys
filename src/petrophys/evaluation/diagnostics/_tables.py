@@ -3,7 +3,7 @@ The class-table sets of the diagnostics analyzers.
 
 ``"current"`` (default) classifies with the canonical tables of
 :data:`~petrophys.model.class_tables.CLASS_TABLES`, so a property gets the
-same class in every analyzer. ``"benchmark"`` keeps the tables of the GeoLink
+same class in every analyzer. ``"geolink"`` keeps the tables of the GeoLink
 eval package: frozen copies that each analyzer holds as class attributes and
 inline rules, together with their threshold texts, which never read the
 registry.
@@ -28,12 +28,14 @@ if TYPE_CHECKING:
     from petrophys.model.well import Well
 
 #: The class-table sets an analyzer takes.
-CLASS_TABLE_SETS = ("current", "benchmark")
+CLASS_TABLE_SETS = ("current", "geolink")
 
 
 def class_table_set(value: str) -> str:
     """Validate an analyzer's ``class_tables`` argument."""
     text = str(value).strip().lower()
+    if text == "benchmark":
+        raise ValueError('class_tables "benchmark" is now "geolink": the GeoLink eval package\'s tables')
     if text not in CLASS_TABLE_SETS:
         raise ValueError(f"class_tables must be one of {CLASS_TABLE_SETS}, not {value!r}")
     return text

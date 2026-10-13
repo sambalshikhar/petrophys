@@ -178,7 +178,7 @@ the samples GeoLink codes. Other curves whose names contain LITH or FACIES are
 not read. Whatever the curve is called, its codes are decoded with the
 GeoLink/Kingdom code table, and a warning says so for a curve other than
 `LITHOLOGY_GEOLINK`. `pp.interpret` takes no codebook: a codebook names the
-codes in plots and context. The benchmark calculation profile
+codes in plots and context. The "geolink" calculation profile
 ({ref}`calculation profiles <calculation-profiles>`) keeps the eval package's
 search unless `lithology_curve` is set.
 
@@ -225,7 +225,7 @@ in for:
 | `PNSH` with `RBSH` | `phi_cl` (`RBSH` also `rho_cl`) | The neutron reading and the density of shale give the clay porosity; PNSH alone is not used |
 
 Header temperatures labelled degC or K are converted; unlabelled ones are read
-as degF. The benchmark calculation profile ({ref}`calculation profiles
+as degF. The "geolink" calculation profile ({ref}`calculation profiles
 <calculation-profiles>`) reads CLFL as NaCl salinity in ppm, ignores MFST and
 MST, and takes PNSH as the clay porosity.
 

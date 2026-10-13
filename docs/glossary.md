@@ -50,7 +50,7 @@ print("30/6-5 interpreted:", result.status, "|", len(result.steps_executed), "st
 | Net rock, reservoir, pay | Samples passing the clay cutoff; then also the porosity cutoff; then also the saturation cutoff. Evaporite, coal, halite recognized on the logs and bad-hole samples are never net reservoir or pay. |
 | Bad hole | `BAD_HOLE` = 1: the caliper reads more than 1.5 in over the bit size, the bit is larger than 17.5 in, or the absolute density correction DRHO is above 0.15 g/cm3. The caliper and bit-size tests run only where a bit size is known; see {doc}`data_quality`. |
 | Class tables | The classes each property is graded into, such as `CLEAN_FORMATION` for clay volume or `GOOD_RESERVOIR` for reservoir quality, with a `NO_*_DATA` label where a value is missing: `CLASS_TABLES` in `petrophys.model`. Context labels and the diagnostics analyzers use them; see {doc}`context`. |
-| Calculation profile | Which calculations a run uses (`calculation_profile`): `"current"` (the default), or `"benchmark"`, which keeps the calculations of the GeoLink eval context package; see {ref}`calculation profiles <calculation-profiles>`. |
+| Calculation profile | Which calculations a run uses (`calculation_profile`): `"current"` (the default), or `"geolink"`, which keeps the calculations of the GeoLink eval context package; see {ref}`calculation profiles <calculation-profiles>`. |
 | Trace | The record of a run: each step's status, method, inputs, outputs, parameters and decisions. |
 | Context | A compact JSON summary of an interpreted well for LLMs and other tools; see {doc}`context`. |
 

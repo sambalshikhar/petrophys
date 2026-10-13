@@ -52,9 +52,9 @@ def test_canonical_route_is_used_with_embedded_lithology():
     assert _step(result, "vclay").parameters["nd_matrix"] == "sandstone"
     assert _step(result, "lithology").method == "canonical_multi_mineral_solver"
     assert _step(result, "saturation").parameters["vcl_cutoff_for_routing"] == 0.3
-    # Net rock takes the clastic standard; the benchmark profile keeps 0.3.
+    # Net rock takes the clastic standard; the "geolink" profile keeps 0.3.
     assert _step(result, "net_pay").parameters["vcl_cutoff"] == 0.4
-    benchmark = _run(_workflow_well(with_embedded_lithology=True), "benchmark")
+    benchmark = _run(_workflow_well(with_embedded_lithology=True), "geolink")
     assert _step(benchmark, "net_pay").parameters["vcl_cutoff"] == 0.3
     assert well.get("LITHOLOGY_GEOLINK") is not None
     assert well.get("LITHO") is None
@@ -63,7 +63,7 @@ def test_canonical_route_is_used_with_embedded_lithology():
 
 
 def test_benchmark_keeps_the_limestone_nd_clean_line():
-    result = _run(_workflow_well(with_embedded_lithology=True), calculation_profile="benchmark")
+    result = _run(_workflow_well(with_embedded_lithology=True), calculation_profile="geolink")
 
     assert result.success
     assert _step(result, "vclay").parameters["nd_matrix"] == "limestone"
@@ -94,7 +94,7 @@ def test_missing_neutron_skips_only_optional_mineral_inversion():
 
 
 def test_canonical_indonesia_is_the_benchmark_sand_term_variant():
-    """The benchmark profile's Indonesia variant, against hand-computed values.
+    """The "geolink" profile's Indonesia variant, against hand-computed values.
 
     Rt=10, Rw=0.05, phi=0.20, Vcl=0.30, Rcl=2, a=1, m=n=2. The variant solves
     1/sqrt(Rt) = clay + sand * Sw^(n/2); the published equation of Poupon and

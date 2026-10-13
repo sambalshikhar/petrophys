@@ -12,12 +12,23 @@ effect on the bundled wells.
 
 ### Calculation profiles
 
-- The published COSTA and Danish context packages are computed by context
-  profiles, `costa_v1` and `danish_v1` (aliases `costa`, `danish`), each
-  running its package's own pipeline from the delivery's LAS files with the
-  calculations the package used: `export_context(..., context_profile=...)`,
-  `petrophys-context --profile ...`, and
-  `petrophys.reporting.context_profiles.export_context_profile`. The COSTA
+- The calculation profile that keeps the GeoLink eval package's calculations
+  is named `"geolink"` (it was `"benchmark"`), like the context profile that
+  reproduces that package: `calculation_profile="geolink"`,
+  `petrophys-mcp serve --calculation-profile geolink`,
+  `PETROPHYS_CALCULATION_PROFILE=geolink`, and `class_tables="geolink"` for
+  the diagnostics analyzers. `"benchmark"` is refused with a message naming
+  the new value.
+- The published GeoLink, COSTA and Danish context packages are computed by
+  context profiles, `geolink_v1`, `costa_v1` and `danish_v1` (aliases
+  `geolink`, `costa`, `danish`), each running its package's own pipeline from
+  the delivery's raw LAS files with the calculations the package used:
+  `export_context(..., context_profile=...)`, `petrophys-context --profile ...`,
+  and `petrophys.reporting.context_profiles.export_context_profile`. Without a
+  profile, the current workflow runs. A profile fixes its package's settings
+  and rejects `workflow_config` and the other interpretation options. The
+  GeoLink profile reads the raw `eval` LAS, the NPD tops workbook and the
+  GeoLink lithology codebook. The COSTA
   profile needs no files besides petrophys: the COSTA LAS, the per-well
   interpretation parameters and the reference calcite/dolomite volumes are
   bundled (`datasets/costa`, `_internal/data`). The Danish profile reads the raw LAS, the Danish
@@ -31,7 +42,7 @@ effect on the bundled wells.
 - The category context exporter takes `group_layout`: per well, the
   formation/lithology groups to export instead of splitting by tops and
   lithology codes (the Danish profile's one group per formation).
-- Under `"benchmark"` the interpreted LAS keep the source's depth unit label
+- Under `"geolink"` the interpreted LAS keep the source's depth unit label
   (e.g. `FT`) and equivalent unit labels (`gAPI`, `m3/m3`), write the
   temperature parameters without units, and pad header columns by UTF-8 bytes,
   as the eval package's files were written; `export_las` takes
@@ -41,20 +52,20 @@ effect on the bundled wells.
 
 - `DynamicWorkflowConfig.calculation_profile` chooses the calculations.
   `"current"`, the default, is the maintained interpretation, with the
-  corrections listed under "Corrected calculations". `"benchmark"` keeps the
+  corrections listed under "Corrected calculations". `"geolink"` keeps the
   calculations behind the GeoLink eval context benchmark package fixed, so
   the package can be regenerated from its raw LAS files. The setting's
   documentation lists every difference between the two.
 - The package was made in two runs with different calculations: its main
   run interpreted 30 of the 32 wells, and a re-run interpreted 15/9-17 and
-  34/10-23 and wrote the context of every well. Under `"benchmark"`,
+  34/10-23 and wrote the context of every well. Under `"geolink"`,
   interpreting a well (`petrophys.interpret`, `run_dynamic_workflow`,
   `DynamicWorkflow`, the zoned batch runner, the MCP server) uses the main
   run's calculations, except for 15/9-17 and 34/10-23, which get the
   re-run's. Either well is recognised by its UWI, its WELL header or, in the
   zoned batch runner, its LAS file name, compared without case or
   surrounding spaces and with `/` read as `_`; `15/9-17 A` is another well.
-  Writing context under `"benchmark"` uses the re-run's calculations for
+  Writing context under `"geolink"` uses the re-run's calculations for
   every well. The workflow trace names the calculations a well got in
   `config.benchmark_calculations`: `"main_run"` or `"rerun"`.
 - The main run's calculations differ further from the re-run's: they take
@@ -67,23 +78,23 @@ effect on the bundled wells.
   compute MHI wherever SW and SXO are finite; and write a duplicate
   BADHOLEFLAG curve.
 - `petrophys.interpret`, `export_context` and the MCP server use `"current"`
-  unless told otherwise; `petrophys-context` does too unless a COSTA or
-  Danish context profile is selected. For the
-  package's calculations, pass
-  `workflow_config=DynamicWorkflowConfig(calculation_profile="benchmark", reuse_input_resflag=True)`
+  unless told otherwise; `petrophys-context` does too unless a context
+  profile is selected. To reproduce the package, use `context_profile="geolink"`;
+  to apply its calculations to other wells, pass
+  `workflow_config=DynamicWorkflowConfig(calculation_profile="geolink", reuse_input_resflag=True)`
   to `export_context`: the package picked SWIRR_APP from the reservoir flag
   already on its interpreted LAS files.
-- `petrophys-mcp serve --calculation-profile {current,benchmark}`, or the
+- `petrophys-mcp serve --calculation-profile {current,geolink}`, or the
   `PETROPHYS_CALCULATION_PROFILE` environment variable, sets the profile of
   the MCP server's interpretations whose settings name none, so that an
-  evaluation harness can pin `"benchmark"`. A profile in a tool's settings
+  evaluation harness can pin `"geolink"`. A profile in a tool's settings
   still wins, `petrophys-mcp check` reports the active one, and
   `create_server` takes it as `calculation_profile`. Only the MCP server
   reads the variable; the library ignores it.
 - `scripts/generate_benchmark_context.py` regenerates the package. With
   `--from-raw` it starts from the raw LAS files and writes both outputs: the
   interpreted ("processed") LAS files under `<output-dir>/processed_las`,
-  then the context built from those. `--calculation-profile` (`benchmark`,
+  then the context built from those. `--calculation-profile` (`geolink`,
   the default, or `current`) applies to both steps, and `--well` limits the
   run to the wells named. With the package's NPD tops workbook and lithology
   codebook next to the raw LAS folder (or given with `--tops-file` and
@@ -105,7 +116,7 @@ effect on the bundled wells.
 - Context exports, and the hydrocarbon analysis and invasion statistics of
   the workflow, classify with the class tables of their profile: `"current"`
   with the canonical tables of `petrophys.model.CLASS_TABLES` (see
-  "Classes and reservoir quality"), `"benchmark"` with frozen copies of the
+  "Classes and reservoir quality"), `"geolink"` with frozen copies of the
   eval package's tables, rules and threshold texts. The diagnostics
   analyzers and `run_comprehensive_analysis` take the choice as
   `class_tables`, `"current"` by default.
@@ -113,17 +124,17 @@ effect on the bundled wells.
 ### Corrected calculations
 
 The default profile, `"current"`, makes the corrections below to the eval
-package's calculations, and `"benchmark"` keeps the package's calculation in
+package's calculations, and `"geolink"` keeps the package's calculation in
 each case; the `calculation_profile` documentation also lists where the
 package's main run differs further. A bullet that names a library function
-describes that function for every caller; under `"benchmark"` the workflow
+describes that function for every caller; under `"geolink"` the workflow
 keeps the package's behaviour wherever the package's calculations used the
 function.
 
 Net pay from `petrophys.interpret` with default settings on the bundled
 wells (30/6-5 with `rw=0.07, rw_meas_temp_f=230`), with these corrections
 and before them, that is with the package's re-run calculations
-(`calculation_profile="benchmark"` gives these wells the main run's
+(`calculation_profile="geolink"` gives these wells the main run's
 calculations instead: 1400.9 m of net pay on 30/6-5):
 
 | Well | Net pay | Before | Notes |
@@ -142,7 +153,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   also removes compressional slowness below 38.5 us/ft, faster than any
   rock matrix, and SP beyond +/-500 mV: on 16/7-1, about half of the DTC
   samples and a -6183 mV SP spike.
-- TEMP and TMPC curves are read in the unit their label gives (the benchmark
+- TEMP and TMPC curves are read in the unit their label gives (the "geolink" profile
   reads them as degF), and `standardize_curves` converts a degC or K
   temperature curve to F and screens it on its own scale.
 - A header bit size outside 3-36 in, such as a -999.25 null or a value in
@@ -173,7 +184,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   reports the curve as `vendor_curve`. Names that only contain LITH or
   FACIES, such as `LITHO_PATT` in the Daydream 1 logs, are no longer read as
   lithology codes, and curves the workflow writes (`LITHO`, `LITHO_CLASS`,
-  `MMQC`, `GT_*`) never are. Unless `lithology_curve` is set, the benchmark
+  `MMQC`, `GT_*`) never are. Unless `lithology_curve` is set, the "geolink" profile
   takes the vendor lithology and its matrix from any curve named like a
   lithology code log, and the per-depth groups from `LITHOLOGY_GEOLINK`
   alone.
@@ -193,7 +204,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   (`not_assessed_samples`; BAD_HOLE is 0 there), and its `bit_size_source`
   is `"BS_curve_and_well_header"` where the header fills gaps in the BS
   curve and `"none"`, with `bit_size_used` None, in a well without a bit
-  size. The benchmark assumes an 8.5 in bit where a well has no BS curve or
+  size. The "geolink" profile assumes an 8.5 in bit where a well has no BS curve or
   header bit size, uses a header bit size whatever its value and never to
   fill gaps in a BS curve, and tests |DRHO| only in a well with a caliper.
 - Among the 32 wells of the eval package, the assumed bit size flagged
@@ -223,7 +234,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   clean line's 40 p.u. point, outside the neutron-density triangle; VCL
   comes from the other indicators there.
 - Shale-coded samples of 30/6-5, 25/5-1 and 15/9-14 now have a median VCL of
-  1.0, where the benchmark calculations give 0.24-0.62, low enough on 30/6-5
+  1.0, where the "geolink" calculations give 0.24-0.62, low enough on 30/6-5
   for shale to pass the 0.3 clay cutoff.
 - `sp_min` is the shale SP baseline and `sp_max` the clean-sand line; the
   setting descriptions had them the other way round. User baselines are
@@ -252,16 +263,16 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
 - A LAS header PNSH, the neutron log's reading in shale, gives the clay
   porosity together with RBSH (shale density) as a neutron-density shale
   point. PNSH alone is set aside, as it is not a clay porosity; the
-  benchmark takes it as `phi_cl`.
+  "geolink" profile takes it as `phi_cl`.
 - GeoLink code 10 ("Porous Limestone") takes limestone endpoints and code 26
-  ("Gap", no lithology recorded) no lithology group, where the benchmark
+  ("Gap", no lithology recorded) no lithology group, where the "geolink" profile
   groups them as sandstone and evaporite; context exports name them so.
 - In neutron-density crossover (PHID > PHIN + 0.05), PHIT is the
   root-mean-square of PHID and PHIN (Gaymard and Poupon, 1968) only with
   `hc_type="gas"`; in oil wells it is the density porosity.
 - Coal takes the chartbook slowness of 120 us/ft (bituminous coal reads
   110-140 us/ft) and the gypsum group the table's 52.5 us/ft, where the
-  benchmark uses 250 and 83 us/ft.
+  "geolink" profile uses 250 and 83 us/ft.
 - The same-well core porosity correction is fitted to PHIT, since the helium
   porosity of cleaned, dried plugs is total porosity (API RP 40, 1998), and
   PHIE_CC = PHIT_CC - (PHIT - PHIE), kept within 0 and PHIT_CC. A fit is
@@ -289,7 +300,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   unit (ppm, kppm and % labels are converted), into the new setting
   `rmf_chlorides_mg_l`. Unless an Rmf or `rmf_salinity_ppm` is given, Rmf
   comes from the NaCl equivalent, Cl x 58.44/35.45, turned into ppm with the
-  brine density of McCain (1991); the trace shows each step. The benchmark
+  brine density of McCain (1991); the trace shows each step. The "geolink" profile
   reads CLFL as NaCl ppm. On 15/9-14 and 16/7-1, whose headers give CLFL and
   no Rmf, Rmf is about a third lower, and an Rw derived from the SP falls in
   proportion; 30/6-5 and 25/5-1 take Rmf from their headers.
@@ -317,7 +328,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   flushed-zone microresistivity reading), else the shallow RSHA and then
   RESS, else the RMED/RESM medium/deep proxy; the trace records the order
   (`rxo_curve_order`) and a decision naming the samples each curve gave. The
-  benchmark reads RSHA first, then RXO and RESS. On 15/9-14, the only
+  "geolink" profile reads RSHA first, then RXO and RESS. On 15/9-14, the only
   bundled GeoLink well with RXO, the ratio changes on 20% of the samples and
   its Rxo/Rt class on 9.3%. `InvasionModule` also reads RXO first by default
   (see "Breaking changes").
@@ -326,12 +337,12 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
 
 - The Indonesia equation is the published one of Poupon and Leveaux (1971),
   1/sqrt(Rt) = [Vcl^(1 - Vcl/2)/sqrt(Rcl) + phi^(m/2)/sqrt(a Rw)] Sw^(n/2),
-  in `petrophys.interpret` and `steps.saturation`. The benchmark's variant
+  in `petrophys.interpret` and `steps.saturation`. The "geolink" profile's variant
   applies Sw^(n/2) to the sand term only, which drives shaly samples to
   SW = 0.
 - Dual Water runs only with a supplied bound-water resistivity: `rwb`, a
   header RWB or `steps.saturation(rwb=...)`. Rwb is not estimated (the
-  benchmark takes 0.3 Rw). With `sw_model="auto"`, shaly carbonate samples
+  "geolink" profile takes 0.3 Rw). With `sw_model="auto"`, shaly carbonate samples
   without it take the clastic routing (Waxman-Smits with CEC and B,
   Simandoux at a salinity of 20,000 ppm or more, otherwise Indonesia), and
   the trace counts them; `sw_model="dual_water"` without Rwb stops the
@@ -372,7 +383,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   (closure 0.01 v/v, RHOB 0.02 g/cm3, NPHI 0.02 v/v, U 0.5 b/cm3, DT
   2 us/ft). Unweighted, the sonic and U rows dominate the fit and the 0.05
   closure gate rejects most samples whose logs agree within tool precision;
-  `row_uncertainty=None` keeps that solve, which the benchmark uses. The
+  `row_uncertainty=None` keeps that solve, which the "geolink" profile uses. The
   mineral volumes change; porosity, saturation and net pay of the bundled
   wells do not.
 - The carbonate domain takes calcite and dolomite from bulk density and
@@ -386,7 +397,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   takes clay from VCL at `rho_cl`, effective porosity, the pore fluid
   `rho_fl`, and calcite 2.71 and dolomite 2.87 g/cm3; `"costa"` is the COSTA
   field calibration (illite from GR, total porosity, a 1.19 g/cm3 brine and
-  a 2.847 g/cm3 dolomite) and the benchmark's default, which there keeps the
+  a 2.847 g/cm3 dolomite) and the "geolink" profile's default, which there keeps the
   per-sample solve.
 - `LithologyModule(solver_options=...)` passes options such as
   `row_uncertainty` to its solver.
@@ -428,7 +439,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   groups are carbonate, every other group clastic, and samples without a
   group take the family of the run's lithology. A cutoff set in the config
   applies to every sample. The trace records the cutoffs used
-  (`cutoffs_by_family`, `cutoff_source`). The benchmark uses VCL < 0.3 and
+  (`cutoffs_by_family`, `cutoff_source`). The "geolink" profile uses VCL < 0.3 and
   SW < 0.7, with the carbonate PHIE cutoff only where a sample is labelled
   `"carbonate"`.
 - Evaporites (halite and the other salts, anhydrite and gypsum), coal,
@@ -543,12 +554,12 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   statistics, the derived-log list, DATA_COMPLETENESS or the category
   analyses: the category exporter recomputes these logs for each group right
   after its QC. Where the QC leaves a segment without porosity or
-  permeability, the benchmark keeps the values computed before it, and it
+  permeability, the "geolink" profile keeps the values computed before it, and it
   keeps the workflow's PHI_Z.
 - Depths and intervals carry the well's depth unit: `formation_info` and
   `lithology_group_info` give it as `depth_unit`, the bad-hole intervals of
   `BADHOLE_QC_CHECK` end with it, and the KH note gives KH in mD times the
-  depth unit. The benchmark writes them without a unit, as the eval package
+  depth unit. The "geolink" profile writes them without a unit, as the eval package
   does.
 - The bad-hole QC of a context (`BADHOLE_QC_CHECK` and the BAD_HOLE note)
   follows the rule of the bad-hole step, so it agrees with the BAD_HOLE
@@ -565,16 +576,16 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   MCP tools compute the `"current"` calculations by default: the
   calculations behind the GeoLink eval context benchmark with the
   corrections listed under "Corrected calculations".
-  `calculation_profile="benchmark"` computes the benchmark's own. Under both
+  `calculation_profile="geolink"` computes the package's own. Under both
   profiles:
   - Defaults: GR endpoints picked from the log (`gr_min`/`gr_max` None:
     P5/P95) and a sandstone matrix in the clastic domain; with another
     `lithology_domain` the matrix is resolved within that domain.
     `standardize_input`, `vcl_cutoff` and `sw_cutoff` default to None and
     take their profile's value: input standardization is on under
-    `"current"` and off under `"benchmark"`, and unset net-pay cutoffs follow
+    `"current"` and off under `"geolink"`, and unset net-pay cutoffs follow
     each sample's lithology family under `"current"` and are VCL < 0.3 and
-    SW < 0.7 under `"benchmark"`.
+    SW < 0.7 under `"geolink"`.
   - LAS header parameters override settings left at their defaults (for
     example `RHO_FL` over `rho_fl=1.0`); explicitly set values still win.
   - Without a measurement temperature, a given Rw is taken as the value at
@@ -594,7 +605,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   - Swirr stays as picked before permeability: the `permeability_finalize`
     and `rock_quality_finalize` steps are gone.
   - Bad-hole flags no longer fall back to pad calipers (HD1/HD2) when CALI
-    is absent. `"benchmark"` assumes an 8.5 in bit size when a well has no
+    is absent. `"geolink"` assumes an 8.5 in bit size when a well has no
     BS curve or header bit size and flags washout only with a caliper (DRHO
     alone does not flag it); `"current"` assumes no bit size, and where none
     is known flags washout from DRHO alone, also without a caliper (see
@@ -606,9 +617,9 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   - `SaturationAnalysis` no longer derives SO; `NumericalStatisticalAnalysis`
     counts 2- and 3-sigma deviations with `np.nanmean`/`np.nanstd` and exact
     thresholds.
-  - Context packages use the benchmark layout: input curves are classified
+  - Context packages use the eval package's layout: input curves are classified
     against the raw LAS files (`raw_input_dir`, default the sibling of a
-    `*_processed` folder), value ranges use the benchmark rules (RMF from
+    `*_processed` folder), value ranges use the eval package's rules (RMF from
     0.01 ohm.m; no SP, SO or NMR rules), BS gets statistics and SO does not.
     Their notes describe the calculations of the profile used, and under
     `"current"` their depths carry the well's depth unit.
@@ -635,7 +646,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   `SaturationAnalysis`, `HydrocarbonAnalysis`, `LithologyAnalysis`) and
   `run_comprehensive_analysis` classify with `CLASS_TABLES` by default
   (`class_tables="current"`), so their labels and threshold texts change as
-  "Classes and reservoir quality" lists; `class_tables="benchmark"` keeps
+  "Classes and reservoir quality" lists; `class_tables="geolink"` keeps
   the eval package's. With the default tables, the reservoir-quality
   sections of porosity, permeability, hydrocarbon and lithology need clay
   volume (VCL, VCLAY or VSH) as well as porosity and permeability, and apply
@@ -738,7 +749,7 @@ calculations instead: 1400.9 m of net pay on 30/6-5):
   `DynamicWorkflowConfig.mineral_solver_version` selects the clastic workflow solver (default `1`, the
   algorithm the workflow already used; it replaces the private `CanonicalMultiMineralSolver`), and
   `LithologyModule(solver_version=...)` selects it there (default `2`).
-- Options behind the benchmark profile, usable on their own: `InvasionModule(medium_deep_proxy=...,
+- Options behind the "geolink" profile, usable on their own: `InvasionModule(medium_deep_proxy=...,
   depthwise_curve_merge=...)`, `SaturationModule(sxo_quicklook_fallback="per_sample"|"whole_curve",
   depthwise_curve_merge=...)`, `PermeabilityModule(porosity_curves=...)` and
   `HydrocarbonAnalysis(porosity_curves=...)`. Defaults keep the current behaviour.

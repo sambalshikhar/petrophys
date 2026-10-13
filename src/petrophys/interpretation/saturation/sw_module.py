@@ -131,7 +131,7 @@ class SaturationModule:
         Indonesia) and counts them in ``SaturationResult.fallback_counts``;
         ``model="dual_water"`` raises ``ValueError``. A number takes
         ``Rwb = rwb_fallback * Rw``, an assumption rather than a measurement;
-        the benchmark calculation profile of :func:`petrophys.interpret`
+        the "geolink" calculation profile of :func:`petrophys.interpret`
         pins 0.3.
     effective_waxman_smits : bool, optional
         Report the Waxman-Smits saturation, which is solved on total

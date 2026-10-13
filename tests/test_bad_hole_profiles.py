@@ -4,7 +4,7 @@ Under ``calculation_profile="current"`` the caliper washout test
 (CALI - BS > 1.5 in) and the large-hole test (BS > 17.5 in) run only where a
 bit size is known, sample by sample (the BS curve, else a 3-36 in header bit
 size), and |DRHO| > 0.15 g/cm3 flags washout wherever DRHO is logged. The
-benchmark profile keeps the eval package's rule: the BS curve as logged, else
+"geolink" profile keeps the eval package's rule: the BS curve as logged, else
 the header bit size whatever its value, else an assumed 8.5 in bit, with
 |DRHO| tested only on a well with a caliper.
 """
@@ -117,7 +117,7 @@ def test_without_a_bit_size_current_flags_drho_alone_and_the_benchmark_assumes_8
     assert step.decisions == [message, "2 bad-hole samples flagged out of 8"]
     assert result.warnings == [message]
 
-    flags, step, result = _bad_hole(_well(), "benchmark")
+    flags, step, result = _bad_hole(_well(), "geolink")
     assert flags == [1] * N
     assert step.parameters == {
         "bit_size_used": 8.5,
@@ -144,7 +144,7 @@ def test_a_plausible_header_bit_size_fills_the_gaps_of_the_bs_curve_under_curren
     assert (params["no_bit_size_samples"], params["caliper_test_samples"]) == (0, 8)
     assert not result.warnings
 
-    flags, step, _ = _bad_hole(well(), "benchmark")
+    flags, step, _ = _bad_hole(well(), "geolink")
     assert flags == [0, 0, 1, 0, 0, 0, 0, 0]
     assert set(step.parameters) == BENCHMARK_PARAMETERS
     assert (step.parameters["bit_size_source"], step.parameters["bit_size_used"]) == (
@@ -187,7 +187,7 @@ def test_without_a_caliper_current_flags_drho_and_the_benchmark_does_not():
     ]
     assert not result.warnings
 
-    flags, _, _ = _bad_hole(_well(cali=None, bs=[8.5] * N), "benchmark")
+    flags, _, _ = _bad_hole(_well(cali=None, bs=[8.5] * N), "geolink")
     assert flags == [0] * N
 
 
@@ -214,7 +214,7 @@ def test_a_caliper_without_a_bit_size_or_drho_is_not_assessed_under_current():
     # The benchmark tests the caliper against 8.5 in: CALI - 8.5 = 4 in > 1.5 in.
     well = _well(drho=None)
     well.add_curve("GR", np.linspace(30.0, 120.0, N), "API", "Gamma Ray")
-    result = DynamicWorkflow(DynamicWorkflowConfig(rw=0.05, calculation_profile="benchmark")).run(well)
+    result = DynamicWorkflow(DynamicWorkflowConfig(rw=0.05, calculation_profile="geolink")).run(well)
     assert "bad_hole" not in result.specific_steps_skipped
     assert well.get("BAD_HOLE").data.tolist() == [1.0] * N
 
@@ -252,7 +252,7 @@ def test_the_clay_point_is_picked_from_in_gauge_shale_without_a_bit_size():
     # DRHO alone flags samples 2 and 5; elsewhere the gas crossover counts.
     ("current", [0, 0, 1, 0, 0, 1, 0, 0], [1, 1, 0, 1, 1, 0, 1, 1], [0, 0, 1, 0, 0, 1, 0, 0]),
     # CALI - 8.5 in = 4 in flags every sample: no crossover, all poor quality.
-    ("benchmark", [1] * N, [0] * N, [1] * N),
+    ("geolink", [1] * N, [0] * N, [1] * N),
 ])
 def test_crossover_and_log_quality_follow_the_bad_hole_flag(profile, bad_hole, crossover, poor):
     # Gas crossover (PHID - PHIN = 0.15 > 0.05) in clean, porous rock.
@@ -321,7 +321,7 @@ def test_the_context_bad_hole_check_assumes_no_bit_size_under_current():
 def test_the_context_bad_hole_check_keeps_8_5_in_under_the_benchmark():
     well = _well()
     well.add_curve("BAD_HOLE", np.ones(N), "", "Bad Hole Flag")
-    workflow_result, step = _workflow_result("benchmark", bit_size_used=8.5, source="fallback_8.5")
+    workflow_result, step = _workflow_result("geolink", bit_size_used=8.5, source="fallback_8.5")
 
     qc = _build_reference_bad_hole_qc(well, workflow_result)
     assert (qc["bad_hole_points"], qc["parameters_used"]["bit_size_used_in"]) == (8, 8.5)
@@ -340,7 +340,7 @@ def test_the_context_bad_hole_check_keeps_8_5_in_under_the_benchmark():
 @pytest.mark.parametrize("profile, reason", [
     ("current", "Needs a density-correction (DRHO) curve, or a caliper (CALI) and a bit size "
                 "(BS curve or a 3-36 in header bit size)"),
-    ("benchmark", "Needs a caliper (CALI) or density-correction (DRHO) curve"),
+    ("geolink", "Needs a caliper (CALI) or density-correction (DRHO) curve"),
 ])
 def test_without_caliper_or_drho_the_step_is_skipped(profile, reason):
     well = _well(cali=None, drho=None, bs=[8.5] * N)

@@ -129,11 +129,11 @@ Then ask, for example: *"Load the sample well 30_6-5, interpret it with Rw = 0.0
 ## Pin the calculations
 
 Interpretations use the library's `"current"` calculations unless the `settings` of a tool call set `calculation_profile`.
-An evaluation harness that must reproduce the GeoLink eval package can make `"benchmark"` the server's default ({ref}`calculation profiles <calculation-profiles>`):
+An evaluation harness that must reproduce the GeoLink eval package can make `"geolink"` the server's default ({ref}`calculation profiles <calculation-profiles>`):
 
 ```bash
-petrophys-mcp serve --calculation-profile benchmark --root /path/to/wells
-PETROPHYS_CALCULATION_PROFILE=benchmark petrophys-mcp serve --root /path/to/wells   # the same
+petrophys-mcp serve --calculation-profile geolink --root /path/to/wells
+PETROPHYS_CALCULATION_PROFILE=geolink petrophys-mcp serve --root /path/to/wells   # the same
 ```
 
 For a server that a client starts, set `PETROPHYS_CALCULATION_PROFILE` in the environment of the client's server entry.

@@ -139,6 +139,10 @@ def _write_bytes(path: Path, data: bytes, overwrite: bool) -> None:
             temporary.unlink()
 
 
+#: The export_context options a context profile takes; the package fixes the rest.
+_PROFILE_OPTIONS = {"well_names", "pattern", "recursive", "tops_file", "lithology_mapping_file"}
+
+
 def export_context(
     data: Any,
     output_path: Any,
@@ -152,21 +156,26 @@ def export_context(
 ):
     """Write a well summary or a fully computed context package.
 
-    Package layouts normally read well files, apply optional formation and
-    lithology inputs, run the workflow, and write context JSON. With a
-    ``workflow_config`` under the benchmark calculation profile, every well
-    gets the calculations of the eval package's re-run, which wrote its context.
-    The default pattern is "*.las"; use pattern="*.dlis" for DLIS and
-    reader_options={"step": 0.1524} to request a DLIS sampling step in metres.
+    Without ``context_profile``, package layouts read the well files in the
+    ``data`` folder, apply optional formation and lithology inputs, interpret
+    each well with the current workflow (or ``workflow_config``), and write
+    context JSON. Files are read by :func:`petrophys.read` from their
+    extension: LAS, DLIS, CSV or TSV. ``pattern`` selects them (default
+    ``"*.las"``; e.g. ``"*.dlis"`` or ``"*.csv"``), and ``reader_options``
+    are passed to the reader, e.g. ``{"depth_unit": "m"}`` for a CSV or TSV
+    file, which records no depth unit, or ``{"step": 0.1524}`` for a DLIS
+    sampling step in metres.
 
-    ``context_profile="costa_v1"`` or ``"danish_v1"`` (aliases ``"costa"``,
-    ``"danish"``) computes that published package from the delivery's LAS
-    files with the package's own pipeline and calculations
-    (:mod:`petrophys.reporting.context_profiles`). ``data`` is then the
-    folder of the Danish raw LAS files, or of the COSTA LAS files (None for
-    the COSTA copies bundled with petrophys); the Danish profile also needs
-    ``tops_file`` (its formation tops workbook) and
-    ``lithology_mapping_file`` (the GeoLink lithology codebook). Context
+    ``context_profile`` computes a published package from its delivery's raw
+    LAS files with the package's own pipeline and calculations
+    (:mod:`petrophys.reporting.context_profiles`): ``"geolink"`` (``data``:
+    the raw ``eval`` folder; also ``tops_file``, the NPD picks workbook, and
+    ``lithology_mapping_file``, the GeoLink lithology codebook), ``"danish"``
+    (the Danish raw LAS; also its tops workbook and the codebook) or
+    ``"costa"`` (the COSTA LAS, or None for the copies bundled with
+    petrophys). A profile fixes the package's settings, so ``workflow_config``
+    and the other interpretation options are rejected; only ``well_names``,
+    ``pattern``, ``tops_file`` and ``lithology_mapping_file`` apply. Context
     profiles apply only to the ``category_formation_lithology`` layout, and
     only the context JSON is written to ``output_path``.
     """
@@ -190,6 +199,19 @@ def export_context(
         raise ValueError(
             "context_profile requires layout='category_formation_lithology'"
         )
+    if context_profile is not None:
+        fixed = sorted(
+            name
+            for name, value in options.items()
+            if name not in _PROFILE_OPTIONS
+            and value not in (None, {}, [], ())
+            and not (name == "minimum_group_thickness" and value == 2.0)
+        )
+        if fixed:
+            raise ValueError(
+                f"context_profile {context_profile!r} runs its package's own settings; "
+                f"remove {', '.join(fixed)}"
+            )
     if overwrite or output.exists():
         raise FileExistsError(
             "Package exports require a new output directory; existing "

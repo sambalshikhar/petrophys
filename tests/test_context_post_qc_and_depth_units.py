@@ -131,7 +131,7 @@ def test_current_context_drops_values_computed_from_rejected_inputs(tmp_path, mo
 
 
 def test_benchmark_context_keeps_the_eval_package_values(tmp_path, monkeypatch):
-    contexts = _export(tmp_path, monkeypatch, "benchmark")
+    contexts = _export(tmp_path, monkeypatch, "geolink")
 
     # PHI_NORM from the workflow's PHI_Z of 0.5 / (1 - 0.5), as in the eval package.
     middle = contexts["porosity", "MIDDLE FM. TOP"]["analysis_results"]["statistics"]

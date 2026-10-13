@@ -369,11 +369,11 @@ def test_benchmark_context_keeps_the_overburden_note():
     def run(profile):
         return SimpleNamespace(base_result=SimpleNamespace(config=SimpleNamespace(calculation_profile=profile)))
 
-    assert _reproduces_benchmark_context(run("benchmark"))
+    assert _reproduces_benchmark_context(run("geolink"))
     assert not _reproduces_benchmark_context(run("current"))
 
 
-@pytest.mark.parametrize("profile", ["benchmark", "current"])
+@pytest.mark.parametrize("profile", ["geolink", "current"])
 def test_context_notes_label_the_overburden_by_profile(profile):
     from petrophys.evaluation.diagnostics import NumericalStatisticalAnalysis
     from petrophys.reporting.reference_export import _build_delivery_computation_notes

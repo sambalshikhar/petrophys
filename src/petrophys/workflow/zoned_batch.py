@@ -103,7 +103,7 @@ PARAMETER_ALIASES: dict[str, str] = {
     "SW_CUTOFF": "sw_cutoff",
 }
 
-#: Header parameters the benchmark profile reads differently: CLFL (mud-filtrate
+#: Header parameters the "geolink" profile reads differently: CLFL (mud-filtrate
 #: chlorides) as NaCl-equivalent salinity, the mud-sample temperatures MFST and
 #: MST not at all, and PNSH as the clay porosity phi_cl.
 _BENCHMARK_PARAMETER_ALIASES: dict[str, Optional[str]] = {
@@ -268,7 +268,7 @@ def _clone_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowCon
 
 
 def _reproduces_benchmark(config: Optional[DynamicWorkflowConfig]) -> bool:
-    """True when this batch runs the benchmark profile."""
+    """True when this batch runs the "geolink" profile."""
     return getattr(config, "calculation_profile", "current") in _BENCHMARK_PROFILES
 
 
@@ -710,7 +710,7 @@ def extract_zoned_parameters(
         Well whose LAS header parameters define the zones.
     calculation_profile : str, default "current"
         :attr:`DynamicWorkflowConfig.calculation_profile` the settings are
-        for; the benchmark profile reads CLFL as NaCl-equivalent salinity,
+        for; the "geolink" profile reads CLFL as NaCl-equivalent salinity,
         ignores MFST and MST, and takes a CEC in meq/g without conversion.
 
     Returns
@@ -920,7 +920,7 @@ def _well_lithology_code_curve(config: DynamicWorkflowConfig, well: "Well") -> O
     the lithology code log once its codes pass the code-log checks on the
     whole well; a zone may hold too few samples to pass them on its own, so
     the zones name the base run's curve and the well keeps one code curve.
-    None under the benchmark profile, when the config names the curve (the
+    None under the "geolink" profile, when the config names the curve (the
     zones inherit it), and for ``LITHOLOGY_GEOLINK``, which every run reads.
     """
     if _reproduces_benchmark(config) or config.lithology_curve is not None:
@@ -1372,7 +1372,7 @@ def _interpret_las_file(
 ) -> tuple[ZonedWorkflowRunResult, set[str]]:
     """Read, standardize and interpret one LAS file of a batch, ready for export.
 
-    Under the benchmark profile the file gets the calculations of the eval
+    Under the "geolink" profile the file gets the calculations of the eval
     package's re-run when its UWI, WELL header or file name names one of the
     package's re-run wells, and otherwise those of its main run (see
     :attr:`DynamicWorkflowConfig.calculation_profile`), once for the file.
@@ -1435,7 +1435,7 @@ def process_las_directory_with_workflow(
     recursive : bool, default False
         Also search subfolders.
     config : DynamicWorkflowConfig, optional
-        Base settings for every well. Under ``calculation_profile="benchmark"``
+        Base settings for every well. Under ``calculation_profile="geolink"``
         the eval package's two re-run wells, recognized by their UWI, WELL
         header or file name, get the re-run's calculations.
     well_names : sequence of str, optional
