@@ -80,11 +80,12 @@ def build_package_parser(layout: str) -> argparse.ArgumentParser:
         parser.add_argument(
             "--profile",
             dest="context_profile",
-            choices=("costa", "costa_v1", "danish", "danish_v1"),
+            choices=("geolink", "geolink_v1", "costa", "costa_v1", "danish", "danish_v1"),
             help=(
-                "Compute a published context package with its own pipeline: the input "
-                "directory holds the COSTA LAS or the Danish raw LAS; danish also needs "
-                "--formations (its tops workbook) and --lithology-codes (the GeoLink codebook)."
+                "Compute a published context package with its own pipeline from the input "
+                "directory's raw LAS (GeoLink eval, COSTA or Danish); geolink and danish also "
+                "need --formations (their tops workbook) and --lithology-codes (the GeoLink "
+                "codebook). Without it, the current workflow runs."
             ),
         )
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))
@@ -193,10 +194,11 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--profile",
         dest="context_profile",
-        choices=("costa", "costa_v1", "danish", "danish_v1"),
+        choices=("geolink", "geolink_v1", "costa", "costa_v1", "danish", "danish_v1"),
         help=(
-            "Compute a published category context package (costa or danish) from its "
-            "LAS input directory; danish also needs --formations and --lithology-codes"
+            "Compute a published category context package (geolink, costa or danish) from "
+            "its raw LAS directory; geolink and danish also need --formations and "
+            "--lithology-codes. Without it, the current workflow runs."
         ),
     )
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))

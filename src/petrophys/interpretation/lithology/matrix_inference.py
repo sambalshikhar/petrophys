@@ -288,7 +288,7 @@ def interpreted_lithology_code_curve(well) -> str:
     the wells it interprets under the ``"current"`` calculation profile, or
     with ``lithology_curve`` set, and slices of the well keep the record.
     Without a record, or when the run found no code curve, this is
-    ``LITHOLOGY_GEOLINK``, the only curve the benchmark profile reads.
+    ``LITHOLOGY_GEOLINK``, the only curve the "geolink" profile reads.
     """
     return _recorded_code_curve(well)[1] or GEOLINK_LITHOLOGY_CURVE
 

@@ -41,7 +41,7 @@ def net_thickness(well: "Well", mask: np.ndarray, cells: bool = True) -> Dict[st
     """Thickness flagged by each net flag over ``mask``, rounded to 0.01 depth units.
 
     Each flagged sample counts with its midpoint cell from the actual depths,
-    or, with ``cells=False`` (the benchmark calculation profile), with the
+    or, with ``cells=False`` (the "geolink" calculation profile), with the
     well's depth step, as the net-pay trace counts it.
     """
     thickness: Dict[str, Any] = {"depth_unit": well.depth_unit}

@@ -161,17 +161,17 @@ _SHORT_CHOICES = {
 
 #: Defaults resolved at run time, stated where the schema default is None.
 _RUNTIME_DEFAULTS = {
-    "standardize_input": "True (False under the benchmark calculation profile)",
-    "vcl_cutoff": "0.40 clastic, 0.30 carbonate samples (0.3 under the benchmark profile)",
-    "sw_cutoff": "0.60 clastic, 0.70 carbonate samples (0.7 under the benchmark profile)",
+    "standardize_input": "True (False under the 'geolink' calculation profile)",
+    "vcl_cutoff": "0.40 clastic, 0.30 carbonate samples (0.3 under the 'geolink' profile)",
+    "sw_cutoff": "0.60 clastic, 0.70 carbonate samples (0.7 under the 'geolink' profile)",
     "phie_cutoff": "0.08 clastic, 0.045 carbonate samples",
     "bht_f": "header BHT (converted to degF)",
     "td_ft": "header TD, else deepest sample",
     "rw": "header RW (at RWT; median formation temperature assumed when RWT is missing)",
     "a": "by lithology", "m": "by lithology", "n": "by lithology",
     "rho_ma": "from matrix_type",
-    "carbonate_calibration": "generic ('costa' under the benchmark profile)",
-    "nd_clay": "picked in the well's shales ((2.62, 0.38) under the benchmark profile)",
+    "carbonate_calibration": "generic ('costa' under the 'geolink' profile)",
+    "nd_clay": "picked in the well's shales ((2.62, 0.38) under the 'geolink' profile)",
 }
 
 

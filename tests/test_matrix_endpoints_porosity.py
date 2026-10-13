@@ -4,7 +4,7 @@ The "current" calculations take density-porosity endpoints from apparent log
 densities, regroup GeoLink codes 10 and 26, put the clay porosity on the
 endpoints of the PHIT it corrects, read a LAS header shale point (PNSH with
 RBSH) as such, and use the root-mean-square in gas crossover when the
-hydrocarbon is gas. The benchmark profile keeps the eval package's
+hydrocarbon is gas. The "geolink" profile keeps the eval package's
 calculations.
 """
 import numpy as np
@@ -183,7 +183,7 @@ def test_evaporite_endpoints_use_log_densities_under_current():
     vcl = [0.0] * 20 + [0.05] * 10
 
     current = _run(_geolink_well(codes, rhob, nphi, vcl), "current")
-    benchmark = _run(_geolink_well(codes, rhob, nphi, vcl), "benchmark")
+    benchmark = _run(_geolink_well(codes, rhob, nphi, vcl), "geolink")
 
     salt = slice(0, 10)
     carnallite = slice(10, 20)
@@ -192,7 +192,7 @@ def test_evaporite_endpoints_use_log_densities_under_current():
     assert np.all(current.well.get("PHIE").data[carnallite] < 0.02)
     assert _endpoints(current)["HALITE"]["rho_ma"] == pytest.approx(2.032)
     assert _endpoints(current)["CARNALLITE"]["rho_ma"] == pytest.approx(1.570)
-    # The benchmark profile keeps halite's grain density for every salt code.
+    # The "geolink" profile keeps halite's grain density for every salt code.
     np.testing.assert_allclose(benchmark.well.get("PHID").data[salt], (2.17 - 2.04) / 1.17)
     assert _endpoints(benchmark)["HALITE"]["rho_ma"] == pytest.approx(2.17)
     assert "CARNALLITE" not in _endpoints(benchmark)
@@ -208,7 +208,7 @@ def test_geolink_codes_10_and_26_and_coal_endpoints_by_profile():
     well_b.add_curve("DTC", np.full(n, 90.0), "us/ft", "Sonic")
 
     current = _endpoints(_run(well_c, "current"))
-    benchmark = _endpoints(_run(well_b, "benchmark"))
+    benchmark = _endpoints(_run(well_b, "geolink"))
 
     assert current["LIMESTONE"]["rho_ma"] == pytest.approx(2.71)
     assert "EVAPORITE" not in current  # Gap samples keep the configured matrix
@@ -269,8 +269,8 @@ def test_context_export_names_codes_10_and_26_as_the_profile_treats_them(workboo
     codes = [10] * 6 + [26] * 6 + [1] * 6
     n = len(codes)
     exported = {}
-    for profile in ("current", "benchmark"):
-        # The context export runs the benchmark profile with the re-run's calculations.
+    for profile in ("current", "geolink"):
+        # The context export runs the "geolink" profile with the re-run's calculations.
         with _rerun_calculations():
             result = _run(_geolink_well(codes, [2.45] * n, [0.18] * n, [0.1] * n), profile)
         mapping = reference._run_lithology_mapping(workbook, result)
@@ -292,8 +292,8 @@ def test_context_export_names_codes_10_and_26_as_the_profile_treats_them(workboo
         (12, 6),
         ["GT_LIMESTONE", "NO_LITHOLOGY_DATA", "GT_SANDSTONE"],
     )
-    # The benchmark profile keeps the eval package's names and groups.
-    assert exported["benchmark"] == (
+    # The "geolink" profile keeps the eval package's names and groups.
+    assert exported["geolink"] == (
         ["CALCAREOUS SANDSTONE", "GYPSUM", "SAND"],
         (18, 0),
         ["GT_SANDSTONE", "GT_EVAPORITE"],
@@ -335,10 +335,10 @@ def test_clay_porosity_is_the_shale_porosity_on_the_reservoir_endpoints():
 
 
 def test_the_rerun_calculations_keep_the_wet_shale_clay_porosity():
-    # 34/10-23 is one of the eval package's re-run wells: the benchmark profile
+    # 34/10-23 is one of the eval package's re-run wells: the "geolink" profile
     # gives it the re-run's calculations.
     well, v = _shaly_sand_well(name="34/10-23")
-    result = _run(well, "benchmark")
+    result = _run(well, "geolink")
     porosity = _step(result, "porosity").parameters
 
     # The shale samples' PHIT on the wet-shale point (2.58 g/cc, NPHI 0.30).
@@ -406,7 +406,7 @@ def test_benchmark_takes_pnsh_as_the_clay_porosity(calculations):
 
     well, _ = _header_well(PNSH=0.31, RBSH=2.46)
     with _rerun_calculations(calculations == "rerun"):
-        porosity = _step(_run(well, "benchmark", phi_cl=0.25), "porosity").parameters
+        porosity = _step(_run(well, "geolink", phi_cl=0.25), "porosity").parameters
     assert porosity["phi_cl"] == pytest.approx(0.31)
     assert porosity["phi_cl_source"] == "LAS PNSH parameter"
     assert "phi_cl_shale_point" not in porosity and "phi_cl_header_note" not in porosity
@@ -419,14 +419,14 @@ def test_header_pnsh_is_a_phi_cl_setting_only_under_the_benchmark_profile():
     current, unmapped = _extract_global_parameter_overrides(well, calculation_profile="current")
     assert "phi_cl" not in current and "PNSH" not in unmapped
     assert current["rho_cl"] == pytest.approx(2.46)
-    overrides, _ = _extract_global_parameter_overrides(well, calculation_profile="benchmark")
+    overrides, _ = _extract_global_parameter_overrides(well, calculation_profile="geolink")
     assert overrides["phi_cl"] == pytest.approx(0.31)
 
 
 # -- External potash intervals -----------------------------------------------------------
 
 
-@pytest.mark.parametrize("profile", ["current", "benchmark"])
+@pytest.mark.parametrize("profile", ["current", "geolink"])
 def test_external_sylvite_and_potash_labels(profile):
     import pandas as pd
 
@@ -474,8 +474,8 @@ def test_gas_crossover_counts_by_profile_and_hydrocarbon():
     # Gaymard and Poupon (1968): sqrt((0.229^2 + 0.164^2) / 2) = 0.1992.
     np.testing.assert_allclose(gas.well.get("PHIT").data, np.sqrt((0.229**2 + 0.164**2) / 2))
     # Oil (the default) leaves the neutron log almost untouched: the crossover is
-    # not gas, and PHIT is density porosity, as under the benchmark profile.
-    for result in (run("current"), run("benchmark", hc_type="gas"), run("benchmark")):
+    # not gas, and PHIT is density porosity, as under the "geolink" profile.
+    for result in (run("current"), run("geolink", hc_type="gas"), run("geolink")):
         counts = _step(result, "porosity").parameters["phit_source_counts"]
         assert counts["density_from_gas_crossover"] == n
         assert "rms_from_gas_crossover" not in counts
@@ -526,7 +526,7 @@ def test_context_rebuilds_the_groups_the_workflow_used():
         return list(_segment_lithology_groups_for_saturation(well, "clastic"))
 
     assert groups("current") == ["limestone", "clastic", "sandstone", "sandstone"]
-    assert groups("benchmark") == ["sandstone", "evaporite", "sandstone", "sandstone"]
+    assert groups("geolink") == ["sandstone", "evaporite", "sandstone", "sandstone"]
 
     def porosity_step(gas_key):
         return StepResult(step="porosity", success=True, parameters={

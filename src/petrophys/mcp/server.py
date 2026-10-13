@@ -188,7 +188,7 @@ def create_server(
         Existing session to serve (mainly for tests).
     calculation_profile : str, optional
         Calculation profile of interpretations whose settings do not set
-        ``calculation_profile``, e.g. ``"benchmark"`` to pin an
+        ``calculation_profile``, e.g. ``"geolink"`` to pin an
         evaluation harness to the eval package's calculations. Defaults to
         ``PETROPHYS_CALCULATION_PROFILE``, else the library default
         (``"current"``). A profile given in a tool's settings wins. The
@@ -322,6 +322,21 @@ def create_server(
 
     def run_interpretation(well_id: str, settings: Dict[str, Any]) -> Tuple[str, Any, List[str]]:
         well = state.well(well_id)
+        settings = dict(settings)
+        # COSTA is the one bundled collection whose lithology needs a field
+        # calibration. Apply that calibration when the agent loads a COSTA
+        # sample or a LAS carrying the COSTA field header. Explicit settings
+        # still win, so users can run a generic carbonate or clastic check.
+        field = str(getattr(getattr(well, "header", None), "field", "") or "").strip().lower()
+        if not field:
+            field = str(well.get_parameter("FLD", "") or "").strip().lower()
+        source = str(state.sources.get(well_id, "")).strip().lower()
+        is_costa = field == "costa" or source.startswith("sample:") and Path(
+            pp.sample(source.split(":", 1)[1])
+        ).parent.name.casefold() == "costa"
+        if is_costa:
+            settings.setdefault("lithology_domain", "carbonate")
+            settings.setdefault("carbonate_calibration", "costa")
         with _captured_warnings() as messages:
             result = pp.interpret(well, **settings)
         return state.add_interpretation(well_id, result), result, messages
@@ -598,7 +613,7 @@ def create_server(
         - vcl_cutoff, phie_cutoff, sw_cutoff (v/v): net-pay cutoffs; defaults by
           lithology family: clastic VCL < 0.40, PHIE > 0.08, SW < 0.60;
           carbonate VCL < 0.30, PHIE > 0.045, SW < 0.70. Evaporite and bad-hole
-          samples are not net reservoir or pay (the benchmark calculation
+          samples are not net reservoir or pay (the "geolink" calculation
           profile keeps VCL < 0.3, SW < 0.7 and counts them).
         - gr_min, gr_max (API): GR clean/shale (default 20/100).
         - apply_hc_correction, hc_type: oil|gas; skip_steps: e.g. ['permeability'].

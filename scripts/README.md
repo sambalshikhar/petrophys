@@ -44,8 +44,8 @@ python scripts/generate_benchmark_context.py --input-dir PATH/danish/las \
     --lithology-mapping-file PATH/Litho_Nomenclature_Kingdom.xlsx --output-dir NEW_DIR
 ```
 
-For GeoLink, the same script retains the benchmark calculation workflow. One
-command regenerates the whole GeoLink package from the raw LAS files:
+For GeoLink, the script runs the `geolink` context profile. One command
+regenerates the whole GeoLink package from the raw LAS files:
 
 ```
 python scripts/generate_benchmark_context.py --from-raw --input-dir PATH/eval --output-dir NEW_DIR
@@ -63,7 +63,7 @@ context from those files. The NPD tops workbook
 The package was made in two runs with different calculations: its main run
 interpreted 30 of the 32 wells, and a re-run interpreted `15_9-17` and
 `34_10-23` and wrote the context of every well. The script's default,
-`--calculation-profile benchmark`, keeps both sets of calculations: it
+`--calculation-profile geolink`, keeps both sets of calculations: it
 interprets `15_9-17` and `34_10-23` with the re-run's calculations and the
 other wells with the main run's, and writes the context of every well with the
 re-run's. The two wells are recognized by their UWI or WELL header or by their

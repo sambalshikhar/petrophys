@@ -176,7 +176,7 @@ def test_lithology_module_passes_solver_options():
     assert LithologyModule(solver_options={"closure_tolerance": 0.1}).solver.closure_tolerance == 0.1
 
 
-@pytest.mark.parametrize("profile", ["current", "benchmark"])
+@pytest.mark.parametrize("profile", ["current", "geolink"])
 def test_workflow_weights_version_1_rows_only_under_current(profile):
     well = _workflow_well()
     well.add_curve("DTC", np.linspace(70.0, 115.0, well.n_samples), "us/ft", "Sonic")

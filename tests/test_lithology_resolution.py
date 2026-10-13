@@ -245,7 +245,7 @@ def test_module_selects_carbonate_from_core_without_well_name_rules():
 
 
 @pytest.mark.parametrize('profile, method, illite', [
-    ('benchmark', 'costa_gr_illite_calcite_dolomite', True),
+    ('geolink', 'costa_gr_illite_calcite_dolomite', True),
     ('current', 'generic_calcite_dolomite_density_closure', False),
 ])
 def test_explicit_carbonate_setting_passes_through_workflow(profile, method, illite):
@@ -274,7 +274,7 @@ def test_custom_mineral_set_is_preserved_for_a_carbonate_well():
 
 
 @pytest.mark.parametrize('profile, method', [
-    ('benchmark', 'costa_gr_illite_calcite_dolomite'),
+    ('geolink', 'costa_gr_illite_calcite_dolomite'),
     ('current', 'generic_calcite_dolomite_density_closure'),
 ])
 def test_auto_resolution_selects_the_carbonate_domain_route(profile, method):

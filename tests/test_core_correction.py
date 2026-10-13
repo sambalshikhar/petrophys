@@ -190,7 +190,7 @@ def test_poro_perm_transform_requires_two_valid_core_pairs():
         fit_poro_perm_transform(core)
 
 
-# -- Core porosity correction under the "current" and benchmark profile --------------
+# -- Core porosity correction under the "current" and "geolink" profile --------------
 
 
 def _core_step(result):
@@ -263,7 +263,7 @@ def test_current_does_not_apply_an_unphysical_core_porosity_fit(core_phi, n_core
 def test_benchmark_keeps_the_ungated_phie_core_fit(calculations):
     from petrophys.workflow.dynamic_workflow import _rerun_calculations
 
-    # Core porosity falls as log porosity rises; the benchmark profile still applies the fit.
+    # Core porosity falls as log porosity rises; the "geolink" profile still applies the fit.
     well = _cored_well(lambda phit: 0.40 - phit)
     phie = well.get("PHIE").data.copy()
     core = well.get("PHIC").data.copy()
@@ -271,7 +271,7 @@ def test_benchmark_keeps_the_ungated_phie_core_fit(calculations):
     a, b = np.polyfit(phie[valid], core[valid], 1)
 
     with _rerun_calculations(calculations == "rerun"):
-        result = DynamicWorkflow(DynamicWorkflowConfig(calculation_profile="benchmark")).run_selected_steps(
+        result = DynamicWorkflow(DynamicWorkflowConfig(calculation_profile="geolink")).run_selected_steps(
             well, [WorkflowStep.CORE_CORRECTION]
         )
     step = _core_step(result)
@@ -284,12 +284,12 @@ def test_benchmark_keeps_the_ungated_phie_core_fit(calculations):
     assert not any("Core porosity correction" in note for note in step.decisions)
 
 
-@pytest.mark.parametrize("profile", ["current", "benchmark"])
+@pytest.mark.parametrize("profile", ["current", "geolink"])
 def test_context_notes_name_the_porosity_the_core_correction_was_fitted_to(profile):
     from petrophys.reporting.reference_export import _compact_curve_note
     from petrophys.workflow.dynamic_workflow import _rerun_calculations
 
-    # The context export runs the benchmark profile with the re-run's calculations.
+    # The context export runs the "geolink" profile with the re-run's calculations.
     with _rerun_calculations():
         result = DynamicWorkflow(DynamicWorkflowConfig(calculation_profile=profile)).run_selected_steps(
             _cored_well(_linear_core), [WorkflowStep.CORE_CORRECTION]

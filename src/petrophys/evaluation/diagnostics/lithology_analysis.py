@@ -159,13 +159,13 @@ class LithologyAnalysis:
         Lithology group -> set of ``LITHOLOGY_GEOLINK`` codes. Default
         ``GROUND_TRUTH_GROUPS``; ``CURRENT_GROUND_TRUTH_GROUPS`` groups the
         codes as the "current" calculation profile does.
-    class_tables : {"current", "benchmark"}, default "current"
+    class_tables : {"current", "geolink"}, default "current"
         ``"current"`` grades sandstone and carbonate samples with the
         reservoir-quality table of
         :data:`~petrophys.model.class_tables.CLASS_TABLES` (effective porosity,
         permeability and clay volume, the classes the porosity, permeability
         and hydrocarbon analyses give), and the overall interpretation takes
-        that class. ``"benchmark"`` keeps the GeoLink eval package's grades
+        that class. ``"geolink"`` keeps the GeoLink eval package's grades
         (FAIR from porosity alone; GOOD and EXCELLENT also below a shale
         volume) and texts.
     lithology_family : str or sequence of str, optional
@@ -188,7 +188,7 @@ class LithologyAnalysis:
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
-        benchmark = self.class_tables == "benchmark"
+        benchmark = self.class_tables == "geolink"
         n_samples = well.n_samples
         gt_codes, _ = get_curve_data(well, [interpreted_lithology_code_curve(well)])
         computed_litho, _ = get_curve_data(well, ["LITHO"])

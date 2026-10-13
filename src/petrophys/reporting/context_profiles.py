@@ -1,18 +1,22 @@
-"""Computed reproductions of the published COSTA and Danish context packages.
+"""Computed reproductions of the published GeoLink, COSTA and Danish context packages.
 
-The GeoLink eval package is reproduced by ``calculation_profile="benchmark"``
-(see :attr:`petrophys.workflow.DynamicWorkflowConfig.calculation_profile`).
-The COSTA and Danish packages were made by their own pipelines: the COSTA
-package by interpretation steps of its own around the workflow and a rewrite of
-the context notes, the Danish package by a preparation of its raw LAS and one
+Each package was made by a pipeline of its own: the GeoLink package by the
+zoned batch runner and the category exporter with the calculations its runs
+used (``calculation_profile="geolink"``), the COSTA package by
+interpretation steps of its own around the workflow and a rewrite of the
+context notes, the Danish package by a preparation of its raw LAS and one
 context group per formation of its tops workbook. A context profile runs that
-pipeline, from the delivery's LAS files to the context JSON, with the
-calculations each package used; nothing is copied from a published package.
+pipeline, from the delivery's raw LAS files to the context JSON; nothing is
+copied from a published package. Without a context profile, a context package
+is computed with the library's current workflow.
 
-The reproduction of each package was checked against it: the interpreted LAS
-files are identical byte for byte, and every number and note of the context
-is the same except the ELECTROFACIES statistics, which come from k-means
-clustering that was unseeded when the packages were made.
+Each reproduction was checked against its package. The COSTA and Danish
+interpreted LAS are identical byte for byte, as are the GeoLink ones of 31 of
+its 32 wells (16/10-4's differ at three SW samples). Every context number and
+note is the same except the ELECTROFACIES statistics, which come from k-means
+clustering that was unseeded when the packages were made, and, for GeoLink's
+15/9-17 and 34/10-23, the SO statistics and some note wording of the re-run
+that wrote their context.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from typing import Optional, Sequence
 
 from petrophys.reporting._costa_context import COSTA_WELLS
 from petrophys.reporting._danish_context import DANISH_WELLS
+from petrophys.reporting._geolink_context import GEOLINK_WELLS
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,16 @@ class ContextProfile:
 
 
 _PROFILES = {
+    "geolink_v1": ContextProfile(
+        name="geolink_v1",
+        aliases=("geolink", "geolink-v1"),
+        description=(
+            "The GeoLink eval six-category context package for 32 Norwegian wells, computed from "
+            "their raw LAS files, the NPD formation tops workbook and the GeoLink lithology codebook."
+        ),
+        well_names=GEOLINK_WELLS,
+        required_inputs=("tops_file", "lithology_mapping_file"),
+    ),
     "costa_v1": ContextProfile(
         name="costa_v1",
         aliases=("costa", "costa-v1"),
@@ -91,12 +106,15 @@ def describe_context_profile(name: str) -> dict:
         "well_names": list(profile.well_names),
         "well_count": len(profile.well_names),
         "required_inputs": list(profile.required_inputs),
-        "output_contract": "computed; matches the published package except ELECTROFACIES statistics",
+        "output_contract": "computed from the delivery's raw LAS with the package's own pipeline",
     }
 
 
 def _selector(value: str) -> str:
-    return Path(str(value)).stem.strip().casefold().replace("_", "-")
+    text = str(value).strip()
+    if text.lower().endswith(".las"):
+        text = Path(text).stem
+    return text.strip().casefold().replace("/", "-").replace("_", "-")
 
 
 def identify_context_profile(
@@ -106,11 +124,11 @@ def identify_context_profile(
     pattern: str = "*.las",
     recursive: bool = False,
 ) -> Optional[ContextProfile]:
-    """The COSTA or Danish profile whose wells the input files (or ``well_names``) are, else None.
+    """The context profile whose wells the input files (or ``well_names``) are, else None.
 
     ``input_path`` may be one LAS file or a directory; in a directory every
     selected file must belong to the same profile. None means the input is
-    not one of those deliveries (for example, a GeoLink well).
+    not one of the published deliveries.
     """
     source = Path(input_path)
     if well_names:
@@ -143,24 +161,29 @@ def export_context_profile(
     tops_file: Optional[str | Path] = None,
     lithology_mapping_file: Optional[str | Path] = None,
 ):
-    """Compute a published COSTA or Danish context package from its LAS files.
+    """Compute a published GeoLink, COSTA or Danish context package from its LAS files.
 
     Parameters
     ----------
     input_dir : str or Path or None
-        The delivery's LAS files: the Danish raw LAS, or the COSTA LAS (None
-        for the COSTA copies bundled with petrophys).
+        The delivery's raw LAS files: the GeoLink ``eval`` folder, the Danish
+        raw LAS, or the COSTA LAS (None for the COSTA copies bundled with
+        petrophys).
     output_dir : str or Path
         Folder for the category context JSON.
     context_profile : str
-        ``"costa_v1"`` or ``"danish_v1"`` (or an alias, ``"costa"``, ``"danish"``).
+        ``"geolink_v1"``, ``"costa_v1"`` or ``"danish_v1"`` (aliases
+        ``"geolink"``, ``"costa"``, ``"danish"``).
     work_dir : str or Path
         Folder for the intermediate LAS: ``processed_las`` (interpreted LAS
         and workflow traces) and, for the Danish package, ``prepared_las``.
     well_names : sequence of str, optional
         Only these wells.
+    pattern : str, default ``"*.las"``
+        The delivery files to read; the packages were made from LAS files.
     tops_file, lithology_mapping_file : str or Path, optional
-        Required by the Danish profile: its formation tops workbook and the
+        Required by the GeoLink and Danish profiles: the formation tops
+        workbook (the NPD picks for GeoLink, the Danish tops workbook) and the
         GeoLink/Kingdom lithology codebook.
 
     Returns
@@ -171,6 +194,11 @@ def export_context_profile(
     profile = get_context_profile(context_profile)
     if recursive:
         raise ValueError("Context profiles read one folder of LAS files; recursive is not supported")
+    if not str(pattern).lower().endswith(".las"):
+        raise ValueError(
+            f"Context profile {profile.name} reproduces a LAS delivery; pattern must select .las files, "
+            f"got {pattern!r}"
+        )
     if well_names:
         known = {_selector(name) for name in profile.well_names}
         unknown = sorted(name for name in well_names if _selector(name) not in known)
@@ -183,8 +211,6 @@ def export_context_profile(
             output_dir, work_dir=work_dir, input_dir=input_dir, well_names=well_names, pattern=pattern
         )
 
-    from petrophys.reporting._danish_context import reproduce_danish_context
-
     missing = [
         name for name, value in (("tops_file", tops_file), ("lithology_mapping_file", lithology_mapping_file))
         if value is None
@@ -192,7 +218,22 @@ def export_context_profile(
     if missing:
         raise ValueError(f"Context profile {profile.name} requires {', '.join(missing)}")
     if input_dir is None:
-        raise ValueError("Context profile danish_v1 requires the folder of Danish raw LAS files")
+        raise ValueError(f"Context profile {profile.name} requires the folder of its raw LAS files")
+    if profile.name == "geolink_v1":
+        from petrophys.reporting._geolink_context import reproduce_geolink_context
+
+        return reproduce_geolink_context(
+            input_dir,
+            output_dir,
+            tops_file=tops_file,
+            lithology_mapping_file=lithology_mapping_file,
+            work_dir=work_dir,
+            well_names=well_names,
+            pattern=pattern,
+        )
+
+    from petrophys.reporting._danish_context import reproduce_danish_context
+
     return reproduce_danish_context(
         input_dir,
         output_dir,

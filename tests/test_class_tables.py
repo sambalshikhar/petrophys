@@ -1,6 +1,6 @@
 """One registry of class tables: the canonical classes of each property, the model enums and helpers that
 classify through it, and the diagnostics analyzers, whose "current" class tables give a property the same class in
-every category while the "benchmark" set keeps the GeoLink eval package's tables and texts."""
+every category while the "geolink" set keeps the GeoLink eval package's tables and texts."""
 from types import SimpleNamespace
 
 import numpy as np
@@ -338,7 +338,7 @@ def test_current_tables_give_a_property_one_class_in_every_category():
 
 
 def test_benchmark_tables_keep_the_eval_package_classes_and_texts():
-    a = _analyses("benchmark")
+    a = _analyses("geolink")
     assert _labels(a["permeability"], "permeability_variation_controls") == [
         "MIXED_LITHOLOGY", "MIXED_LITHOLOGY", "CLEAN_RESERVOIR", "SHALE_DOMINATED", "MIXED_LITHOLOGY",
         "CLEAN_RESERVOIR"]
@@ -358,7 +358,7 @@ def test_benchmark_tables_keep_the_eval_package_classes_and_texts():
     # RXO / RDEP, not INVASION_RATIO: 0.5 is conductive at the second sample.
     assert _labels(a["permeability"], "invasion_profile_permeability_indicators")[:2] == [
         "CONDUCTIVE_INVASION", "CONDUCTIVE_INVASION"]
-    no_mhi = SaturationAnalysis(class_tables="benchmark").analyze(_well(mhi=False), add_curves=False)
+    no_mhi = SaturationAnalysis(class_tables="geolink").analyze(_well(mhi=False), add_curves=False)
     assert _labels(no_mhi, "hydrocarbon_movability_invasion_characteristics") == [   # 0.7 / 1.3 fallback
         "MINIMAL_INVASION", "CONDUCTIVE_INVASION", "MINIMAL_INVASION", "MINIMAL_INVASION", "NO_INVASION_DATA",
         "MINIMAL_INVASION"]
@@ -389,7 +389,7 @@ def test_missing_curves_get_missing_labels_under_current():
     assert _labels(perm, "overall_permeability_interpretation") == ["NO_QUALITY_DATA"] * 3
     hydrocarbon = HydrocarbonAnalysis().analyze(well, add_curves=False)
     assert _labels(hydrocarbon, "reservoir_quality_for_hydrocarbons") == ["NO_QUALITY_DATA"] * 3
-    old = PermeabilityAnalysis(class_tables="benchmark").analyze(well, add_curves=False)
+    old = PermeabilityAnalysis(class_tables="geolink").analyze(well, add_curves=False)
     assert _labels(old, "overall_permeability_interpretation") == ["TIGHT_FORMATION"] * 3
 
 
@@ -496,7 +496,7 @@ def test_workflow_grades_reservoir_quality_with_each_samples_family(monkeypatch)
             super().__init__(*args, **kwargs)
 
     monkeypatch.setattr(diagnostics, "HydrocarbonAnalysis", SpyHydrocarbon)
-    for profile in ("benchmark", "current"):
+    for profile in ("geolink", "current"):
         n = 60
         well = Well("FAMILY-WORKFLOW")
         well.depth = np.arange(2000.0, 2000.0 + 0.5 * n, 0.5)
@@ -550,8 +550,8 @@ def test_every_current_section_table_coarsens_its_canonical_table(analyzer):
     current = analyzer()
     for name, table in TABLE_OF_BANDS[analyzer].items():
         assert _is_coarsening(bands_of(current, name), CLASS_TABLES[table].bands), name
-        # The class attribute stays the benchmark's frozen table, which a "benchmark" analyzer uses.
-        assert bands_of(analyzer(class_tables="benchmark"), name) is bands_of(analyzer, name)
+        # The class attribute stays the benchmark's frozen table, which a "geolink" analyzer uses.
+        assert bands_of(analyzer(class_tables="geolink"), name) is bands_of(analyzer, name)
     assert not _is_coarsening(PermeabilityAnalysis.VARIATION_BANDS, CLASS_TABLES["VCL"].bands)
     assert not _is_coarsening(SaturationAnalysis.INVASION_BANDS, CLASS_TABLES["RXO_RT"].bands)
 
@@ -572,18 +572,18 @@ def test_context_exporter_uses_the_profile_tables():
         return SimpleNamespace(base_result=base, zone_results=[])
 
     first = {}
-    for key, workflow_result in (("benchmark", run("benchmark")), ("current", run("current")), ("none", None)):
+    for key, workflow_result in (("geolink", run("geolink")), ("current", run("current")), ("none", None)):
         result = ref._category_analysis_result("permeability", _well(), workflow_result)
         first[key] = _labels(result, "permeability_variation_controls")[0]
-    assert first == {"benchmark": "MIXED_LITHOLOGY", "current": "CLEAN_FORMATION", "none": "CLEAN_FORMATION"}
-    summary = ref._build_analysis_summary(_well(), run("benchmark"))["HYDROCARBON_ANALYSIS"]
+    assert first == {"geolink": "MIXED_LITHOLOGY", "current": "CLEAN_FORMATION", "none": "CLEAN_FORMATION"}
+    summary = ref._build_analysis_summary(_well(), run("geolink"))["HYDROCARBON_ANALYSIS"]
     assert summary["petrophysical_hydrocarbon_indicators"]["calculation_thresholds"].endswith(
         "LOW_SW: SW < 0.50. NO_INDICATION: no petrophysical hydrocarbon criterion met.")
 
 
 def test_run_comprehensive_analysis_selects_the_tables():
     current = run_comprehensive_analysis(_well(), add_curves=False, store_results=False)
-    benchmark = run_comprehensive_analysis(_well(), add_curves=False, store_results=False, class_tables="benchmark")
+    benchmark = run_comprehensive_analysis(_well(), add_curves=False, store_results=False, class_tables="geolink")
     key = "PERMEABILITY_AND_FLOW_UNITS"
     assert _labels(current.categories[key], "permeability_variation_controls")[0] == "CLEAN_FORMATION"
     assert _labels(benchmark.categories[key], "permeability_variation_controls")[0] == "MIXED_LITHOLOGY"
@@ -624,10 +624,10 @@ def test_workflow_passes_the_profile_tables(monkeypatch):
         result.add_curve("CALI", np.full(n, 8.7), "in", "Caliper")
         return result
 
-    for profile in ("benchmark", "current"):
+    for profile in ("geolink", "current"):
         config = DynamicWorkflowConfig(rw=0.05, skip_steps=["temperature", "rmf"], calculation_profile=profile)
         result = DynamicWorkflow(config).run(well())
         assert result.success, result.errors
-    assert seen["hydrocarbon"] == ["benchmark", "current"]
+    assert seen["hydrocarbon"] == ["geolink", "current"]
     assert seen["invasion"][0] is dynamic_workflow._BENCHMARK_INVASION_BANDS and seen["invasion"][1] is None
     assert dynamic_workflow._BENCHMARK_INVASION_BANDS.edges == (0.8, 1.2)

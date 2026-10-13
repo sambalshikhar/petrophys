@@ -4,7 +4,7 @@ Rmf from mud-filtrate chlorides: Cl x 58.44/35.45 is the NaCl equivalent in
 mg/l, divided by the brine density at standard conditions (McCain, 1991) to
 give ppm by weight; Rmf75 = 0.0123 + 3647.5 / ppm^0.955 (Bateman and Konen,
 1977); Arps (1953) carries a resistivity to formation temperature,
-R(T) = R(T1) (T1 + 6.77) / (T + 6.77) in degF. The benchmark profile keeps
+R(T) = R(T1) (T1 + 6.77) / (T + 6.77) in degF. The "geolink" profile keeps
 reading the CLFL header as NaCl ppm, ignores MFST and MST, and reads TEMP as degF.
 """
 from types import SimpleNamespace
@@ -43,7 +43,7 @@ from petrophys.workflow.zoned_batch import run_dynamic_workflow_with_zones
 CHLORIDES_MG_L = 30000.0
 NACL_PPM = 47863.9
 RMF_75F = 0.0123 + 3647.5 / NACL_PPM ** 0.955  # 0.13606 ohm.m
-# The same 30,000 read as NaCl ppm, as the benchmark profile reads CLFL.
+# The same 30,000 read as NaCl ppm, as the "geolink" profile reads CLFL.
 RW_75F_30000_PPM = 0.0123 + 3647.5 / 30000.0 ** 0.955  # 0.20565 ohm.m
 TEMPS_F = (150.0, 200.0)
 
@@ -104,7 +104,7 @@ def test_rmf_from_chlorides_matches_the_hand_calculation():
     "profile,method,rmf_75f,setting",
     [
         ("current", "mud_filtrate_chlorides_conversion", RMF_75F, "rmf_chlorides_mg_l"),
-        ("benchmark", "mud_filtrate_salinity_conversion", RW_75F_30000_PPM, "rmf_salinity_ppm"),
+        ("geolink", "mud_filtrate_salinity_conversion", RW_75F_30000_PPM, "rmf_salinity_ppm"),
     ],
 )
 def test_header_clfl_is_read_as_chlorides_except_by_the_benchmark_profile(
@@ -140,7 +140,7 @@ def test_header_clfl_is_read_as_chlorides_except_by_the_benchmark_profile(
     "profile,reason",
     [
         ("current", "rmf_salinity_ppm, rmf_chlorides_mg_l or rm, or provide RMF, CLFL or RM in the LAS header"),
-        ("benchmark", "rmf_salinity_ppm or rm, or provide RMF/RM in the LAS header"),
+        ("geolink", "rmf_salinity_ppm or rm, or provide RMF/RM in the LAS header"),
     ],
 )
 def test_missing_rmf_source_names_the_chloride_setting_under_current_only(profile, reason):
@@ -166,7 +166,7 @@ def test_header_chlorides_in_ppm_are_nacl_ppm_without_a_density_step():
     "profile,method,temp_key,measured_f",
     [
         ("current", "las_metadata_profile_temperature_correction", "measured_temp_f", 68.0),
-        ("benchmark", "las_metadata_assumed_reference_temperature", "reference_temp_f", 75.0),
+        ("geolink", "las_metadata_assumed_reference_temperature", "reference_temp_f", 75.0),
     ],
 )
 def test_mfst_is_the_rmf_temperature_except_under_the_benchmark_profile(
@@ -184,7 +184,7 @@ def test_mfst_is_the_rmf_temperature_except_under_the_benchmark_profile(
     assert result.well.get("RMF").data[-1] == pytest.approx(_arps_f(0.08, measured_f, 200.0))
 
 
-@pytest.mark.parametrize("profile,measured_f", [("current", 60.0), ("benchmark", 75.0)])
+@pytest.mark.parametrize("profile,measured_f", [("current", 60.0), ("geolink", 75.0)])
 def test_mst_is_the_rm_temperature_except_under_the_benchmark_profile(profile, measured_f):
     well = _well()
     well.set_parameter("RM", 0.1)
@@ -310,7 +310,7 @@ def test_standardizer_converts_celsius_temperature_curves():
     "profile,temps_read_f",
     [
         ("current", TEMPS_F),
-        ("benchmark", ((150.0 - 32.0) / 1.8, (200.0 - 32.0) / 1.8)),
+        ("geolink", ((150.0 - 32.0) / 1.8, (200.0 - 32.0) / 1.8)),
     ],
 )
 def test_workflow_reads_a_celsius_temp_curve_except_under_the_benchmark_profile(profile, temps_read_f):

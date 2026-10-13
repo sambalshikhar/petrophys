@@ -1,10 +1,10 @@
-"""Shaly-sand water saturation under the current and the benchmark profile.
+"""Shaly-sand water saturation under the current and the "geolink" profile.
 
 The ``"current"`` profile uses the published equations: the Indonesia equation
 of Poupon and Leveaux (1971); the wet-zone Dual Water form of Clavier, Coates
 and Dumanoir (1984), run only with a supplied Rwb; and Waxman and Smits (1968)
 with CEC given in meq/100 g and its total-porosity Sw reported on the
-effective basis. Oil-based mud writes no SXO or MHI. The ``"benchmark"``
+effective basis. Oil-based mud writes no SXO or MHI. The ``"geolink"``
 profile keeps the eval package's calculations, those of its main run and of
 its re-run alike.
 
@@ -33,7 +33,7 @@ from petrophys.workflow._canonical_calculations import (
     canonical_indonesia,
 )
 
-#: The calculation sets of the benchmark profile: the eval package's main run,
+#: The calculation sets of the "geolink" profile: the eval package's main run,
 #: and its re-run, which its re-run wells and its context export get.
 BENCHMARK_CALCULATIONS = ["main_run", "rerun"]
 SHALY = slice(0, 16)  # VCL 0.35, PHIE 0.20, PHIT 0.25, RDEP 10 ohm.m
@@ -122,7 +122,7 @@ def test_waxman_smits_matches_the_closed_form_for_n_2():
 def test_saturation_module_rwb_and_waxman_smits_options():
     with pytest.raises(ValueError, match="rwb"):
         SaturationModule(model="dual_water", rwb_fallback=None).calculate(_well(), rw=0.05, rcl=2.0)
-    # The benchmark profile's module keeps Rwb = 0.3 Rw and the total-porosity Sw.
+    # The "geolink" profile's module keeps Rwb = 0.3 Rw and the total-porosity Sw.
     module = CanonicalSaturationModule(rwb_fallback=None, effective_waxman_smits=True)
     assert module.rwb_fallback == 0.3
     assert module.effective_waxman_smits is False
@@ -194,7 +194,7 @@ def test_current_workflow_uses_the_poupon_leveaux_indonesia_equation():
 
 @pytest.mark.parametrize("calculations", BENCHMARK_CALCULATIONS)
 def test_benchmark_keeps_the_sand_term_only_indonesia(calculations):
-    result = _run("benchmark", calculations=calculations)
+    result = _run("geolink", calculations=calculations)
     rw = _shaly(result, "RW")
     clay, sand = _indonesia_terms(rw)
     step = _step(result, "saturation")
@@ -236,7 +236,7 @@ def test_current_saturation_trace_describes_only_the_models_that_ran():
 
 @pytest.mark.parametrize("calculations", BENCHMARK_CALCULATIONS)
 def test_benchmark_saturation_trace_keeps_its_archie_and_phi_cl_notes(calculations):
-    decisions = _step(_run("benchmark", calculations=calculations, phi_cl=0.12), "saturation").decisions
+    decisions = _step(_run("geolink", calculations=calculations, phi_cl=0.12), "saturation").decisions
     assert _ARCHIE_ONLY_NOTE in decisions
     assert "Dual Water phi_cl = 0.120 from config" in decisions
 
@@ -303,7 +303,7 @@ def test_current_sends_shaly_carbonate_with_cec_and_b_but_no_rwb_to_waxman_smits
 @pytest.mark.parametrize("inputs", [{}, {"salinity_ppm": 35000.0}, {"cec": 5.0, "b_coeff": 3.8}])
 def test_benchmark_keeps_dual_water_with_rwb_from_rw(calculations, inputs):
     result = _run(
-        "benchmark", calculations=calculations, lithology_domain="carbonate", phi_cl=0.12, **inputs
+        "geolink", calculations=calculations, lithology_domain="carbonate", phi_cl=0.12, **inputs
     )
     rw = _shaly(result, "RW")
     expected = canonical_dual_water(
@@ -322,8 +322,8 @@ def test_explicit_dual_water_needs_rwb():
         _run("current", sw_model="dual_water", raise_on_error=True)
     with pytest.raises(ValueError, match="needs rwb="):
         steps.saturation(model="dual_water")
-    # The benchmark profile keeps Rwb = 0.3 Rw.
-    assert _run("benchmark", sw_model="dual_water").well.get("SW") is not None
+    # The "geolink" profile keeps Rwb = 0.3 Rw.
+    assert _run("geolink", sw_model="dual_water").well.get("SW") is not None
 
 
 # -- Waxman-Smits: CEC units and Sw basis ----------------------------------------------
@@ -346,7 +346,7 @@ def test_current_converts_cec_and_reports_effective_waxman_smits_sw():
 @pytest.mark.parametrize("calculations", BENCHMARK_CALCULATIONS)
 def test_benchmark_passes_cec_unconverted_and_keeps_total_sw(calculations):
     result = _run(
-        "benchmark", calculations=calculations, sw_model="waxman_smits", cec=5.0, b_coeff=3.8, rho_ma=2.65
+        "geolink", calculations=calculations, sw_model="waxman_smits", cec=5.0, b_coeff=3.8, rho_ma=2.65
     )
     rw = _shaly(result, "RW")
     expected = waxman_smits(np.full(16, 0.25), np.full(16, 10.0), rw, 5.0, 2.65, 3.8)
@@ -364,8 +364,8 @@ def test_cec_must_be_a_plausible_meq_per_100_g_value():
     config.cec, config.b_coeff = 500.0, 3.8
     with pytest.raises(ValueError, match="cec must be between 0 and 150"):
         DynamicWorkflow(config).run(_well())
-    # The benchmark profile keeps its validation.
-    assert DynamicWorkflowConfig(cec=500.0, calculation_profile="benchmark").cec == 500.0
+    # The "geolink" profile keeps its validation.
+    assert DynamicWorkflowConfig(cec=500.0, calculation_profile="geolink").cec == 500.0
 
 
 def test_current_warns_about_a_cec_that_looks_like_meq_per_g():
@@ -375,7 +375,7 @@ def test_current_warns_about_a_cec_that_looks_like_meq_per_g():
     assert message in _run("current", cec=0.05, **settings).warnings
     assert not any("clean-sand value" in note for note in _run("current", cec=5.0, **settings).warnings)
     for calculations in BENCHMARK_CALCULATIONS:
-        benchmark = _run("benchmark", calculations=calculations, cec=0.05, **settings)
+        benchmark = _run("geolink", calculations=calculations, cec=0.05, **settings)
         assert not any("clean-sand value" in note for note in benchmark.warnings)
     # steps.saturation warns the same way.
     well = _well()
@@ -441,7 +441,7 @@ def test_current_waxman_smits_pairs_phie_cc_with_a_total_porosity_on_its_basis()
 @pytest.mark.parametrize("calculations", BENCHMARK_CALCULATIONS)
 def test_benchmark_keeps_the_log_phit_beside_phie_cc(calculations):
     result = _run(
-        "benchmark", _core_corrected_well(), calculations=calculations,
+        "geolink", _core_corrected_well(), calculations=calculations,
         sw_model="waxman_smits", cec=5.0, b_coeff=3.8, rho_ma=2.65,
     )
     rw = _shaly(result, "RW")
@@ -502,7 +502,7 @@ def test_current_writes_no_sxo_or_mhi_for_oil_based_mud():
 @pytest.mark.parametrize("calculations", BENCHMARK_CALCULATIONS)
 def test_benchmark_keeps_sxo_and_mhi_for_oil_based_mud(calculations):
     skip = [name for name in _SATURATION_ONLY if name not in ("rmf", "mhi")]
-    result = _run("benchmark", _obm_well(), calculations=calculations, mud_type="OBM", skip_steps=skip)
+    result = _run("geolink", _obm_well(), calculations=calculations, mud_type="OBM", skip_steps=skip)
 
     assert _step(result, "saturation").parameters["sxo_method"] == "archie_rxo_rmf"
     assert result.well.get("SXO") is not None
@@ -552,7 +552,7 @@ def test_current_takes_no_rw_from_sp_or_rxo_rt_with_oil_based_mud(sp):
 @pytest.mark.parametrize("calculations", BENCHMARK_CALCULATIONS)
 @pytest.mark.parametrize("sp", [True, False])
 def test_benchmark_keeps_the_rw_from_the_oil_based_mud_rmf(calculations, sp):
-    step = _rw_step("benchmark", _sp_well(sp), calculations=calculations, mud_type="OBM")
+    step = _rw_step("geolink", _sp_well(sp), calculations=calculations, mud_type="OBM")
 
     assert step.method == ("sp_clean_water" if sp else "rxo_rt_clean_water")
     assert step.parameters["rmf_min"] == 200.0
@@ -588,7 +588,7 @@ def test_context_text_names_the_equation_each_profile_ran():
     assert reference._sw_route_reason_text("indonesia", current).endswith(
         "; non-carbonate, or carbonate without Rwb"
     )
-    # The text of the benchmark profile is the eval package's.
+    # The text of the "geolink" profile is the eval package's.
     assert reference._sw_equation_text(["indonesia"], {}) == (
         "Indonesia 1/sqrt(Rt)=VCL^(1-VCL/2)/sqrt(RCL)+PHIE^(m/2)*Sw^(n/2)/sqrt(a*RW)"
     )
@@ -615,7 +615,7 @@ def test_context_route_text_names_the_route_that_reached_indonesia():
     # A requested model runs on every sample, whatever its VCL.
     requested = {**current, "sw_model_requested": "indonesia"}
     assert reference._sw_route_reason_text("indonesia", requested) == "requested sw_model='indonesia'"
-    # The text of the benchmark profile is the eval package's.
+    # The text of the "geolink" profile is the eval package's.
     benchmark = {"vcl_cutoff_for_routing": 0.3, "salinity_ppm": 35000.0, "sw_model_requested": "indonesia"}
     assert reference._sw_route_reason_text("indonesia", benchmark) == (
         "VCL>=0.3, non-carbonate, no CEC/B, salinity=35000 ppm"
@@ -636,7 +636,7 @@ def test_context_routing_counts_follow_the_rwb_rule_of_the_current_profile():
     saline, lab = {"salinity_ppm": 35000.0}, {"cec": 5.0, "b_coeff": 3.8}
     assert reference._segment_saturation_model_counts(well, {**current, **saline}) == {"simandoux": 20}
     assert reference._segment_saturation_model_counts(well, {**current, **lab}) == {"waxman_smits": 20}
-    # The benchmark profile keeps Dual Water for shaly carbonate.
+    # The "geolink" profile keeps Dual Water for shaly carbonate.
     assert reference._segment_saturation_model_counts(well, {**benchmark, **saline}) == {"dual_water": 20}
     assert reference._segment_saturation_model_counts(well, {**benchmark, **lab}) == {"dual_water": 20}
 
@@ -644,7 +644,7 @@ def test_context_routing_counts_follow_the_rwb_rule_of_the_current_profile():
 # -- The pp.interpret entry point and LAS header values ------------------------------------
 
 
-@pytest.mark.parametrize("profile", ["current", "benchmark"])
+@pytest.mark.parametrize("profile", ["current", "geolink"])
 def test_interpret_indonesia_matches_the_equation_of_its_profile(profile):
     result = pp.interpret(
         _well(), rw=0.05, a=1.0, m=2.0, n=2.0, sw_model="indonesia",
@@ -674,8 +674,8 @@ def test_interpret_reads_a_las_header_cec_in_meq_per_100_g():
     swt = _waxman_smits_n2(0.25, 10.0, rw, 0.05, 3.8)  # 5 meq/100 g = 0.05 meq/g
     assert _step(current, "saturation").parameters["cec"] == 5.0
     np.testing.assert_allclose(_shaly(current, "SW"), 1 - (0.25 / 0.20) * (1 - swt), atol=1e-6)
-    # The benchmark profile passes the header value to the solver as it stands.
-    benchmark = run("benchmark")
+    # The "geolink" profile passes the header value to the solver as it stands.
+    benchmark = run("geolink")
     expected = waxman_smits(np.full(16, 0.25), np.full(16, 10.0), rw, 5.0, 2.65, 3.8)
     np.testing.assert_allclose(_shaly(benchmark, "SW"), expected, rtol=1e-12)
 
@@ -688,7 +688,7 @@ def test_a_las_header_cec_labelled_meq_per_g_is_converted_under_current(unit, ce
         well.set_parameter("CEC__UNIT", unit)
 
     assert _extract_global_parameter_overrides(well)[0]["cec"] == pytest.approx(cec)
-    overrides, _ = _extract_global_parameter_overrides(well, calculation_profile="benchmark")
+    overrides, _ = _extract_global_parameter_overrides(well, calculation_profile="geolink")
     assert overrides["cec"] == 0.05
 
 

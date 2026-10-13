@@ -149,16 +149,16 @@ Evaporite, coal, halite recognized on the logs and bad-hole samples are never ne
 
 `calculation_profile` chooses which calculations run.
 `"current"`, the default, is the interpretation these pages describe.
-`"benchmark"` keeps the calculations that made the GeoLink eval context package, so that the package can be regenerated exactly from the raw LAS files; use it for that, or to compare against the package, not for new interpretations.
+`"geolink"` keeps the calculations that made the GeoLink eval context package, so that the package can be regenerated exactly from the raw LAS files; use it for that, or to compare against the package, not for new interpretations.
 
 The package was made in two runs with different calculations.
-Under `"benchmark"`, interpreting a well uses the calculations of the main run, except for 15/9-17 and 34/10-23, which get those of the re-run; a well is recognized by its UWI or WELL header and, in the zoned batch runner, by its file name.
+Under `"geolink"`, interpreting a well uses the calculations of the main run, except for 15/9-17 and 34/10-23, which get those of the re-run; a well is recognized by its UWI or WELL header and, in the zoned batch runner, by its file name.
 Writing context uses the re-run's calculations for every well.
 `result.to_trace_dict()["config"]["benchmark_calculations"]` says which a well got: `"main_run"` or `"rerun"`.
 
 The main differences from `"current"`:
 
-| | `"current"` (default) | `"benchmark"` |
+| | `"current"` (default) | `"geolink"` |
 |---|---|---|
 | Input curves | standard names and units; implausible values screened | read as delivered |
 | Lithology code curve | one curve gives the vendor lithology, the matrix and the per-depth lithology groups: `lithology_curve`, else `LITHOLOGY_GEOLINK`, else a curve under a lithology-code name | vendor lithology and matrix from the first code curve under a lithology-code name or any name containing LITH or FACIES; per-depth groups from `LITHOLOGY_GEOLINK` alone |
@@ -183,7 +183,7 @@ profiled = [{"setting": item["name"],
 pd.DataFrame(profiled).style.hide(axis="index")
 ```
 
-`carbonate_calibration`, too, resolves to `"generic"` under `"current"` and to `"costa"` under `"benchmark"`.
+`carbonate_calibration`, too, resolves to `"generic"` under `"current"` and to `"costa"` under `"geolink"`.
 From a source checkout, one command regenerates the whole package from the raw LAS files:
 
 ```bash
@@ -280,7 +280,7 @@ fig.tight_layout()
 plt.show()
 ```
 
-The carbonate solve is closed-form over whole arrays, through the apparent matrix density (Clavier and Rust, 1976), so a whole well takes well under a second; the benchmark calculation profile keeps the COSTA notebooks' sample-by-sample solve, which takes about a second on a COSTA interval but minutes on a whole well.
+The carbonate solve is closed-form over whole arrays, through the apparent matrix density (Clavier and Rust, 1976), so a whole well takes well under a second; the "geolink" calculation profile keeps the COSTA notebooks' sample-by-sample solve, which takes about a second on a COSTA interval but minutes on a whole well.
 Where the solved volumes miss RHOB by more than 0.02 g/cm3 (an apparent matrix density outside calcite-dolomite, such as quartz, anhydrite or bad hole), mineral volumes are NaN and QC-flagged; closure alone does not prove a mineral model right.
 
 ## Zoned and batch runs

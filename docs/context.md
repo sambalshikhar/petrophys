@@ -133,16 +133,28 @@ PHI_NORM, RQI, FZI and BVW are then recomputed from the porosity, permeability a
 | `"formation_lithology"` | `<well>/<formation>/<formation>_<group>.json`, plus the interpreted LAS |
 | `"category_formation_lithology"` | `<category>/<well>/<formation>/…_<category>.json` for hydrocarbon, lithology, numerical, permeability, porosity and saturation |
 
-## Published COSTA and Danish packages
+## Published packages: GeoLink, COSTA and Danish
 
-The COSTA and Danish context packages were made by pipelines of their own,
-not by GeoLink's. A context profile runs that pipeline from the delivery's LAS
-files and computes the interpreted LAS and the context with the calculations
-each package used; nothing is copied from a published package. The
-interpreted LAS match the published files byte for byte, and every context
+Without `context_profile`, a package is computed with the library's current
+workflow, as above. A context profile instead reproduces one of the three
+published eval packages: it runs the package's own pipeline from the
+delivery's raw LAS files and computes the interpreted LAS and the context with
+the calculations that package used; nothing is copied from a published
+package. The interpreted LAS match the published files byte for byte (GeoLink:
+31 of 32 wells; 16/10-4's differ at three SW samples), and every context
 number and note matches except the ELECTROFACIES statistics, which come from
-k-means clustering that was unseeded when the packages were made.
+k-means clustering that was unseeded when the packages were made, and, for
+GeoLink's 15/9-17 and 34/10-23, the SO statistics and some note wording of the
+re-run that wrote their context.
 
+- `geolink_v1` (alias `geolink`) covers the 32 GeoLink eval wells. It reads
+  their raw LAS (the package's `eval` folder), the NPD formation tops workbook
+  (`NPD stratigraphic picks north sea.xlsx`) and the GeoLink lithology
+  codebook (`Litho_Nomenclature_Kingdom.xlsx`). It interprets 30 wells with the
+  calculations of the package's main run and 15/9-17 and 34/10-23 with those
+  of its re-run, then writes the context of every well with the re-run's
+  (`calculation_profile="geolink"`, {ref}`calculation profiles
+  <calculation-profiles>`).
 - `costa_v1` (alias `costa`) covers the 17 COSTA wells. Its inputs ship with
   petrophys: the COSTA LAS files (`petrophys/datasets/costa`), the per-well
   interpretation parameters and reference calcite and dolomite volumes
@@ -163,6 +175,14 @@ k-means clustering that was unseeded when the packages were made.
 ```python
 import petrophys as pp
 
+pp.export_context(
+    r"PATH/eval",
+    "outputs/geolink_context",
+    layout="category_formation_lithology",
+    context_profile="geolink",
+    tops_file=r"PATH/NPD stratigraphic picks north sea.xlsx",
+    lithology_mapping_file=r"PATH/Litho_Nomenclature_Kingdom.xlsx",
+)
 pp.export_context(
     None,                              # the COSTA LAS bundled with petrophys
     "outputs/costa_context",
@@ -186,8 +206,11 @@ petrophys-context PATH/danish/las outputs/danish_context \
   --lithology-codes PATH/Litho_Nomenclature_Kingdom.xlsx
 ```
 
-`export_context` writes the context JSON only. The eval script keeps the
-intermediate files too: the interpreted LAS and their workflow traces under
+A profile fixes its package's settings: it takes `well_names`, `pattern`
+(LAS only), `tops_file` and `lithology_mapping_file`, and rejects
+`workflow_config` and the other interpretation options. `export_context`
+writes the context JSON only. The eval script keeps the intermediate files
+too: the interpreted LAS and their workflow traces under
 `<output-dir>/processed_las` and, for the Danish package, the prepared LAS
 under `<output-dir>/prepared_las`. Given one LAS file or a folder, it
 recognizes GeoLink, COSTA or Danish wells by name (`--dataset` overrides):
@@ -197,11 +220,14 @@ python scripts/generate_benchmark_context.py --input-dir PATH/HW-31.las --output
 ```
 
 Use `--well` (or `well_names=[...]`) for a subset, and
-`pp.list_context_profiles()` or `pp.describe_context_profile("danish")` to
-inspect the profiles. Without `context_profile`/`--profile`, a package is
-calculated with the library's current calculations.
+`pp.list_context_profiles()` or `pp.describe_context_profile("geolink")` to
+inspect the profiles.
 
-## DLIS context packages
+## DLIS, CSV and TSV input
+
+Package layouts read each file with `pp.read`, which picks the format from the
+extension: LAS, DLIS, CSV or TSV. `pattern` selects the files (default
+`"*.las"`), and `reader_options` go to the reader.
 
 DLIS uses the same interpretation and category exporters as LAS. For example,
 from a repository checkout, generate all six categories for the deep Daydream-1
@@ -238,6 +264,15 @@ petrophys-context src/petrophys/datasets/daydream outputs/daydream_context_cli \
   --layout category_formation_lithology \
   --pattern daydream1_deep_pex_aps_ppc_ecs.dlis --dlis-step 0.1524
 ```
+
+CSV and TSV files hold one well each, with a depth column (`DEPTH` by
+default; `reader_options={"depth_column": "MD"}` names another). They record
+no depth unit, so give it: `pattern="*.csv", reader_options={"depth_unit": "m"}`
+(CLI: `--pattern "*.csv" --depth-unit m`). They record no curve units or
+header parameters either: give the curves in the library's standard units and
+pass values such as `rw`, `rw_meas_temp_f` and `bht_f` in `workflow_config`,
+which LAS files would carry in their headers. The published-package profiles
+read LAS only.
 
 ## Class labels
 
@@ -277,7 +312,7 @@ petrophys-context logs outputs/context_run_01 --layout category_formation_lithol
 | `--well WELL` | export only these wells (repeatable) |
 | `--recursive`, `--pattern` | search nested folders; choose which files to read |
 | `--min-thickness` | override the grouping threshold |
-| `--profile` | compute the published `costa` or `danish` package from its LAS files (danish also needs `--formations` and `--lithology-codes`) |
+| `--profile` | compute the published `geolink`, `costa` or `danish` package from its raw LAS (geolink and danish also need `--formations` and `--lithology-codes`); without it, the current workflow runs |
 | `--tops-rank`, `--tops-sheet` | pick the formation level (`group`, `formation`, `member`) and the Excel sheet |
 | `--lithology-domain` | broad mineral-solving domain: `clastic`, `carbonate`, `evaporite` or `auto` |
 | `--max-bytes`, `--max-total-bytes` | change the size limits |
@@ -312,27 +347,19 @@ The standardized readers accept CSV, TSV, Excel and DataFrames; {doc}`input_temp
 | Thin groups | groups thinner than `minimum_group_thickness` (default 2.0, in each LAS's own depth unit, which each file gives as `formation_info.depth_unit`) are not written |
 | Carbonate wells | set `lithology_domain` to `carbonate` in LAS metadata, `workflow_config`, or the CLI flag; for COSTA field wells, also `carbonate_calibration="costa"` in `workflow_config` |
 
-## The GeoLink eval package
+## The "geolink" calculations on other wells
 
 Context exported with default settings, by `pp.export_context`, `petrophys-context` or the MCP server, uses the `"current"` calculations.
-The GeoLink eval context package was made with the calculations that the `"benchmark"` calculation profile keeps ({ref}`calculation profiles <calculation-profiles>`).
-To export context with them from Python, pass
+To reproduce the GeoLink package, use `context_profile="geolink"` above.
+To apply the package's calculations to other wells, pass
 
 ```python
-workflow_config=pp.DynamicWorkflowConfig(calculation_profile="benchmark", reuse_input_resflag=True)
+workflow_config=pp.DynamicWorkflowConfig(calculation_profile="geolink", reuse_input_resflag=True)
 ```
 
-to `pp.export_context`.
-Every well is then interpreted with the calculations of the package's re-run, which wrote its context, and `reuse_input_resflag=True` keeps a reservoir flag (`RESFLAG` or `NET_RES`) already on an input well for the SWIRR_APP pick, as the package's context step did with its interpreted LAS files.
+to `pp.export_context` without a context profile.
+Every well is then interpreted with the calculations of the GeoLink package's re-run, which wrote its context, and `reuse_input_resflag=True` keeps a reservoir flag (`RESFLAG` or `NET_RES`) already on an input well for the SWIRR_APP pick, as the package's context step did with its interpreted LAS files.
 Such context is the package's own: class labels that differ between categories, derived logs as the package computed them, and depths without a unit.
-The CLI's `--profile` option selects the COSTA or Danish package described
-above. It does not replace GeoLink's calculation profile.
-
-From a source checkout, one command regenerates the whole package, interpreted LAS files and context, from the raw LAS files:
-
-```bash
-python scripts/generate_benchmark_context.py --from-raw --input-dir PATH/eval --output-dir NEW_DIR
-```
 
 ## Schema and size contracts
 

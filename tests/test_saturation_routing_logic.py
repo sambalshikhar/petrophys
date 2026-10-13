@@ -71,7 +71,7 @@ def test_saturation_module_guesses_rwb_only_when_told_to():
     well = _saturation_well(vcl=0.6)
     with pytest.raises(ValueError, match="rwb"):
         SaturationModule(model="dual_water").calculate(well, rw=0.05, rcl=5.0)
-    # rwb_fallback=0.3 takes Rwb = 0.3 Rw, as the benchmark profile does.
+    # rwb_fallback=0.3 takes Rwb = 0.3 Rw, as the "geolink" profile does.
     guessed = SaturationModule(model="dual_water", rwb_fallback=0.3).calculate(well, rw=0.05, rcl=5.0)
     supplied = SaturationModule(model="dual_water").calculate(well, rw=0.05, rcl=5.0, rwb=0.015)
     np.testing.assert_allclose(guessed.sw, supplied.sw, rtol=1e-12)

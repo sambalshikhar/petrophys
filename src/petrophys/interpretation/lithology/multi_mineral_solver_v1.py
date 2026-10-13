@@ -151,7 +151,7 @@ class MultiMineralSolverV1:
         ``rhob`` (g/cm³), ``nphi`` (v/v), ``u`` (b/cm³) and ``dt`` (μs/ft).
         Rows are divided by these values before the solve; keys left out keep
         :data:`ROW_UNCERTAINTY` (0.01, 0.02, 0.02, 0.5, 2.0). None solves the
-        rows unscaled, the calculation behind the GeoLink benchmark profile.
+        rows unscaled, the calculation behind the "geolink" calculation profile.
 
     Examples
     --------

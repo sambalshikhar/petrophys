@@ -257,7 +257,7 @@ def interpret(
     porosity, water saturation, permeability, net pay, ...). Steps that cannot
     run are skipped with a recorded reason. Where a step has to assume a value
     (a default Rw, a 30 C/km temperature gradient, ...), the trace records it
-    and ``result.warnings`` says so; no bit size is assumed. The benchmark
+    and ``result.warnings`` says so; no bit size is assumed. The ``"geolink"``
     calculation profile (``calculation_profile``) keeps the eval package's
     behaviour instead: no standardization, an 8.5 in bit size where the well
     records none, and of these assumptions only the default Rw is warned
@@ -359,7 +359,7 @@ def interpret(
             name: value
             for name, value in metadata_options.items()
             if getattr(config, name, None) is None
-            # Under the benchmark profile an unset cutoff already holds its
+            # Under the "geolink" profile an unset cutoff already holds its
             # profile default (VCL 0.3, SW 0.7), which a header does not replace.
             and not (profile in _BENCHMARK_PROFILES and name in _PROFILE_DEFAULTS)
         }

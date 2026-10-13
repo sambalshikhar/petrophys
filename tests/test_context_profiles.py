@@ -1,4 +1,4 @@
-"""Computed reproductions of the published COSTA and Danish context packages."""
+"""Computed reproductions of the published GeoLink, COSTA and Danish context packages."""
 
 from __future__ import annotations
 
@@ -23,22 +23,26 @@ COSTA_DIR = Path(pp.__file__).resolve().parent / "datasets" / "costa"
 
 
 def test_context_profiles_are_named_with_aliases():
-    assert pp.list_context_profiles() == ("costa_v1", "danish_v1")
+    assert pp.list_context_profiles() == ("costa_v1", "danish_v1", "geolink_v1")
     assert pp.get_context_profile("costa") is pp.get_context_profile("costa-v1")
     assert pp.get_context_profile("danish").name == "danish_v1"
+    assert pp.get_context_profile("GeoLink").name == "geolink_v1"
     costa = pp.describe_context_profile("costa")
     assert costa["well_count"] == 17 and costa["required_inputs"] == []
-    danish = pp.describe_context_profile("danish")
-    assert danish["required_inputs"] == ["tops_file", "lithology_mapping_file"]
+    for name, wells in (("danish", 5), ("geolink", 32)):
+        described = pp.describe_context_profile(name)
+        assert described["well_count"] == wells
+        assert described["required_inputs"] == ["tops_file", "lithology_mapping_file"]
     with pytest.raises(ValueError, match="Unknown context profile"):
-        pp.get_context_profile("geolink")
+        pp.get_context_profile("benchmark")
 
 
 def test_identify_context_profile_by_well_names(tmp_path):
     assert pp.identify_context_profile(COSTA_DIR / "HW-31.las") is pp.get_context_profile("costa")
     assert pp.identify_context_profile(COSTA_DIR) is pp.get_context_profile("costa")
     assert pp.identify_context_profile(tmp_path, well_names=["elin-1", "IDA-1"]).name == "danish_v1"
-    assert pp.identify_context_profile(tmp_path, well_names=["30_6-5"]) is None
+    assert pp.identify_context_profile(tmp_path, well_names=["30_6-5", "15/9-17", "16_2-11 a"]).name == "geolink_v1"
+    assert pp.identify_context_profile(tmp_path, well_names=["30/6-6"]) is None
     assert pp.identify_context_profile(tmp_path, well_names=["elin-1", "HW-3"]) is None
 
 
@@ -56,6 +60,72 @@ def test_export_context_profile_checks_wells_and_danish_inputs(tmp_path):
 def test_profile_is_only_available_for_category_packages(tmp_path):
     with pytest.raises(ValueError, match="requires layout='category_formation_lithology'"):
         pp.export_context(tmp_path, tmp_path / "out", layout="formation_lithology", context_profile="costa")
+
+
+def test_profile_fixes_its_package_settings(tmp_path):
+    category = {"layout": "category_formation_lithology", "context_profile": "costa"}
+    with pytest.raises(ValueError, match="remove workflow_config"):
+        pp.export_context(None, tmp_path / "a", workflow_config=DynamicWorkflowConfig(), **category)
+    with pytest.raises(ValueError, match="remove minimum_group_thickness"):
+        pp.export_context(None, tmp_path / "b", minimum_group_thickness=3.0, **category)
+    with pytest.raises(ValueError, match="reproduces a LAS delivery"):
+        pp.export_context(None, tmp_path / "c", pattern="*.dlis", **category)
+    with pytest.raises(ValueError, match="geolink_v1 requires tops_file"):
+        context_profiles.export_context_profile(
+            tmp_path, tmp_path / "d", context_profile="geolink", work_dir=tmp_path / "work"
+        )
+
+
+def test_geolink_profile_runs_the_benchmark_pipeline(tmp_path):
+    raw = tmp_path / "eval"
+    raw.mkdir()
+    (raw / "HW-3.las").write_bytes((COSTA_DIR / "HW-3.las").read_bytes())
+    pd.DataFrame([{"Well": "HW-3", "Formation": "KHARAIB-2 FM. TOP", "MD_Top": 7805.0}]).to_excel(
+        tmp_path / "tops.xlsx", index=False
+    )
+    pd.DataFrame(
+        [{"Attribute": "Limestone", "Lithology Attribute": "Limestone", "Abbreviation": 11},
+         {"Attribute": "Dolomite", "Lithology Attribute": "Dolomite", "Abbreviation": 15}]
+    ).to_excel(tmp_path / "codes.xlsx", index=False)
+
+    output = tmp_path / "context"
+    pp.export_context(
+        raw, output, layout="category_formation_lithology", context_profile="geolink",
+        tops_file=tmp_path / "tops.xlsx", lithology_mapping_file=tmp_path / "codes.xlsx",
+    )
+    categories = {path.parts[-4] for path in output.rglob("*.json") if path.name != "curve_name_mapping.json"}
+    assert categories == {"hydrocarbon", "lithology", "numerical", "permeability", "porosity", "saturation"}
+    assert {path.parts[-2] for path in output.rglob("*_numerical.json")} == {"KHARAIB-2 FM. TOP"}
+
+    work = tmp_path / "work"
+    context_profiles.export_context_profile(
+        raw, tmp_path / "context2", context_profile="geolink", work_dir=work,
+        tops_file=tmp_path / "tops.xlsx", lithology_mapping_file=tmp_path / "codes.xlsx",
+    )
+    # The benchmark writer: temperature parameters without unit or description.
+    interpreted = (work / "processed_las" / "HW-3.las").read_text(encoding="utf-8")
+    assert "temperature_gradient" in interpreted and "degF/100ft" not in interpreted
+
+
+def test_export_context_without_a_profile_runs_the_current_workflow(tmp_path):
+    raw = tmp_path / "las"
+    raw.mkdir()
+    (raw / "HW-3.las").write_bytes((COSTA_DIR / "HW-3.las").read_bytes())
+    seen = []
+    from petrophys.reporting import reference_export
+
+    original = reference_export._run_context_workflow
+
+    def spy(well, config):
+        seen.append(config.calculation_profile)
+        return original(well, config)
+
+    reference_export._run_context_workflow = spy
+    try:
+        pp.export_context(raw, tmp_path / "out", layout="category_formation_lithology")
+    finally:
+        reference_export._run_context_workflow = original
+    assert seen == ["current"]
 
 
 def test_context_cli_exposes_profiles_only_on_category_layout():
@@ -240,7 +310,7 @@ def test_danish_calculations_take_an_rw_without_temperature_at_75f():
         ("RDEP", 5 + rng.random(depth.size), "ohm.m"),
     ):
         well.add_curve(name, values, unit, name)
-    config = DynamicWorkflowConfig(calculation_profile="benchmark", rw=0.065, bht_f=200.0)
+    config = DynamicWorkflowConfig(calculation_profile="geolink", rw=0.065, bht_f=200.0)
     with _dataset_calculations("danish"):
         result = run_dynamic_workflow(well, config=config)
     step = next(step for step in result.steps_executed if step.step == "rw")

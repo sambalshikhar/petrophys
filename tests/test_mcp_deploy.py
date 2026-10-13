@@ -94,13 +94,13 @@ def test_serve_pins_a_calculation_profile(monkeypatch, capsys, tmp_path):
 
     monkeypatch.setattr(server, "create_server", create_server)
     monkeypatch.delenv(PROFILE_ENV_VAR, raising=False)
-    assert cli.main(["serve", "--root", str(tmp_path), "--calculation-profile", "benchmark"]) == 0
-    assert seen == {"calculation_profile": "benchmark", "ran": True}
+    assert cli.main(["serve", "--root", str(tmp_path), "--calculation-profile", "geolink"]) == 0
+    assert seen == {"calculation_profile": "geolink", "ran": True}
 
     seen.clear()
-    monkeypatch.setenv(PROFILE_ENV_VAR, "BENCHMARK")
+    monkeypatch.setenv(PROFILE_ENV_VAR, "GEOLINK")
     assert cli.main(["--root", str(tmp_path)]) == 0
-    assert seen["calculation_profile"] == "benchmark"
+    assert seen["calculation_profile"] == "geolink"
 
     monkeypatch.setenv(PROFILE_ENV_VAR, "benchmark_rerun")
     assert cli.main(["serve", "--root", str(tmp_path)]) == 2

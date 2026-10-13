@@ -136,7 +136,7 @@ table uses them.
        :class:`pp.PermeabilityAnalysis <petrophys.evaluation.diagnostics.PermeabilityAnalysis>`,
        :class:`pp.SaturationAnalysis <petrophys.evaluation.diagnostics.SaturationAnalysis>`
      - Category analyses of an interpreted well. ``class_tables="current"``
-       (default) classifies with the canonical tables; ``"benchmark"`` keeps
+       (default) classifies with the canonical tables; ``"geolink"`` keeps
        the tables and texts of the GeoLink eval package. All but the
        saturation analysis grade reservoir quality with the limits of
        ``lithology_family`` (``"clastic"``, ``"carbonate"`` or a lithology,

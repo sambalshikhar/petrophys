@@ -38,12 +38,12 @@ class HydrocarbonAnalysis:
     ----------
     porosity_curves : list of str, optional
         Porosity curve preference, in order; default PHIE_CC, PHIE, PHIT.
-    class_tables : {"current", "benchmark"}, default "current"
+    class_tables : {"current", "geolink"}, default "current"
         ``"current"`` grades water saturation, MHI and reservoir quality with
         the canonical tables of :data:`~petrophys.model.class_tables.CLASS_TABLES`:
         LOW_SW is any water-saturation class short of WATER_BEARING, and
         reservoir quality reads effective porosity, permeability and clay
-        volume. ``"benchmark"`` keeps the GeoLink eval package's rules and texts
+        volume. ``"geolink"`` keeps the GeoLink eval package's rules and texts
         (LOW_SW below SW 0.50; reservoir quality from porosity and permeability,
         UNDETERMINED where either is missing).
     lithology_family : str or sequence of str, optional
@@ -53,7 +53,7 @@ class HydrocarbonAnalysis:
     """
 
     CATEGORY_KEY = "HYDROCARBON_ANALYSIS"
-    # The benchmark's MHI classes (Bands: base label, then each step in order).
+    # The "geolink" profile's MHI classes (Bands: base label, then each step in order).
     # An analyzer with the "current" class tables holds the canonical table.
     MHI_BANDS = Bands("HIGH_MOVEABLE_HC", ((">=", 0.5, "MODERATE_MOVEABLE_HC"), (">=", 0.7, "LOW_MOVEABLE_HC"),
                                            (">=", 0.9, "MINIMAL_MOVEABLE_HC")))
@@ -77,7 +77,7 @@ class HydrocarbonAnalysis:
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
-        benchmark = self.class_tables == "benchmark"
+        benchmark = self.class_tables == "geolink"
         n_samples = well.n_samples
         sw, _ = get_curve_data(well, ["SWA", "SW", "SWT-LOG"])
         mhi, _ = get_curve_data(well, ["MHI"])

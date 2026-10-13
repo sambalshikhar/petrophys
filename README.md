@@ -215,7 +215,7 @@ petrophys-mcp check --root /path/to/wells                      # verify folders 
 The model calls the same validated workflow as `pp.interpret`; invalid settings
 come back with the accepted values, and file access is limited to the `--root`
 folders. To interpret with the calculations of the GeoLink eval context
-benchmark, start the server with `--calculation-profile benchmark` (see
+benchmark, start the server with `--calculation-profile geolink` (see
 [Calculation profiles](#calculation-profiles)). See the
 [LLM agents guide](https://petrophys.netlify.app/mcp). For
 code-generating assistants, the docs also serve
@@ -292,11 +292,11 @@ cutoffs alone).
 ## Calculation profiles
 
 `calculation_profile` selects the calculations. `"current"`, the default, is
-the interpretation this README describes. `"benchmark"` keeps the calculations
+the interpretation this README describes. `"geolink"` keeps the calculations
 behind the GeoLink eval context benchmark package fixed, so that
 `scripts/generate_benchmark_context.py` regenerates the package from the raw
 LAS files exactly (see [scripts/README.md](scripts/README.md)). The package was
-made in two runs, a main run and a re-run. Under `"benchmark"`, interpreting a
+made in two runs, a main run and a re-run. Under `"geolink"`, interpreting a
 well uses the main run's calculations, except for wells 15/9-17 and 34/10-23
 (recognized by their UWI or WELL header, or in batch runs by file name), which
 get the re-run's; writing context uses the re-run's calculations for every
@@ -309,30 +309,32 @@ net pay. The `calculation_profile` setting of `DynamicWorkflowConfig`
 documents every difference.
 
 Context packages from `pp.export_context` or the `petrophys-context` command,
-and the MCP server, use `"current"` by default. For the package's calculations,
-give `pp.export_context` the setting
-`workflow_config=pp.DynamicWorkflowConfig(calculation_profile="benchmark", reuse_input_resflag=True)`;
-`scripts/generate_benchmark_context.py` uses the same setting and adds the
-package's other inputs. `petrophys-mcp serve --calculation-profile benchmark`,
+and the MCP server, use `"current"` by default. To reproduce the package, use
+the `geolink` context profile below. `petrophys-mcp serve --calculation-profile geolink`,
 or the `PETROPHYS_CALCULATION_PROFILE` environment variable, gives the MCP
-server's interpretations the benchmark profile, e.g. for an evaluation harness;
+server's interpretations the "geolink" profile, e.g. for an evaluation harness;
 a profile in a tool call's settings still takes precedence. Only the MCP server
 reads that variable; `pp.interpret` and `petrophys-context` ignore it.
 
-The published COSTA and Danish context packages were made by pipelines of
-their own. A context profile runs that pipeline from the delivery's LAS files
-and computes the package with the calculations it used:
+Each published eval package, GeoLink, COSTA or Danish, has a context profile
+that runs the package's own pipeline from its raw LAS files and computes it
+with the calculations it used. Without a profile, the current workflow runs:
 
 ```python
+pp.export_context(
+    "PATH/eval", "outputs/geolink_context",
+    layout="category_formation_lithology", context_profile="geolink",
+    tops_file="PATH/NPD stratigraphic picks north sea.xlsx",
+    lithology_mapping_file="PATH/Litho_Nomenclature_Kingdom.xlsx",
+)
 pp.export_context(
     None, "outputs/costa_context",  # None: the COSTA LAS bundled with petrophys
     layout="category_formation_lithology", context_profile="costa",
 )
 ```
 
-The Danish profile also takes its tops workbook and the GeoLink lithology
-codebook (`tops_file=`, `lithology_mapping_file=`). Use
-`pp.list_context_profiles()` and `pp.describe_context_profile("danish")` to
+The Danish profile takes its raw LAS, its tops workbook and the same codebook.
+Use `pp.list_context_profiles()` and `pp.describe_context_profile("danish")` to
 inspect them. One script reproduces any of the three eval collections from a
 LAS file or folder, keeping the interpreted LAS as well:
 

@@ -34,19 +34,19 @@ class SaturationAnalysis:
 
     Parameters
     ----------
-    class_tables : {"current", "benchmark"}, default "current"
+    class_tables : {"current", "geolink"}, default "current"
         ``"current"`` grades water saturation, BVW, MHI and Rxo/Rt with the
         canonical tables of :data:`~petrophys.model.class_tables.CLASS_TABLES`
         (a sample without MHI is NO_MHI_DATA; the invasion fallback classifies
         the workflow's INVASION_RATIO when the well has one) and places the
-        stable contact zones on the water-saturation classes. ``"benchmark"``
+        stable contact zones on the water-saturation classes. ``"geolink"``
         keeps the GeoLink eval package's classes and texts: the class
         attributes below, with every sample without MHI labelled
         MINIMAL_MOVEABLE_HC as the package was.
     """
 
     CATEGORY_KEY = "SATURATION_AND_FLUID_DISTRIBUTION"
-    # The benchmark's one-curve classes of the sections below (Bands: base label,
+    # The "geolink" profile's one-curve classes of the sections below (Bands: base label,
     # then each step in order). An analyzer with the "current" class tables holds
     # the canonical tables under the same names.
     WATER_SATURATION_BANDS = Bands("WATER_BEARING", (("<", 0.60, "FAIR_HC_SATURATION"), ("<", 0.40, "GOOD_HC_SATURATION"),
@@ -71,7 +71,7 @@ class SaturationAnalysis:
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
-        benchmark = self.class_tables == "benchmark"
+        benchmark = self.class_tables == "geolink"
         n_samples = well.n_samples
         sw, sw_source = get_curve_data(well, ["SWA", "SW", "SWT-LOG"])
         sxo, sxo_source = get_curve_data(well, ["SWXOA", "SXO", "SXO-LOG"])

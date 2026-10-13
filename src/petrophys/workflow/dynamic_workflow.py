@@ -238,7 +238,7 @@ LITHOLOGY_GROUP_TO_MATRIX = {
     "coal": "coal",
 }
 
-# The "current" calculations regroup a few GeoLink codes; the benchmark profile
+# The "current" calculations regroup a few GeoLink codes; the "geolink" profile
 # keeps GROUND_TRUTH_CODE_TO_GROUP. Code 10 is "Porous Limestone" in the Kingdom
 # lithology codebook ("Calcareous Sandstone" is only its display pattern) and
 # logs as a carbonate; code 26, "Gap", records no lithology. The potash salts
@@ -703,7 +703,7 @@ class DynamicWorkflowConfig:
     #: mnemonics get canonical aliases, units such as kg/m3 or percent
     #: porosity are converted and implausible values are screened, with a
     #: warning. None (default) means True under the ``"current"`` calculation
-    #: profile and False under the benchmark profile.
+    #: profile and False under the "geolink" profile.
     standardize_input: Optional[bool] = None
     #: Rename vendor mnemonics to canonical names instead of adding aliases.
     rename_input_curves: bool = False
@@ -724,7 +724,7 @@ class DynamicWorkflowConfig:
     # -- Mud properties ------------------------------------------------------
     #: ``"WBM"`` (water-based) or ``"OBM"`` (oil-based) mud. With oil-based mud
     #: no SXO or MHI is computed, and Rw is not estimated from the SP or Rxo/Rt:
-    #: they need a conductive water-based filtrate (the benchmark profile
+    #: they need a conductive water-based filtrate (the "geolink" profile
     #: computes them).
     mud_type: str = "WBM"
     #: The mud contains clay or KCl, which disables SP-based Rw estimation.
@@ -733,20 +733,20 @@ class DynamicWorkflowConfig:
     rmf_at_meas_temp: Optional[float] = None
     #: Temperature at which ``rmf_at_meas_temp`` was measured, degF. Left at
     #: the default, the LAS header RMFT is used, or else MFST (mud filtrate
-    #: sample temperature), which the benchmark profile does not read.
+    #: sample temperature), which the "geolink" profile does not read.
     rmf_meas_temp_f: float = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
     #: Mud-filtrate salinity, ppm NaCl equivalent (alternative to Rmf).
     rmf_salinity_ppm: Optional[float] = None
     #: Mud-filtrate chlorides (Cl-), mg/l, as on the mud report and the LAS
     #: header CLFL. Without Rmf or ``rmf_salinity_ppm``, Rmf comes from its NaCl
     #: equivalent: Cl x 58.44/35.45, divided by the brine density to give ppm
-    #: by weight. The benchmark profile reads CLFL as ``rmf_salinity_ppm``.
+    #: by weight. The "geolink" profile reads CLFL as ``rmf_salinity_ppm``.
     rmf_chlorides_mg_l: Optional[float] = None
     #: Mud resistivity Rm at ``rm_meas_temp_f``, ohm.m (Rmf is derived from it).
     rm: Optional[float] = None
     #: Temperature at which ``rm`` was measured, degF. Left at the default, the
     #: LAS header RMT is used, or else MST (mud sample temperature), which the
-    #: benchmark profile does not read.
+    #: "geolink" profile does not read.
     rm_meas_temp_f: float = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
     #: ``"fresh"`` or ``"salt"`` mud, which sets the Rm-to-Rmf factor.
     mud_water: str = "fresh"
@@ -808,13 +808,13 @@ class DynamicWorkflowConfig:
     #: whole numbers from 0 to 99, at most 50 distinct, half or more of them
     #: GeoLink codes. A warning names a curve other than ``LITHOLOGY_GEOLINK``,
     #: and a curve set here that has no finite samples. Unless this is set, the
-    #: benchmark profile takes its per-depth lithology groups from
+    #: "geolink" profile takes its per-depth lithology groups from
     #: ``LITHOLOGY_GEOLINK`` alone (see ``calculation_profile``).
     lithology_curve: Optional[str] = None
     #: Mineral solver for the clastic mineral step. ``1`` (default) is
     #: :class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`, the
     #: original solver: VCL and PHIE are fixed inputs, each equation row is
-    #: weighted by its nominal tool uncertainty (unweighted under the benchmark
+    #: weighted by its nominal tool uncertainty (unweighted under the "geolink"
     #: profile), and samples that fail the 0.05 closure gate are left
     #: unsolved. ``2`` is
     #: :class:`~petrophys.interpretation.lithology.MultiMineralSolver`, which
@@ -827,7 +827,7 @@ class DynamicWorkflowConfig:
     #: ``rho_fl``, calcite 2.71 and dolomite 2.87 g/cm3. ``"costa"``: the COSTA
     #: field calibration, illite from GR (``-0.0424035 + 0.00562239 * GR``),
     #: total porosity, a 1.19 g/cm3 brine and a 2.847 g/cm3 dolomite. Default:
-    #: ``"generic"``; ``"costa"`` under the benchmark profile. Both read the
+    #: ``"generic"``; ``"costa"`` under the "geolink" profile. Both read the
     #: porosity step's PHIE or PHIT, computed with the ``matrix_type`` density,
     #: so the calcite-dolomite split largely follows ``matrix_type`` where that
     #: porosity is density-derived.
@@ -848,7 +848,7 @@ class DynamicWorkflowConfig:
     #: Waxman-Smits runs only with ``cec`` and ``b_coeff``, from lab data or the
     #: LAS header, where a CEC in MEQ/G is converted; neither is estimated. A
     #: value under 1 gets a warning, as meq/g values look like that. The
-    #: benchmark profile passes ``cec`` to the solver as meq/g.
+    #: "geolink" profile passes ``cec`` to the solver as meq/g.
     cec: Optional[float] = None
     #: Equivalent counter-ion conductance B, (S/m)/(meq/cm3): at 25 degC
     #: 4.6 * (1 - 0.6 * exp(-0.77 / Rw)) (Waxman and Smits, 1968), and higher at
@@ -863,7 +863,7 @@ class DynamicWorkflowConfig:
     #: samples without it the clastic routing (Waxman-Smits with ``cec`` and
     #: ``b_coeff``, Simandoux at a ``salinity_ppm`` of 20000 or more, otherwise
     #: Indonesia), and ``sw_model="dual_water"`` stops with an error. Rwb is not
-    #: estimated (the benchmark profile takes 0.3 Rw).
+    #: estimated (the "geolink" profile takes 0.3 Rw).
     rwb: Optional[float] = None
     #: Clay (shale) porosity, v/v. A value given here is used as it stands. Left
     #: at the default, it is derived from the well's shale samples where they
@@ -888,12 +888,12 @@ class DynamicWorkflowConfig:
     # -- Net-pay cutoffs (None: lithology-family standards) --------------------
     #: Maximum clay volume for net rock, v/v. Unset, each sample takes the
     #: standard of its lithology family (``STANDARD_CUTOFFS``: 0.40 clastic,
-    #: 0.30 carbonate); the benchmark profile uses 0.3. Unless
+    #: 0.30 carbonate); the "geolink" profile uses 0.3. Unless
     #: ``sw_routing_vcl_cutoff`` is set, saturation switches to a shaly-sand
     #: model above this clay volume, or above 0.3 when it is unset.
     vcl_cutoff: Optional[float] = None
     #: Maximum water saturation for net pay, v/v. Unset: 0.60 clastic, 0.70
-    #: carbonate; 0.7 under the benchmark profile.
+    #: carbonate; 0.7 under the "geolink" profile.
     sw_cutoff: Optional[float] = None
     #: Minimum effective porosity for net reservoir, v/v. Unset: 0.08 clastic,
     #: 0.045 carbonate.
@@ -922,7 +922,7 @@ class DynamicWorkflowConfig:
     #: that reading. Without them VCL_SP is reported and only fills depths with
     #: no GR or neutron-density value. A warning flags user baselines whose
     #: order contradicts the SP polarity; the automatic P5/P95 picks assume a
-    #: normal SP and are not checked. The benchmark profile always puts VCL_SP
+    #: normal SP and are not checked. The "geolink" profile always puts VCL_SP
     #: in the minimum.
     sp_max: Optional[float] = None
 
@@ -937,7 +937,7 @@ class DynamicWorkflowConfig:
     #: clean line leaves VCL_ND out of VCL, with a warning. VCL_ND is measured
     #: from the clean line of the run's matrix at every depth, carbonate beds
     #: of a clastic well included. Zoned runs give every zone the whole-well
-    #: point. The benchmark profile uses (2.62, 0.38) and ignores this setting.
+    #: point. The "geolink" profile uses (2.62, 0.38) and ignores this setting.
     nd_clay: Optional[Tuple[float, float]] = None
 
     # -- Permeability --------------------------------------------------------
@@ -957,12 +957,12 @@ class DynamicWorkflowConfig:
     swirr_flag_phi_cl: str = "workflow"
     # -- Calculation profile -------------------------------------------------
     #: Which calculations run. ``"current"`` (default) is the maintained
-    #: interpretation. ``"benchmark"`` keeps the calculations behind the GeoLink
+    #: interpretation. ``"geolink"`` keeps the calculations behind the GeoLink
     #: eval package fixed, so the package can be regenerated from the raw logs
     #: exactly (see ``scripts/generate_benchmark_context.py``). The package was
     #: made in two runs with different calculations: its main run interpreted
     #: 30 of the 32 wells, and a re-run interpreted 15/9-17 and 34/10-23 and
-    #: wrote the context of every well. Under ``"benchmark"``:
+    #: wrote the context of every well. Under ``"geolink"``:
     #:
     #: * interpreting a well (``petrophys.interpret``, ``run_dynamic_workflow``,
     #:   ``DynamicWorkflow``, the zoned batch runner, the MCP server) uses the
@@ -1102,7 +1102,7 @@ class DynamicWorkflowConfig:
     #: equation rather than Archie. None (default) uses ``vcl_cutoff``, or 0.3
     #: when that is unset. Unset net-pay cutoffs resolve per lithology family
     #: under ``"current"`` (clastic VCL < 0.40), so net rock with 0.3-0.4 clay
-    #: gets the shaly-sand equations; under the benchmark profile (VCL < 0.3)
+    #: gets the shaly-sand equations; under the "geolink" profile (VCL < 0.3)
     #: every net-rock sample is evaluated with Archie. A lower value, e.g. 0.15,
     #: also applies the shaly-sand equations to moderately shaly reservoir rock.
     #: Under ``"current"`` the SWIRR_APP samples are picked below the same clay
@@ -1167,19 +1167,26 @@ _MINERAL_SOLVER_VERSIONS = (1, 2)
 _CARBONATE_CALIBRATIONS = ("generic", "costa")
 #: Profiles that keep the eval package's calculations (see
 #: DynamicWorkflowConfig.calculation_profile).
-_BENCHMARK_PROFILES = ("benchmark",)
+_BENCHMARK_PROFILES = ("geolink",)
 _CALCULATION_PROFILES = ("current", *_BENCHMARK_PROFILES)
+#: The former name of the "geolink" profile, refused with a pointer to it.
+_RENAMED_PROFILE = "benchmark"
+_RENAMED_PROFILE_MESSAGE = (
+    'calculation_profile "benchmark" is now "geolink": the calculations of the GeoLink '
+    'eval package. To reproduce a published context package, use context_profile '
+    '("geolink", "costa" or "danish") in export_context.'
+)
 #: The eval package's wells that its re-run interpreted, as compared by
-#: :func:`_normalized_well_name`. The benchmark profile gives them the re-run's
+#: :func:`_normalized_well_name`. The "geolink" profile gives them the re-run's
 #: calculations.
 _RERUN_WELLS = frozenset({"15_9-17", "34_10-23"})
-#: True inside :func:`_rerun_calculations`: the benchmark profile then gives
+#: True inside :func:`_rerun_calculations`: the "geolink" profile then gives
 #: every well the calculations of the eval package's re-run.
 _RERUN_CALCULATIONS_REQUESTED: ContextVar[bool] = ContextVar(
     "petrophys_rerun_calculations_requested", default=False
 )
 #: The published context packages besides GeoLink's whose calculations the
-#: benchmark profile keeps. Both were interpreted with the calculations of the
+#: "geolink" profile keeps. Both were interpreted with the calculations of the
 #: GeoLink re-run; the COSTA package also with the two saturation rules of
 #: :meth:`DynamicWorkflow._costa_saturation`.
 _DATASET_CALCULATIONS = ("danish", "costa")
@@ -1188,7 +1195,7 @@ _DATASET_CALCULATIONS_REQUESTED: ContextVar[Optional[str]] = ContextVar(
     "petrophys_dataset_calculations_requested", default=None
 )
 #: Settings whose default depends on ``calculation_profile``, as (default under
-#: ``"current"``, default under the benchmark profile). A setting left as None
+#: ``"current"``, default under the "geolink" profile). A setting left as None
 #: takes the default of its profile; a value set explicitly always wins. Unset
 #: net-pay cutoffs stay None under ``"current"``: net pay resolves them per
 #: lithology family.
@@ -1198,15 +1205,15 @@ _PROFILE_DEFAULTS: Dict[str, Tuple[Any, Any]] = {
     "sw_cutoff": (None, 0.7),
 }
 #: Rxo/Rt classes behind the invasion step's conductive, minimal and resistive
-#: percentages under the benchmark profile: the eval package's table, a frozen
+#: percentages under the "geolink" profile: the eval package's table, a frozen
 #: copy kept apart from the canonical CLASS_TABLES["RXO_RT"].
 _BENCHMARK_INVASION_BANDS = Bands(
     "MINIMAL_INVASION", (("<", 0.8, "CONDUCTIVE_INVASION"), (">", 1.2, "RESISTIVE_INVASION"))
 )
-#: The curve the invasion ratio reads first under the benchmark profile: the
+#: The curve the invasion ratio reads first under the "geolink" profile: the
 #: shallow RSHA, then RXO and RESS. "current" reads the flushed-zone RXO first.
 _BENCHMARK_RXO_CURVE = "RSHA"
-# Matrix slowness (us/ft) that the benchmark profile uses in place of the
+# Matrix slowness (us/ft) that the "geolink" profile uses in place of the
 # shared mineral table's chartbook values: coal 250 (table 120) everywhere, and
 # gypsum 83 (table 52.5) for the gypsum lithology group.
 _BENCHMARK_SLOWNESS = {"coal": 250.0}
@@ -1298,6 +1305,8 @@ def _normalized_choice(
         setattr(config, name, canonical[key])
     elif key in {alias.lower() for alias in aliases}:
         setattr(config, name, key)
+    elif name == "calculation_profile" and key == _RENAMED_PROFILE:
+        errors.append(_RENAMED_PROFILE_MESSAGE)
     else:
         errors.append(_choice_error(name, value, choices))
 
@@ -1349,7 +1358,7 @@ def _validate_lithology_curve(config: "DynamicWorkflowConfig", errors: List[str]
 
 
 def _normalized_well_name(name: Any) -> str:
-    """A well name as the benchmark routing compares it.
+    """A well name as the "geolink" routing compares it.
 
     Case and surrounding spaces are ignored and ``/`` reads as ``_``; the rest
     must match, so ``"15/9-17 A"`` is not ``"15_9-17"``.
@@ -1379,7 +1388,7 @@ def _is_rerun_well(well: "Well", file_stem: Optional[str] = None) -> bool:
 
 @contextmanager
 def _rerun_calculations(enabled: bool = True) -> Iterator[None]:
-    """Give every benchmark run inside the block the calculations of the eval package's re-run.
+    """Give every "geolink" run inside the block the calculations of the eval package's re-run.
 
     The context exporters enter it around their workflow runs, as the re-run
     wrote the package's context; the zoned batch runner enters it for a re-run
@@ -1398,7 +1407,7 @@ def _rerun_calculations(enabled: bool = True) -> Iterator[None]:
 
 @contextmanager
 def _dataset_calculations(dataset: str) -> Iterator[None]:
-    """Give every benchmark run inside the block the calculations of ``dataset``'s package.
+    """Give every "geolink" run inside the block the calculations of ``dataset``'s package.
 
     ``dataset`` is ``"danish"`` or ``"costa"`` (:data:`_DATASET_CALCULATIONS`).
     Both packages were interpreted with the calculations of the GeoLink
@@ -1415,10 +1424,10 @@ def _dataset_calculations(dataset: str) -> Iterator[None]:
 
 
 def _uses_rerun_calculations(well: "Well", file_stem: Optional[str] = None) -> bool:
-    """True when a benchmark run of ``well`` gets the calculations of the eval package's re-run.
+    """True when a "geolink" run of ``well`` gets the calculations of the eval package's re-run.
 
     That is inside :func:`_rerun_calculations`, or for one of the package's
-    re-run wells (:func:`_is_rerun_well`); every other benchmark run gets the
+    re-run wells (:func:`_is_rerun_well`); every other "geolink" run gets the
     calculations of the package's main run.
     """
     return _RERUN_CALCULATIONS_REQUESTED.get() or _is_rerun_well(well, file_stem)
@@ -1436,8 +1445,8 @@ def _profile_setting(config: DynamicWorkflowConfig, field_name: str) -> Any:
 def _left_at_default(config: DynamicWorkflowConfig, field_name: str) -> bool:
     """True when a setting is unset or still has its default value.
 
-    Under the benchmark profile a setting of :data:`_PROFILE_DEFAULTS` that
-    holds its benchmark value (e.g. ``vcl_cutoff=0.3``) also counts as left
+    Under the "geolink" profile a setting of :data:`_PROFILE_DEFAULTS` that
+    holds its "geolink" value (e.g. ``vcl_cutoff=0.3``) also counts as left
     at the default, as the eval package's calculations treat it.
     """
     import dataclasses
@@ -1658,7 +1667,7 @@ class DynamicWorkflowResult:
     rmf_computed: Optional[Union[float, np.ndarray]] = None
     rcl_computed: Optional[float] = None
     temperature_gradient: Optional[float] = None
-    # The eval package's calculations a benchmark run gave the well, "main_run"
+    # The eval package's calculations a "geolink" run gave the well, "main_run"
     # or "rerun" (None under "current"); the trace reports them.
     _benchmark_calculations: Optional[str] = field(
         default=None, init=False, repr=False, compare=False
@@ -2169,7 +2178,7 @@ class DynamicWorkflow:
     def _start_result(self, well: "Well") -> DynamicWorkflowResult:
         """Open the result of a run on ``well``, resolving its benchmark calculations.
 
-        Under the benchmark profile the well gets the calculations of the eval
+        Under the "geolink" profile the well gets the calculations of the eval
         package's re-run or of its main run (:func:`_uses_rerun_calculations`),
         once for the whole run; the result records which for the trace.
         """
@@ -2312,7 +2321,7 @@ class DynamicWorkflow:
     def _eval_lithology_detection(self) -> bool:
         """True when vendor lithology is found as the eval package's calculations found it.
 
-        That is the benchmark profile without ``lithology_curve``: the vendor
+        That is the "geolink" profile without ``lithology_curve``: the vendor
         lithology and its matrix come from any curve named as a lithology code
         log, the per-depth lithology groups from ``LITHOLOGY_GEOLINK`` alone.
         Otherwise one curve, :meth:`_lithology_code_curve`, serves all three.
@@ -2377,7 +2386,7 @@ class DynamicWorkflow:
     def _benchmark(self) -> bool:
         """True when the run uses the calculations of the eval package's main run.
 
-        That is the benchmark profile for a well other than the package's two
+        That is the "geolink" profile for a well other than the package's two
         re-run wells, outside a context export (:func:`_uses_rerun_calculations`).
         It gates what the main run did beyond the re-run's calculations.
         """
@@ -2385,7 +2394,7 @@ class DynamicWorkflow:
 
     @property
     def _reproducing_benchmark(self) -> bool:
-        """True under the benchmark profile: keep the eval package's calculations.
+        """True under the "geolink" profile: keep the eval package's calculations.
 
         It gates what the package's main run and re-run share; :attr:`_benchmark`
         gates what only the main run did.
@@ -2407,7 +2416,7 @@ class DynamicWorkflow:
         gas-zone approximation, so ``"current"`` applies it only when
         ``hc_type`` is ``"gas"``. Oil hardly moves the neutron log, so in an
         oil well the crossover comes from the matrix or shale endpoints, and
-        PHIT is density porosity there, as under the benchmark profile.
+        PHIT is density porosity there, as under the "geolink" profile.
         """
         if not self._reproducing_benchmark and str(self.config.hc_type).lower() == "gas":
             return "rms"
@@ -2445,7 +2454,7 @@ class DynamicWorkflow:
     def _phie_names(self, include_phit: bool = True) -> List[str]:
         """Effective-porosity curve preference.
 
-        The benchmark reads PHIE alone: neither the core-corrected PHIE_CC nor
+        The "geolink" profile reads PHIE alone: neither the core-corrected PHIE_CC nor
         a PHIT fallback, so samples without PHIE stay unevaluated.
         """
         if self._benchmark:
@@ -2454,7 +2463,7 @@ class DynamicWorkflow:
         return [*names, "PHIT"] if include_phit else names
 
     def _perm_names(self, *extra: str) -> List[str]:
-        """Permeability curve preference; the benchmark ignores PERM_CC."""
+        """Permeability curve preference; the "geolink" profile ignores PERM_CC."""
         names = ["PERM"] if self._benchmark else ["PERM_CC", "PERM"]
         return [*names, *extra]
 
@@ -2466,7 +2475,7 @@ class DynamicWorkflow:
         water (API RP 40, 1998; Bush and Jenkins, 1970), so it is total
         porosity. A fit that rests on few pairs, has a slope that is not
         positive or an r^2 below ``_CORE_POROSITY_MIN_R_SQUARED`` is not used.
-        The benchmark profile fits core porosity to PHIE and uses every fit.
+        The "geolink" profile fits core porosity to PHIE and uses every fit.
         """
         if self._reproducing_benchmark:
             return {}
@@ -3788,7 +3797,7 @@ class DynamicWorkflow:
     def _temperature_curve_f(self, curve: Any) -> np.ndarray:
         """Temperature curve values in degF.
 
-        A curve labelled in degC or K is converted; the benchmark profile reads
+        A curve labelled in degC or K is converted; the "geolink" profile reads
         the values as degF whatever the label.
         """
         values = np.asarray(curve.data, dtype=float)
@@ -4297,7 +4306,7 @@ class DynamicWorkflow:
 
         carbonate = self.config.lithology_domain == "carbonate"
         # The COSTA calibration writes its GR-derived illite as VILL; under the
-        # benchmark profile it keeps the notebooks' per-sample SLSQP solve.
+        # "geolink" profile it keeps the notebooks' per-sample SLSQP solve.
         costa_carbonate = carbonate and self._carbonate_calibration == "costa"
         notebook_costa = costa_carbonate and self._reproducing_benchmark
         weighted_rows = None
@@ -4334,7 +4343,7 @@ class DynamicWorkflow:
             trace.parameters.update(selection)
         else:
             solver_version = self.config.mineral_solver_version
-            # The benchmark profile solves the version 1 rows unweighted.
+            # The "geolink" profile solves the version 1 rows unweighted.
             unweighted = solver_version == 1 and self._reproducing_benchmark
             litho_module = LithologyModule(
                 lithology="auto",
@@ -4408,7 +4417,7 @@ class DynamicWorkflow:
                 "Input lithology was available -> mineral volumes computed, LITHO not inferred or overwritten"
             )
         if not carbonate or notebook_costa:
-            # The clastic solvers read PEF and DTC; the benchmark profile's
+            # The clastic solvers read PEF and DTC; the "geolink" profile's
             # COSTA trace also carries this line.
             trace.decisions.append("PEF screened for plausibility; DTC used when PEF is absent or invalid")
         if result.reduced_qc_fallback is not None and np.any(result.reduced_qc_fallback):
@@ -4616,7 +4625,7 @@ class DynamicWorkflow:
                 temp_measured=rmf_meas_temp_f,
                 temp_formation=temp_profile,
             )
-            # The benchmark profile fills rmf_salinity_ppm from the CLFL header.
+            # The "geolink" profile fills rmf_salinity_ppm from the CLFL header.
             source = "CLFL salinity" if self._reproducing_benchmark else "mud-filtrate salinity"
             decisions.append(
                 f"Rmf from {source}: {self.config.rmf_salinity_ppm:.0f} ppm -> "
@@ -5240,13 +5249,13 @@ class DynamicWorkflow:
 
         def density_endpoint(props) -> float:
             # Density porosity takes the apparent log density where one is
-            # tabulated (evaporites); the benchmark profile keeps grain density.
+            # tabulated (evaporites); the "geolink" profile keeps grain density.
             if benchmark or props.log_density is None:
                 return float(props.density)
             return float(props.log_density)
 
         def slowness_endpoint(props, matrix_key, group: bool) -> float:
-            # The benchmark profile keeps the eval package's coal slowness and
+            # The "geolink" profile keeps the eval package's coal slowness and
             # gypsum-group slowness.
             if benchmark:
                 kept = _BENCHMARK_GROUP_SLOWNESS if group else _BENCHMARK_SLOWNESS
@@ -5379,7 +5388,7 @@ class DynamicWorkflow:
 
         Under ``"current"`` a configured ``phi_cl`` comes first, then a LAS
         header shale point (:meth:`_header_shale_point_phi_cl`), then the
-        well's shale samples, then the configured default. The benchmark
+        well's shale samples, then the configured default. The "geolink"
         profile takes the LAS PNSH header itself as ``phi_cl``, ahead of
         everything else.
 
@@ -6899,7 +6908,7 @@ class DynamicWorkflow:
 
         hc_result = HydrocarbonAnalysis(
             porosity_curves=self._phie_names(),
-            class_tables="benchmark" if self._reproducing_benchmark else "current",
+            class_tables="geolink" if self._reproducing_benchmark else "current",
             # Each sample's reservoir-quality limits come from its lithology
             # family, as its net-pay cutoffs do.
             lithology_family=None if self._reproducing_benchmark else self._cutoff_families(lithology),

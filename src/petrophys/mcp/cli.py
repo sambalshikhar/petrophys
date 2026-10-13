@@ -80,7 +80,7 @@ def _parser() -> argparse.ArgumentParser:
         "--calculation-profile", choices=_CALCULATION_PROFILES, default=None,
         help=f"Calculation profile of this server's interpretations whose settings do not set "
              f"one. Defaults to ${PROFILE_ENV_VAR}, else 'current'. An evaluation harness can "
-             "pin 'benchmark' (the GeoLink eval package's calculations). Only the MCP "
+             "pin 'geolink' (the GeoLink eval package's calculations). Only the MCP "
              f"server reads ${PROFILE_ENV_VAR}; petrophys.interpret and petrophys-context ignore it.",
     )
     serve.set_defaults(transport="stdio")

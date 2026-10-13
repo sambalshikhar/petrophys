@@ -1,6 +1,6 @@
-"""Canonical saturation calculations of the benchmark calculation profile.
+"""Canonical saturation calculations of the "geolink" calculation profile.
 
-The ``"benchmark"`` calculation profile reproduces the GeoLink eval package,
+The ``"geolink"`` calculation profile reproduces the GeoLink eval package,
 whose shaly-sand saturation used the Indonesia and Dual Water variants below.
 They are not the published equations: the ``"current"`` profile uses
 :func:`~petrophys.interpretation.saturation.indonesia` (Poupon and Leveaux,
@@ -22,7 +22,7 @@ CALCULATION_REVISION = "canonical"
 
 
 def canonical_indonesia(rt, rw, phi, vcl, rcl, a=1.0, m=2.0, n=2.0):
-    """Indonesia variant of the benchmark profile, with Sw on the sand term only.
+    """Indonesia variant of the "geolink" profile, with Sw on the sand term only.
 
     Solves ``1/sqrt(Rt) = Vcl^(1-Vcl/2)/sqrt(Rcl) + phi^(m/2)/sqrt(a*Rw) * Sw^(n/2)``:
     the clay term carries no ``Sw^(n/2)``, so it is subtracted from
@@ -55,7 +55,7 @@ def canonical_indonesia(rt, rw, phi, vcl, rcl, a=1.0, m=2.0, n=2.0):
 
 
 def canonical_dual_water(phi_t, rt, rw, rwb, vcl, phi_cl, a=1.0, m=2.0, n=2.0):
-    """Dual Water variant of the benchmark profile.
+    """Dual Water variant of the "geolink" profile.
 
     :func:`~petrophys.interpretation.saturation.dual_water` with the apparent
     water resistivity mixed from the raw bound-water saturation
@@ -73,7 +73,7 @@ def canonical_dual_water(phi_t, rt, rw, rwb, vcl, phi_cl, a=1.0, m=2.0, n=2.0):
 
 
 class CanonicalSaturationModule(SaturationModule):
-    """Saturation routing of the benchmark profile.
+    """Saturation routing of the "geolink" profile.
 
     :class:`~petrophys.interpretation.saturation.SaturationModule` with the
     Indonesia and Dual Water variants of this module. Dual Water takes

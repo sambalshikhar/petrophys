@@ -6,7 +6,7 @@ it stands, else (under ``"current"``) the first lithology-code mnemonic whose
 curve holds lithology codes. The vendor lithology, the matrix resolved from it,
 the per-depth lithology groups and the readers downstream (net pay,
 permeability, the context exporter, the diagnostics, the plots) all read that
-one curve. The benchmark profile keeps the eval package's reading: the
+one curve. The "geolink" profile keeps the eval package's reading: the
 name-pattern detector for the vendor lithology and its matrix, per-depth groups
 from ``LITHOLOGY_GEOLINK`` alone.
 """
@@ -187,7 +187,7 @@ def test_current_reads_a_code_mnemonic_as_it_reads_geolink(name):
 
 
 def test_benchmark_groups_by_geolink_alone():
-    renamed = _run(_codes_well("FACIES"), "benchmark")
+    renamed = _run(_codes_well("FACIES"), "geolink")
 
     # The eval package's detector still finds the vendor lithology ...
     assert _step(renamed, "input_context").parameters == {
@@ -202,7 +202,7 @@ def test_benchmark_groups_by_geolink_alone():
     assert "lithology_code_curve" not in renamed.well.get_parameter("_geology_context")
     assert _decoded_warning(renamed) == []
 
-    geolink = _run(_codes_well(), "benchmark")
+    geolink = _run(_codes_well(), "geolink")
     assert "vendor_curve" not in _step(geolink, "input_context").parameters
     assert _step(geolink, "porosity").parameters["matrix_source"] == "ground_truth_lithology_geolink"
     assert "lithology_code_curve" not in geolink.well.get_parameter("_geology_context")
@@ -213,7 +213,7 @@ def test_a_lithology_like_name_is_a_vendor_lithology_only_under_benchmark():
     assert _step(current, "input_context").parameters["selected_source"] == "computed"
     assert _step(current, "input_context").parameters["vendor_curve"] is None
 
-    benchmark = _run(_codes_well("LITHO_PATT"), "benchmark")
+    benchmark = _run(_codes_well("LITHO_PATT"), "geolink")
     assert _step(benchmark, "input_context").parameters["selected_source"] == "vendor"
 
     with pytest.raises(ValueError, match="or the curve named by lithology_curve"):
@@ -226,7 +226,7 @@ def test_lithology_curve_names_the_code_curve():
     # Ten codes under an unrecognized name: too few for the code-log checks,
     # read all the same because the setting names the curve.
     codes = np.r_[np.full(5, 1.0), np.full(5, 11.0), np.full(N - 10, np.nan)]
-    for profile in ("current", "benchmark"):
+    for profile in ("current", "geolink"):
         result = _run(_codes_well("LITHO_PATT", codes=codes), profile, lithology_curve="litho_patt")
         assert result.config.lithology_curve == "LITHO_PATT"
         assert _step(result, "input_context").parameters["vendor_curve"] == "LITHO_PATT"
@@ -285,7 +285,7 @@ def test_the_vendor_matrix_comes_from_the_curve_of_the_groups():
     # five codes are too few to resolve one.
     assert vendor_resolution("current") is None
     # The benchmark detector passes over the five codes and reads FACIES.
-    benchmark = vendor_resolution("benchmark")
+    benchmark = vendor_resolution("geolink")
     assert (benchmark.method, benchmark.matrix) == ("vendor_log", "limestone")
 
 
@@ -297,7 +297,7 @@ def test_a_rerun_records_its_own_code_curve():
         workflow.run(well)
         assert well.get_parameter("_geology_context")["lithology_code_curve"] == "FACIES"
         # A benchmark run of the same well object reads it without the record.
-        DynamicWorkflow(_config("benchmark")).run(well)
+        DynamicWorkflow(_config("geolink")).run(well)
     assert "lithology_code_curve" not in well.get_parameter("_geology_context")
     assert well.get("LITHO") is not None
 
@@ -323,7 +323,7 @@ def test_zones_read_the_whole_well_code_curve():
     assert context["vendor_curve"] == "FACIES" and context["selected_source"] == "vendor"
     assert _step(zone, "porosity").parameters["matrix_source"] == "vendor_lithology_log[FACIES]"
 
-    zone, context = zone_context("benchmark")
+    zone, context = zone_context("geolink")
     assert zone.config.lithology_curve is None
     assert "vendor_curve" not in context
 
@@ -343,8 +343,8 @@ def test_context_reads_the_code_curve_the_interpretation_read():
     assert ref._reference_statistics_curve_key("FACIES", current) is None
     assert ref._reference_statistics_curve_key("LITHOLOGY_GEOLINK", current) is None
 
-    # The benchmark profile reads LITHOLOGY_GEOLINK alone, as the eval package did.
-    benchmark = _run(_codes_well("FACIES"), "benchmark").well
+    # The "geolink" profile reads LITHOLOGY_GEOLINK alone, as the eval package did.
+    benchmark = _run(_codes_well("FACIES"), "geolink").well
     assert ref._context_lithology_curve(benchmark) is None
     assert ref._reference_statistics_curve_key("FACIES", benchmark) == "FACIES"
     # Saturation routing groups by the computed LITHO instead.
@@ -369,7 +369,7 @@ def test_diagnostics_read_the_code_curve_the_interpretation_read():
     assert group_codes(current) == [7.0] * 30 + [1.0] * 30
     assert "FACIES" not in NumericalStatisticalAnalysis._numeric_curve_names(current)
 
-    benchmark = _run(_codes_well("FACIES"), "benchmark").well
+    benchmark = _run(_codes_well("FACIES"), "geolink").well
     assert group_codes(benchmark) == [0.0] * N
     assert "FACIES" in NumericalStatisticalAnalysis._numeric_curve_names(benchmark)
 
@@ -528,7 +528,7 @@ def test_bundled_30_6_5_reads_a_renamed_code_curve_as_it_reads_geolink():
             _build_lithology_group_segments(geolink.well)
         )
 
-    # The benchmark profile keeps the eval-era reading: no per-depth groups.
-    benchmark = interpret("FACIES", calculation_profile="benchmark")
+    # The "geolink" profile keeps the eval-era reading: no per-depth groups.
+    benchmark = interpret("FACIES", calculation_profile="geolink")
     assert _step(benchmark, "porosity").parameters["matrix_mode"] == "constant"
     assert benchmark.well.get("LITHO") is not None

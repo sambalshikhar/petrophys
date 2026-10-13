@@ -159,7 +159,7 @@ def test_brent_answer_with_assumptions(tmp_path):
         # The eval package's calculations, as an evaluation harness pins them.
         pinned = _data(await client.call_tool("interpret_well", {
             "well_id": "30_6-5",
-            "settings": {"rw": 0.07, "rw_meas_temp_f": 230, "calculation_profile": "benchmark"},
+            "settings": {"rw": 0.07, "rw_meas_temp_f": 230, "calculation_profile": "geolink"},
             "summary_top": 2841, "summary_bottom": 2958}))
         whole = _data(await client.call_tool("interpret_well", {
             "well_id": "30_6-5", "settings": {"rw": 0.07, "rw_meas_temp_f": 230}}))
@@ -169,9 +169,11 @@ def test_brent_answer_with_assumptions(tmp_path):
             "summary_top": 176.6, "summary_bottom": 3556.1}))
         reservoir_file = _data(await client.call_tool("interpret_well", {
             "well_id": "HW-3", "settings": {"lithology_domain": "carbonate"}}))
-        return brent, pinned, whole, header, explicit, reservoir_file
+        costa_defaults = _data(await client.call_tool("interpret_well", {
+            "well_id": "HW-3", "settings": {}}))
+        return brent, pinned, whole, header, explicit, reservoir_file, costa_defaults
 
-    brent, pinned, whole, header, explicit, reservoir_file = _run(tmp_path, script)
+    brent, pinned, whole, header, explicit, reservoir_file, costa_defaults = _run(tmp_path, script)
     assert brent["net_thickness"]["net_pay"] == pytest.approx(23.0, abs=0.1)
     assert brent["pay_averages"]["PHIE"] == pytest.approx(0.211, abs=0.005)
     assert brent["assumptions"][0].startswith("Rw 0.07 ohm.m at 230 degF, given in settings")
@@ -183,7 +185,7 @@ def test_brent_answer_with_assumptions(tmp_path):
     assert pinned["net_thickness"]["net_pay"] == pytest.approx(38.4, abs=0.1)
     assert pinned["pay_averages"]["PHIE"] == pytest.approx(0.217, abs=0.005)
     assert any(text.startswith("Net-pay cutoffs: VCL < 0.3") for text in pinned["assumptions"])
-    assert pinned["settings_used"]["calculation_profile"] == "benchmark"
+    assert pinned["settings_used"]["calculation_profile"] == "geolink"
     assert not any("whole logged interval" in note for note in brent["review_notes"])
     assert any("whole logged interval" in note for note in whole["review_notes"])
     # A window that spans the whole well is still flagged; a file holding one
@@ -191,6 +193,9 @@ def test_brent_answer_with_assumptions(tmp_path):
     assert any("logged interval" in note for note in explicit["review_notes"])
     assert not any("logged interval" in note for note in reservoir_file["review_notes"])
     assert "VCALC" in reservoir_file["new_curves"]
+    assert "VILL" in costa_defaults["new_curves"]
+    assert costa_defaults["settings_used"]["lithology_domain"] == "carbonate"
+    assert costa_defaults["settings_used"]["carbonate_calibration"] == "costa"
     # Without rw the header RW is used at an assumed temperature, and said so.
     assert "LAS header RW" in header["assumptions"][0]
     assert "ASSUMED" in header["assumptions"][0]
@@ -205,18 +210,18 @@ def test_server_default_calculation_profile_and_override(tmp_path, monkeypatch):
                 "well_id": "30_6-5", "settings": {**settings, **extra}}))
 
     monkeypatch.delenv("PETROPHYS_CALCULATION_PROFILE", raising=False)
-    pinned = create_server([tmp_path], calculation_profile="benchmark")
+    pinned = create_server([tmp_path], calculation_profile="geolink")
     default = asyncio.run(interpret(pinned))
     override = asyncio.run(interpret(pinned, calculation_profile="current"))
-    assert default["settings_used"]["calculation_profile"] == "benchmark"
+    assert default["settings_used"]["calculation_profile"] == "geolink"
     assert any(text.startswith("Net-pay cutoffs: VCL < 0.3") for text in default["assumptions"])
     # A profile given in the tool settings wins over the server default.
     assert "calculation_profile" not in override["settings_used"]
     assert any(text.startswith("Net-pay cutoffs: clastic") for text in override["assumptions"])
 
-    monkeypatch.setenv("PETROPHYS_CALCULATION_PROFILE", "Benchmark")
+    monkeypatch.setenv("PETROPHYS_CALCULATION_PROFILE", "GeoLink")
     from_env = asyncio.run(interpret(create_server([tmp_path])))
-    assert from_env["settings_used"]["calculation_profile"] == "benchmark"
+    assert from_env["settings_used"]["calculation_profile"] == "geolink"
     for value in ("may2026", "benchmark_rerun"):
         monkeypatch.setenv("PETROPHYS_CALCULATION_PROFILE", value)
         with pytest.raises(ValueError, match=f"PETROPHYS_CALCULATION_PROFILE='{value}'"):
