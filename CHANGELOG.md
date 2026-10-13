@@ -12,6 +12,33 @@ effect on the bundled wells.
 
 ### Calculation profiles
 
+- The published COSTA and Danish context packages are computed by context
+  profiles, `costa_v1` and `danish_v1` (aliases `costa`, `danish`), each
+  running its package's own pipeline from the delivery's LAS files with the
+  calculations the package used: `export_context(..., context_profile=...)`,
+  `petrophys-context --profile ...`, and
+  `petrophys.reporting.context_profiles.export_context_profile`. The COSTA
+  profile needs no files besides petrophys: the COSTA LAS, the per-well
+  interpretation parameters and the reference calcite/dolomite volumes are
+  bundled (`datasets/costa`, `_internal/data`). The Danish profile reads the raw LAS, the Danish
+  tops workbook and the GeoLink lithology codebook. The interpreted LAS of
+  both packages are reproduced byte for byte, and every context number and
+  note except the ELECTROFACIES statistics.
+- `scripts/generate_benchmark_context.py` accepts one LAS file or a folder
+  from any eval collection and recognizes GeoLink, COSTA or Danish wells by
+  name (`--dataset` overrides); for COSTA and Danish it also keeps the
+  interpreted LAS (and the prepared Danish LAS).
+- The category context exporter takes `group_layout`: per well, the
+  formation/lithology groups to export instead of splitting by tops and
+  lithology codes (the Danish profile's one group per formation).
+- Under `"benchmark"` the interpreted LAS keep the source's depth unit label
+  (e.g. `FT`) and equivalent unit labels (`gAPI`, `m3/m3`), write the
+  temperature parameters without units, and pad header columns by UTF-8 bytes,
+  as the eval package's files were written; `export_las` takes
+  `depth_unit_label` and `pad_header_by_bytes` for this. The GeoLink package's
+  interpreted LAS of 15/9-13, 15/9-17, 30/6-5, 34/10-21, 34/10-23 and 35/9-2
+  are now reproduced byte for byte too.
+
 - `DynamicWorkflowConfig.calculation_profile` chooses the calculations.
   `"current"`, the default, is the maintained interpretation, with the
   corrections listed under "Corrected calculations". `"benchmark"` keeps the
@@ -40,7 +67,8 @@ effect on the bundled wells.
   compute MHI wherever SW and SXO are finite; and write a duplicate
   BADHOLEFLAG curve.
 - `petrophys.interpret`, `export_context` and the MCP server use `"current"`
-  unless told otherwise, and `petrophys-context` always does. For the
+  unless told otherwise; `petrophys-context` does too unless a COSTA or
+  Danish context profile is selected. For the
   package's calculations, pass
   `workflow_config=DynamicWorkflowConfig(calculation_profile="benchmark", reuse_input_resflag=True)`
   to `export_context`: the package picked SWIRR_APP from the reservoir flag
@@ -65,8 +93,9 @@ effect on the bundled wells.
   python scripts/generate_benchmark_context.py --from-raw --input-dir PATH/eval --output-dir NEW_DIR
   ```
 
-  It rebuilds the interpreted LAS files of all 32 wells and the 25,566
-  context files. The 30 wells of the main run reproduce every number of the
+  It rebuilds the interpreted LAS files of all 32 wells, 31 of them byte for
+  byte (16/10-4's differ at three SW samples), and the 25,566 context files.
+  The 30 wells of the main run reproduce every number of the
   package apart from the ELECTROFACIES statistics, which come from k-means
   clustering that was unseeded when the package was made; 15/9-17 and
   34/10-23 reproduce every number except the SO statistics their archived

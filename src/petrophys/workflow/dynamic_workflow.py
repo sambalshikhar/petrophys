@@ -20,7 +20,7 @@ Pipeline execution order:
     Module 11: Net Pay
 """
 
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 from contextlib import contextmanager
 from contextvars import ContextVar
 import dataclasses
@@ -1044,7 +1044,12 @@ class DynamicWorkflowConfig:
     #:   no permeability left keeps the PHI_NORM, RQI and FZI computed before
     #:   the QC (and its BVW when no porosity is left), PHI_Z is not recomputed,
     #:   and formation and group depths, bad-hole intervals and the KH note
-    #:   carry no depth unit.
+    #:   carry no depth unit;
+    #: * the zoned batch runner writes the interpreted LAS as the eval package
+    #:   did: the source's depth unit label (e.g. ``FT``) and its unit labels
+    #:   where the standard unit is equivalent (e.g. m3/m3, gAPI), the
+    #:   temperature profile's parameters without unit or description, and
+    #:   header columns padded by UTF-8 bytes.
     #:
     #: The main run's calculations differ further:
     #:
@@ -1061,11 +1066,13 @@ class DynamicWorkflowConfig:
     #:   present (RSHA, then RXO, then RESS), without the medium-resistivity
     #:   proxy; neither fills the gaps of that curve from the next one;
     #: * MHI wherever SW and SXO are finite, without the invaded-zone gate;
-    #: * a duplicate BADHOLEFLAG curve alongside BAD_HOLE, and the temperature
-    #:   profile's parameters without unit or description;
-    #: * the zoned batch runner's interpreted LAS keeps the source's unit labels
-    #:   where the standard unit is equivalent (e.g. m3/m3, gAPI) and leaves out
-    #:   PHIT and PHI_SEC where they only repeat PHIS and zero.
+    #: * a duplicate BADHOLEFLAG curve alongside BAD_HOLE;
+    #: * the zoned batch runner's interpreted LAS leaves out PHIT and PHI_SEC
+    #:   where they only repeat PHIS and zero.
+    #:
+    #: The COSTA and Danish context packages are reproduced by context profiles
+    #: (:mod:`petrophys.reporting.context_profiles`) with the re-run's
+    #: calculations and a few of their own.
     #:
     #: The library reads no environment variable for this setting; only the
     #: MCP server takes a default from ``petrophys-mcp --calculation-profile``
@@ -1170,6 +1177,15 @@ _RERUN_WELLS = frozenset({"15_9-17", "34_10-23"})
 #: every well the calculations of the eval package's re-run.
 _RERUN_CALCULATIONS_REQUESTED: ContextVar[bool] = ContextVar(
     "petrophys_rerun_calculations_requested", default=False
+)
+#: The published context packages besides GeoLink's whose calculations the
+#: benchmark profile keeps. Both were interpreted with the calculations of the
+#: GeoLink re-run; the COSTA package also with the two saturation rules of
+#: :meth:`DynamicWorkflow._costa_saturation`.
+_DATASET_CALCULATIONS = ("danish", "costa")
+#: The dataset inside :func:`_dataset_calculations`, else None.
+_DATASET_CALCULATIONS_REQUESTED: ContextVar[Optional[str]] = ContextVar(
+    "petrophys_dataset_calculations_requested", default=None
 )
 #: Settings whose default depends on ``calculation_profile``, as (default under
 #: ``"current"``, default under the benchmark profile). A setting left as None
@@ -1378,6 +1394,24 @@ def _rerun_calculations(enabled: bool = True) -> Iterator[None]:
         yield
     finally:
         _RERUN_CALCULATIONS_REQUESTED.reset(token)
+
+
+@contextmanager
+def _dataset_calculations(dataset: str) -> Iterator[None]:
+    """Give every benchmark run inside the block the calculations of ``dataset``'s package.
+
+    ``dataset`` is ``"danish"`` or ``"costa"`` (:data:`_DATASET_CALCULATIONS`).
+    Both packages were interpreted with the calculations of the GeoLink
+    re-run, so every run inside the block also gets those.
+    """
+    if dataset not in _DATASET_CALCULATIONS:
+        raise ValueError(f"dataset must be one of {_DATASET_CALCULATIONS}, got {dataset!r}")
+    token = _DATASET_CALCULATIONS_REQUESTED.set(dataset)
+    try:
+        with _rerun_calculations():
+            yield
+    finally:
+        _DATASET_CALCULATIONS_REQUESTED.reset(token)
 
 
 def _uses_rerun_calculations(well: "Well", file_stem: Optional[str] = None) -> bool:
@@ -2126,9 +2160,11 @@ class DynamicWorkflow:
         # (_lithology_code_curve).
         self._code_curve: Optional[str] = None
         self._code_curve_well: Optional["Well"] = None
-        # Whether the run gives the well the eval package's re-run calculations;
+        # Whether the run gives the well the eval package's re-run calculations,
+        # and the published dataset whose calculations it keeps, if any;
         # resolved per run by _start_result.
         self._rerun_selected = False
+        self._dataset: Optional[str] = None
 
     def _start_result(self, well: "Well") -> DynamicWorkflowResult:
         """Open the result of a run on ``well``, resolving its benchmark calculations.
@@ -2138,9 +2174,14 @@ class DynamicWorkflow:
         once for the whole run; the result records which for the trace.
         """
         self._rerun_selected = _uses_rerun_calculations(well)
+        self._dataset = (
+            _DATASET_CALCULATIONS_REQUESTED.get() if self._reproducing_benchmark else None
+        )
         result = DynamicWorkflowResult(well=well, config=self.config)
         if self._reproducing_benchmark:
-            result._benchmark_calculations = "rerun" if self._rerun_selected else "main_run"
+            result._benchmark_calculations = self._dataset or (
+                "rerun" if self._rerun_selected else "main_run"
+            )
         return result
 
     def _prepare_input_context(self, well: "Well") -> None:
@@ -3455,7 +3496,7 @@ class DynamicWorkflow:
 
         well.add_curve("TEMP", result.temperature, "degF", "Formation Temperature")
         # The eval package stored these values without unit or description.
-        store_temperature_parameters(well, result, with_metadata=not self._benchmark)
+        store_temperature_parameters(well, result, with_metadata=not self._reproducing_benchmark)
 
         self._result.temperature_gradient = result.gradient
         trace.method = result.source
@@ -4655,6 +4696,121 @@ class DynamicWorkflow:
         trace.decisions = decisions
         return trace
 
+    def _costa_saturation(
+        self, well: "Well", computed_sw: np.ndarray, model: str
+    ) -> Tuple[List[str], Optional[str], Dict[str, Any], np.ndarray, np.ndarray, np.ndarray]:
+        """Write SW and SO as the COSTA package's interpretation did.
+
+        SW takes the source saturation (SW_INPUT, SW_RAW or SW_SOURCE) where it
+        is finite and within 0-1, and the computed SW elsewhere; SO = 1 - SW
+        wherever SW is finite.
+
+        Returns
+        -------
+        tuple
+            The output curves, the source curve's name and metadata, the
+            samples it gave, the samples SO covers, and the SW written.
+        """
+        source_sw, source_sw_source, source_sw_meta = get_curve_data_depthwise(
+            well, ["SW_INPUT", "SW_RAW", "SW_SOURCE"]
+        )
+        if source_sw is None:
+            source_sw_mask = np.zeros(well.n_samples, dtype=bool)
+        else:
+            source_sw_mask = np.isfinite(source_sw) & (source_sw >= 0.0) & (source_sw <= 1.0)
+        final_sw = computed_sw.copy()
+        if source_sw is not None:
+            final_sw[source_sw_mask] = source_sw[source_sw_mask]
+        well.add_curve("SW", final_sw, "v/v", f"Water Saturation ({model}; source input priority)")
+        so = np.full(final_sw.shape, np.nan, dtype=float)
+        so_valid = np.isfinite(final_sw)
+        so[so_valid] = 1.0 - final_sw[so_valid]
+        well.add_curve("SO", so, "v/v", "Oil Saturation")
+        return ["SW", "SO"], source_sw_source, dict(source_sw_meta or {}), source_sw_mask, so_valid, final_sw
+
+    def _dataset_given_rw(
+        self,
+        well: "Well",
+        temp_profile: np.ndarray,
+        las_rw_temp_f: Optional[float],
+        decisions: List[str],
+        finalize: Callable[..., StepResult],
+    ) -> Optional[StepResult]:
+        """RW from a given Rw as the Danish and COSTA packages computed it, else None.
+
+        Those packages corrected a configured or header Rw to the formation
+        temperature with Arps directly, and took an Rw without its measurement
+        temperature at 75 degF (:data:`DEFAULT_RESISTIVITY_REFERENCE_TEMP_F`).
+        With a measurement temperature the result equals the salinity route of
+        the GeoLink package. None when no Rw is given, so the shared Rw rules
+        apply.
+        """
+        from petrophys.interpretation.electrical.rw.temp_correction import correct_rw_temperature
+
+        if self.config.rw is not None:
+            if self.config.rw_meas_temp_f is not None:
+                decisions.append(
+                    f"Rw directly corrected from {self.config.rw:.4f} ohm.m @ {self.config.rw_meas_temp_f:.0f}F "
+                    f"with Arps along the temperature profile"
+                )
+                return finalize(
+                    "user_provided_temperature_profile_corrected",
+                    correct_rw_temperature(self.config.rw, self.config.rw_meas_temp_f, temp_profile, "F"),
+                    {
+                        "rw_at_measured_temp": self.config.rw,
+                        "measured_temp_f": self.config.rw_meas_temp_f,
+                        "source_priority": "config.rw",
+                    },
+                )
+            assumed_temp_f = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
+            decisions.append(
+                f"Rw input {self.config.rw:.4f} ohm.m used assumed reference temperature {assumed_temp_f:.1f}F "
+                "and was directly corrected with Arps along the temperature profile"
+            )
+            return finalize(
+                "user_provided_assumed_reference_temperature",
+                correct_rw_temperature(self.config.rw, assumed_temp_f, temp_profile, "F"),
+                {
+                    "rw": float(self.config.rw),
+                    "reference_temp_f": assumed_temp_f,
+                    "source_priority": "config.rw",
+                },
+            )
+
+        las_rw = _parameter_float(well, "RW")
+        if las_rw is None:
+            las_rw = _constant_zoned_parameter(well, "RW")
+        if las_rw is None:
+            return None
+        if las_rw_temp_f is not None:
+            decisions.append(
+                f"Rw directly corrected from LAS metadata: {float(las_rw):.4f} ohm.m @ {las_rw_temp_f:.0f}F "
+                f"with Arps along the temperature profile"
+            )
+            return finalize(
+                "las_metadata_temperature_profile_corrected",
+                correct_rw_temperature(float(las_rw), las_rw_temp_f, temp_profile, "F"),
+                {
+                    "rw_at_measured_temp": float(las_rw),
+                    "measured_temp_f": las_rw_temp_f,
+                    "source_priority": "las.RW",
+                },
+            )
+        assumed_temp_f = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
+        decisions.append(
+            f"Rw from LAS metadata used assumed reference temperature {assumed_temp_f:.1f}F "
+            "and was directly corrected with Arps along the temperature profile"
+        )
+        return finalize(
+            "las_metadata_assumed_reference_temperature",
+            correct_rw_temperature(float(las_rw), assumed_temp_f, temp_profile, "F"),
+            {
+                "rw": float(las_rw),
+                "reference_temp_f": assumed_temp_f,
+                "source_priority": "las.RW",
+            },
+        )
+
     def _step_rw(self, well: "Well") -> StepResult:
         from petrophys.interpretation.electrical.rw.rw_module import RwModule
         from petrophys.interpretation.electrical.rw.salinity_rw import rw_from_salinity, salinity_from_rw
@@ -4689,6 +4845,11 @@ class DynamicWorkflow:
             trace.output_curves = ["RW"]
             trace.decisions = decisions
             return trace
+
+        if self._dataset is not None:
+            dataset_trace = self._dataset_given_rw(well, temp_profile, las_rw_temp_f, decisions, _finalize_rw)
+            if dataset_trace is not None:
+                return dataset_trace
 
         if self.config.rw is not None:
             if self.config.rw_meas_temp_f is not None:
@@ -6043,8 +6204,15 @@ class DynamicWorkflow:
         source_sw_source = None
         source_sw_meta = {}
         source_sw_mask = np.zeros(well.n_samples, dtype=bool)
-        well.add_curve("SW", computed_sw, "v/v", f"Water Saturation ({result.model})")
-        outputs = ["SW"]
+        so_valid = None
+        written_sw = computed_sw
+        if self._dataset == "costa":
+            outputs, source_sw_source, source_sw_meta, source_sw_mask, so_valid, written_sw = (
+                self._costa_saturation(well, computed_sw, result.model)
+            )
+        else:
+            well.add_curve("SW", computed_sw, "v/v", f"Water Saturation ({result.model})")
+            outputs = ["SW"]
         sxo_method, sxo_reason = result.sxo_method, result.sxo_reason
         sxo_method_counts = result.sxo_method_counts or {}
         if not flushed_zone:
@@ -6204,6 +6372,8 @@ class DynamicWorkflow:
             trace.decisions.append(
                 f"Rw unavailable for SW; Rcl = {self._result.rcl_computed}"
             )
+        if so_valid is not None and np.any(so_valid):
+            trace.decisions.append("SO = 1 - SW where SW is finite")
         if sxo_method == "archie_rxo_rmf":
             trace.decisions.append("SXO from Archie invaded-zone equation using RSHA/RXO/RESS and RMF")
         elif sxo_method == "archie_rxo_rmf+fifth_root_quicklook":
@@ -6225,9 +6395,9 @@ class DynamicWorkflow:
             )
         elif not flushed_zone:
             trace.decisions.append(f"SXO not computed: {sxo_reason}")
-        if np.any(np.isfinite(computed_sw)):
+        if np.any(np.isfinite(written_sw)):
             trace.decisions.append(
-                f"Sw range: {np.nanmin(computed_sw):.3f} - {np.nanmax(computed_sw):.3f}"
+                f"Sw range: {np.nanmin(written_sw):.3f} - {np.nanmax(written_sw):.3f}"
             )
         else:
             trace.decisions.append("Sw range: all values are NaN")

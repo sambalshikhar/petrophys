@@ -76,6 +76,17 @@ def build_package_parser(layout: str) -> argparse.ArgumentParser:
         default=2.0,
         help="Minimum lithology-group thickness in the well depth unit",
     )
+    if layout == "category_formation_lithology":
+        parser.add_argument(
+            "--profile",
+            dest="context_profile",
+            choices=("costa", "costa_v1", "danish", "danish_v1"),
+            help=(
+                "Compute a published context package with its own pipeline: the input "
+                "directory holds the COSTA LAS or the Danish raw LAS; danish also needs "
+                "--formations (its tops workbook) and --lithology-codes (the GeoLink codebook)."
+            ),
+        )
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))
     parser.add_argument("--tops-sheet", help="Explicit formation Excel sheet name")
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
@@ -130,6 +141,7 @@ def package_main(layout: str, argv=None) -> int:
             layout=layout,
             max_bytes=args.max_bytes,
             max_total_bytes=args.max_total_bytes,
+            context_profile=getattr(args, "context_profile", None),
             **_package_options(args),
         )
     except (OSError, ValueError, TypeError, RuntimeError) as exc:
@@ -178,6 +190,15 @@ def main(argv=None) -> int:
     parser.add_argument("--pattern", default="*.las", help="Input glob; use *.dlis for DLIS")
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--min-thickness", type=float, default=2.0)
+    parser.add_argument(
+        "--profile",
+        dest="context_profile",
+        choices=("costa", "costa_v1", "danish", "danish_v1"),
+        help=(
+            "Compute a published category context package (costa or danish) from its "
+            "LAS input directory; danish also needs --formations and --lithology-codes"
+        ),
+    )
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))
     parser.add_argument("--tops-sheet", help="Explicit formation Excel sheet name")
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
@@ -190,6 +211,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.layout == "well":
+            if args.context_profile is not None:
+                parser.error("--profile requires --layout category_formation_lithology")
             if args.input.is_dir():
                 parser.error("layout=well requires one well file")
             if args.well or args.tops_rank or args.tops_sheet:
@@ -216,6 +239,7 @@ def main(argv=None) -> int:
                 layout=args.layout,
                 max_bytes=args.max_bytes,
                 max_total_bytes=args.max_total_bytes,
+                context_profile=args.context_profile,
                 **_package_options(package_args),
             )
     except (OSError, ValueError, TypeError, RuntimeError) as exc:

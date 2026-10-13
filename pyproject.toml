@@ -106,6 +106,7 @@ petrophys = [
     "preprocessing/imputation/pretrained/*.joblib",
     "preprocessing/imputation/pretrained/*.json",
     "visualization/templates/*.xml",
+    "_internal/data/*.csv",
     "datasets/*.csv",
     "datasets/*.md",
     "datasets/costa/*.las",

@@ -1,5 +1,5 @@
 """
-Regenerate the GeoLink eval context benchmark package.
+Reproduce context for a GeoLink, COSTA, or Danish eval well.
 
 Runs the category-first context exporter, which reproduces the calculations,
 layout, and notes of
@@ -25,12 +25,20 @@ run's, and writes the context of every well with the re-run's.
 calculations instead.
 
 ELECTROFACIES labels come from k-means clustering, which was unseeded when the
-benchmark was made, so they cannot be recovered. The script fixes the string-hash seed, so
-reruns write byte-identical files.
+benchmark was made, so they cannot be recovered. The script fixes the
+string-hash seed, so reruns write byte-identical files.
 
-petrophys-context and petrophys.export_context run the same context exporter;
-this script adds the eval package's inputs (raw LAS folder, NPD tops and
-codebook) and its calculation profile.
+Pass one LAS file or a directory. The script identifies the eval collection
+from the well names (or take --dataset). The COSTA and Danish packages are
+computed by their own pipelines (petrophys.reporting.context_profiles): the
+COSTA LAS, or the Danish raw LAS with the Danish tops workbook and the GeoLink
+lithology codebook, give the interpreted LAS under <output-dir>/processed_las
+(and the prepared Danish LAS under <output-dir>/prepared_las) and the context:
+
+    python scripts/generate_benchmark_context.py --dataset costa --input-dir PATH/costa_las_raw --output-dir NEW_DIR
+    python scripts/generate_benchmark_context.py --dataset danish --input-dir PATH/danish/las \
+        --tops-file PATH/Danish_formation_tops_for_context.xlsx \
+        --lithology-mapping-file PATH/Litho_Nomenclature_Kingdom.xlsx --output-dir NEW_DIR
 """
 
 from __future__ import annotations
@@ -50,6 +58,11 @@ from petrophys.reporting.reference_export import (  # noqa: E402
     export_reference_json_work_package_by_category_formation_lithology,
     write_reference_curve_name_mapping,
 )
+from petrophys.reporting.context_profiles import (  # noqa: E402
+    export_context_profile,
+    identify_context_profile,
+)
+from petrophys.api import read  # noqa: E402
 from petrophys.workflow import DynamicWorkflowConfig  # noqa: E402
 from petrophys.workflow.zoned_batch import (  # noqa: E402
     process_las_directory_with_workflow,
@@ -63,11 +76,21 @@ REPRODUCE_COMMAND = (
 )
 
 
+GEOLINK_WELLS = {
+    "15_9-13", "15_9-15", "15_9-17", "15_9-18", "15_9-2", "15_9-23",
+    "15_9-4", "15_9-5", "15_9-7", "16_10-4", "16_2-11 a", "16_2-6",
+    "25_10-10", "25_10-8", "25_10-9", "25_11-19 s", "30_6-14", "30_6-5",
+    "31_4-4", "34_10-21", "34_10-23", "34_10-35", "34_11-2 s", "35_11-11",
+    "35_11-6", "35_11-7", "35_4-1", "35_8-1", "35_8-2", "35_9-2",
+    "35_9-7", "35_9-9",
+}
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Regenerate the GeoLink eval context benchmark: category-first JSON by well, "
-            "formation, and lithology group."
+            "Reproduce category-first context JSON for GeoLink, COSTA, or Danish "
+            "eval wells. The collection is detected automatically."
         ),
         epilog=f"Reproduce the whole package from the raw LAS files:\n  {REPRODUCE_COMMAND}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -76,7 +99,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--input-dir",
         type=Path,
         required=True,
-        help="Directory containing the processed LAS files (eval_processed).",
+        help="One eval LAS file, or a directory containing eval LAS files.",
+    )
+    parser.add_argument(
+        "--dataset",
+        choices=("auto", "geolink", "costa", "danish"),
+        default="auto",
+        help="Eval collection (default: detect from the well names).",
     )
     parser.add_argument(
         "--output-dir",
@@ -89,14 +118,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Excel workbook containing formation tops. Defaults to "
-             "'NPD stratigraphic picks north sea.xlsx' next to --input-dir.",
+             "'NPD stratigraphic picks north sea.xlsx' next to --input-dir (GeoLink) or "
+             "'Danish_formation_tops_for_context.xlsx' next to it or its parent (Danish).",
     )
     parser.add_argument(
         "--lithology-mapping-file",
         type=Path,
         default=None,
         help="Workbook used to map LITHOLOGY_GEOLINK codes to lithology-group labels. "
-             "Defaults to 'Litho_Nomenclature_Kingdom.xlsx' next to --input-dir.",
+             "Defaults to 'Litho_Nomenclature_Kingdom.xlsx' next to --input-dir; "
+             "required for Danish.",
     )
     parser.add_argument(
         "--raw-input-dir",
@@ -160,9 +191,147 @@ def _rerun_with_fixed_hash_seed() -> None:
         raise SystemExit(subprocess.call([sys.executable, *sys.argv], env=env))
 
 
-def main() -> int:
+def _well_key(value: str) -> str:
+    return Path(str(value)).stem.strip().casefold().replace("/", "_")
+
+
+def _input_scope(
+    parser: argparse.ArgumentParser,
+    input_path: Path,
+    well_names: list[str],
+) -> tuple[Path, list[str], bool]:
+    if not input_path.exists():
+        parser.error(f"input LAS path does not exist: {input_path}")
+    if input_path.is_dir():
+        return input_path, well_names, False
+    if input_path.suffix.casefold() != ".las":
+        parser.error(f"single-file input must be LAS: {input_path}")
+    inferred = input_path.stem
+    if well_names and _well_key(inferred) not in {_well_key(name) for name in well_names}:
+        parser.error(f"--well does not select input file {input_path.name}")
+    return input_path.parent, well_names or [inferred], True
+
+
+def _candidate_well_keys(
+    input_path: Path,
+    input_dir: Path,
+    well_names: list[str],
+    pattern: str,
+    recursive: bool,
+) -> set[str]:
+    if well_names:
+        return {_well_key(name) for name in well_names}
+    if input_path.is_file():
+        return {_well_key(input_path.stem)}
+    iterator = input_dir.rglob(pattern) if recursive else input_dir.glob(pattern)
+    return {_well_key(path.stem) for path in iterator if path.is_file()}
+
+
+def _detect_dataset(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    input_path: Path,
+    input_dir: Path,
+    well_names: list[str],
+) -> str:
+    if args.dataset != "auto":
+        return args.dataset
+    profile = identify_context_profile(
+        input_path,
+        well_names=well_names,
+        pattern=args.pattern,
+        recursive=args.recursive,
+    )
+    if profile is not None:
+        return profile.name.removesuffix("_v1")
+    keys = _candidate_well_keys(
+        input_path, input_dir, well_names, args.pattern, args.recursive
+    )
+    if keys and keys.issubset(GEOLINK_WELLS):
+        return "geolink"
+    parser.error(
+        "could not identify the eval collection. Use a recognized GeoLink, COSTA, "
+        "or Danish LAS file, or set --dataset explicitly."
+    )
+    raise AssertionError("argparse.error did not exit")
+
+
+def _looks_like_processed_geolink(path: Path) -> bool:
+    try:
+        well = read(path)
+    except Exception:
+        return False
+    derived = {"VCL", "PHIE", "SW", "PERM", "NET_PAY", "RESFLAG"}
+    return len(derived.intersection(well.curves)) >= 3
+
+
+def _danish_tops_file(input_dir: Path) -> Path | None:
+    for folder in (input_dir.parent, input_dir.parent.parent):
+        candidate = folder / "Danish_formation_tops_for_context.xlsx"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _export_profile(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    dataset: str,
+    input_dir: Path,
+    well_names: list[str],
+) -> int:
+    if args.calculation_profile != "benchmark":
+        parser.error(f"the {dataset} package is computed with its own calculations; "
+                     "--calculation-profile applies to GeoLink")
+    tops_file = lithology_mapping_file = None
+    if dataset == "danish":
+        tops_file = args.tops_file or _danish_tops_file(input_dir)
+        lithology_mapping_file = args.lithology_mapping_file
+        if tops_file is None or lithology_mapping_file is None:
+            parser.error("danish needs --tops-file (its tops workbook) and --lithology-mapping-file "
+                         "(the GeoLink codebook, Litho_Nomenclature_Kingdom.xlsx)")
+    profile = f"{dataset}_v1"
+    results = export_context_profile(
+        input_dir,
+        args.output_dir,
+        context_profile=profile,
+        work_dir=args.output_dir,
+        well_names=well_names,
+        pattern=args.pattern,
+        recursive=args.recursive,
+        tops_file=tops_file,
+        lithology_mapping_file=lithology_mapping_file,
+    )
+    successful = sum(1 for item in results if item.success)
+    wells = sorted({Path(item.source_file).stem for item in results})
+    print(f"Dataset:        {dataset}")
+    print(f"Context profile:{profile:>11}")
+    print(f"Input LAS:      {input_dir}")
+    if tops_file is not None:
+        print(f"Tops file:      {tops_file}")
+        print(f"Litho map:      {lithology_mapping_file}")
+    print(f"Output root:    {args.output_dir}")
+    print(f"Interpreted LAS: {Path(args.output_dir) / 'processed_las'}")
+    print(f"Wells:          {len(wells)} ({', '.join(wells)})")
+    print(f"JSON files:     {len(results)}")
+    print(f"Success:        {successful}")
+    return 0 if successful == len(results) else 1
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    input_path = args.input_dir
+    input_dir, well_names, single_file = _input_scope(
+        parser, input_path, args.well_names
+    )
+    dataset = _detect_dataset(parser, args, input_path, input_dir, well_names)
+
+    if dataset in {"costa", "danish"}:
+        return _export_profile(parser, args, dataset, input_dir, well_names)
+
+    args.well_names = well_names
+    args.input_dir = input_dir
     if args.tops_file is None:
         args.tops_file = args.input_dir.parent / "NPD stratigraphic picks north sea.xlsx"
     if args.lithology_mapping_file is None:
@@ -171,7 +340,10 @@ def main() -> int:
     raw_input_dir = args.raw_input_dir
     context_input_dir = args.input_dir
     processed_dir = None
-    if args.from_raw:
+    from_raw = args.from_raw or (
+        single_file and not _looks_like_processed_geolink(input_path)
+    )
+    if from_raw:
         processed_dir = Path(args.output_dir) / "processed_las"
         batch = process_las_directory_with_workflow(
             input_dir=args.input_dir,
@@ -216,6 +388,7 @@ def main() -> int:
 
     if processed_dir is not None:
         print(f"Raw LAS:        {args.input_dir}")
+    print("Dataset:        geolink")
     print(f"Profile:        {args.calculation_profile}")
     print(f"Input LAS:      {context_input_dir}")
     print(f"Tops file:      {args.tops_file}")
