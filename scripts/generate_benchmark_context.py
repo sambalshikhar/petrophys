@@ -1,45 +1,13 @@
-"""
-Reproduce context for a GeoLink, COSTA, or Danish eval well.
+"""Generate dataset-specific benchmark context for GeoLink, COSTA or Danish.
 
-Runs the category-first context exporter, which reproduces the calculations,
-layout, and notes of
-context_json_category_all_wells_fm_gp_mb_core_no_metrics_phiecc_sat_latest
-from the processed LAS files (eval_processed), the raw LAS files next to them
-(eval), the NPD formation tops workbook, and the lithology codebook.
+Pass one LAS file or a folder and select a dataset, or let the script detect
+it from well names. Dataset profiles supply the interpretation parameters,
+calibration and grouping rules. Raw GeoLink folders require --from-raw;
+GeoLink and Danish also require their tops workbook and lithology codebook.
+The script retains interpreted LAS and traces under <output-dir>/processed_las,
+and Danish prepared inputs under <output-dir>/prepared_las.
 
-With ``--from-raw`` the input folder holds the raw LAS files instead, and the
-script runs the whole package from them with the ``geolink`` context profile
-(``petrophys.reporting.context_profiles``): first the interpreted ("processed")
-LAS files, then the context from those. Both outputs land under the output
-folder. This one command reproduces the whole package:
-
-    python scripts/generate_benchmark_context.py --from-raw --input-dir PATH/eval --output-dir NEW_DIR
-
-The package was made in two runs with different calculations: its main run
-interpreted 30 of the 32 wells, and a re-run interpreted 15_9-17 and 34_10-23
-and wrote the context of every well. The "geolink" calculation profile, the
-default of ``--calculation-profile``, keeps both sets of calculations fixed
-while the library's default calculations change: it interprets 15_9-17 and
-34_10-23 with the re-run's calculations and the other wells with the main
-run's, and writes the context of every well with the re-run's.
-``--calculation-profile current`` runs both steps with the library's current
-calculations instead.
-
-ELECTROFACIES labels come from k-means clustering, which was unseeded when the
-benchmark was made, so they cannot be recovered. The script fixes the
-string-hash seed, so reruns write byte-identical files.
-
-Pass one LAS file or a directory. The script identifies the eval collection
-from the well names (or take --dataset). The COSTA and Danish packages are
-computed by their own pipelines (petrophys.reporting.context_profiles): the
-COSTA LAS, or the Danish raw LAS with the Danish tops workbook and the GeoLink
-lithology codebook, give the interpreted LAS under <output-dir>/processed_las
-(and the prepared Danish LAS under <output-dir>/prepared_las) and the context:
-
-    python scripts/generate_benchmark_context.py --dataset costa --input-dir PATH/costa_las_raw --output-dir NEW_DIR
-    python scripts/generate_benchmark_context.py --dataset danish --input-dir PATH/danish/las \
-        --tops-file PATH/Danish_formation_tops_for_context.xlsx \
-        --lithology-mapping-file PATH/Litho_Nomenclature_Kingdom.xlsx --output-dir NEW_DIR
+See docs/benchmark_context.md for complete commands and required inputs.
 """
 
 from __future__ import annotations
@@ -141,11 +109,8 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("geolink", "current"),
         default="geolink",
         help=(
-            "Calculation profile of both steps (default: benchmark). 'geolink' "
-            "interprets 15_9-17 and 34_10-23 with the eval package's re-run "
-            "calculations and the other wells with its main run's, and writes the "
-            "context of every well with the re-run's, as the package was made; "
-            "'current' uses the library's current calculations."
+            "Interpretation configuration for GeoLink runs: geolink (default) "
+            "or current. COSTA and Danish use their dataset configurations."
         ),
     )
     parser.add_argument(
@@ -252,8 +217,8 @@ def _export_profile(
     well_names: list[str],
 ) -> int:
     if args.calculation_profile != "geolink":
-        parser.error(f"the {dataset} package is computed with its own calculations; "
-                     "--calculation-profile current applies to GeoLink only")
+        parser.error(f"the {dataset} profile fixes its interpretation configuration; "
+                     "omit the --calculation-profile override")
     if args.min_thickness != 2.0 or args.raw_input_dir is not None:
         parser.error(f"the {dataset} package fixes its grouping and inputs; "
                      "drop --min-thickness and --raw-input-dir")

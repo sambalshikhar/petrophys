@@ -158,7 +158,7 @@ def export_context(
 
     Without ``context_profile``, package layouts read the well files in the
     ``data`` folder, apply optional formation and lithology inputs, interpret
-    each well with the current workflow (or ``workflow_config``), and write
+    each well with the supplied ``workflow_config`` or defaults, and write
     context JSON. Files are read by :func:`petrophys.read` from their
     extension: LAS, DLIS, CSV or TSV. ``pattern`` selects them (default
     ``"*.las"``; e.g. ``"*.dlis"`` or ``"*.csv"``), and ``reader_options``

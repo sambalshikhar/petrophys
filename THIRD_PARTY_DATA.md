@@ -103,39 +103,18 @@ Files: `src/petrophys/datasets/formation_pressure/`.
 Originator: **Norsk Hydro**. Source: *Final Well Report, well 35/11-13*,
 NH/OD-B-4522/05 Rev 1, dated 13 December 2005; Norwegian Offshore Directorate
 wellbore ID **5063**. The user supplied the local North Sea Reports copy.
-The collection retains four evidence pages (original PDF pages 44, 45, 54, 55)
-and a rendering of the pressure plot, with source hashes and page references.
-
-The CSV/LAS derivatives transcribe Table 3.7.4; interpreted fluid labels and
-fit-selection flags are Petrophys additions identified separately from the
-measurements. These data and report pages are not relicensed as MIT software.
+The bundled LAS is a Petrophys transcription of the report's pressure stations;
+interpreted fluid labels and fit-selection flags are Petrophys additions
+identified separately from the measurements. The data are not relicensed as MIT
+software.
 The supplied copy does not provide a separate redistribution licence. No claim
 of supplier endorsement or independent validation of the reported contact is made.
 
 The second source is Norsk Hydro's *Final Well Report, well 35/11-10*, dated
 12 December 1997 (wellbore ID **3042**), supplied in the same local collection.
-Original PDF pages 34, 35 and 38 are retained. The Fensfjord CSV/LAS files contain
-ten measured station markers digitized from Figure 8.2, not values sampled from
-the drawn gradient lines. Fluid labels, pixel calibration, rounding and the
-subset selection are documented in `35_11_10_source_manifest.json`. These
-derivatives have the same attribution and licence qualification stated above.
-
-## JAMSTEC C0020A native MDT pretests
-
-Files: `src/petrophys/datasets/formation_pressure/c0020a_mdt_*`.
-Originator: **Schlumberger**, acquired for **JAMSTEC**, IODP Expedition 337,
-well C0020A, Run 4 XLD probe, September 2012. Public custodian: JAMSTEC's
-[Sio7 logging archive](https://www.jamstec.go.jp/sio7/well-logging/337/C0020A/).
-
-The 35 LAS traces retain original bytes and source headers; filenames alone
-were shortened. The associated pretest report is unchanged. The reference CSV
-is a Petrophys transcription of per-test formation pressures/statuses, with
-null formation pressure for failed tests. Exact source URLs, original filenames,
-report pages and SHA-256 checksums are recorded in the collection manifest.
-These data are used for scientific/educational reproducibility. JAMSTEC
-[identifies IODP policy as governing IODP cruise data](https://www.jamstec.go.jp/mare3/e/information/sampledata.html).
-No separate software-style licence is embedded in the delivery; it is not
-relicensed as MIT code, and no supplier endorsement of our picker is claimed.
+The Fensfjord LAS contains ten station markers digitized from Figure 8.2, not
+values sampled from drawn gradient lines. These derivatives have the same
+attribution and licence qualification stated above.
 
 ## GeoLink
 

@@ -49,7 +49,7 @@ def _add_standard_inputs(parser: argparse.ArgumentParser) -> None:
 
 
 def build_package_parser(layout: str) -> argparse.ArgumentParser:
-    """Build the parser shared by the historical script entry points."""
+    """Build the parser shared by the package script entry points."""
     parser = argparse.ArgumentParser(
         description="Compute formation/lithology context packages from LAS or DLIS files"
     )
@@ -85,7 +85,7 @@ def build_package_parser(layout: str) -> argparse.ArgumentParser:
                 "Compute a published context package with its own pipeline from the input "
                 "directory's raw LAS (GeoLink eval, COSTA or Danish); geolink and danish also "
                 "need --formations (their tops workbook) and --lithology-codes (the GeoLink "
-                "codebook). Without it, the current workflow runs."
+                "codebook). Omit it to interpret with your supplied settings."
             ),
         )
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))
@@ -198,7 +198,7 @@ def main(argv=None) -> int:
         help=(
             "Compute a published category context package (geolink, costa or danish) from "
             "its raw LAS directory; geolink and danish also need --formations and "
-            "--lithology-codes. Without it, the current workflow runs."
+            "--lithology-codes. Omit it to interpret with your supplied settings."
         ),
     )
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))

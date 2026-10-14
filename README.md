@@ -184,15 +184,17 @@ pp.export_context(result, "well_context.json")
 
 The versioned API enforces byte budgets and preserves existing files by default.
 It supports formation/lithology packages and the `petrophys-context` command.
-Packages are interpreted with the default calculations;
-[Calculation profiles](#calculation-profiles) shows how to get those of the
-GeoLink eval context benchmark instead.
+Packages use your interpretation settings. [Calculation profiles](#calculation-profiles)
+explains how to select dataset configurations for benchmark context.
 By default, the context classifies each property with its table in
 `petrophys.model.CLASS_TABLES`, so a property gets the same class in every
 category; reservoir quality needs PHIE, PERM and VCL (`NO_QUALITY_DATA`
 otherwise) and uses the limits of each sample's lithology family, clastic or
 carbonate.
 See the [context guide](https://petrophys.netlify.app/context.html) and [interpretation review guide](https://petrophys.netlify.app/data_quality.html).
+For GeoLink, COSTA and Danish benchmark reproduction, see the
+[benchmark context guide](docs/benchmark_context.md), with commands, required
+inputs, output layouts and known reproduction limits.
 Net-pay output is cutoff screening, not confirmed pay; review warnings and calibration.
 
 ## Use with LLM agents (MCP)
@@ -291,34 +293,19 @@ cutoffs alone).
 
 ## Calculation profiles
 
-`calculation_profile` selects the calculations. `"current"`, the default, is
-the interpretation this README describes. `"geolink"` keeps the calculations
-behind the GeoLink eval context benchmark package fixed, so that
-`scripts/generate_benchmark_context.py` regenerates the package from the raw
-LAS files exactly (see [scripts/README.md](scripts/README.md)). The package was
-made in two runs, a main run and a re-run. Under `"geolink"`, interpreting a
-well uses the main run's calculations, except for wells 15/9-17 and 34/10-23
-(recognized by their UWI or WELL header, or in batch runs by file name), which
-get the re-run's; writing context uses the re-run's calculations for every
-well. The profile is for reproducing that package, not for new
-interpretations: among other differences, it neither standardizes nor screens
-input curves, warns about no assumed value except a default Rw, takes
-Rwb = 0.3 Rw for Dual Water when none is given, sets unset net-pay cutoffs to
-VCL < 0.3 and SW < 0.7, and lets evaporite, coal and bad-hole samples count as
-net pay. The `calculation_profile` setting of `DynamicWorkflowConfig`
-documents every difference.
+`calculation_profile` selects an interpretation configuration: `"current"` is
+the default, and `"geolink"` provides the GeoLink evaluation configuration.
+Use a dataset `context_profile` to generate benchmark context: it applies
+the collection's preparation, interpretation, calibration and export rules.
+See the [benchmark context guide](docs/benchmark_context.md) for commands and
+required inputs.
 
-Context packages from `pp.export_context` or the `petrophys-context` command,
-and the MCP server, use `"current"` by default. To reproduce the package, use
-the `geolink` context profile below. `petrophys-mcp serve --calculation-profile geolink`,
-or the `PETROPHYS_CALCULATION_PROFILE` environment variable, gives the MCP
-server's interpretations the "geolink" profile, e.g. for an evaluation harness;
-a profile in a tool call's settings still takes precedence. Only the MCP server
-reads that variable; `pp.interpret` and `petrophys-context` ignore it.
+For an MCP evaluation harness, `petrophys-mcp serve --calculation-profile geolink`
+or `PETROPHYS_CALCULATION_PROFILE=geolink` selects the GeoLink configuration.
+Settings supplied in a tool call take precedence. The environment variable
+is read by the MCP server only.
 
-Each published eval package, GeoLink, COSTA or Danish, has a context profile
-that runs the package's own pipeline from its raw LAS files and computes it
-with the calculations it used. Without a profile, the current workflow runs:
+Dataset profiles are available for GeoLink, COSTA and Danish:
 
 ```python
 pp.export_context(

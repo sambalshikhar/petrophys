@@ -1,15 +1,8 @@
-"""The GeoLink eval context package, computed from its raw LAS files.
+"""GeoLink benchmark context computed from raw LAS.
 
-The package was made in two steps, both reproduced here with
-``calculation_profile="geolink"``:
-
-1. Interpretation of the raw LAS by the zoned batch runner: 30 wells with the
-   calculations of the package's main run, 15/9-17 and 34/10-23 with those of
-   its re-run.
-2. Context from the interpreted LAS, the NPD formation tops workbook and the
-   GeoLink/Kingdom lithology codebook, every well with the re-run's
-   calculations; the reservoir flag already on the interpreted LAS picks the
-   SWIRR_APP samples, as in the package.
+The dataset profile interprets the input LAS, then exports six category contexts
+using the NPD tops workbook and GeoLink lithology codebook. Dataset-specific
+well settings and reservoir selections are applied during the calculation.
 """
 
 from __future__ import annotations

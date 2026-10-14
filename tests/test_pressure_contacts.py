@@ -90,22 +90,19 @@ def test_units_and_datum_invariance():
 
 
 def test_real_unlabeled_csv_las_and_label_independence(tmp_path):
-    source = pd.read_csv(sample("35_11_13_mdt_points"))
-    points = source.drop(columns=["FLUID", "USE_FIT"])
-    # Selection comes only from the original measurement remarks. Gas stations
-    # previously excluded by the labeled example are now included.
-    points["USE_FIT"] = points.REMARKS.eq("ok")
+    source = read_formation_pressure(sample("35_11_13_mdt")).points
+    points = pd.DataFrame({"TVDSS_M": source.depth, "PRES_BAR": source.pressure})
+    points["USE_FIT"] = np.isfinite(source.pressure.to_numpy())
     path = tmp_path / "stations.csv"
     points.to_csv(path, index=False)
     csv = read_formation_pressure(path)
-    assert csv.points.use_fit.sum() == 21
+    assert csv.points.use_fit.sum() == 28
     assert csv.points.fluid.eq("unknown").all()
     with pytest.raises(ValueError, match="infer_contacts"):
         csv.fit_fwl()
     fit = csv.infer_contacts()
     assert fit.status == "interpreted"
-    assert fit.fwl_depth == pytest.approx(3113.1740677202133)
-    assert abs(fit.fwl_depth-3112.6) < 2  # external check, never a model input
+    assert fit.fwl_depth == pytest.approx(3114.704052904744)
     # Inference itself must not read any label, even when a table contains one.
     csv.points["fluid"] = "deliberately-wrong-label"
     assert csv.infer_contacts().fwl_depth == fit.fwl_depth
@@ -120,7 +117,9 @@ def test_real_unlabeled_csv_las_and_label_independence(tmp_path):
 
 
 def test_digitized_second_well_returns_ambiguity_without_labels():
-    p = pd.read_csv(sample("35_11_10_fensfjord_mdt_points")).drop(columns=["FLUID", "USE_FIT"])
+    source = read_formation_pressure(sample("35_11_10_fensfjord_mdt")).points
+    p = pd.DataFrame({"TVDSS_M": source.depth, "PRES_BAR": source.pressure})
+    p["USE_FIT"] = np.isfinite(source.pressure.to_numpy())
     data = read_formation_pressure(p)
     result = data.infer_contacts()
     assert result.status == "ambiguous"

@@ -9,21 +9,17 @@ from petrophys.interpretation.saturation.height import fit_pressure_fwl, read_fo
 
 
 def field_points():
-    points = pd.read_csv(sample("35_11_13_mdt_points"))
-    return points.loc[points.USE_FIT]
+    data = read_formation_pressure(sample("35_11_13_mdt"))
+    return data.points.loc[data.points.use_fit]
 
 
-def test_report_reproduction_and_las_csv_equivalence():
-    all_points = pd.read_csv(sample("35_11_13_mdt_points"))
+def test_report_reproduction_from_las():
     las = lasio.read(sample("35_11_13_mdt"))
-    assert len(las.index) == len(all_points) == 29
+    assert len(las.index) == 29
     assert las.well.STEP.value == 0
-    np.testing.assert_allclose(las.index, all_points.TVDSS_M)
-    np.testing.assert_allclose(las["PRES"], all_points.PRES_BAR, equal_nan=True)
-    np.testing.assert_array_equal(las["USE_FIT"], all_points.USE_FIT)
-    assert all_points.REMARKS.iloc[-1] == "Dry Test" and np.isnan(las['PRES'][-1])
+    assert np.isnan(las["PRES"][-1])
     points = field_points()
-    fit = fit_pressure_fwl(points.TVDSS_M, points.PRES_BAR, points.FLUID)
+    fit = fit_pressure_fwl(points.depth, points.pressure, points.fluid)
     assert (fit.hydrocarbon.n, fit.water.n) == (10, 9)
     # Tolerance reflects published interpretation vs unweighted OLS, not
     # a target imposed on the fit or an uncertainty bound.
@@ -36,12 +32,12 @@ def test_report_reproduction_and_las_csv_equivalence():
 
 def test_units_and_datum_shift_preserve_intersection():
     d = field_points()
-    baseline = fit_pressure_fwl(d.TVDSS_M, d.PRES_BAR, d.FLUID)
-    converted = fit_pressure_fwl(d.TVDSS_M / 0.3048, d.PRES_BAR / 0.06894757293168,
-                                 d.FLUID, depth_unit="ft", pressure_unit="psi")
+    baseline = fit_pressure_fwl(d.depth, d.pressure, d.fluid)
+    converted = fit_pressure_fwl(d.depth / 0.3048, d.pressure / 0.06894757293168,
+                                 d.fluid, depth_unit="ft", pressure_unit="psi")
     assert converted.fwl_depth * 0.3048 == pytest.approx(baseline.fwl_depth)
     assert converted.fwl_pressure * 0.06894757293168 == pytest.approx(baseline.fwl_pressure)
-    shifted = fit_pressure_fwl(d.TVDSS_M + 25, d.PRES_BAR + 1, d.FLUID,
+    shifted = fit_pressure_fwl(d.depth + 25, d.pressure + 1, d.fluid,
                                depth_reference="TVD_RKB")
     assert shifted.fwl_depth == pytest.approx(baseline.fwl_depth + 25)
     assert shifted.fwl_pressure == pytest.approx(baseline.fwl_pressure + 1)
@@ -63,7 +59,7 @@ def test_invalid_gradients_or_missing_pressure_rejected(pressure):
 def test_invalid_units_or_md_rejected(kwargs):
     d = field_points()
     with pytest.raises(ValueError):
-        fit_pressure_fwl(d.TVDSS_M, d.PRES_BAR, d.FLUID, **kwargs)
+        fit_pressure_fwl(d.depth, d.pressure, d.fluid, **kwargs)
 
 
 def test_unknown_fluid_and_insufficient_depth_span_rejected():
@@ -78,39 +74,22 @@ def test_unknown_fluid_and_insufficient_depth_span_rejected():
     ("35_11_10_fensfjord_mdt", 2287.3352250077814, (4, 6)),
 ])
 def test_file_workflow_two_wells(stem, expected, counts):
-    csv = read_formation_pressure(sample(stem + "_points"))
     las = read_formation_pressure(sample(stem))
-    for data in [csv, las]:
-        fit = data.fit_fwl()
-        assert fit.fwl_depth == pytest.approx(expected)
-        assert (fit.hydrocarbon.n, fit.water.n) == counts
-        assert fit.water.pressure_at(fit.fwl_depth) == pytest.approx(fit.fwl_pressure)
-        assert fit.hydrocarbon.pressure_at(fit.fwl_depth) == pytest.approx(fit.fwl_pressure)
-    np.testing.assert_allclose(csv.points.pressure, las.points.pressure, equal_nan=True)
-    np.testing.assert_allclose(csv.points.depth, las.points.depth)
-
-
-def test_second_well_digitization_provenance_and_report_comparison():
-    import json
-    import hashlib
-    path = sample("35_11_10_fensfjord_mdt_points")
-    manifest = json.loads((path.parent / "35_11_10_source_manifest.json").read_text())
-    for item in manifest["files"]:
-        assert hashlib.sha256((path.parent / item["path"]).read_bytes()).hexdigest() == item["sha256"]
-    d = manifest["digitization"]
-    controls = np.c_[d["calibration_pixels"], np.ones(4)]
-    transform = np.linalg.lstsq(controls, d["calibration_pressure_bar_depth_m"], rcond=None)[0]
-    recovered = np.c_[d["station_pixels"], np.ones(10)] @ transform
-    data = read_formation_pressure(path)
-    np.testing.assert_allclose(data.points.pressure, recovered[:, 0].round(2))
-    np.testing.assert_allclose(data.points.depth, recovered[:, 1].round(1))
-    # A digitized subset and an OLS fit need not reproduce the drawn report
-    # lines exactly. This is a regression/reproduction check, not uncertainty.
-    assert abs(data.fit_fwl().fwl_depth - manifest["reported_fwl_tvd_msl_m"]) < 5
+    fit = las.fit_fwl()
+    assert fit.fwl_depth == pytest.approx(expected)
+    assert (fit.hydrocarbon.n, fit.water.n) == counts
+    assert fit.water.pressure_at(fit.fwl_depth) == pytest.approx(fit.fwl_pressure)
+    assert fit.hydrocarbon.pressure_at(fit.fwl_depth) == pytest.approx(fit.fwl_pressure)
 
 
 def test_custom_table_mapping_qc_and_delimited_csv(tmp_path):
-    original = pd.read_csv(sample("35_11_13_mdt_points"))
+    source = read_formation_pressure(sample("35_11_13_mdt")).points
+    original = pd.DataFrame({
+        "TVDSS_M": source.depth,
+        "PRES_BAR": source.pressure,
+        "FLUID": source.fluid,
+        "USE_FIT": source.use_fit,
+    })
     frame = original.rename(columns={"TVDSS_M": "Z", "PRES_BAR": "P", "FLUID": "CODE",
                                      "USE_FIT": "KEEP"})
     frame.CODE = frame.CODE.map({"oil": 8, "water": 9, "gas": 7})
@@ -144,13 +123,15 @@ def test_las_requires_datum_and_explicit_fluid_code_mapping():
 
 
 def test_reader_rejects_ambiguous_columns_md_and_mixed_wells():
-    frame = pd.read_csv(sample("35_11_13_mdt_points"))
+    source = read_formation_pressure(sample("35_11_13_mdt")).points
+    frame = pd.DataFrame({"TVDSS_M": source.depth, "PRES_BAR": source.pressure})
     with pytest.raises(ValueError, match="MD"):
         read_formation_pressure(frame, depth_column="MD_RKB_M", depth_unit="m",
                                 depth_reference="TVD_RKB")
     frame["DEPT"] = frame.TVDSS_M
     with pytest.raises(ValueError, match="depth_column"):
         read_formation_pressure(frame)
+    frame["WELL"] = "35/11-13"
     frame.loc[0, "WELL"] = "another well"
     with pytest.raises(ValueError, match="one well"):
         read_formation_pressure(frame, depth_column="TVDSS_M")

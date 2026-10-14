@@ -228,6 +228,7 @@ Continue with the :doc:`installation guide <installation>`, the
    specialist_data
    data_quality
    context
+   benchmark_context
    mcp
 
 .. toctree::

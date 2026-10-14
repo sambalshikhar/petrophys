@@ -7852,9 +7852,8 @@ def export_reference_json_work_package_by_formation_lithology(
         ``columns`` or ``sep``.
     workflow_config : DynamicWorkflowConfig, optional
         Interpretation settings (default: the workflow defaults). LAS header
-        parameters override them. Under ``calculation_profile="geolink"``
-        every well gets the calculations of the eval package's re-run, which
-        wrote its context.
+        parameters override them. ``calculation_profile="geolink"`` selects
+        the GeoLink evaluation configuration for context export.
     lithology_file : str or Path, optional
         Per-depth lithology intervals for the wells.
     lithology_domain : str, optional
@@ -8111,9 +8110,8 @@ def export_reference_json_work_package_by_category_formation_lithology(
     as usual.
 
     ``scripts/generate_benchmark_context.py`` runs it to reproduce the GeoLink
-    eval context benchmark, with ``calculation_profile="geolink"``: every
-    well then gets the calculations of the package's re-run, which wrote its
-    context. Input curves are classified against the raw LAS files in
+    eval context benchmark with the GeoLink evaluation configuration.
+    Input curves are classified against the raw LAS files in
     ``raw_input_dir`` (default: the sibling of a ``*_processed`` input
     directory), falling back to the curves of the LAS being read.
     """

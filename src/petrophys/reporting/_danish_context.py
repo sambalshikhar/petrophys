@@ -1,16 +1,7 @@
-"""The Danish eval context package, computed from its raw LAS files.
+"""Danish benchmark context computed from raw LAS.
 
-The package was made in three steps, each reproduced here:
-
-1. Preparation. Each raw LAS gets the depth in feet (``DEPT``), the shallow
-   resistivity under its standard name (RSHAL becomes RSHA, written last), the
-   standard unit label of every standard curve (NPHI labelled PU when its
-   values are in percent), and, when it has none, a ``LITHOLOGY_GEOLINK`` code
-   curve from each formation's majority lithology in the tops workbook.
-2. Interpretation of the prepared LAS with the GeoLink re-run's calculations
-   (:func:`petrophys.workflow.dynamic_workflow._dataset_calculations`).
-3. Context, one lithology group per formation of the tops workbook, named by
-   its majority lithology (:func:`danish_group_layout`).
+The dataset profile prepares depth units, curve names and formation lithology,
+interprets the prepared LAS, and exports one lithology group per formation.
 """
 
 from __future__ import annotations
