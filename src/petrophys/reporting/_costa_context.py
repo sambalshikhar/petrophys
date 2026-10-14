@@ -46,6 +46,15 @@ _DEFAULT_RW_68F = 0.1
 #: Lithology groups thinner than 2 m (in feet) are not exported.
 _MIN_GROUP_THICKNESS_FT = 2.0 * 3.280839895
 _SKIPPED_STEPS = ("vclay", "rcl", "rmf", "invasion", "core_correction", "permeability", "lithology", "hc_correction", "mhi")
+#: The workflow step each step run outside the workflow stands in for: its record joins the workflow result under that
+#: name, so a result holds the complete step record (the context trace keeps the package's own names).
+_RECORD_STEP_NAMES = {
+    "costa_core_curve_aliases": "core_correction",
+    "costa_vcl": "vclay",
+    "costa_lithology_volumes": "lithology",
+    "costa_core_permeability": "permeability",
+    "costa_crossover_flag": "crossover_flag",
+}
 #: Curves the package removed from the interpreted LAS: COSTA has no shallow resistivity.
 _UNSUPPORTED_SATURATION_CURVES = ("SXO", "SWXO", "SWXOA", "MHI", "SW_INPUT", "SO_INPUT")
 #: Curves the package removed from the context lists and statistics.
@@ -388,6 +397,56 @@ def _precomputed_trace_steps(well, parameters: CostaWellParameters) -> list[dict
     ]
 
 
+def precomputed_step_results(well, parameters: CostaWellParameters, input_curves, recorded_outputs) -> list:
+    """The steps COSTA runs outside the workflow, as workflow :class:`StepResult` records under the workflow's step names.
+
+    A step is included when it wrote curves the input LAS did not carry and no recorded workflow step wrote; its
+    output list keeps only those curves. Its method, inputs, parameters and decisions are the package's.
+
+    Parameters
+    ----------
+    well : Well
+        The interpreted well.
+    parameters : CostaWellParameters
+        The well's COSTA interpretation parameters.
+    input_curves : iterable of str
+        The curves of the input LAS.
+    recorded_outputs : iterable of str
+        The curves the workflow's own steps list as outputs.
+
+    Returns
+    -------
+    list of StepResult
+    """
+    from petrophys.workflow.dynamic_workflow import StepResult
+
+    given = {str(c).upper() for c in input_curves}
+    recorded = {str(c).upper() for c in recorded_outputs}
+    records = []
+    for trace in _precomputed_trace_steps(well, parameters):
+        outputs = [c for c in trace["output_curves"]
+                   if c.upper() not in given and c.upper() not in recorded and _has_finite(well, c)]
+        if not trace["success"] or not outputs:
+            continue
+        records.append(StepResult(
+            step=_RECORD_STEP_NAMES[trace["step"]], success=True, method=str(trace["method"]),
+            input_curves=list(trace["input_curves"]), output_curves=outputs,
+            parameters=dict(trace["parameters"]), decisions=list(trace["decisions"]),
+        ))
+    return records
+
+
+def _attach_precomputed_records(result, well, parameters: CostaWellParameters, input_curves) -> None:
+    """Put the steps run outside the workflow at the front of ``result``'s step record (see
+    :func:`precomputed_step_results`) and take their names off the skipped list."""
+    base = result.base_result
+    recorded = [c for step in base.steps_executed for c in (step.output_curves or [])]
+    records = precomputed_step_results(well, parameters, input_curves, recorded)
+    base.steps_executed[:0] = records
+    names = {r.step for r in records}
+    base.steps_skipped = [s for s in base.steps_skipped if s not in names]
+
+
 def interpret_costa_las(
     input_dir: str | Path,
     output_dir: str | Path,
@@ -475,12 +534,68 @@ def interpret_costa_las(
             payload = json.loads(trace_path.read_text(encoding="utf-8"))
             payload["costa_precomputed_steps"] = _precomputed_trace_steps(workflow_result.well, well_parameters)
             trace_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+            _attach_precomputed_records(workflow_result, workflow_result.well, well_parameters, input_curves)
             results.append(item)
         except Exception as exc:
             failure = BatchLasResult(source_file=str(file_path), output_file=str(export_path), success=False, errors=[str(exc)])
             failure.json_log_file = _write_json_log(failure, relative, output)
             results.append(failure)
     return results
+
+
+def interpret_costa_context_las(
+    input_dir: str | Path,
+    output_dir: str | Path,
+    *,
+    well_names: Optional[Sequence[str]] = None,
+    parameters: Optional[dict[str, CostaWellParameters]] = None,
+    reference_volumes: Optional[dict[str, dict[float, tuple[float, float]]]] = None,
+    pattern: str = "*.las",
+):
+    """Interpret the COSTA LAS files as the COSTA context computed its statistics.
+
+    :func:`interpret_costa_las` (steps 1 and 2 of the module docstring), then the context exporter's own pass over each
+    interpreted LAS: its workflow run, the finalised curves and its value-range QC. Each result's step record is
+    complete: the steps run outside the workflow (see :func:`precomputed_step_results`) and the workflow's own.
+
+    Parameters
+    ----------
+    input_dir, output_dir : str or Path
+        Folder of the COSTA LAS files; folder for the interpreted LAS and their traces.
+    well_names : sequence of str, optional
+        Only these wells (file stems).
+    parameters, reference_volumes : dict, optional
+        COSTA tables; default the bundled ones.
+    pattern : str
+        File pattern within ``input_dir``.
+
+    Returns
+    -------
+    list of BatchLasResult
+        One per well. ``input_curves`` stay the input LAS's own curves; ``result`` is the context pass.
+    """
+    from petrophys.preprocessing.quality.value_ranges import apply_value_range_qc
+    from petrophys.reporting.reference_export import (_context_value_range_rules, _read_context_input_well,
+                                                      _run_context_workflow)
+    from petrophys.workflow.dynamic_workflow import _dataset_calculations
+    from petrophys.workflow.zoned_batch import _finalize_export_curves
+
+    parameters = parameters if parameters is not None else load_costa_parameters()
+    items = interpret_costa_las(input_dir, output_dir, well_names=well_names, parameters=parameters,
+                                reference_volumes=reference_volumes, pattern=pattern)
+    for item in items:
+        if not item.success:
+            continue
+        with _dataset_calculations("costa"):
+            well, config = _read_context_input_well(Path(item.output_file), workflow_config=costa_workflow_config())
+            original = set(well.curves)
+            result = _run_context_workflow(well, config)
+            _finalize_export_curves(result.well, original)
+            apply_value_range_qc(result.well, rules=_context_value_range_rules(result))
+        _attach_precomputed_records(result, result.well, parameters[Path(item.source_file).stem.upper()],
+                                    item.input_curves)
+        item.result = result
+    return items
 
 
 def write_costa_formation_tops(processed_dir: str | Path, tops_file: str | Path) -> Path:
