@@ -1372,10 +1372,9 @@ def _interpret_las_file(
 ) -> tuple[ZonedWorkflowRunResult, set[str]]:
     """Read, standardize and interpret one LAS file of a batch, ready for export.
 
-    Under the "geolink" profile the file gets the calculations of the eval
-    package's re-run when its UWI, WELL header or file name names one of the
-    package's re-run wells, and otherwise those of its main run (see
-    :attr:`DynamicWorkflowConfig.calculation_profile`), once for the file.
+    The "geolink" profile resolves dataset-specific settings once per file
+    using its UWI, WELL header or file name (see
+    :attr:`DynamicWorkflowConfig.calculation_profile`).
 
     Returns
     -------
@@ -1435,9 +1434,9 @@ def process_las_directory_with_workflow(
     recursive : bool, default False
         Also search subfolders.
     config : DynamicWorkflowConfig, optional
-        Base settings for every well. Under ``calculation_profile="geolink"``
-        the eval package's two re-run wells, recognized by their UWI, WELL
-        header or file name, get the re-run's calculations.
+        Base settings for every well. ``calculation_profile="geolink"`` selects
+        the GeoLink evaluation configuration, resolved using each well's
+        UWI, WELL header or file name.
     well_names : sequence of str, optional
         Only interpret files whose name (without extension) matches one of
         these well names.

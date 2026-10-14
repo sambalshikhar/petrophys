@@ -18,8 +18,10 @@ or as one config object:
 A default of ``None`` means the value is taken from the data, from the
 standard for the lithology family, or from the calculation profile; the
 description says which, and the Default column adds the value a profile sets.
-``calculation_profile`` is ``"current"`` unless you are reproducing the GeoLink
-eval package (see :ref:`calculation-profiles`). Invalid values raise
+``calculation_profile`` selects an interpretation configuration: ``"current"``
+is the default and ``"geolink"`` supplies the GeoLink evaluation configuration
+(see :ref:`calculation-profiles`). For dataset context generation, see
+:doc:`../benchmark_context`. Invalid values raise
 ``ValueError`` before any calculation, naming the accepted values.
 ``result.summary()["settings_used"]`` shows the values a run actually used.
 

@@ -147,51 +147,20 @@ Evaporite, coal, halite recognized on the logs and bad-hole samples are never ne
 (calculation-profiles)=
 ## Calculation profiles
 
-`calculation_profile` chooses which calculations run.
-`"current"`, the default, is the interpretation these pages describe.
-`"geolink"` keeps the calculations that made the GeoLink eval context package, so that the package can be regenerated exactly from the raw LAS files; use it for that, or to compare against the package, not for new interpretations.
+`calculation_profile` selects an interpretation configuration. `"current"`
+is the default; `"geolink"` provides the GeoLink evaluation configuration.
+Explicitly supplied settings take precedence over profile defaults, and
+`result.summary()["settings_used"]` records the resolved settings.
 
-The package was made in two runs with different calculations.
-Under `"geolink"`, interpreting a well uses the calculations of the main run, except for 15/9-17 and 34/10-23, which get those of the re-run; a well is recognized by its UWI or WELL header and, in the zoned batch runner, by its file name.
-Writing context uses the re-run's calculations for every well.
-`result.to_trace_dict()["config"]["benchmark_calculations"]` says which a well got: `"main_run"` or `"rerun"`.
+For benchmark context, select a dataset `context_profile`: `geolink`, `costa`
+or `danish`. The profile supplies the preparation, interpretation, calibration
+and grouping rules for that collection. See {doc}`benchmark_context` for the
+inputs and commands, and {doc}`context` for general context generation.
 
-The main differences from `"current"`:
-
-| | `"current"` (default) | `"geolink"` |
-|---|---|---|
-| Input curves | standard names and units; implausible values screened | read as delivered |
-| Lithology code curve | one curve gives the vendor lithology, the matrix and the per-depth lithology groups: `lithology_curve`, else `LITHOLOGY_GEOLINK`, else a curve under a lithology-code name | vendor lithology and matrix from the first code curve under a lithology-code name or any name containing LITH or FACIES; per-depth groups from `LITHOLOGY_GEOLINK` alone |
-| Bad hole | caliper washout and large-hole tests only where a bit size is known (BS curve, else a 3-36 in header value); elsewhere an absolute DRHO above 0.15 g/cm3 alone, with a warning | an 8.5 in bit assumed where the well records none, without a warning; DRHO tested only in a well with a caliper |
-| Clay volume | minimum of VCL_GR and VCL_ND, on the matrix's neutron-density clean line and a clay point from the well's shales; VCL_SP reported | minimum of VCL_GR, VCL_SP and VCL_ND, on the limestone clean line and a fixed clay point (2.62 g/cm3, 0.38) |
-| Shaly-sand saturation | Indonesia as published by Poupon and Leveaux (1971); Dual Water only with a measured `rwb`; Waxman-Smits `cec` in meq/100 g | an Indonesia variant; Dual Water with Rwb = 0.3 Rw when none is given; `cec` passed on as given |
-| Oil-based mud | no SXO or MHI, and no Rw from the SP or Rxo/Rt | computed as for water-based mud |
-| Invasion ratio (Rxo/Rt) | the flushed-zone RXO first, then the shallow RSHA and RESS, then RMED or RESM as a proxy | RSHA first, then RXO and RESS |
-| Net-pay cutoffs left unset | per lithology family | VCL < 0.3 and SW < 0.7 |
-| Evaporite, coal and bad hole | never net reservoir or pay | can be net pay |
-| Class labels in context and in the workflow's hydrocarbon analysis | one canonical table per property ({py:data}`CLASS_TABLES <petrophys.model.CLASS_TABLES>`), so a property gets the same class in every category; reservoir quality from PHIE, PERM and VCL with the limits of each sample's lithology family | the eval package's tables, which differ by category |
-| Context after the value-range QC | PHI_NORM, RQI, FZI, BVW and PHI_Z recomputed from the curves left; depths and bad-hole intervals given with their unit | the eval package's values; no depth unit |
-| Assumed values (Rw temperature, temperature gradient) | reported in `result.warnings` | not reported |
-
-The `calculation_profile` entry of {doc}`api/settings` lists every difference.
-A setting you give explicitly is used under either profile; these settings take their default from the profile when left unset (`None` under `"current"` means the lithology-family standard):
-
-```{code-cell} python
-profiled = [{"setting": item["name"],
-             **{profile: repr(value) for profile, value in item["profile_defaults"].items()}}
-            for item in config_schema() if "profile_defaults" in item]
-pd.DataFrame(profiled).style.hide(axis="index")
-```
-
-`carbonate_calibration`, too, resolves to `"generic"` under `"current"` and to `"costa"` under `"geolink"`.
-From a source checkout, one command regenerates the whole package from the raw LAS files:
-
-```bash
-python scripts/generate_benchmark_context.py --from-raw --input-dir PATH/eval --output-dir NEW_DIR
-```
-
-{doc}`context` shows how to export context with the package's calculations from Python, and {doc}`mcp` how to pin an MCP server to them.
-The library reads no environment variable for the profile: `pp.interpret` and `pp.export_context` use `"current"` unless their settings say otherwise, and `petrophys-context` always does.
+For an MCP evaluation harness, select the calculation configuration with
+`petrophys-mcp serve --calculation-profile geolink`; see {doc}`mcp`.
+The library API reads its profile from the supplied settings, while the MCP
+server can also read `PETROPHYS_CALCULATION_PROFILE`.
 
 ## Clay volume
 

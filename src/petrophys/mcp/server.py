@@ -612,9 +612,9 @@ def create_server(
           as they are not estimated.
         - vcl_cutoff, phie_cutoff, sw_cutoff (v/v): net-pay cutoffs; defaults by
           lithology family: clastic VCL < 0.40, PHIE > 0.08, SW < 0.60;
-          carbonate VCL < 0.30, PHIE > 0.045, SW < 0.70. Evaporite and bad-hole
-          samples are not net reservoir or pay (the "geolink" calculation
-          profile keeps VCL < 0.3, SW < 0.7 and counts them).
+          carbonate VCL < 0.30, PHIE > 0.045, SW < 0.70. Dataset profiles may
+          supply their own screening rules; inspect the resolved parameters
+          and pay flags in the workflow trace.
         - gr_min, gr_max (API): GR clean/shale (default 20/100).
         - apply_hc_correction, hc_type: oil|gas; skip_steps: e.g. ['permeability'].
         Use run_workflow for a recipe with given methods (e.g. a quick look) and

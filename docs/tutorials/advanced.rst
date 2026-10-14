@@ -46,10 +46,7 @@ use these package extras where needed:
    35/11-13 and 35/11-10 Fensfjord with ``read_formation_pressure``, removes the
    report-derived fluid labels and calls ``infer_contacts``. The second well
    uses digitized station markers and returns ambiguity rather than a definite
-   FWL. It also picks stable buildup pressures from 35 native C0020A MDT
-   pretest LAS traces with ``read_mdt_pretest().pick_pressure()``, plots QC
-   windows and keeps unresolved tests out of gradient fitting. Report
-   comparisons stay outside the module. The separate HW-3
+   FWL. Report comparisons stay outside the module. The separate HW-3
    saturation-height example uses its own explicitly assumed FWL.
 
 .. note::

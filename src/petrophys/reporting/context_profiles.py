@@ -1,22 +1,10 @@
-"""Computed reproductions of the published GeoLink, COSTA and Danish context packages.
+"""Dataset-specific benchmark context for GeoLink, COSTA and Danish.
 
-Each package was made by a pipeline of its own: the GeoLink package by the
-zoned batch runner and the category exporter with the calculations its runs
-used (``calculation_profile="geolink"``), the COSTA package by
-interpretation steps of its own around the workflow and a rewrite of the
-context notes, the Danish package by a preparation of its raw LAS and one
-context group per formation of its tops workbook. A context profile runs that
-pipeline, from the delivery's raw LAS files to the context JSON; nothing is
-copied from a published package. Without a context profile, a context package
-is computed with the library's current workflow.
-
-Each reproduction was checked against its package. The COSTA and Danish
-interpreted LAS are identical byte for byte, as are the GeoLink ones of 31 of
-its 32 wells (16/10-4's differ at three SW samples). Every context number and
-note is the same except the ELECTROFACIES statistics, which come from k-means
-clustering that was unseeded when the packages were made, and, for GeoLink's
-15/9-17 and 34/10-23, the SO statistics and some note wording of the re-run
-that wrote their context.
+Each context profile computes its collection's JSON from raw LAS using the
+configured preparation, interpretation, calibration and grouping rules.
+GeoLink and Danish require their tops workbook and lithology codebook; COSTA
+uses bundled inputs and calibration data. See docs/benchmark_context.md for
+required inputs, examples and reference-comparison limits.
 """
 
 from __future__ import annotations

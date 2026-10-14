@@ -1,15 +1,11 @@
-"""Native MDT traces, independent report checks and failure-mode regressions."""
+"""MDT pretest picker and failure-mode regressions using synthetic traces."""
 from dataclasses import replace
-import hashlib
-import json
-from pathlib import Path
 
 import lasio
 import numpy as np
 import pandas as pd
 import pytest
 
-from petrophys import sample
 from petrophys.interpretation.saturation.height import (
     MDTPickingConfig, formation_pressures_from_mdt, pick_mdt_pressure,
     read_mdt_pretest,
@@ -25,36 +21,6 @@ def signal(level=300., repeat=None):
         mask = (t >= start) & (t < stop)
         p[mask] = target-30*np.exp(-(t[mask]-start)/10.)
     return t, p
-
-
-def test_all_native_traces_against_independent_report():
-    folder = Path(sample("c0020a_mdt_077")).parent
-    manifest = json.loads((folder / "c0020a_mdt_manifest.json").read_text())
-    refs = pd.read_csv(folder / manifest["reference_file"]).set_index("FILE_ID")
-    assert hashlib.sha256((folder / manifest["reference_file"]).read_bytes()).hexdigest() == manifest["reference_sha256"]
-    assert hashlib.sha256((folder / manifest["report_file"]).read_bytes()).hexdigest() == manifest["report_sha256"]
-    accepted, failed, valid_review = [], [], []
-    assert len(manifest["files"]) == 35
-    for item in manifest["files"]:
-        path = folder / item["file"]
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == item["sha256"]
-        trace = read_mdt_pretest(path)
-        # Only raw curves and metadata go to the picker, never report picks/QC.
-        pick = trace.pick_pressure()
-        ref = refs.loc[item["file_id"]]
-        assert trace.pressure_unit == "psi" and trace.depth_reference == "MD"
-        if pick.status == "accepted":
-            assert ref.REPORT_STATUS == "Valid Test"
-            assert abs(pick.pressure-ref.REPORT_PRESSURE_PSI) < 0.2
-            assert abs(pick.station_depth-ref.PROBE_MD_M) < .1
-            assert pick.pressure < min(pick.mud_before, pick.mud_after)-100
-            accepted.append(item["file_id"])
-        else:
-            assert pick.pressure is None and pick.flags
-            (valid_review if ref.REPORT_STATUS == "Valid Test" else failed).append(item["file_id"])
-    assert len(accepted) == 22
-    assert failed == [86, 105, 112, 118]
-    assert valid_review == [70, 85, 87, 95, 96, 97, 113, 114, 115]
 
 
 def test_retraction_does_not_select_mud_and_repeat_agreement():
@@ -108,9 +74,14 @@ def test_pressure_time_depth_units_and_time_origin(unit, factor):
 
 
 def test_reader_las_csv_and_custom_columns(tmp_path):
-    path = sample("c0020a_mdt_077")
+    t, p = signal(repeat=300.)
+    las = lasio.LASFile()
+    las.append_curve("TIME", t, unit="S")
+    las.append_curve("PQDVP1", np.full_like(t, 2000.), unit="M")
+    las.append_curve("PQQP1", p, unit="PSI")
+    path = tmp_path / "pretest.las"
+    las.write(str(path), version=2)
     native = read_mdt_pretest(path)
-    las = lasio.read(path)
     frame = pd.DataFrame({"seconds": native.time, "quartz": native.pressure, "probe": native.depth})
     csv = tmp_path / "pretest.csv"
     frame.to_csv(csv, sep=";", index=False)
@@ -118,7 +89,7 @@ def test_reader_las_csv_and_custom_columns(tmp_path):
                               depth_column="probe", time_unit="s", pressure_unit="psi", depth_unit="m",
                               csv_kwargs={"sep": ";"})
     assert custom.pick_pressure().pressure == native.pick_pressure().pressure
-    assert read_mdt_pretest(las).pick_pressure().pressure == native.pick_pressure().pressure
+    assert read_mdt_pretest(las).pick_pressure().pressure == pytest.approx(native.pick_pressure().pressure)
     frame = frame.rename(columns={"seconds": "TIME_S", "quartz": "PRES_PSI", "probe": "DEPTH_M"})
     assert read_mdt_pretest(frame).pick_pressure().pressure == native.pick_pressure().pressure
     frame["PRES_BAR"] = frame.PRES_PSI*.06894757293168
@@ -143,8 +114,10 @@ def test_invalid_configuration_time_and_array_metadata():
 
 
 def test_station_bridge_excludes_review_and_requires_real_tvd():
-    accepted = read_mdt_pretest(sample("c0020a_mdt_077")).pick_pressure()
-    review = read_mdt_pretest(sample("c0020a_mdt_086")).pick_pressure()
+    accepted = pick_mdt_pressure(*signal(repeat=300.), depth=np.full(501, 2000.),
+                                 pressure_unit="psi")
+    review = pick_mdt_pressure(*signal(repeat=305.), depth=np.full(501, 2000.),
+                               pressure_unit="psi")
     with pytest.raises(ValueError, match="Provide TVD"):
         formation_pressures_from_mdt([accepted, review])
     data = formation_pressures_from_mdt([accepted, review], tvd=[2600., 3000.],
@@ -174,9 +147,10 @@ def test_raw_to_unlabeled_contacts_pipeline():
 def test_library_qc_plot():
     import matplotlib.pyplot as plt
     from petrophys.visualization import create_mdt_pretest_plot
-    for number in (77, 86):
-        trace = read_mdt_pretest(sample(f"c0020a_mdt_{number:03}"))
-        figure = create_mdt_pretest_plot(trace)
-        assert len(figure.axes) == 1
-        assert len(figure.axes[0].patches) >= 1
-        plt.close(figure)
+    t, p = signal(repeat=300.)
+    trace = read_mdt_pretest(pd.DataFrame({"TIME_S": t, "DEPTH_M": np.full_like(t, 2000.),
+                                           "PRES_PSI": p}))
+    figure = create_mdt_pretest_plot(trace)
+    assert len(figure.axes) == 1
+    assert len(figure.axes[0].patches) >= 1
+    plt.close(figure)

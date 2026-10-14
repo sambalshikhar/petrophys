@@ -956,127 +956,20 @@ class DynamicWorkflowConfig:
     #: 2026-05-01. The reported PHIE and SW are unchanged.
     swirr_flag_phi_cl: str = "workflow"
     # -- Calculation profile -------------------------------------------------
-    #: Which calculations run. ``"current"`` (default) is the maintained
-    #: interpretation. ``"geolink"`` keeps the calculations behind the GeoLink
-    #: eval package fixed, so the package can be regenerated from the raw logs
-    #: exactly (see ``scripts/generate_benchmark_context.py``). The package was
-    #: made in two runs with different calculations: its main run interpreted
-    #: 30 of the 32 wells, and a re-run interpreted 15/9-17 and 34/10-23 and
-    #: wrote the context of every well. Under ``"geolink"``:
+    #: Interpretation configuration. ``"current"`` is the default;
+    #: ``"geolink"`` supplies the GeoLink evaluation configuration, including
+    #: dataset-specific calculation and classification rules. Explicit settings
+    #: take precedence over profile defaults. Resolved parameters and selected
+    #: methods are recorded in the workflow trace.
     #:
-    #: * interpreting a well (``petrophys.interpret``, ``run_dynamic_workflow``,
-    #:   ``DynamicWorkflow``, the zoned batch runner, the MCP server) uses the
-    #:   main run's calculations, except for 15/9-17 and 34/10-23, which get the
-    #:   re-run's. Either well is recognized by its UWI, then its WELL header
-    #:   and, in the zoned batch runner, its LAS file name, compared without
-    #:   case, with ``/`` and ``_`` alike and surrounding spaces ignored, and
-    #:   otherwise exactly (``"15/9-17 A"`` is another well). The workflow trace
-    #:   names the calculations a well got in ``benchmark_calculations``:
-    #:   ``"main_run"`` or ``"rerun"``;
-    #: * writing context (the exporters in ``petrophys.reporting``, which
-    #:   ``petrophys.export_context`` and the context scripts run) uses the
-    #:   re-run's calculations for every well.
+    #: For GeoLink, COSTA or Danish benchmark context, use ``context_profile``
+    #: in ``petrophys.export_context`` to select the collection's preparation,
+    #: calibration, interpretation and grouping rules. See the benchmark context
+    #: guide for required inputs and commands.
     #:
-    #: Where the re-run's calculations differ from ``"current"``:
-    #:
-    #: * input curves are not standardized or screened for implausible values
-    #:   (vendor mnemonics and units as read);
-    #: * the vendor lithology and an ``"auto"`` matrix come from the first
-    #:   curve that holds lithology codes under a lithology-code mnemonic or
-    #:   any name containing LITH or FACIES, and the per-depth lithology groups
-    #:   from ``LITHOLOGY_GEOLINK`` alone (``"current"`` reads one curve for
-    #:   all three; see ``lithology_curve``);
-    #: * VCL takes the minimum with SP picked on whole-log baselines, the
-    #:   limestone neutron-density clean line and a fixed (2.62, 0.38) clay
-    #:   point, and VCL_ND also outside the neutron-density triangle;
-    #: * evaporites use grain densities as density-porosity endpoints, clay
-    #:   porosity comes from shale samples on the shale matrix, gas crossover
-    #:   takes density porosity whatever ``hc_type``, the LAS PNSH header (the
-    #:   neutron log's shale reading) is the clay porosity, GeoLink code 10
-    #:   counts as sandstone, code 26 ("Gap") as an evaporite and the potash
-    #:   codes 27 and 32-34 as halite, and coal and the gypsum group keep
-    #:   slowness 250 and 83 us/ft;
-    #: * the same-well core porosity correction is fitted to PHIE and applied
-    #:   whatever its fit quality (``"current"`` fits it to PHIT, takes the
-    #:   clay-bound part off again and applies it only when it passes a quality
-    #:   gate);
-    #: * header CLFL is read as NaCl salinity without the chloride conversion,
-    #:   temperature curves are read as degF whatever their unit, and the
-    #:   MFST/MST headers are not read;
-    #: * the version 1 mineral rows are solved unweighted, and the carbonate
-    #:   domain applies the COSTA calibration sample by sample (SLSQP);
-    #: * saturation uses an Indonesia variant with Sw^(n/2) on the sand term
-    #:   only, Dual Water without the bound-water cap and with Rwb = 0.3 Rw
-    #:   when none is given, Waxman-Smits with CEC passed on as given and the
-    #:   total-porosity Sw, both reading the log PHIT alongside PHIE_CC, and
-    #:   SXO, MHI and the SP and Rxo/Rt estimates of Rw also for oil-based mud;
-    #: * unset net-pay cutoffs are VCL < 0.3 and SW < 0.7 (the carbonate PHIE
-    #:   cutoff only where a sample is labelled ``"carbonate"``), and bad-hole,
-    #:   evaporite and coal samples and halite known only from its log response
-    #:   can be net reservoir and pay and are among the samples SWIRR_APP is
-    #:   picked from;
-    #: * bad hole: the caliper washout test assumes an 8.5 in bit where the
-    #:   well has no BS curve and no header bit size, a header bit size is used
-    #:   whatever its value and never fills gaps in a BS curve, and the DRHO
-    #:   test runs only on a well with a caliper (``"current"`` runs the
-    #:   caliper washout and large-hole tests only where a bit size is known,
-    #:   and the DRHO test wherever DRHO is logged);
-    #: * the invasion ratio reads the shallow RSHA first, then RXO and RESS
-    #:   (``"current"`` reads the flushed-zone RXO first, then RSHA and RESS,
-    #:   and records the curves in the trace);
-    #: * the diagnostics analyzers (the context categories and the workflow's
-    #:   hydrocarbon analysis) classify with the eval package's class tables
-    #:   rather than the canonical ones of
-    #:   :data:`~petrophys.model.class_tables.CLASS_TABLES`: clean rock below
-    #:   VCL 0.20 in the permeability context but 0.25 in the porosity one, an
-    #:   Rxo/Rt fallback of 0.7/1.3 in saturation, FZI as micro to mega pores,
-    #:   reservoir grades that differ by category, none with a porosity floor
-    #:   per lithology family (the canonical grades test effective porosity,
-    #:   permeability and clay volume with the limits of each sample's
-    #:   lithology family), a sample without MHI as MINIMAL_MOVEABLE_HC, and the
-    #:   invasion statistics from a frozen copy of the 0.8/1.2 table;
-    #: * assumed values (bit size, Rw temperature, temperature gradient,
-    #:   Swirr) raise no warning, and ``result.to_las()`` lists no warnings in
-    #:   ``~Other``;
-    #: * ``result.summary()`` counts net thickness as samples times the depth
-    #:   step, as the trace does, rather than each sample's depth cell;
-    #: * after a context export's value-range QC, a segment with no porosity or
-    #:   no permeability left keeps the PHI_NORM, RQI and FZI computed before
-    #:   the QC (and its BVW when no porosity is left), PHI_Z is not recomputed,
-    #:   and formation and group depths, bad-hole intervals and the KH note
-    #:   carry no depth unit;
-    #: * the zoned batch runner writes the interpreted LAS as the eval package
-    #:   did: the source's depth unit label (e.g. ``FT``) and its unit labels
-    #:   where the standard unit is equivalent (e.g. m3/m3, gAPI), the
-    #:   temperature profile's parameters without unit or description, and
-    #:   header columns padded by UTF-8 bytes.
-    #:
-    #: The main run's calculations differ further:
-    #:
-    #: * clay porosity from the mean PHIT of every shale-lithology sample,
-    #:   rather than the neutron-density-averaged shale samples only;
-    #: * the Rw estimate, saturation, rock quality, net pay and BVW read PHIE
-    #:   and PERM rather than the core-corrected PHIE_CC and PERM_CC, and where
-    #:   PHIE is missing no step falls back to PHIT, permeability and its core
-    #:   correction included;
-    #: * one Archie coefficient set resolved from the lithology domain, rather
-    #:   than per-depth coefficients from the lithology log;
-    #: * the SXO quick-look relation only as a whole-curve fallback, and the
-    #:   invasion ratio from the first flushed-zone or shallow resistivity
-    #:   present (RSHA, then RXO, then RESS), without the medium-resistivity
-    #:   proxy; neither fills the gaps of that curve from the next one;
-    #: * MHI wherever SW and SXO are finite, without the invaded-zone gate;
-    #: * a duplicate BADHOLEFLAG curve alongside BAD_HOLE;
-    #: * the zoned batch runner's interpreted LAS leaves out PHIT and PHI_SEC
-    #:   where they only repeat PHIS and zero.
-    #:
-    #: The COSTA and Danish context packages are reproduced by context profiles
-    #: (:mod:`petrophys.reporting.context_profiles`) with the re-run's
-    #: calculations and a few of their own.
-    #:
-    #: The library reads no environment variable for this setting; only the
-    #: MCP server takes a default from ``petrophys-mcp --calculation-profile``
-    #: or ``PETROPHYS_CALCULATION_PROFILE``.
+    #: Library calls read this setting from the supplied configuration. The MCP
+    #: server can also select it through ``--calculation-profile`` or
+    #: ``PETROPHYS_CALCULATION_PROFILE``.
     calculation_profile: str = "current"
     #: Reuse a RESFLAG or NET_RES curve already on the well as the reservoir
     #: flag that picks the SWIRR_APP samples before permeability. False

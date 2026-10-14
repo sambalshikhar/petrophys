@@ -60,7 +60,7 @@ warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core sat
 | **Hole quality**: bad-hole samples are left out of net reservoir and pay; where no bit size is known, only DRHO can flag them | the `BAD_HOLE` curve next to the pay flags; the warnings and sample counts of the `bad_hole` step |
 | **Cutoffs**: project values instead of the lithology-family standards | the `net_pay` step parameters |
 | **Geology**: formation and lithology files are optional | logs drive the workflow; a formation name never creates logs or mineral fractions |
-| **Calculation profile**: `"current"`, unless you are reproducing the GeoLink eval package | `result.config.calculation_profile`; see {doc}`workflows` |
+| **Calculation profile**: the interpretation configuration selected for your task | `result.config.calculation_profile`; see {doc}`workflows` |
 
 Do not tune Rw just to get the pay you expect.
 
