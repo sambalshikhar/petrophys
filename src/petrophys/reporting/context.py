@@ -113,7 +113,20 @@ def build_context(
     return payload
 
 
+def _filesystem_path(path: Path) -> Path:
+    """Use Windows extended paths for I/O, retaining public logical filenames."""
+    if os.name != "nt":
+        return path
+    value = os.path.abspath(path)
+    if value.startswith("\\\\?\\"):
+        return Path(value)
+    if value.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + value[2:])
+    return Path("\\\\?\\" + value)
+
+
 def _write_bytes(path: Path, data: bytes, overwrite: bool) -> None:
+    path = _filesystem_path(path)
     if path.exists() and not overwrite:
         raise FileExistsError(
             f"Output already exists: {path}; pass overwrite=True "
@@ -212,7 +225,8 @@ def export_context(
                 f"context_profile {context_profile!r} runs its package's own settings; "
                 f"remove {', '.join(fixed)}"
             )
-    if overwrite or output.exists():
+    output_io = _filesystem_path(output)
+    if overwrite or output_io.exists():
         raise FileExistsError(
             "Package exports require a new output directory; existing "
             "packages are never overwritten"
@@ -231,8 +245,8 @@ def export_context(
             if layout == "formation_lithology"
             else reference.export_reference_json_work_package_by_category_formation_lithology
         )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(prefix=".petrophys-context-", dir=output.parent) as directory:
+    output_io.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix=".petrophys-context-", dir=output_io.parent) as directory:
         staged = Path(directory) / "package"
         if context_profile is None:
             results = exporter(input_dir=source, output_dir=staged, **options)
@@ -293,5 +307,5 @@ def export_context(
                 value = getattr(item, field)
                 if value:
                     setattr(item, field, str(output / Path(value).relative_to(staged)))
-        staged.rename(output)
+        staged.rename(output_io)
     return results

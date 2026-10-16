@@ -197,6 +197,7 @@ class StandardWorkflow:
         self.config = config or WorkflowConfig()
         self.errors: List[str] = []
         self.warnings: List[str] = []
+        self._core_porosity_generated = False
 
     def run(self, well: "Well") -> WorkflowResult:
         """
@@ -214,6 +215,7 @@ class StandardWorkflow:
         """
         self.errors = []
         self.warnings = []
+        self._core_porosity_generated = False
 
         result = WorkflowResult(
             well=well,
@@ -426,7 +428,6 @@ class StandardWorkflow:
         return (
             get_curve(well, ["PHIE", "PHIT"]) is not None
             and get_curve(well, ["PHIC", "CPOR"]) is not None
-            and get_curve(well, ["KH_CORE", "CPERM", "K_CORE", "PERM_CORE"]) is not None
         )
 
     def _calculate_core_correction(self, well: "Well") -> StepTrace:
@@ -434,6 +435,7 @@ class StandardWorkflow:
         from petrophys.interpretation.permeability import PermeabilityModule
 
         trace = StepTrace(step="core_correction", method="same_well_core_correction")
+        self._core_porosity_generated = False
         try:
             stale_core_curves = [name for name in ("PHIE_CC", "PERM_CC") if well.get(name) is not None]
             for curve_name in stale_core_curves:
@@ -463,6 +465,7 @@ class StandardWorkflow:
             perm_core = result.metadata.get("perm_core")
             if phi_corecal is not None:
                 well.add_curve("PHIE_CC", phi_corecal, "v/v", "Core-corrected effective porosity")
+                self._core_porosity_generated = True
                 trace.output_curves.append("PHIE_CC")
                 trace.decisions.append("Core-corrected porosity stored as PHIE_CC before saturation")
             if perm_core is not None:
@@ -537,7 +540,10 @@ class StandardWorkflow:
 
         trace = StepTrace(step="permeability", method=self.config.perm_method)
         try:
-            stale_core_curves = [name for name in ("PHIE_CC", "PERM_CC") if well.get(name) is not None]
+            stale_core_curves = [
+                name for name in ("PHIE_CC", "PERM_CC")
+                if well.get(name) is not None and not (name == "PHIE_CC" and self._core_porosity_generated)
+            ]
             for curve_name in stale_core_curves:
                 well.remove_curve(curve_name)
             if stale_core_curves:

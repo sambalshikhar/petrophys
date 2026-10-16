@@ -306,6 +306,12 @@ pd.DataFrame([{"table": name, "classes": table.describe()}
 ```
 
 Reservoir quality grades effective porosity (PHIE_CC, else PHIE, else PHIT), permeability (PERM_CC, else PERM, PERM_CORE or PERM_TIMUR) and clay volume (VCL, else VCLAY, else VSH) together, with the limits of the lithology family of the group's lithology.
+
+Core-corrected porosity (`PHIE_CC`) needs usable paired log and core porosity
+(`PHIC` or `CPOR`), subject to the calibration's sample and fit-quality checks.
+It does not require core permeability. Core permeability (`KH_CORE`, `CPERM`
+or a supported alias) is needed for the separate `PERM_CC` transform. A well
+can therefore export `PHIE_CC` alongside empirical `PERM` without `PERM_CC`.
 Limestone, chalk, dolomite and marl are carbonate and every other rock is clastic; a compound name goes by its last rock word, so SANDY LIMESTONE is carbonate and CALCAREOUS SHALE clastic.
 A sample without lithology takes the family of the lithology domain of the run that interpreted it.
 A sample without effective porosity, permeability or clay volume is `NO_QUALITY_DATA`: it gets no grade, not even `NON_RESERVOIR`.

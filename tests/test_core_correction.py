@@ -139,6 +139,95 @@ def test_dynamic_workflow_builds_phie_cc_before_saturation():
     assert "PHIE_CC" in saturation_step.input_curves
 
 
+@pytest.mark.parametrize("profile", ["current", "geolink"])
+@pytest.mark.parametrize("core_perm", ["absent", "all_null", "porosity_alias"])
+def test_core_porosity_does_not_require_core_permeability_in_full_routing(profile, core_perm, tmp_path):
+    from petrophys.io import export_las, read_las
+    from petrophys.reporting.reference_export import _compact_curve_note
+
+    config = DynamicWorkflowConfig(calculation_profile=profile, rw=0.05, swirr=0.25)
+    steps = [WorkflowStep.RW, WorkflowStep.CORE_CORRECTION, WorkflowStep.SATURATION, WorkflowStep.PERMEABILITY]
+    paired = DynamicWorkflow(config).run_selected_steps(_cored_well(_linear_core), steps)
+    well = _cored_well(_linear_core)
+    if core_perm in {"absent", "porosity_alias"}:
+        well.remove_curve("KH_CORE")
+        if core_perm == "porosity_alias":
+            well.rename_curve("PHIC", "CPOR")
+    else:
+        well.get("KH_CORE").data[:] = np.nan
+    result = DynamicWorkflow(config).run_selected_steps(well, steps)
+
+    assert not result.errors
+    assert result.well.get("PHIE_CC") is not None
+    np.testing.assert_allclose(result.well["PHIE_CC"].data, paired.well["PHIE_CC"].data)
+    np.testing.assert_allclose(result.well["SW"].data, paired.well["SW"].data)
+    assert result.well.get("PERM_CC") is None
+    assert result.well.get("PERM") is not None
+    saturation = next(step for step in result.steps_executed if step.step == "saturation")
+    assert ("PHIE_CC" if profile == "current" else "PHIE") in saturation.input_curves
+
+    target = tmp_path / "processed.las"
+    export_las(result.well, target)
+    restored = read_las(target)
+    np.testing.assert_allclose(restored["PHIE_CC"].data, result.well["PHIE_CC"].data, atol=1e-5)
+    note = _compact_curve_note("PHIE_CC", "computed", "", _core_step(result), result.well)
+    assert "core porosity correction" in note
+    assert "porosity-only calibration" in note
+
+
+def test_empirical_permeability_keeps_porosity_calibrated_earlier_in_the_run():
+    well = _cored_well(_linear_core)
+    well.remove_curve("KH_CORE")
+    config = DynamicWorkflowConfig(perm_method="timur", swirr=0.25)
+    result = DynamicWorkflow(config).run_selected_steps(
+        well, [WorkflowStep.CORE_CORRECTION, WorkflowStep.PERMEABILITY]
+    )
+    assert not result.errors
+    corrected_total = 1.1 * well["PHIT"].data - 0.02
+    expected = np.clip(corrected_total - (well["PHIT"].data - well["PHIE"].data), 0, corrected_total)
+    np.testing.assert_allclose(result.well["PHIE_CC"].data, expected)
+    assert result.well.get("PERM_CC") is None
+
+
+def test_porosity_only_formation_fits_are_not_overwritten_by_global_permeability_fallback():
+    from petrophys.model.formation_tops import FormationTops
+
+    well = Well("POROSITY-ONLY-FORMATIONS")
+    well.depth = 1000.0 + np.arange(40) * 0.5
+    phi = np.linspace(.1, .3, well.n_samples)
+    expected = np.where(well.depth < 1010., .8 * phi + .02, 1.2 * phi - .015)
+    well.add_curve("PHIE", phi, "v/v")
+    well.add_curve("PHIC", expected, "v/v")
+    well.add_curve("SW", np.full(well.n_samples, .4), "v/v")
+    tops = FormationTops.from_dict([
+        {"name": "Upper", "top_depth": 1000., "bottom_depth": 1009.75},
+        {"name": "Lower", "top_depth": 1010., "bottom_depth": 1020.},
+    ])
+    result = PermeabilityModule().calculate(well, swi=.25, formation_tops=tops)
+    np.testing.assert_allclose(result.metadata["phi_corecal"], expected, atol=1e-12)
+    assert result.metadata["perm_core"] is None
+    assert np.isfinite(result.perm).all()
+
+
+@pytest.mark.parametrize("method", ["auto", "timur"])
+def test_standard_workflow_corrects_porosity_without_core_permeability(method):
+    from petrophys.workflow.standard_workflow import StandardWorkflow, WorkflowConfig
+
+    well = _cored_well(_linear_core)
+    well.remove_curve("KH_CORE")
+    with pytest.warns(DeprecationWarning):
+        workflow = StandardWorkflow(WorkflowConfig(
+            calculate_vcl=False, calculate_porosity=False, calculate_net_pay=False,
+            rw=.05, swirr=.25, perm_method=method,
+        ))
+    result = workflow.run(well)
+    assert result.success
+    assert result.well.get("PHIE_CC") is not None
+    assert result.well.get("PERM_CC") is None
+    saturation = next(step for step in result.steps if step.step == "saturation")
+    assert "PHIE_CC" in saturation.input_curves
+
+
 def test_peer_core_is_not_used_unless_explicitly_enabled():
     phie = np.linspace(0.10, 0.28, 10)[[0, 2, 4, 6, 8]]
     peer = _core_well(1.1 * phie + 0.01, 10 ** (12.0 * (1.1 * phie + 0.01) - 2.0))

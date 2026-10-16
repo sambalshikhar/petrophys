@@ -103,12 +103,17 @@ def _filled_swirr_result(
 
 @dataclass
 class CorePermModel:
-    """Core-derived porosity correction + poro-perm transform."""
+    """Core-derived porosity correction, with an optional poro-perm transform.
+
+    ``perm_transform`` is None when the well has core porosity but no usable
+    core permeability: the porosity correction (and PHIE_CC) still applies,
+    it just predicts no permeability.
+    """
 
     porosity_correction: PorosityCorrection
-    perm_transform: PoroPermTransform
     source_well: str
     source_field: str
+    perm_transform: Optional[PoroPermTransform] = None
     source_formation: Optional[str] = None
     source_type: str = "same_well_core"
     input_curve: str = "PHIE"
@@ -117,13 +122,21 @@ class CorePermModel:
 
     @property
     def n_core_points(self) -> int:
-        """Return the number of matched core points used for the transform."""
-        return self.perm_transform.n_points
+        """Return the number of matched core points the model is based on."""
+        if self.perm_transform is not None:
+            return self.perm_transform.n_points
+        return self.porosity_correction.n_points
 
     def predict(self, porosity: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Predict corrected porosity and permeability for a log curve."""
+        """Predict corrected porosity and permeability for a log curve.
+
+        Permeability is all-NaN when the model has no fitted poro-perm transform.
+        """
         phi_corr = self.porosity_correction.predict(porosity)
-        perm = np.clip(self.perm_transform.predict(phi_corr), 0.001, PERMEABILITY_MAX_MD)
+        if self.perm_transform is None:
+            perm = np.full_like(np.asarray(phi_corr, dtype=float), np.nan)
+        else:
+            perm = np.clip(self.perm_transform.predict(phi_corr), 0.001, PERMEABILITY_MAX_MD)
         return phi_corr, perm
 
 
@@ -560,10 +573,14 @@ def _serialize_core_model(model: CorePermModel) -> Dict[str, Any]:
             "A": model.porosity_correction.A,
             "B": model.porosity_correction.B,
         },
-        "perm_transform": {
-            "A": model.perm_transform.A,
-            "B": model.perm_transform.B,
-        },
+        "perm_transform": (
+            {
+                "A": model.perm_transform.A,
+                "B": model.perm_transform.B,
+            }
+            if model.perm_transform is not None
+            else None
+        ),
     }
 
 
@@ -577,13 +594,19 @@ def _fit_core_perm_model(
     min_porosity_r_squared: Optional[float] = None,
 ) -> Optional[CorePermModel]:
     """
-    Fit a core-derived porosity correction and poro-perm transform.
+    Fit a core-derived porosity correction, and a poro-perm transform when possible.
 
     If ``formation_name`` is provided, the fit is limited to that formation
     interval using the supplied ``formation_tops``. ``porosity_curve`` is the
     log porosity the correction is fitted to (default: PHIE, else PHIT). With
     ``min_porosity_r_squared`` a porosity correction that fails the quality
     gate of :func:`_porosity_correction_rejection` rejects the whole model.
+
+    The porosity correction only needs core porosity, so it is fitted (and,
+    if it passes the quality gate, returned) even when the well has no usable
+    core permeability; the returned model then has ``perm_transform=None`` and
+    predicts porosity only. Core permeability is required solely for the
+    poro-perm transform that rides along with it.
     """
     porosity_curve = _core_porosity_curve_name(source_well, porosity_curve)
     top = None
@@ -620,9 +643,9 @@ def _fit_core_perm_model(
         _reject("no_core_curves")
         return None
 
-    if core.porosity is None or core.permeability is None:
+    if core.porosity is None:
         _reject(
-            "missing_core_porosity_or_permeability",
+            "missing_core_porosity",
             core_porosity_curve=core.metadata.get("core_porosity_curve"),
             core_permeability_curve=core.metadata.get("core_permeability_curve"),
         )
@@ -633,12 +656,6 @@ def _fit_core_perm_model(
             source_well,
             core,
             log_curve=porosity_curve,
-        )
-        transform = fit_log_poro_perm_transform_from_correction(
-            source_well,
-            core,
-            correction,
-            porosity_curve=porosity_curve,
         )
     except ValueError as exc:
         _reject(
@@ -665,10 +682,37 @@ def _fit_core_perm_model(
             )
             return None
 
-    if transform.n_points < min_core_points:
+    transform: Optional[PoroPermTransform] = None
+    if core.permeability is not None:
+        try:
+            transform = fit_log_poro_perm_transform_from_correction(
+                source_well,
+                core,
+                correction,
+                porosity_curve=porosity_curve,
+            )
+        except ValueError as exc:
+            _reject(
+                "perm_fit_failed",
+                error=str(exc),
+                core_porosity_curve=core.metadata.get("core_porosity_curve"),
+                core_permeability_curve=core.metadata.get("core_permeability_curve"),
+            )
+        else:
+            if transform.n_points < min_core_points:
+                _reject(
+                    "too_few_core_perm_points",
+                    n_core_points=transform.n_points,
+                    min_core_points=min_core_points,
+                    core_porosity_curve=core.metadata.get("core_porosity_curve"),
+                    core_permeability_curve=core.metadata.get("core_permeability_curve"),
+                )
+                transform = None
+
+    if transform is None and correction.n_points < min_core_points:
         _reject(
             "too_few_core_points",
-            n_core_points=transform.n_points,
+            n_core_points=correction.n_points,
             min_core_points=min_core_points,
             core_porosity_curve=core.metadata.get("core_porosity_curve"),
             core_permeability_curve=core.metadata.get("core_permeability_curve"),
@@ -1084,14 +1128,21 @@ class PermeabilityModule:
             rejected_models=core_rejected_models,
             **self._core_options(),
         )
-        same_mask = np.isfinite(same_well_perm)
-        if np.any(same_mask):
-            phi_corecal[same_mask] = same_well_phi[same_mask]
-            perm_core[same_mask] = same_well_perm[same_mask]
+        # Porosity and permeability resolve independently: a model with no
+        # usable core permeability still supplies PHIE_CC, so a later stage
+        # (peer wells, same-well global fit) is only asked to fill whichever
+        # of the two is still missing, never to redo one already resolved.
+        phi_mask = np.isfinite(same_well_phi)
+        if np.any(phi_mask):
+            phi_corecal[phi_mask] = same_well_phi[phi_mask]
+        perm_mask = np.isfinite(same_well_perm)
+        if np.any(perm_mask):
+            perm_core[perm_mask] = same_well_perm[perm_mask]
 
-        unresolved = ~np.isfinite(perm_core)
+        phi_unresolved = ~np.isfinite(phi_corecal)
+        perm_unresolved = ~np.isfinite(perm_core)
         peer_models: List[CorePermModel] = []
-        if np.any(unresolved) and peer_wells and self.use_peer_core:
+        if np.any(phi_unresolved | perm_unresolved) and peer_wells and self.use_peer_core:
             peer_phi, peer_perm, peer_models = _build_peer_core_prediction(
                 well,
                 peer_wells=peer_wells,
@@ -1099,13 +1150,16 @@ class PermeabilityModule:
                 rejected_models=core_rejected_models,
                 **self._core_options(),
             )
-            peer_mask = unresolved & np.isfinite(peer_perm)
-            if np.any(peer_mask):
-                phi_corecal[peer_mask] = peer_phi[peer_mask]
-                perm_core[peer_mask] = peer_perm[peer_mask]
-                unresolved = ~np.isfinite(perm_core)
+            peer_phi_mask = phi_unresolved & np.isfinite(peer_phi)
+            if np.any(peer_phi_mask):
+                phi_corecal[peer_phi_mask] = peer_phi[peer_phi_mask]
+            peer_perm_mask = perm_unresolved & np.isfinite(peer_perm)
+            if np.any(peer_perm_mask):
+                perm_core[peer_perm_mask] = peer_perm[peer_perm_mask]
+            phi_unresolved = ~np.isfinite(phi_corecal)
+            perm_unresolved = ~np.isfinite(perm_core)
 
-        if np.any(unresolved):
+        if np.any(phi_unresolved | perm_unresolved):
             same_well_global = _fit_core_perm_model(
                 well,
                 formation_tops=None,
@@ -1115,9 +1169,18 @@ class PermeabilityModule:
             )
             if same_well_global is not None:
                 core_phi = self._core_input_porosity(well, phi)
-                phi_global, perm_global = same_well_global.predict(core_phi[unresolved])
-                phi_corecal[unresolved] = phi_global
-                perm_core[unresolved] = perm_global
+                need_mask = phi_unresolved | perm_unresolved
+                phi_global, perm_global = same_well_global.predict(core_phi[need_mask])
+                global_phi = np.full_like(phi_corecal, np.nan)
+                global_perm = np.full_like(perm_core, np.nan)
+                global_phi[need_mask] = phi_global
+                global_perm[need_mask] = perm_global
+                global_phi_mask = phi_unresolved & np.isfinite(global_phi)
+                if np.any(global_phi_mask):
+                    phi_corecal[global_phi_mask] = global_phi[global_phi_mask]
+                global_perm_mask = perm_unresolved & np.isfinite(global_perm)
+                if np.any(global_perm_mask):
+                    perm_core[global_perm_mask] = global_perm[global_perm_mask]
                 same_well_models.append(same_well_global)
 
         perm_core = _cap_permeability(perm_core)
@@ -1210,16 +1273,17 @@ class PermeabilityModule:
             **self._core_options(),
         )
         same_mask = np.isfinite(same_well_perm)
+        same_phi_mask = np.isfinite(same_well_phi)
+        phi_corecal[same_phi_mask] = same_well_phi[same_phi_mask]
         if np.any(same_mask):
             perm[same_mask] = same_well_perm[same_mask]
-            phi_corecal[same_mask] = same_well_phi[same_mask]
             perm_core[same_mask] = same_well_perm[same_mask]
 
         unresolved = ~np.isfinite(perm)
         peer_phi = np.full_like(phi, np.nan, dtype=float)
         peer_perm = np.full_like(phi, np.nan, dtype=float)
         peer_models: List[CorePermModel] = []
-        if np.any(unresolved) and peer_wells and self.use_peer_core:
+        if np.any(unresolved | ~np.isfinite(phi_corecal)) and peer_wells and self.use_peer_core:
             peer_phi, peer_perm, peer_models = _build_peer_core_prediction(
                 well,
                 peer_wells=peer_wells,
@@ -1228,13 +1292,14 @@ class PermeabilityModule:
                 **self._core_options(),
             )
             peer_mask = unresolved & np.isfinite(peer_perm)
+            peer_phi_mask = ~np.isfinite(phi_corecal) & np.isfinite(peer_phi)
+            phi_corecal[peer_phi_mask] = peer_phi[peer_phi_mask]
             if np.any(peer_mask):
                 perm[peer_mask] = peer_perm[peer_mask]
-                phi_corecal[peer_mask] = peer_phi[peer_mask]
                 perm_core[peer_mask] = peer_perm[peer_mask]
                 unresolved = ~np.isfinite(perm)
 
-        if np.any(unresolved):
+        if np.any(unresolved | ~np.isfinite(phi_corecal)):
             same_well_global = _fit_core_perm_model(
                 well,
                 formation_tops=None,
@@ -1244,10 +1309,17 @@ class PermeabilityModule:
             )
             if same_well_global is not None:
                 core_phi = self._core_input_porosity(well, phi)
-                phi_global, perm_global = same_well_global.predict(core_phi[unresolved])
-                phi_corecal[unresolved] = phi_global
-                perm_core[unresolved] = perm_global
-                perm[unresolved] = perm_global
+                needed = unresolved | ~np.isfinite(phi_corecal)
+                phi_global, perm_global = same_well_global.predict(core_phi[needed])
+                global_phi = np.full_like(phi_corecal, np.nan)
+                global_perm = np.full_like(perm_core, np.nan)
+                global_phi[needed] = phi_global
+                global_perm[needed] = perm_global
+                phi_mask = ~np.isfinite(phi_corecal) & np.isfinite(global_phi)
+                phi_corecal[phi_mask] = global_phi[phi_mask]
+                perm_mask = unresolved & np.isfinite(global_perm)
+                perm_core[perm_mask] = global_perm[perm_mask]
+                perm[perm_mask] = global_perm[perm_mask]
                 same_well_models.append(same_well_global)
                 unresolved = ~np.isfinite(perm)
 

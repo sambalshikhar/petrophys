@@ -1,6 +1,7 @@
 """Public contracts for computed, bounded context generation."""
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -179,7 +180,9 @@ def test_daydream_dlis_context_package(tmp_path, layout):
     pytest.importorskip("dlisio")
     from petrophys.datasets import integration_fixture
 
-    source = Path(integration_fixture("daydream1_deep_pex_aps_ppc_ecs.dlis"))
+    source = Path(os.environ.get(
+        "PETROPHYS_DLIS_DEEP", integration_fixture("daydream1_deep_pex_aps_ppc_ecs.dlis")
+    ))
     if not source.exists() or source.stat().st_size < 1024:
         pytest.skip("Daydream DLIS fixture unavailable; run git lfs pull")
     output = tmp_path / layout
@@ -375,6 +378,39 @@ def test_trace_paths_survive_package_staging_without_payload_wrapper(tmp_path, m
     payload = json.loads((output / "sample.trace.json").read_text(encoding="utf-8"))
     assert Path(payload["context_json_file"]) == output / "sample.json"
     assert Path(payload["context_json_file"]).is_file()
+
+
+def test_long_context_paths_preserve_names_and_atomic_publication(context_well, tmp_path, monkeypatch):
+    from petrophys.reporting.context import _filesystem_path
+
+    parent = tmp_path / ("long-directory-" * 6) / ("nested-directory-" * 5)
+    output = parent / "package"
+    relative = Path("permeability") / ("well-name-" * 7) / "WHOLE_WELL" / (
+        "WHOLE_WELL_NO_LITHOLOGY_DATA_GROUP_1_permeability.json"
+    )
+    assert len(str(output / relative)) > 260
+
+    def fake_exporter(input_dir, output_dir, **options):
+        target = output_dir / relative
+        target.parent.mkdir(parents=True)
+        target.write_text('{"value": 1}', encoding="utf-8")
+        return [reference.ExampleFormatExportResult("input.las", str(target), True, str(target))]
+
+    monkeypatch.setattr(
+        reference, "export_reference_json_work_package_by_formation_lithology", fake_exporter
+    )
+    with pytest.raises(pp.ContextSizeError):
+        pp.export_context(tmp_path, output, layout="formation_lithology", max_total_bytes=1)
+    assert not _filesystem_path(output).exists()
+    results = pp.export_context(tmp_path, output, layout="formation_lithology")
+    assert results[0].json_file == str(output / relative)
+    assert json.loads(_filesystem_path(output / relative).read_text(encoding="utf-8")) == {"value": 1}
+    with pytest.raises(FileExistsError):
+        pp.export_context(tmp_path, output, layout="formation_lithology")
+
+    single = parent / ("single-context-" * 6 + ".json")
+    assert pp.export_context(context_well, single) == single
+    assert json.loads(_filesystem_path(single).read_text(encoding="utf-8"))["well"]["name"] == context_well.name
 
 
 def test_total_package_budget_is_enforced(tmp_path, monkeypatch):

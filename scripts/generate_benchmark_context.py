@@ -8,6 +8,8 @@ The script retains interpreted LAS and traces under <output-dir>/processed_las,
 and Danish prepared inputs under <output-dir>/prepared_las.
 
 See docs/benchmark_context.md for complete commands and required inputs.
+
+Example: python scripts/generate_benchmark_context.py --from-raw --input-dir PATH/eval --output-dir NEW_DIR
 """
 
 from __future__ import annotations
