@@ -3048,7 +3048,6 @@ class DynamicWorkflow:
                 well,
                 porosity,
                 ("core porosity (PHIC/CPOR)", "PHIC", "CPOR"),
-                ("core permeability (KH_CORE/CPERM)", "KH_CORE", "CPERM", "K_CORE", "PERM_CORE"),
             )
         elif step is WorkflowStep.SATURATION:
             missing = self._missing(well, ("effective porosity (PHIE)", "PHIE_CC", "PHIE"), deep_res)
@@ -3305,7 +3304,6 @@ class DynamicWorkflow:
         return (
             self._has_curve(well, "PHIE", "PHIT")
             and self._has_curve(well, "PHIC", "CPOR")
-            and self._has_curve(well, "KH_CORE", "CPERM", "K_CORE", "PERM_CORE")
         )
 
     def _can_saturation(self, well: "Well") -> bool:
@@ -6342,7 +6340,16 @@ class DynamicWorkflow:
                     "and available for Swirr routing"
                 )
 
-        stale_core_curves = [name for name in ("PHIE_CC", "PERM_CC") if well.get(name) is not None]
+        # A porosity calibration made earlier in this run is independent of
+        # the selected permeability method (including empirical methods).
+        core_phi_generated = self._result is not None and any(
+            step.step == "core_correction" and step.success and "PHIE_CC" in step.output_curves
+            for step in self._result.steps_executed
+        )
+        stale_core_curves = [
+            name for name in ("PHIE_CC", "PERM_CC")
+            if well.get(name) is not None and not (name == "PHIE_CC" and core_phi_generated)
+        ]
         for curve_name in stale_core_curves:
             well.remove_curve(curve_name)
         if stale_core_curves:
@@ -6350,6 +6357,8 @@ class DynamicWorkflow:
                 "Existing core-corrected curves cleared before permeability; "
                 "PHIE_CC/PERM_CC are rewritten only when the current same-well core model is fitted"
             )
+        if core_phi_generated:
+            decisions.append("Porosity calibration from the core-correction step retained independently of permeability")
 
         code_curve = self._lithology_code_curve(well)
         perm_module = PermeabilityModule(

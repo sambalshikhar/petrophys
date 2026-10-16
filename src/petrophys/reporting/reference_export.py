@@ -467,10 +467,13 @@ _CONTEXT_VALUE_RANGE_RULES = {
 }
 
 
+# Target order reaches the benchmark's computed/missing summaries and compact
+# notes. Keep the published order explicit so JSON is reproducible across
+# Python hash seeds.
 CATEGORY_CONTEXT_SPECS = {
     "hydrocarbon": {
         "analyzer": HydrocarbonAnalysis,
-        "targets": {
+        "targets": (
             "TEMP",
             "RMF",
             "RW",
@@ -489,19 +492,18 @@ CATEGORY_CONTEXT_SPECS = {
             "MHI",
             "CROSSOVER_FLAG",
             "VP_VS_RATIO",
-            "PRIME_GAS_TARGET",
-            "PRIME_OIL_TARGET",
             "RESFLAG",
             "SEALFLAG",
-        },
+            "PRIME_GAS_TARGET",
+            "PRIME_OIL_TARGET",
+        ),
     },
     "saturation": {
         "analyzer": SaturationAnalysis,
-        "targets": {
+        "targets": (
             "TEMP",
             "RMF",
             "RW",
-            "RWA",
             "PHID",
             "PHIN",
             "PHIS",
@@ -511,13 +513,14 @@ CATEGORY_CONTEXT_SPECS = {
             "SXO",
             "BVW",
             "MHI",
-            "ND_SEPARATION",
             "PHIT_GAS_CORR",
-        },
+            "ND_SEPARATION",
+            "RWA",
+        ),
     },
     "permeability": {
         "analyzer": PermeabilityAnalysis,
-        "targets": {
+        "targets": (
             "PERM",
             "PERM_CC",
             "RQI",
@@ -529,11 +532,11 @@ CATEGORY_CONTEXT_SPECS = {
             "PHIT",
             "VCL",
             "MHI",
-        },
+        ),
     },
     "porosity": {
         "analyzer": PorosityAnalysis,
-        "targets": {
+        "targets": (
             "PHID",
             "PHIN",
             "PHIS",
@@ -541,60 +544,60 @@ CATEGORY_CONTEXT_SPECS = {
             "PHIE",
             "PHIE_CC",
             "PHI_SEC",
-            "DS_SEPARATION",
             "PORO_QUALITY_INDEX",
+            "DS_SEPARATION",
             "RQI",
             "FZI",
             "VCL",
-        },
+        ),
     },
     "numerical": {
         "analyzer": NumericalStatisticalAnalysis,
-        "targets": {
+        "targets": (
             "TEMP",
             "RW",
             "RMF",
             "BAD_HOLE",
-            "DATA_COMPLETENESS",
-            "GR_GRAD",
-            "RHOB_GRAD",
-            "RDEP_GRAD",
-            "NPHI_GRAD",
-            "DTC_GRAD",
-            "CONSISTENCY_RATIO",
+            "SH_MIN",
+            "ELECTROFACIES",
             "ACOUSTIC_IMPEDANCE",
-            "POISSON_RATIO",
+            "DATA_COMPLETENESS",
+            "NPHI_GRAD",
             "YOUNG_MOD",
             "BRITTLENESS_INDEX",
-            "ELECTROFACIES",
-            "S_V",
             "PP_HYDROSTATIC",
-            "SH_MIN",
+            "RHOB_GRAD",
+            "S_V",
+            "RDEP_GRAD",
+            "CONSISTENCY_RATIO",
+            "GR_GRAD",
+            "POISSON_RATIO",
+            "DTC_GRAD",
             "NET_PAY",
-        },
+        ),
     },
     "lithology": {
         "analyzer": LithologyAnalysis,
-        "targets": {
+        "targets": (
             "LITHO",
             "VCL",
             "VQUAR",
             "VCALC",
             "VDOLO",
             "VANHY",
+            "COMPOSITE_CLAY_INDICATOR",
+            "LITHOLOGY_GROUP",
+            "DOLOMITE_INDICATOR",
             "GT_LITHOLOGY_GROUP_CODE",
             "LIMESTONE_INDICATOR",
-            "DOLOMITE_INDICATOR",
+            "LITHOLOGY_NAME",
             "CARBONATE_INDICATOR",
             "GR_CLAY_INDICATOR",
             "NPHI_CLAY_INDICATOR",
             "PEF_CLAY_INDICATOR",
             "COMPOSITE_CLAY",
-            "COMPOSITE_CLAY_INDICATOR",
             "CONSISTENCY_SCORE",
-            "LITHOLOGY_GROUP",
-            "LITHOLOGY_NAME",
-        },
+        ),
     },
 }
 
@@ -1896,10 +1899,16 @@ def _missing_curve_reason(
                 reasons = sorted({str(model.get("reason") or "unknown") for model in rejected})
                 reason_text = ", ".join(reasons)
                 if "no_core_curves" in reasons:
+                    if curve == "PHIE_CC":
+                        return "no same-well core porosity was available for calibration"
                     return "no same-well core porosity/permeability curves were available for calibration"
-                if "missing_core_porosity_or_permeability" in reasons:
-                    return "same-well core data did not contain both porosity and permeability for calibration"
+                if "missing_core_porosity" in reasons or "missing_core_porosity_or_permeability" in reasons:
+                    if curve == "PHIE_CC":
+                        return "no usable core porosity was available; core permeability is not required for porosity calibration"
+                    return "same-well core data did not contain usable paired porosity and permeability for calibration"
                 if "too_few_core_points" in reasons:
+                    if curve == "PHIE_CC":
+                        return "same-well core data had too few paired log/core porosity samples" + _rejected_core_model_text(step.parameters)
                     return "same-well core data had too few paired core porosity/permeability samples" + _rejected_core_model_text(step.parameters)
                 return f"same-well core model was not fitted; reason={reason_text}" + _rejected_core_model_text(step.parameters)
             if curve == "PHIE_CC":
@@ -4116,6 +4125,13 @@ def _core_model_text(params: dict[str, Any]) -> str:
     model = same_well_models[0] if same_well_models else models[0]
     por = model.get("porosity_correction") or {}
     perm = model.get("perm_transform") or {}
+    if not perm:
+        return (
+            f" core_phi={model.get('core_porosity_curve') or 'unknown'}, "
+            f"A={_format_numeric(por.get('A'), 4)}, B={_format_numeric(por.get('B'), 4)}, "
+            f"n={model.get('n_core_points')}; porosity-only calibration, "
+            "no usable core permeability transform."
+        )
     return (
         f" core_phi={model.get('core_porosity_curve') or 'unknown'}, "
         f"core_perm={model.get('core_permeability_curve') or 'unknown'}, "
