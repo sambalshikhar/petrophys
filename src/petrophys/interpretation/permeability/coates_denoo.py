@@ -6,6 +6,8 @@ from typing import Optional, Union
 
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 #: Published constants ``(P, Q, R)`` of the Wyllie-Rose family
 #: ``k = P * phi^Q / Swi^R``, with k in mD and phi and Swi as fractions (v/v).
 WYLLIE_ROSE_PRESETS = {
@@ -40,12 +42,19 @@ def coates_denoo(
     Returns
     -------
     float or np.ndarray
-        Permeability (mD)
+        Permeability (mD); NaN where Swi exceeds 1
     """
-    swi = np.where(swi <= 0, 0.01, swi) if isinstance(swi, np.ndarray) else max(swi, 0.01)
-    phi = np.where(phi <= 0, 0.001, phi) if isinstance(phi, np.ndarray) else max(phi, 0.001)
+    swi = np.asarray(swi, dtype=float)
+    phi = np.asarray(phi, dtype=float)
+    swi = np.where(swi <= 0, 0.01, swi)
+    phi = np.where(phi <= 0, 0.001, phi)
 
-    return 10000.0 * np.power(phi, 4.0) * np.power((1.0 - swi) / swi, 2.0)
+    k = 10000.0 * np.power(phi, 4.0) * np.power((1.0 - swi) / swi, 2.0)
+    if not reproducing_benchmark():
+        # Swi > 1 is not a saturation; squaring (1 - Swi) made it a growing k.
+        k = np.where(swi > 1.0, np.nan, k)
+        return k[()] if k.ndim == 0 else k
+    return k
 
 
 def wyllie_rose(
@@ -114,7 +123,9 @@ def wyllie_rose(
     q = preset_q if q is None else float(q)
     r = preset_r if r is None else float(r)
 
-    swi = np.where(swi <= 0, 0.01, swi) if isinstance(swi, np.ndarray) else max(swi, 0.01)
-    phi = np.where(phi <= 0, 0.001, phi) if isinstance(phi, np.ndarray) else max(phi, 0.001)
+    swi = np.asarray(swi, dtype=float)
+    phi = np.asarray(phi, dtype=float)
+    swi = np.where(swi <= 0, 0.01, swi)
+    phi = np.where(phi <= 0, 0.001, phi)
 
     return p * np.power(phi, q) / np.power(swi, r)

@@ -7,11 +7,16 @@ porosity analysis.
 
 from typing import TYPE_CHECKING, Optional, Union
 from dataclasses import dataclass
+import warnings
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.constants import DefaultParameters, MatrixProperties
 from petrophys.interpretation.porosity.density_porosity import density_porosity
-from petrophys.interpretation.porosity.sonic_porosity import sonic_porosity, secondary_porosity
+from petrophys.interpretation.porosity.sonic_porosity import (
+    secondary_porosity,
+    wyllie_time_average,
+)
 from petrophys.interpretation.porosity.total_porosity import total_porosity
 from petrophys.interpretation.porosity.effective_porosity import effective_porosity
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
@@ -98,7 +103,9 @@ class PorosityModule:
         well : Well
             Well with RHOB required; NPHI and DTC optional but recommended
         vcl : np.ndarray, optional
-            Clay volume array (uses VCL curve from well if not provided)
+            Clay volume array (uses VCL curve from well if not provided).
+            Without either, no clay correction is possible: PHIE is written
+            equal to PHIT, with a ``UserWarning``.
 
         Returns
         -------
@@ -111,10 +118,12 @@ class PorosityModule:
         if rhob is None:
             raise ValueError("RHOB with finite samples required for porosity calculation")
 
+        no_vcl = False
         if vcl is None:
             vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
             if vcl is None:
                 vcl = np.zeros(well.n_samples)
+                no_vcl = not reproducing_benchmark()
 
         # --- Density porosity ---
         phid = density_porosity(rhob, self.rhob_matrix, self.rhob_fluid)
@@ -122,16 +131,26 @@ class PorosityModule:
         # --- Sonic porosity ---
         phis = None
         if dtc is not None:
-            phis = sonic_porosity(
-                dtc, self.matrix,
-                dtc_fluid=DefaultParameters.FLUID_SLOWNESS
+            # The matrix slowness set from the matrix (or by the caller).
+            phis = wyllie_time_average(
+                dtc, self.dtc_matrix, DefaultParameters.FLUID_SLOWNESS
             )
 
         # --- Total porosity (N-D) ---
         phit = total_porosity(nphi, phid) if nphi is not None else phid
 
         # --- Effective porosity ---
-        phie = effective_porosity(phit, vcl, self.phi_clay)
+        if no_vcl:
+            # No clay volume to correct for: PHIE is PHIT.
+            warnings.warn(
+                "No VCL, VCLAY or VSH curve and no vcl given: PHIE is written equal to PHIT "
+                "(no clay-bound water correction)",
+                UserWarning,
+                stacklevel=2,
+            )
+            phie = np.array(phit, dtype=float, copy=True)
+        else:
+            phie = effective_porosity(phit, vcl, self.phi_clay)
 
         # --- Secondary porosity index = phit - phis (NOT phie - phis) ---
         # Using phit correctly captures all secondary porosity (fractures,
@@ -195,6 +214,30 @@ def calculate_porosity(
     Returns
     -------
     PorosityResult
+
+    Raises
+    ------
+    TypeError
+        For an unknown keyword argument (for example a misspelt ``rhobfluid``).
+    ValueError
+        For an unknown matrix, a fluid density that is not in g/cm3 or a
+        clay porosity that is not a fraction.
     """
+    if kwargs:
+        raise TypeError(
+            f"calculate_porosity() got unexpected keyword argument(s): {', '.join(sorted(kwargs))}"
+        )
+    try:
+        MatrixProperties.get(matrix)
+    except KeyError:
+        raise ValueError(
+            f"Unknown matrix {matrix!r}. Available: {', '.join(MatrixProperties.names())}"
+        ) from None
+    if not (0.0 < float(rhob_fluid) <= 2.0):
+        raise ValueError(
+            f"rhob_fluid={rhob_fluid:g} is not a fluid density in g/cm3 (kg/m3 / 1000)"
+        )
+    if not (0.0 <= float(phi_clay) <= 1.0):
+        raise ValueError(f"phi_clay={phi_clay:g} must be a fraction (v/v), not a percentage")
     module = PorosityModule(matrix=matrix, rhob_fluid=rhob_fluid, phi_clay=phi_clay)
     return module.calculate(well, vcl)

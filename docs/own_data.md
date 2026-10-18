@@ -152,7 +152,7 @@ tops.tail(3).style.hide(axis="index").format(precision=1)
 | --- | --- |
 | Table in feet, well in metres (or the reverse) | Converts, and records `depth_conversion` in the report |
 | No `depth_unit` given | Assumes the well's unit and notes it in the report |
-| No `depth_reference` or `datum` given | Assumes they match the well, with a warning |
+| No `depth_reference` or `datum` given | Assumes they match the well and notes the assumption in the report |
 | Different reference (MD, TVD, TVDSS) or datum | Raises `ValueError`: a survey or datum transformation is needed |
 | Some rows outside the logged interval | Counts them in the report |
 | No row overlaps the logs | Warns with {class}`~petrophys.exceptions.DataQualityWarning`, suggesting the other unit if it fits |

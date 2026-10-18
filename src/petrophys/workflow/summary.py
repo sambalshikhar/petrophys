@@ -57,6 +57,14 @@ def net_thickness(well: "Well", mask: np.ndarray, cells: bool = True) -> Dict[st
     return thickness
 
 
+def _differs(value: Any, default: Any) -> bool:
+    """Whether a setting differs from its default; a table or array that is set does."""
+    try:
+        return bool(value != default)
+    except (TypeError, ValueError):
+        return True
+
+
 def summarize_result(
     result: "DynamicWorkflowResult",
     top: Optional[float] = None,
@@ -74,7 +82,7 @@ def summarize_result(
         for name, spec in defaults.items()
         if name != "lithology"
         and spec.default is not dataclasses.MISSING
-        and getattr(result.config, name) != spec.default
+        and _differs(getattr(result.config, name), spec.default)
     }
     return json_object({
         "petrophys_version": __version__,

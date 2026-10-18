@@ -14,6 +14,7 @@ from petrophys.interpretation.electrical.rw.sp_rw import estimate_sp_lines, rw_f
 from petrophys.interpretation.electrical.rw.salinity_rw import rw_from_salinity
 from petrophys.interpretation.electrical.rw.temp_correction import correct_rw_temperature
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+from petrophys._internal.benchmark import reproducing_benchmark
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -230,7 +231,10 @@ class RwModule:
                 )
 
         if method == "rxo_rt" or method == "auto":
-            rxo_data, _, _ = get_curve_data_depthwise(well, ["RSHA", "RXO", "RESS"])
+            # The flushed-zone RXO first; the benchmark packages read the
+            # shallow RSHA first.
+            rxo_curves = ["RSHA", "RXO", "RESS"] if reproducing_benchmark() else ["RXO", "RSHA", "RESS"]
+            rxo_data, _, _ = get_curve_data_depthwise(well, rxo_curves)
             rt_data, _, _ = get_curve_data_depthwise(well, ["RDEP", "RT"])
             if method == "rxo_rt" and rmf is None:
                 raise ValueError("Rmf is required for Rxo/Rt-based Rw")
@@ -295,7 +299,7 @@ def calculate_rw(
     >>> rw = calculate_rw(salinity=50000, temperature=150)
     """
     if method == "salinity" and salinity is not None:
-        return rw_from_salinity(salinity, temperature or 150.0)
+        return rw_from_salinity(salinity, 150.0 if temperature is None else temperature)
 
     if method == "given" and rw_given is not None:
         return rw_given

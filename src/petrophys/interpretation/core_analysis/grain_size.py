@@ -48,7 +48,12 @@ _WENTWORTH = [
 
 
 def wentworth_class(d_um: float) -> str:
-    """Return the Wentworth class name for a grain diameter in µm."""
+    """Return the Wentworth class name for a grain diameter in µm.
+
+    Missing (NaN) or negative diameters return ``"Unknown"``.
+    """
+    if not np.isfinite(d_um) or d_um < 0:
+        return "Unknown"
     for boundary, name in _WENTWORTH:
         if d_um >= boundary:
             return name

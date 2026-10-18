@@ -10,12 +10,15 @@ solved as
 
     Sw^n = (1 / Rt - Vsh^exp / Rtsh) * a * Rw / phi^m
 
-with Sw = 0 where the shale term alone exceeds 1 / Rt.
+with Sw = NaN where the shale term alone exceeds 1 / Rt: the equation has
+no solution there (the benchmark packages gave Sw = 0).
 """
 
 from typing import Union
 
 import numpy as np
+
+from petrophys._internal.benchmark import reproducing_benchmark
 
 
 def north_sea_shaly_sand(
@@ -56,7 +59,7 @@ def north_sea_shaly_sand(
     Returns
     -------
     float or np.ndarray
-        Water saturation (0-1)
+        Water saturation (0-1); NaN where the shale term alone exceeds 1/Rt
     """
     scalar = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vsh)
 
@@ -65,6 +68,9 @@ def north_sea_shaly_sand(
     vsh = np.atleast_1d(np.asarray(vsh, dtype=float))
 
     rt = np.where(rt <= 0, 1e-10, rt)
+    # Infinite Rt (no conductivity reading) is missing, as in archie().
+    if not reproducing_benchmark():
+        rt = np.where(np.isinf(rt), np.nan, rt)
     phi = np.where(phi <= 0, 1e-10, phi)
     vsh = np.clip(vsh, 0.0, 1.0)
     rw = np.asarray(rw, dtype=float)
@@ -76,7 +82,12 @@ def north_sea_shaly_sand(
     rtsh = max(rtsh, 1e-10)
 
     shale_term = np.power(vsh, vsh_exp) / rtsh
-    sw_n = np.maximum(((1.0 / rt) - shale_term) * (a * rw) / np.power(phi, m), 0.0)
+    sw_n = ((1.0 / rt) - shale_term) * (a * rw) / np.power(phi, m)
+    if reproducing_benchmark():
+        sw_n = np.maximum(sw_n, 0.0)
+    else:
+        # The shale alone conducts more than the rock: no Sw solves the equation.
+        sw_n = np.where(sw_n < 0, np.nan, sw_n)
     sw = np.power(sw_n, 1.0 / n)
     sw = np.clip(sw, 0.0, 1.0)
 

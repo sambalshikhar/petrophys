@@ -83,7 +83,7 @@ petrophys-mcp config codex --root /path/to/wells     # ~/.codex/config.toml
 
 ## Deploy over HTTP
 
-Use HTTP when the model is not on your machine: a server shared by a team, a container, or a hosted model (OpenAI's Responses API, ChatGPT connectors) that reaches the server by URL. Clients send a bearer token; the server refuses to listen beyond localhost without one.
+Use HTTP when the model is not on your machine: a server shared by a team, a container, or a hosted model (OpenAI's Responses API, ChatGPT connectors) that reaches the server by URL. Clients send a bearer token; the server refuses to listen beyond localhost without one. One server process holds one set of loaded wells and interpretations: every client of an HTTP server sees and can use the wells and runs of the others, so run a server per user when that matters.
 
 ::::{tab-set}
 

@@ -26,6 +26,7 @@ from petrophys.interpretation.permeability.lith_vcl import (
     lith_vcl_permeability,
 )
 from petrophys._internal.analysis_helpers import get_curve, get_curve_data_depthwise
+from petrophys._internal.benchmark import reproducing_benchmark
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -65,7 +66,18 @@ def _as_fraction_if_percent(values: np.ndarray) -> np.ndarray:
     """Convert percentage-like saturation values to fractions."""
     arr = np.asarray(values, dtype=float).copy()
     finite = arr[np.isfinite(arr)]
-    if finite.size and np.nanmax(np.abs(finite)) > 1.5 and np.nanmax(np.abs(finite)) <= 100.0:
+    if not finite.size:
+        return arr
+    if reproducing_benchmark():
+        # The benchmark packages read the curve maximum, so one spike above
+        # 1.5 in a v/v curve rescaled the whole curve.
+        level = np.nanmax(np.abs(finite))
+        if level > 1.5 and level <= 100.0:
+            arr = arr / 100.0
+        return arr
+    # A percent curve has its typical value above 1.5; spikes in a v/v curve
+    # do not make it one (they are rejected by _valid_swirr instead).
+    if np.median(np.abs(finite)) > 1.5 and np.nanmax(np.abs(finite)) <= 100.0:
         arr = arr / 100.0
     return arr
 
@@ -913,13 +925,21 @@ def _describe_auto_method(
 
 
 def _auto_empirical_methods(fallback_method: str) -> List[str]:
-    """Return empirical methods in workflow priority order."""
+    """Return empirical methods in workflow priority order.
+
+    The fallback method is tried first, then coates, timur and lith_vcl. The
+    benchmark packages tried coates first whatever the fallback.
+    """
     fallback = _normalize_perm_method(fallback_method)
-    methods: List[str] = ["coates"]
-    if fallback not in {"", "coates", "timur", "lith_vcl"}:
-        methods.append(fallback)
-    methods.append("timur")
-    methods.append("lith_vcl")
+    if reproducing_benchmark():
+        methods: List[str] = ["coates"]
+        if fallback not in {"", "coates", "timur", "lith_vcl"}:
+            methods.append(fallback)
+        methods.append("timur")
+        methods.append("lith_vcl")
+        return list(dict.fromkeys(methods))
+    methods = [fallback] if fallback else []
+    methods.extend(["coates", "timur", "lith_vcl"])
     return list(dict.fromkeys(methods))
 
 

@@ -34,7 +34,7 @@ tokens, and can target the in-process server, stdio, or a running HTTP server
 and Danish using each dataset's interpretation parameters, calibration and
 grouping rules. It accepts one LAS file or a folder, identifies the collection
 by well name, and retains interpreted LAS and workflow traces in
-`OUTPUT/processed_las`. Danish runs also retain `OUTPUT/prepared_las`.
+`OUTPUT/processed_las`.
 
 See the [benchmark context guide](../docs/benchmark_context.md) for required
 inputs, complete commands and subset runs. For context from your own wells,

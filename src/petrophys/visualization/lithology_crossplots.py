@@ -19,7 +19,11 @@ try:
 except Exception:  # pragma: no cover
     HAS_MPL = False
 
-from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+from petrophys._internal.analysis_helpers import (
+    curve_source_mnemonic,
+    get_curve_data_depthwise,
+)
+from petrophys.preprocessing.standardization.unit_converter import get_conversion_factor
 
 
 # zero-porosity matrix points (neutron v/v, density g/cc, sonic us/ft)
@@ -31,11 +35,28 @@ _MATRIX = {
 _RHO_FL, _NPHI_FL, _DT_FL = 1.0, 1.0, 189.0
 
 
-def _xy(well, names, depth_range):
-    data, _, _ = get_curve_data_depthwise(well, names)
+def _xy(well, names, depth_range, unit=None):
+    """Depth-wise curve data; with ``unit`` each source curve is converted to it.
+
+    The chart constants assume v/v porosity, g/cc density and us/ft slowness,
+    so curves read in %, kg/m3 or us/m are converted (unknown labels are kept).
+    """
+    data, _, meta = get_curve_data_depthwise(well, names)
     if data is None:
         return None, None
-    arr = np.asarray(data, dtype=float)
+    arr = np.array(data, dtype=float)
+    if unit is not None:
+        sources = meta["source_per_sample"]
+        seen = set()
+        for name in names:
+            curve = well.get(name)
+            source = (curve_source_mnemonic(curve) or curve.mnemonic) if curve is not None else None
+            if curve is None or source in seen or not curve.unit:
+                continue
+            seen.add(source)
+            factor = get_conversion_factor(str(curve.unit), unit)
+            if factor is not None and factor != 1.0:
+                arr[sources == source] *= factor
     depth = np.asarray(getattr(well, "depth", None), dtype=float)
     if depth_range is not None and depth.shape == arr.shape:
         lo, hi = depth_range
@@ -48,12 +69,32 @@ def _color(well, color_curve, depth_range):
     if not color_curve:
         return None, None
     c, _ = _xy(well, [color_curve], depth_range)
-    return c, color_curve
+    curve = well.get(color_curve)
+    unit = str(getattr(curve, "unit", "") or "").strip() if curve is not None else ""
+    return c, f"{color_curve} [{unit}]" if unit else color_curve
+
+
+def _note_outside_axes(ax, x, y):
+    """State how many plottable points fall outside the fixed chart limits."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    finite = np.isfinite(x) & np.isfinite(y)
+    (x0, x1), (y0, y1) = sorted(ax.get_xlim()), sorted(ax.get_ylim())
+    outside = finite & ((x < x0) | (x > x1) | (y < y0) | (y > y1))
+    count = int(np.count_nonzero(outside))
+    if count:
+        ax.text(
+            0.01, 0.01,
+            f"{count} of {int(np.count_nonzero(finite))} points outside the plotted range",
+            transform=ax.transAxes, fontsize=7, color="0.35", ha="left", va="bottom",
+        )
 
 
 def _scatter(ax, x, y, c, clabel, fig, cmap="viridis", norm=None):
     if c is not None and np.any(np.isfinite(c)):
-        sc = ax.scatter(x, y, c=c, s=6, alpha=0.6, cmap=cmap, norm=norm)
+        # Points without a colour value are drawn grey, not dropped.
+        cmap = plt.get_cmap(cmap).with_extremes(bad="0.6")
+        sc = ax.scatter(x, y, c=c, s=6, alpha=0.6, cmap=cmap, norm=norm, plotnonfinite=True)
         cb = fig.colorbar(sc, ax=ax, pad=0.02)
         cb.set_label(clabel, fontsize=8)
     else:
@@ -67,8 +108,8 @@ def create_nd_crossplot(
 ):
     """Density-neutron crossplot with sandstone/limestone/dolomite matrix lines
     (porosity ticked 0-40%). RHOB axis is inverted (high density at the bottom)."""
-    nphi, _ = _xy(well, ["NPHI", "PHIN"], depth_range)
-    rhob, _ = _xy(well, ["RHOB"], depth_range)
+    nphi, _ = _xy(well, ["NPHI", "PHIN"], depth_range, "v/v")
+    rhob, _ = _xy(well, ["RHOB"], depth_range, "g/cm3")
     if nphi is None or rhob is None:
         raise ValueError("N-D crossplot needs NPHI and RHOB")
     c, clabel = _color(well, color_curve, depth_range)
@@ -89,6 +130,7 @@ def create_nd_crossplot(
 
     ax.set_xlabel("NPHI (v/v, limestone)"); ax.set_ylabel("RHOB (g/cc)")
     ax.set_xlim(-0.05, 0.45); ax.set_ylim(3.0, 1.8)   # density inverted
+    _note_outside_axes(ax, nphi, rhob)
     ax.set_title(f"Density-Neutron — {well.header.well_name or ''}")
     ax.grid(alpha=0.3); ax.legend(fontsize=8, loc="upper right")
     fig.tight_layout()
@@ -102,9 +144,9 @@ def create_mn_plot(
 ):
     """M-N crossplot (porosity-independent lithology), with the quartz/calcite/
     dolomite triangle and the secondary-porosity / gas / shale directions."""
-    nphi, _ = _xy(well, ["NPHI", "PHIN"], depth_range)
-    rhob, _ = _xy(well, ["RHOB"], depth_range)
-    dt, _ = _xy(well, ["DTC", "DT"], depth_range)
+    nphi, _ = _xy(well, ["NPHI", "PHIN"], depth_range, "v/v")
+    rhob, _ = _xy(well, ["RHOB"], depth_range, "g/cm3")
+    dt, _ = _xy(well, ["DTC", "DT"], depth_range, "us/ft")
     if nphi is None or rhob is None or dt is None:
         raise ValueError("M-N plot needs NPHI, RHOB and DTC")
     c, clabel = _color(well, color_curve, depth_range)
@@ -142,9 +184,9 @@ def create_mid_plot(
 ):
     """MID plot: apparent matrix density vs apparent matrix sonic, with the
     quartz/calcite/dolomite points (porosity-independent lithology)."""
-    nphi, _ = _xy(well, ["NPHI", "PHIN"], depth_range)
-    rhob, _ = _xy(well, ["RHOB"], depth_range)
-    dt, _ = _xy(well, ["DTC", "DT"], depth_range)
+    nphi, _ = _xy(well, ["NPHI", "PHIN"], depth_range, "v/v")
+    rhob, _ = _xy(well, ["RHOB"], depth_range, "g/cm3")
+    dt, _ = _xy(well, ["DTC", "DT"], depth_range, "us/ft")
     if nphi is None or rhob is None or dt is None:
         raise ValueError("MID plot needs NPHI, RHOB and DTC")
     c, clabel = _color(well, color_curve, depth_range)
@@ -169,6 +211,7 @@ def create_mid_plot(
     ax.set_xlabel("Apparent matrix sonic  DTmaa (us/ft)")
     ax.set_ylabel("Apparent matrix density  RHOmaa (g/cc)")
     ax.set_xlim(35, 65); ax.set_ylim(3.0, 2.5)
+    _note_outside_axes(ax, dt_maa, rho_maa)
     ax.set_title(f"MID Plot — {well.header.well_name or ''}")
     ax.grid(alpha=0.3); fig.tight_layout()
     return fig
@@ -183,8 +226,8 @@ def create_buckles_plot(
     """Buckles plot: porosity vs water saturation with constant-BVW hyperbolas.
     Points on the same BVW = phi*Sw hyperbola are at irreducible water (a single
     well-defined hyperbola implies uniform grain size / Swirr)."""
-    phie, _ = _xy(well, [phie_curve, "PHIT"], depth_range)
-    sw, _ = _xy(well, [sw_curve, "SWA", "SWT-LOG"], depth_range)
+    phie, _ = _xy(well, [phie_curve, "PHIT"], depth_range, "v/v")
+    sw, _ = _xy(well, [sw_curve, "SWA", "SWT-LOG"], depth_range, "v/v")
     if phie is None or sw is None:
         raise ValueError("Buckles plot needs PHIE and SW")
     c, clabel = _color(well, color_curve, depth_range)
@@ -225,10 +268,11 @@ def create_hingle_plot(
 ):
     """Hingle plot: porosity vs Rt^(-1/m) on linear axes, with iso-Sw lines through
     the origin (the linear-axis counterpart of the Pickett plot). Water-bearing
-    points fall on the Sw=1 line; its slope gives a*Rw."""
+    points fall on the Sw=1 line, whose slope is (a*Rw)^(-1/m), so
+    a*Rw = slope^(-m)."""
     if not m:
         raise ValueError("Hingle plot requires a non-zero cementation exponent m")
-    phie, _ = _xy(well, [phie_curve, "PHIT"], depth_range)
+    phie, _ = _xy(well, [phie_curve, "PHIT"], depth_range, "v/v")
     rt, _ = _xy(well, [rt_curve, "RT", "RDEP"], depth_range)
     if phie is None or rt is None:
         raise ValueError("Hingle plot needs PHIE and Rt")

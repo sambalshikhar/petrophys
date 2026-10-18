@@ -8,6 +8,7 @@ to standard mnemonics used throughout the library.
 from typing import Dict, List, Optional
 
 from petrophys._internal.analysis_helpers import base_curve_mnemonic
+from petrophys._internal.benchmark import reproducing_benchmark
 
 # Standard mnemonic to aliases mapping
 ALIAS_MAP: Dict[str, List[str]] = {
@@ -15,14 +16,15 @@ ALIAS_MAP: Dict[str, List[str]] = {
     "SWC": ["SW_CORE", "CORE_SW"],
     "SOC": ["SO_CORE", "CORE_SO"],
     "SGC": ["SG_CORE", "CORE_SG"],
-    # Deep Resistivity (RDEP)
+    # Deep Resistivity (RDEP): the 90 in array curve is the deepest reading,
+    # so it ranks above the 60 in curve.
     "RDEP": [
         "RT",
         "ILD",
         "RILD",
         "LLD",
-        "AT60",
         "AT90",
+        "AT60",
         "HRLT",
         "RESD",
         "RD",
@@ -148,14 +150,13 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "HSGR",
         "ECGR",
         "ECGR_EDTC",
-        "HCGR",
         "HGR",
         "HGR_EDTC",
     ],
     # Spectral Gamma - Total (SGR)
     "SGR": ["SGR", "GR_S", "HSGR", "SGRC"],
-    # Spectral Gamma - Computed (CGR)
-    "CGR": ["CGR", "GR_C", "GRC"],
+    # Spectral Gamma - Computed (CGR): HCGR is the HNGS uranium-free GR.
+    "CGR": ["CGR", "GR_C", "GRC", "HCGR"],
     # Spontaneous Potential (SP)
     "SP": ["SP", "SPON", "SSP", "PSP"],
     # Bit Size (BS)
@@ -191,6 +192,19 @@ for standard, aliases in ALIAS_MAP.items():
         _REVERSE_MAP[alias.upper()] = standard
     _REVERSE_MAP[standard.upper()] = standard
 
+#: Alias lists the benchmark context packages were computed with, where they
+#: differ from :data:`ALIAS_MAP`: RDEP ranked AT60 before AT90, and HCGR was
+#: a GR alias. Used inside ``historical_benchmark()``.
+_BENCHMARK_ALIAS_MAP: Dict[str, List[str]] = {
+    "RDEP": [
+        name if name not in ("AT60", "AT90") else {"AT60": "AT90", "AT90": "AT60"}[name]
+        for name in ALIAS_MAP["RDEP"]
+    ],
+    "GR": [*ALIAS_MAP["GR"][:ALIAS_MAP["GR"].index("HGR")], "HCGR", *ALIAS_MAP["GR"][ALIAS_MAP["GR"].index("HGR"):]],
+    "CGR": [name for name in ALIAS_MAP["CGR"] if name != "HCGR"],
+}
+_BENCHMARK_REVERSE_MAP: Dict[str, str] = {"HCGR": "GR"}
+
 
 def get_standard_mnemonic(mnemonic: str) -> str:
     """
@@ -217,6 +231,10 @@ def get_standard_mnemonic(mnemonic: str) -> str:
     """
     normalized = str(mnemonic).strip().upper()
     base = base_curve_mnemonic(normalized)
+    if reproducing_benchmark():
+        historical = _BENCHMARK_REVERSE_MAP.get(normalized, _BENCHMARK_REVERSE_MAP.get(base))
+        if historical is not None:
+            return historical
     return _REVERSE_MAP.get(normalized, _REVERSE_MAP.get(base, normalized))
 
 
@@ -232,9 +250,13 @@ def get_aliases(standard_mnemonic: str) -> List[str]:
     Returns
     -------
     list of str
-        List of aliases
+        List of aliases, in ranking order (the benchmark packages' order
+        inside ``historical_benchmark()``)
     """
-    return ALIAS_MAP.get(standard_mnemonic.upper(), [])
+    standard = standard_mnemonic.upper()
+    if reproducing_benchmark() and standard in _BENCHMARK_ALIAS_MAP:
+        return list(_BENCHMARK_ALIAS_MAP[standard])
+    return ALIAS_MAP.get(standard, [])
 
 
 def find_curve_type(mnemonic: str) -> Optional[str]:

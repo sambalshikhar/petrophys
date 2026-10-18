@@ -8,7 +8,7 @@ import numpy as np
 import re
 import warnings
 
-from petrophys._internal.analysis_helpers import get_curve
+from petrophys._internal.analysis_helpers import get_curve, get_curve_data_depthwise
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -65,10 +65,13 @@ class WorkflowConfig:
     # Matrix properties
     matrix_type: str = "sandstone"
     lithology: str = "clastic"
-    matrix_density: float = 2.65
+    # Matrix density (g/cm3) and sonic slowness (us/ft): None takes the
+    # values of matrix_type; an explicit value wins.
+    matrix_density: Optional[float] = None
     fluid_density: float = 1.0
-    matrix_dt: float = 55.5
-    fluid_dt: float = 189.0
+    matrix_dt: Optional[float] = None
+    # Pore-fluid slowness (us/ft): None is 189 (fresh water).
+    fluid_dt: Optional[float] = None
     phi_cl: float = 0.15
     rho_cl: float = 2.45
 
@@ -198,6 +201,10 @@ class StandardWorkflow:
         self.errors: List[str] = []
         self.warnings: List[str] = []
         self._core_porosity_generated = False
+        # Temperature (degF) the Rw value is given at; None: at formation temperature.
+        self._rw_temp_f: Optional[float] = None
+        self._input_curves: set = set()
+        self._well: Optional["Well"] = None
 
     def run(self, well: "Well") -> WorkflowResult:
         """
@@ -216,6 +223,9 @@ class StandardWorkflow:
         self.errors = []
         self.warnings = []
         self._core_porosity_generated = False
+        self._rw_temp_f = None
+        self._input_curves = set(well.curves)
+        self._well = well
 
         result = WorkflowResult(
             well=well,
@@ -255,7 +265,7 @@ class StandardWorkflow:
             if self.config.calculate_net_pay:
                 result.steps.append(self._calculate_net_pay(well))
 
-            result.success = len(self.errors) == 0
+            result.success = len(self.errors) == 0 and all(st.success for st in result.steps)
             result.errors = self.errors
             result.warnings = self.warnings
 
@@ -333,9 +343,19 @@ class StandardWorkflow:
         if las_rw is None:
             las_rw = _constant_zoned_parameter(well, "RW")
         if las_rw is not None:
+            from petrophys.workflow.dynamic_workflow import _parameter_temperature_f
+
             trace.method = "las_metadata"
             trace.parameters = {"rw": float(las_rw)}
-            trace.decisions.append(f"Rw = {float(las_rw):.4f} ohm.m (LAS metadata)")
+            # RWT is the temperature of the header RW; saturation corrects it to TEMP.
+            self._rw_temp_f = _parameter_temperature_f(well, "RWT")
+            if self._rw_temp_f is not None:
+                trace.parameters["rw_meas_temp_f"] = self._rw_temp_f
+                trace.decisions.append(
+                    f"Rw = {float(las_rw):.4f} ohm.m at {self._rw_temp_f:.0f}F (LAS metadata RW, RWT)"
+                )
+            else:
+                trace.decisions.append(f"Rw = {float(las_rw):.4f} ohm.m (LAS metadata)")
             return float(las_rw), trace
 
         if self.config.salinity_ppm is not None:
@@ -347,6 +367,7 @@ class StandardWorkflow:
                 avg_temp = (self.config.surface_temp_f + self.config.bht_f) / 2
 
             rw = rw_from_salinity(self.config.salinity_ppm, avg_temp)
+            self._rw_temp_f = avg_temp
             trace.method = "salinity_conversion"
             trace.parameters = {"salinity_ppm": self.config.salinity_ppm,
                                "temperature_f": avg_temp, "rw": rw}
@@ -357,23 +378,48 @@ class StandardWorkflow:
         sp = well.get("SP")
         if sp is not None and not self.config.mud_has_clay_or_kcl:
             from petrophys.interpretation.electrical.rw import RwModule
+            from petrophys.interpretation.temperature.temp_corrections import arps_equation
+            from petrophys.interpretation.temperature.temp_profile import temperature_curve_f
+            from petrophys.workflow.dynamic_workflow import _parameter_temperature_f
             try:
                 rmf_for_sp = self.config.rmf_at_meas_temp
+                rmf_temp_f = self.config.rmf_meas_temp_f
                 las_rmf = _parameter_float(well, "RMF")
                 if las_rmf is None:
                     las_rmf = _constant_zoned_parameter(well, "RMF")
                 if las_rmf is not None:
                     rmf_for_sp = float(las_rmf)
+                    las_rmf_temp = _parameter_temperature_f(well, "RMFT")
+                    if las_rmf_temp is None:
+                        las_rmf_temp = _parameter_temperature_f(well, "MFST")
+                    if las_rmf_temp is not None:
+                        rmf_temp_f = las_rmf_temp
+
+                # The SP equation takes Rmf at formation temperature.
+                formation_temp = temperature_curve_f(well, ["TEMP"])
+                rmf_at_formation = rmf_for_sp
+                if formation_temp is not None:
+                    rmf_at_formation = arps_equation(rmf_for_sp, rmf_temp_f, formation_temp)
+                else:
+                    self.warnings.append(
+                        f"Rmf {rmf_for_sp} ohm.m at {rmf_temp_f:.0f}F used in the SP equation "
+                        "without temperature correction: no TEMP curve"
+                    )
 
                 rw_module = RwModule(method="sp")
                 result = rw_module.calculate(
                     well,
-                    rmf=rmf_for_sp,
+                    rmf=rmf_at_formation,
+                    temperature=formation_temp,
                 )
+                rw_temp = result.metadata.get("rw_temperature_f")
+                if formation_temp is not None and rw_temp is not None:
+                    self._rw_temp_f = float(rw_temp)
                 trace.method = result.method
                 trace.input_curves = ["SP"]
                 trace.parameters = {
                     "rmf": rmf_for_sp,
+                    "rmf_meas_temp_f": rmf_temp_f,
                     "rw": result.rw,
                     **result.metadata,
                 }
@@ -392,31 +438,61 @@ class StandardWorkflow:
         """Calculate porosity."""
         from petrophys.interpretation.porosity import PorosityModule
 
+        from petrophys.model.constants import DefaultParameters
+
         trace = StepTrace(step="porosity", method="density_neutron")
-        trace.parameters = {
-            "matrix_type": self.config.matrix_type,
-            "matrix_density": self.config.matrix_density,
-            "fluid_density": self.config.fluid_density,
-            "matrix_dt": self.config.matrix_dt,
-            "fluid_dt": self.config.fluid_dt,
-            "phi_cl": self.config.phi_cl,
-        }
         try:
             por_module = PorosityModule(
                 matrix=self.config.matrix_type,
                 rhob_fluid=self.config.fluid_density,
                 phi_clay=self.config.phi_cl
             )
-            por_module.rhob_matrix = self.config.matrix_density
-            por_module.dtc_matrix = self.config.matrix_dt
+            # Endpoints: the matrix_type values unless the config sets them.
+            matrix_density = (
+                self.config.matrix_density if self.config.matrix_density is not None
+                else por_module.rhob_matrix
+            )
+            matrix_dt = self.config.matrix_dt if self.config.matrix_dt is not None else por_module.dtc_matrix
+            fluid_dt = (
+                self.config.fluid_dt if self.config.fluid_dt is not None
+                else DefaultParameters.FLUID_SLOWNESS
+            )
+            trace.parameters = {
+                "matrix_type": self.config.matrix_type,
+                "matrix_density": matrix_density,
+                "fluid_density": self.config.fluid_density,
+                "matrix_dt": matrix_dt,
+                "fluid_dt": fluid_dt,
+                "phi_cl": self.config.phi_cl,
+                "endpoint_source": {
+                    "matrix_density": "config" if self.config.matrix_density is not None else "matrix_type",
+                    "matrix_dt": "config" if self.config.matrix_dt is not None else "matrix_type",
+                    "fluid_dt": "config" if self.config.fluid_dt is not None else "default",
+                },
+            }
+            por_module.rhob_matrix = matrix_density
+            por_module.dtc_matrix = matrix_dt
             result = por_module.calculate(well)
+            if result.phis is not None and self.config.fluid_dt is not None:
+                # PorosityModule reads the default fluid slowness; a fluid_dt
+                # set in the config replaces it.
+                from petrophys.interpretation.porosity.sonic_porosity import (
+                    secondary_porosity,
+                    wyllie_time_average,
+                )
+
+                dtc = get_curve_data_depthwise(well, ["DTC", "DT"])[0]
+                result.phis = wyllie_time_average(dtc, matrix_dt, fluid_dt)
+                result.phi_sec = secondary_porosity(result.phis, result.phit)
+            if result.phis is not None:
+                trace.decisions.append(f"PHIS = (DT - {matrix_dt}) / ({fluid_dt} - {matrix_dt})")
             por_module.add_to_well(well, result)
 
             inputs = [c for c in ["RHOB", "NPHI", "DTC", "VCL"] if well.get(c)]
             outputs = [c for c in ["PHID", "PHIT", "PHIE", "PHIS"] if well.get(c)]
             trace.input_curves = inputs
             trace.output_curves = outputs
-            trace.decisions.append(f"PHID = (rho_ma({self.config.matrix_density}) - RHOB) / "
+            trace.decisions.append(f"PHID = (rho_ma({matrix_density}) - RHOB) / "
                                   f"(rho_ma - rho_fl({self.config.fluid_density}))")
         except Exception as e:
             self.warnings.append(f"Porosity calculation warning: {e}")
@@ -438,6 +514,8 @@ class StandardWorkflow:
         self._core_porosity_generated = False
         try:
             stale_core_curves = [name for name in ("PHIE_CC", "PERM_CC") if well.get(name) is not None]
+            if stale_core_curves:
+                self._warn_input_curves_removed(stale_core_curves, "core correction")
             for curve_name in stale_core_curves:
                 well.remove_curve(curve_name)
             if stale_core_curves:
@@ -495,6 +573,23 @@ class StandardWorkflow:
             "shale_exp": self.config.shale_exp,
         }
         try:
+            from petrophys.interpretation.temperature.temp_corrections import arps_equation
+            from petrophys.interpretation.temperature.temp_profile import temperature_curve_f
+
+            rw_used: Any = rw
+            formation_temp = temperature_curve_f(well, ["TEMP"]) if self._rw_temp_f is not None else None
+            if formation_temp is not None:
+                # Rw given at another temperature: Arps-corrected to TEMP at each depth.
+                rw_used = arps_equation(rw, self._rw_temp_f, formation_temp)
+                trace.parameters["rw_reference_temp_f"] = self._rw_temp_f
+                trace.decisions.append(
+                    f"Rw {rw:.4f} ohm.m at {self._rw_temp_f:.0f}F corrected to TEMP (Arps)"
+                )
+            elif self._rw_temp_f is not None:
+                self.warnings.append(
+                    f"Rw {rw:.4f} ohm.m at {self._rw_temp_f:.0f}F used without temperature "
+                    "correction: no TEMP curve"
+                )
             sw_module = SaturationModule(
                 a=self.config.a, m=self.config.m,
                 n=self.config.n, model=self.config.saturation_model,
@@ -502,7 +597,7 @@ class StandardWorkflow:
             )
             result = sw_module.calculate(
                 well,
-                rw=rw,
+                rw=rw_used,
                 lithology=self.config.lithology,
                 rwb=self.config.rwb,
                 phi_cl=self.config.phi_cl,
@@ -544,6 +639,8 @@ class StandardWorkflow:
                 name for name in ("PHIE_CC", "PERM_CC")
                 if well.get(name) is not None and not (name == "PHIE_CC" and self._core_porosity_generated)
             ]
+            if stale_core_curves:
+                self._warn_input_curves_removed(stale_core_curves, "permeability")
             for curve_name in stale_core_curves:
                 well.remove_curve(curve_name)
             if stale_core_curves:
@@ -687,6 +784,25 @@ class StandardWorkflow:
             trace.message = str(e)
         return trace
 
+    def _warn_input_curves_removed(self, curves: List[str], step: str) -> None:
+        """Keep input curves (not ones this run wrote) as ``<NAME>_INPUT`` and warn.
+
+        The caller removes ``curves`` afterwards; an input curve is renamed
+        here first, so it survives as PHIE_CC_INPUT or PERM_CC_INPUT.
+        """
+        removed = [name for name in curves if name in self._input_curves]
+        self._input_curves.difference_update(removed)
+        if removed:
+            for name in removed:
+                if well_curve := self._well.get(name):
+                    self._well.remove_curve(f"{name}_INPUT")
+                    self._well.rename_curve(well_curve.mnemonic, f"{name}_INPUT")
+            self.warnings.append(
+                f"Input curve(s) {', '.join(removed)} kept as "
+                f"{', '.join(f'{name}_INPUT' for name in removed)} before {step}; "
+                "earlier steps (e.g. saturation) may have used them"
+            )
+
     def _calculate_net_pay(self, well: "Well") -> StepTrace:
         """Calculate net pay flags."""
         from petrophys.evaluation.net_pay import NetPayModule
@@ -705,10 +821,13 @@ class StandardWorkflow:
             )
             result = np_module.calculate(well)
             np_module.add_to_well(well, result)
-            trace.input_curves = ["VCL", "PHIE", "SW"]
+            # NetPayModule reads PHIE_CC, else PHIE, else PHIT.
+            porosity = get_curve(well, ["PHIE_CC", "PHIE", "PHIT"])
+            porosity_name = porosity.mnemonic if porosity is not None else "PHIE"
+            trace.input_curves = ["VCL", porosity_name, "SW"]
             trace.output_curves = ["NET_ROCK", "NET_RES", "NET_PAY"]
             trace.decisions.append(f"NET_ROCK: VCL < {self.config.vcl_cutoff}")
-            trace.decisions.append(f"NET_RES: + PHIE > {self.config.phie_cutoff}")
+            trace.decisions.append(f"NET_RES: + {porosity_name} > {self.config.phie_cutoff}")
             trace.decisions.append(f"NET_PAY: + Sw < {self.config.sw_cutoff}")
         except Exception as e:
             self.warnings.append(f"Net pay calculation warning: {e}")
@@ -743,11 +862,11 @@ def run_standard_workflow(
     """
     if config is None:
         config = WorkflowConfig(**kwargs)
-    else:
-        # Update config with kwargs
-        for key, value in kwargs.items():
-            if hasattr(config, key):
-                setattr(config, key, value)
+    elif kwargs:
+        # Override a copy of config; unknown settings raise as without config.
+        import dataclasses
+
+        config = dataclasses.replace(config, **kwargs)
 
     workflow = StandardWorkflow(config)
     return workflow.run(well)

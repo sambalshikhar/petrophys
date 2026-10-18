@@ -3,9 +3,18 @@ Average calculations for zones and intervals.
 """
 
 from typing import TYPE_CHECKING, Optional, List, Dict, Union
+import warnings
 import numpy as np
 
-from petrophys._internal.analysis_helpers import resolve_well_depth_range, well_depth_array
+from petrophys._internal.analysis_helpers import (
+    get_curve_data_depthwise,
+    resolve_well_depth_range,
+    well_depth_array,
+)
+from petrophys._internal.benchmark import reproducing_benchmark
+
+#: Core-corrected curves preferred, where they exist, by the pay averages.
+_CORE_CORRECTED = {"PHIE": "PHIE_CC", "PERM": "PERM_CC"}
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -115,12 +124,14 @@ def calculate_pay_averages(
     net_pay_curve : str
         Name of net pay flag curve
     curves : list, optional
-        Curves to average
+        Curves to average (default PHIE, SW, VCL, PERM, BVW). ``PHIE`` and
+        ``PERM`` take the core-corrected ``PHIE_CC`` / ``PERM_CC`` sample
+        where it exists, as the interpretation's SW and NET_PAY do.
 
     Returns
     -------
     dict
-        Dictionary of averages over net pay
+        Dictionary of averages over net pay, keyed by the requested names
     """
     depth = well_depth_array(well)
     top_depth, bottom_depth = resolve_well_depth_range(well, top_depth, bottom_depth)
@@ -144,7 +155,12 @@ def calculate_pay_averages(
             results[curve_name] = np.nan
             continue
 
-        data = curve.data[mask]
+        corrected = _CORE_CORRECTED.get(curve_name.upper())
+        if corrected is not None and not reproducing_benchmark():
+            data, _, _ = get_curve_data_depthwise(well, [corrected, curve_name])
+            data = (np.asarray(data, dtype=float) if data is not None else np.asarray(curve.data, dtype=float))[mask]
+        else:
+            data = curve.data[mask]
         valid = data[~np.isnan(data)]
 
         if len(valid) == 0:
@@ -209,6 +225,11 @@ def calculate_weighted_averages(
     # Get weights
     weight_c = well.get(weight_curve)
     if weight_c is None:
+        warnings.warn(
+            f"Weight curve {weight_curve!r} is not on the well; the averages are unweighted",
+            UserWarning,
+            stacklevel=2,
+        )
         weights = np.ones(len(depth))[mask]
     else:
         weights = weight_c.data[mask]

@@ -14,9 +14,27 @@ from petrophys.interpretation.temperature.temp_corrections import (
     correct_resistivity_temperature,
     arps_equation,
 )
+from petrophys._internal.benchmark import reproducing_benchmark
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
+
+
+def _parameter_temperature_f(well: "Well", name: str) -> Optional[float]:
+    """A numeric header parameter (e.g. RMFT) in degF, or None."""
+    from petrophys.model.units import temperature_to_fahrenheit
+
+    value = well.get_parameter(name)
+    if value is None:
+        return None
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(value):
+        return None
+    unit = well.get_parameter(f"{name}__UNIT")
+    return float(temperature_to_fahrenheit(value, str(unit) if unit is not None else None))
 
 
 @dataclass
@@ -144,6 +162,12 @@ class RmfModule:
         """
         Calculate Rmf from well header and temperature curve.
 
+        The header Rmf/Rm is taken as measured at ``well.header.rm_temp``,
+        else at the RMFT header parameter (mud filtrate measurement
+        temperature), else at MFST (mud filtrate sample temperature), each
+        converted from its unit label, else at 75 degF. Pass the measurement
+        temperature to :meth:`calculate` when it differs.
+
         Parameters
         ----------
         well : Well
@@ -160,7 +184,14 @@ class RmfModule:
         # Get header values
         rmf_surface = well.header.rmf
         rm_surface = well.header.rm
-        rm_temp = well.header.rm_temp or 75.0
+        rm_temp = well.header.rm_temp
+        if rm_temp is None and not reproducing_benchmark():
+            # RMFT, else the sample temperature MFST of standard log headers.
+            rm_temp = _parameter_temperature_f(well, "RMFT")
+            if rm_temp is None:
+                rm_temp = _parameter_temperature_f(well, "MFST")
+        if rm_temp is None:
+            rm_temp = 75.0
 
         if rmf_surface is None and rm_surface is None:
             raise ValueError("No Rmf or Rm in well header")

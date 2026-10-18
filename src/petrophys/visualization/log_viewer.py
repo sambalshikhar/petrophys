@@ -390,6 +390,29 @@ INDUSTRY_LITHOLOGY_LABEL_ALIASES: Dict[str, str] = {
 }
 
 
+def _sample_cell_fill(depth: np.ndarray, active: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Depths and mask for ``fill_betweenx`` that shade each active sample's cell.
+
+    ``fill_betweenx(where=mask)`` fills only between consecutive active
+    samples, so a single flagged sample has no height and an N-sample run is
+    drawn N-1 steps thick. Each sample is drawn over depth +/- half a step
+    instead (capped at half the median step across gaps).
+    """
+    depth = np.asarray(depth, dtype=float).reshape(-1)
+    active = np.asarray(active, dtype=bool).reshape(-1)
+    steps = np.diff(depth)
+    finite_steps = np.abs(steps[np.isfinite(steps) & (steps != 0)])
+    half_step = 0.5 * float(np.median(finite_steps)) if finite_steps.size else 0.5
+    half = np.clip(np.nan_to_num(steps / 2.0, nan=half_step), -half_step, half_step)
+    if half.size:
+        upper = np.concatenate([half, half[-1:]])
+        lower = np.concatenate([half[:1], half])
+    else:
+        upper = lower = np.full(depth.shape, half_step)
+    edges = np.column_stack([depth - lower, depth + upper]).reshape(-1)
+    return edges, np.repeat(active, 2)
+
+
 def _lithology_label_key(label: Any) -> str:
     text = str(label or "").strip().lower()
     text = re.sub(r"[\s_/\-()]+", " ", text)
@@ -413,7 +436,8 @@ def _lookup_lithology_style(label: Any, styles: Mapping[str, Any], default: Any 
 
     lowered = _lithology_style_text(label)
     for key, value in sorted_styles:
-        if _lithology_label_key(key) in lowered:
+        # Match at a word start only, so 'basalt' does not match 'salt'.
+        if re.search(r"(?<![a-z0-9])" + re.escape(_lithology_label_key(key)), lowered):
             return value
     return default
 
@@ -496,7 +520,12 @@ def _read_lithology_mapping_records(path: Path) -> List[Dict[str, Any]]:
 
 
 @lru_cache(maxsize=8)
-def _load_lithology_mapping_tables(paths: Tuple[Path, ...]) -> Dict[Any, str]:
+def _load_lithology_mapping_tables(
+    paths: Tuple[Path, ...],
+    stamps: Tuple[Any, ...] = (),
+) -> Dict[Any, str]:
+    # ``stamps`` (file modification time and size) is part of the cache key
+    # so an edited table is read again.
     for path in paths:
         if not path.exists():
             warnings.warn(
@@ -530,7 +559,15 @@ def _load_lithology_mapping_tables(paths: Tuple[Path, ...]) -> Dict[Any, str]:
 
 def _default_geolink_lithology_mapping() -> Dict[Any, str]:
     """Return the lithology code table configured for this process, if any."""
-    return _load_lithology_mapping_tables(_candidate_geolink_lithology_mapping_paths())
+    paths = _candidate_geolink_lithology_mapping_paths()
+    stamps = []
+    for path in paths:
+        try:
+            stat = path.stat()
+            stamps.append((stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            stamps.append(None)
+    return _load_lithology_mapping_tables(paths, tuple(stamps))
 
 
 # Industry-standard lithology fill colours, keyed by normalized label.
@@ -1412,9 +1449,17 @@ def _as_float(value: Optional[str], default: Optional[float] = None) -> Optional
         return default
 
 
+def _float_or_default(value: Optional[str], default: float) -> float:
+    """Parse a template number; an explicit 0 is kept, NaN/inf use ``default``."""
+    parsed = _as_float(value)
+    if parsed is None or not math.isfinite(parsed):
+        return default
+    return parsed
+
+
 def _as_int(value: Optional[str], default: int) -> int:
     parsed = _as_float(value)
-    if parsed is None:
+    if parsed is None or not math.isfinite(parsed):
         return default
     return int(parsed)
 
@@ -1450,13 +1495,13 @@ def _parse_curve(element: ET.Element) -> LogCurveSpec:
         left=_as_float(_first_attr(element, ("left", "min"))),
         right=_as_float(_first_attr(element, ("right", "max"))),
         color=_first_attr(element, ("color", "line_color"), "black") or "black",
-        line_width=_as_float(_first_attr(element, ("line_width", "width", "linewidth")), 0.8) or 0.8,
+        line_width=_float_or_default(_first_attr(element, ("line_width", "width", "linewidth")), 0.8),
         line_style=_first_attr(element, ("line_style", "linestyle"), "-") or "-",
-        alpha=_as_float(element.attrib.get("alpha"), 1.0) or 1.0,
+        alpha=_float_or_default(element.attrib.get("alpha"), 1.0),
         fill=_first_attr(element, ("fill", "fill_direction")),
         fill_color=_first_attr(element, ("fill_color", "fillcolor")),
         fill_color_map=_first_attr(element, ("fill_color_map", "fill_cmap", "cmap")),
-        fill_alpha=_as_float(_first_attr(element, ("fill_alpha", "fillalpha")), 0.28) or 0.28,
+        fill_alpha=_float_or_default(_first_attr(element, ("fill_alpha", "fillalpha")), 0.28),
         left_color_value=_as_float(element.attrib.get("left_color_value")),
         right_color_value=_as_float(element.attrib.get("right_color_value")),
         left_cutoff_fill=_as_float(element.attrib.get("left_cutoff_fill")),
@@ -1464,7 +1509,7 @@ def _parse_curve(element: ET.Element) -> LogCurveSpec:
         left_crossover=_first_attr(element, ("left_crossover", "left_crossover_curve")),
         right_crossover=_first_attr(element, ("right_crossover", "right_crossover_curve")),
         marker=_first_attr(element, ("marker", "symbol")),
-        marker_size=_as_float(_first_attr(element, ("marker_size", "markersize")), 0.0) or 0.0,
+        marker_size=_float_or_default(_first_attr(element, ("marker_size", "markersize")), 0.0),
         candidates=explicit_candidates,
     )
 
@@ -1494,8 +1539,8 @@ def _parse_track(element: ET.Element) -> LogTrackSpec:
         display_name=display_name,
         width=_as_float(element.attrib.get("width"), 1.0) or 1.0,
         scale=(_first_attr(element, ("scale", "xscale"), "linear") or "linear").lower(),
-        left=_as_float(_first_attr(element, ("left", "min")), 0.0) or 0.0,
-        right=_as_float(_first_attr(element, ("right", "max")), 1.0) or 1.0,
+        left=_float_or_default(_first_attr(element, ("left", "min")), 0.0),
+        right=_float_or_default(_first_attr(element, ("right", "max")), 1.0),
         cumulative=track_type == "cumulative" or _as_bool(element.attrib.get("cumulative")),
         depth_track=track_type == "depth",
         track_type=track_type,
@@ -1559,8 +1604,30 @@ def _display_well(well: "Well") -> "Well":
 
     from petrophys.preprocessing.standardization import standardize_curves
 
+    from petrophys.model.units import PERCENT_SATURATION_UNITS
+    from petrophys.preprocessing.standardization.curve_standardizer import (
+        CURVE_PLAUSIBLE_RANGES,
+    )
+
     display = deepcopy(well)
+    # Depth curves stay in the well's own unit: tops, intervals and
+    # depth_range are given in that unit and are not converted.
+    depth_curves = {
+        name: display._curves[name].copy()
+        for name in CURVE_ALIAS_CANDIDATES["DEPT"]
+        if name in display._curves
+    }
+    # Percent-labelled fraction curves (SW, SXO, BVW, PHID ...) are shown in
+    # v/v; standardization converts only some of them and would otherwise
+    # remove the rest as implausible or keep a '%' label on rescaled data.
+    for mnemonic, curve in display._curves.items():
+        limits = CURVE_PLAUSIBLE_RANGES.get(str(get_standard_mnemonic(mnemonic)).upper())
+        unit = str(curve.unit or "").strip().lower()
+        if limits is not None and limits[1] <= 1.0 and unit in PERCENT_SATURATION_UNITS:
+            curve._data = np.asarray(curve.data, dtype=float) / 100.0
+            curve.unit = "v/v"
     standardize_curves(display, rename_curves=False, convert_units=True)
+    display._curves.update(depth_curves)
     return display
 
 
@@ -1832,7 +1899,9 @@ class LogViewer:
         height: Optional[float],
     ) -> Tuple[float, float]:
         if depth_range is not None:
-            return float(depth_range[0]), float(depth_range[1])
+            # (top, bottom) in either order; depth always increases downwards.
+            first, second = float(depth_range[0]), float(depth_range[1])
+            return min(first, second), max(first, second)
         top_value = top if top is not None else self.template.top
         height_value = height if height is not None else self.template.height
         inferred_top, inferred_bottom = finite_min_max(depth)
@@ -2005,7 +2074,9 @@ class LogViewer:
             label = self._curve_label(self._display_label(spec, curve), curve)
             fill_color = spec.fill_color or spec.color
             if spec.fill:
-                self._plot_curve_fill(ax, depth, x, finite, spec, fill_color)
+                self._plot_curve_fill(
+                    ax, depth, x, finite, spec, fill_color, left, right, track.scale
+                )
 
             self._plot_cutoff_fills(ax, depth, data, x, finite, left, right, track, spec)
             self._plot_crossover_fills(ax, depth, x, finite, left, right, track, spec)
@@ -2068,6 +2139,9 @@ class LogViewer:
         finite: np.ndarray,
         spec: LogCurveSpec,
         fill_color: str,
+        left: Optional[float] = None,
+        right: Optional[float] = None,
+        scale: str = "linear",
     ) -> None:
         direction = str(spec.fill).lower()
         baseline = 0.0 if direction == "left" else 1.0
@@ -2076,8 +2150,23 @@ class LogViewer:
             if values.size:
                 cmap = plt.get_cmap(spec.fill_color_map)
                 quantiles = np.linspace(np.nanmin(values), np.nanmax(values), 16)
+                color_range = (spec.left_color_value, spec.right_color_value)
+                use_color_range = (
+                    left is not None and right is not None
+                    and any(limit is not None for limit in color_range)
+                )
                 for value in quantiles:
-                    color = cmap(np.clip(value, 0.0, 1.0))
+                    position = value
+                    if use_color_range:
+                        # Colour by the data value on the template's colour scale.
+                        data_value = self._denormalize_scalar(value, left, right, scale)
+                        position = self._normalize_scalar(
+                            data_value,
+                            left if color_range[0] is None else color_range[0],
+                            right if color_range[1] is None else color_range[1],
+                            scale,
+                        )
+                    color = cmap(np.clip(position, 0.0, 1.0))
                     where = finite & (x >= value if direction == "left" else x <= value)
                     ax.fill_betweenx(depth, baseline, x, where=where, color=color, alpha=spec.fill_alpha)
                 return
@@ -2110,7 +2199,8 @@ class LogViewer:
                 self._warn_missing(f"{spec.curve_name} (no finite values)")
                 continue
 
-            cleaned = np.where(finite, np.clip(data, 0.0, None), 0.0)
+            # A missing component leaves a gap rather than being stacked as 0.
+            cleaned = np.where(finite, np.clip(data, 0.0, None), np.nan)
             next_cumulative = cumulative + cleaned
             x0 = self._normalize(cumulative, track.left, track.right, track.scale)
             x1 = self._normalize(next_cumulative, track.left, track.right, track.scale)
@@ -2156,7 +2246,8 @@ class LogViewer:
                 self._warn_missing(f"{spec.curve_name} (no finite values)")
                 continue
 
-            cleaned = np.where(finite, np.clip(data, 0.0, None), 0.0)
+            # A missing component leaves a gap rather than being stacked as 0.
+            cleaned = np.where(finite, np.clip(data, 0.0, None), np.nan)
             next_cumulative = cumulative + cleaned
             x0 = self._normalize(cumulative, track.left, track.right, track.scale)
             x1 = self._normalize(next_cumulative, track.left, track.right, track.scale)
@@ -2223,7 +2314,7 @@ class LogViewer:
         if not np.any(finite):
             return
 
-        phi = np.where(finite, np.clip(data, 0.0, None), 0.0)
+        phi = np.where(finite, np.clip(data, 0.0, None), np.nan)
         next_cumulative = cumulative + phi
         x0 = self._normalize(cumulative, track.left, track.right, track.scale)
         x1 = self._normalize(next_cumulative, track.left, track.right, track.scale)
@@ -2244,7 +2335,7 @@ class LogViewer:
             {
                 "spec": spec,
                 "curve": curve,
-                "label": "PHIE",
+                "label": str(getattr(curve, "mnemonic", "") or "PHIE"),
                 "color": "white",
                 "hatch": "",
             }
@@ -3002,7 +3093,10 @@ class LogViewer:
             y0 = idx * row_height
             y1 = (idx + 1) * row_height
             color = spec.fill_color or FLAG_COLORS.get(spec.curve_name.upper(), spec.color)
-            ax.fill_betweenx(depth, y0, y1, where=active, color=color, alpha=0.75, linewidth=0.0)
+            cell_depth, cell_active = _sample_cell_fill(depth, active)
+            ax.fill_betweenx(
+                cell_depth, y0, y1, where=cell_active, color=color, alpha=0.75, linewidth=0.0
+            )
             ax.axvline(y0, color="0.92", linewidth=0.4, zorder=0)
             label = spec.display_name or curve.mnemonic
             self._add_curve_header(ax, idx, label, 0.0, 1.0, spec.color, "linear")
@@ -3083,7 +3177,18 @@ class LogViewer:
                 self._warn_missing(str(attr))
                 continue
             other = np.asarray(other_curve.data, dtype=float)
-            other_x = self._normalize(other, left, right, track.scale)
+            # Normalize the other curve on the scale it is drawn with in this
+            # track; fall back to this curve's scale when it is not plotted here.
+            other_left, other_right = left, right
+            for other_spec in track.curves:
+                if other_spec is spec:
+                    continue
+                candidate = self._get_curve(other_spec)
+                if candidate is not None and candidate.mnemonic == other_curve.mnemonic:
+                    other_left = other_spec.left if other_spec.left is not None else track.left
+                    other_right = other_spec.right if other_spec.right is not None else track.right
+                    break
+            other_x = self._normalize(other, other_left, other_right, track.scale)
             valid = finite & np.isfinite(other_x)
             where = valid & (other_x < x) if direction == "left" else valid & (other_x > x)
             ax.fill_betweenx(
@@ -3329,12 +3434,13 @@ class LogViewer:
         active = np.isfinite(data) & (data > 0.5) & np.isfinite(depth)
         if not np.any(active):
             return
+        cell_depth, cell_active = _sample_cell_fill(depth, active)
         for ax in self.axes:
             ax.fill_betweenx(
-                depth,
+                cell_depth,
                 0.0,
                 1.0,
-                where=active,
+                where=cell_active,
                 color="#d73027",
                 alpha=0.075,
                 linewidth=0.0,
@@ -3452,6 +3558,15 @@ class LogViewer:
     def _normalize_scalar(self, value: float, left: float, right: float, scale: str) -> float:
         arr = self._normalize(np.asarray([value], dtype=float), left, right, scale)
         return float(arr[0]) if np.isfinite(arr[0]) else np.nan
+
+    def _denormalize_scalar(self, x: float, left: float, right: float, scale: str) -> float:
+        """Inverse of :meth:`_normalize_scalar`: data value drawn at display ``x``."""
+        if str(scale).lower() == "log":
+            if left <= 0 or right <= 0:
+                return np.nan
+            left_log, right_log = math.log10(left), math.log10(right)
+            return float(10.0 ** (left_log + x * (right_log - left_log)))
+        return float(left + x * (right - left))
 
     def _depth_ticks(self, top: float, bottom: float, spacing: float) -> Iterable[float]:
         if spacing <= 0:

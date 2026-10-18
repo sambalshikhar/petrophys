@@ -68,8 +68,10 @@ def verify(costa_source_dir=None):
     closure_errors = {}
     for name, computed, supplied in (
         ("MPHI", nmr.bins.sum(axis=1), nmr.mphi),
-        ("MBVI", nmr.bvi_from_bins(), nmr.mbvi),
-        ("MFFI", nmr.ffi_from_bins(), nmr.mffi),
+        # The supplied partition uses a sharp split below / at-or-above
+        # the 32 ms bin centre, rather than the reader's partial-bin default.
+        ("MBVI", nmr.bvi_from_bins(partial_bins=False), nmr.mbvi),
+        ("MFFI", nmr.ffi_from_bins(partial_bins=False), nmr.mffi),
     ):
         error = float(np.max(np.abs(computed - supplied)))
         require(error <= info["rounding_tolerance_pu"], f"{name} closure: {error}")

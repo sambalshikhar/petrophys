@@ -287,8 +287,9 @@ def safe_divide(
     min_abs: float = 1e-10,
 ) -> np.ndarray:
     """Safely divide arrays/scalars and return a float ndarray."""
-    num = np.asarray(numerator, dtype=float)
-    den = np.asarray(denominator, dtype=float)
+    num, den = np.broadcast_arrays(
+        np.asarray(numerator, dtype=float), np.asarray(denominator, dtype=float)
+    )
     result = np.full(np.broadcast(num, den).shape, fill_value, dtype=float)
     valid = np.isfinite(num) & np.isfinite(den) & (np.abs(den) > min_abs)
     result[valid] = num[valid] / den[valid]

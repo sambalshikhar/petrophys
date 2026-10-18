@@ -25,6 +25,28 @@ def _require_depth_unit(depth_unit: Optional[str], source: str) -> str:
         )
     return normalize_depth_unit(depth_unit)
 
+
+def _warn_on_coerced_values(df: pd.DataFrame, skip: List[str], source: str) -> None:
+    """Warn when text in mostly numeric columns is read as missing (NaN)."""
+    coerced = {}
+    for column in df.columns:
+        if column in skip or pd.api.types.is_numeric_dtype(df[column]):
+            continue
+        series = df[column]
+        numeric = pd.to_numeric(series, errors="coerce")
+        if not numeric.notna().any():
+            continue  # a text column; Well.from_dataframe reports it separately
+        lost = series.notna() & numeric.isna()
+        if lost.any():
+            coerced[column] = series[lost].astype(str).unique()[:5].tolist()
+    if coerced:
+        details = "; ".join(f"{column}: {values}" for column, values in coerced.items())
+        warnings.warn(
+            f"{source}: non-numeric values in numeric columns are read as missing (NaN) - {details}",
+            UserWarning,
+            stacklevel=3,
+        )
+
 def read_csv(
     filepath: Union[str, Path],
     depth_column: str = "DEPTH",
@@ -63,7 +85,7 @@ def read_csv(
     Examples
     --------
     >>> from petrophys.io import read_csv
-    >>> well = read_csv("well_data.csv", depth_column="MD")
+    >>> well = read_csv("well_data.csv", depth_column="MD", depth_unit="m")
     """
     from petrophys.model.well import Well
 
@@ -107,6 +129,9 @@ def read_csv(
     if not well_name:
         well_name = filepath.stem
 
+    _warn_on_coerced_values(
+        df, [c for c in (candidate_well_column,) if c], f"CSV file {filepath.name!r}"
+    )
     well = Well.from_dataframe(
         df,
         depth_column=depth_column.upper(),
@@ -164,8 +189,22 @@ def read_csv_wells(
     if null_values:
         na_values.extend(null_values)
 
+    # Read the identifier column as text in every chunk, so a numeric UWI is
+    # not parsed as int in one chunk and float in another ("1001" vs
+    # "1001.0") and keeps its leading zeros.
+    header_options = {
+        key: value for key, value in kwargs.items()
+        if key not in {"nrows", "dtype", "converters", "usecols"}
+    }
+    raw_columns = pd.read_csv(path, skiprows=skiprows, nrows=0, **header_options).columns
+    raw_by_upper = {str(column).strip().upper(): column for column in raw_columns}
+    resolved = _resolve_well_column(pd.DataFrame(columns=list(raw_by_upper)), well_column)
+    if resolved is not None and not isinstance(kwargs.get("dtype"), (str, type)):
+        kwargs["dtype"] = {**(kwargs.get("dtype") or {}), raw_by_upper[resolved]: str}
+
     grouped: Dict[str, List[pd.DataFrame]] = {}
     identifier_column: Optional[str] = None
+    blank_identifier_rows = 0
     for chunk in pd.read_csv(
         path,
         skiprows=skiprows,
@@ -180,14 +219,27 @@ def read_csv_wells(
                 raise ValueError(
                     "No well identifier column found; pass well_column explicitly"
                 )
+        blank_identifier_rows += int(
+            (chunk[identifier_column].isna()
+             | (chunk[identifier_column].astype(str).str.strip() == "")).sum()
+        )
         for identifier, rows in chunk.groupby(identifier_column, dropna=True, sort=False):
             name = str(identifier).strip()
             if name:
                 grouped.setdefault(name, []).append(rows)
 
+    if blank_identifier_rows:
+        warnings.warn(
+            f"CSV file {path.name!r}: {blank_identifier_rows} row(s) with a blank "
+            f"{identifier_column!r} were not assigned to any well and are not read.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     wells: Dict[str, Well] = {}
     for name, frames in grouped.items():
         frame = pd.concat(frames, axis=0, ignore_index=True)
+        _warn_on_coerced_values(frame, [identifier_column], f"CSV file {path.name!r}, well {name!r}")
         wells[name] = Well.from_dataframe(
             frame,
             depth_column=depth_column.upper(),
@@ -319,15 +371,32 @@ def read_ascii(
         unit_parts = lines[units_line].strip().split(delimiter if delimiter != r'\s+' else None)
         if len(unit_parts) == len(df.columns):
             units = dict(zip(df.columns, unit_parts))
+        else:
+            warnings.warn(
+                f"ASCII file {filepath.name!r}: units line {units_line} has "
+                f"{len(unit_parts)} entries for {len(df.columns)} columns; units are ignored.",
+                UserWarning,
+                stacklevel=2,
+            )
 
     depth_col = depth_column.upper()
     requested_name = well_name
+    source = f"ASCII file {Path(filepath).name!r}"
+    file_depth_unit = units.get(depth_col)
+    if file_depth_unit and depth_unit is not None and str(depth_unit).strip():
+        file_unit = normalize_depth_unit(file_depth_unit, strict=False)
+        if file_unit != normalize_depth_unit(depth_unit, strict=False):
+            warnings.warn(
+                f"{source}: the units line gives depth unit {file_depth_unit!r}, which "
+                f"differs from depth_unit={depth_unit!r}; the file's unit is used.",
+                UserWarning,
+                stacklevel=2,
+            )
+    _warn_on_coerced_values(df, [depth_col], source)
     well = Well.from_dataframe(
         df,
         depth_column=depth_col,
-        depth_unit=_require_depth_unit(
-            units.get(depth_col) or depth_unit, f"ASCII file {Path(filepath).name!r}"
-        ),
+        depth_unit=_require_depth_unit(file_depth_unit or depth_unit, source),
         name=requested_name,
     )
     if not well.name:
@@ -366,7 +435,7 @@ def detect_file_format(filepath: Union[str, Path]) -> Dict[str, Any]:
     filepath = Path(filepath)
 
     with open(filepath, 'r') as f:
-        lines = [f.readline() for _ in range(20)]
+        lines = [line for line in (f.readline() for _ in range(20)) if line]
 
     # Check for common patterns
     format_info = {
@@ -376,20 +445,32 @@ def detect_file_format(filepath: Union[str, Path]) -> Dict[str, Any]:
         "has_units": False,
     }
 
-    # Count potential delimiters in data lines
-    for i, line in enumerate(lines[1:], 1):
-        line = line.strip()
-        if not line or line.startswith('#'):
-            format_info["skiprows"] = i
-            continue
+    # Leading blank or comment lines come before the header; skiprows counts
+    # them and header_line is relative to the remaining lines.
+    content = [
+        (i, line.strip()) for i, line in enumerate(lines)
+        if line.strip() and not line.strip().startswith('#')
+    ]
+    if not content:
+        return format_info
+    format_info["skiprows"] = content[0][0]
 
-        # Check delimiter
-        if '\t' in line:
-            format_info["delimiter"] = '\t'
-        elif ',' in line:
-            format_info["delimiter"] = ','
-        else:
-            format_info["delimiter"] = r'\s+'
-        break
+    # The delimiter is taken from the first line after the header, or from
+    # the header itself in a header-only file.
+    sample = content[1][1] if len(content) > 1 else content[0][1]
+    if '\t' in sample:
+        format_info["delimiter"] = '\t'
+    elif ',' in sample:
+        format_info["delimiter"] = ','
+    else:
+        format_info["delimiter"] = r'\s+'
+
+    # A units line follows the header and holds no numbers.
+    if len(content) > 2:
+        split_on = None if format_info["delimiter"] == r'\s+' else format_info["delimiter"]
+        tokens = [token.strip() for token in content[1][1].split(split_on)]
+        format_info["has_units"] = not any(
+            pd.notna(pd.to_numeric(token, errors="coerce")) for token in tokens if token
+        )
 
     return format_info

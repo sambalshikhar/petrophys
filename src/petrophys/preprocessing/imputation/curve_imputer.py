@@ -461,7 +461,9 @@ class PretrainedCurveImputer:
             length=working_well.n_samples,
             strict_units=True,
         )
-        missing_mask = np.isnan(target_values)
+        # Only null samples (NaN or -999-style sentinels) are filled; finite
+        # measured values outside the plausible range are left unchanged.
+        missing_mask = np.isnan(raw_target_values) | (raw_target_values <= -900.0)
         missing_before = int(np.sum(missing_mask))
 
         if missing_before == 0:

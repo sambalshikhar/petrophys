@@ -24,8 +24,6 @@ import sys
 import time
 from pathlib import Path
 
-from openai import OpenAI
-
 HOST_PROMPT = (
     "You are a petrophysics assistant working for a geoscientist. You can use the "
     "Petrophys tools to load and interpret well data. Use the tools rather than "
@@ -92,6 +90,7 @@ def _result_to_output(result) -> tuple[object, dict]:
 async def run_scenario(scenario: dict, *, model: str, target_spec: str, root: str,
                        max_turns: int = 20) -> dict:
     from mcp import Client
+    from openai import OpenAI
 
     client_ai = OpenAI(api_key=_key())
     record = {"id": scenario["id"], "prompt": scenario["prompt"], "calls": [],

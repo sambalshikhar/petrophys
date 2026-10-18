@@ -28,7 +28,7 @@ from typing import Optional, Sequence, Union
 
 import numpy as np
 
-from petrophys.interpretation.core_analysis.calibration import _interp_curve_at_depth
+from petrophys.interpretation.core_analysis.calibration import _log_at_depth
 from petrophys.model.core import CoreData
 
 _CORE_PROPERTIES = ("porosity", "permeability", "grain_density", "sw", "so")
@@ -159,7 +159,7 @@ def _scan(log_depth, log_values, plug_depth, core_values, shifts, min_points, lo
     correlations = np.full(shifts.shape, np.nan)
     counts = np.zeros(shifts.shape, dtype=int)
     for index, shift in enumerate(shifts):
-        at_plugs = _interp_curve_at_depth(log_depth, log_values, plug_depth + shift)
+        at_plugs = _log_at_depth(log_depth, log_values, plug_depth + shift)
         if log_scale:
             at_plugs = np.where(at_plugs > 0, at_plugs, np.nan)
             with np.errstate(divide="ignore", invalid="ignore"):

@@ -126,10 +126,11 @@ def _filesystem_path(path: Path) -> Path:
 
 
 def _write_bytes(path: Path, data: bytes, overwrite: bool) -> None:
+    shown = path
     path = _filesystem_path(path)
     if path.exists() and not overwrite:
         raise FileExistsError(
-            f"Output already exists: {path}; pass overwrite=True "
+            f"Output already exists: {shown}; pass overwrite=True "
             "(--overwrite on the command line) to replace it"
         )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -226,12 +227,19 @@ def export_context(
                 f"remove {', '.join(fixed)}"
             )
     output_io = _filesystem_path(output)
-    if overwrite or output_io.exists():
+    if overwrite:
+        raise ValueError(
+            "overwrite applies only to single-file exports (layout='well'); "
+            "package exports always write a new output directory"
+        )
+    if output_io.exists():
         raise FileExistsError(
             "Package exports require a new output directory; existing "
             "packages are never overwritten"
         )
 
+    if data is None and context_profile is None:
+        raise ValueError("Package exports need the folder of well files as data")
     source = None if data is None and context_profile is not None else Path(data)
     if source is not None and not source.is_dir():
         raise FileNotFoundError(f"Input well directory not found: {source}")
@@ -267,10 +275,22 @@ def export_context(
                 lithology_mapping_file=options.get("lithology_mapping_file"),
             )
         if not results:
-            raise ValueError(
-                "No context files generated; check well selection, formations, "
-                "and minimum thickness"
+            reason = "check well selection, formations, and minimum thickness"
+            pattern = options.get("pattern", "*.las")
+            found = [] if source is None else sorted(
+                source.rglob(pattern) if options.get("recursive") else source.glob(pattern)
             )
+            wanted = [str(name) for name in options.get("well_names") or []]
+            if source is not None and not found:
+                reason = f"no input file matches {pattern!r} in {source}"
+            elif found and wanted and not reference._filter_input_files_by_well_names(
+                found, wanted
+            ):
+                reason = (
+                    f"no input file is named after well {', '.join(wanted)} "
+                    f"(files: {', '.join(path.name for path in found[:10])})"
+                )
+            raise ValueError(f"No context files generated; {reason}")
         failures = [item for item in results if not item.success]
         if failures:
             errors = [error for item in failures for error in item.errors]

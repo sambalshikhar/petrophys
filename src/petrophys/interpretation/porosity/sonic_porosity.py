@@ -32,7 +32,8 @@ def wyllie_time_average(
     Returns
     -------
     float or np.ndarray
-        Sonic porosity (v/v)
+        Sonic porosity (v/v). Missing/nonfinite inputs and zero
+        fluid-matrix slowness contrast return NaN.
     """
     dtc_arr = np.asarray(dtc, dtype=float)
     dtc_matrix_arr = np.asarray(dtc_matrix, dtype=float)
@@ -41,9 +42,10 @@ def wyllie_time_average(
 
     with np.errstate(divide="ignore", invalid="ignore"):
         phis = np.where(
-            denominator != 0,
+            (denominator != 0) & np.isfinite(dtc_arr)
+            & np.isfinite(dtc_matrix_arr) & np.isfinite(dtc_fluid_arr),
             (dtc_arr - dtc_matrix_arr) / denominator,
-            0.0,
+            np.nan,
         )
 
     phis = np.clip(phis, 0, 0.5)
@@ -84,7 +86,15 @@ def sonic_porosity(
         "shale": 100.0,
     }
 
-    dtc_matrix = matrix_slowness.get(matrix.lower(), 55.5)
+    dtc_matrix = matrix_slowness.get(matrix.lower())
+    if dtc_matrix is None:
+        # Other minerals and aliases (calcite, quartz, anhydrite, ...) from
+        # the matrix table; an unknown name is an error, not sandstone.
+        from petrophys.model.constants import MatrixProperties
+        try:
+            dtc_matrix = MatrixProperties.get(matrix).slowness
+        except KeyError:
+            raise ValueError(f"Unknown matrix {matrix!r} for sonic porosity") from None
     # The compaction factor Cp divides the time-average porosity (Hilchie,
     # 1978). Scaling the fluid-matrix slowness contrast by Cp does that before
     # the 0-0.5 limits, so uncompacted rock is not capped at 0.5 / Cp.

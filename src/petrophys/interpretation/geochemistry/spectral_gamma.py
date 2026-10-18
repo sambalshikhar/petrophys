@@ -19,6 +19,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 import numpy as np
 
 from petrophys._internal.analysis_helpers import base_curve_mnemonic
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.data_types import DataType
 
 # Common API sensitivity coefficients for concentration logs.  Potassium is in
@@ -256,6 +257,13 @@ def _convert_concentration(
     values = np.asarray(curve.data, dtype=float).copy()
     unit = str(getattr(curve, "unit", "") or "")
     key = _unit_key(unit)
+    historical = reproducing_benchmark()
+    fraction_keys = {"fraction", "mass/mass", "wt/wt", "g/g", "kg/kg", "kgf/kgf"}
+    if not historical:
+        fraction_keys |= {"v/v", "frac", "dec", "decimal"}
+    # A unit the checks below do not recognise is assumed, so it is reported; the
+    # benchmark packages warned only on blank or dimensionless units.
+    ambiguous = not historical or not key or key in {"dimensionless", "unitless"}
 
     if property_name == "POTASSIUM":
         target_unit = "%"
@@ -263,10 +271,10 @@ def _convert_concentration(
             return values / 10_000.0, target_unit, "ppm_to_percent", None
         if "%" in key:
             return values, target_unit, "identity_percent", None
-        if key in {"fraction", "mass/mass", "wt/wt", "g/g", "kg/kg", "kgf/kgf"}:
+        if key in fraction_keys:
             return values * 100.0, target_unit, "fraction_to_percent", None
         warning = None
-        if not key or key in {"dimensionless", "unitless"}:
+        if ambiguous:
             warning = (
                 f"{source_name}: potassium unit {unit!r} is ambiguous; "
                 "industry spectral-gamma convention (%) was assumed"
@@ -278,10 +286,10 @@ def _convert_concentration(
         return values, target_unit, "identity_ppm", None
     if "%" in key:
         return values * 10_000.0, target_unit, "percent_to_ppm", None
-    if key in {"fraction", "mass/mass", "wt/wt", "g/g", "kg/kg", "kgf/kgf"}:
+    if key in fraction_keys:
         return values * 1_000_000.0, target_unit, "fraction_to_ppm", None
     warning = None
-    if not key or key in {"dimensionless", "unitless"}:
+    if ambiguous:
         warning = (
             f"{source_name}: {property_name.lower()} unit {unit!r} is ambiguous; "
             "industry spectral-gamma convention (ppm) was assumed"

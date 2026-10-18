@@ -21,7 +21,7 @@ def _value(seq: Optional[Sequence], i: int) -> Optional[float]:
     if seq is None:
         return None
     v = seq[i]
-    return None if v is None or (isinstance(v, float) and not np.isfinite(v)) else v
+    return None if v is None or (isinstance(v, (float, np.floating)) and not np.isfinite(v)) else v
 
 
 def flow_roles(

@@ -510,6 +510,8 @@ def compare_saturation_models(
                 float(vsh_exp), float(shale_exp),
             )
         sw_model = np.clip(np.asarray(sw_model, dtype=float), 0.0, 1.0)
+        # A non-finite Rt is an unknown measurement: Sw is unknown for every model.
+        sw_model[~np.isfinite(np.asarray(rt_w, dtype=float))] = np.nan
         saturations[model] = sw_model
         summary = pay_summary_from_arrays(vcl_w, phie_w, sw_model, dz, cutoffs, unit)
         summaries[model] = summary

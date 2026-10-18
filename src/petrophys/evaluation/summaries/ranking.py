@@ -47,7 +47,7 @@ def best_and_weakest(
     direction : {"higher", "lower"}
         The better direction (:func:`property_direction`).
     bad_hole : sequence of float, optional
-        Bad-hole share per zone.
+        Bad-hole share per zone; an unknown (None or NaN) share keeps the zone.
     max_bad_hole_fraction : float
         The largest bad-hole share a ranked zone may have.
 
@@ -66,7 +66,8 @@ def best_and_weakest(
     if direction not in ("higher", "lower"):
         raise ValueError(f"direction must be 'higher' or 'lower', not {direction!r}")
     ok = [i for i, v in enumerate(values) if v is not None and np.isfinite(v)]
-    good = [i for i in ok if bad_hole is None or bad_hole[i] <= max_bad_hole_fraction]
+    good = [i for i in ok if bad_hole is None or bad_hole[i] is None or not np.isfinite(bad_hole[i])
+            or bad_hole[i] <= max_bad_hole_fraction]
     pick = good or ok
     basis = "good_hole" if good else "all_in_bad_hole"
     if len(pick) < 2:

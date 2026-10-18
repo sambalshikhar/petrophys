@@ -196,7 +196,8 @@ def get_good_data_mask(
     flags : dict
         Dictionary of flag arrays
     required_curves : list of str, optional
-        Curves that must have valid data
+        Curves that must have valid data (any case). A required curve the
+        well does not have leaves no good samples.
 
     Returns
     -------
@@ -215,8 +216,15 @@ def get_good_data_mask(
     # Check required curves have valid data
     if required_curves:
         for mnemonic in required_curves:
-            if mnemonic in well._curves:
-                curve_data = well._curves[mnemonic].data
-                good_mask &= ~np.isnan(curve_data)
+            curve = well.get(mnemonic)
+            if curve is None:
+                curve = next(
+                    (well.get(name) for name in well.curves if name.upper() == str(mnemonic).upper()),
+                    None,
+                )
+            if curve is None:
+                good_mask[:] = False
+                continue
+            good_mask &= ~np.isnan(np.asarray(curve.data, dtype=float))
 
     return good_mask

@@ -8,8 +8,10 @@ import warnings
 import numpy as np
 
 from petrophys.model.constants import DefaultParameters
+from petrophys.evaluation.net_pay.cutoffs import cutoff_family
 from petrophys.evaluation.net_pay.flags import generate_net_flags
 from petrophys._internal.analysis_helpers import cell_thickness, get_curve_data_depthwise
+from petrophys._internal.benchmark import reproducing_benchmark
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -42,7 +44,10 @@ class NetPayModule:
     When an array is provided, the VCL and PHIE cutoffs vary by depth
     with the local lithology.
 
-    Only the family label ``"carbonate"`` selects the carbonate cutoffs.
+    The carbonate cutoffs apply to the carbonate family of
+    :func:`~petrophys.evaluation.net_pay.cutoffs.cutoff_family` (carbonate,
+    limestone, chalk, dolomite, marl); every other label is clastic. The
+    benchmark reproduction keeps the exact label ``"carbonate"`` alone.
 
     The flags come from the cutoffs alone, with no samples left out unless a
     ``quality_mask`` is given. :func:`petrophys.interpret` also takes each
@@ -93,7 +98,9 @@ class NetPayModule:
 
     @staticmethod
     def _is_carbonate(label) -> bool:
-        return str(label).lower() == "carbonate"
+        if reproducing_benchmark():
+            return str(label).lower() == "carbonate"
+        return cutoff_family(label) == "carbonate"
 
     def _carbonate_mask(self) -> np.ndarray:
         return np.array([self._is_carbonate(v) for v in self.lithology])
@@ -245,8 +252,10 @@ def calculate_net_pay(
         Net pay adds ``Sw < sw_cutoff``. Default: 0.60 clastic or 0.70
         carbonate.
     lithology : str or np.ndarray
-        'clastic' or 'carbonate', or per-depth array of these strings. Only
-        the label 'carbonate' selects the carbonate standards.
+        'clastic' or 'carbonate', or per-depth array of lithology labels.
+        The carbonate family (carbonate, limestone, chalk, dolomite, marl;
+        :func:`~petrophys.evaluation.net_pay.cutoffs.cutoff_family`) selects
+        the carbonate standards, every other label the clastic ones.
 
     Notes
     -----

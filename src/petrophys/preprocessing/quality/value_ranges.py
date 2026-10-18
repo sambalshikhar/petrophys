@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional
 
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 if TYPE_CHECKING:
     from petrophys.model.well import Well
 
@@ -38,8 +40,10 @@ VALUE_RANGE_RULES: dict[str, ValueRangeRule] = {
     "NPHI": ValueRangeRule(-0.15, 0.60, "nan", ("NPHI",)),
     "PEF": ValueRangeRule(0.0, 15.0, "nan", ("PEF",)),
     "CALI": ValueRangeRule(
-        4.0, 40.0, "nan", ("CALI", "CAL", "DCAL", "HD1_PPC1", "HD2_PPC1")
+        4.0, 40.0, "nan", ("CALI", "CAL", "HD1_PPC1", "HD2_PPC1")
     ),
+    # Differential caliper (CALI - BS), not an absolute hole size.
+    "DCAL": ValueRangeRule(-5.0, 5.0, "nan", ("DCAL",)),
     "BS": ValueRangeRule(4.0, 40.0, "nan", ("BS",)),
     "PHIS": ValueRangeRule(-0.05, 0.60, "nan", ("PHIS",)),
     "PERM": ValueRangeRule(1e-4, 2e4, "nan", ("PERM",)),
@@ -114,6 +118,49 @@ def _rule_lookup() -> dict[str, tuple[str, ValueRangeRule]]:
 
 _RULE_LOOKUP = _rule_lookup()
 
+#: Unit of each rule family's bounds. A curve of the family in another
+#: recognised unit (NPHI in pu, CALI in mm, DT in us/m) is screened against
+#: the bounds converted to its own unit. Families without an entry (API,
+#: mD, temperature scales, flags) are screened as they are.
+_FRACTION_RULE_FAMILIES = (
+    "NPHI", "PHIS", "PHID", "PHIN", "PHIND", "PHIRH", "PHIT", "PHIE", "PHIE_CC",
+    "PHI_SEC", "NMR_SWIRR", "SW", "SO", "SXO", "SWIRR_APP", "BVW", "MHI",
+    "VDOL", "VLIM", "VSAND", "VANHY", "VSH",
+)
+RULE_UNITS: dict[str, str] = {
+    **{family: "v/v" for family in _FRACTION_RULE_FAMILIES},
+    "CALI": "in",
+    "DCAL": "in",
+    "BS": "in",
+    "DTC": "us/ft",
+    "DTS": "us/ft",
+    "RHOB": "g/cm3",
+    "RMF": "ohm.m",
+    "RXO": "ohm.m",
+    "RDEP": "ohm.m",
+    "RW": "ohm.m",
+    "RWA": "ohm.m",
+}
+
+
+def _rule_bounds(
+    canonical: str, rule: ValueRangeRule, unit: Optional[str]
+) -> tuple[tuple[float, float], Optional[str]]:
+    """The rule's bounds in ``unit`` (the curve's own) and that unit.
+
+    The unit is None when no conversion was needed or recognised. The
+    benchmark packages screened every curve in the rule's unit.
+    """
+    standard = RULE_UNITS.get(canonical)
+    if standard is None or not unit or reproducing_benchmark():
+        return (rule.low, rule.high), None
+    from petrophys.preprocessing.standardization.unit_converter import get_conversion_factor
+
+    factor = get_conversion_factor(str(unit), standard)
+    if factor is None or factor <= 0.0 or factor == 1.0:
+        return (rule.low, rule.high), None
+    return (rule.low / factor, rule.high / factor), str(unit)
+
 
 def rule_for_curve(
     mnemonic: str, rules: Optional[Mapping[str, ValueRangeRule]] = None
@@ -125,8 +172,11 @@ def rule_for_curve(
     upper = str(mnemonic or "").upper()
     table = VALUE_RANGE_RULES if rules is None else rules
     if upper.startswith("SXO-"):
-        return "SXO", table["SXO"]
+        return ("SXO", table["SXO"]) if "SXO" in table else None
     if rules is None:
+        if upper == "DCAL" and reproducing_benchmark():
+            # The benchmark packages screened DCAL as an absolute caliper.
+            return ("CALI", table["CALI"])
         return _RULE_LOOKUP.get(upper)
     for canonical, rule in rules.items():
         if upper == canonical.upper() or upper in (alias.upper() for alias in rule.aliases):
@@ -135,15 +185,22 @@ def rule_for_curve(
 
 
 def _qc_curve_data(
-    data: np.ndarray, rule: ValueRangeRule
+    data: np.ndarray, rule: ValueRangeRule, bounds: Optional[tuple[float, float]] = None
 ) -> tuple[np.ndarray, dict[str, int]]:
     arr = np.asarray(data, dtype=float).copy()
+    low, high = (rule.low, rule.high) if bounds is None else bounds
     finite = np.isfinite(arr)
-    below = finite & (arr < rule.low)
-    above = finite & (arr > rule.high)
+    below = finite & (arr < low)
+    above = finite & (arr > high)
+    if not reproducing_benchmark():
+        # +/-inf is outside every range and becomes NaN under clip rules too;
+        # the benchmark packages left infinities as they were.
+        below |= np.isneginf(arr)
+        above |= np.isposinf(arr)
     changed = below | above
     if rule.action == "clip":
-        arr[finite] = np.clip(arr[finite], rule.low, rule.high)
+        arr[finite] = np.clip(arr[finite], low, high)
+        arr[changed & ~finite] = np.nan
     else:
         arr[changed] = np.nan
     return arr, {
@@ -154,25 +211,40 @@ def _qc_curve_data(
 
 
 def clean_curve_values(
-    mnemonic: str, data: Any, rules: Optional[Mapping[str, ValueRangeRule]] = None
+    mnemonic: str,
+    data: Any,
+    rules: Optional[Mapping[str, ValueRangeRule]] = None,
+    unit: Optional[str] = None,
 ) -> tuple[np.ndarray, Optional[dict[str, Any]]]:
-    """Clean one curve array with its configured value-range rule."""
+    """Clean one curve array with its configured value-range rule.
+
+    ``unit`` is the curve's unit: when it is a recognised unit of the rule
+    family other than the rule's own (see :data:`RULE_UNITS`), the bounds are
+    converted to it before screening and reported in it with a ``unit`` key.
+    """
     match = rule_for_curve(mnemonic, rules)
     arr = np.asarray(data, dtype=float)
     if match is None:
         return arr.copy(), None
     canonical, rule = match
-    cleaned, stats = _qc_curve_data(arr, rule)
-    return cleaned, {
+    bounds, curve_unit = _rule_bounds(canonical, rule, unit)
+    cleaned, stats = _qc_curve_data(arr, rule, bounds)
+    low, high = bounds
+    if curve_unit is not None:
+        low, high = float(f"{low:.6g}"), float(f"{high:.6g}")
+    item: dict[str, Any] = {
         "curve": str(mnemonic).upper(),
         "canonical_curve": canonical,
-        "low": float(rule.low),
-        "high": float(rule.high),
+        "low": float(low),
+        "high": float(high),
         "action": rule.action,
         "changed": stats["changed"],
         "below": stats["below"],
         "above": stats["above"],
     }
+    if curve_unit is not None:
+        item["unit"] = curve_unit
+    return cleaned, item
 
 
 def apply_value_range_qc(
@@ -186,7 +258,15 @@ def apply_value_range_qc(
 
     Values outside ``nan`` rules are set to NaN. Values outside ``clip`` rules
     are clipped to the configured low/high bounds. ``rules`` replaces
-    :data:`VALUE_RANGE_RULES`.
+    :data:`VALUE_RANGE_RULES`. Curve data are changed in place.
+
+    The ranges are in the library's standard units (fractions in v/v,
+    caliper and bit size in inches, sonic in us/ft). A curve whose unit is
+    another recognised unit of its family (NPHI in pu or %, CALI in mm, DT in
+    us/m) is screened against the bounds converted to that unit; a curve in
+    an unrecognised unit is screened as it is, so standardize the curves
+    first (:func:`petrophys.preprocessing.standardization.standardize_curves`)
+    when in doubt. +/-inf is set to NaN under every rule.
     """
     names = list(curve_names or getattr(well, "curves", []))
     report: list[dict[str, Any]] = []
@@ -196,7 +276,9 @@ def apply_value_range_qc(
         if curve is None:
             continue
         try:
-            cleaned, item = clean_curve_values(name, curve.data, rules)
+            cleaned, item = clean_curve_values(
+                name, curve.data, rules, unit=getattr(curve, "unit", None)
+            )
         except (TypeError, ValueError):
             continue
         if item is None:
@@ -226,9 +308,10 @@ def value_range_qc_note(
     parts = []
     for item in changed_items[:max_items]:
         action = "clipped" if item.get("action") == "clip" else "set NaN"
+        unit = f" {item['unit']}" if item.get("unit") else ""
         parts.append(
             f"{item.get('curve')} {action}={item.get('changed')} "
-            f"(<{item.get('low')}:{item.get('below')}, >{item.get('high')}:{item.get('above')})"
+            f"(<{item.get('low')}:{item.get('below')}, >{item.get('high')}:{item.get('above')}{unit})"
         )
     if len(changed_items) > max_items:
         parts.append(f"+{len(changed_items) - max_items} more curves")

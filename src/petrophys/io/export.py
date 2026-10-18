@@ -7,7 +7,10 @@ file formats including LAS, CSV, and Excel.
 
 from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any
 from pathlib import Path
+import warnings
 import numpy as np
+
+from petrophys._internal.benchmark import reproducing_benchmark
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -66,6 +69,10 @@ def _export_well_parameters(las, well: "Well") -> None:
             value = value.item()
         if isinstance(value, float) and not np.isfinite(value):
             value = ""
+        if isinstance(value, (dict, list, tuple, set, np.ndarray)) and not reproducing_benchmark():
+            # Structured metadata (e.g. dlis_merge) has no LAS ~P form; its
+            # text would re-read truncated at the first colon.
+            continue
 
         las.params.append(
             lasio.HeaderItem(
@@ -122,7 +129,16 @@ def export_las(
         widens its column by one). The bytes written are the same UTF-8.
     **kwargs
         Additional arguments passed to lasio's LASFile.write
-        (e.g. ``fmt="%.8f"`` to control numeric precision)
+        (e.g. ``fmt="%.8f"`` to control numeric precision). Without
+        ``fmt`` the values are written with six significant figures
+        (``%.6g``), or lasio's fixed five decimals when reproducing a
+        benchmark context package.
+
+    Notes
+    -----
+    Irregularly sampled depths are written with ``STEP 0`` as LAS 2.0
+    requires, and samples without a finite depth are left out (a LAS index
+    cannot be null). Non-scalar well parameters (dicts, lists) are not written.
 
     Examples
     --------
@@ -136,6 +152,11 @@ def export_las(
         )
 
     filepath = Path(filepath)
+    historical = reproducing_benchmark()
+    # The benchmark packages were written with lasio's fixed five decimals,
+    # which print values below 5e-6 (permeability in mD) as 0; otherwise six
+    # significant figures keep them.
+    kwargs.setdefault("fmt", "%.5f" if historical else "%.6g")
     depth_label = well.depth_unit
     if depth_unit_label:
         from petrophys.model.units import normalize_depth_unit
@@ -199,6 +220,35 @@ def export_las(
             value=header.location,
             descr="LOCATION"
         )
+    if not historical:
+        for mnemonic, value, descr in (
+            ("CNTY", header.county, "COUNTY"),
+            ("STAT", header.state, "STATE"),
+            ("CTRY", header.country, "COUNTRY"),
+        ):
+            if value:
+                setattr(las.well, mnemonic, lasio.HeaderItem(mnemonic=mnemonic, value=value, descr=descr))
+
+    # A LAS index is never null: samples without a finite depth are left out.
+    keep = None
+    irregular = False
+    step_value = well.step
+    if well.depth is not None and not historical:
+        depth_values = np.asarray(well.depth, dtype=float)
+        finite_depth = np.isfinite(depth_values)
+        if not finite_depth.all():
+            keep = finite_depth
+            warnings.warn(
+                f"export_las: {int((~finite_depth).sum())} sample(s) without a finite "
+                "depth are not written.",
+                UserWarning,
+                stacklevel=2,
+            )
+        diffs = np.diff(depth_values[finite_depth])
+        if diffs.size > 1 and not np.allclose(
+            diffs, diffs[0], rtol=0.0, atol=1e-3 * abs(diffs[0])
+        ):
+            irregular = True  # LAS 2.0: STEP 0 for variable sampling
 
     # Set depth reference
     if well.top is not None:
@@ -215,11 +265,11 @@ def export_las(
             value=well.bottom,
             descr="STOP DEPTH"
         )
-    if well.step is not None:
+    if step_value is not None:
         las.well.STEP = lasio.HeaderItem(
             mnemonic="STEP",
             unit=depth_label,
-            value=well.step,
+            value=step_value,
             descr="STEP"
         )
 
@@ -248,7 +298,7 @@ def export_las(
     if well.depth is not None:
         las.append_curve(
             "DEPT",
-            well.depth,
+            well.depth if keep is None else np.asarray(well.depth, dtype=float)[keep],
             unit=depth_label,
             descr="DEPTH"
         )
@@ -258,6 +308,14 @@ def export_las(
         curves = well.curves
     else:
         curves = [c.upper() for c in curves]
+
+    missing = [mnemonic for mnemonic in curves if mnemonic not in well._curves]
+    if missing and not historical:
+        warnings.warn(
+            f"export_las: requested curves not in the well are not written: {', '.join(missing)}",
+            UserWarning,
+            stacklevel=2,
+        )
 
     # Add curves
     for mnemonic in curves:
@@ -269,6 +327,8 @@ def export_las(
         # Inf was previously written literally as "inf", breaking re-read round-trips.
         data = curve.data.copy().astype(float)
         data = np.where(np.isfinite(data), data, -999.25)
+        if keep is not None:
+            data = data[keep]
 
         las.append_curve(
             mnemonic,
@@ -276,6 +336,10 @@ def export_las(
             unit=curve.unit,
             descr=curve.metadata.description
         )
+
+    if irregular and kwargs.get("STEP") is None:
+        # lasio otherwise writes the first depth difference as STEP.
+        kwargs["STEP"] = kwargs["fmt"] % 0.0
 
     # Write file
     # lasio would open the file with the platform's locale encoding, which
@@ -366,7 +430,8 @@ def export_excel(
     well : Well
         Well object to export
     filepath : str or Path
-        Output file path (should be .xlsx)
+        Output file path. The file is written as .xlsx; another suffix
+        (including .xls) is replaced by .xlsx.
     curves : list of str, optional
         Specific curves to export (default: all)
     include_depth : bool, optional
@@ -386,7 +451,8 @@ def export_excel(
     import pandas as pd
 
     filepath = Path(filepath)
-    if filepath.suffix.lower() not in ['.xlsx', '.xls']:
+    if filepath.suffix.lower() != '.xlsx':
+        # openpyxl writes xlsx content only; a .xls name would mislabel it.
         filepath = filepath.with_suffix('.xlsx')
 
     if curves is None:
@@ -399,6 +465,7 @@ def export_excel(
         # Write header sheet if requested
         if include_header:
             header_data = well.header.to_dict()
+            header_data["depth_unit"] = well.depth_unit
             header_df = pd.DataFrame([
                 {"Parameter": k, "Value": v}
                 for k, v in header_data.items()
@@ -408,6 +475,8 @@ def export_excel(
 
         # Write log data
         df = well.to_dataframe(curves=curves, include_depth=include_depth)
+        # Non-finite values as empty cells, as export_csv/export_las null them.
+        df = df.replace([np.inf, -np.inf], np.nan)
         df.to_excel(writer, sheet_name=sheet_name, index=False, **kwargs)
 
         # Write curve info
@@ -415,14 +484,16 @@ def export_excel(
         for mnemonic in curves:
             if mnemonic in well._curves:
                 curve = well._curves[mnemonic]
+                values = np.asarray(curve.data, dtype=float)
+                finite = values[np.isfinite(values)]
                 curve_info.append({
                     "Mnemonic": mnemonic,
                     "Unit": curve.unit,
                     "Description": curve.metadata.description,
-                    "Min": curve.min(),
-                    "Max": curve.max(),
-                    "Valid Count": curve.valid_count(),
-                    "Null Count": curve.null_count()
+                    "Min": float(finite.min()) if finite.size else float("nan"),
+                    "Max": float(finite.max()) if finite.size else float("nan"),
+                    "Valid Count": int(finite.size),
+                    "Null Count": int(values.size - finite.size)
                 })
         if curve_info:
             curve_df = pd.DataFrame(curve_info)

@@ -165,6 +165,13 @@ class WashoutDetection:
         """Calculate summary statistics."""
         n_samples = well.n_samples
         depth_step = abs(well.step or 1.0)
+        # Each sample stands for half the interval to each neighbour, so the
+        # thickness is right for irregular or merged sampling as well.
+        sample_thickness = np.full(n_samples, depth_step, dtype=float)
+        if well.depth is not None and n_samples > 1:
+            depth = np.asarray(well.depth, dtype=float)
+            if np.all(np.isfinite(depth)):
+                sample_thickness = np.abs(np.gradient(depth))
 
         stats = {}
 
@@ -172,7 +179,7 @@ class WashoutDetection:
             count = np.sum(flag)
             stats[f"{name}_count"] = int(count)
             stats[f"{name}_percent"] = float(count / n_samples * 100) if n_samples else 0.0
-            stats[f"{name}_thickness"] = float(count * depth_step)
+            stats[f"{name}_thickness"] = float(np.sum(sample_thickness[np.asarray(flag, dtype=bool)]))
 
         return stats
 

@@ -77,6 +77,16 @@ def _indonesia_terms(rw, vcl=0.35, phie=0.20, rcl=2.0):
     return vcl ** (1 - vcl / 2) / np.sqrt(rcl), phie / np.sqrt(rw)
 
 
+def _dual_water_swe(phit, rt, rw, rwb, vcl, phi_cl):
+    """Clavier-Coates-Dumanoir Swe for a = 1, m = n = 2: the positive root of
+    Cw Swt^2 + Swb (Cwb - Cw) Swt - 1/(PHIT^2 Rt) = 0, then (Swt - Swb)/(1 - Swb)."""
+    swb = vcl * phi_cl / phit
+    cw, cwb = 1 / np.asarray(rw, dtype=float), 1 / rwb
+    b = swb * (cwb - cw)
+    swt = (-b + np.sqrt(b ** 2 + 4 * cw / (phit ** 2 * rt))) / (2 * cw)
+    return np.clip((swt - swb) / (1 - swb), 0.0, 1.0)
+
+
 def _waxman_smits_n2(phit, rt, rw, cec_meq_per_g, b, rho_ma=2.65, m_star=2.0):
     """Closed-form root of Ct = (Sw^2 / F*) (Cw + B Qv / Sw) for n = 2."""
     f_star = phit ** -m_star
@@ -89,17 +99,39 @@ def _waxman_smits_n2(phit, rt, rw, cec_meq_per_g, b, rho_ma=2.65, m_star=2.0):
 # -- The public equations ------------------------------------------------------
 
 
-def test_dual_water_is_the_wet_zone_form_of_crain():
+def test_dual_water_is_the_clavier_coates_dumanoir_form():
+    # Clavier, Coates and Dumanoir (1984): Swb = Vcl*phi_cl/PHIT;
+    # 1/Rt = PHIT^m/a Swt^n [Cw + (Swb/Swt)(Cwb - Cw)], for n = 2 the positive
+    # root of Cw Swt^2 + Swb (Cwb - Cw) Swt - a/(PHIT^m Rt) = 0;
+    # Swe = (Swt - Swb) / (1 - Swb). PHIT 0.25, Rt 2, Rw 0.05, Rwb 0.02,
+    # Vcl 0.30, phi_cl 0.15.
+    swb = 0.30 * 0.15 / 0.25  # 0.18
+    cw, cwb = 1 / 0.05, 1 / 0.02  # 20, 50
+    b = swb * (cwb - cw)  # 5.4
+    k = 1 / (0.25 ** 2 * 2.0)  # 8
+    swt = (-b + np.sqrt(b ** 2 + 4 * cw * k)) / (2 * cw)  # 0.51171
+    expected = (swt - swb) / (1 - swb)
+    assert expected == pytest.approx(0.4045, abs=1e-4)
+    assert 0.25 ** 2 * swt ** 2 * (cw + swb / swt * (cwb - cw)) == pytest.approx(0.5)
+    assert dual_water(0.25, 2.0, 0.05, 0.02, 0.30, 0.15) == pytest.approx(expected, rel=1e-12)
+
+
+def test_dual_water_benchmark_variant_is_the_wet_zone_form_of_crain():
     # Crain's Petrophysical Handbook: Swb = Vcl*phi_cl/PHIT;
     # Ro = a Rw Rwb / (PHIT^m (Rwb + Swb (Rw - Rwb))); Swt = (Ro/Rt)^(1/n);
     # Swe = (Swt - Swb) / (1 - Swb). PHIT 0.25, Rt 10, Rw 0.05, Rwb 0.02,
     # Vcl 0.30, phi_cl 0.15.
+    from petrophys._internal.benchmark import historical_benchmark
+
     swb = 0.30 * 0.15 / 0.25  # 0.18
     ro = 0.05 * 0.02 / (0.25 ** 2 * (0.02 + swb * (0.05 - 0.02)))  # 0.62992
     swt = np.sqrt(ro / 10.0)  # 0.25098
     expected = (swt - swb) / (1 - swb)
     assert expected == pytest.approx(0.0866, abs=1e-4)
-    assert dual_water(0.25, 10.0, 0.05, 0.02, 0.30, 0.15) == pytest.approx(expected, rel=1e-12)
+    with historical_benchmark():
+        assert dual_water(0.25, 10.0, 0.05, 0.02, 0.30, 0.15) == pytest.approx(expected, rel=1e-12)
+    # Both forms agree in wet rock (Rt = Ro).
+    assert dual_water(0.25, ro, 0.05, 0.02, 0.30, 0.15) == pytest.approx(1.0)
 
 
 def test_dual_water_caps_bound_water_saturation_unlike_the_benchmark_variant():
@@ -139,12 +171,14 @@ def test_public_saturation_entry_points_do_not_guess_rwb():
         sw = calculate_sw(well, rw=0.05, rcl=2.0, lithology="carbonate")
     clay, sand = _indonesia_terms(0.05)
     np.testing.assert_allclose(sw[SHALY], (1 / np.sqrt(10.0)) / (clay + sand), rtol=1e-9)
-    # A supplied Rwb runs Dual Water.
-    swb = 0.35 * 0.15 / 0.25
-    ro = 0.05 * 0.02 / (0.25 ** 2 * (0.02 + swb * (0.05 - 0.02)))
-    expected = (np.sqrt(ro / 10.0) - swb) / (1 - swb)
-    sw = calculate_sw(well, rw=0.05, rcl=2.0, lithology="carbonate", rwb=0.02, phi_cl=0.15)
-    np.testing.assert_allclose(sw[SHALY], expected, rtol=1e-9)
+    # A supplied Rwb runs Dual Water. With Rwb = 0.02 the bound water alone
+    # (Swb = 0.21) conducts more than Rt = 10 allows, so Swe = 0; Rwb = 0.04
+    # leaves free water.
+    for rwb, swe_at_rwb in ((0.02, 0.0), (0.04, 0.0605)):
+        expected = _dual_water_swe(0.25, 10.0, 0.05, rwb, 0.35, 0.15)
+        assert expected == pytest.approx(swe_at_rwb, abs=1e-4)
+        sw = calculate_sw(well, rw=0.05, rcl=2.0, lithology="carbonate", rwb=rwb, phi_cl=0.15)
+        np.testing.assert_allclose(sw[SHALY], expected, rtol=1e-9, atol=1e-12)
 
 
 def test_standard_workflow_runs_dual_water_only_with_rwb():
@@ -260,13 +294,11 @@ def test_current_runs_dual_water_with_a_supplied_rwb():
     result = _run("current", lithology_domain="carbonate", phi_cl=0.12, rwb=0.02)
     rw = _shaly(result, "RW")
     step = _step(result, "saturation")
-    swb = 0.35 * 0.12 / 0.25
-    ro = rw * 0.02 / (0.25 ** 2 * (0.02 + swb * (rw - 0.02)))
-    expected = (np.sqrt(ro / 10.0) - swb) / (1 - swb)
+    expected = _dual_water_swe(0.25, 10.0, rw, 0.02, 0.35, 0.12)
 
     assert step.parameters["sw_model_sample_counts"] == {"dual_water": 20}
     np.testing.assert_allclose(_shaly(result, "SW"), expected, rtol=1e-9)
-    assert _shaly(result, "SW")[0] == pytest.approx(0.102, abs=1e-3)
+    assert _shaly(result, "SW")[0] == pytest.approx(0.0188, abs=1e-3)
 
 
 def test_current_sends_saline_shaly_carbonate_without_rwb_to_simandoux():

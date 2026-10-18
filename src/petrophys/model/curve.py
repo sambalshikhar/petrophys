@@ -11,6 +11,7 @@ import copy
 import numpy as np
 import pandas as pd
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.data_types import DataType
 
 
@@ -105,8 +106,17 @@ class Curve:
 
     @data.setter
     def data(self, value: Union[np.ndarray, List[float]]):
-        """Set curve data."""
-        self._data = np.asarray(value, dtype=np.float64)
+        """Set curve data (same length as the depth, when the curve has one)."""
+        data = np.asarray(value, dtype=np.float64)
+        if (
+            self._depth is not None
+            and len(data) != len(self._depth)
+            and not reproducing_benchmark()
+        ):
+            raise ValueError(
+                f"Data length ({len(data)}) must match depth length ({len(self._depth)})"
+            )
+        self._data = data
 
     @property
     def depth(self) -> Optional[np.ndarray]:
@@ -115,9 +125,14 @@ class Curve:
 
     @depth.setter
     def depth(self, value: Optional[Union[np.ndarray, List[float]]]):
-        """Set depth values."""
+        """Set depth values (same length as the data)."""
         if value is not None:
-            self._depth = np.asarray(value, dtype=np.float64)
+            depth = np.asarray(value, dtype=np.float64)
+            if len(depth) != len(self._data) and not reproducing_benchmark():
+                raise ValueError(
+                    f"Depth length ({len(depth)}) must match data length ({len(self._data)})"
+                )
+            self._depth = depth
         else:
             self._depth = None
 
@@ -157,9 +172,11 @@ class Curve:
             metadata=self.metadata
         )
 
-    def __array__(self) -> np.ndarray:
+    def __array__(self, dtype=None, copy=None) -> np.ndarray:
         """Return data for numpy operations."""
-        return self._data
+        if copy:
+            return np.array(self._data, dtype=dtype, copy=True)
+        return np.asarray(self._data, dtype=dtype)
 
     # Arithmetic operations
     def __add__(self, other: Union["Curve", float, np.ndarray]) -> "Curve":
@@ -179,26 +196,39 @@ class Curve:
         return self._create_derived(other - self._data)
 
     def __mul__(self, other: Union["Curve", float, np.ndarray]) -> "Curve":
+        unit = self.unit
         if isinstance(other, Curve):
+            # A product of two dimensioned curves has no unit we can name.
+            unit = self.unit if not other.unit else (other.unit if not self.unit else "")
             other = other.data
-        return self._create_derived(self._data * other)
+        return self._create_derived(self._data * other, unit)
 
     def __rmul__(self, other: Union[float, np.ndarray]) -> "Curve":
         return self._create_derived(other * self._data)
 
     def __truediv__(self, other: Union["Curve", float, np.ndarray]) -> "Curve":
+        unit = self.unit
         if isinstance(other, Curve):
+            unit = self.unit if not other.unit else ""
             other = other.data
-        return self._create_derived(self._data / other)
+        return self._create_derived(self._data / other, unit)
 
     def __rtruediv__(self, other: Union[float, np.ndarray]) -> "Curve":
-        return self._create_derived(other / self._data)
+        # The reciprocal of a dimensioned curve (e.g. 1/RT) is not in its unit.
+        return self._create_derived(other / self._data, "")
 
     def __pow__(self, power: float) -> "Curve":
-        return self._create_derived(self._data ** power)
+        return self._create_derived(self._data ** power, self.unit if power == 1 else "")
 
-    def _create_derived(self, data: np.ndarray) -> "Curve":
-        """Create a derived curve with same depth and metadata."""
+    def _create_derived(self, data: np.ndarray, unit: Optional[str] = None) -> "Curve":
+        """Create a derived curve with same depth and metadata.
+
+        ``unit`` is the unit of the result (default: this curve's unit); it is
+        empty when it cannot be inferred. The benchmark reproduction keeps
+        this curve's unit for every operation.
+        """
+        if unit is None or reproducing_benchmark():
+            unit = self.unit
         meta = CurveMetadata(
             description=f"Derived from {self.mnemonic}",
             source="computed",
@@ -207,7 +237,7 @@ class Curve:
         return Curve(
             mnemonic=f"{self.mnemonic}_derived",
             data=data,
-            unit=self.unit,
+            unit=unit,
             depth=self._depth,
             depth_unit=self.depth_unit,
             metadata=meta
@@ -263,25 +293,35 @@ class Curve:
         """Return values that are not NaN."""
         return self._data[~np.isnan(self._data)]
 
-    def min(self) -> float:
+    @staticmethod
+    def _check_reduction_args(axis=None, out=None) -> None:
+        """Accept the arguments NumPy passes for ``np.mean(curve)`` and similar calls."""
+        if axis not in (None, 0, -1) or out is not None:
+            raise TypeError("Curve statistics reduce the whole curve; axis and out are not supported")
+
+    def min(self, axis=None, out=None, **kwargs) -> float:
         """Return minimum value (excluding NaN)."""
+        self._check_reduction_args(axis, out)
         data = self._non_nan_data()
         return float(np.min(data)) if data.size else float("nan")
 
-    def max(self) -> float:
+    def max(self, axis=None, out=None, **kwargs) -> float:
         """Return maximum value (excluding NaN)."""
+        self._check_reduction_args(axis, out)
         data = self._non_nan_data()
         return float(np.max(data)) if data.size else float("nan")
 
-    def mean(self) -> float:
+    def mean(self, axis=None, dtype=None, out=None, **kwargs) -> float:
         """Return mean value (excluding NaN)."""
+        self._check_reduction_args(axis, out)
         data = self._non_nan_data()
         return float(np.mean(data)) if data.size else float("nan")
 
-    def std(self) -> float:
+    def std(self, axis=None, dtype=None, out=None, ddof=0, **kwargs) -> float:
         """Return standard deviation (excluding NaN)."""
+        self._check_reduction_args(axis, out)
         data = self._non_nan_data()
-        return float(np.std(data)) if data.size else float("nan")
+        return float(np.std(data, ddof=ddof)) if data.size else float("nan")
 
     def median(self) -> float:
         """Return median value (excluding NaN)."""
@@ -339,10 +379,22 @@ class Curve:
         return curve
 
     def interpolate(self, method: str = "linear") -> "Curve":
-        """Interpolate NaN values."""
+        """Interpolate NaN values between valid samples.
+
+        Linear interpolation follows the curve depth when it has one. NaN
+        values before the first and after the last valid sample stay NaN.
+        """
         curve = self.copy()
-        series = pd.Series(curve._data)
-        curve._data = series.interpolate(method=method).values
+        if reproducing_benchmark():
+            series = pd.Series(curve._data)
+            curve._data = series.interpolate(method=method).values
+            return curve
+        if method == "linear" and self._depth is not None and np.all(np.diff(self._depth) > 0):
+            series = pd.Series(curve._data, index=self._depth)
+            method = "index"
+        else:
+            series = pd.Series(curve._data)
+        curve._data = series.interpolate(method=method, limit_area="inside").to_numpy(dtype=float)
         return curve
 
     def depth_slice(

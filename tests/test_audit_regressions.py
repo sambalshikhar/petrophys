@@ -54,10 +54,12 @@ def test_mineral_solver_pure_minerals_resolve_exactly():
     )
 
     solver = MultiMineralSolver()
+    from petrophys.interpretation.lithology.matrix_properties import get_log_density
+
     for name in ("quartz", "calcite", "dolomite", "anhydrite"):
         p = MINERAL_PROPERTIES[name]
         r = solver.explain_sample(
-            rhob=p["density"], nphi=p["nphi"], pef=p["pef"],
+            rhob=get_log_density(name), nphi=p["nphi"], pef=p["pef"],
             dt=p["slowness"], vcl=0.0,
         )
         frac = dict(zip(r["columns"], r["x"]))

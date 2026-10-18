@@ -3,12 +3,23 @@
 The dataset profile interprets the input LAS, then exports six category contexts
 using the NPD tops workbook and GeoLink lithology codebook. Dataset-specific
 well settings and reservoir selections are applied during the calculation.
+
+Each well is interpreted once from its raw LAS. A preparatory step
+standardizes the input curves and stores them at the delivered LAS precision
+(five decimals), and computes the reservoir flag that selects the SWIRR_APP
+samples (RESFLAG) and the bad-hole flag BADHOLEFLAG with the package's
+first-run settings; the workflow then runs with the package's context settings. ``processed_las`` holds that
+interpretation, so each context statistic is the statistic of that LAS over
+the group's depth window, and each ``workflow_json`` trace records the
+preparatory step, the workflow steps and the final QC.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional, Sequence
+
+from petrophys.reporting._single_run import _historical_standardization
 
 #: Wells of the GeoLink package, by file stem.
 GEOLINK_WELLS = (
@@ -19,6 +30,32 @@ GEOLINK_WELLS = (
 )
 
 
+def _first_run_flags(file_path: Path, well) -> dict:
+    """Prepare a raw GeoLink well: inputs and reservoir flags of the package's first-run settings.
+
+    See :func:`petrophys.reporting._single_run.prepare_from_first_run`.
+    """
+    from petrophys.reporting._single_run import RESERVOIR_FLAGS, prepare_from_first_run
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
+    from petrophys.workflow.zoned_batch import _interpret_las_file, _serialize_step_result_with_well
+
+    result, _ = _interpret_las_file(Path(file_path), DynamicWorkflowConfig(calculation_profile="geolink"))
+    return prepare_from_first_run(
+        well,
+        result.well,
+        export_options={
+            "depth_unit_label": getattr(result.well, "_source_depth_unit_label", None),
+            "pad_header_by_bytes": True,
+        },
+        reader_config=DynamicWorkflowConfig(calculation_profile="geolink", reuse_input_resflag=True),
+        used_curves=RESERVOIR_FLAGS,
+        calculation_steps=[
+            _serialize_step_result_with_well(step, result.well) for step in result.base_result.steps_executed
+        ],
+    )
+
+
+@_historical_standardization
 def reproduce_geolink_context(
     input_dir: str | Path,
     output_dir: str | Path,
@@ -42,7 +79,8 @@ def reproduce_geolink_context(
     lithology_mapping_file : str or Path
         The GeoLink/Kingdom lithology codebook (``Litho_Nomenclature_Kingdom.xlsx``).
     work_dir : str or Path
-        Folder for the interpreted LAS and their workflow traces (``processed_las``).
+        Folder for ``processed_las``: the LAS the context is computed from, with
+        its ``workflow_json`` traces.
     well_names : sequence of str, optional
         Only these wells (file stems).
 
@@ -56,35 +94,27 @@ def reproduce_geolink_context(
         write_reference_curve_name_mapping,
     )
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
-    from petrophys.workflow.zoned_batch import process_las_directory_with_workflow
 
-    processed_dir = Path(work_dir) / "processed_las"
-    batch = process_las_directory_with_workflow(
-        input_dir=input_dir,
-        output_dir=processed_dir,
-        pattern=pattern,
-        config=DynamicWorkflowConfig(calculation_profile="geolink"),
-        well_names=well_names,
-    )
-    if not batch:
+    if not any(Path(input_dir).glob(pattern)):
         raise FileNotFoundError(f"No GeoLink LAS files matching {pattern!r} in {input_dir}")
-    failed = [item for item in batch if not item.success]
-    if failed:
-        raise RuntimeError(
-            "GeoLink interpretation failed: "
-            + "; ".join(f"{Path(item.source_file).stem}: {' | '.join(item.errors)}" for item in failed)
-        )
     results = export_reference_json_work_package_by_category_formation_lithology(
-        input_dir=processed_dir,
+        input_dir=input_dir,
         output_dir=output_dir,
         tops_file=tops_file,
         pattern=pattern,
-        well_names=[Path(item.source_file).stem for item in batch],
+        well_names=well_names,
         lithology_mapping_file=lithology_mapping_file,
-        # The package picked SWIRR_APP from the reservoir flag already on the
-        # interpreted LAS; the library default recomputes the flag.
+        # SWIRR_APP is picked from the reservoir flag of the preparatory step.
         workflow_config=DynamicWorkflowConfig(calculation_profile="geolink", reuse_input_resflag=True),
         raw_input_dir=input_dir,
+        processed_las_dir=Path(work_dir) / "processed_las",
+        prepare_input=_first_run_flags,
     )
+    failed = [item for item in results if not item.success]
+    if failed:
+        raise RuntimeError(
+            "GeoLink context failed: "
+            + "; ".join(f"{Path(item.source_file).stem}: {' | '.join(item.errors)}" for item in failed[:5])
+        )
     write_reference_curve_name_mapping(output_dir)
     return results

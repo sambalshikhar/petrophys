@@ -9,6 +9,8 @@ from typing import Union
 import numpy as np
 from scipy.optimize import brentq
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 
 def simandoux(
     rt: Union[float, np.ndarray],
@@ -64,6 +66,10 @@ def simandoux(
     vcl = np.atleast_1d(vcl.astype(float, copy=False))
 
     rt  = np.where(rt  <= 0, 1e-10, rt)
+    # Infinite Rt (no conductivity reading) is missing, as in archie().
+    historical = reproducing_benchmark()
+    if not historical:
+        rt = np.where(np.isinf(rt), np.nan, rt)
     phi = np.where(phi <= 0, 1e-10, phi)
     rcl = max(rcl, 1e-10)
 
@@ -73,9 +79,17 @@ def simandoux(
 
     if abs(n - 2.0) < 1e-9:
         # Exact quadratic solution for n = 2:
-        #   A * Sw^2 + B * Sw - C = 0  =>  Sw = (-B + sqrt(B^2 + 4AC)) / (2A)
+        #   A * Sw^2 + B * Sw - C = 0  =>  Sw = (-B + sqrt(B^2 + 4AC)) / (2A),
+        # evaluated as 2C / (B + sqrt(B^2 + 4AC)), which stays accurate as
+        # A -> 0 (non-porous shale) and tends to C/B = Rcl / (Vcl * Rt).
         discriminant = np.maximum(B ** 2 + 4 * A * C, 0.0)
-        sw = (-B + np.sqrt(discriminant)) / (2 * A)
+        if historical:
+            # The benchmark packages used the cancelling form, which gives 0
+            # where porosity is 0.
+            sw = (-B + np.sqrt(discriminant)) / (2 * A)
+        else:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                sw = 2 * C / (B + np.sqrt(discriminant))
     else:
         # General n: solve A*Sw^n + B*Sw - C = 0 numerically per sample
         sw = np.empty_like(rt)
@@ -85,6 +99,12 @@ def simandoux(
             def f(s):
                 return a_i * s ** n + b_i * s - c_i
 
+            if not historical and not (
+                np.isfinite(a_i) and np.isfinite(b_i) and np.isfinite(c_i)
+            ):
+                # Missing Rt, porosity or Vcl leaves Sw missing, as for n = 2.
+                sw[i] = np.nan
+                continue
             try:
                 # f(0) = -c_i < 0,  f(1) = a_i + b_i - c_i (usually >= 0)
                 if f(1.0) < 0:

@@ -5,10 +5,13 @@ This module provides functions to convert curve data between
 different unit systems and standardize units.
 """
 
-from typing import TYPE_CHECKING, Union, Optional, Tuple
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import TYPE_CHECKING, Iterator, Union, Optional, Tuple
 import warnings
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.units import UnitConverter, core_saturation_to_fraction, temperature_unit
 from petrophys.preprocessing.standardization.alias_map import (
     get_standard_mnemonic,
@@ -108,6 +111,47 @@ UNIT_CONVERSIONS = {
     ("in", "mm"): 25.4,
 }
 
+#: Other spellings of units in :data:`UNIT_CONVERSIONS` (lower case), e.g. the
+#: LAS 2.0 specification's ``K/M3`` and ``US/M`` and the micro sign U+00B5 that
+#: cp1252/Latin-1 files use for the Greek mu U+03BC.
+UNIT_SPELLINGS = {
+    "k/m3": "kg/m3",
+    "g/c3": "g/cm3",
+    "us/f": "us/ft",
+    "usec/ft": "us/ft",
+    "usec/m": "us/m",
+    "µs/m": "μs/m",
+    "µs/ft": "μs/ft",
+    "ft3/ft3": "v/v",
+    "dec": "v/v",
+    "frac": "v/v",
+    "fraction": "v/v",
+}
+
+_BENCHMARK_UNITS: ContextVar[bool] = ContextVar("petrophys_benchmark_units", default=False)
+
+
+@contextmanager
+def benchmark_unit_table() -> Iterator[None]:
+    """Run the block with the unit handling of the benchmark packages.
+
+    The workflow uses it under the "geolink" calculation profile; context
+    exports get it from :func:`~petrophys._internal.benchmark.historical_benchmark`.
+    """
+    token = _BENCHMARK_UNITS.set(True)
+    try:
+        yield
+    finally:
+        _BENCHMARK_UNITS.reset(token)
+
+
+def _benchmark_units() -> bool:
+    """True when units are handled as the benchmark packages did.
+
+    Those packages had no :data:`UNIT_SPELLINGS`.
+    """
+    return _BENCHMARK_UNITS.get() or reproducing_benchmark()
+
 
 def get_conversion_factor(from_unit: str, to_unit: str) -> Optional[float]:
     """
@@ -125,8 +169,16 @@ def get_conversion_factor(from_unit: str, to_unit: str) -> Optional[float]:
     float or None
         Conversion factor, or None if no conversion available
     """
+    return _conversion_factor(from_unit, to_unit, spellings=not _benchmark_units())
+
+
+def _conversion_factor(from_unit: str, to_unit: str, *, spellings: bool) -> Optional[float]:
+    """:func:`get_conversion_factor`, with :data:`UNIT_SPELLINGS` only if ``spellings``."""
     from_unit = from_unit.lower().strip()
     to_unit = to_unit.lower().strip()
+    if spellings:
+        from_unit = UNIT_SPELLINGS.get(from_unit, from_unit)
+        to_unit = UNIT_SPELLINGS.get(to_unit, to_unit)
 
     if from_unit == to_unit:
         return 1.0
@@ -242,6 +294,9 @@ def standardize_units(
     """
     Convert curve to standard units based on curve type.
 
+    A curve with a blank unit, or a unit with no known conversion to the
+    standard one, is returned unconverted with a ``UserWarning``.
+
     Parameters
     ----------
     curve : Curve
@@ -259,6 +314,18 @@ def standardize_units(
     standard_unit = get_standard_unit(curve.mnemonic)
     if standard_unit is None:
         return curve if inplace else curve.copy()
+    unit = str(curve.unit or "").strip()
+    if unit.lower() != standard_unit.lower() and (
+        get_conversion_factor(unit, standard_unit) is None
+        and not _converts_temperature(unit, standard_unit)
+    ):
+        warnings.warn(
+            f"{curve.mnemonic}: unit {unit!r} cannot be converted to {standard_unit!r}; "
+            "the curve is left unconverted.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return curve if inplace else curve.copy()
 
     return convert_curve_units(curve, standard_unit, inplace=inplace)
 
@@ -269,6 +336,10 @@ def standardize_porosity_units(
 ) -> Tuple[np.ndarray, str]:
     """
     Standardize porosity to fraction (v/v).
+
+    Percent units are divided by 100. For fractional or unknown units the data
+    are divided by 100 only when their median exceeds 1, so a few spikes above
+    1 do not rescale a fractional curve.
 
     Parameters
     ----------
@@ -285,17 +356,12 @@ def standardize_porosity_units(
     data = np.asarray(data, dtype=np.float64)
     current_unit = current_unit.lower().strip()
 
-    if current_unit in ["v/v", "fraction", "decimal"]:
-        # Check if data looks like percentage
-        finite = data[np.isfinite(data)]
-        if finite.size and np.nanmax(finite) > 1.0:
-            data = data / 100.0
-    elif current_unit in ["%", "pu", "percent"]:
+    if current_unit in ["%", "pu", "percent"]:
         data = data / 100.0
     else:
-        # Unknown unit, try to guess
+        # Fractional or unknown unit: check if data looks like percentage
         finite = data[np.isfinite(data)]
-        if finite.size and np.nanmax(finite) > 1.0:
+        if finite.size and np.median(finite) > 1.0:
             data = data / 100.0
 
     return data, "v/v"
@@ -308,6 +374,9 @@ def standardize_resistivity_units(
     """
     Standardize resistivity to ohm.m.
 
+    A unit with no known conversion to ohm.m (for example a conductivity in
+    mS/m) is returned unconverted, with its own label and a ``UserWarning``.
+
     Parameters
     ----------
     data : float or np.ndarray
@@ -318,18 +387,26 @@ def standardize_resistivity_units(
     Returns
     -------
     tuple
-        (converted_data, "ohm.m")
+        (converted_data, "ohm.m"), or (data, current_unit) when unconvertible
     """
     data = np.asarray(data, dtype=np.float64)
     factor = get_conversion_factor(current_unit, "ohm.m")
-    if factor:
-        data = data * factor
-    return data, "ohm.m"
+    if factor is None:
+        warnings.warn(
+            f"Resistivity unit {current_unit!r} cannot be converted to 'ohm.m'; "
+            "the data are left unconverted.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return data, current_unit
+    return data * factor, "ohm.m"
 
 
 def detect_porosity_unit(data: np.ndarray) -> str:
     """
     Detect if porosity is in fraction or percentage.
+
+    Percentage is reported when the median of the valid samples exceeds 1.
 
     Parameters
     ----------
@@ -346,7 +423,6 @@ def detect_porosity_unit(data: np.ndarray) -> str:
     if len(valid_data) == 0:
         return "v/v"
 
-    max_val = np.max(valid_data)
-    if max_val > 1.0:
+    if np.median(valid_data) > 1.0:
         return "%"
     return "v/v"

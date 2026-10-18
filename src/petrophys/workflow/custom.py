@@ -37,6 +37,7 @@ import importlib
 import inspect
 import json
 import math
+import re
 import warnings
 from pathlib import Path
 from typing import (
@@ -84,6 +85,9 @@ WORKFLOW_SCHEMA = "petrophys.workflow"
 WORKFLOW_SCHEMA_VERSION = 1
 
 _MISSING = object()
+
+#: ~Params entries :meth:`WorkflowRunResult.to_las` writes (lasio numbers repeats ``:1``, ``:2``).
+_PROVENANCE_PARAMETER = re.compile(r"^PP_(VERSION|WORKFLOW|STATUS|STEP\d+)(:\d+)?$")
 
 
 # --------------------------------------------------------------------------
@@ -211,9 +215,12 @@ class _Params:
         ):
             self.add(f"{name} must be a number; got {_short_repr(value)}")
             return None
-        number = float(value)
+        try:
+            number = float(value)
+        except OverflowError:
+            number = math.inf
         if not math.isfinite(number):
-            self.add(f"{name} must be finite; got {value!r}")
+            self.add(f"{name} must be finite; got {_short_repr(value)}")
             return None
         if positive and number <= 0:
             self.add(f"{name} must be greater than 0; got {value!r}")
@@ -692,6 +699,8 @@ def _run_custom(func: Callable[..., Any], produces: Mapping[str, str],
         )
     if missing:
         raise ValueError(f"{label} did not return {', '.join(missing)}, which it declares in produces")
+    # Check every output before adding any, so a failed step leaves no curves.
+    curves: Dict[str, np.ndarray] = {}
     for key in declared:
         value = returned[key]
         try:
@@ -704,6 +713,8 @@ def _run_custom(func: Callable[..., Any], produces: Mapping[str, str],
                 f"{label} returned {key} with {size} values; the well has "
                 f"{ctx.well.n_samples} depth samples. Return one value per depth sample."
             )
+        curves[key] = data
+    for key, data in curves.items():
         ctx.add_curve(key, data, produces[key], f"{key} from custom step {ctx.step.name}")
 
 
@@ -2213,7 +2224,13 @@ class WorkflowRunResult:
         lines.append(json.dumps(self.workflow.to_dict(), separators=(",", ":")))
         output = Path(path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        export_las(self.well, output, extra_parameters=items, other="\n".join(lines), **options)
+        # Provenance read from a LAS an earlier run wrote is replaced, not repeated.
+        well = copy.copy(self.well)
+        well._parameters = {
+            key: value for key, value in self.well._parameters.items()
+            if not (isinstance(key, str) and _PROVENANCE_PARAMETER.match(key))
+        }
+        export_las(well, output, extra_parameters=items, other="\n".join(lines), **options)
         return output
 
     def plot(self, **options: Any) -> Any:
@@ -2360,7 +2377,7 @@ class WorkflowBatchResult:
                 window_bottom = float(np.nanmax(depth)) if bottom is None else float(bottom)
                 zone = calculate_zone_summary(well, window_top, window_bottom, zone_name="window")
                 rows.append({**base, "Depth Unit": well.depth_unit, "Top": window_top,
-                             "Bottom": window_bottom, **_zone_metrics(zone), "Error": error})
+                             "Bottom": window_bottom, **_zone_metrics(zone, well), "Error": error})
                 continue
             try:
                 table = run.formation_summary(rank=rank)
@@ -2394,11 +2411,13 @@ class WorkflowBatchResult:
                 f"{len(self.errors)} errors>")
 
 
-def _zone_metrics(zone: Any) -> Dict[str, Any]:
+def _zone_metrics(zone: Any, well: Any) -> Dict[str, Any]:
+    # Without a NET_PAY flag net pay is unknown, not zero; NTG needs a gross interval.
+    has_pay = well.get("NET_PAY") is not None
     return {
         "Gross": zone.gross_thickness,
-        "Net Pay": zone.net_pay,
-        "NTG": zone.ntg,
+        "Net Pay": zone.net_pay if has_pay else np.nan,
+        "NTG": zone.ntg if has_pay and zone.gross_thickness > 0 else np.nan,
         "Avg PHIE": zone.avg_phie,
         "Avg Sw": zone.avg_sw,
         "Avg VCL": zone.avg_vcl,

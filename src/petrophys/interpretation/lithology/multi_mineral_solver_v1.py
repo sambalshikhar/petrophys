@@ -30,7 +30,7 @@ from typing import Dict, Mapping, Optional, Tuple, Union
 import numpy as np
 from scipy.optimize import nnls
 
-from petrophys.interpretation.lithology.matrix_properties import get_mineral_properties
+from petrophys.interpretation.lithology.matrix_properties import get_log_density, get_mineral_properties
 
 
 # Tool-response endpoints frozen with version 1, so its results cannot drift
@@ -64,7 +64,8 @@ def _get_endpoints(name: str) -> Dict[str, float]:
         return dict(_V1_ENDPOINTS[name])
     p = get_mineral_properties(name)
     return {
-        "density": p["density"],
+        # the density-log response (evaporites read below their grain density)
+        "density": get_log_density(name),
         "nphi":    p["nphi"],
         "pef":     p["pef"],
         "u":       p["u"],
@@ -95,7 +96,7 @@ def _constrain_mineral_fractions(
     fractions: np.ndarray,
     available_fraction: float,
 ) -> np.ndarray:
-    """Clip mineral fractions and enforce closure to the available rock volume."""
+    """Clip mineral fractions and scale them down if they exceed the available rock volume."""
     constrained = np.asarray(fractions, dtype=float).copy()
     constrained = np.clip(constrained, 0.0, max(float(available_fraction), 0.0))
     total = float(np.nansum(constrained))
@@ -131,8 +132,9 @@ class MultiMineralSolverV1:
     where U = PEF × ρ. Each row is divided by its ``row_uncertainty`` before
     the non-negative least-squares solve. When the solved total differs from
     ``1 - Vcl - φe`` by more than 0.05 the sample is not solved: its mineral
-    volumes are NaN and ``qc_flag`` is set. Otherwise volumes are clipped and
-    scaled to close on the available rock volume.
+    volumes are NaN and ``qc_flag`` is set. Otherwise volumes are clipped to
+    the available rock volume and scaled down only when their total exceeds
+    it; a total below it (within the 0.05 gate) is reported unscaled.
 
     Parameters
     ----------

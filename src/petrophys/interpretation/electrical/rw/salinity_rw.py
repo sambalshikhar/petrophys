@@ -8,6 +8,7 @@ from salinity measurements.
 from typing import Union
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.units import UnitConverter, temperature_unit
 
 #: Mass of NaCl per unit mass of chloride (molar masses 58.44 and 35.45 g/mol):
@@ -114,14 +115,21 @@ def rw_from_salinity(
     Returns
     -------
     float or np.ndarray
-        Formation water resistivity (ohm.m)
+        Formation water resistivity (ohm.m). Zero or negative salinity gives
+        NaN.
     """
     # Convert to Fahrenheit
     if temperature_unit(temp_unit, strict=True) != "F":
         temperature = UnitConverter.temperature(temperature, temp_unit, "F")
 
-    # Handle zero or negative salinity
-    if isinstance(salinity_ppm, np.ndarray):
+    # Zero or negative salinity has no Rw. The benchmark packages read it as
+    # 1 ppm.
+    if not reproducing_benchmark():
+        salinity_ppm = np.asarray(salinity_ppm, dtype=float)
+        salinity_ppm = np.where(salinity_ppm > 0, salinity_ppm, np.nan)
+        if salinity_ppm.ndim == 0:
+            salinity_ppm = float(salinity_ppm)
+    elif isinstance(salinity_ppm, np.ndarray):
         salinity_ppm = np.where(salinity_ppm <= 0, 1, salinity_ppm)
     else:
         salinity_ppm = max(salinity_ppm, 1)
@@ -160,7 +168,8 @@ def salinity_from_rw(
     Returns
     -------
     float or np.ndarray
-        Salinity in ppm NaCl
+        Salinity in ppm NaCl. Missing Rw, and Rw at or below the 0.0123
+        ohm.m (at 75 degF) asymptote of the fit, give NaN.
     """
     # Convert to Fahrenheit
     if temperature_unit(temp_unit, strict=True) != "F":
@@ -174,7 +183,15 @@ def salinity_from_rw(
     # salinity^0.955 = 3647.5 / (Rw75 - 0.0123)
     # salinity = (3647.5 / (Rw75 - 0.0123))^(1/0.955)
 
-    if isinstance(rw_75, np.ndarray):
+    if not reproducing_benchmark():
+        # The benchmark packages floored the denominator at 1e-10, which read
+        # missing or too-low Rw as ~1.6e14 ppm.
+        rw_75 = np.asarray(rw_75, dtype=float)
+        with np.errstate(invalid="ignore"):
+            denominator = np.where(rw_75 > 0.0123, rw_75 - 0.0123, np.nan)
+        if denominator.ndim == 0:
+            denominator = float(denominator)
+    elif isinstance(rw_75, np.ndarray):
         denominator = np.where(rw_75 > 0.0123, rw_75 - 0.0123, 1e-10)
     else:
         denominator = max(rw_75 - 0.0123, 1e-10)
@@ -196,11 +213,15 @@ def classify_water_salinity(salinity_ppm: Union[float, np.ndarray]) -> str:
     Returns
     -------
     str
-        Classification ("fresh", "brackish", "saline", "brine")
+        Classification ("fresh", "brackish", "saline", "brine"), or
+        "unknown" for a missing salinity
     """
     if isinstance(salinity_ppm, np.ndarray):
-        salinity_ppm = np.nanmean(salinity_ppm)
+        finite = salinity_ppm[np.isfinite(salinity_ppm)]
+        salinity_ppm = float(np.mean(finite)) if finite.size else np.nan
 
+    if not np.isfinite(salinity_ppm):
+        return "unknown"
     if salinity_ppm < 1000:
         return "fresh"
     elif salinity_ppm < 10000:

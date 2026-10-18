@@ -49,7 +49,9 @@ class NormalizationModule:
     Parameters
     ----------
     method : str, optional
-        Normalization method ("linear", "percentile", "z-score")
+        Normalization method. Only linear normalization is implemented
+        ("linear", or "percentile" for the same linear mapping between
+        percentile anchors); other methods raise ``ValueError``.
         Default: "linear"
 
     Examples
@@ -63,6 +65,11 @@ class NormalizationModule:
     """
 
     def __init__(self, method: str = "linear"):
+        if str(method).lower() not in ("linear", "percentile"):
+            raise ValueError(
+                f"Unsupported normalization method {method!r}; only 'linear' "
+                "(percentile anchors) is implemented"
+            )
         self.method = method
         self._reference_stats: dict = {}
 
@@ -108,7 +115,9 @@ class NormalizationModule:
         else:
             values = np.asarray(data, dtype=np.float64).copy()
 
-        # Auto-detect source range if not provided
+        # Auto-detect source range if not provided; an infinite sample is
+        # missing data and must not become a percentile anchor.
+        values[np.isinf(values)] = np.nan
         valid_data = values[~np.isnan(values)]
         if len(valid_data) == 0:
             return values

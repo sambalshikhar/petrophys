@@ -10,6 +10,7 @@ import numpy as np
 from scipy.cluster.vq import ClusterError, kmeans2
 
 from petrophys.interpretation.rock_physics.elastic import calculate_elastic_properties
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys._internal.analysis_helpers import (
     CategoryAnalysisResult,
     DerivedCurve,
@@ -31,11 +32,28 @@ class NumericalStatisticalAnalysis:
 
     CATEGORY_KEY = "NUMERICAL_AND_STATISTICAL_ANALYSIS"
 
+    #: Bulk density (g/cc) assumed between the surface and the top of the density log.
+    RHO_OVERBURDEN = 2.3
+    #: Seawater density (kg/m3) of the water column above the sea floor.
+    RHO_SEAWATER = 1025.0
+
     def analyze(
         self,
         well: "Well",
         add_curves: bool = True,
+        rho_overburden: float = RHO_OVERBURDEN,
+        water_depth_m: float = 0.0,
     ) -> CategoryAnalysisResult:
+        """Classify the well's numerical data quality and derive screening curves.
+
+        ``rho_overburden`` (g/cc) is the bulk density assumed from the surface
+        (or the sea floor) down to the first density sample, and
+        ``water_depth_m`` the water column above the sea floor, both measured
+        from the depth datum; S_V and PP_HYDROSTATIC are absolute stresses
+        from that datum. Inside the benchmark reproduction S_V is the
+        increment from the top of the density log and PP_HYDROSTATIC adds a
+        fixed 100 m of seawater below 200 m, as the packages were built.
+        """
         n_samples = well.n_samples
         numeric_curve_names = self._numeric_curve_names(well)
         curve_arrays = {
@@ -74,6 +92,9 @@ class NumericalStatisticalAnalysis:
         trend_labels = np.full(n_samples, "STABLE_ZONE", dtype=object)
         if gradient_curves:
             stack = np.vstack(list(gradient_curves.values()))
+            if not reproducing_benchmark():
+                # The |0.1| threshold is per metre; a feet well's gradients are per foot.
+                stack = stack / self._metres_per_depth_unit(well)
             significant = np.sum(np.isfinite(stack) & (np.abs(stack) > 0.1), axis=0)
             trend_labels[significant >= 1] = "MODERATE_TREND_ZONE"
             trend_labels[significant >= 3] = "STRONG_TREND_ZONE"
@@ -223,30 +244,52 @@ class NumericalStatisticalAnalysis:
         advanced_labels[advanced_available] = "ADVANCED_DATA_AVAILABLE"
 
         depth_m = depth_to_meters(well.depth, well.depth_unit)
-        dz_m = depth_step_array(depth_m)
+        benchmark = reproducing_benchmark()
         sv = np.full(n_samples, np.nan, dtype=float)
         pp = np.full(n_samples, np.nan, dtype=float)
         sh_min = np.full(n_samples, np.nan, dtype=float)
-        if rhob is not None:
+        if rhob is not None and benchmark:
+            dz_m = depth_step_array(depth_m)
             valid = np.isfinite(rhob)
             if np.any(valid):
                 # Context stress is an increment across the analyzed interval.
                 sv[valid] = np.cumsum(
                     (rhob[valid] * 1000.0) * 9.81 * dz_m[valid]
                 ) / 1e6
+        elif rhob is not None:
+            sv = self._overburden_stress(rhob, depth_m, rho_overburden, water_depth_m)
         finite_depth_m = depth_m[np.isfinite(depth_m)]
-        if finite_depth_m.size:
+        if finite_depth_m.size and benchmark:
             seawater = (1025.0 * 9.81 * 100.0 / 1e6) if np.nanmax(np.abs(finite_depth_m)) > 200.0 else 0.0
+            pp = (1000.0 * 9.81 * np.abs(depth_m) / 1e6) + seawater
+        elif finite_depth_m.size:
+            # Water gradient from the datum; the seawater column (if any) is the
+            # denser part of it, so it only adds the density excess over fresh water.
+            seawater = (self.RHO_SEAWATER - 1000.0) * 9.81 * float(water_depth_m) / 1e6
             pp = (1000.0 * 9.81 * np.abs(depth_m) / 1e6) + seawater
         valid_sh = np.isfinite(poisson_ratio) & np.isfinite(sv) & np.isfinite(pp) & (poisson_ratio < 0.999)
         sh_min[valid_sh] = ((poisson_ratio[valid_sh] / (1.0 - poisson_ratio[valid_sh])) * (sv[valid_sh] - pp[valid_sh])) + pp[valid_sh]
-        derived_curves["S_V"] = DerivedCurve(
-            sv, "MPa", "Overburden stress increment from the top of the analysed interval"
-        )
-        derived_curves["PP_HYDROSTATIC"] = DerivedCurve(pp, "MPa", "Hydrostatic pore pressure")
-        derived_curves["SH_MIN"] = DerivedCurve(
-            sh_min, "MPa", "Minimum horizontal stress from the S_V increment, not absolute"
-        )
+        if benchmark:
+            derived_curves["S_V"] = DerivedCurve(
+                sv, "MPa", "Overburden stress increment from the top of the analysed interval"
+            )
+            derived_curves["PP_HYDROSTATIC"] = DerivedCurve(pp, "MPa", "Hydrostatic pore pressure")
+            derived_curves["SH_MIN"] = DerivedCurve(
+                sh_min, "MPa", "Minimum horizontal stress from the S_V increment, not absolute"
+            )
+        else:
+            derived_curves["S_V"] = DerivedCurve(
+                sv,
+                "MPa",
+                f"Overburden stress from the datum ({rho_overburden:g} g/cc above the density log, "
+                f"{float(water_depth_m):g} m of water)",
+            )
+            derived_curves["PP_HYDROSTATIC"] = DerivedCurve(
+                pp, "MPa", f"Hydrostatic pore pressure from the datum ({float(water_depth_m):g} m of water)"
+            )
+            derived_curves["SH_MIN"] = DerivedCurve(
+                sh_min, "MPa", "Minimum horizontal stress from Poisson ratio with absolute S_V and PP"
+            )
 
         geomech_labels = np.full(n_samples, "NO_GEOMECH_DATA", dtype=object)
         geomech_count = np.sum(
@@ -294,6 +337,9 @@ class NumericalStatisticalAnalysis:
                     methodology="Counts significant gradients across GR, RHOB, RDEP, NPHI, and DTC.",
                     calculation_thresholds=(
                         "STRONG_TREND_ZONE when >= 3 gradients exceed |0.1|; "
+                        "MODERATE when 1-2; STABLE when none."
+                        if benchmark else
+                        "STRONG_TREND_ZONE when >= 3 gradients exceed |0.1| per metre; "
                         "MODERATE when 1-2; STABLE when none."
                     ),
                 ),
@@ -346,6 +392,11 @@ class NumericalStatisticalAnalysis:
                     methodology=(
                         "Computes S_V from cumulative RHOB*9.81*dz, PP_HYDROSTATIC from water gradient, "
                         "and SH_MIN from Poisson ratio with S_V and PP."
+                        if benchmark else
+                        f"Computes S_V from the datum ({rho_overburden:g} g/cc above the density log, "
+                        f"{float(water_depth_m):g} m of water, then the integrated RHOB with internal "
+                        "gaps interpolated), PP_HYDROSTATIC from the water gradient over the same "
+                        "column, and SH_MIN from Poisson ratio with S_V and PP."
                     ),
                     calculation_thresholds="GEOMECH_DATA_AVAILABLE when at least two geomechanical parameters are finite.",
                 ),
@@ -392,6 +443,46 @@ class NumericalStatisticalAnalysis:
             interpreted_lithology_code_curve(well),
         }
         return [name for name in well.curves if name.upper() not in excluded]
+
+    @staticmethod
+    def _metres_per_depth_unit(well: "Well") -> float:
+        return float(depth_to_meters(np.ones(1), well.depth_unit)[0])
+
+    @classmethod
+    def _overburden_stress(
+        cls,
+        rhob: np.ndarray,
+        depth_m: np.ndarray,
+        rho_overburden: float,
+        water_depth_m: float,
+    ) -> np.ndarray:
+        """Absolute overburden stress (MPa) from the datum.
+
+        The water column weighs ``RHO_SEAWATER``, the sediment above the first
+        density sample ``rho_overburden`` (g/cc), and below it the density log
+        is integrated with the trapezoid rule over the actual depths; samples
+        inside an internal RHOB gap take the linearly interpolated density, so
+        the gap still adds its weight. Samples above the first or below the
+        last density sample, or without a finite depth, are NaN.
+        """
+        sv = np.full(rhob.shape, np.nan, dtype=float)
+        valid = np.isfinite(rhob) & np.isfinite(depth_m)
+        if not np.any(valid):
+            return sv
+        order = np.argsort(depth_m, kind="stable")
+        depth_sorted = depth_m[order]
+        rhob_sorted = rhob[order]
+        finite = np.isfinite(rhob_sorted) & np.isfinite(depth_sorted)
+        first, last = np.flatnonzero(finite)[[0, -1]]
+        covered = np.zeros(rhob.shape, dtype=bool)
+        covered[first:last + 1] = np.isfinite(depth_sorted[first:last + 1])
+        z = depth_sorted[covered]
+        rho = np.interp(z, depth_sorted[finite], rhob_sorted[finite]) * 1000.0
+        water = min(max(float(water_depth_m), 0.0), max(float(z[0]), 0.0))
+        above = (cls.RHO_SEAWATER * water + rho_overburden * 1000.0 * (z[0] - water)) * 9.81
+        increments = 0.5 * (rho[1:] + rho[:-1]) * np.diff(z) * 9.81
+        sv[order[covered]] = (above + np.concatenate([[0.0], np.cumsum(increments)])) / 1e6
+        return sv
 
     @staticmethod
     def _gradient(values: np.ndarray, depth: np.ndarray) -> np.ndarray:

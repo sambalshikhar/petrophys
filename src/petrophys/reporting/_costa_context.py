@@ -1,21 +1,22 @@
 """The COSTA eval context package, computed from the COSTA LAS files.
 
-The package interpreted the 17 bundled COSTA wells (``petrophys/datasets/costa``,
-the same files as the package's ``costa_las_raw`` folder) in three steps,
-each reproduced here. Its two tables are bundled in ``petrophys/_internal/data``.
+Each of the 17 bundled COSTA wells (``petrophys/datasets/costa``, the same
+files as the package's ``costa_las_raw`` folder) is interpreted once, and its
+context is computed from that interpretation. The package's two tables are
+bundled in ``petrophys/_internal/data``.
 
-1. Curves from the well's own inputs before the workflow: PERM from the core
-   permeability PERM_CC; VCL by the well's gamma-ray method
-   (``costa_interpretation_parameters.csv``); calcite and dolomite volumes
-   (VCALC, VDOLO), taken from ``costa_reference_carbonate_volumes.csv`` where
-   that table has the depth and otherwise solved from VCL, the core porosity
-   PHIE_CC and RHOB; and from them a two-group LITHOLOGY_GEOLINK (limestone 11,
-   dolomite 15) and LITHO.
+1. A preparatory step (:func:`_costa_preparation`) computes curves from the
+   well's own inputs: PERM from the core permeability PERM_CC; VCL by the
+   well's gamma-ray method (``costa_interpretation_parameters.csv``); calcite
+   and dolomite volumes (VCALC, VDOLO), taken from
+   ``costa_reference_carbonate_volumes.csv`` where that table has the depth and
+   otherwise solved from VCL, the core porosity PHIE_CC and RHOB; from them a
+   two-group LITHOLOGY_GEOLINK (limestone 11, dolomite 15); and LITHO and
+   CROSSOVER_FLAG from an interpretation with the COSTA settings
+   (:func:`interpret_costa_las`).
 2. The workflow with the COSTA settings (:func:`costa_workflow_config`) and the
    COSTA calculations (:func:`petrophys.workflow.dynamic_workflow._dataset_calculations`):
-   SW takes the source SW_INPUT where it has one, SO = 1 - SW. CROSSOVER_FLAG
-   is added afterwards, and the flushed-zone curves, which COSTA has no
-   shallow resistivity for, are dropped.
+   SW by Archie, SO = 1 - SW.
 3. Context for one formation spanning each well, with the package's notes:
    the per-curve method notes of :func:`costa_method_notes` replace the
    workflow's, and context curves the package left out are removed.
@@ -32,6 +33,8 @@ from pathlib import Path
 from typing import Any, Optional, Sequence
 
 import numpy as np
+
+from petrophys.reporting._single_run import _historical_standardization
 
 #: Wells of the COSTA package, by file stem.
 COSTA_WELLS = (
@@ -388,6 +391,33 @@ def _precomputed_trace_steps(well, parameters: CostaWellParameters) -> list[dict
     ]
 
 
+def _interpret_costa_well(file_path: Path, well_parameters, reference_volumes):
+    """Interpret one COSTA LAS as the package did; returns (result, input curves, depth label)."""
+    from petrophys.io import read_las
+    from petrophys.preprocessing.standardization import standardize_curves
+    from petrophys.workflow.dynamic_workflow import _dataset_calculations
+    from petrophys.workflow.zoned_batch import _finalize_export_curves, run_dynamic_workflow_with_zones
+
+    well = read_las(file_path)
+    depth_label = getattr(well, "_source_depth_unit_label", None)
+    # As the package, which kept the source's equivalent unit labels.
+    well = standardize_curves(well, rename_curves=True, convert_units=True, relabel_equivalent_units=False)
+    input_curves = set(well.curves)
+    _add_precomputed_curves(well, well_parameters, reference_volumes)
+    well.set_parameter("_COSTA_VCL_METHOD", well_parameters.vcl_method)
+    well.set_parameter("_COSTA_PHIE_METHOD", well_parameters.phie_method)
+    well.set_parameter("_COSTA_SATURATION_METHOD", well_parameters.saturation_method)
+    finalize_inputs = set(well.curves)
+    with _dataset_calculations("costa"):
+        workflow_result = run_dynamic_workflow_with_zones(well, config=costa_workflow_config())
+    _add_crossover_flag(workflow_result.well)
+    for mnemonic in _UNSUPPORTED_SATURATION_CURVES:
+        if workflow_result.well.get(mnemonic) is not None:
+            workflow_result.well.remove_curve(mnemonic)
+    _finalize_export_curves(workflow_result.well, finalize_inputs)
+    return workflow_result, input_curves, depth_label
+
+
 def interpret_costa_las(
     input_dir: str | Path,
     output_dir: str | Path,
@@ -397,9 +427,11 @@ def interpret_costa_las(
     reference_volumes: Optional[dict[str, dict[float, tuple[float, float]]]] = None,
     pattern: str = "*.las",
 ):
-    """Interpret the COSTA LAS files as the COSTA package did (steps 1 and 2 of the module docstring).
+    """Interpret the COSTA LAS files with the COSTA settings and precomputed curves.
 
-    Writes the interpreted LAS and a ``workflow_json`` trace per well under
+    SW takes the source SW_INPUT where it has one; CROSSOVER_FLAG is added
+    after the workflow, and the flushed-zone curves, which COSTA has no shallow
+    resistivity for, are dropped. Writes the interpreted LAS and a ``workflow_json`` trace per well under
     ``output_dir``, and returns one BatchLasResult per well.
     """
     from petrophys.io import export_las, read_las
@@ -424,27 +456,13 @@ def interpret_costa_las(
         relative = file_path.relative_to(source)
         export_path = output / relative
         try:
-            well = read_las(file_path)
-            depth_label = getattr(well, "_source_depth_unit_label", None)
-            # As the package, which kept the source's equivalent unit labels.
-            well = standardize_curves(well, rename_curves=True, convert_units=True, relabel_equivalent_units=False)
             key = file_path.stem.upper()
             if key not in parameters:
                 raise ValueError(f"No COSTA interpretation parameters for well {file_path.stem}")
             well_parameters = parameters[key]
-            input_curves = set(well.curves)
-            _add_precomputed_curves(well, well_parameters, reference_volumes.get(key, {}))
-            well.set_parameter("_COSTA_VCL_METHOD", well_parameters.vcl_method)
-            well.set_parameter("_COSTA_PHIE_METHOD", well_parameters.phie_method)
-            well.set_parameter("_COSTA_SATURATION_METHOD", well_parameters.saturation_method)
-            finalize_inputs = set(well.curves)
-            with _dataset_calculations("costa"):
-                workflow_result = run_dynamic_workflow_with_zones(well, config=costa_workflow_config())
-            _add_crossover_flag(workflow_result.well)
-            for mnemonic in _UNSUPPORTED_SATURATION_CURVES:
-                if workflow_result.well.get(mnemonic) is not None:
-                    workflow_result.well.remove_curve(mnemonic)
-            _finalize_export_curves(workflow_result.well, finalize_inputs)
+            workflow_result, input_curves, depth_label = _interpret_costa_well(
+                file_path, well_parameters, reference_volumes.get(key, {})
+            )
             export_las(workflow_result.well, export_path, depth_unit_label=depth_label)
 
             warnings = list(workflow_result.warnings)
@@ -484,7 +502,7 @@ def interpret_costa_las(
 
 
 def write_costa_formation_tops(processed_dir: str | Path, tops_file: str | Path) -> Path:
-    """One formation, KHARAIB-2 FM. TOP, from the first sample of each interpreted LAS."""
+    """One formation, KHARAIB-2 FM. TOP, from the first sample of each LAS in ``processed_dir``."""
     import pandas as pd
 
     from petrophys.io import read_las
@@ -677,6 +695,51 @@ def patch_costa_context_notes(context_dir: str | Path, parameters: Optional[dict
     return count
 
 
+#: Curves of the preparatory interpretation the COSTA context's interpretation uses:
+#: the package's precomputed inputs, its lithology log and its crossover flag.
+_PREPARED_CURVES = (
+    ("PERM", "COSTA precomputed permeability", "Permeability from the core permeability PERM_CC."),
+    ("VCL", "COSTA precomputed clay volume", "Clay volume by the well's VCL method of the COSTA parameter table."),
+    ("VQUAR", "COSTA precomputed mineral volume", "Quartz volume of the COSTA carbonate mineral solve."),
+    ("VCALC", "COSTA precomputed mineral volume", "Calcite volume (reference volumes where available, else the carbonate solve)."),
+    ("VDOLO", "COSTA precomputed mineral volume", "Dolomite volume (reference volumes where available, else the carbonate solve)."),
+    ("LITHOLOGY_GEOLINK", "COSTA precomputed lithology code", "Lithology code from the carbonate volumes (11 limestone, 15 dolomite)."),
+    ("LITHO", "lithology log of the preparatory interpretation", "Lithology log of the interpretation listed in calculation_steps."),
+    ("CROSSOVER_FLAG", "neutron-density crossover of the preparatory interpretation", "Neutron-density crossover flag of the interpretation listed in calculation_steps."),
+)
+
+
+def _costa_preparation(parameters, reference_volumes):
+    """The preparatory step of a COSTA well's interpretation (see :mod:`petrophys.reporting._single_run`)."""
+
+    def prepare(file_path, well):
+        from petrophys.reporting._single_run import prepare_from_first_run
+        from petrophys.workflow.zoned_batch import _serialize_step_result_with_well
+
+        key = Path(file_path).stem.upper()
+        if key not in parameters:
+            raise ValueError(f"No COSTA interpretation parameters for well {Path(file_path).stem}")
+        result, _, depth_label = _interpret_costa_well(Path(file_path), parameters[key], reference_volumes.get(key, {}))
+        preparation = prepare_from_first_run(
+            well,
+            result.well,
+            export_options={"depth_unit_label": depth_label},
+            reader_config=costa_workflow_config(),
+            used_curves=_PREPARED_CURVES,
+        )
+        steps = [_serialize_step_result_with_well(step, result.well) for step in result.base_result.steps_executed]
+        for entry in preparation["preparatory_steps"]:
+            if entry["step"] == "litho":
+                entry["calculation_steps"] = steps
+        preparation["preparatory_steps"].insert(
+            1, {"step": "costa_precomputed_steps", "steps": _precomputed_trace_steps(result.well, parameters[key])}
+        )
+        return preparation
+
+    return prepare
+
+
+@_historical_standardization
 def reproduce_costa_context(
     output_dir: str | Path,
     *,
@@ -694,8 +757,9 @@ def reproduce_costa_context(
     output_dir : str or Path
         Folder for the category context JSON.
     work_dir : str or Path
-        Folder for the interpreted LAS with their workflow traces
-        (``processed_las``) and the formation tops the context used.
+        Folder for the interpreted LAS the context is computed from, with
+        their workflow traces (``processed_las``), and the formation tops the
+        context used.
     input_dir : str or Path, optional
         Folder of the COSTA LAS files; default the bundled
         ``petrophys/datasets/costa`` copies.
@@ -723,27 +787,29 @@ def reproduce_costa_context(
     else:
         source = Path(input_dir)
     work = Path(work_dir)
-    processed_dir = work / "processed_las"
-    batch = interpret_costa_las(
-        source, processed_dir, well_names=well_names, parameters=parameters, reference_volumes=reference, pattern=pattern
-    )
-    failed = [item for item in batch if not item.success]
-    if failed:
-        raise RuntimeError(
-            "COSTA interpretation failed: "
-            + "; ".join(f"{Path(item.source_file).stem}: {' | '.join(item.errors)}" for item in failed)
-        )
-    tops_file = write_costa_formation_tops(processed_dir, work / "costa_formation_tops_whole_well.xlsx")
+    # One formation from each well's first logged sample, as the package's.
+    tops_file = write_costa_formation_tops(source, work / "costa_formation_tops_whole_well.xlsx")
 
     with _dataset_calculations("costa"):
         results = export_reference_json_work_package_by_category_formation_lithology(
-            input_dir=processed_dir,
+            input_dir=source,
             output_dir=output_dir,
             tops_file=tops_file,
+            pattern=pattern,
             minimum_group_thickness=_MIN_GROUP_THICKNESS_FT,
-            well_names=[Path(item.source_file).stem for item in batch],
+            well_names=well_names,
             raw_input_dir=source,
             workflow_config=costa_workflow_config(),
+            processed_las_dir=work / "processed_las",
+            prepare_input=_costa_preparation(parameters, reference),
+        )
+    if not results:
+        raise FileNotFoundError(f"No COSTA LAS files matching {pattern!r} in {source}")
+    failed = [item for item in results if not item.success]
+    if failed:
+        raise RuntimeError(
+            "COSTA context failed: "
+            + "; ".join(f"{Path(item.source_file).stem}: {' | '.join(item.errors)}" for item in failed[:5])
         )
     write_reference_curve_name_mapping(output_dir)
     patch_costa_context_notes(output_dir, parameters)

@@ -19,8 +19,11 @@ def pickett_analysis(
     """
     Perform Pickett plot analysis to determine Archie parameters.
 
-    Uses water-saturated zones (Sw=1) to determine m from slope
-    and a from intercept.
+    Regresses log(Rt) on log(phi) over every valid sample (after the
+    optional VCL filter) and returns m from the slope; a is fixed at 1.0.
+    The fit gives the cementation exponent only for water-bearing (Sw = 1)
+    rock, so pass the water-zone samples only: the function does not select
+    them, and hydrocarbon-bearing samples bias m.
 
     log(Rt) = -m × log(φ) + log(a × Rw)
 
@@ -31,7 +34,7 @@ def pickett_analysis(
     phi : np.ndarray
         Porosity
     sw_water : float
-        Sw value to consider as water zone (default: 1.0)
+        Not used; kept for backward compatibility (default: 1.0)
     vcl_cutoff : float
         Maximum VCL for clean sand (default: 0.3)
     vcl : np.ndarray, optional

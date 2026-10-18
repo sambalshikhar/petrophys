@@ -4,6 +4,8 @@ Neutron-Density clay volume calculation.
 from typing import Union, Tuple
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 
 # N-D clean-line endpoints per matrix: (den_cl1, neu_cl1, den_cl2, neu_cl2).
 # Cl1 is the zero-porosity matrix point (from MINERAL_PROPERTIES); Cl2 is the
@@ -106,7 +108,12 @@ def vcl_from_nd(
 
     # Handle degenerate configuration (denominator == 0)
     if np.isclose(den, 0.0):
-        out = np.zeros_like(nphi_arr)
+        # The clay point lies on the clean line: the ratio is undefined. The
+        # benchmark packages returned 0 there.
+        if reproducing_benchmark():
+            out = np.zeros_like(nphi_arr)
+        else:
+            out = np.full(np.broadcast(nphi_arr, rhob_arr).shape, np.nan)
     else:
         out = num / den
 

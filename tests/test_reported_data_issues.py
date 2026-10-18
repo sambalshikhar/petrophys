@@ -63,10 +63,18 @@ def test_bundled_formations_declare_units_and_intentional_hierarchy():
 
 
 def test_only_the_carbonate_label_selects_carbonate_cutoffs(tmp_path):
+    from petrophys._internal.benchmark import historical_benchmark
+
     well = pp.Well("CUTOFFS")
     well.depth = np.arange(5.0)
     labels = np.array(["limestone", "dolomite", "marl", "carbonate", "clastic"])
-    result = NetPayModule(lithology=labels).calculate(well, vcl=np.full(5, .1), phie=np.full(5, .06), sw=np.full(5, .65))
+    arrays = dict(vcl=np.full(5, .1), phie=np.full(5, .06), sw=np.full(5, .65))
+    # The carbonate family (cutoff_family) takes the carbonate cutoffs; the
+    # benchmark packages took them for the label "carbonate" alone.
+    result = NetPayModule(lithology=labels).calculate(well, **arrays)
+    np.testing.assert_array_equal(result.net_pay, [True, True, True, True, False])
+    with historical_benchmark():
+        result = NetPayModule(lithology=labels).calculate(well, **arrays)
     np.testing.assert_array_equal(result.net_pay, [False, False, False, True, False])
     path = tmp_path / "marl.csv"
     path.write_text("top,bottom,lithology\n0,5,Marl\n", encoding="utf-8")

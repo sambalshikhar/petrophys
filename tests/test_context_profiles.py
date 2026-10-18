@@ -105,6 +105,33 @@ def test_geolink_profile_runs_the_benchmark_pipeline(tmp_path):
     # The benchmark writer: temperature parameters without unit or description.
     interpreted = (work / "processed_las" / "HW-3.las").read_text(encoding="utf-8")
     assert "temperature_gradient" in interpreted and "degF/100ft" not in interpreted
+    # One interpretation from the raw LAS; the trace records the preparatory
+    # reservoir-flag step and the final QC.
+    assert not (work / "first_pass_las").exists()
+    trace = json.loads((work / "processed_las" / "workflow_json" / "HW-3.json").read_text(encoding="utf-8"))
+    assert trace["input_file"] == trace["source_file"] == str(raw / "HW-3.las")
+    assert [step["step"] for step in trace["preparatory_steps"]][:2] == ["input_standardization", "resflag"]
+    assert [step["step"] for step in trace["post_workflow_steps"]] == ["value_range_qc", "dependent_curve_recompute"]
+
+    # processed_las is the interpretation the context is computed from: each
+    # statistic is that LAS's statistic over the group's depth window.
+    las = lasio.read(work / "processed_las" / "HW-3.las")
+    checked = 0
+    for path in (tmp_path / "context2").rglob("*_porosity.json"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        info = data["analysis_results"]["lithology_group_info"]
+        window = (las.index >= info["start_depth"] - 1e-6) & (las.index <= info["end_depth"] + 1e-6)
+        assert int(window.sum()) == info["data_points"]
+        for key, stats in data["analysis_results"]["statistics"].items():
+            curve = key[: -len("_overall")] if key.endswith("_overall") else key
+            if curve not in las.keys() or not isinstance(stats.get("arithmetic_mean"), (int, float)):
+                continue
+            values = np.asarray(las[curve], dtype=float)[window]
+            values = values[np.isfinite(values)]
+            if values.size:
+                assert round(float(values.mean()), 4) == pytest.approx(stats["arithmetic_mean"], abs=1e-4), curve
+                checked += 1
+    assert checked
 
 
 def test_export_context_without_a_profile_runs_the_current_workflow(tmp_path):
@@ -175,16 +202,18 @@ def test_costa_profile_computes_the_published_hw3_context(tmp_path):
     )
     assert "SXO_overall" not in analysis["statistics"]
 
+    # processed_las is the interpretation the context is computed from: SW is
+    # the context's Archie SW (SW_INPUT is not one of its inputs) and SO = 1 - SW.
     las = lasio.read(tmp_path / "work" / "processed_las" / "HW-3.las")
-    source = lasio.read(COSTA_DIR / "HW-3.las")
     sw, so = las["SW"], las["SO"]
-    given = np.isfinite(source["SW_INPUT"]) & (source["SW_INPUT"] >= 0) & (source["SW_INPUT"] <= 1)
-    np.testing.assert_allclose(sw[given], source["SW_INPUT"][given], atol=5e-6)
     np.testing.assert_allclose(so, 1.0 - sw, atol=1e-5)
     assert set(np.unique(las["LITHOLOGY_GEOLINK"][np.isfinite(las["LITHOLOGY_GEOLINK"])])) <= {11.0, 15.0}
-    assert "SXO" not in las.curves.keys() and "MHI" not in las.curves.keys()
+    assert "SW_INPUT" not in las.curves.keys() and "MHI" not in las.curves.keys()
     trace = json.loads((tmp_path / "work" / "processed_las" / "workflow_json" / "HW-3.json").read_text(encoding="utf-8"))
-    assert [step["step"] for step in trace["costa_precomputed_steps"]][:2] == ["costa_core_curve_aliases", "costa_vcl"]
+    steps = trace["preparatory_steps"]
+    assert [step["step"] for step in steps][:2] == ["input_standardization", "costa_precomputed_steps"]
+    assert "SW_INPUT" in steps[0]["curves_set_aside"]
+    assert [step["step"] for step in steps[1]["steps"]][:2] == ["costa_core_curve_aliases", "costa_vcl"]
 
 
 def test_costa_parameter_tables_are_bundled():

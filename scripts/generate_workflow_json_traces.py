@@ -56,7 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    if not args.input_dir.is_dir():
+        parser.error(f"input directory not found: {args.input_dir}")
     output_dir = args.output_dir or args.input_dir
     results = write_workflow_json_traces_directory(
         input_dir=args.input_dir,

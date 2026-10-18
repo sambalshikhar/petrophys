@@ -77,24 +77,6 @@ class NMRCalibration:
 # ---------------------------------------------------------------------------
 
 
-def _interp_at_core(
-    nmr: "NMRData",
-    core_depth: np.ndarray,
-    core_perm: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Interpolate NMR log properties to core plug depths and filter valid pairs.
-
-    Returns
-    -------
-    core_depth_valid, core_perm_valid, nmr_depths_for_interp
-        All arrays reduced to rows where both core_perm > 0 and NMR MPHI > 0.
-    """
-    core_depth = np.asarray(core_depth, dtype=float)
-    core_perm = np.asarray(core_perm, dtype=float)
-    return core_depth, core_perm
-
-
 def _interp_curve_at_depth(
     log_depth: np.ndarray,
     log_values: np.ndarray,

@@ -116,7 +116,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 
 # -- serve ---------------------------------------------------------------------
+def _missing_server_modules(transport: str) -> List[str]:
+    """Modules of the ``mcp`` extra that ``serve`` needs but cannot import."""
+    import importlib.util
+
+    needed = ["mcp", "pydantic"] + ([] if transport == "stdio" else ["uvicorn"])
+    return [name for name in needed if importlib.util.find_spec(name) is None]
+
+
 def _serve(args: argparse.Namespace) -> int:
+    missing = _missing_server_modules(args.transport)
+    if missing:
+        print(f"petrophys-mcp: the MCP server needs the optional 'mcp' extra "
+              f"(missing: {', '.join(missing)}). Install it with "
+              f"pip install 'petrophys[mcp]' (requires Python 3.10 or later).", file=sys.stderr)
+        return 2
     import matplotlib
 
     matplotlib.use("Agg")
@@ -125,9 +139,12 @@ def _serve(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"petrophys-mcp: {exc}", file=sys.stderr)
         return 2
-    if args.transport == "stdio":
+    try:
         from petrophys.mcp.server import create_server
-
+    except ImportError as exc:  # without the [mcp] extra: its install hint
+        print(f"petrophys-mcp: {exc}", file=sys.stderr)
+        return 1
+    if args.transport == "stdio":
         create_server(args.root or None, calculation_profile=profile).run()
         return 0
 
@@ -250,7 +267,7 @@ def run_checks(roots: Sequence[str] = (), url: Optional[str] = None,
 
         results.append((True, "MCP SDK", version("mcp")))
     except Exception as exc:  # pragma: no cover - mcp is required to get here
-        results.append((False, "MCP SDK", f"not importable ({exc}); pip install 'petrophys[mcp]'"))
+        results.append((False, "MCP SDK", f"not importable ({exc}); pip install 'petrophys[mcp]' (Python 3.10+)"))
         return results
 
     folders = [Path(r).expanduser() for r in roots] or [

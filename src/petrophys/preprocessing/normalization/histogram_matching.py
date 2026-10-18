@@ -39,6 +39,10 @@ def histogram_matching(
     >>> # Normalize well B to match well A
     >>> gr_b_normalized = histogram_matching(gr_well_b, gr_well_a)
     """
+    # Float copies, so integer inputs are not truncated on assignment.
+    source = np.asarray(source, dtype=float)
+    reference = np.asarray(reference, dtype=float)
+
     # Handle NaN values
     source_valid_mask = ~np.isnan(source)
     ref_valid_mask = ~np.isnan(reference)
@@ -105,6 +109,9 @@ def histogram_equalization(
     np.ndarray
         Equalized data
     """
+    # A float copy, so integer inputs are not truncated on assignment.
+    data = np.asarray(data, dtype=float)
+
     # Handle NaN values
     valid_mask = ~np.isnan(data)
     valid_data = data[valid_mask]

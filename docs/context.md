@@ -227,10 +227,15 @@ petrophys-context PATH/danish/las outputs/danish_context \
 A profile fixes its package's settings: it takes `well_names`, `pattern`
 (LAS only), `tops_file` and `lithology_mapping_file`, and rejects
 `workflow_config` and the other interpretation options. `export_context`
-writes the context JSON only. The eval script keeps the intermediate files
-too: the interpreted LAS and their workflow traces under
-`<output-dir>/processed_las` and, for the Danish package, the prepared LAS
-under `<output-dir>/prepared_las`. Given one LAS file or a folder, it
+writes the context JSON only. The eval script keeps the LAS too:
+`<output-dir>/processed_las` holds the interpreted LAS and workflow traces the
+context is computed from, so each context statistic is the statistic of that
+LAS over the group's depth window. Each well is interpreted once from its raw
+LAS; a preparatory step, recorded in the trace, computes the curves the
+package's settings take from a first run: for GeoLink and Danish the reservoir
+flag that selects the SWIRR_APP samples and the bad-hole flag BADHOLEFLAG, for
+COSTA its precomputed curves (PERM, VCL, carbonate volumes and lithology).
+Given one LAS file or a folder, it
 recognizes GeoLink, COSTA or Danish wells by name (`--dataset` overrides):
 
 ```bash

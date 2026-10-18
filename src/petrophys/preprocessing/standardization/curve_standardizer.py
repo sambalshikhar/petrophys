@@ -9,18 +9,24 @@ import warnings
 from typing import TYPE_CHECKING, Optional, List, Dict, Any
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.exceptions import DataQualityWarning
 
 from petrophys.preprocessing.standardization.alias_map import (
+    get_aliases,
     get_standard_mnemonic,
     get_standard_unit,
     base_curve_mnemonic,
     ALIAS_MAP,
 )
 from petrophys.preprocessing.standardization.unit_converter import (
+    CORE_SATURATION_CURVES,
+    _benchmark_units,
+    _conversion_factor,
     _converts_temperature,
     convert_curve_units,
     convert_units,
+    standardize_core_saturation,
     standardize_units,
     get_conversion_factor,
 )
@@ -106,17 +112,33 @@ def _curve_standardization_priority(curve: "Curve") -> int:
         return 0
 
 
+#: Medium (60 in) array curves the RDEP alias passes over when the 90 in curve
+#: of the same tool is present: the 90 in curve is the deep reading.
+_SHALLOWER_ARRAY_DEEP_ALIASES = {"AT60": "AT90", "AO60": "AO90"}
+
+
 def add_standard_curve_aliases(
     well: "Well",
     standards: Optional[List[str]] = None,
+    *,
+    prefer_deepest_array: bool = True,
 ) -> Dict[str, str]:
     """Add canonical working aliases without removing vendor mnemonics.
 
     Curves marked as lower-quality or uncalibrated by an input reader are not
-    promoted into canonical interpretation slots.
+    promoted into canonical interpretation slots. With
+    ``prefer_deepest_array``, RDEP takes an AT90/AO90 curve over the medium
+    AT60/AO60 curve of the same tool whatever their sample counts.
     """
     requested = [name.upper() for name in (standards or list(ALIAS_MAP))]
     alias_map: Dict[str, str] = {}
+    # The benchmark packages kept the sample-count choice between AT60 and AT90.
+    prefer_deepest_array = prefer_deepest_array and not reproducing_benchmark()
+    valid_bases = {
+        base_curve_mnemonic(name)
+        for name in well.curves
+        if well.get(name) is not None and well.get(name).valid_count() > 0
+    }
 
     for standard in requested:
         direct = well.get(standard)
@@ -127,7 +149,7 @@ def add_standard_curve_aliases(
         ):
             continue
 
-        aliases = [standard, *ALIAS_MAP.get(standard, [])]
+        aliases = [standard, *get_aliases(standard)]
         alias_rank = {name.upper(): index for index, name in enumerate(aliases)}
         candidates = []
         for order, mnemonic in enumerate(well.curves):
@@ -140,9 +162,15 @@ def add_standard_curve_aliases(
             base = base_curve_mnemonic(mnemonic)
             if base not in alias_rank:
                 continue
+            shallower_array = (
+                prefer_deepest_array
+                and standard == "RDEP"
+                and _SHALLOWER_ARRAY_DEEP_ALIASES.get(base) in valid_bases
+            )
             score = (
                 priority,
                 int(base == standard),
+                -int(shallower_array),
                 curve.valid_count(),
                 -alias_rank[base],
                 -order,
@@ -270,6 +298,17 @@ def _screen_standard_curve_values(
     return curve
 
 
+def _standard_conversion_factor(unit: str, standard_unit: str, standard_name: str) -> Optional[float]:
+    """Conversion factor from ``unit`` to a standard curve's unit.
+
+    Core saturation curves skip the extra unit spellings: their "frac" label
+    often holds percent values, which :func:`standardize_core_saturation`
+    detects, so it is not relabelled "v/v" here.
+    """
+    spellings = not _benchmark_units() and standard_name.upper() not in CORE_SATURATION_CURVES
+    return _conversion_factor(unit, standard_unit, spellings=spellings)
+
+
 class CurveStandardizer:
     """
     Standardizes curve mnemonics and units.
@@ -379,8 +418,11 @@ class CurveStandardizer:
         from petrophys.model.data_types import DataType
 
         # Track renamed curves to avoid conflicts
+        historical = reproducing_benchmark()
         new_curves = {}
         rename_map = {}
+        #: Original mnemonic of the curve holding each standard name.
+        slot_source = {}
 
         for mnemonic, curve in well._curves.items():
             # Get standard name
@@ -405,10 +447,22 @@ class CurveStandardizer:
                 rename_map[mnemonic] = standard_name
 
             # Convert units if needed
-            if self.convert_units:
+            if self.convert_units and standard_name in CORE_SATURATION_CURVES and not historical:
+                # Core saturations: percent values under a "frac" or blank
+                # label are detected and converted to v/v, with a warning.
+                # The benchmark packages left them as written.
+                try:
+                    standardize_core_saturation(new_curve, inplace=True)
+                except ValueError as exc:
+                    warnings.warn(
+                        f"{mnemonic}: {exc}; the curve is left unconverted.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+            elif self.convert_units:
                 standard_unit = get_standard_unit(standard_name)
                 if standard_unit and curve.unit:
-                    factor = get_conversion_factor(curve.unit, standard_unit)
+                    factor = _standard_conversion_factor(curve.unit, standard_unit, standard_name)
                     if factor is not None:
                         if factor != 1.0:
                             new_curve._data = new_curve._data * factor
@@ -423,11 +477,10 @@ class CurveStandardizer:
 
             _screen_standard_curve_values(new_curve, standard_name, curve.unit, self.plausible_ranges)
 
-            # Handle duplicate standard names: the incoming curve replaces the
-            # occupant only with a higher source priority (DLIS channel
-            # quality) or, at equal priority, more valid samples; the occupant
-            # is then kept under the incoming curve's mnemonic. Otherwise the
-            # incoming curve is dropped.
+            # Handle duplicate standard names: the incoming curve takes the
+            # standard name only with a higher source priority (DLIS channel
+            # quality) or, at equal priority, more valid samples. The other
+            # curve keeps its own original mnemonic; no curve is dropped.
             if (
                 standard_name in new_curves
                 and self.rename_curves
@@ -435,12 +488,37 @@ class CurveStandardizer:
             ):
                 existing = new_curves[standard_name]
                 existing_priority = _curve_standardization_priority(existing)
-                if source_priority > existing_priority or (
+                wins = source_priority > existing_priority or (
                     source_priority == existing_priority
                     and new_curve.valid_count() > existing.valid_count()
-                ):
-                    new_curves[mnemonic] = existing
+                )
+                if historical:
+                    # The benchmark packages kept the loser under the incoming
+                    # mnemonic, or dropped the incoming curve.
+                    if wins:
+                        new_curves[mnemonic] = existing
+                        new_curves[standard_name] = new_curve
+                    continue
+                if wins:
+                    kept, kept_name = existing, slot_source[standard_name]
                     new_curves[standard_name] = new_curve
+                    slot_source[standard_name] = mnemonic
+                else:
+                    kept, kept_name = new_curve, mnemonic
+                if kept_name == standard_name:
+                    # The losing curve already carried the standard name.
+                    kept_name = f"{standard_name}_2"
+                    while kept_name in new_curves:
+                        kept_name += "_2"
+                kept.mnemonic = kept_name
+                rename_map.pop(kept_name, None)
+                new_curves[kept_name] = kept
+                warnings.warn(
+                    f"{kept_name} and {slot_source[standard_name]} both map to {standard_name}; "
+                    f"{slot_source[standard_name]} is used as {standard_name} and {kept_name} keeps its own name.",
+                    DataQualityWarning,
+                    stacklevel=2,
+                )
             else:
                 target_name = (
                     standard_name
@@ -448,6 +526,7 @@ class CurveStandardizer:
                     else mnemonic
                 )
                 new_curves[target_name] = new_curve
+                slot_source[target_name] = mnemonic
 
         # Update well curves
         well._curves = new_curves
@@ -494,7 +573,7 @@ class CurveStandardizer:
         if convert:
             standard_unit = get_standard_unit(standard_name)
             if standard_unit and curve.unit:
-                factor = get_conversion_factor(curve.unit, standard_unit)
+                factor = _standard_conversion_factor(curve.unit, standard_unit, standard_name)
                 if factor is not None:
                     if factor != 1.0:
                         new_curve._data = new_curve._data * factor
@@ -534,7 +613,7 @@ class CurveStandardizer:
             return well._curves[curve_type]
 
         # Search aliases
-        aliases = ALIAS_MAP.get(curve_type, [])
+        aliases = get_aliases(curve_type)
         for alias in aliases:
             if alias in well._curves:
                 return well._curves[alias]

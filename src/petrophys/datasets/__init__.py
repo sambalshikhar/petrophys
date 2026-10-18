@@ -110,9 +110,11 @@ def list_integration_fixtures(kind: Optional[str] = None) -> List[str]:
 def integration_fixture(name: str) -> Path:
     """Return the path to an optional repository integration fixture.
 
-    ``name`` may be a complete filename or an unambiguous file stem. Missing
-    fixtures raise ``FileNotFoundError`` so callers can skip optional examples or
-    ask contributors to run ``git lfs pull``.
+    ``name`` may be a complete filename or an unambiguous file stem. Names that
+    are not catalogued raise ``FileNotFoundError``. A catalogued fixture's path
+    is returned even when the file is absent (wheel/sdist installs) or is still
+    a Git LFS pointer, so callers should check ``path.exists()`` and its size
+    before use and skip, or ask contributors to run ``git lfs pull``.
     """
     key = str(name).strip().lower()
     matches = [

@@ -49,22 +49,40 @@ def calculate_elastic_properties(
 
     RHOB is expected in g/cc, DTC/DTS in us/ft. No shear-sonic fallback is
     applied; Vs-dependent properties remain NaN when DTS is unavailable.
-    Scalar inputs return scalar properties.
+    Inputs broadcast against each other; scalar inputs return scalar
+    properties.
+
+    DTC outside 20-300 us/ft and DTS outside 20-600 us/ft are treated as
+    invalid (NaN velocity).  Where Vp/Vs < sqrt(2) the velocities are not
+    those of an isotropic elastic solid (Poisson's ratio would be negative),
+    so Poisson's ratio, the bulk modulus and Young's modulus are NaN there;
+    the shear modulus, from Vs alone, is kept. Inside
+    ``historical_benchmark()`` Poisson's ratio is clipped to [0, 0.49] and the
+    moduli at 0 instead, as the benchmark packages were computed.
     """
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    historical = reproducing_benchmark()
 
     rhob = np.asarray(rhob_gcc, dtype=float)
     dtc = np.asarray(dtc_us_per_ft, dtype=float)
     scalar_input = rhob.ndim == 0 and dtc.ndim == 0 and np.ndim(dts_us_per_ft) == 0
-    rhob, dtc = np.broadcast_arrays(np.atleast_1d(rhob), np.atleast_1d(dtc))
+    if dts_us_per_ft is None:
+        rhob, dtc = np.broadcast_arrays(np.atleast_1d(rhob), np.atleast_1d(dtc))
+        dts = None
+    else:
+        rhob, dtc, dts = np.broadcast_arrays(
+            np.atleast_1d(rhob),
+            np.atleast_1d(dtc),
+            np.atleast_1d(np.asarray(dts_us_per_ft, dtype=float)),
+        )
 
     vp = np.full(rhob.shape, np.nan, dtype=float)
     valid_vp = np.isfinite(dtc) & (dtc >= 20.0) & (dtc <= 300.0)
     vp[valid_vp] = US_PER_FOOT_TO_M_PER_SECOND / dtc[valid_vp]
 
     vs = np.full(rhob.shape, np.nan, dtype=float)
-    if dts_us_per_ft is not None:
-        dts = np.asarray(dts_us_per_ft, dtype=float)
-        _, dts = np.broadcast_arrays(rhob, dts)
+    if dts is not None:
         valid_vs = np.isfinite(dts) & (dts >= 20.0) & (dts <= 600.0)
         vs[valid_vs] = US_PER_FOOT_TO_M_PER_SECOND / dts[valid_vs]
 
@@ -102,18 +120,22 @@ def calculate_elastic_properties(
         vs2_v = vs2[valid_denom]
         denom_v = denom[valid_denom]
 
-        poisson_ratio[idx] = np.clip(
-            (vp2_v - (2.0 * vs2_v)) / (2.0 * denom_v),
-            0.0,
-            0.49,
-        )
-        shear_mod_gpa[idx] = np.clip(rho_v * vs2_v / 1e9, 0.0, None)
-        bulk_mod_gpa[idx] = np.clip(rho_v * (vp2_v - ((4.0 / 3.0) * vs2_v)) / 1e9, 0.0, None)
-        young_mod_gpa[idx] = np.clip(
-            rho_v * vs2_v * ((3.0 * vp2_v) - (4.0 * vs2_v)) / denom_v / 1e9,
-            0.0,
-            None,
-        )
+        nu = (vp2_v - (2.0 * vs2_v)) / (2.0 * denom_v)
+        bulk = rho_v * (vp2_v - ((4.0 / 3.0) * vs2_v)) / 1e9
+        young = rho_v * vs2_v * ((3.0 * vp2_v) - (4.0 * vs2_v)) / denom_v / 1e9
+        if historical:
+            nu = np.clip(nu, 0.0, 0.49)
+            bulk = np.clip(bulk, 0.0, None)
+            young = np.clip(young, 0.0, None)
+        else:
+            possible = nu >= 0.0
+            nu = np.where(possible, nu, np.nan)
+            bulk = np.where(possible, bulk, np.nan)
+            young = np.where(possible, young, np.nan)
+        poisson_ratio[idx] = nu
+        shear_mod_gpa[idx] = rho_v * vs2_v / 1e9
+        bulk_mod_gpa[idx] = bulk
+        young_mod_gpa[idx] = young
 
     properties = dict(
         vp_m_s=vp,

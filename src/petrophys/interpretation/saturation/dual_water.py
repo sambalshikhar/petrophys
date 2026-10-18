@@ -9,6 +9,8 @@ surfaces (Rwb).
 from typing import Union
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 
 def dual_water(
     phi_t: Union[float, np.ndarray],
@@ -28,14 +30,17 @@ def dual_water(
     water (Rwb).  Operates entirely on total porosity — effective
     porosity is not required and is not used in the derivation.
 
-    This is the wet-zone (Ro) form of the Dual Water model of Clavier,
-    Coates and Dumanoir (1984), "Theoretical and experimental bases for the
-    dual-water model for interpretation of shaly sands", SPE Journal 24(2),
-    as published in Crain's Petrophysical Handbook: the two waters are mixed
-    in the proportions of the water-filled rock, Archie's equation on total
-    porosity gives Swt, and the bound water is removed to give Swe. The full
-    model weights the bound water by Swb/Swt rather than Swb, so the two
-    agree in wet rock (Swt = 1) and differ in hydrocarbon-bearing rock.
+    This is the Dual Water model of Clavier, Coates and Dumanoir (1984),
+    "Theoretical and experimental bases for the dual-water model for
+    interpretation of shaly sands", SPE Journal 24(2): the two waters are
+    mixed in the proportions of the water actually in the pores, Swb/Swt
+    bound and 1 - Swb/Swt free, so the conductivity equation is solved for
+    Swt (a quadratic for n = 2, iterated otherwise) and the bound water is
+    removed to give Swe. The benchmark packages used the wet-zone (Ro) form
+    of Crain's Petrophysical Handbook, which mixes the waters in the
+    proportions Swb and 1 - Swb of water-filled rock; the two agree in wet
+    rock (Swt = 1) and the wet-zone form reads higher in hydrocarbon-bearing
+    rock, where the bound water is a larger share of the pore water.
 
     Equations
     ---------
@@ -45,11 +50,11 @@ def dual_water(
     Bound water saturation (capped at 0.999 where phi_bw >= phi_t):
         Swb = phi_bw / phi_t
 
-    Apparent total water resistivity:
-        1/Rwt = Swb/Rwb + (1 - Swb)/Rw
+    Conductivity, with Cw = 1/Rw and Cwb = 1/Rwb:
+        1/Rt = (phi_t^m / a) * Swt^n * [Cw + (Swb/Swt) * (Cwb - Cw)]
 
-    Total Sw (Archie on total porosity):
-        Swt = [(a * Rwt) / (phi_t^m * Rt)]^(1/n)
+    Total Sw, for n = 2 the positive root of
+        Cw * Swt^2 + Swb * (Cwb - Cw) * Swt - a / (phi_t^m * Rt) = 0
 
     Effective (free-water) saturation:
         Swe = (Swt - Swb) / (1 - Swb)
@@ -93,6 +98,12 @@ def dual_water(
     rw_safe = np.where(rw <= 0, 1e-10, rw) if isinstance(rw, np.ndarray) else max(rw, 1e-10)
     rwb_safe = np.where(rwb <= 0, 1e-10, rwb) if isinstance(rwb, np.ndarray) else max(rwb, 1e-10)
     rt_safe = np.where(rt <= 0, 1e-10, rt) if isinstance(rt, np.ndarray) else max(rt, 1e-10)
+    # Infinite Rt (no conductivity reading) is missing, as in archie().
+    if not reproducing_benchmark():
+        if isinstance(rt_safe, np.ndarray):
+            rt_safe = np.where(np.isinf(rt_safe), np.nan, rt_safe)
+        elif np.isinf(rt_safe):
+            rt_safe = np.nan
 
     swb = phi_bw / phi_t_safe
 
@@ -106,11 +117,29 @@ def dual_water(
         else min(swb, 0.999)
     )
 
-    # Apparent total water resistivity
-    rwt = 1.0 / (swb_safe / rwb_safe + (1.0 - swb_safe) / rw_safe)
+    if reproducing_benchmark():
+        # Wet-zone form: apparent water resistivity mixed from Swb, then
+        # Archie on total porosity.
+        rwt = 1.0 / (swb_safe / rwb_safe + (1.0 - swb_safe) / rw_safe)
+        swt = ((a * rwt) / (phi_t_safe ** m * rt_safe)) ** (1.0 / n)
+        swe = (swt - swb_safe) / (1.0 - swb_safe)
+        return np.clip(swe, 0.0, 1.0)
 
-    # Total Sw via Archie on total porosity
-    swt = ((a * rwt) / (phi_t_safe ** m * rt_safe)) ** (1.0 / n)
+    # Clavier-Coates-Dumanoir: the bound water is the fraction Swb/Swt of the
+    # pore water, 1/Rt = phi_t^m/a * Swt^n * [Cw + (Swb/Swt) (Cwb - Cw)].
+    cw = 1.0 / rw_safe
+    cwb = 1.0 / rwb_safe
+    k = a / (phi_t_safe ** m * rt_safe)  # a / (phi_t^m Rt)
+    b = swb_safe * (cwb - cw)
+    with np.errstate(invalid="ignore"):
+        # n = 2: Cw Swt^2 + B Swt - K = 0, the positive root.
+        swt = (-b + np.sqrt(b * b + 4.0 * cw * k)) / (2.0 * cw)
+        if float(n) != 2.0:
+            # Fixed-point iteration on the apparent water conductivity
+            # Cw + (Swb/Swt) (Cwb - Cw), from the n = 2 root; Swt below Swb
+            # leaves Swe = 0 either way.
+            for _ in range(100):
+                swt = np.power(k / (cw + b / np.maximum(swt, swb_safe)), 1.0 / n)
 
     # Convert to effective Sw
     swe = (swt - swb_safe) / (1.0 - swb_safe)

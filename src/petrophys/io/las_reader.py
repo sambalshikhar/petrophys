@@ -10,6 +10,7 @@ from pathlib import Path
 import warnings
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.units import normalize_depth_unit
 
 if TYPE_CHECKING:
@@ -209,13 +210,28 @@ class LASReader:
             if name in self.curves:
                 depth_curve = name
                 break
+        if depth_curve is None and self.curves and not reproducing_benchmark():
+            # LAS 2.0: the first ~C curve is the index (e.g. TDEP, INDEX).
+            depth_curve = self.curves[0]
 
         if depth_curve:
             well._depth = self._las[depth_curve]
             # Get depth unit
             for curve in self._las.curves:
                 if curve.mnemonic == depth_curve:
-                    well._depth_unit = _normalize_depth_unit(curve.unit)
+                    index_unit = curve.unit
+                    if not (index_unit or "").strip() and not reproducing_benchmark():
+                        # A blank index unit: STRT/STOP/STEP carry the index unit.
+                        index_unit = self._well_section_depth_unit()
+                        if not index_unit:
+                            warnings.warn(
+                                f"{self.filepath.name}: the index curve {depth_curve!r} "
+                                "and STRT/STOP/STEP have no depth unit; feet are assumed. "
+                                "Set well.depth_unit if the depths are in metres.",
+                                UserWarning,
+                                stacklevel=2,
+                            )
+                    well._depth_unit = _normalize_depth_unit(index_unit)
                     # The label as written, which the "geolink" profile writes back.
                     well._source_depth_unit_label = (curve.unit or "").strip()
                     break
@@ -284,6 +300,24 @@ class LASReader:
             bht_unit = self._get_constant_zoned_unit("BHT").lower()
             if bht is not None and "c" in bht_unit and "f" not in bht_unit:
                 bht = (bht * 9.0 / 5.0) + 32.0
+            elif bht is not None and not reproducing_benchmark():
+                unit_key = bht_unit.replace("deg", "").replace("\u00b0", "").replace(" ", "").strip(".")
+                if unit_key in {"k", "kelvin"}:
+                    bht = (bht - 273.15) * 9.0 / 5.0 + 32.0
+                elif not unit_key:
+                    warnings.warn(
+                        f"{self.filepath.name}: zoned BHT has no unit; degF is assumed.",
+                        UserWarning,
+                        stacklevel=3,
+                    )
+                elif "f" not in unit_key:
+                    warnings.warn(
+                        f"{self.filepath.name}: zoned BHT unit {bht_unit!r} is not "
+                        "recognised; the header BHT is left unset.",
+                        UserWarning,
+                        stacklevel=3,
+                    )
+                    bht = None
             if bht is not None:
                 well.header.bht = bht
                 well.header.bht_unit = "F"
@@ -297,6 +331,12 @@ class LASReader:
             field_name = self._get_constant_zoned_text("FLD")
             if field_name:
                 well.header.field = field_name
+
+    def _well_section_depth_unit(self) -> str:
+        """Return the single non-blank unit of ~W STRT/STOP/STEP, or ''."""
+        units = {self.get_header_unit(key).strip() for key in ("STRT", "STOP", "STEP")}
+        units.discard("")
+        return next(iter(units)) if len(units) == 1 else ""
 
     def _get_constant_zoned_float(self, prefix: str) -> Optional[float]:
         """Return a single unique float value from PARAM_Zn entries."""

@@ -9,6 +9,8 @@ Note: SP should be discarded if clay or KCl is used in the drilling mud.
 from typing import Union
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 
 def vcl_from_sp(
     sp: Union[float, np.ndarray],
@@ -51,7 +53,12 @@ def vcl_from_sp(
     >>> vcl_sp = vcl_from_sp(sp_data, sp_max=-80, sp_min=-10)
     """
     if sp_max == sp_min:
-        return np.zeros_like(sp) if isinstance(sp, np.ndarray) else 0.0
+        if reproducing_benchmark():
+            return np.zeros_like(sp) if isinstance(sp, np.ndarray) else 0.0
+        # Equal baselines leave the SP index undefined.
+        if isinstance(sp, np.ndarray):
+            return np.full(sp.shape, np.nan, dtype=float)
+        return float("nan")
 
     vcl = (sp_max - sp) / (sp_max - sp_min)
     return np.clip(vcl, 0, 1)

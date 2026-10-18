@@ -66,8 +66,15 @@ def standardize_nphi(
         ("dolomite", "sandstone"): 0.06,
     }
 
-    key = (current_matrix.lower(), target_matrix.lower())
-    correction = corrections.get(key, 0.0)
+    aliases = {"calcite": "limestone", "lime": "limestone",
+               "quartz": "sandstone", "sand": "sandstone"}
+    names = []
+    for name in (current_matrix, target_matrix):
+        name = aliases.get(name.lower(), name.lower())
+        if name not in ("limestone", "sandstone", "dolomite"):
+            raise ValueError(f"Unknown matrix {name!r}: use limestone, sandstone or dolomite")
+        names.append(name)
+    correction = corrections.get(tuple(names), 0.0)
 
     return nphi + correction
 

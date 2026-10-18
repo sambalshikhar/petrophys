@@ -95,7 +95,7 @@ def _porosity_to_pu(
     mnemonic_text = (mnemonic or "").strip().upper()
     fraction_unit = (
         "v/v" in unit_text
-        or unit_text in {"vv", "frac", "fraction", "decimal"}
+        or unit_text in {"vv", "frac", "fraction", "decimal", "dec", "m3/m3", "ft3/ft3", "cfcf", "1"}
         or unit_text.endswith("/v")
     )
     fraction_mnemonic = mnemonic_text in {
@@ -704,6 +704,8 @@ class NMRData:
         result = np.nansum(np.where(selected, weights * self.bins, np.nan), axis=1)
         result[selected_count == 0] = 0.0
         result[coverage < min_bin_coverage] = np.nan
+        # A missing per-depth cutoff leaves the partition undefined there.
+        result[np.isnan(weights).any(axis=1)] = np.nan
         return result
 
     def t2_distribution(self, depth_index: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -736,7 +738,7 @@ class NMRData:
 
     def permeability_sdr(
         self,
-        c: float = 4.0,
+        c: Optional[float] = None,
         calibration: Optional["NMRCalibration"] = None,
         prefer_stored: bool = True,
     ) -> np.ndarray:
@@ -750,19 +752,31 @@ class NMRData:
 
         Parameters
         ----------
-        c : float
+        c : float, optional
             Empirical constant (default 4.0 — Kenyon 1992).
             Ignored when ``calibration`` is supplied.
         calibration : NMRCalibration, optional
             Result of ``calibrate_sdr()``.  When provided, the fitted
             constant overrides ``c``.
+        prefer_stored : bool
+            Return the stored vendor ``KSDR`` curve, when one was loaded,
+            instead of computing it.  Applies only when neither ``c`` nor
+            ``calibration`` is given.
 
         Returns
         -------
         np.ndarray
             Permeability (mD).
         """
-        if calibration is None and prefer_stored and "KSDR" in self.stored_permeability:
+        explicit = c is not None
+        if c is None:
+            c = 4.0
+        if (
+            calibration is None
+            and not explicit
+            and prefer_stored
+            and "KSDR" in self.stored_permeability
+        ):
             return self.stored_permeability["KSDR"].copy()
         if calibration is not None:
             c = calibration.params["c"]
@@ -773,9 +787,9 @@ class NMRData:
 
     def permeability_coates(
         self,
-        c: float = 10.0,
-        a: float = 4.0,
-        b: float = 2.0,
+        c: Optional[float] = None,
+        a: Optional[float] = None,
+        b: Optional[float] = None,
         calibration: Optional["NMRCalibration"] = None,
         prefer_stored: bool = True,
     ) -> np.ndarray:
@@ -788,18 +802,32 @@ class NMRData:
 
         Parameters
         ----------
-        c, a, b : float
-            Coates parameters.  Ignored when ``calibration`` is supplied.
+        c, a, b : float, optional
+            Coates parameters (defaults 10, 4, 2).  Ignored when
+            ``calibration`` is supplied.
         calibration : NMRCalibration, optional
             Result of ``calibrate_coates()``.  When provided, fitted
             parameters override ``c``, ``a``, ``b``.
+        prefer_stored : bool
+            Return the stored vendor ``KTIM`` curve, when one was loaded,
+            instead of computing it.  Applies only when none of ``c``,
+            ``a``, ``b`` or ``calibration`` is given.
 
         Returns
         -------
         np.ndarray
             Permeability (mD).  NaN where BVI = 0.
         """
-        if calibration is None and prefer_stored and "KTIM" in self.stored_permeability:
+        explicit = c is not None or a is not None or b is not None
+        c = 10.0 if c is None else c
+        a = 4.0 if a is None else a
+        b = 2.0 if b is None else b
+        if (
+            calibration is None
+            and not explicit
+            and prefer_stored
+            and "KTIM" in self.stored_permeability
+        ):
             return self.stored_permeability["KTIM"].copy()
         if calibration is not None:
             c = calibration.params["c"]
@@ -901,9 +929,12 @@ class NMRData:
         np.ndarray
             Pore body radius (µm).
         """
-        factor = {"sphere": 3.0, "cylinder": 2.0, "slit": 1.0}.get(
-            geometry.lower(), 3.0
-        )
+        factors = {"sphere": 3.0, "cylinder": 2.0, "slit": 1.0}
+        if geometry.lower() not in factors:
+            raise ValueError(
+                f"Unknown pore geometry {geometry!r}; use 'sphere', 'cylinder' or 'slit'"
+            )
+        factor = factors[geometry.lower()]
         return factor * surface_relaxivity * self.t2_lm() * 1e-3  # ms → s
 
     def swirr_nmr(self) -> np.ndarray:
@@ -920,19 +951,22 @@ class NMRData:
 
     def bin_cumulative(self) -> np.ndarray:
         """
-        Cumulative T2 distribution per depth, normalised to MPHI.
+        Cumulative T2 distribution per depth, normalised to the sum of the bins.
 
         Returns
         -------
         np.ndarray
-            Shape (n_depth, n_bins).  Each row sums to 1 where MPHI > 0.
+            Shape (n_depth, n_bins).  Each row ends at 1 where the bins sum
+            to more than 0; NaN bins are skipped (they add nothing); NaN rows
+            where the depth has no bin data.
         """
         if not self.has_bins:
             raise ValueError("T2 bin data required")
         total = np.nansum(self.bins, axis=1, keepdims=True)
+        has_data = np.isfinite(self.bins).any(axis=1, keepdims=True)
         with np.errstate(divide="ignore", invalid="ignore"):
-            normed = np.where(total > 0, self.bins / total, 0.0)
-        return np.cumsum(normed, axis=1)
+            normed = np.where(total > 0, self.bins / total, np.where(has_data, 0.0, np.nan))
+        return np.where(has_data, np.nancumsum(normed, axis=1), np.nan)
 
     # ------------------------------------------------------------------
     # Utilities

@@ -50,7 +50,7 @@ class TokenAuthMiddleware:
 
     def __init__(self, app: ASGIApp, token: Optional[str], version: str) -> None:
         self.app = app
-        self.token = token
+        self.token = token or None  # an empty token is no token
         self.version = version
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -76,7 +76,9 @@ class TokenAuthMiddleware:
             if name.lower() == b"authorization":
                 scheme, _, supplied = value.decode("latin-1").partition(" ")
                 if scheme.lower() == "bearer":
-                    return hmac.compare_digest(supplied.strip(), self.token or "")
+                    # Compare bytes: compare_digest rejects non-ASCII str.
+                    return hmac.compare_digest(supplied.strip().encode("latin-1"),
+                                               (self.token or "").encode("utf-8"))
         return False
 
 
@@ -136,6 +138,7 @@ def build_app(
     from petrophys.mcp.server import create_server
     from petrophys.version import __version__
 
+    token = token or None  # as on the command line, an empty token is no token
     server = create_server(roots, calculation_profile=calculation_profile)
     if allowed_hosts:
         security = TransportSecuritySettings(

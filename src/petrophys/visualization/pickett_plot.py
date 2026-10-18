@@ -5,6 +5,7 @@ Pickett plot for Archie parameter determination.
 from petrophys.visualization.style import _styled_plot, save_figure
 
 from typing import TYPE_CHECKING, Optional, Tuple
+import warnings
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -89,12 +90,14 @@ class PickettPlot:
         rt_valid = rt[mask]
 
         # Plot data points
-        if color_data is not None:
+        if color_data is not None and np.any(np.isfinite(color_data[mask])):
             color_valid = color_data[mask]
+            # Points without a colour value are drawn grey, not dropped.
+            colormap = plt.get_cmap('viridis').with_extremes(bad="0.6")
             scatter = self.ax.scatter(
                 phie_valid, rt_valid,
                 c=color_valid, s=5, alpha=0.7,
-                cmap='viridis', edgecolors='none'
+                cmap=colormap, edgecolors='none', plotnonfinite=True
             )
             cbar = self.fig.colorbar(scatter, ax=self.ax)
             cbar.set_label(color_label)
@@ -266,10 +269,17 @@ def create_pickett_plot(
         if c_c is not None:
             color_data = c_c.data
             color_label = f"{color_curve} [{c_c.unit}]"
+        else:
+            warnings.warn(
+                f"Colour curve '{color_curve}' not found; plotting without colour.",
+                UserWarning,
+                stacklevel=2,
+            )
     else:
         # Default to depth
         color_data = well.depth
-        color_label = "Depth"
+        depth_unit = getattr(well, "depth_unit", "") or ""
+        color_label = f"Depth [{depth_unit}]" if depth_unit else "Depth"
 
     # Apply depth range
     if depth_range:

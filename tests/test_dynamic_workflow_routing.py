@@ -1359,7 +1359,8 @@ def test_phi_cl_is_one_representative_scalar_across_depth():
     well.add_curve("VCL", np.full(n, 0.95), "v/v", "Clay volume")
     phit = np.linspace(0.30, 0.10, n)
 
-    workflow = DynamicWorkflow(DynamicWorkflowConfig(phi_cl=0.15))
+    # phi_cl left at its default (None) is derived from the data; an explicit 0.15 would be kept.
+    workflow = DynamicWorkflow(DynamicWorkflowConfig())
     info = workflow._resolve_phi_cl(
         well,
         well.get("VCL"),
@@ -1391,10 +1392,10 @@ def test_phi_cl_uses_config_fallback_when_shale_phit_is_not_nd_average(record_ro
     sat_step = _step_by_name(result, "saturation")
 
     assert por_step.parameters["phit_source_counts"]["density_from_missing_phin"] > 0
-    assert por_step.parameters["phi_cl_source"] == "config_or_default"
+    assert por_step.parameters["phi_cl_source"] == "config"  # explicit phi_cl=0.15 is kept
     assert por_step.parameters["phi_cl"] == pytest.approx(0.15)
-    assert "no shale-control PHIT samples" in por_step.parameters["phi_cl_fallback_reason"]
-    assert sat_step.parameters["phi_cl_source"] == "config_or_default"
+    assert por_step.parameters["phi_cl_fallback_reason"] is None  # explicit phi_cl: no derivation attempted
+    assert sat_step.parameters["phi_cl_source"] == "config"
     assert sat_step.parameters["phi_cl"] == pytest.approx(por_step.parameters["phi_cl"])
 
 
@@ -1630,7 +1631,7 @@ def test_reused_workflow_resolves_auto_matrix_per_well():
     fresh = DynamicWorkflow(config()).run(pp.read(pp.sample("15_9-14")))
 
     workflow = DynamicWorkflow(config())
-    carbonate = workflow.run(pp.read(pp.sample("HW-3")))
+    carbonate = workflow.run(pp.read(pp.sample("HW-27")))  # PEF: auto resolves limestone
     reused = workflow.run(pp.read(pp.sample("15_9-14")))
 
     assert carbonate.config.matrix_type != fresh.config.matrix_type
@@ -1662,7 +1663,7 @@ def test_skipped_steps_explain_what_is_missing(capsys):
 def test_explicit_carbonate_domain_keeps_a_carbonate_matrix():
     import petrophys as pp
 
-    well = pp.read(pp.sample("HW-27"))  # core grain density alone points to sandstone
+    well = pp.read(pp.sample("30_6-5"))  # core grain density points to sandstone
     result = pp.interpret(well, lithology_domain="carbonate")
     assert result.config.matrix_type in {"limestone", "dolomite"}
     assert any("lithology_domain is 'carbonate', but" in warning for warning in result.warnings)
@@ -1671,12 +1672,17 @@ def test_explicit_carbonate_domain_keeps_a_carbonate_matrix():
 def test_default_domain_is_clastic_and_auto_domain_follows_the_evidence():
     import petrophys as pp
 
-    well = pp.read(pp.sample("HW-3"))  # core grain density says dolomite
+    well = pp.read(pp.sample("HW-3"))  # GR/RHOB/NPHI/DT only: no PEF and no core grain density
     default = pp.interpret(well)
     assert (default.config.lithology_domain, default.config.matrix_type) == ("clastic", "sandstone")
 
+    # Without lithology evidence "auto" falls back to the clastic default and says so.
     auto = pp.interpret(well, lithology_domain="auto")
-    assert (auto.config.lithology_domain, auto.config.matrix_type) == ("carbonate", "dolomite")
+    assert (auto.config.lithology_domain, auto.config.matrix_type) == ("clastic", "sandstone")
+    assert any("Auto lithology resolved" in w for w in auto.warnings)
+    # The documented call for this limestone names the domain; porosity then uses the limestone matrix.
+    carbonate = pp.interpret(well, lithology_domain="carbonate")
+    assert (carbonate.config.lithology_domain, carbonate.config.matrix_type) == ("carbonate", "limestone")
 
 
 def test_net_pay_decisions_use_the_well_depth_unit():

@@ -282,6 +282,9 @@ class FormationTops:
 
         Intervals completely outside the well range are excluded.
         Partially overlapping intervals are clipped to well boundaries.
+        Intervals whose ``metadata["depth_unit"]`` is the other length unit
+        ("m" or "ft") than ``well.depth_unit`` are converted to the well unit
+        first.
 
         Parameters
         ----------
@@ -297,18 +300,32 @@ class FormationTops:
         if well_top is None or well_bottom is None:
             return FormationTops([])
 
+        from petrophys._internal.benchmark import reproducing_benchmark
+        from petrophys.model.units import normalize_depth_unit
+
+        well_unit = normalize_depth_unit(getattr(well, "depth_unit", None) or "", strict=False)
         clipped = []
         for iv in self._intervals:
-            if iv.bottom_depth <= well_top or iv.top_depth >= well_bottom:
+            top_depth, bottom_depth = iv.top_depth, iv.bottom_depth
+            metadata = iv.metadata.copy()
+            unit = normalize_depth_unit(str(metadata.get("depth_unit") or ""), strict=False)
+            if (
+                not reproducing_benchmark()
+                and {unit, well_unit} == {"m", "ft"}
+            ):
+                factor = 0.3048 if unit == "ft" else 1.0 / 0.3048
+                top_depth, bottom_depth = top_depth * factor, bottom_depth * factor
+                metadata["depth_unit"] = well_unit
+            if bottom_depth <= well_top or top_depth >= well_bottom:
                 continue
             klass = type(iv)
             # Build kwargs from the instance's fields
             kwargs = {
                 "name": iv.name,
-                "top_depth": max(iv.top_depth, well_top),
-                "bottom_depth": min(iv.bottom_depth, well_bottom),
+                "top_depth": max(top_depth, well_top),
+                "bottom_depth": min(bottom_depth, well_bottom),
                 "lithology": iv.lithology,
-                "metadata": iv.metadata.copy(),
+                "metadata": metadata,
             }
             # Preserve subclass-specific fields
             if isinstance(iv, Formation):
@@ -371,9 +388,14 @@ class FormationTops:
         return pd.DataFrame(rows)
 
     def to_csv(self, filepath: Union[str, Path]) -> None:
-        """Export intervals to CSV."""
+        """Export intervals to CSV (depths at full precision)."""
+        from petrophys._internal.benchmark import reproducing_benchmark
+
         df = self.to_dataframe()
-        df.to_csv(filepath, index=False, float_format="%.2f")
+        if reproducing_benchmark():
+            df.to_csv(filepath, index=False, float_format="%.2f")
+        else:
+            df.to_csv(filepath, index=False)
 
     # ------------------------------------------------------------------ #
     #  Collection interface                                                #
@@ -400,7 +422,7 @@ class FormationTops:
         return iter(self._intervals)
 
     def __getitem__(self, key: Union[int, str]) -> Interval:
-        if isinstance(key, int):
+        if isinstance(key, (int, np.integer)):
             return self._intervals[key]
         iv = self.get_by_name(key)
         if iv is None:
@@ -463,6 +485,17 @@ def _interval_records(intervals, label, top, bottom):
     usable = np.isfinite(tops) & np.isfinite(bottoms)
     if np.any(usable & (bottoms < tops)):
         raise ValueError("An interval has its bottom above its top")
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    if not np.all(usable) and not reproducing_benchmark():
+        import warnings
+
+        names = ", ".join(repr(name) for name in labels[~usable][:10])
+        warnings.warn(
+            f"Intervals without a finite top and bottom are not used for labelling: {names}",
+            UserWarning,
+            stacklevel=3,
+        )
     return tops[usable], bottoms[usable], labels[usable]
 
 
@@ -506,7 +539,9 @@ def label_depths(
         group). The default raises so that nesting is never resolved
         silently.
     default : object, default ""
-        Label for depths outside every interval.
+        Label for depths outside every interval. Intervals with a missing
+        (NaN) top or bottom are left out with a warning, so their depths get
+        this label too.
 
     Returns
     -------

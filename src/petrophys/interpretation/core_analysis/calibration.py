@@ -18,6 +18,7 @@ import numpy as np
 from petrophys.model.core import CoreData
 from petrophys.model.units import core_saturation_to_fraction
 from petrophys._internal.analysis_helpers import get_curve
+from petrophys._internal.benchmark import reproducing_benchmark
 
 
 @dataclass
@@ -103,7 +104,9 @@ def interpolate_log_at_core(
     Returns
     -------
     np.ndarray
-        Log values interpolated at core depths.
+        Log values interpolated at core depths. Plugs inside a gap of
+        missing log samples (NaN) get NaN rather than a value bridged
+        across the gap.
     """
     curve = well.get(curve_name)
     if curve is None:
@@ -117,7 +120,7 @@ def interpolate_log_at_core(
             f"Curve '{curve_name}' length ({values.size}) does not match "
             f"well depth length ({depth.size})"
         )
-    return _interp_curve_at_depth(depth, values, core.depth)
+    return _log_at_depth(depth, values, core.depth)
 
 
 def core_data_from_well(
@@ -149,10 +152,11 @@ def core_data_from_well(
     ``CPERM-AMB-KL``, ``GDEN``, ``SWC``, and ``CSW-AMB``. The returned object
     keeps only depths where at least one requested core property exists.
 
-    Core water and oil saturations are returned as fractions (v/v). Percent
-    values are converted, including percentages labelled as fractions (see
-    :func:`petrophys.model.units.core_saturation_to_fraction`); each conversion
-    raises a ``UserWarning`` and is recorded in ``metadata["core_sw_normalization"]``
+    Core porosity and water and oil saturations are returned as fractions
+    (v/v). Percent values are converted, including percentages labelled as
+    fractions (see :func:`petrophys.model.units.core_saturation_to_fraction`);
+    each conversion raises a ``UserWarning`` and is recorded in
+    ``metadata["core_porosity_normalization"]``, ``metadata["core_sw_normalization"]``
     and ``metadata["core_so_normalization"]``.
 
     ``CoreData.lithology`` holds the codes of the first of ``lithology_curves``
@@ -177,7 +181,8 @@ def core_data_from_well(
     so, so_source = _first_curve(so_curves)
 
     normalization = {}
-    for key, source, names in (("sw", sw_source, sw_curves), ("so", so_source, so_curves)):
+    for key, source, names in (("porosity", porosity_source, porosity_curves),
+                               ("sw", sw_source, sw_curves), ("so", so_source, so_curves)):
         if source is None:
             continue
         curve = get_curve(well, list(names))
@@ -185,7 +190,9 @@ def core_data_from_well(
         for message in record["warnings"]:
             warnings.warn(message, UserWarning, stacklevel=2)
         normalization[key] = record
-        if key == "sw":
+        if key == "porosity":
+            porosity = fractions
+        elif key == "sw":
             sw = fractions
         else:
             so = fractions
@@ -228,6 +235,7 @@ def core_data_from_well(
         "core_grain_density_curve": grain_density_source,
         "core_sw_curve": sw_source,
         "core_so_curve": so_source,
+        "core_porosity_normalization": normalization.get("porosity"),
         "core_sw_normalization": normalization.get("sw"),
         "core_so_normalization": normalization.get("so"),
     }
@@ -695,6 +703,9 @@ def correct_porosity_with_grain_density(
         rho_ma[core_mask] = _interp_curve_at_depth(
             core.depth, core.grain_density, depth[core_mask],
         )
+        # Cored depths beyond the first/last plug with grain density
+        # fall back to the assumed matrix density.
+        rho_ma[~np.isfinite(rho_ma)] = default_rho_ma
 
     # PHID = (rho_ma - RHOB) / (rho_ma - rho_fluid)
     phid = (rho_ma - rhob.data) / (rho_ma - rho_fluid)
@@ -819,6 +830,35 @@ def _interp_curve_at_depth(
             left=np.nan,
             right=np.nan,
         )
+    return out
+
+
+def _log_at_depth(
+    log_depth: np.ndarray,
+    log_values: np.ndarray,
+    target_depth: np.ndarray,
+) -> np.ndarray:
+    """Interpolate a log at target depths without bridging NaN gaps.
+
+    A target gets NaN when the finite log samples around it are more than
+    1.5 median sample steps apart, i.e. when missing samples lie between them.
+    """
+    out = _interp_curve_at_depth(log_depth, log_values, target_depth)
+    if reproducing_benchmark():
+        return out
+    log_depth = np.asarray(log_depth, dtype=float).reshape(-1)
+    log_values = np.asarray(log_values, dtype=float).reshape(-1)
+    steps = np.diff(np.unique(log_depth[np.isfinite(log_depth)]))
+    if steps.size == 0:
+        return out
+    x = np.unique(log_depth[np.isfinite(log_depth) & np.isfinite(log_values)])
+    if x.size < 2:
+        return out
+    targets = np.asarray(target_depth, dtype=float).reshape(-1)
+    hi = np.clip(np.searchsorted(x, targets), 1, x.size - 1)
+    gap = x[hi] - x[hi - 1]
+    on_sample = np.isin(targets, x)
+    out[(gap > 1.5 * np.median(steps)) & ~on_sample] = np.nan
     return out
 
 

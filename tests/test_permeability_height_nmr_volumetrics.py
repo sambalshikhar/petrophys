@@ -328,13 +328,17 @@ def test_north_sea_solves_the_parallel_conductivity_form():
 # Overburden stress label: an increment over the analysed interval
 # ---------------------------------------------------------------------------
 def test_overburden_is_labelled_as_an_interval_increment():
+    from petrophys._internal.benchmark import historical_benchmark
     from petrophys.evaluation.diagnostics import NumericalStatisticalAnalysis
 
     well = Well("SV")
     well.depth = np.arange(2000.0, 2010.0, 0.5)
     well.depth_unit = "m"
     well.add_curve("RHOB", np.full(20, 2.4), "g/cm3")
-    result = NumericalStatisticalAnalysis().analyze(well, add_curves=False)
+    # The benchmark packages report the increment; the current analysis is
+    # absolute from the surface (tests/test_decisions_evaluation.py).
+    with historical_benchmark():
+        result = NumericalStatisticalAnalysis().analyze(well, add_curves=False)
     assert "increment" in result.derived_curves["S_V"].description
     assert "S_V increment" in result.derived_curves["SH_MIN"].description
     # S_V adds 2400 kg/m3 * 9.81 * 0.5 m per sample from the top of the interval (MPa);

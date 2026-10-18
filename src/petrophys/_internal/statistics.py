@@ -3,7 +3,35 @@ Statistical utilities for petrophysics calculations.
 """
 
 from typing import Optional, Dict, Union, Tuple
+import warnings
+
 import numpy as np
+
+
+def _positive_values(
+    values: np.ndarray, weights: np.ndarray, name: str
+) -> Tuple[np.ndarray, np.ndarray, bool]:
+    """Keep the positive values of a reciprocal or logarithmic mean.
+
+    Returns the positive values and their weights, and whether a zero with a
+    positive weight was present: a zero makes the harmonic or geometric mean 0
+    (a zero-permeability barrier), as ``scipy.stats.hmean`` gives. Negative
+    values have no such mean and are excluded with a warning. The benchmark
+    packages dropped both silently (``historical_benchmark()``).
+    """
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    positive = values > 0
+    if reproducing_benchmark():
+        return values[positive], weights[positive], False
+    negative = int(np.count_nonzero(values < 0))
+    if negative:
+        warnings.warn(
+            f"{name}: {negative} negative value(s) excluded; the mean is of the positive values.",
+            stacklevel=3,
+        )
+    zero = bool(np.any((values == 0) & (weights > 0)))
+    return values[positive], weights[positive], zero
 
 
 def finite_min_max(values: np.ndarray) -> Tuple[Optional[float], Optional[float]]:
@@ -66,7 +94,8 @@ def harmonic_mean(
     Parameters
     ----------
     values : np.ndarray
-        Data values (must be positive)
+        Data values (non-negative). A zero gives 0, as a zero-permeability
+        barrier does; negative values are excluded with a warning.
     weights : np.ndarray, optional
         Weights for each value
     ignore_nan : bool
@@ -85,14 +114,15 @@ def harmonic_mean(
         weights = np.asarray(weights, dtype=float)
 
     if ignore_nan:
-        mask = ~np.isnan(values) & ~np.isnan(weights) & (values > 0)
+        mask = ~np.isnan(values) & ~np.isnan(weights)
         values = values[mask]
         weights = weights[mask]
-    else:
-        mask = values > 0
-        values = values[mask]
-        weights = weights[mask]
+    elif np.isnan(values).any() or np.isnan(weights).any():
+        return np.nan
+    values, weights, zero = _positive_values(values, weights, "harmonic_mean")
 
+    if zero:
+        return 0.0
     if len(values) == 0 or np.sum(weights) == 0:
         return np.nan
 
@@ -110,7 +140,8 @@ def geometric_mean(
     Parameters
     ----------
     values : np.ndarray
-        Data values (must be positive)
+        Data values (non-negative). A zero gives 0; negative values are
+        excluded with a warning.
     weights : np.ndarray, optional
         Weights for each value
     ignore_nan : bool
@@ -129,14 +160,15 @@ def geometric_mean(
         weights = np.asarray(weights, dtype=float)
 
     if ignore_nan:
-        mask = ~np.isnan(values) & ~np.isnan(weights) & (values > 0)
+        mask = ~np.isnan(values) & ~np.isnan(weights)
         values = values[mask]
         weights = weights[mask]
-    else:
-        mask = values > 0
-        values = values[mask]
-        weights = weights[mask]
+    elif np.isnan(values).any() or np.isnan(weights).any():
+        return np.nan
+    values, weights, zero = _positive_values(values, weights, "geometric_mean")
 
+    if zero:
+        return 0.0
     if len(values) == 0 or np.sum(weights) == 0:
         return np.nan
 

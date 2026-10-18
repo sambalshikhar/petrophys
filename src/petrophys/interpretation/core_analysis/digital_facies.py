@@ -303,6 +303,8 @@ class DigitalCoreFacies:
         n = X.shape[0]
 
         labels = np.zeros(n, dtype=int)
+        if not np.any(valid):
+            return labels
         X_scaled = self._scaler.transform(X[valid])
         X_weighted = X_scaled * np.sqrt(self._weights)
         labels[valid] = self._kmeans.predict(X_weighted) + 1
@@ -335,7 +337,8 @@ class DigitalCoreFacies:
         las = lasio.read(str(filepath))
         depth = np.array(las.index, dtype=float)
         facies_raw = np.array(las[facies_mnemonic], dtype=float)
-        facies_raw[facies_raw == null_value] = 0
+        # lasio already turns the NULL value into NaN
+        facies_raw[(facies_raw == null_value) | ~np.isfinite(facies_raw)] = 0
         facies = facies_raw.astype(int)
         n_facies = int(np.max(facies[facies > 0])) if np.any(facies > 0) else 0
 

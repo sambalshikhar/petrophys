@@ -297,10 +297,13 @@ class CoreMechanical:
         Parameters
         ----------
         window_m : float
-            Averaging window in metres (e.g. 0.30 for 30 cm).
+            Averaging window in depth units, metres for EpsLog data
+            (e.g. 0.30 for 30 cm). Each output averages the samples within
+            the window centred on its depth, so samples across a depth gap
+            are not mixed in.
         step_m : float, optional
-            Output sample spacing in metres.
-            Defaults to the input sample spacing.
+            Output sample spacing in depth units.
+            Defaults to the input depths.
 
         Returns
         -------
@@ -316,22 +319,34 @@ class CoreMechanical:
             return self
         dz = float(np.median(diffs))
         half = int(round(window_m / dz / 2))
+        # Half-window in depth: the same samples as +/- half steps on
+        # regularly sampled data
+        half_depth = (half + 1e-6) * dz
+
+        depth = np.asarray(self.depth, dtype=float)
+        if step_m is not None and step_m > 0:
+            finite_depth = depth[np.isfinite(depth)]
+            top, bottom = float(finite_depth.min()), float(finite_depth.max())
+            n_out = int(np.floor((bottom - top) / step_m + 1e-9)) + 1
+            out_depth = top + step_m * np.arange(n_out)
+        else:
+            out_depth = depth.copy()
 
         def _smooth(arr):
             if arr is None:
                 return None
-            out = np.full_like(arr, np.nan)
-            for i in range(len(arr)):
-                lo = max(0, i - half)
-                hi = min(len(arr), i + half + 1)
-                finite = arr[lo:hi][np.isfinite(arr[lo:hi])]
+            arr = np.asarray(arr, dtype=float)
+            out = np.full(out_depth.shape, np.nan)
+            for i, z in enumerate(out_depth):
+                in_window = np.abs(depth - z) <= half_depth
+                finite = arr[in_window][np.isfinite(arr[in_window])]
                 out[i] = float(np.mean(finite)) if finite.size else np.nan
             return out
 
         extra = {k: _smooth(v) for k, v in self.extra_scales.items()}
 
         return CoreMechanical(
-            depth=self.depth.copy(),
+            depth=out_depth,
             ucs=_smooth(self.ucs),
             vp=_smooth(self.vp),
             vs=_smooth(self.vs),

@@ -483,7 +483,9 @@ def oxide_closure(
     The calculation follows ``W_i = F * Y_i / S_i`` with
     ``F = 1 / sum(X_i * Y_i / S_i)``.  ``S_i`` is the tool sensitivity and
     ``X_i`` is the oxide-association factor.  Both must be supplied by the
-    caller; no vendor calibration is guessed.
+    caller; no vendor calibration is guessed.  The closure needs every
+    supplied yield, so a depth where any yield is missing is NaN in all
+    outputs rather than closed over the remaining elements.
     """
     keys = [str(key).strip().upper() for key in relative_yields]
     if not keys:
@@ -513,7 +515,7 @@ def oxide_closure(
 
     adjusted: Dict[str, np.ndarray] = {}
     denominator = np.zeros(shape, dtype=float)
-    finite_any = np.zeros(shape, dtype=bool)
+    finite_all = np.ones(shape, dtype=bool)
     for key, values in arrays.items():
         sensitivity = sensitivity_map[key]
         factor = oxide_map[key]
@@ -526,10 +528,10 @@ def oxide_closure(
         adjusted[key] = component
         finite = np.isfinite(component)
         denominator[finite] += factor * component[finite]
-        finite_any |= finite
+        finite_all &= finite
 
     scale = np.full(shape, np.nan)
-    valid = finite_any & np.isfinite(denominator) & (denominator > 0)
+    valid = finite_all & np.isfinite(denominator) & (denominator > 0)
     scale[valid] = 1.0 / denominator[valid]
 
     element_fractions: Dict[str, np.ndarray] = {}
@@ -794,7 +796,9 @@ def interpret_elemental_spectroscopy(
             element.capitalize(): values
             for element, values in result.dry_weight_fractions.items()
         }
-        elemental = XRFData(depth=depth, elements=symbols)
+        elemental = XRFData(
+            depth=depth, elements=symbols, units={symbol: "wt_frac" for symbol in symbols},
+        )
         for ratio_name, values in elemental.elemental_ratios().items():
             if not np.any(np.isfinite(values)):
                 continue
