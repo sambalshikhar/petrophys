@@ -572,9 +572,15 @@ def interpret_costa_context_las(
 ):
     """Interpret the COSTA LAS files as the COSTA context computed its statistics.
 
-    :func:`interpret_costa_las` (steps 1 and 2 of the module docstring), then the context exporter's own pass over each
-    interpreted LAS: its workflow run, the finalised curves and its value-range QC. Each result's step record is
-    complete: the steps run outside the workflow (see :func:`precomputed_step_results`) and the workflow's own.
+    The single run of :func:`reproduce_costa_context`: each raw LAS is read as
+    the context reads it, prepared in memory (:func:`_costa_preparation`),
+    interpreted once by the context workflow and given the context's
+    value-range QC. The interpreted LAS and its workflow trace are written
+    under ``output_dir`` as the package's ``processed_las``. Each result's step
+    record is complete: the steps run outside the workflow (see
+    :func:`precomputed_step_results`) and the workflow's own.
+    :func:`petrophys.export_context_profile` with ``context_profile="costa"``
+    delivers the same LAS together with the context package.
 
     Parameters
     ----------
@@ -590,29 +596,63 @@ def interpret_costa_context_las(
     Returns
     -------
     list of BatchLasResult
-        One per well. ``input_curves`` stay the input LAS's own curves; ``result`` is the context pass.
+        One per well. ``input_curves`` are the raw LAS's own curves; ``result``
+        is the interpretation the context statistics are computed from.
     """
+    from petrophys._internal.benchmark import historical_benchmark
     from petrophys.preprocessing.quality.value_ranges import apply_value_range_qc
-    from petrophys.reporting.reference_export import (_context_value_range_rules, _read_context_input_well,
-                                                      _run_context_workflow)
+    from petrophys.reporting.reference_export import (
+        _context_value_range_rules,
+        _filter_input_files_by_well_names,
+        _read_context_input_well,
+        _run_context_workflow,
+        _write_context_workflow_las,
+    )
     from petrophys.workflow.dynamic_workflow import _dataset_calculations
-    from petrophys.workflow.zoned_batch import _finalize_export_curves
+    from petrophys.workflow.zoned_batch import BatchLasResult, _finalize_export_curves
 
     parameters = parameters if parameters is not None else load_costa_parameters()
-    items = interpret_costa_las(input_dir, output_dir, well_names=well_names, parameters=parameters,
-                                reference_volumes=reference_volumes, pattern=pattern)
-    for item in items:
-        if not item.success:
-            continue
-        with _dataset_calculations("costa"):
-            well, config = _read_context_input_well(Path(item.output_file), workflow_config=costa_workflow_config())
-            original = set(well.curves)
-            result = _run_context_workflow(well, config)
-            _finalize_export_curves(result.well, original)
-            apply_value_range_qc(result.well, rules=_context_value_range_rules(result))
-        _attach_precomputed_records(result, result.well, parameters[Path(item.source_file).stem.upper()],
-                                    item.input_curves)
-        item.result = result
+    reference_volumes = reference_volumes if reference_volumes is not None else load_costa_reference_volumes()
+    source = Path(input_dir)
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    prepare = _costa_preparation(parameters, reference_volumes)
+    items = []
+    for file_path in _filter_input_files_by_well_names(sorted(source.glob(pattern)), well_names):
+        try:
+            key = file_path.stem.upper()
+            if key not in parameters:
+                raise ValueError(f"No COSTA interpretation parameters for well {file_path.stem}")
+            with historical_benchmark(), _dataset_calculations("costa"):
+                well, config = _read_context_input_well(file_path, workflow_config=costa_workflow_config())
+                input_curves = sorted(well.curves)
+                preparation = prepare(file_path, well)
+                original = set(well.curves)
+                result = _run_context_workflow(well, config)
+                _finalize_export_curves(result.well, original)
+                preparation["after_workflow"](result.well)
+                las_path = _write_context_workflow_las(
+                    file_path, source, output, well, result, original, [],
+                    source_file=file_path, preparatory_steps=preparation["preparatory_steps"],
+                )
+                apply_value_range_qc(result.well, rules=_context_value_range_rules(result))
+            _attach_precomputed_records(result, result.well, parameters[key], input_curves)
+            item = BatchLasResult(
+                source_file=str(file_path),
+                output_file=str(las_path),
+                success=result.base_result.success and all(zone.success for zone in result.zone_results),
+                warnings=list(result.warnings) + list(result.base_result.warnings),
+                input_curves=input_curves,
+                output_curves=sorted(result.well.curves),
+                computed_curves=sorted(set(result.well.curves) - set(input_curves)),
+                zones_applied=len(result.zones),
+                result=result,
+            )
+            item.json_log_file = str(Path(las_path).parent / "workflow_json" / f"{file_path.stem}.json")
+            items.append(item)
+        except Exception as exc:
+            items.append(BatchLasResult(source_file=str(file_path), output_file=str(output / file_path.name),
+                                        success=False, errors=[str(exc)]))
     return items
 
 

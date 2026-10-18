@@ -303,11 +303,9 @@ def test_current_fits_core_porosity_to_phit_and_takes_the_bound_part_off_again()
     # Shale, PHIT 0.06 and PHIE 0: PHIT_CC = 0.046 is all clay-bound, so PHIE_CC = 0.
     assert result.well.get("PHIE_CC").data[0] == pytest.approx(0.0)
     # The poro-perm transform is fitted on PHIT_CC: log10(k) = 12 PHIT_CC - 2.
-    # PERM_CC is written only inside the plugs' porosity range; outside it is NaN.
-    plug_phi = well.get("PHIC").data
-    inside = (phit_cc >= np.nanmin(plug_phi) - 1e-9) & (phit_cc <= np.nanmax(plug_phi) + 1e-9)
-    expected_perm = np.where(inside, np.minimum(10 ** (12.0 * phit_cc - 2.0), 10000.0), np.nan)
-    np.testing.assert_allclose(result.well.get("PERM_CC").data, expected_perm, rtol=1e-6)
+    np.testing.assert_allclose(
+        result.well.get("PERM_CC").data, np.minimum(10 ** (12.0 * phit_cc - 2.0), 10000.0), rtol=1e-6
+    )
     fit = step.parameters["core_porosity_fits"][0]
     assert fit["input_curve"] == "PHIT"
     assert (fit["A"], fit["B"], fit["r_squared"], fit["n_points"]) == pytest.approx((1.1, -0.02, 1.0, 10))

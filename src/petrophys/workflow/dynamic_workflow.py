@@ -2539,95 +2539,6 @@ class DynamicWorkflow:
         self._warn_assumed(message)
         return message
 
-    def _perm_cc_within_plug_range(
-        self, well: "Well", metadata: Dict[str, Any], perm_core: np.ndarray
-    ) -> tuple[Optional[np.ndarray], Dict[str, Any]]:
-        """PERM_CC only where the core-corrected porosity lies within its fit's plug range.
-
-        Each same-well poro-perm transform is a line through log10(k) of the
-        plugs against their core-corrected porosity (``A * PHI + B``), so
-        outside the porosity range of those plugs it extrapolates: a shale or
-        coal reading a higher log porosity than any plug gets a permeability
-        no plug supports. PERM_CC is set to NaN there; the count and the
-        ranges go into the trace. Peer-well models are not gated.
-        """
-        import warnings as _warnings
-
-        from petrophys.interpretation.core_analysis.calibration import (
-            core_data_from_well,
-            interpolate_log_at_core,
-        )
-
-        perm_core = np.array(perm_core, dtype=float, copy=True)
-        phi_input = metadata.get("phi_corecal")
-        models = [
-            model for model in metadata.get("core_models") or []
-            if str(model.get("source_type", "")).startswith("same_well") and model.get("perm_transform")
-        ]
-        info: Dict[str, Any] = {"decisions": [], "parameters": {}}
-        if phi_input is None or not models:
-            return perm_core, info
-        phi_input = np.asarray(phi_input, dtype=float)
-        depth = np.asarray(well.depth, dtype=float)
-        tops = self.config.formation_tops
-        if tops is None or not hasattr(tops, "intervals"):
-            tops = well.get_parameter("formation_tops")
-
-        ranges = []
-        covered = np.zeros(well.n_samples, dtype=bool)
-        outside_total = 0
-        ordered = sorted(models, key=lambda model: model.get("source_formation") is None)
-        for model in ordered:
-            formation = model.get("source_formation")
-            top = bottom = None
-            if formation is not None:
-                interval = tops.get_by_name(formation) if tops is not None else None
-                if interval is None:
-                    continue
-                top, bottom = interval.top_depth, interval.bottom_depth
-                mask = np.asarray(interval.contains(depth), dtype=bool) & ~covered
-            else:
-                mask = ~covered
-            try:
-                with _warnings.catch_warnings():
-                    _warnings.simplefilter("ignore")
-                    core = core_data_from_well(well, top=top, bottom=bottom)
-                phi_log = interpolate_log_at_core(well, core, model["input_curve"])
-            except (ValueError, KeyError):
-                continue
-            if core.permeability is None:
-                continue
-            correction = model["porosity_correction"]
-            phi_corr = np.clip(correction["A"] * np.asarray(phi_log, dtype=float) + correction["B"], 0.0, 0.5)
-            perm_plugs = np.asarray(core.permeability, dtype=float)
-            valid = np.isfinite(phi_corr) & np.isfinite(perm_plugs) & (phi_corr > 0) & (perm_plugs > 0.001)
-            if not np.any(valid):
-                continue
-            low, high = float(np.min(phi_corr[valid])), float(np.max(phi_corr[valid]))
-            with np.errstate(invalid="ignore"):
-                outside = mask & np.isfinite(perm_core) & ((phi_input < low) | (phi_input > high))
-            perm_core[outside] = np.nan
-            covered |= mask
-            count = int(np.count_nonzero(outside))
-            outside_total += count
-            ranges.append({
-                "source_formation": formation, "plug_porosity_min": low, "plug_porosity_max": high,
-                "n_plugs": int(np.count_nonzero(valid)), "samples_outside": count,
-            })
-            info["decisions"].append(
-                f"PERM_CC ({formation or 'all depths'}) written only where the core-corrected "
-                f"porosity lies within the {low:.3f}-{high:.3f} v/v range of the "
-                f"{int(np.count_nonzero(valid))} plugs of the fit: {count} samples set to NaN"
-            )
-        info["parameters"] = {
-            "perm_cc_plug_porosity_ranges": ranges,
-            "perm_cc_outside_plug_range_samples": outside_total,
-        }
-        if not np.any(np.isfinite(perm_core)):
-            info["decisions"].append("No PERM_CC written: every sample lies outside the plug porosity range")
-            return None, info
-        return perm_core, info
-
     def _core_porosity_decisions(self, metadata: Dict[str, Any], phie_cc_written: bool) -> List[str]:
         """Trace lines for the "current" core porosity correction and its gate."""
         decisions = []
@@ -6404,10 +6315,6 @@ class DynamicWorkflow:
         perm_core = result.metadata.get("perm_core")
         if phi_corecal is not None and not self._reproducing_benchmark:
             phi_corecal = self._effective_core_porosity(well, phi_corecal)
-        plug_range = None
-        if perm_core is not None and not self._historical:
-            perm_core, plug_range = self._perm_cc_within_plug_range(well, result.metadata, perm_core)
-            decisions.extend(plug_range["decisions"])
         if phi_corecal is not None:
             well.add_curve(
                 "PHIE_CC",
@@ -6429,8 +6336,6 @@ class DynamicWorkflow:
 
         trace.input_curves = [result.metadata.get("porosity_curve", "PHIE")]
         trace.output_curves = outputs
-        if plug_range is not None:
-            trace.parameters.update(plug_range["parameters"])
         trace.parameters = {
             **trace.parameters,
             "strategy": result.metadata.get("strategy"),
@@ -6888,10 +6793,6 @@ class DynamicWorkflow:
         perm_core = result.metadata.get("perm_core")
         if phi_corecal is not None and not self._reproducing_benchmark:
             phi_corecal = self._effective_core_porosity(well, phi_corecal)
-        plug_range = None
-        if perm_core is not None and not self._historical:
-            perm_core, plug_range = self._perm_cc_within_plug_range(well, result.metadata, perm_core)
-            decisions.extend(plug_range["decisions"])
         if phi_corecal is not None:
             well.add_curve(
                 "PHIE_CC",
@@ -6957,8 +6858,6 @@ class DynamicWorkflow:
         }
         if resflag_info is not None:
             trace.parameters["pre_permeability_resflag"] = resflag_info
-        if plug_range is not None:
-            trace.parameters.update(plug_range["parameters"])
         if result.metadata.get("core_sections_count"):
             decisions.append(
                 f"Core-calibrated sections: {result.metadata['core_sections_count']} samples"
