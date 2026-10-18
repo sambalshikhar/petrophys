@@ -140,12 +140,25 @@ def with_navigation(
     data: BoreholeImageData,
     navigation: dict[str, Sequence[float]],
 ) -> BoreholeImageData:
-    """Return an image object with per-depth navigation stored in metadata."""
+    """Return an image object with per-depth navigation stored in metadata.
+
+    Each navigation curve must have one value per image depth sample; resample
+    coarser navigation onto the image depth before calling this function.
+    """
     metadata = dict(data.metadata)
     metadata["_navigation"] = {
-        str(key).upper(): np.asarray(value, dtype=np.float32).copy()
+        str(key).upper(): np.asarray(value, dtype=np.float32).reshape(-1).copy()
         for key, value in navigation.items()
     }
+    n_depth = np.asarray(data.depth).shape[0]
+    mismatched = {
+        key: arr.size for key, arr in metadata["_navigation"].items() if arr.size != n_depth
+    }
+    if mismatched:
+        raise ValueError(
+            f"Navigation curves {mismatched} must have one value per image depth "
+            f"sample ({n_depth}); resample them onto the image depth first."
+        )
     metadata["navigation_keys"] = sorted(metadata["_navigation"])
     return BoreholeImageData(
         depth=data.depth,
@@ -309,8 +322,13 @@ def equalize_dynamic(
     depth: np.ndarray,
     window_m: float = 0.5,
     clip: tuple[float, float] = (2.0, 98.0),
+    depth_unit: str = "m",
 ) -> np.ndarray:
-    """Apply sliding-window percentile equalization along the depth axis."""
+    """Apply sliding-window percentile equalization along the depth axis.
+
+    ``window_m`` is in metres and is converted to ``depth_unit`` (``"m"``,
+    ``"ft"``, ``"in"`` or ``"0.1 in"``) before sizing the window.
+    """
     arr = np.asarray(image, dtype=np.float32)
     dep = np.asarray(depth, dtype=float)
     if arr.shape[0] != dep.size:
@@ -321,7 +339,8 @@ def equalize_dynamic(
     step = np.nanmedian(np.abs(np.diff(dep)))
     if not np.isfinite(step) or step <= 0:
         return equalize_static(arr, clip=clip)
-    half_window_rows = max(1, int(round((float(window_m) / step) / 2.0)))
+    window = float(window_m) / _metres_per_depth_unit(depth_unit)
+    half_window_rows = max(1, int(round((window / step) / 2.0)))
     out = np.full(arr.shape, np.nan, dtype=np.float32)
     for row in range(arr.shape[0]):
         start = max(0, row - half_window_rows)
@@ -412,7 +431,12 @@ def plot_fmi(
 
     mode = str(equalize or "none").strip().lower()
     if mode == "dynamic":
-        image = equalize_dynamic(display_data.image, display_data.depth, window_m=window_m)
+        image = equalize_dynamic(
+            display_data.image,
+            display_data.depth,
+            window_m=window_m,
+            depth_unit=display_data.depth_unit,
+        )
         vmin, vmax = 0.0, 1.0
     elif mode == "static":
         image = equalize_static(display_data.image)
@@ -434,11 +458,22 @@ def plot_fmi(
         vmin=vmin,
         vmax=vmax,
     )
-    ax.set_xlabel("Azimuth [deg]" if oriented else "Borehole image sample")
+    highside = (
+        str(display_data.metadata.get("orientation_reference", "north")).strip().lower()
+        == "highside"
+    )
+    if not oriented:
+        ax.set_xlabel("Borehole image sample")
+    elif highside:
+        ax.set_xlabel("Angle from high side [deg]")
+    else:
+        ax.set_xlabel("Azimuth [deg]")
     ax.set_ylabel(f"Depth [{display_data.depth_unit}]")
     if oriented:
         ax.set_xticks([0, 90, 180, 270, 360])
-        ax.set_xticklabels(["N", "E", "S", "W", "N"])
+        ax.set_xticklabels(
+            ["HS", "90", "LS", "270", "HS"] if highside else ["N", "E", "S", "W", "N"]
+        )
     return ax
 
 
@@ -699,6 +734,17 @@ def _align_navigation_to_depth(
             filled[: arr.size] = arr
             aligned[key] = filled
     return aligned
+
+
+def _metres_per_depth_unit(depth_unit: str) -> float:
+    unit = str(depth_unit or "m").strip().lower().replace(".", "")
+    if unit in {"ft", "f", "feet", "foot"}:
+        return 0.3048
+    if unit in {"in", "inch", "inches"}:
+        return 0.0254
+    if unit in {"01 in", "01in"}:
+        return 0.00254
+    return 1.0
 
 
 def _reference_navigation_key(reference: str) -> str:

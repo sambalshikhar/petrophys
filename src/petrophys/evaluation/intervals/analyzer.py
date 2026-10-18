@@ -97,7 +97,7 @@ class IntervalAnalyzer:
         self.net_reservoir_curve = net_reservoir_curve
         self.net_rock_curve = net_rock_curve
 
-    def analyze(self, interval: Interval) -> IntervalSummary:
+    def analyze(self, interval: Interval, include_bottom: bool = True) -> IntervalSummary:
         """
         Compute summary for a single interval.
 
@@ -105,6 +105,8 @@ class IntervalAnalyzer:
         ----------
         interval : Interval
             Depth interval to analyze
+        include_bottom : bool
+            Count a sample at the interval's bottom depth
 
         Returns
         -------
@@ -122,10 +124,13 @@ class IntervalAnalyzer:
             net_pay_curve=self.net_pay_curve,
             net_reservoir_curve=self.net_reservoir_curve,
             net_rock_curve=self.net_rock_curve,
+            include_bottom=include_bottom,
         )
 
         # Whole-interval mask
         mask = (depth >= interval.top_depth) & (depth <= interval.bottom_depth)
+        if not include_bottom:
+            mask &= depth < interval.bottom_depth
 
         # Curve averages over entire interval
         avg_gr = _curve_mean(well, "GR", mask)
@@ -178,7 +183,10 @@ class IntervalAnalyzer:
         else:
             intervals = list(tops)
 
-        return [self.analyze(iv) for iv in intervals]
+        # A boundary sample shared with the next interval is counted once, in that interval.
+        top_depths = {float(iv.top_depth) for iv in intervals}
+        return [self.analyze(iv, include_bottom=float(iv.bottom_depth) not in top_depths)
+                for iv in intervals]
 
     @staticmethod
     def to_dataframe(summaries: List[IntervalSummary]):

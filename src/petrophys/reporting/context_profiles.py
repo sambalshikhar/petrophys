@@ -163,8 +163,8 @@ def export_context_profile(
         ``"geolink_v1"``, ``"costa_v1"`` or ``"danish_v1"`` (aliases
         ``"geolink"``, ``"costa"``, ``"danish"``).
     work_dir : str or Path
-        Folder for the intermediate LAS: ``processed_las`` (interpreted LAS
-        and workflow traces) and, for the Danish package, ``prepared_las``.
+        Folder for ``processed_las``: the interpreted LAS the context is
+        computed from, with workflow traces.
     well_names : sequence of str, optional
         Only these wells.
     pattern : str, default ``"*.las"``

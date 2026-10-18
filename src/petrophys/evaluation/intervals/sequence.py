@@ -60,7 +60,7 @@ def stacking_pattern(
         ch = v[i] - v[i - 1] if i and np.isfinite(v[i]) and np.isfinite(v[i - 1]) else float("nan")
         changes.append(float(ch))
         steps.append("" if i == 0 or not np.isfinite(ch) else
-                     "cleaner" if ch <= -thr else "dirtier" if ch >= thr else "no change")
+                     "no change" if ch == 0 else "cleaner" if ch <= -thr else "dirtier" if ch >= thr else "no change")
     packages: List[Dict[str, object]] = []
     k = 1
     while k < v.size:

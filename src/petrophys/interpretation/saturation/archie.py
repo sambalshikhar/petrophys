@@ -46,6 +46,7 @@ def archie(
     >>> sw = archie(rt=10, rw=0.05, phi=0.20)
     >>> print(f"Sw = {sw:.2f}")
     """
+    finite = np.isfinite(rt) & np.isfinite(rw) & np.isfinite(phi)
     # Avoid division by zero
     rt = np.where(rt <= 0, 1e-10, rt) if isinstance(rt, np.ndarray) else max(rt, 1e-10)
     phi = np.where(phi <= 0, 1e-10, phi) if isinstance(phi, np.ndarray) else max(phi, 1e-10)
@@ -56,7 +57,8 @@ def archie(
     # Solve for Sw
     sw = np.power(sw_n, 1 / n)
 
-    return np.clip(sw, 0, 1)
+    result = np.where(finite, np.clip(sw, 0, 1), np.nan)
+    return float(result) if result.ndim == 0 else result
 def archie_f(
     phi: Union[float, np.ndarray],
     a: float = 1.0,

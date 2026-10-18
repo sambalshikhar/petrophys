@@ -110,6 +110,7 @@ def execute_notebook(source, destination, timeout=300):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("notebooks", nargs="*", help="Repository-relative notebook paths")
+    parser.add_argument("--all", action="store_true", help="Execute every notebook under examples/")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--inplace", action="store_true", help="Refresh outputs after successful execution")
     mode.add_argument("--output-dir", type=Path, help="Keep executed copies outside source notebooks")
@@ -119,8 +120,13 @@ def main(argv=None):
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
 
+    if args.all and args.notebooks:
+        parser.error("Use --all or explicit notebook paths, not both")
+    selected = (sorted(path.relative_to(REPO_ROOT).as_posix()
+                       for path in (REPO_ROOT / "examples").rglob("*.ipynb"))
+                if args.all else args.notebooks or USER_JOURNEY_NOTEBOOKS)
     results = []
-    for name in args.notebooks or USER_JOURNEY_NOTEBOOKS:
+    for name in selected:
         source = (REPO_ROOT / name).resolve()
         try:
             relative = source.relative_to(REPO_ROOT / "examples")
@@ -142,9 +148,10 @@ def main(argv=None):
         results.append(row)
         print(f"{row['status'].upper()} {name} ({row['seconds']}s)", flush=True)
 
-    if args.report:
-        args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(results, indent=2), encoding="utf-8")
+        if args.report:
+            # Retain completed evidence if a later kernel crashes or a run stops.
+            args.report.parent.mkdir(parents=True, exist_ok=True)
+            args.report.write_text(json.dumps(results, indent=2), encoding="utf-8")
     passed = sum(row["status"] == "passed" for row in results)
     print(f"{passed}/{len(results)} notebooks passed", flush=True)
     return 0 if passed == len(results) else 1

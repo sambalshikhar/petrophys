@@ -77,7 +77,8 @@ def test_auto_empirical_falls_back_to_lith_vcl_when_coates_and_timur_fail(monkey
     result = module.calculate(well)
 
     assert result.metadata["empirical_method"] == "lith_vcl"
-    assert result.metadata["empirical_attempted_methods"] == ["coates", "timur", "lith_vcl"]
+    # The fallback method is tried first, then the automatic order.
+    assert result.metadata["empirical_attempted_methods"] == ["timur", "coates", "lith_vcl"]
     assert "coates unavailable" in result.metadata["empirical_error"]
     assert "timur unavailable" in result.metadata["empirical_error"]
     assert result.swi_source == "not_required"

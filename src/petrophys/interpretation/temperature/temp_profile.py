@@ -13,6 +13,7 @@ from petrophys.model.well import Well
 from petrophys.model.constants import DefaultParameters
 from petrophys.model.units import UnitConverter, temperature_to_fahrenheit, temperature_unit
 from petrophys.interpretation.temperature.temp_gradient import (
+    _depth_unit_is_metres,
     calculate_temperature_gradient,
     estimate_gradient_from_bht,
     gradient_c_per_km_to_fahrenheit_per_100ft,
@@ -270,7 +271,7 @@ class TemperatureProfile:
             surface_temp, temperature_unit(surface_temp_unit, strict=True)
         )
 
-        if depth_unit.lower() == "m":
+        if _depth_unit_is_metres(depth_unit):
             td = UnitConverter.meters_to_feet(td)
 
         gradient = estimate_gradient_from_bht(bht, td, surface_temp)
@@ -349,7 +350,7 @@ class TemperatureProfile:
         if temperature_unit(temp_unit, strict=True) != "F":
             temp1 = UnitConverter.temperature(temp1, temp_unit, "F")
             ref_temp = UnitConverter.temperature(ref_temp, temp_unit, "F")
-        if depth_unit.lower() == "m":
+        if _depth_unit_is_metres(depth_unit):
             depth1 = UnitConverter.meters_to_feet(depth1)
             ref_depth = UnitConverter.meters_to_feet(ref_depth)
 
@@ -387,7 +388,7 @@ class TemperatureProfile:
             raise ValueError("Temperature gradient not set")
 
         # Convert depth to feet
-        if depth_unit.lower() == "m":
+        if _depth_unit_is_metres(depth_unit):
             depth = UnitConverter.meters_to_feet(depth)
 
         # Calculate temperature

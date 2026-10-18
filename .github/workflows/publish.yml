@@ -20,6 +20,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install build twine
 
+      - name: Require completed release verification
+        run: python scripts/check_release_gate.py
+
       - name: Verify release tag matches package version
         run: >-
           python -c "import os, pathlib, tomllib;
@@ -32,6 +35,9 @@ jobs:
 
       - name: Check package
         run: twine check dist/*
+
+      - name: Verify exact artifact hashes against release approval
+        run: python scripts/check_release_gate.py --dist dist
 
       - name: Install and smoke-test wheel
         run: |

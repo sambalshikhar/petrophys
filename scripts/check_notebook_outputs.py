@@ -76,6 +76,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("notebooks", nargs="*", type=Path)
     args = parser.parse_args(argv)
+    missing = [str(path) for path in args.notebooks if not path.is_file()]
+    if missing:
+        parser.error(f"notebook not found: {', '.join(missing)}")
     notebooks = args.notebooks or sorted(
         path for path in (REPO_ROOT / "examples").rglob("*.ipynb")
         if ".ipynb_checkpoints" not in path.parts

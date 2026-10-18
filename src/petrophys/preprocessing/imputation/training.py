@@ -13,6 +13,7 @@ import hashlib
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 import platform
+import warnings
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -177,7 +178,8 @@ def _extract_standard_curves(
         try:
             unit = str(getattr(curve, "unit", "") or "")
             values = _standardize_training_values(las[mnemonic], standard, unit)
-        except Exception:
+        except Exception as error:
+            warnings.warn(f"{mnemonic} skipped for training: {error}", UserWarning, stacklevel=2)
             continue
         valid_count = int(np.sum(~np.isnan(values)))
         previous = candidates.get(standard)

@@ -52,7 +52,7 @@ def mud_regime(rmf: float, rw: float, similar_factor: float = SIMILAR_FACTOR) ->
 
     Examples
     --------
-    >>> mud_regime(0.3, 0.05), mud_regime(0.04, 0.05), mud_regime(0.055, 0.05)
+    >>> mud_regime(0.3, 0.05), mud_regime(0.045, 0.05), mud_regime(0.055, 0.05)
     ('fresh', 'similar', 'similar')
     """
     if not (rmf > 0 and rw > 0):

@@ -69,6 +69,8 @@ class LogPlot:
         for ax in self.axes:
             ax.invert_yaxis()
             ax.grid(True, alpha=0.3)
+        unit = getattr(self.well, "depth_unit", "") or ""
+        self.axes[0].set_ylabel(f"Depth [{unit}]" if unit else "Depth")
 
         return self.fig, self.axes
 

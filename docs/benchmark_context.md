@@ -61,8 +61,9 @@ where that pipeline requires them.
 python scripts/generate_benchmark_context.py --dataset danish --input-dir "PATH/danish/las" --tops-file "PATH/Danish_formation_tops_for_context.xlsx" --lithology-mapping-file "PATH/Litho_Nomenclature_Kingdom.xlsx" --output-dir "outputs/danish_benchmark_run_01"
 ```
 
-The Danish pipeline prepares the input curves/depth units, interprets them,
-then exports the formation groups used by the benchmark.
+The Danish profile sets the input curves and depth units as a preparatory
+step, interprets each well, then exports the formation groups used by the
+benchmark.
 
 ### One well or a subset
 
@@ -97,8 +98,11 @@ For raw profile runs, the output contains six category directories:
 `<well>/<formation>/<formation>_<lithology-group>_<category>.json`.
 The root also contains `curve_name_mapping.json`.
 
-The script retains interpreted LAS and workflow traces in `processed_las/`.
-The Danish profile additionally retains `prepared_las/`. GeoLink runs that
+The script writes the LAS the context is computed from, with workflow traces,
+to `processed_las/`: a context statistic is the statistic of that LAS over the
+group's depth window. Each profile interprets each raw LAS once; its traces
+record the preparatory step. A `--calculation-profile current` run from raw
+LAS keeps its first interpretation in `first_pass_las/`. GeoLink runs that
 start with already interpreted LAS reuse those input files rather than
 generating this intermediate directory.
 

@@ -202,9 +202,14 @@ class Session:
             for root, label in zip(self.roots, self.root_labels)
         ]
         replacements.append((str(_samples_dir()), SAMPLES_LABEL))
-        for absolute, label in sorted(replacements, key=lambda item: -len(item[0])):
+        # OSError messages show the file name as repr(), which doubles each
+        # Windows backslash; redact that spelling too.
+        forms = [(absolute, os.sep, label) for absolute, label in replacements]
+        forms += [(absolute.replace("\\", "\\\\"), "\\\\", label)
+                  for absolute, label in replacements if "\\" in absolute]
+        for absolute, sep, label in sorted(forms, key=lambda item: -len(item[0])):
             if absolute and absolute in text:
-                text = text.replace(absolute + os.sep, "" if label == "." else label + "/")
+                text = text.replace(absolute + sep, "" if label == "." else label + "/")
                 text = text.replace(absolute, label)
         return text
 
@@ -215,6 +220,13 @@ class Session:
         identifier, counter = base, 2
         while identifier in self.wells and well_id is None:
             identifier, counter = f"{base}-{counter}", counter + 1
+        if well_id is not None and self.sources.get(identifier, source) != source:
+            # Reloading the same file replaces it; another file must not
+            # silently take over a loaded well's id.
+            raise SessionError(
+                f"Well id {identifier!r} is already used by {self.sources[identifier]}; "
+                "give another well_id."
+            )
         self.wells[identifier] = well
         self.sources[identifier] = source
         return identifier

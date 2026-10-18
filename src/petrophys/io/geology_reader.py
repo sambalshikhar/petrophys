@@ -205,6 +205,21 @@ def _check_depth_coverage(table, fields, well, unit, *, unit_assumed):
         f"{log_top:g}-{log_base:g} {unit}."
     )
     if not outside.all():
+        if unit_assumed:
+            # Partly outside with an assumed unit: say so when the other unit
+            # would place more of the rows inside the logged interval.
+            other = "m" if unit == "ft" else "ft"
+            factor = 0.3048 if other == "m" else 1.0 / 0.3048
+            outside_other = (bases / factor < log_top) | (tops / factor > log_base)
+            if outside_other.sum() < outside.sum():
+                warnings.warn(
+                    f"{int(outside.sum())} of {len(table)} geology rows lie outside the logged "
+                    f"interval {log_top:g}-{log_base:g} {unit}, with no geology depth_unit "
+                    f"supplied ({unit} assumed); {int(outside_other.sum())} would if the depths "
+                    f"are in {other}. Pass depth_unit for the geology file.",
+                    DataQualityWarning,
+                    stacklevel=4,
+                )
         return
     message = (
         f"None of the {len(table)} geology rows overlaps the logged interval "

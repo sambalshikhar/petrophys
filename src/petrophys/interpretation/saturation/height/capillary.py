@@ -43,6 +43,8 @@ def pc_from_height(
     sg_hc: float = 0.8,
 ) -> ArrayLike:
     """Capillary pressure (psi) at a height above the free-water level (ft)."""
+    if sg_water - sg_hc <= 0:
+        raise ValueError("sg_water must exceed sg_hc for a buoyancy gradient")
     h = np.asarray(height_ft, dtype=float)
     pc = WATER_GRADIENT_PSI_PER_FT * (sg_water - sg_hc) * np.clip(h, 0.0, None)
     return float(pc) if pc.ndim == 0 else pc

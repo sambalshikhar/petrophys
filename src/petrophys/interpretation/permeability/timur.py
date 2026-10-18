@@ -40,8 +40,12 @@ def timur(
     float or np.ndarray
         Permeability (mD)
     """
-    swi = np.where(swi <= 0, 0.01, swi) if isinstance(swi, np.ndarray) else max(swi, 0.01)
-    phi = np.where(phi <= 0, 0.001, phi) if isinstance(phi, np.ndarray) else max(phi, 0.001)
+    # Apply the same nonpositive-input fallback for scalars and arrays.
+    # Positive values, including small fractions, retain their measured value.
+    swi = np.asarray(swi, dtype=float)
+    phi = np.asarray(phi, dtype=float)
+    swi = np.where(swi <= 0, 0.01, swi)
+    phi = np.where(phi <= 0, 0.001, phi)
 
     phi_pct = phi * 100.0
     swi_pct = swi * 100.0

@@ -4,8 +4,10 @@ Pass one LAS file or a folder and select a dataset, or let the script detect
 it from well names. Dataset profiles supply the interpretation parameters,
 calibration and grouping rules. Raw GeoLink folders require --from-raw;
 GeoLink and Danish also require their tops workbook and lithology codebook.
-The script retains interpreted LAS and traces under <output-dir>/processed_las,
-and Danish prepared inputs under <output-dir>/prepared_las.
+<output-dir>/processed_las holds the LAS (and workflow traces) the context is
+computed from, so each context statistic is the statistic of that LAS over the
+group's depth window. A --calculation-profile current run from raw LAS keeps
+its first interpretation under <output-dir>/first_pass_las.
 
 See docs/benchmark_context.md for complete commands and required inputs.
 
@@ -120,7 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Treat --input-dir as raw LAS files: interpret them into "
-            "<output-dir>/processed_las first, then build the context from those."
+            "<output-dir>/first_pass_las first, then build the context from those."
         ),
     )
     parser.add_argument(
@@ -255,7 +257,7 @@ def _export_profile(
         print(f"Tops file:      {tops_file}")
         print(f"Litho map:      {lithology_mapping_file}")
     print(f"Output root:    {args.output_dir}")
-    print(f"Interpreted LAS: {Path(args.output_dir) / 'processed_las'}")
+    print(f"Processed LAS:  {Path(args.output_dir) / 'processed_las'}  (the context's interpretation)")
     print(f"Wells:          {len(wells)} ({', '.join(wells)})")
     print(f"JSON files:     {len(results)}")
     print(f"Success:        {successful}")
@@ -293,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     context_input_dir = args.input_dir
     processed_dir = None
     if from_raw:
-        processed_dir = Path(args.output_dir) / "processed_las"
+        processed_dir = Path(args.output_dir) / "first_pass_las"
         batch = process_las_directory_with_workflow(
             input_dir=args.input_dir,
             output_dir=processed_dir,
@@ -302,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
             config=DynamicWorkflowConfig(calculation_profile=args.calculation_profile),
             well_names=args.well_names,
         )
-        print(f"Interpreted LAS: {processed_dir}  ({args.calculation_profile})")
+        print(f"First pass LAS: {processed_dir}  ({args.calculation_profile})")
         failed_wells = [item.source_file for item in batch if not item.success]
         print(f"  wells: {len(batch)}  written: {len(batch) - len(failed_wells)}")
         for source in failed_wells:
@@ -327,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
         well_names=args.well_names,
         lithology_mapping_file=args.lithology_mapping_file,
         raw_input_dir=raw_input_dir,
+        processed_las_dir=Path(args.output_dir) / "processed_las",
     )
     mapping_path = write_reference_curve_name_mapping(args.output_dir)
 
@@ -342,6 +345,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Input LAS:      {context_input_dir}")
     print(f"Tops file:      {args.tops_file}")
     print(f"Output root:    {args.output_dir}")
+    print(f"Processed LAS:  {Path(args.output_dir) / 'processed_las'}  (the context's interpretation)")
     print(f"Pattern:        {args.pattern}")
     print(f"Recursive:      {args.recursive}")
     print(f"Min thickness:  {args.min_thickness}")

@@ -23,6 +23,17 @@ import numpy as np
 from petrophys._internal.analysis_helpers import resolve_well_depth_range, well_depth_array
 
 
+def _depth_label(well: "Well") -> str:
+    unit = getattr(well, "depth_unit", "") or ""
+    return f"Depth [{unit}]" if unit else "Depth"
+
+
+def _cell_fill(depth: np.ndarray, mask: np.ndarray):
+    """Shade each flagged sample over its own depth cell (see log viewer)."""
+    from petrophys.visualization.log_viewer import _sample_cell_fill
+    return _sample_cell_fill(depth, mask)
+
+
 @_styled_plot
 def plot_zone_flags(
     well: "Well",
@@ -86,9 +97,10 @@ def plot_zone_flags(
         # Fill where flag is True/1
         mask = data > 0.5
         if np.any(mask):
+            cell_depth, cell_mask = _cell_fill(depth, mask)
             ax.fill_betweenx(
-                depth, x_left, x_left + width,
-                where=mask,
+                cell_depth, x_left, x_left + width,
+                where=cell_mask,
                 color=colors.get(curve_name, 'gray'),
                 alpha=0.7,
                 label=curve_name
@@ -97,7 +109,7 @@ def plot_zone_flags(
     ax.set_xlim(0, 1)
     ax.set_ylim(bottom, top)
     ax.set_xticks([])
-    ax.set_ylabel("Depth")
+    ax.set_ylabel(_depth_label(well))
     handles, _ = ax.get_legend_handles_labels()
     if handles:
         ax.legend(loc='upper right', fontsize=8)
@@ -201,7 +213,7 @@ def create_net_pay_summary_plot(
         ax1.fill_betweenx(depth, 0, gr.data, alpha=0.3, color='green')
         ax1.set_xlim(0, 150)
     ax1.set_xlabel("GR [API]")
-    ax1.set_ylabel("Depth")
+    ax1.set_ylabel(_depth_label(well))
     ax1.grid(True, alpha=0.3)
 
     # Track 2: Flags
@@ -217,9 +229,10 @@ def create_net_pay_summary_plot(
         curve = well.get(curve_name)
         if curve is not None:
             mask = curve.data > 0.5
+            cell_depth, cell_mask = _cell_fill(depth, mask)
             ax2.fill_betweenx(
-                depth, x_left, x_right,
-                where=mask,
+                cell_depth, x_left, x_right,
+                where=cell_mask,
                 color=color,
                 alpha=0.7,
                 label=curve_name

@@ -30,8 +30,10 @@ Detectability gate (how the unreliability is made honest, not hidden):
   reports Sw ONLY where that swing exceeds ``detect_factor`` x the sonic noise.
   Where the signal is below noise (stiff, low-porosity rock; oil/condensate),
   Sw is set to NaN and ``detectable`` is False, with a per-sample
-  ``sw_uncertainty``. So the result is trustworthy where it is reported and
-  abstains where the physics does not support an answer.
+  ``sw_uncertainty``. The method abstains where the fluid signal is below the
+  sonic noise. The gate does not include the error of the dry-frame modulus
+  (K_dry): with the default calibrated frame a few percent K_dry error can move
+  a reported gas Sw by several tenths, so a reported Sw is not error-free.
 """
 
 from __future__ import annotations

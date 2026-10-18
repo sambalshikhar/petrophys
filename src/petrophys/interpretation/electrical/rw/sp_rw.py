@@ -9,6 +9,8 @@ from typing import Tuple, Union
 
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 
 def calculate_ssp(
     sp: Union[float, np.ndarray],
@@ -68,7 +70,9 @@ def rw_from_ssp(
     Calculate Rw from static spontaneous potential (SSP).
 
     ``temp_unit`` is "F", "C", "K" or a label such as "degC"; unknown labels
-    raise ``ValueError``.
+    raise ``ValueError``. The result is not limited: a value outside
+    0.01-10 ohm.m shows that the SP route does not apply (the benchmark
+    packages clipped it to that range). Missing (NaN) inputs give NaN.
     """
     from petrophys.model.units import UnitConverter, temperature_unit
 
@@ -78,12 +82,14 @@ def rw_from_ssp(
     k = 61 + 0.133 * temperature
     rw = rmf / np.power(10, -ssp / k)
 
-    if isinstance(rw, np.ndarray):
-        rw = np.clip(rw, 0.01, 10.0)
-    else:
-        rw = max(0.01, min(rw, 10.0))
+    if reproducing_benchmark():
+        # The benchmark packages limited Rw to 0.01-10 ohm.m (and max/min
+        # turned a missing scalar into 0.01 ohm.m).
+        if isinstance(rw, np.ndarray):
+            return np.clip(rw, 0.01, 10.0)
+        return max(0.01, min(rw, 10.0))
 
-    return rw
+    return rw if isinstance(rw, np.ndarray) else float(rw)
 
 
 def rw_from_sp(
@@ -154,12 +160,19 @@ def rw_from_rxo_rt(
     Returns
     -------
     float or np.ndarray
-        Formation water resistivity
+        Formation water resistivity; NaN where Rxo is zero or negative
 
     Notes
     -----
     This method is most accurate in clean water zones
     where Sw = Sxo = 1.0
     """
+    if not reproducing_benchmark():
+        # A zero or negative Rxo has no Rw. The benchmark packages replaced
+        # zero by 1e-10 ohm.m.
+        rxo_arr = np.asarray(rxo, dtype=float)
+        rxo_arr = np.where(rxo_arr > 0, rxo_arr, np.nan)
+        rxo = rxo_arr if rxo_arr.ndim else float(rxo_arr)
+        return rmf * rt / rxo
     rxo = np.where(rxo == 0, 1e-10, rxo) if isinstance(rxo, np.ndarray) else max(rxo, 1e-10)
     return rmf * rt / rxo

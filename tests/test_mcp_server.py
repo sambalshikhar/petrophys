@@ -145,8 +145,8 @@ def test_responses_are_compact_json(tmp_path):
     loaded = result.structured_content
     assert loaded["header_parameters"]["BHT"].startswith("126 degC (= 258.8 degF)")
     notes = " ".join(loaded["header_notes"])
-    assert "no RWT" in notes and "median formation temperature (ASSUMED)" in notes
-    assert "higher than RMF" in notes
+    assert "Header RW = 0.07 ohm.m at RWT 230 degF" in notes
+    assert "higher than RMF" not in notes          # RW 0.07 is below RMF 0.08
 
 
 def test_brent_answer_with_assumptions(tmp_path):
@@ -183,7 +183,7 @@ def test_brent_answer_with_assumptions(tmp_path):
     # The eval package's calculations, as an evaluation harness pins them; 30/6-5
     # gets those of the package's main run.
     assert pinned["net_thickness"]["net_pay"] == pytest.approx(38.4, abs=0.1)
-    assert pinned["pay_averages"]["PHIE"] == pytest.approx(0.217, abs=0.005)
+    assert pinned["pay_averages"]["PHIE"] == pytest.approx(0.202, abs=0.005)
     assert any(text.startswith("Net-pay cutoffs: VCL < 0.3") for text in pinned["assumptions"])
     assert pinned["settings_used"]["calculation_profile"] == "geolink"
     assert not any("whole logged interval" in note for note in brent["review_notes"])
@@ -196,9 +196,9 @@ def test_brent_answer_with_assumptions(tmp_path):
     assert "VILL" in costa_defaults["new_curves"]
     assert costa_defaults["settings_used"]["lithology_domain"] == "carbonate"
     assert costa_defaults["settings_used"]["carbonate_calibration"] == "costa"
-    # Without rw the header RW is used at an assumed temperature, and said so.
+    # Without rw the header RW is used at its header temperature, and said so.
     assert "LAS header RW" in header["assumptions"][0]
-    assert "ASSUMED" in header["assumptions"][0]
+    assert "at 230 degF" in header["assumptions"][0]
 
 
 def test_server_default_calculation_profile_and_override(tmp_path, monkeypatch):
@@ -427,8 +427,8 @@ def test_interpret_wells_compares_in_one_call(tmp_path):
     first = costa["wells"][0]
     assert first["rw"] == "0.0682 ohm.m at 68 degF (header RW and RWT)"
     assert first["depth_unit"] == "ft" and first["net_pay"] > 100
-    assert no_rwt["wells"][0]["status"] == "not_run"
-    assert "no temperature (RWT)" in no_rwt["wells"][0]["reason"]
+    # 30/6-5's header carries RW with its temperature, so the header route runs.
+    assert no_rwt["wells"][0]["status"] == "interpreted"
     assert zones["zones"][0]["Formation"] == "KHARAIB-2"
 
 

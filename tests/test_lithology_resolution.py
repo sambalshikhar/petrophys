@@ -124,7 +124,7 @@ def _well_with_core_porosity(rho_matrix, phi=0.20, n=60):
     w.add_curve("GR", np.full(n, 20.0), "gAPI", "clean")
     rhob = rho_matrix * (1 - phi) + 1.0 * phi
     w.add_curve("RHOB", np.full(n, rhob), "g/cm3", "Bulk Density")
-    w.add_curve("PHIE_CC", np.full(n, phi), "v/v", "core porosity")
+    w.add_curve("CPOR", np.full(n, phi), "v/v", "core porosity")
     return w
 
 
@@ -153,7 +153,7 @@ def test_core_matrix_hc_correction_recovers_carbonate():
     w.depth = np.arange(n, dtype=float)
     w.add_curve("GR", np.full(n, 20.0), "gAPI", "clean")
     w.add_curve("RHOB", np.full(n, rhob), "g/cm3", "Bulk Density")
-    w.add_curve("PHIE_CC", np.full(n, phi), "v/v", "core porosity")
+    w.add_curve("CPOR", np.full(n, phi), "v/v", "core porosity")
     w.add_curve("SW", np.full(n, 0.20), "v/v", "Water Saturation")
 
     # water assumption mislabels it clastic
@@ -252,7 +252,7 @@ def test_explicit_carbonate_setting_passes_through_workflow(profile, method, ill
     from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 
     well = _well_with_core_porosity(2.71)
-    well.remove_curve('PHIE_CC')
+    well.remove_curve('CPOR')
     well.add_curve('NPHI', np.full(60, 0.2), 'v/v')
     result = DynamicWorkflow(DynamicWorkflowConfig(
         lithology_domain='carbonate', matrix_type='limestone', calculation_profile=profile,
@@ -281,7 +281,8 @@ def test_auto_resolution_selects_the_carbonate_domain_route(profile, method):
     from petrophys.workflow import DynamicWorkflow, DynamicWorkflowConfig
 
     well = _well_with_core_porosity(2.71)
-    well['RHOB'].data[-20:] = 2.65 * 0.8 + 0.2
+    # Ten sandstone samples of 60: 83% of the votes, above the 80% gate.
+    well['RHOB'].data[-10:] = 2.65 * 0.8 + 0.2
     well.add_curve('NPHI', np.full(60, 0.2), 'v/v')
     result = DynamicWorkflow(DynamicWorkflowConfig(
         lithology_domain='auto', matrix_type='auto', calculation_profile=profile,

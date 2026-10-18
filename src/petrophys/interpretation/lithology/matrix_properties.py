@@ -121,28 +121,54 @@ def get_mineral_properties(mineral: str, property_name: Optional[str] = None):
     if mineral not in MINERAL_PROPERTIES:
         # Try to get from core constants
         try:
-            props = MatrixProperties.get(mineral)
-            return {
-                "density": props.density,
-                "slowness": props.slowness,
-                "nphi": props.nphi,
-                "pef": props.pef,
-                # volumetric photoelectric factor U = PEF x density (consumers
-                # such as the multi-mineral solver read "u" unconditionally).
-                "u": props.pef * props.density,
-            }
+            matrix = MatrixProperties.get(mineral)
         except KeyError:
             raise KeyError(f"Unknown mineral: {mineral}")
-
-    props = MINERAL_PROPERTIES[mineral]
+        props = {
+            "density": matrix.density,
+            "slowness": matrix.slowness,
+            "nphi": matrix.nphi,
+            "pef": matrix.pef,
+            # volumetric photoelectric factor U = PEF x density (consumers
+            # such as the multi-mineral solver read "u" unconditionally).
+            "u": matrix.pef * matrix.density,
+        }
+    else:
+        props = MINERAL_PROPERTIES[mineral]
     if property_name:
-        return props.get(property_name)
+        if property_name not in props:
+            raise KeyError(
+                f"Unknown property {property_name!r} for mineral {mineral!r}; "
+                f"available: {sorted(props)}"
+            )
+        return props[property_name]
     return props
 
 
 def get_matrix_density(mineral: str) -> float:
     """Get matrix density for a mineral in g/cm³."""
     return get_mineral_properties(mineral, "density")
+
+
+def get_log_density(mineral: str) -> float:
+    """Density-log response of a mineral in g/cm³.
+
+    The apparent log density where one is tabulated (the evaporites of
+    :class:`~petrophys.model.constants.MatrixProperties`, e.g. halite 2.032),
+    otherwise the grain density. This is the RHOB endpoint of the N-D
+    crossplot and the multi-mineral solver; the benchmark packages used the
+    grain density, kept inside ``historical_benchmark()``.
+    """
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    density = get_mineral_properties(mineral, "density")
+    if reproducing_benchmark():
+        return density
+    try:
+        props = MatrixProperties.get(mineral)
+    except KeyError:
+        return density
+    return props.log_density if props.log_density is not None else density
 
 
 def get_matrix_slowness(mineral: str) -> float:

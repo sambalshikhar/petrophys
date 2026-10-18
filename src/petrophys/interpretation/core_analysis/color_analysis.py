@@ -164,14 +164,14 @@ class CoreImageData:
             return arr
 
         def _norm01(arr):
-            """Normalise to [0,1] if the stored range clearly exceeds 1."""
+            """Scale 0-255 values to [0,1] if the stored range clearly exceeds 1."""
             if arr is None:
                 return None
             finite = arr[np.isfinite(arr)]
             if finite.size == 0:
                 return arr
             mx = np.nanmax(finite)
-            return arr / mx if mx > 1.5 else arr
+            return arr / 255.0 if mx > 1.5 else arr
 
         depth = np.array(las.index, dtype=float)
         meta = {
@@ -349,6 +349,11 @@ class CoreImageData:
             h = np.where(mask_b, (r - g) / delta + 4, h)
 
         h = h * 60.0  # degrees
+
+        # Missing RGB samples have no hue or saturation
+        missing = ~(np.isfinite(r) & np.isfinite(g) & np.isfinite(b))
+        h = np.where(missing, np.nan, h)
+        s = np.where(missing, np.nan, s)
 
         return {"hue": h, "saturation": s, "value": v}
 

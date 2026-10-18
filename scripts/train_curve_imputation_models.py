@@ -66,6 +66,8 @@ def main() -> None:
         help="Random seed used for sampling and model training.",
     )
     args = parser.parse_args()
+    if not Path(args.data_dir).is_dir():
+        parser.error(f"data directory not found: {args.data_dir}")
 
     output = Path(args.output) if args.output else None
     model_names = [name.strip() for name in args.models.split(",") if name.strip()]

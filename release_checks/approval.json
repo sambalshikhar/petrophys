@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "status": "PENDING",
+  "verified_commit": null,
+  "verified_source_sha256": null,
+  "version": null,
+  "artifacts": [],
+  "checks": {
+    "scientific_review": {"status": "PENDING", "evidence": []},
+    "apis_formats_metadata_routing": {"status": "PENDING", "evidence": []},
+    "dataset_runs": {"status": "PENDING", "evidence": []},
+    "mcp_cli_security": {"status": "PENDING", "evidence": []},
+    "dependency_security": {"status": "PENDING", "evidence": []},
+    "performance": {"status": "PENDING", "evidence": []},
+    "artifact_contents": {"status": "PENDING", "evidence": []},
+    "clean_platform_installs": {"status": "PENDING", "evidence": []},
+    "tutorials_docs_figures": {"status": "PENDING", "evidence": []},
+    "redistribution": {"status": "DEFERRED", "evidence": []},
+    "release_configuration": {"status": "DEFERRED", "evidence": []}
+  }
+}

@@ -12,6 +12,17 @@ if TYPE_CHECKING:
     from petrophys.model.well import Well
 
 
+def _first_curve(well: "Well", preferred: List[str], standard: str):
+    """The first of ``preferred``, else of the standard mnemonic's aliases, present on the well."""
+    from petrophys.preprocessing.standardization.alias_map import get_aliases
+
+    for name in dict.fromkeys([*preferred, standard, *get_aliases(standard)]):
+        curve = well.get(name)
+        if curve is not None:
+            return curve
+    return None
+
+
 def _nanmean_or_nan(values: np.ndarray) -> float:
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
@@ -56,6 +67,16 @@ class QuickLook:
     Quick look analysis for rapid well evaluation.
 
     Provides fast estimates without full interpretation.
+
+    Parameters
+    ----------
+    gr_clean, gr_shale : float
+        GR endpoints (API) of the linear VCL estimate.
+    rho_matrix, rho_fluid : float
+        Density endpoints (g/cm3) of the porosity estimate.
+    rw : float, default 0.05
+        Formation water resistivity (ohm.m, at formation temperature) of the
+        Archie Sw estimate (a = 1, m = n = 2). It is not read from the well.
     """
 
     def __init__(
@@ -63,12 +84,14 @@ class QuickLook:
         gr_clean: float = 20.0,
         gr_shale: float = 120.0,
         rho_matrix: float = 2.65,
-        rho_fluid: float = 1.0
+        rho_fluid: float = 1.0,
+        rw: float = 0.05,
     ):
         self.gr_clean = gr_clean
         self.gr_shale = gr_shale
         self.rho_matrix = rho_matrix
         self.rho_fluid = rho_fluid
+        self.rw = rw
 
     def analyze(
         self,
@@ -104,40 +127,41 @@ class QuickLook:
 
         mask = (depth >= top_depth) & (depth <= bottom_depth)
 
-        # Check data availability
-        result.has_gr = well.get("GR") is not None
-        result.has_resistivity = any(well.get(c) is not None for c in ["RT", "LLD", "ILD", "RDEP"])
-        result.has_density = well.get("RHOB") is not None
-        result.has_neutron = well.get("NPHI") is not None
-        result.has_sonic = well.get("DT") is not None
+        # Check data availability (standard mnemonics and their common aliases)
+        gr_curve = _first_curve(well, ["GR"], "GR")
+        rt_curve = _first_curve(well, ["RT", "LLD", "ILD", "RDEP"], "RDEP")
+        rhob_curve = _first_curve(well, ["RHOB"], "RHOB")
+        nphi_curve = _first_curve(well, ["NPHI"], "NPHI")
+        result.has_gr = gr_curve is not None
+        result.has_resistivity = rt_curve is not None
+        result.has_density = rhob_curve is not None
+        result.has_neutron = nphi_curve is not None
+        result.has_sonic = _first_curve(well, ["DT"], "DTC") is not None
 
         # Calculate quick averages
-        if result.has_gr:
-            gr = well.get("GR").data[mask]
+        if gr_curve is not None:
+            gr = gr_curve.data[mask]
             result.avg_gr = _nanmean_or_nan(gr)
             result.estimated_vcl = self._quick_vcl(result.avg_gr)
 
-        if result.has_resistivity:
-            for name in ["RT", "LLD", "ILD", "RDEP"]:
-                rt = well.get(name)
-                if rt is not None:
-                    result.avg_rt = _nanmean_or_nan(rt.data[mask])
-                    break
+        if rt_curve is not None:
+            result.avg_rt = _nanmean_or_nan(rt_curve.data[mask])
 
-        if result.has_density:
-            rhob = well.get("RHOB").data[mask]
+        if rhob_curve is not None:
+            rhob = rhob_curve.data[mask]
             result.avg_rhob = _nanmean_or_nan(rhob)
             result.estimated_porosity = self._quick_porosity(result.avg_rhob)
 
-        if result.has_neutron:
-            nphi = well.get("NPHI").data[mask]
+        if nphi_curve is not None:
+            nphi = nphi_curve.data[mask]
             result.avg_nphi = _nanmean_or_nan(nphi)
 
         # Estimate Sw if we have enough data
         if result.has_resistivity and result.estimated_porosity > 0:
             result.estimated_sw = self._quick_sw(
                 result.avg_rt,
-                result.estimated_porosity
+                result.estimated_porosity,
+                rw=self.rw,
             )
 
         # Find potential pay zones
@@ -149,7 +173,9 @@ class QuickLook:
         return result
 
     def _quick_vcl(self, gr: float) -> float:
-        """Quick VCL estimate from GR."""
+        """Quick VCL estimate from GR (NaN when the GR endpoints are equal)."""
+        if self.gr_shale == self.gr_clean:
+            return np.nan
         igr = (gr - self.gr_clean) / (self.gr_shale - self.gr_clean)
         igr = np.clip(igr, 0, 1)
         return float(igr)
@@ -169,8 +195,10 @@ class QuickLook:
         m: float = 2.0,
         n: float = 2.0
     ) -> float:
-        """Quick Sw estimate using Archie."""
-        if rt <= 0 or porosity <= 0:
+        """Quick Sw estimate using Archie; NaN for a non-positive Rt."""
+        if not rt > 0:
+            return np.nan
+        if porosity <= 0:
             return 1.0
 
         sw_n = a * rw / (porosity ** m * rt)
@@ -188,12 +216,8 @@ class QuickLook:
         depth = well_depth_array(well)
 
         # Look for low GR, high resistivity intervals
-        gr = well.get("GR")
-        rt = None
-        for name in ["RT", "LLD", "ILD", "RDEP"]:
-            rt = well.get(name)
-            if rt is not None:
-                break
+        gr = _first_curve(well, ["GR"], "GR")
+        rt = _first_curve(well, ["RT", "LLD", "ILD", "RDEP"], "RDEP")
 
         if gr is None or rt is None:
             return zones

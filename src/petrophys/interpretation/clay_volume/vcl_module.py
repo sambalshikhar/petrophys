@@ -7,12 +7,14 @@ VCL methods and selects the minimum value.
 
 from typing import Optional, List, Dict, Any, Tuple, Union
 from dataclasses import dataclass
+import warnings
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.well import Well
 from petrophys.model.constants import DefaultParameters, MatrixProperties
 from petrophys.interpretation.clay_volume.gr_method import vcl_from_gr
-from petrophys.interpretation.clay_volume.sp_method import vcl_from_sp, should_use_sp
+from petrophys.interpretation.clay_volume.sp_method import vcl_from_sp, should_use_sp, sp_polarity
 from petrophys.interpretation.clay_volume.nd_method import ND_CLAY_POINT, vcl_from_nd, nd_clean_line
 from petrophys.interpretation.clay_volume.classification import classify_vcl
 from petrophys.interpretation.porosity.density_porosity import density_porosity
@@ -57,9 +59,13 @@ class VclModule:
     Parameters
     ----------
     gr_min : float, optional
-        Clean sand GR value (default: 20 API)
+        Clean sand GR value (default: 20 API). Left at the default, the log
+        minimum is used where it is lower than 20 API.
     gr_max : float, optional
-        Shale GR value (default: 100 API)
+        Shale GR value (default: 100 API). Left at the default, the log
+        maximum is used where it is higher than 100 API, so isolated GR
+        spikes raise the shale baseline for the whole well; pass explicit
+        baselines for a log with spikes.
     gr_method : str, optional
         GR method (default: "linear")
     use_sp : bool, optional
@@ -71,7 +77,11 @@ class VclModule:
     sp_min : float, optional
         Shale SP baseline, mV. With ``sp_max`` left as None both lines are
         picked from the log, P5 for ``sp_max`` and P95 for ``sp_min``; SP is
-        not used when only ``sp_min`` is missing.
+        not used when only ``sp_min`` is missing. Where the log has a GR and
+        the SP falls with it clearly (rank correlation below -0.3 after
+        de-trending, :func:`~petrophys.interpretation.clay_volume.sp_method.sp_polarity`),
+        the SP is reversed and the two picks are swapped, with a
+        ``UserWarning``.
     sp_fallback_only : bool, optional
         Keep VCL_SP out of the minimum (default: False). It is still computed
         and returned, and fills only depths where neither GR nor N-D gives a
@@ -163,6 +173,15 @@ class VclModule:
             gr_max = self.gr_max
 
         return gr_min, gr_max
+
+    @staticmethod
+    def _sp_reversed(well: "Well", sp_data: np.ndarray, gr_data: Optional[np.ndarray]) -> bool:
+        """Whether the SP and GR show a reversed SP (falls with GR) clearly."""
+        if reproducing_benchmark() or gr_data is None or well.depth is None:
+            return False
+        unit = str(getattr(well, "depth_unit", "") or "").strip().lower()
+        window = 100.0 if unit in {"ft", "feet", "foot", "f"} else 30.0
+        return sp_polarity(sp_data, gr_data, well.depth, window=window, min_correlation=0.3) < 0
 
     def _combine_nd_primary(self, n_samples, vcl_gr, vcl_sp, vcl_nd, nphi_data, rhob_data):
         """Neutron-density-primary clay combination.
@@ -289,6 +308,18 @@ class VclModule:
                 if len(valid_sp) > 0:
                     sp_max = np.percentile(valid_sp, 5)  # Most negative
                     sp_min = np.percentile(valid_sp, 95)  # Shale baseline
+                    if self._sp_reversed(well, sp_data, gr_data):
+                        # A reversed SP (Rmf < Rw) deflects positive in clean
+                        # sand: the clean line is the P95 and the shale
+                        # baseline the P5.
+                        sp_max, sp_min = sp_min, sp_max
+                        warnings.warn(
+                            "SP polarity is reversed (SP falls with GR): the picked SP "
+                            f"baselines are swapped, clean-sand line {sp_max:.1f} mV and "
+                            f"shale baseline {sp_min:.1f} mV",
+                            UserWarning,
+                            stacklevel=2,
+                        )
 
             if sp_max is not None and sp_min is not None:
                 vcl_sp = vcl_from_sp(sp_data, sp_max, sp_min)
@@ -449,6 +480,11 @@ def calculate_vcl(
     >>> result = calculate_vcl(well, gr_min=15, gr_max=110)
     >>> well["VCL"] = result.vcl
     """
+    if gr_min is not None and gr_max is not None and float(gr_min) >= float(gr_max):
+        raise ValueError(
+            f"gr_min ({gr_min:g}) must be below gr_max ({gr_max:g}): gr_min is the "
+            "clean-sand GR and gr_max the shale GR"
+        )
     module = VclModule(
         gr_min=gr_min,
         gr_max=gr_max,

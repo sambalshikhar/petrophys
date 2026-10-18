@@ -8,11 +8,16 @@ This module implements the square-root conductivity form:
 Rearranging:
 
     Sw^(n/2) = [1 / sqrt(Rt) - Vcl^c / sqrt(Rsh)] * sqrt(a * Rw) / phi^(m/2)
+
+with Sw = NaN where the shale term alone exceeds 1 / sqrt(Rt): the equation
+has no solution there (the benchmark packages gave Sw = 0).
 """
 
 from typing import Union
 
 import numpy as np
+
+from petrophys._internal.benchmark import reproducing_benchmark
 
 
 def nigeria_schlumberger(
@@ -53,7 +58,8 @@ def nigeria_schlumberger(
     Returns
     -------
     float or np.ndarray
-        Water saturation (0-1)
+        Water saturation (0-1); NaN where the shale term alone exceeds
+        1/sqrt(Rt)
     """
     scalar = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vcl)
 
@@ -62,6 +68,9 @@ def nigeria_schlumberger(
     vcl = np.atleast_1d(np.asarray(vcl, dtype=float))
 
     rt = np.where(rt <= 0, 1e-10, rt)
+    # Infinite Rt (no conductivity reading) is missing, as in archie().
+    if not reproducing_benchmark():
+        rt = np.where(np.isinf(rt), np.nan, rt)
     phi = np.where(phi <= 0, 1e-10, phi)
     vcl = np.clip(vcl, 0.0, 1.0)
     rw = np.asarray(rw, dtype=float)
@@ -74,7 +83,12 @@ def nigeria_schlumberger(
 
     shale_term = np.power(vcl, shale_exp) / np.sqrt(rsh)
     sand_term_base = np.power(phi, m / 2.0) / np.sqrt(a * rw)
-    lhs = np.maximum((1.0 / np.sqrt(rt)) - shale_term, 0.0)
+    lhs = (1.0 / np.sqrt(rt)) - shale_term
+    if reproducing_benchmark():
+        lhs = np.maximum(lhs, 0.0)
+    else:
+        # The shale alone conducts more than the rock: no Sw solves the equation.
+        lhs = np.where(lhs < 0, np.nan, lhs)
     sand_term_base = np.where(sand_term_base <= 0, 1e-10, sand_term_base)
 
     sw_half_n = lhs / sand_term_base

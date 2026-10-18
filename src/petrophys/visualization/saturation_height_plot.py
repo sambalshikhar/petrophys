@@ -31,11 +31,14 @@ def create_saturation_height_plot(
     max_height_ft: float = 300.0,
     figsize: Tuple[float, float] = (12.0, 5.2),
     title: str = "Saturation-Height Model",
+    data_label: str = "data",
 ):
     """Render the J-function fit and the resulting Sw-vs-height type curves.
 
     ``rock_classes`` is a list of (perm_mD, phi) pairs to draw height curves for;
-    defaults to a poor / moderate / good rock triplet.
+    defaults to a poor / moderate / good rock triplet. ``data_label`` names the
+    source of the (J, Sw) points in the legend (e.g. ``"core data"`` or a
+    log-derived Sw curve); the points are labelled ``"data"`` without it.
     """
     if not HAS_MPL:
         raise ImportError("matplotlib is required for visualization")
@@ -52,12 +55,16 @@ def create_saturation_height_plot(
         j = np.asarray(j, dtype=float)
         sw = np.asarray(sw, dtype=float)
         ok = np.isfinite(j) & np.isfinite(sw) & (j > 0)
-        axj.scatter(j[ok], sw[ok], s=12, alpha=0.55, color="0.35", label="core data")
+        axj.scatter(j[ok], sw[ok], s=12, alpha=0.55, color="0.35", label=data_label)
         jline = np.geomspace(max(np.nanmin(j[ok]), 1e-3), np.nanmax(j[ok]), 100)
     else:
         jline = np.geomspace(0.05, 50.0, 100)
-    axj.plot(jline, model.sw_from_j(jline), color="crimson", lw=2.0,
-             label=f"Sw = {model.a:.3g}·J^{model.b:.3g}")
+    if model.form == "power_swir":
+        fit_label = (f"Sw = {model.swir:.3g} + {1.0 - model.swir:.3g}·"
+                     f"{model.a:.3g}·J^{model.b:.3g}")
+    else:
+        fit_label = f"Sw = {model.a:.3g}·J^{model.b:.3g}"
+    axj.plot(jline, model.sw_from_j(jline), color="crimson", lw=2.0, label=fit_label)
     axj.set_xscale("log")
     axj.set_xlabel("Leverett J  (dimensionless)")
     axj.set_ylabel("Sw  (frac)")

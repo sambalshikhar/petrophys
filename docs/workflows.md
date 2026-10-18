@@ -149,8 +149,11 @@ Evaporite, coal, halite recognized on the logs and bad-hole samples are never ne
 
 `calculation_profile` selects an interpretation configuration. `"current"`
 is the default; `"geolink"` provides the GeoLink evaluation configuration.
-Explicitly supplied settings take precedence over profile defaults, and
-`result.summary()["settings_used"]` records the resolved settings.
+Explicitly supplied settings take precedence over profile defaults.
+`result.summary()["settings_used"]` records the settings you supplied and
+the `calculation_profile`; values the profile itself applies, such as its
+net-pay cutoffs, show as `None` there and are recorded in the step decisions
+of the trace.
 
 For benchmark context, select a dataset `context_profile`: `geolink`, `costa`
 or `danish`. The profile supplies the preparation, interpretation, calibration
@@ -161,6 +164,16 @@ For an MCP evaluation harness, select the calculation configuration with
 `petrophys-mcp serve --calculation-profile geolink`; see {doc}`mcp`.
 The library API reads its profile from the supplied settings, while the MCP
 server can also read `PETROPHYS_CALCULATION_PROFILE`.
+
+## Settings, header values and input curves
+
+An explicit setting wins over a LAS header value: `rw` over the header RW, and `rm`, `rmf_salinity_ppm` and `rmf_chlorides_mg_l` over the header RMF and CLFL (a value `pp.interpret` copied from the header, such as CLFL, ranks with the header, below a direct RMF).
+`phi_cl`, `rmf_meas_temp_f` and `rm_meas_temp_f` are unset (`None`) by default and resolve to 0.15 v/v and 75 degF, so an explicit value, including one equal to the default, is always used.
+Zone-only header parameters (`RW_Z1` with `TOP_Z1`/`BOT_Z1`) apply inside their zone; outside it the whole-well settings and header values are used, and the trace and warnings say so.
+A measured `TEMP` log with at least half of its samples finite is the temperature source, with the modelled gradient filling its gaps; a sparser log is kept as `TEMP_LOG` and the modelled profile is used.
+With `apply_hc_correction=True`, the porosity step reads the hydrocarbon-corrected `NPHI_HC` and `RHOB_HC`.
+Input `PHIE_CC` and `PERM_CC` curves are kept as `PHIE_CC_INPUT` and `PERM_CC_INPUT` while the run rewrites them from its own core model, and `PERM_CC` is written only where the core-corrected porosity lies within the porosity range of the plugs behind the poro-perm fit (the samples set aside are counted in the trace).
+The `"geolink"` profile keeps the earlier behaviour in each case.
 
 ## Clay volume
 

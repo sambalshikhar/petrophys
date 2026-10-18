@@ -11,6 +11,7 @@ from scipy.optimize import nnls
 from petrophys.model.well import Well
 
 from petrophys.interpretation.lithology.matrix_properties import (
+    get_log_density,
     get_mineral_properties,
     MINERAL_PROPERTIES,
 )
@@ -23,17 +24,23 @@ def _u(pef: float, density: float) -> float:
 
 
 def _get_endpoints(name: str) -> Dict[str, float]:
-    """Return endpoint dict with density, nphi, pef, u, dt for a mineral/fluid."""
+    """Return endpoint dict with density, nphi, pef, u, dt for a mineral/fluid.
+
+    The density is the density-log response: evaporites read below their
+    grain density (pure halite 2.032, not 2.17), so the grain density would
+    solve a salt to several porosity units.
+    """
     p = get_mineral_properties(name)
+    density = get_log_density(name)
     return {
-        "density": p["density"],
+        "density": density,
         "nphi":    p["nphi"],
         "pef":     p["pef"],
         # Derive the U endpoint with the same rule as the measured log term
         # (U = PEF·ρ, see _u) so the solver's U row is internally consistent.
         # The hardcoded literature "u" values differ from PEF·ρ by up to ~0.1
         # and otherwise inject a small spurious-mineral bias on pure lithologies.
-        "u":       _u(p["pef"], p["density"]),
+        "u":       _u(p["pef"], density),
         "dt":      p["slowness"],
     }
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys._internal.analysis_helpers import (
     CategoryAnalysisResult,
     DerivedCurve,
@@ -15,7 +16,7 @@ from petrophys._internal.analysis_helpers import (
 )
 from petrophys.evaluation.diagnostics._tables import class_table_set, rxo_rt_ratio
 from petrophys.evaluation.diagnostics.bands import Bands
-from petrophys.evaluation.mhi.mhi_module import calculate_mhi
+from petrophys.evaluation.mhi.mhi_module import MhiModule, calculate_mhi
 from petrophys.model.class_tables import CLASS_TABLES
 from typing import TYPE_CHECKING
 
@@ -101,7 +102,14 @@ class SaturationAnalysis:
 
         if mhi is None and sw is not None and sxo is not None:
             mhi = calculate_mhi(sxo, sw)
-            derived_curves["MHI"] = DerivedCurve(mhi, "", "Moveable Hydrocarbon Index")
+            if not (benchmark or reproducing_benchmark()):
+                # As MhiModule: no MHI where SXO lacks invaded-zone support (e.g.
+                # the SW^(1/5) quick-look SXO, which makes MHI a function of SW alone).
+                mhi = np.where(MhiModule.diagnostic_sxo_mask(well, sxo=sxo, sw=sw), mhi, np.nan)
+                if not np.any(np.isfinite(mhi)):
+                    mhi = None
+            if mhi is not None:
+                derived_curves["MHI"] = DerivedCurve(mhi, "", "Moveable Hydrocarbon Index")
 
         water_sat_labels = np.full(n_samples, "NO_SATURATION_DATA", dtype=object)
         if sw is not None:

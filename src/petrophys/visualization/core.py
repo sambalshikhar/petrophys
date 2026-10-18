@@ -103,8 +103,8 @@ def plot_calibration(
             label=f"Fit: y={result.slope:.2f}x+{result.intercept:.3f}",
         )
 
-    ax.set_xlabel("Core")
-    ax.set_ylabel("Log")
+    ax.set_xlabel(f"Core {result.property_name}")
+    ax.set_ylabel(f"Log {result.property_name}")
     ax.set_title(
         title
         or (
@@ -224,7 +224,8 @@ def plot_core_on_logs(
     curves : list, optional
         Log curves to show. Default: ["GR", "PHIE", "PERM", "SW"].
     depth_range : tuple, optional
-        (top, bottom) depth range. Default: core interval +/- 50m.
+        (top, bottom) depth range. Default: core interval +/- 50 depth
+        units (m or ft, as the well).
     figsize : tuple
         Figure size.
 
@@ -245,7 +246,9 @@ def plot_core_on_logs(
         "PHIT": ("porosity", "Core PHI"),
         "PHID": ("porosity", "Core PHI"),
         "PHID_CORE": ("porosity", "Core PHI"),
+        "PHIE_CORECAL": ("porosity", "Core PHI"),
         "PERM": ("permeability", "Core K"),
+        "PERM_CC": ("permeability", "Core K"),
         "PERM_CORE": ("permeability", "Core K"),
         "PERM_CORECAL": ("permeability", "Core K"),
         "SW": ("sw", "Core Sw"),
@@ -305,7 +308,7 @@ def plot_core_on_logs(
 
         ax.set_xlabel(f"{curve_name} [{curve.unit if curve else ''}]")
         if i == 0:
-            ax.set_ylabel("Depth")
+            ax.set_ylabel(f"Depth [{well.depth_unit}]" if well.depth_unit else "Depth")
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
 
@@ -313,9 +316,12 @@ def plot_core_on_logs(
         ax.set_ylim(depth_range[1], depth_range[0])
 
     well_name = well.name or "Unknown"
+    interval = (
+        f", {core.top:.0f}-{core.bottom:.0f} {well.depth_unit or 'm'}"
+        if core.top is not None and core.bottom is not None else ""
+    )
     fig.suptitle(
-        f"{well_name} - Core Data on Logs ({core.n_plugs} plugs, "
-        f"{core.top:.0f}-{core.bottom:.0f} {well.depth_unit or 'm'})",
+        f"{well_name} - Core Data on Logs ({core.n_plugs} plugs{interval})",
         fontsize=13,
         fontweight="bold",
     )

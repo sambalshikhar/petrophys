@@ -233,7 +233,12 @@ class CoreData:
         return cls.from_dataframe(df, **kwargs)
 
     def to_dataframe(self) -> "pd.DataFrame":
-        """Export core data to a pandas DataFrame."""
+        """Export core data to a pandas DataFrame.
+
+        Per-plug ``metadata`` columns (arrays with one value per plug, such as
+        the extra columns kept by :meth:`from_dataframe`) are exported after
+        the named fields; other metadata is not.
+        """
         if not HAS_PANDAS:
             raise ImportError("pandas is required")
         data = {"DEPTH": self.depth}
@@ -249,6 +254,14 @@ class CoreData:
             data["CSO"] = self.so
         if self.lithology is not None:
             data["CLITH"] = self.lithology
+        for key, value in (self.metadata or {}).items():
+            if (
+                key not in data
+                and isinstance(value, (np.ndarray, list, tuple, pd.Series))
+                and np.ndim(value) == 1
+                and len(value) == len(self.depth)
+            ):
+                data[key] = value
         return pd.DataFrame(data)
 
     def filter_by_depth(

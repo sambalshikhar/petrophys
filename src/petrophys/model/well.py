@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.curve import Curve, CurveMetadata
 from petrophys.model.data_types import DataType
 from petrophys.model.units import normalize_depth_unit
@@ -143,8 +144,9 @@ class Well:
     >>> print(gr.mean())
     65.3
 
-    >>> # Add computed curve
+    >>> # Add computed curve (arithmetic keeps the RHOB unit, so set the result's)
     >>> well["PHID"] = (2.65 - well["RHOB"]) / (2.65 - 1.0)
+    >>> well["PHID"].unit = "v/v"
     """
 
     def __init__(self, name: str = ""):
@@ -175,8 +177,20 @@ class Well:
 
     @depth.setter
     def depth(self, value: Union[np.ndarray, List[float]]):
-        """Set depth array."""
-        self._depth = np.asarray(value, dtype=np.float64)
+        """Set depth array; the curves take the new depth (lengths must match)."""
+        depth = np.asarray(value, dtype=np.float64)
+        if reproducing_benchmark():
+            self._depth = depth
+            return
+        for mnemonic, curve in self._curves.items():
+            if len(curve.data) != len(depth):
+                raise ValueError(
+                    f"Depth has {len(depth)} samples but curve {mnemonic!r} has "
+                    f"{len(curve.data)}; lengths must match."
+                )
+        self._depth = depth
+        for curve in self._curves.values():
+            curve.depth = depth
 
     @property
     def depth_unit(self) -> str:
@@ -185,8 +199,15 @@ class Well:
 
     @depth_unit.setter
     def depth_unit(self, value: str):
-        """Set depth unit (``"m"`` or ``"ft"``; aliases such as ``"M"`` or ``"feet"`` are normalized)."""
+        """Set depth unit (``"m"`` or ``"ft"``; aliases such as ``"M"`` or ``"feet"`` are normalized).
+
+        The curves take the new unit too. It only relabels the depth; set
+        :attr:`depth` to converted values first when changing units.
+        """
         self._depth_unit = normalize_depth_unit(value)
+        if not reproducing_benchmark():
+            for curve in self._curves.values():
+                curve.depth_unit = self._depth_unit
 
     @property
     def curves(self) -> List[str]:
@@ -275,7 +296,12 @@ class Well:
         return self._curves[mnemonic]
 
     def __setitem__(self, mnemonic: str, value: Union[Curve, np.ndarray, List[float]]):
-        """Set or add a curve."""
+        """Set or add a curve.
+
+        A curve stored under a new mnemonic is stored as a copy, so the
+        caller's curve keeps its name. A curve without depth takes the well
+        depth; one with a different depth is refused.
+        """
         mnemonic = mnemonic.upper()
         if isinstance(value, Curve):
             n_samples = self.n_samples
@@ -284,6 +310,18 @@ class Well:
                     f"Curve {mnemonic!r} has {len(value.data)} samples but "
                     f"well has {n_samples}; lengths must match."
                 )
+            if not reproducing_benchmark():
+                if value.mnemonic != mnemonic:
+                    value = value.copy()
+                if self._depth is not None:
+                    if value.depth is None:
+                        value.depth = self._depth
+                        value.depth_unit = self._depth_unit
+                    elif not np.array_equal(value.depth, self._depth, equal_nan=True):
+                        raise ValueError(
+                            f"Curve {mnemonic!r} has a different depth from the well; "
+                            "resample it onto well.depth first."
+                        )
             value.mnemonic = mnemonic
             self._curves[mnemonic] = value
         else:
@@ -363,9 +401,25 @@ class Well:
         return False
 
     def rename_curve(self, old_name: str, new_name: str) -> bool:
-        """Rename a curve."""
+        """Rename a curve.
+
+        Raises
+        ------
+        ValueError
+            If another curve already has ``new_name``.
+        """
         old_name = old_name.upper()
         new_name = new_name.upper()
+        if (
+            old_name in self._curves
+            and new_name != old_name
+            and new_name in self._curves
+            and not reproducing_benchmark()
+        ):
+            raise ValueError(
+                f"Cannot rename {old_name!r} to {new_name!r}: the well already has "
+                f"a curve {new_name!r}; remove it first."
+            )
         if old_name in self._curves:
             curve = self._curves.pop(old_name)
             curve.mnemonic = new_name
@@ -400,9 +454,18 @@ class Well:
         -------
         pd.DataFrame
             DataFrame with curve data
+
+        Raises
+        ------
+        KeyError
+            If a requested curve is not in the well.
         """
         if curves is None:
             curves = list(self._curves.keys())
+        elif not reproducing_benchmark():
+            missing = [name for name in curves if name.upper() not in self._curves]
+            if missing:
+                raise KeyError(f"Curves not found: {', '.join(missing)}")
 
         data = {}
         if include_depth and self._depth is not None:
@@ -430,7 +493,9 @@ class Well:
         df : pd.DataFrame
             DataFrame with curve data
         depth_column : str, optional
-            Name of depth column
+            Name of depth column (matched case-insensitively). A frame whose
+            index carries this name, as ``lasio``'s ``LASFile.df()`` returns,
+            uses the index as depth.
         depth_unit : {"m", "ft"}
             Unit of ``depth_column``. Required when the frame has a depth
             column; tabular data does not record it.
@@ -440,9 +505,42 @@ class Well:
         Returns
         -------
         Well
-            New Well instance
+            New Well instance. Values of mostly numeric columns that are not
+            numbers become NaN and are listed in the
+            ``COERCED_NON_NUMERIC_VALUES`` parameter.
+
+        Raises
+        ------
+        ValueError
+            If two columns differ only in case (curve names are upper case).
         """
         well = cls(name=name)
+
+        checked = not reproducing_benchmark()
+        if checked:
+            if depth_column not in df.columns:
+                matches = [col for col in df.columns if str(col).upper() == str(depth_column).upper()]
+                index_name = df.index.name
+                if len(matches) == 1:
+                    depth_column = matches[0]
+                elif (
+                    not matches
+                    and index_name is not None
+                    and str(index_name).upper() == str(depth_column).upper()
+                ):
+                    df = df.reset_index()
+                    depth_column = df.columns[0]
+            seen: Dict[str, Any] = {}
+            for col in df.columns:
+                if col == depth_column:
+                    continue
+                key = str(col).upper()
+                if key in seen:
+                    raise ValueError(
+                        f"Columns {seen[key]!r} and {col!r} both become curve {key!r}; "
+                        "rename one of them."
+                    )
+                seen[key] = col
 
         if depth_column in df.columns:
             if depth_unit is None:
@@ -457,6 +555,7 @@ class Well:
             well._depth_unit = normalize_depth_unit(depth_unit)
 
         skipped_non_numeric: Dict[str, List[str]] = {}
+        coerced_non_numeric: Dict[str, List[str]] = {}
         for col in df.columns:
             if col == depth_column:
                 continue
@@ -465,8 +564,13 @@ class Well:
             numeric = pd.to_numeric(series, errors="coerce")
             has_numeric = bool(numeric.notna().any())
             has_value = bool(series.notna().any())
+            if checked:
+                col = str(col)
             if has_numeric or not has_value:
                 well.add_curve(col, numeric.to_numpy(dtype=float))
+                lost = series.notna() & numeric.isna()
+                if checked and bool(lost.any()):
+                    coerced_non_numeric[col.upper()] = series[lost].astype(str).unique()[:20].tolist()
                 continue
 
             values = series.dropna().astype(str).unique()[:20].tolist()
@@ -481,6 +585,8 @@ class Well:
         if skipped_non_numeric:
             well.set_parameter("SKIPPED_NON_NUMERIC_COLUMNS", sorted(skipped_non_numeric))
             well.set_parameter("SKIPPED_NON_NUMERIC_VALUES", skipped_non_numeric)
+        if coerced_non_numeric:
+            well.set_parameter("COERCED_NON_NUMERIC_VALUES", coerced_non_numeric)
 
         return well
 

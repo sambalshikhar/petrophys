@@ -30,7 +30,8 @@ def density_porosity(
     Returns
     -------
     float or np.ndarray
-        Density porosity (v/v)
+        Density porosity (v/v). Missing/nonfinite inputs and zero
+        matrix-fluid density contrast return NaN.
 
     Examples
     --------
@@ -45,9 +46,10 @@ def density_porosity(
 
     with np.errstate(divide="ignore", invalid="ignore"):
         phid = np.where(
-            denominator != 0,
+            (denominator != 0) & np.isfinite(rhob_arr)
+            & np.isfinite(rhob_matrix_arr) & np.isfinite(rhob_fluid_arr),
             (rhob_matrix_arr - rhob_arr) / denominator,
-            0.0,
+            np.nan,
         )
 
     phid = np.clip(phid, 0, 0.5)
@@ -86,5 +88,13 @@ def calculate_phid(
         "calcite": 2.71,
     }
 
-    rhob_matrix = matrix_densities.get(matrix.lower(), 2.65)
+    rhob_matrix = matrix_densities.get(matrix.lower())
+    if rhob_matrix is None:
+        # Other minerals (anhydrite, halite, ...) from the matrix table; an
+        # unknown name is an error, not sandstone.
+        from petrophys.model.constants import MatrixProperties
+        try:
+            rhob_matrix = MatrixProperties.get_log_density(matrix)
+        except KeyError:
+            raise ValueError(f"Unknown matrix {matrix!r} for density porosity") from None
     return density_porosity(rhob, rhob_matrix, rhob_fluid)

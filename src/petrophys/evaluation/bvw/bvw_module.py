@@ -6,13 +6,19 @@ from typing import TYPE_CHECKING, Optional, Union
 import numpy as np
 
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+from petrophys._internal.benchmark import reproducing_benchmark
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
 
 
 class BvwModule:
-    """Bulk Volume Water calculator."""
+    """Bulk Volume Water calculator.
+
+    Porosity is the core-corrected ``PHIE_CC`` where it exists, else ``PHIE``,
+    else ``PHIT`` (the same porosity the interpretation's SW and NET_PAY use;
+    the benchmark reproduction reads PHIE/PHIT).
+    """
 
     def calculate(
         self,
@@ -22,9 +28,10 @@ class BvwModule:
     ) -> np.ndarray:
         """Calculate BVW."""
         if phie is None:
-            phie, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
+            names = ["PHIE", "PHIT"] if reproducing_benchmark() else ["PHIE_CC", "PHIE", "PHIT"]
+            phie, _, _ = get_curve_data_depthwise(well, names)
             if phie is None:
-                raise ValueError("PHIE or PHIT with finite samples required")
+                raise ValueError(f"{' or '.join(names)} with finite samples required")
 
         if sw is None:
             sw, _, _ = get_curve_data_depthwise(well, ["SW", "SWA", "SWT-LOG"])
@@ -34,7 +41,9 @@ class BvwModule:
         return phie * sw
 
     def add_to_well(self, well: "Well") -> "Well":
-        """Add BVW curve to well."""
+        """Add a BVW curve to the well; an existing BVW (the interpretation's) is kept."""
+        if well.get("BVW") is not None and not reproducing_benchmark():
+            return well
         bvw = self.calculate(well)
         well.add_curve("BVW", bvw, "v/v", "Bulk Volume Water")
         return well

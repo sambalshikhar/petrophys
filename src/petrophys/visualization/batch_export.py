@@ -67,6 +67,8 @@ def export_interpretation_plots(
     """
     input_path = Path(input_dir)
     output_path = Path(output_dir)
+    if not input_path.is_dir():
+        raise NotADirectoryError(f"Input directory {str(input_path)!r} does not exist")
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
 
     results: List[BatchVisualizationResult] = []

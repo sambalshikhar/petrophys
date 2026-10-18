@@ -96,7 +96,8 @@ def correct_resistivity_temperature(
     temp_unit : str, optional
         Temperature unit: "F", "C", "K" or a label such as "degC"
     method : str, optional
-        Correction method ("arps" or "arp2")
+        Correction method ("arps" or "arp2"); other names raise
+        ``ValueError``
 
     Returns
     -------
@@ -111,6 +112,8 @@ def correct_resistivity_temperature(
     """
     if method.lower() == "arps":
         return arps_equation(resistivity, from_temp, to_temp, temp_unit)
+    elif method.lower() != "arp2":
+        raise ValueError(f"Unknown resistivity temperature correction {method!r}: use 'arps' or 'arp2'")
     else:
         # Alternative Arp formula (slightly different constant)
         scale, (from_temp, to_temp) = _arps_scale(temp_unit, from_temp, to_temp)

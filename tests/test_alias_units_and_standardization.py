@@ -3,6 +3,7 @@ import pytest
 
 from petrophys import Well
 from petrophys.exceptions import DataQualityWarning
+from petrophys.interpretation.electrical.rw.salinity_rw import salinity_mg_per_l_to_ppm
 from petrophys.preprocessing.standardization import standardize_curves
 from petrophys.preprocessing.standardization.alias_map import get_standard_mnemonic
 from petrophys.workflow import DynamicWorkflowConfig, run_dynamic_workflow
@@ -26,8 +27,9 @@ def test_parameter_aliases_convert_temperature_depth_salinity_and_booleans():
         ("CLFL", 30000.0, "mg/l", "rmf_chlorides_mg_l", 30000.0),
         ("MFST", 20.0, "degC", "rmf_meas_temp_f", 68.0),
         ("MST", 60.0, "degF", "rm_meas_temp_f", 60.0),
-        ("SAL", 35.0, "g/l", "salinity_ppm", 35000.0),
-        ("WATSAL", 35000.0, "mg/L", "salinity_ppm", 35000.0),
+        # Per-volume salinities are divided by the brine density (ppm by weight).
+        ("SAL", 35.0, "g/l", "salinity_ppm", salinity_mg_per_l_to_ppm(35000.0)),
+        ("WATSAL", 35000.0, "mg/L", "salinity_ppm", salinity_mg_per_l_to_ppm(35000.0)),
         ("WSAL", 3.5, "%", "salinity_ppm", 35000.0),
         ("RWT", 25.0, "C", "rw_meas_temp_f", 77.0),
         ("RMFT", 25.0, "C", "rmf_meas_temp_f", 77.0),
@@ -99,7 +101,8 @@ def test_zoned_parameter_extraction_converts_depths_and_alias_units():
     assert "rmf_salinity_ppm" not in zone.config_overrides
     benchmark = zoned_batch.extract_zoned_parameters(well, calculation_profile="geolink")
     assert benchmark[0].config_overrides["rmf_salinity_ppm"] == 80000.0
-    assert zone.config_overrides["salinity_ppm"] == 35000.0
+    assert np.isclose(zone.config_overrides["salinity_ppm"], salinity_mg_per_l_to_ppm(35000.0))
+    assert benchmark[0].config_overrides["salinity_ppm"] == 35000.0
     assert zone.config_overrides["bht_f"] == 212.0
     assert zone.config_overrides["apply_hc_correction"] is True
 

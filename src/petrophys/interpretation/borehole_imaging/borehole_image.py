@@ -149,6 +149,12 @@ class BoreholeImageData:
             channel_names = ["IMAGE"]
         if samples_per_channel is None:
             samples_per_channel = [int(image_arr.shape[1])]
+        if len(channel_names) != len(samples_per_channel):
+            raise ValueError(
+                f"channel_names has {len(channel_names)} entries but "
+                f"samples_per_channel has {len(samples_per_channel)}; give one "
+                "sample count per channel"
+            )
         if sum(samples_per_channel) != image_arr.shape[1]:
             raise ValueError("samples_per_channel must sum to image width")
 
@@ -609,7 +615,8 @@ def _collect_flattened_curve_groups(
         if matches:
             groups.append((str(prefix).upper(), [name for _, name in matches]))
 
-    if groups:
+    # Explicit prefixes that match nothing must not fall back to generic grouping.
+    if groups or channel_prefixes:
         return groups
 
     buckets: dict[str, list[tuple[int, str]]] = {}

@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from enum import Enum
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.constants import DefaultParameters
 from petrophys.interpretation.saturation.archie import archie
 from petrophys.interpretation.saturation.north_sea import north_sea_shaly_sand
@@ -223,7 +224,9 @@ class SaturationModule:
         rmf : float, optional
             Mud filtrate resistivity (for Sxo)
         vcl : np.ndarray, optional
-            Clay volume
+            Clay volume (default: the VCL or VCLAY curve). Without either the
+            rock is taken as clean: Archie runs whatever ``model`` says, with
+            a ``UserWarning``.
         phie : np.ndarray, optional
             Effective porosity
         phit : np.ndarray, optional
@@ -268,9 +271,19 @@ class SaturationModule:
 
         # Get VCL and effective porosity. PHIE_CC is preferred when present so
         # saturation honors same-well core-corrected porosity.
+        no_vcl = False
         if vcl is None:
             vcl_data, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY"])
             vcl = vcl_data if vcl_data is not None else np.zeros(well.n_samples)
+            if vcl_data is None and not reproducing_benchmark():
+                # The shaly-sand models have no clay term without VCL.
+                no_vcl = True
+                warnings.warn(
+                    "No VCL or VCLAY curve and no vcl given: water saturation uses Archie "
+                    "(clean rock) instead of " + ("auto routing" if self.model == "auto" else self.model),
+                    UserWarning,
+                    stacklevel=2,
+                )
 
         if phie is None:
             phie_data, _, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE"])
@@ -295,7 +308,13 @@ class SaturationModule:
 
             # Auto-routing is applied sample-by-sample so clean and shaly
             # intervals can coexist within the same well/zone.
-            if self.model == "auto":
+            if no_vcl:
+                sw = self._run_model(SwModel.ARCHIE, rt_data, rw, rcl, vcl, phie, phit,
+                                     cec, b_coeff, rho_ma, m_star, rwb, phi_cl, rtsh, vsh_exp, shale_exp,
+                                     self.a, self.m, self.n, clip_counts=clip_counts)
+                model_name = SwModel.ARCHIE.value
+                model_counts = {model_name: int(rt_data.shape[0])}
+            elif self.model == "auto":
                 if isinstance(lithology, np.ndarray):
                     lithology_array = np.asarray(lithology, dtype=object)
                 else:
@@ -525,11 +544,15 @@ class SaturationModule:
                 a_value, m_value, n_value, shale_exp
             )
 
-        elif model == SwModel.SIMANDOUX:
-            return simandoux(rt, rw, phie, vcl, rcl, a_value, m_value, n_value)
+        # A given shale resistivity replaces the computed Rcl in Simandoux and
+        # Indonesia as well; the benchmark packages used Rcl there.
+        rsh = rcl if rtsh is None or reproducing_benchmark() else rtsh
+
+        if model == SwModel.SIMANDOUX:
+            return simandoux(rt, rw, phie, vcl, rsh, a_value, m_value, n_value)
 
         elif model == SwModel.INDONESIA:
-            return indonesia(rt, rw, phie, vcl, rcl, a_value, m_value, n_value)
+            return indonesia(rt, rw, phie, vcl, rsh, a_value, m_value, n_value)
 
         elif model == SwModel.DUAL_WATER:
             if rwb is None:

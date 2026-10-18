@@ -184,8 +184,9 @@ def generate_bad_hole_flags(
     well : Well
         Well object with log curves
     bit_size : float or np.ndarray, optional
-        Bit size in inches. If not supplied, uses the header value or the
-        depth-by-depth BS curve when available.
+        Bit size in inches. If not supplied, uses the header value when it is
+        a hole size in inches (3-36 in; a null such as -999.25 or a size in
+        mm is ignored), else the depth-by-depth BS curve when available.
     cali_threshold : float, optional
         Caliper-BS washout threshold
     drho_threshold : float, optional
@@ -223,7 +224,7 @@ def generate_bad_hole_flags(
 
     # Get bit size
     if bit_size is None:
-        bit_size = well.header.bit_size
+        bit_size = _plausible_bit_size(well.header.bit_size)
     if bit_size is None:
         # Try to get from BS curve
         bs_data, _, _ = get_curve_data_depthwise(well, ["BS"])

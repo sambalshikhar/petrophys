@@ -8,10 +8,12 @@ while the two sources below agreed with vendor ground truth):
        (e.g. LITHOLOGY_GEOLINK; see :func:`lithology_code_curve`), decoded via
        LITHOLOGY_CODE_CLASS. Read up front, so it can drive the N-D VCL clean
        line, porosity matrix, Sw routing and net-pay cutoffs for the whole run.
-  1. Core-porosity matrix density -- apparent matrix density from CORE porosity
-       (PHIE_CC/CPOR), rho_ma = (RHOB - phi*rho_fl)/(1 - phi). Knowing the true
-       porosity pins the matrix and breaks the quartz/calcite degeneracy WITHOUT
-       PEF. Also a raw-input source, read up front.
+  1. Core matrix density -- the median core grain density (GDEN/CGD) when the
+       well carries one; otherwise the apparent matrix density from CORE porosity
+       (CPOR/PHIC), rho_ma = (RHOB - phi*rho_fl)/(1 - phi), when 80% or more of
+       the samples agree. Knowing the true porosity pins the matrix and breaks
+       the quartz/calcite degeneracy WITHOUT PEF. Also a raw-input source, read
+       up front.
   2. Multi-mineral solver  -- the VQUAR/VCALC/VDOLO/VANHY mineral volumes the
        LITHOLOGY step computes. Reliable WITH PEF; without PEF it cannot separate
        quartz from calcite, so it is the last data-driven resort. Available only
@@ -90,15 +92,25 @@ _COMPUTED_LITHOLOGY_CURVES = {"LITHO", "MMQC", "LITHO_COMPUTED", "LITHOLOGY_COMP
 # Substrings that look lithology-ish but are not a lithology-code log.
 _LITHOLOGY_NAME_DENY = ("LITHOSTAT", "LITHOSTATIC", "FLAG", "PRESS")
 
-# core (lab) porosity curves — ground-truth porosity that pins apparent matrix density
+# core (lab) porosity curves — ground-truth porosity that pins apparent matrix
+# density. PHIE_CC is a core-corrected log porosity (COSTA's is the renamed
+# upstream PHIE), not a core measurement; the benchmark packages read it as one.
 _CORE_POROSITY_CURVES = (
-    "PHIE_CC", "PHIT_CC", "CPOR", "CPOR_CC", "PHIC", "COREPHI", "CPORE",
+    "PHIT_CC", "CPOR", "CPOR_CC", "PHIC", "COREPHI", "CPORE",
 )
+_BENCHMARK_CORE_POROSITY_CURVES = ("PHIE_CC", *_CORE_POROSITY_CURVES)
+
+# core (lab) grain density curves — the measured matrix density
+_CORE_GRAIN_DENSITY_CURVES = ("GDEN", "CGD", "GRAIN_DENSITY", "CORE_GDEN")
 
 # matrix grain densities for the apparent-matrix-density classification
 _MATRIX_DENSITY_REF = {"sandstone": 2.65, "limestone": 2.71, "dolomite": 2.87}
 
 _MIN_SAMPLES = 20
+#: Core grain densities needed for a median; plugs are sparser than logs.
+_MIN_GRAIN_DENSITY_SAMPLES = 5
+#: Share of the apparent-matrix-density votes a decision needs.
+_MIN_CORE_MATRIX_CONFIDENCE = 0.8
 
 
 @dataclass
@@ -342,9 +354,11 @@ def resolve_from_core_matrix(
     well, rho_fluid: float = 1.0, rho_hc: float = 0.8,
     gr_percentile: float = 60.0, warn: bool = True,
 ) -> Optional[LithologyResolution]:
-    """Classify from apparent matrix density using CORE porosity, if present.
+    """Classify from the core matrix density, if the well carries core data.
 
-    Knowing the true (core) porosity pins the matrix density:
+    A core grain density curve (GDEN, CGD) measures the matrix density, so
+    its median decides the matrix. Without one, the true (core) porosity pins
+    the apparent matrix density:
         rho_ma = (RHOB - phi*rho_fl_eff) / (1 - phi)
     which breaks the quartz/calcite degeneracy without PEF or a lithology log.
 
@@ -354,10 +368,45 @@ def resolve_from_core_matrix(
     with no water-leg reference, where assuming water alone biases apparent
     matrix density low and a carbonate can read as quartz.
 
-    Classification is done over clean (low-GR) samples.
+    Classification is done over clean (low-GR) samples. The nearest-matrix
+    vote decides only when at least 80% of the samples agree; otherwise None
+    is returned and the later sources (solver, default) decide. Inside
+    ``historical_benchmark()`` the vote is ungated, PHIE_CC counts as core
+    porosity and the grain density is not read, as the benchmark packages
+    were computed.
     """
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    historical = reproducing_benchmark()
+    if not historical:
+        gden_c, _, _ = get_curve_data_depthwise(well, list(_CORE_GRAIN_DENSITY_CURVES))
+        if gden_c is not None:
+            gden = np.asarray(gden_c, dtype=float)
+            gden = gden[np.isfinite(gden) & (gden > 2.0) & (gden < 3.2)]
+            if gden.size >= _MIN_GRAIN_DENSITY_SAMPLES:
+                median = float(np.median(gden))
+                matrix = _nearest(median, _MATRIX_DENSITY_REF)
+                lithology = _MATRIX_TO_LITHOLOGY[matrix]
+                counts = Counter(_nearest(v, _MATRIX_DENSITY_REF) for v in gden)
+                conf = counts.get(matrix, 0) / gden.size
+                votes = {
+                    "clastic": int(counts.get("sandstone", 0)),
+                    "limestone": int(counts.get("limestone", 0)),
+                    "dolomite": int(counts.get("dolomite", 0)),
+                }
+                if warn:
+                    warnings.warn(
+                        f"lithology/matrix='auto': resolved '{lithology}'/'{matrix}' via "
+                        f"core_grain_density (median {median:.2f} g/cm3 of {gden.size} samples).",
+                        stacklevel=2,
+                    )
+                return LithologyResolution(
+                    lithology, matrix, "core_grain_density", int(gden.size), float(conf), votes,
+                )
+
+    porosity_curves = _BENCHMARK_CORE_POROSITY_CURVES if historical else _CORE_POROSITY_CURVES
     rhob_c, _, _ = get_curve_data_depthwise(well, ["RHOB"])
-    phi_c, _, _ = get_curve_data_depthwise(well, list(_CORE_POROSITY_CURVES))
+    phi_c, _, _ = get_curve_data_depthwise(well, list(porosity_curves))
     if rhob_c is None or phi_c is None:
         return None
     rhob = np.asarray(rhob_c, dtype=float)
@@ -383,16 +432,30 @@ def resolve_from_core_matrix(
         return None
     labels = [_nearest(v, _MATRIX_DENSITY_REF) for v in rho_ma]
     counts = Counter(labels)
-    return _finalize(
-        counts.get("sandstone", 0), counts.get("limestone", 0),
-        counts.get("dolomite", 0), "core_matrix_density", rho_ma.size, warn,
-    )
+    votes = (counts.get("sandstone", 0), counts.get("limestone", 0), counts.get("dolomite", 0))
+    if not historical:
+        res = _finalize(*votes, "core_matrix_density", rho_ma.size, False)
+        if res.confidence < _MIN_CORE_MATRIX_CONFIDENCE:
+            if warn:
+                warnings.warn(
+                    f"lithology/matrix='auto': the core-porosity matrix density votes are split "
+                    f"({res.votes}; best {res.confidence:.0%} < {_MIN_CORE_MATRIX_CONFIDENCE:.0%}), "
+                    "so they do not decide the lithology.",
+                    stacklevel=2,
+                )
+            return None
+    return _finalize(*votes, "core_matrix_density", rho_ma.size, warn)
 
 
 def resolve_from_minerals(well, warn: bool = True) -> Optional[LithologyResolution]:
     """Tier 1: classify from solver mineral volumes (VQUAR/VCALC/VDOLO), if present."""
     vq, _, _ = get_curve_data_depthwise(well, ["VQUAR", "VQTZ", "VSAND"])
-    vc, _, _ = get_curve_data_depthwise(well, ["VCALC", "VLIM"])
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    # VCAL is the calcite curve MultiMineralSolver.add_to_well writes; the
+    # benchmark packages were computed without it.
+    calcite_names = ["VCALC", "VLIM"] if reproducing_benchmark() else ["VCALC", "VCAL", "VLIM"]
+    vc, _, _ = get_curve_data_depthwise(well, calcite_names)
     vd, _, _ = get_curve_data_depthwise(well, ["VDOLO", "VDOL"])
     if vq is None or vc is None or vd is None:
         return None

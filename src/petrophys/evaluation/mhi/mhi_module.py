@@ -107,13 +107,21 @@ def calculate_mhi(
     Returns
     -------
     float or np.ndarray
-        Moveable hydrocarbon index
+        Moveable hydrocarbon index; NaN where Sxo <= 0 (MHI undefined)
     """
-    # Avoid division by zero
-    if isinstance(sxo, np.ndarray):
-        sxo_safe = np.where(sxo <= 0, 0.01, sxo)
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    if reproducing_benchmark():
+        # The benchmark packages floored Sxo at 0.01.
+        if isinstance(sxo, np.ndarray):
+            sxo_safe = np.where(sxo <= 0, 0.01, sxo)
+        else:
+            sxo_safe = max(sxo, 0.01)
+    elif isinstance(sxo, np.ndarray):
+        with np.errstate(invalid="ignore"):
+            sxo_safe = np.where(sxo > 0, sxo, np.nan)
     else:
-        sxo_safe = max(sxo, 0.01)
+        sxo_safe = sxo if sxo > 0 else np.nan
 
     mhi = sw / sxo_safe
     # Do NOT clip the upper bound: MHI = Sw/Sxo > 1 is diagnostic (Sxo < Sw means

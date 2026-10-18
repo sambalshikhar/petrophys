@@ -8,6 +8,8 @@ clay conductivity through the cation exchange capacity (CEC).
 from typing import Union
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 
 #: Highest plausible whole-rock cation exchange capacity, meq/100 g: that of
 #: pure smectite (montmorillonite, 80-150 meq/100 g; Grim, 1968).
@@ -161,4 +163,7 @@ def waxman_smits(
     ])
 
     sw = np.clip(sw, 0.0, 1.0)
+    # Infinite Rt (no conductivity reading) is missing, as in archie().
+    if not reproducing_benchmark():
+        sw = np.where(np.isinf(rt), np.nan, sw)
     return float(sw[0]) if scalar_input else sw

@@ -5,6 +5,7 @@ Crossplot visualization.
 from petrophys.visualization.style import _styled_plot, save_figure
 
 from typing import TYPE_CHECKING, Optional, Tuple, Union
+import warnings
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -98,18 +99,18 @@ class CrossPlot:
         """
         self.fig, self.ax = plt.subplots(figsize=self.figsize)
 
-        # Remove NaN values
+        # Remove NaN values; points without a colour value are drawn grey.
         mask = ~np.isnan(x_data) & ~np.isnan(y_data)
-        if color_data is not None:
-            mask &= ~np.isnan(color_data)
 
         x = x_data[mask]
         y = y_data[mask]
 
-        if color_data is not None:
+        if color_data is not None and np.any(np.isfinite(color_data[mask])):
             c = color_data[mask]
+            colormap = plt.get_cmap(cmap).with_extremes(bad="0.6")
             scatter = self.ax.scatter(x, y, c=c, s=marker_size, alpha=alpha,
-                                     cmap=cmap, edgecolors='none')
+                                     cmap=colormap, edgecolors='none',
+                                     plotnonfinite=True)
             cbar = self.fig.colorbar(scatter, ax=self.ax)
             cbar.set_label(color_label)
         else:
@@ -244,6 +245,12 @@ def create_crossplot(
         if c_c is not None:
             color_data = c_c.data
             color_label = f"{color_curve} [{c_c.unit}]"
+        else:
+            warnings.warn(
+                f"Colour curve '{color_curve}' not found; plotting without colour.",
+                UserWarning,
+                stacklevel=2,
+            )
 
     # Apply depth range filter
     if depth_range:

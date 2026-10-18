@@ -94,6 +94,7 @@ def data_quality_report(
         If a requested curve is missing or the window holds no samples.
     """
     from petrophys.preprocessing.quality import find_held_readings, generate_bad_hole_flags
+    from petrophys.preprocessing.quality.bad_hole.flag_generator import _known_bit_size
     from petrophys.preprocessing.standardization.curve_standardizer import CurveStandardizer
 
     names = list(curves) if curves else list(well.curves)
@@ -264,9 +265,15 @@ def data_quality_report(
             seen[key] = name
 
     # Bad hole: caliper versus bit size, DRHO and very large hole.
+    # Flags come from the unit-standardized curves (a caliper in mm against an
+    # inch bit size would flag every sample) with interpret_well's rule: the
+    # caliper test where a bit size is known, |DRHO| wherever DRHO reads.
     bad_hole: Dict[str, Any] = {}
-    flags = generate_bad_hole_flags(window)
-    has_inputs = any(window.get(name) is not None for name in ("CALI", "CAL", "DRHO"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        hole = standardizer.standardize(well.depth_slice(top, bottom))
+    flags = generate_bad_hole_flags(hole, bit_size=_known_bit_size(hole), drho_alone=True)
+    has_inputs = any(hole.get(name) is not None for name in ("CALI", "CAL", "DRHO"))
     if has_inputs:
         combined = np.asarray(flags["bad_hole"], dtype=bool)
         runs = _intervals(depth, combined, merge_gap=1.0 if unit == "m" else 3.0)
@@ -627,13 +634,25 @@ def zone_table(
         "depth_unit": unit,
         "zones": rows,
         "averages_basis": "Avg PHIE/Sw/VCL are means over net-pay samples (null where a zone "
-                          "has no pay); Avg Perm is a geometric mean",
+                          "has no pay); Avg Perm is a geometric mean; NTG is net pay / gross",
     }
+    # Rows chosen by name can still nest (a group and a formation inside it).
+    spans = sorted(zip(frame["Top"], frame["Bottom"])) if "Top" in frame and rows else []
+    deepest = -np.inf
+    overlap = False
+    for top_depth, bottom_depth in spans:
+        overlap = overlap or top_depth < deepest
+        deepest = max(deepest, bottom_depth)
     mixed = rank is None and len(levels) > 1 and not names
     if mixed:
         data["note"] = (
             f"Rows mix levels ({', '.join(sorted(levels))}): formations lie inside groups, so do "
             "not add them up. Pass rank='formation' or rank='group' for one level and totals."
+        )
+    elif overlap:
+        data["note"] = (
+            "The selected rows overlap in depth (a formation inside a group), so they are not "
+            "added up. Select zones of one level for a total."
         )
     elif rows:
         data["total"] = {

@@ -61,14 +61,25 @@ def test_defaults():
     assert config.mineral_solver_version == 1
 
 
-def test_core_saturation_gets_the_ordinary_unit_conversion():
-    well = Well("CORE")
-    well.depth = np.arange(1000.0, 1002.0, 0.5)
-    well.depth_unit = "m"
-    well.add_curve("SWC", np.array([45.0, 60.0, np.nan, 30.0]), "frac", "Core water saturation")
+def test_core_saturation_is_converted_outside_the_benchmark_only():
+    from petrophys._internal.benchmark import historical_benchmark
 
-    standardized = standardize_curves(well)
+    def well():
+        well = Well("CORE")
+        well.depth = np.arange(1000.0, 1002.0, 0.5)
+        well.depth_unit = "m"
+        well.add_curve("SWC", np.array([45.0, 60.0, np.nan, 30.0]), "frac", "Core water saturation")
+        return well
 
+    with pytest.warns(UserWarning, match="SWC: inferred percent"):
+        standardized = standardize_curves(well())
+    assert standardized.get("SWC").unit == "v/v"
+    assert np.nanmax(standardized.get("SWC").data) == pytest.approx(0.60)
+
+    # The benchmark packages kept the percent values under the "frac" label.
+    with historical_benchmark():
+        standardized = standardize_curves(well())
+    assert standardized.get("SWC").unit == "frac"
     assert np.nanmax(standardized.get("SWC").data) == pytest.approx(60.0)
 
 
@@ -79,7 +90,10 @@ def test_collision_keeps_the_curve_with_more_valid_samples():
     well.add_curve("DTC", np.array([80.0, 81.0, 82.0, 83.0]), "us/ft", "Compressional")
     well.add_curve("DT", np.array([90.0, np.nan, 92.0, 93.0]), "us/ft", "Sonic")
 
-    standardized = standardize_curves(well)
+    from petrophys._internal.benchmark import historical_benchmark
+
+    with historical_benchmark():
+        standardized = standardize_curves(well)
 
     assert "DTC" in standardized.curves and "DT" not in standardized.curves
     assert standardized.get("DTC").data[0] == 80.0
@@ -116,11 +130,16 @@ def test_carbonate_cutoffs_need_the_family_label():
     well = _well(n_samples=1)
     phie, vcl, sw = np.array([0.06]), np.array([0.1]), np.array([0.5])
 
+    from petrophys._internal.benchmark import historical_benchmark
+
     limestone = NetPayModule(lithology=np.array(["limestone"], dtype=object))
     carbonate = NetPayModule(lithology=np.array(["carbonate"], dtype=object))
 
-    assert not limestone.calculate(well, vcl=vcl, phie=phie, sw=sw).net_reservoir[0]
-    assert carbonate.calculate(well, vcl=vcl, phie=phie, sw=sw).net_reservoir[0]
+    # Outside the benchmark the limestone label takes the carbonate family
+    # (tests/test_decisions_evaluation.py).
+    with historical_benchmark():
+        assert not limestone.calculate(well, vcl=vcl, phie=phie, sw=sw).net_reservoir[0]
+        assert carbonate.calculate(well, vcl=vcl, phie=phie, sw=sw).net_reservoir[0]
 
 
 def test_saturation_analysis_does_not_derive_oil_saturation():

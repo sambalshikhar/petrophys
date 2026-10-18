@@ -90,8 +90,12 @@ class Bands:
         if not e:
             return (self.base,)
         gaps = [e[0] - 1.0] + [(a + b) / 2 for a, b in zip(e, e[1:])] + [e[-1] + 1.0]
+        # Probe each edge too: a label may apply only at an edge value
+        probes = [gaps[0]]
+        for edge, gap in zip(e, gaps[1:]):
+            probes += [edge, gap]
         order = []
-        for v in gaps:
+        for v in probes:
             label = self.label_of(v)
             if label not in order:
                 order.append(label)
@@ -440,7 +444,18 @@ class ReservoirQualityTable:
         return (self.base, *(grade.label for grade in self.grades))
 
     def describe(self, families: Optional[Sequence[str]] = None) -> str:
-        """The grades as threshold text, for ``families`` (default: every family)."""
+        """The grades as threshold text, for ``families`` (default, or empty: every family).
+
+        Raises
+        ------
+        ValueError
+            If a family is not one of :attr:`families`.
+        """
+        if isinstance(families, str):
+            families = (families,)
+        unknown = sorted(set(() if families is None else families) - set(self.families))
+        if unknown:
+            raise ValueError(f"unknown lithology family {unknown}; use one of {self.families}")
         wanted = set(self.families if families is None else families)
         chosen = [name for name in self.families if name in wanted] or list(self.families)
         (phi_name, k_name, clay_name), (phi_unit, k_unit, clay_unit) = self.quantities, self.units

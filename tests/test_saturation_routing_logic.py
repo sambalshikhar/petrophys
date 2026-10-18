@@ -81,7 +81,8 @@ def test_saturation_module_guesses_rwb_only_when_told_to():
     "forced_model,kwargs",
     [
         ("archie", {}),
-        ("north_sea", {"rtsh": 5.0}),
+        # Vsh^1.6 / Rtsh must stay below 1/Rt = 0.05 for the equation to have a solution.
+        ("north_sea", {"rtsh": 10.0}),
         ("nigeria_schlumberger", {"rtsh": 5.0}),
         ("simandoux", {}),
         ("indonesia", {}),

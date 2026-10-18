@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys._internal.analysis_helpers import (
     CategoryAnalysisResult,
     DerivedCurve,
@@ -241,7 +242,11 @@ class LithologyAnalysis:
         carbonate_labels[gt_carbonate & valid_carbonate & (carbonate_indicator > 0.5)] = "CARBONATE_CONFIRMED"
         carbonate_labels[gt_carbonate & valid_carbonate & (limestone_indicator > 0.5)] = "LIMESTONE_CONFIRMED"
         carbonate_labels[gt_carbonate & valid_carbonate & (dolomite_indicator > 0.5)] = "DOLOMITE_CONFIRMED"
-        carbonate_labels[gt_carbonate & valid_carbonate & (carbonate_indicator <= 0.5)] = "CARBONATE_LOG_MISMATCH"
+        mismatch = gt_carbonate & valid_carbonate & (carbonate_indicator <= 0.5)
+        if not (benchmark or reproducing_benchmark()):
+            # PEF = 2.8 meets the dolomite indicator (>= 2.8) but not the carbonate one (> 2.8).
+            mismatch &= ~(dolomite_indicator > 0.5)
+        carbonate_labels[mismatch] = "CARBONATE_LOG_MISMATCH"
         carbonate_labels[(~gt_carbonate) & valid_carbonate & (carbonate_indicator > 0.5)] = "NON_CARBONATE_CARBONATE_SIGNATURE"
 
         gr_clay = np.full(n_samples, np.nan, dtype=float)

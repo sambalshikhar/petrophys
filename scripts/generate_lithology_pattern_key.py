@@ -147,11 +147,20 @@ def generate_many_lithologies(out_path: Path) -> None:
     print(f"wrote {out_path}")
 
 
-def main() -> None:
+def main(argv=None) -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Regenerate the GeoLink lithology pattern-check figures "
+        "(existing PNGs in the output directory are overwritten)."
+    )
+    parser.add_argument("--output-dir", type=Path, default=OUT_DIR,
+                        help=f"Directory for the two PNGs (default: {OUT_DIR}).")
+    out_dir = parser.parse_args(argv).output_dir
     use_plot_style()
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    generate_pattern_key(OUT_DIR / "geolink_lithology_pattern_key_all_codes.png")
-    generate_many_lithologies(OUT_DIR / "geolink_many_lithologies.png")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    generate_pattern_key(out_dir / "geolink_lithology_pattern_key_all_codes.png")
+    generate_many_lithologies(out_dir / "geolink_many_lithologies.png")
 
 
 if __name__ == "__main__":

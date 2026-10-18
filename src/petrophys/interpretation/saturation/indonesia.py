@@ -8,6 +8,8 @@ particularly suited for formations with lower salinity.
 from typing import Union
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 
 def indonesia(
     rt: Union[float, np.ndarray],
@@ -60,6 +62,9 @@ def indonesia(
     # crashed with AttributeError on scalar rt.
     rt = np.asarray(rt, dtype=float)
     rt = np.where(rt <= 0, 1e-10, rt)
+    # Infinite Rt (no conductivity reading) is missing, as in archie().
+    if not reproducing_benchmark():
+        rt = np.where(np.isinf(rt), np.nan, rt)
     phi = np.asarray(phi, dtype=float)
     phi = np.where(phi <= 0, 1e-10, phi)
     rcl = max(float(rcl), 1e-10)

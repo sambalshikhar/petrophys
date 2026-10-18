@@ -41,7 +41,7 @@ for message in dict.fromkeys([str(item.message) for item in caught] + result.war
     print(fill(f"- {message}", 88, subsequent_indent="  "))
 ```
 
-The first two are Python warnings: 30/6-5 stores core SWC and SOC in percent under a "frac" label, so Petrophys converts them and says so.
+The first two are Python warnings: 30/6-5 stores core SWC and SOC in percent under a "frac" label, so the curve standardization converts them to v/v and says so.
 The rest stay on the result in `result.warnings`. From here on, this page hides only the SWC/SOC message.
 
 ```{code-cell} python
@@ -223,7 +223,7 @@ Petrophys interprets marl with the limestone matrix and the carbonate cutoffs, a
 
 | Sample | Limitation | What Petrophys does |
 |---|---|---|
-| 30/6-5 SWC, SOC | labelled frac, stored in percent | converts them to fractions for the core calibration, with the warnings shown above, and for plots; the bundled LAS is unchanged. Give an explicit unit for ambiguous low values |
+| 30/6-5 SWC, SOC | labelled frac, stored in percent | `standardize_curves` (and so `interpret`) converts them to v/v with the warnings shown above; the raw-well plots convert for display only; the bundled LAS is unchanged. Give an explicit unit for ambiguous low values |
 | 30/6-5 header RW | `RW 0.7` ohm.m with no temperature, ten times the 0.07 used here (likely a slipped decimal) | always pass `rw` and `rw_meas_temp_f` |
 | 15/9-14 DTE | values fit no sonic unit; meaning unknown | not treated as shear slowness; range QC removes them. Do not rescale |
 | Daydream CMR | scalar NMR curves only: no T2 bins or T2LM; `CMRP_3MS` is labelled V/V but holds porosity units | T2LM cannot be computed; vendor KSDR and KCMR are read, not recomputed |

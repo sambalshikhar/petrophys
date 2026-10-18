@@ -17,7 +17,12 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Sequence
 import numpy as np
 
 from petrophys._internal.analysis_helpers import get_curve
-from petrophys.interpretation.electrical.rw.salinity_rw import NACL_PER_CHLORIDE, brine_density
+from petrophys._internal.benchmark import reproducing_benchmark
+from petrophys.interpretation.electrical.rw.salinity_rw import (
+    NACL_PER_CHLORIDE,
+    brine_density,
+    salinity_mg_per_l_to_ppm,
+)
 from petrophys.interpretation.lithology.matrix_inference import (
     GEOLINK_LITHOLOGY_CURVE,
     interpreted_lithology_code_curve,
@@ -317,10 +322,25 @@ def _parse_bool(value: Any) -> bool:
     return text in {"1", "true", "t", "yes", "y", "on"}
 
 
-def _salinity_to_ppm(value: float, unit: str) -> float:
+def _salinity_to_ppm(value: float, unit: str, *, benchmark: bool = False) -> float:
+    """A header salinity in ppm by weight.
+
+    Per-volume units (mg/l, g/l, kg/m3) are converted with the brine density
+    and g/kg is scaled to ppm, except for ``benchmark`` (the "geolink"
+    profile), which keeps the benchmark packages' reading of mg/l and g/l as
+    ppm.
+    """
     text = (unit or "").strip().lower()
     if not text:
         return float(value)
+    if not benchmark:
+        compact = "".join(text.replace("\\", "/").split())
+        if compact == "g/kg":
+            return float(value) * 1000.0
+        if "mg/l" in compact:
+            return salinity_mg_per_l_to_ppm(float(value))
+        if "g/l" in compact or compact in {"kg/m3", "kg/m^3"}:
+            return salinity_mg_per_l_to_ppm(float(value) * 1000.0)
     if "kppm" in text or "ppk" in text:
         return float(value) * 1000.0
     if "mg/l" in text or "mg\\l" in text or "ppm" in text:
@@ -353,6 +373,28 @@ def _chlorides_to_mg_per_l(value: float, unit: str) -> float:
     return chlorides_ppm * brine_density(NACL_PER_CHLORIDE * chlorides_ppm)
 
 
+def _density_to_g_per_cm3(value: float, unit: str) -> float:
+    """A header density in g/cm3, the unit of the density settings.
+
+    kg/m3 is divided by 1000; g/cm3, g/cc and a value without a unit are taken
+    as they stand.
+    """
+    text = "".join((unit or "").lower().split())
+    if text in {"kg/m3", "kg/m^3", "kg/m**3"}:
+        return float(value) / 1000.0
+    return float(value)
+
+
+def _mud_type_from_text(value: Any) -> Optional[str]:
+    """WBM or OBM from a header mud description, or None when it names neither."""
+    text = re.sub(r"[^a-z]", "", _normalize_text(value).lower())
+    if text in {"wbm", "water", "waterbased", "waterbase", "waterbasedmud", "waterbasemud"}:
+        return "WBM"
+    if text in {"obm", "oil", "oilbased", "oilbase", "oilbasedmud", "oilbasemud"}:
+        return "OBM"
+    return None
+
+
 def _cec_to_meq_per_100g(value: float, unit: str) -> float:
     """A header CEC in meq/100 g, the unit of the ``cec`` setting.
 
@@ -369,9 +411,8 @@ def _set_config_value(config: DynamicWorkflowConfig, field_name: str, value: Any
     if value is None or not hasattr(config, field_name):
         return
     if field_name in {"lithology", "lithology_domain"}:
-        domain = str(value).strip().lower()
-        config.lithology_domain = domain
-        config.lithology = domain
+        # The deprecated alias is not mirrored; only the domain is set.
+        config.lithology_domain = str(value).strip().lower()
         return
     setattr(config, field_name, value)
 
@@ -618,6 +659,7 @@ def _apply_parameter_alias(
 ) -> None:
     key = base_name.upper()
     target = PARAMETER_ALIASES.get(key)
+    benchmark = calculation_profile in _BENCHMARK_PROFILES or reproducing_benchmark()
     if calculation_profile in _BENCHMARK_PROFILES:
         target = _BENCHMARK_PARAMETER_ALIASES.get(key, target)
     elif key in _READ_FROM_WELL_PARAMETERS:
@@ -636,6 +678,15 @@ def _apply_parameter_alias(
         return
 
     if key in _FALLBACK_PARAMETERS and target in overrides:
+        return
+
+    if target == "mud_type" and not benchmark:
+        # Descriptive headers such as "Water Based" name a mud type; other text is not used.
+        mud = _mud_type_from_text(value)
+        if mud is None:
+            unmapped_parameters.append(base_name)
+        else:
+            overrides[target] = mud
         return
 
     if target in {
@@ -664,7 +715,9 @@ def _apply_parameter_alias(
     elif target in {"td_ft"}:
         overrides[target] = _depth_to_ft(numeric_value, unit)
     elif target in {"salinity_ppm", "rmf_salinity_ppm"}:
-        overrides[target] = _salinity_to_ppm(numeric_value, unit)
+        overrides[target] = _salinity_to_ppm(numeric_value, unit, benchmark=benchmark)
+    elif target in {"rho_ma", "rho_fl", "rho_cl"} and not benchmark:
+        overrides[target] = _density_to_g_per_cm3(numeric_value, unit)
     elif target == "rmf_chlorides_mg_l":
         overrides[target] = _chlorides_to_mg_per_l(numeric_value, unit)
     elif target == "cec" and calculation_profile not in _BENCHMARK_PROFILES:
@@ -830,16 +883,32 @@ def run_dynamic_workflow_with_zones(
                 f"Header parameter maps to {field_name}={value!r} but the "
                 "config sets it explicitly; config value kept."
             )
-    for field_name, value in zoned_default_overrides.items():
-        if field_name not in global_overrides and _left_at_default(base_config, field_name):
-            _set_config_value(base_config, field_name, value)
+    historical = _reproduces_benchmark(config) or reproducing_benchmark()
+    if historical:
+        # The "geolink" profile filled uncovered intervals with the zones'
+        # common (or Z1) values; the current calculations keep zone values
+        # inside their zones and run the whole-well chain outside them.
+        for field_name, value in zoned_default_overrides.items():
+            if field_name not in global_overrides and _left_at_default(base_config, field_name):
+                _set_config_value(base_config, field_name, value)
     _derive_sw_model(global_overrides, base_config)
-    if "vsh_exp" not in global_overrides:
+    if "vsh_exp" not in global_overrides and historical:
         _derive_sw_model(zoned_default_overrides, base_config)
 
-    for name, value in zoned_default_injected.items():
-        if well.get_parameter(name) is None:
-            well.set_parameter(name, value)
+    if historical:
+        for name, value in zoned_default_injected.items():
+            if well.get_parameter(name) is None:
+                well.set_parameter(name, value)
+    elif zoned_default_overrides or zoned_default_injected:
+        zoned_default_notes = [
+            "Zone parameters apply inside their zones only; outside them the whole-well "
+            "settings and header values are used: "
+            + ", ".join(
+                f"{key}={value}" for key, value in sorted(
+                    {**zoned_default_injected, **zoned_default_overrides}.items()
+                )
+            )
+        ]
 
     if base_config.td_ft is None and well.bottom is not None:
         base_config.td_ft = _depth_to_ft(well.bottom, well.depth_unit)
@@ -890,8 +959,8 @@ def run_dynamic_workflow_with_zones(
         warnings=warnings,
         global_overrides=global_overrides,
         global_unmapped=global_unmapped,
-        zoned_default_overrides=zoned_default_overrides,
-        zoned_default_injected=zoned_default_injected,
+        zoned_default_overrides=zoned_default_overrides if historical else {},
+        zoned_default_injected=zoned_default_injected if historical else {},
     )
 
 
@@ -1451,11 +1520,19 @@ def process_las_directory_with_workflow(
     ------
     FileNotFoundError
         If ``input_dir`` is not an existing folder.
+    ValueError
+        If ``output_dir`` is ``input_dir``: the exports would overwrite the
+        source LAS files.
     """
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     if not input_path.is_dir():
         raise FileNotFoundError(f"LAS input folder not found: {input_path}")
+    if output_path.resolve() == input_path.resolve():
+        raise ValueError(
+            f"output_dir is the input folder {input_path}; the interpreted LAS files would "
+            "overwrite the source files. Choose another output folder."
+        )
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
     if well_names:
         wanted = {str(name).strip().lower().replace("/", "_") for name in well_names}
@@ -1550,10 +1627,18 @@ def write_workflow_json_traces_directory(
     This does not export LAS files or reports. It is intended for audit/training
     traces after processed LAS/context generation, where the user wants one
     JSON per well with full step decisions, parameters, inputs, outputs, and
-    lithology-group summaries.
+    lithology-group summaries. Without ``output_dir`` the traces are written
+    under ``input_dir``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``input_dir`` is not an existing folder.
     """
     input_path = Path(input_dir)
     output_path = Path(output_dir) if output_dir is not None else input_path
+    if not input_path.is_dir():
+        raise FileNotFoundError(f"LAS input folder not found: {input_path}")
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
     if well_names:
         wanted = {str(name).lower() for name in well_names}
@@ -1561,6 +1646,13 @@ def write_workflow_json_traces_directory(
             path for path in files
             if path.stem.lower() in wanted or path.name.lower() in wanted
         ]
+    if not files:
+        _warn(
+            f"No files matching {pattern!r} in {input_path}"
+            + ("" if recursive else "; pass recursive=True to search subfolders"),
+            UserWarning,
+            stacklevel=2,
+        )
 
     results: List[BatchLasResult] = []
     for file_path in files:
@@ -1607,8 +1699,10 @@ def write_workflow_json_traces_directory(
     return results
 
 
-def _resolve_report_path(report_path: str | Path) -> Path:
+def _resolve_report_path(report_path: str | Path, default_name: str) -> Path:
     report_file = Path(report_path)
+    if report_file.is_dir():
+        report_file = report_file / default_name
     report_file.parent.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -1638,7 +1732,7 @@ def write_batch_report(results: Iterable[BatchLasResult], report_path: str | Pat
     Path
         The written report.
     """
-    report_file = _resolve_report_path(report_path)
+    report_file = _resolve_report_path(report_path, "batch_report.csv")
 
     with report_file.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -1706,7 +1800,7 @@ def write_curve_audit_report(
     Path
         The written report.
     """
-    report_file = _resolve_report_path(report_path)
+    report_file = _resolve_report_path(report_path, "curve_audit_report.csv")
     curves = target_curves or AUDIT_TARGET_CURVES
 
     with report_file.open("w", newline="", encoding="utf-8") as handle:
@@ -1750,6 +1844,9 @@ def write_curve_audit_report(
                     peer_models = step.parameters.get("peer_core_models")
                     strategy = step.parameters.get("strategy") or step.parameters.get("method")
                     if (same_well_models or 0) == 0 and (peer_models or 0) == 0:
+                        if curve == "PHIE_CC":
+                            # The porosity calibration needs core porosity only.
+                            return f"no usable core porosity calibration; strategy={strategy}"
                         return f"no usable core permeability model; strategy={strategy}"
                 if curve == "SWIRR_APP" and step is not None:
                     swirr_source = step.parameters.get("swirr_source")

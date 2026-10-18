@@ -48,18 +48,22 @@ def calculate_rcl(
     float
         Representative Rcl (ohm.m)
     """
-    if isinstance(rdep, np.ndarray):
-        valid_mask = np.isfinite(rdep)
-        if isinstance(shale_mask, np.ndarray):
-            valid_mask = valid_mask & shale_mask.astype(bool)
-        elif isinstance(vcl, np.ndarray):
-            valid_mask = valid_mask & np.isfinite(vcl) & (vcl > vcl_threshold)
+    if statistic.lower() not in ("median", "mean"):
+        raise ValueError(f"statistic must be 'median' or 'mean', not {statistic!r}")
+    # Scalars and lists are documented inputs as well as arrays.
+    rdep = np.atleast_1d(np.asarray(rdep, dtype=float))
+    valid_mask = np.isfinite(rdep)
+    if shale_mask is not None:
+        valid_mask = valid_mask & np.atleast_1d(np.asarray(shale_mask)).astype(bool)
+    elif vcl is not None:
+        vcl = np.atleast_1d(np.asarray(vcl, dtype=float))
+        valid_mask = valid_mask & np.isfinite(vcl) & (vcl > vcl_threshold)
 
-        if np.any(valid_mask):
-            values = rdep[valid_mask]
-            if statistic.lower() == "mean":
-                return float(np.nanmean(values))
-            return float(np.nanmedian(values))
+    if np.any(valid_mask):
+        values = rdep[valid_mask]
+        if statistic.lower() == "mean":
+            return float(np.nanmean(values))
+        return float(np.nanmedian(values))
 
     return default_rcl
 

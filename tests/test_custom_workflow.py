@@ -761,11 +761,12 @@ def test_formation_water_from_the_las_header():
     run = Workflow("x", [steps.temperature(), steps.formation_water(rw="header")]).run(costa)
     expected = correct_rw_temperature(0.0682, 68.0, run.well.get("TEMP").data, "F")
     assert same(run.well.get("RW").data, expected)
-    well = _read("30_6-5")  # has RW in its header but no RWT
+    well = _read("30_6-5")
+    well._parameters.pop("RWT")  # RW in the header but no RWT
     table = Workflow("x", [steps.formation_water(rw="header")]).check(well)
     assert not table["Met"].iloc[0] and "RWT" in table["Note"].iloc[0]
     run = Workflow("x", [steps.formation_water(rw="header", rw_temp_f=75)]).run(well)
-    assert run.steps[0].parameters["rw_used"] == 0.7
+    assert run.steps[0].parameters["rw_used"] == 0.07
 
 
 def test_porosity_matches_pp_interpret_with_a_fixed_matrix(well):

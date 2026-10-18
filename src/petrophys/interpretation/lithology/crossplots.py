@@ -9,6 +9,7 @@ from typing import Dict, Tuple, Optional
 import numpy as np
 
 from petrophys.interpretation.lithology.matrix_properties import (
+    get_log_density,
     get_mineral_properties,
     MINERAL_PROPERTIES,
 )
@@ -39,13 +40,14 @@ def nd_crossplot_data(
     if minerals is None:
         minerals = ["quartz", "calcite", "dolomite"]
 
-    # Get mineral endpoints
+    # Get mineral endpoints: the density-log response (evaporites read
+    # below their grain density)
     endpoints = {}
     for mineral in minerals:
         props = get_mineral_properties(mineral)
         endpoints[mineral] = {
             "nphi": props["nphi"],
-            "rhob": props["density"]
+            "rhob": get_log_density(mineral)
         }
 
     # Fluid point
@@ -93,9 +95,9 @@ def mn_crossplot_data(
     dict
         M-N crossplot data
     """
-    # Avoid division by zero
-    denom = rhob - rhob_fluid
-    denom = np.where(np.abs(denom) < 0.01, 0.01, denom)
+    # M and N are undefined when RHOB reads at (or near) fluid density.
+    denom = np.asarray(rhob, dtype=float) - rhob_fluid
+    denom = np.where(np.abs(denom) < 0.01, np.nan, denom)
 
     # Calculate M and N values
     m = (dtc_fluid - dtc) / denom * 0.01

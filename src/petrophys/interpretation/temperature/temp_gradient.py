@@ -8,8 +8,19 @@ from temperature measurements.
 from typing import Optional, Tuple, Union
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.constants import DefaultParameters
-from petrophys.model.units import UnitConverter, temperature_unit
+from petrophys.model.units import UnitConverter, normalize_depth_unit, temperature_unit
+
+
+def _depth_unit_is_metres(depth_unit: str) -> bool:
+    """True for a metre depth unit; unknown labels raise ``ValueError``.
+
+    The benchmark packages read every label other than "m" as feet.
+    """
+    if reproducing_benchmark():
+        return depth_unit.lower() == "m"
+    return normalize_depth_unit(depth_unit, strict=True) == "m"
 
 
 def calculate_temperature_gradient(
@@ -37,7 +48,7 @@ def calculate_temperature_gradient(
         Temperature unit: "F", "C", "K" or a label such as "degC" (see
         :func:`petrophys.model.units.temperature_unit`)
     depth_unit : str, optional
-        Depth unit ("ft" or "m")
+        Depth unit: "ft", "m" or a label such as "metres"
 
     Returns
     -------
@@ -47,7 +58,8 @@ def calculate_temperature_gradient(
     Raises
     ------
     ValueError
-        If ``temp_unit`` is not a recognized temperature unit.
+        If ``temp_unit`` or ``depth_unit`` is not a recognized unit, or the
+        two depths are equal.
 
     Examples
     --------
@@ -62,14 +74,16 @@ def calculate_temperature_gradient(
         temp1 = UnitConverter.temperature(temp1, temp_unit, "F")
         temp2 = UnitConverter.temperature(temp2, temp_unit, "F")
 
-    if depth_unit.lower() == "m":
+    if _depth_unit_is_metres(depth_unit):
         depth1 = UnitConverter.meters_to_feet(depth1)
         depth2 = UnitConverter.meters_to_feet(depth2)
 
     # Calculate gradient
     depth_diff = depth2 - depth1
     if depth_diff == 0:
-        return 0.0
+        if reproducing_benchmark():
+            return 0.0
+        raise ValueError("The two depths are equal: no temperature gradient")
 
     temp_diff = temp2 - temp1
     gradient = (temp_diff / depth_diff) * 100  # per 100 ft
@@ -99,7 +113,7 @@ def estimate_gradient_from_bht(
         Unit of ``bht`` and ``surface_temp`` ("F", "C", "K" or a label such
         as "degC")
     depth_unit : str, optional
-        Depth unit ("ft" or "m")
+        Depth unit: "ft", "m" or a label such as "metres"
 
     Returns
     -------

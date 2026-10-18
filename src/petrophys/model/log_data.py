@@ -96,6 +96,12 @@ class Zone:
     fluid: str = ""
     properties: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self):
+        if self.top > self.bottom:
+            raise ValueError(
+                f"Top depth ({self.top}) must be <= bottom depth ({self.bottom})"
+            )
+
     @property
     def thickness(self) -> float:
         """Return zone thickness."""
@@ -107,8 +113,12 @@ class Zone:
         return DepthInterval(self.top, self.bottom, self.name)
 
     def contains(self, depth: Union[float, np.ndarray]) -> Union[bool, np.ndarray]:
-        """Check if depth(s) are within this zone."""
-        return (depth >= self.top) & (depth <= self.bottom)
+        """Check if depth(s) are within this zone.
+
+        Zones are top-inclusive and bottom-exclusive, so a depth on the
+        boundary between two zones belongs to the lower one.
+        """
+        return (depth >= self.top) & (depth < self.bottom)
 
 
 class ZoneSet:
@@ -147,17 +157,17 @@ class ZoneSet:
         return None
 
     def get_at_depth(self, depth: float) -> Optional[Zone]:
-        """Get zone at a specific depth."""
+        """Get zone at a specific depth (zone tops inclusive, bottoms exclusive)."""
         for zone in self._zones:
             if zone.contains(depth):
                 return zone
         return None
 
     def get_zones_in_range(self, top: float, bottom: float) -> List[Zone]:
-        """Get all zones within a depth range."""
+        """Get all zones with depths within ``[top, bottom]``."""
         result = []
         for zone in self._zones:
-            if zone.bottom >= top and zone.top <= bottom:
+            if zone.bottom > top and zone.top <= bottom:
                 result.append(zone)
         return result
 
@@ -299,7 +309,11 @@ class DepthIndex:
         new_step: float,
         method: str = "linear"
     ) -> "DepthIndex":
-        """Resample to new step size."""
+        """Return a new uniform depth index from top to bottom at ``new_step``.
+
+        Only the depth index is built; no data is resampled, so ``method`` has
+        no effect (use :func:`align_to_depth` to resample data onto it).
+        """
         if new_step <= 0:
             raise ValueError("new_step must be positive")
         top = self.top
@@ -365,14 +379,44 @@ def align_to_depth(
     Returns
     -------
     np.ndarray
-        Resampled data aligned to target depth
+        Resampled data aligned to target depth. Targets outside the source
+        range, or inside a gap of NaN source values, are NaN.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is not "linear" or "nearest".
     """
     from scipy import interpolate
+
+    if method not in ("linear", "nearest"):
+        raise ValueError(f"method must be 'linear' or 'nearest'; got {method!r}")
+    data = np.asarray(data, dtype=float)
+    source_depth = np.asarray(source_depth, dtype=float)
+    target_depth = np.asarray(target_depth, dtype=float)
+    # Samples without a depth cannot be placed
+    finite_depth = np.isfinite(source_depth)
+    order = np.argsort(source_depth[finite_depth], kind="stable")
+    source_depth = source_depth[finite_depth][order]
+    data = data[finite_depth][order]
 
     # Handle NaN values
     valid_mask = ~np.isnan(data)
     if not np.any(valid_mask):
         return np.full(len(target_depth), np.nan)
+    if np.count_nonzero(valid_mask) < 2:
+        result = np.full(len(target_depth), np.nan)
+        result[target_depth == source_depth[valid_mask][0]] = data[valid_mask][0]
+        return result
+
+    # A target next to a NaN source sample lies in a gap with no measurement
+    missing = (~valid_mask).astype(float)
+    if method == "nearest":
+        in_gap = interpolate.interp1d(
+            source_depth, missing, kind="nearest", bounds_error=False, fill_value=1.0
+        )(target_depth) > 0
+    else:
+        in_gap = np.interp(target_depth, source_depth, missing, left=1.0, right=1.0) > 0
 
     if method == "nearest":
         interp = interpolate.interp1d(
@@ -391,4 +435,6 @@ def align_to_depth(
             fill_value=np.nan
         )
 
-    return interp(target_depth)
+    result = interp(target_depth)
+    result[in_gap] = np.nan
+    return result

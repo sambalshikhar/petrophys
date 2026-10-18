@@ -70,7 +70,11 @@ def load_lithology_csv(
     with open(filepath, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         headers = {h.strip().lower(): h.strip() for h in reader.fieldnames or []}
-        rows = list(reader)
+        # Strip keys so "top, bottom" headers match the stripped column names.
+        rows = [
+            {(k.strip() if isinstance(k, str) else k): v for k, v in row.items()}
+            for row in reader
+        ]
 
     # Auto-detect columns
     if top_col is None:
@@ -91,30 +95,45 @@ def load_lithology_csv(
 
     intervals = []
     unrecognized = set()
+    skipped = 0
     for row in rows:
         top_val = _safe_float(row.get(top_col) or row.get(headers.get(top_col.lower(), "")))
         bot_val = _safe_float(row.get(bottom_col) or row.get(headers.get(bottom_col.lower(), "")))
         lith = (row.get(lithology_col) or row.get(headers.get(lithology_col.lower(), "")) or "").strip()
 
-        if top_val is not None and bot_val is not None and lith:
-            # Normalize lithology names
-            lith_lower = lith.lower()
-            if lith_lower in ("sandstone", "sand", "clastic", "clastics", "sst"):
-                lith_normalized = "clastic"
-            elif lith_lower in ("limestone", "carbonate", "chalk", "dolomite", "carb", "marl", "marlstone"):
-                lith_normalized = "carbonate"
-            elif lith_lower in ("shale", "mudstone", "claystone", "siltstone"):
-                lith_normalized = "clastic"  # Shale uses clastic cutoffs
-            else:
-                lith_normalized = "clastic"
-                unrecognized.add(lith)
+        if top_val is None or bot_val is None or not lith:
+            if any(str(v or "").strip() for v in row.values()):
+                skipped += 1
+            continue
+        if top_val > bot_val:
+            raise ValueError(
+                f"Lithology interval top {top_val} is below bottom {bot_val} in {filepath}."
+            )
+        # Normalize lithology names
+        lith_lower = lith.lower()
+        if lith_lower in ("sandstone", "sand", "clastic", "clastics", "sst"):
+            lith_normalized = "clastic"
+        elif lith_lower in ("limestone", "carbonate", "chalk", "dolomite", "carb", "marl", "marlstone"):
+            lith_normalized = "carbonate"
+        elif lith_lower in ("shale", "mudstone", "claystone", "siltstone"):
+            lith_normalized = "clastic"  # Shale uses clastic cutoffs
+        else:
+            lith_normalized = "clastic"
+            unrecognized.add(lith)
 
-            intervals.append(LithologyInterval(
-                top=top_val,
-                bottom=bot_val,
-                lithology=lith_normalized,
-            ))
+        intervals.append(LithologyInterval(
+            top=top_val,
+            bottom=bot_val,
+            lithology=lith_normalized,
+        ))
 
+    if skipped:
+        warnings.warn(
+            f"Skipped {skipped} row(s) in {filepath} with missing or unparseable "
+            "top/bottom depth or lithology.",
+            DataQualityWarning,
+            stacklevel=2,
+        )
     if unrecognized:
         warnings.warn(
             f"Unrecognized lithology labels {sorted(unrecognized)} in {filepath} were "

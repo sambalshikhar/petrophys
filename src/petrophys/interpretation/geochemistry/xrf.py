@@ -162,6 +162,7 @@ class XRFData:
         element_cols: Optional[List[str]] = None,
         error_cols: Optional[Dict[str, str]] = None,
         unit_map: Optional[Dict[str, str]] = None,
+        null_value: float = -999.25,
     ) -> "XRFData":
         """
         Create XRFData from a pandas DataFrame.
@@ -177,6 +178,8 @@ class XRFData:
             Mapping of element name → error column name.
         unit_map : dict, optional
             Mapping of element name → unit string.
+        null_value : float
+            Value to replace with NaN (default: -999.25).
         """
         if not HAS_PANDAS:
             raise ImportError("pandas is required")
@@ -187,13 +190,18 @@ class XRFData:
             element_cols = [c for c in df.select_dtypes(include=np.number).columns
                             if c != depth_col]
 
-        elements = {col: df[col].values.astype(float) for col in element_cols}
+        def _col(name: str) -> np.ndarray:
+            data = df[name].values.astype(float)
+            data[data == null_value] = np.nan
+            return data
+
+        elements = {col: _col(col) for col in element_cols}
         units = unit_map or {}
         errors: Dict[str, np.ndarray] = {}
         if error_cols:
             for elem, ecol in error_cols.items():
                 if ecol in df.columns:
-                    errors[elem] = df[ecol].values.astype(float)
+                    errors[elem] = _col(ecol)
 
         return cls(depth=depth, elements=elements, units=units, errors=errors)
 
@@ -349,12 +357,39 @@ class XRFData:
         if fe is not None:
             siderite_signal = fe.copy()
             if s is not None:
-                # Penalize high S (associated with pyrite/anhydrite)
+                # Penalize high S (associated with pyrite/anhydrite): 0.5 wt%
+                # in the unit the S concentrations are given in
                 with np.errstate(invalid="ignore"):
-                    siderite_signal = np.where(s > 0.5, fe * 0.3, fe)
+                    siderite_signal = np.where(s > self._sulphur_threshold(), fe * 0.3, fe)
             proxies["siderite_index"] = self._normalize(siderite_signal)
 
         return proxies
+
+    #: The S concentration above which Fe is read as pyrite, 0.5 wt%, per unit.
+    _SULPHUR_THRESHOLDS = {
+        "%": 0.5, "wt%": 0.5, "pct": 0.5, "percent": 0.5, "wt_pct": 0.5, "wtpct": 0.5,
+        "frac": 0.005, "fraction": 0.005, "wt_frac": 0.005, "wtfrac": 0.005,
+        "v/v": 0.005, "w/w": 0.005, "dec": 0.005, "decimal": 0.005,
+        "ppm": 5000.0,
+    }
+
+    def _sulphur_threshold(self) -> float:
+        """0.5 wt% of sulphur in the unit of the S concentrations.
+
+        A unit the table does not know, or none, is read as weight percent.
+        The benchmark packages applied 0.5 whatever the unit
+        (``historical_benchmark()``).
+        """
+        from petrophys._internal.benchmark import reproducing_benchmark
+
+        if reproducing_benchmark():
+            return 0.5
+        unit = ""
+        for key, value in self.units.items():
+            if key.casefold() == "s":
+                unit = str(value or "")
+                break
+        return self._SULPHUR_THRESHOLDS.get(unit.strip().lower(), 0.5)
 
     @staticmethod
     def _normalize(arr: np.ndarray) -> np.ndarray:

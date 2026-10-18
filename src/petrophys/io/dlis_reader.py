@@ -10,6 +10,8 @@ from pathlib import Path
 import warnings
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 if TYPE_CHECKING:
     from petrophys.model.well import Well
 
@@ -167,7 +169,17 @@ def _resample_to_depth(
     depth, data = _prepare_for_resample(source_depth, values)
     if depth.size < 2:
         return np.full_like(target_depth, np.nan, dtype=float)
-    return np.interp(target_depth, depth, data, left=np.nan, right=np.nan)
+    resampled = np.interp(target_depth, depth, data, left=np.nan, right=np.nan)
+    # Absent values mean no measurement: interpolate only between valid
+    # samples that are neighbours in the source frame, never across a gap.
+    source_step = _median_step(np.asarray(source_depth, dtype=float))
+    if source_step:
+        target = np.asarray(target_depth, dtype=float)
+        upper = np.clip(np.searchsorted(depth, target, side="left"), 1, depth.size - 1)
+        span = depth[upper] - depth[upper - 1]
+        exact = np.isclose(target, depth[upper]) | np.isclose(target, depth[upper - 1])
+        resampled[(span > 1.5 * abs(source_step)) & ~exact] = np.nan
+    return resampled
 
 
 def _name_set(names: Optional[Iterable[str]]) -> Optional[set[str]]:
@@ -412,6 +424,13 @@ class DLISReader:
                 depth_channel = ch.name
                 depth_data = frame_data[field_name]
                 source_depth_unit = ch.units or "ft"
+                if not ch.units and not reproducing_benchmark():
+                    warnings.warn(
+                        f"DLIS depth channel {ch.name!r} in frame {frame.name!r} has "
+                        "no unit; feet are assumed. Set well.depth_unit if not.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
                 break
 
         if depth_data is not None:
@@ -636,6 +655,10 @@ class DLISReader:
 
         well._depth = np.asarray(target_depth, dtype=float)
         well._depth_unit = depth_unit
+        if not reproducing_benchmark():
+            from petrophys.model.units import normalize_depth_unit
+
+            well._depth_unit = normalize_depth_unit(depth_unit, strict=False)
 
         best_rank: Dict[str, Tuple[int, int]] = {}
         source_frames: Dict[str, str] = {}
@@ -759,7 +782,7 @@ def read_dlis(
         By default, this is enabled when no frame_name is supplied so DLIS behaves
         like a full well-log input. Set False to read a single frame.
     **kwargs
-        Additional arguments (reserved)
+        Reserved for future use; unsupported arguments raise TypeError.
 
     Returns
     -------
@@ -771,6 +794,8 @@ def read_dlis(
     >>> from petrophys.io import read_dlis
     >>> well = read_dlis("well_data.dlis")
     """
+    if kwargs:
+        raise TypeError(f"Unsupported DLIS reader options: {', '.join(sorted(kwargs))}")
     with DLISReader(filepath) as reader:
         if logical_file > 0:
             reader.set_active_file(logical_file)

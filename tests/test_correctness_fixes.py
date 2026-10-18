@@ -131,7 +131,7 @@ def test_standardizer_collision_incoming_wins():
     well = _res_well([("RT", 7), ("ILD", 10)])
     standardize_curves(well, rename_curves=True, convert_units=False)
     assert well.get("RDEP").valid_count() == 10          # ILD data won the slot
-    assert well.get("ILD").valid_count() == 7            # the occupant moves to the incoming name
+    assert well.get("RT").valid_count() == 7             # the occupant keeps its own name
 
 
 def test_standardizer_collision_incoming_loses():
@@ -140,7 +140,7 @@ def test_standardizer_collision_incoming_loses():
     well = _res_well([("RT", 10), ("ILD", 5)])
     standardize_curves(well, rename_curves=True, convert_units=False)
     assert well.get("RDEP").valid_count() == 10
-    assert well.get("ILD") is None                       # fewer valid samples: dropped
+    assert well.get("ILD").valid_count() == 5            # fewer valid samples: kept under its own name
 
 
 def test_standardizer_collision_ties_keep_the_first_curve():
@@ -285,13 +285,18 @@ def test_overburden_is_integrated_from_the_log_interval_top():
         NumericalStatisticalAnalysis,
     )
 
+    from petrophys._internal.benchmark import historical_benchmark
+
     n = 100
     well = _make_well(
         [("RHOB", np.full(n, 2.3), "g/cm3"),
          ("GR", np.full(n, 60.0), "API")],
         n=n, top=1000.0,
     )
-    NumericalStatisticalAnalysis().analyze(well)
+    # The benchmark packages report the increment; the current analysis is
+    # absolute from the surface (tests/test_decisions_evaluation.py).
+    with historical_benchmark():
+        NumericalStatisticalAnalysis().analyze(well)
     sv = np.asarray(well.get("S_V").data, dtype=float)
     pp = np.asarray(well.get("PP_HYDROSTATIC").data, dtype=float)
     mask = np.isfinite(sv) & np.isfinite(pp)

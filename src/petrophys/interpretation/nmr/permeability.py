@@ -159,6 +159,8 @@ def t2_fraction_below_cutoff(
     [1.0, 0.544, 0.0]
     """
     log_t2 = np.log(np.asarray(t2_centers, dtype=float))
+    if log_t2.size >= 2 and not np.all(np.diff(log_t2) > 0):
+        raise ValueError("t2_centers must be strictly increasing")
     log_cut = np.log(np.asarray(cutoff_ms, dtype=float))[..., None]
     if log_t2.size < 2:
         return np.where(log_t2 < log_cut, 1.0, 0.0)
@@ -188,7 +190,7 @@ def bvi_from_bins(
     bins : np.ndarray
         Shape (n_depth, n_bins).
     t2_centers : np.ndarray
-        T2 bin centres (ms).
+        T2 bin centres (ms), strictly increasing.
     cutoff_ms : float
         T2 cutoff (ms).  Default 33 ms, the sandstone value (Coates, Xiao and
         Prammer, 1999).
@@ -199,9 +201,11 @@ def bvi_from_bins(
     Returns
     -------
     np.ndarray
-        BVI (pu).
+        BVI (pu).  NaN when ``cutoff_ms`` is NaN.
     """
     t2c  = np.asarray(t2_centers, dtype=float)
+    if np.isnan(cutoff_ms):
+        return np.full(np.atleast_2d(bins).shape[0], np.nan)
     if partial_bins:
         weights = t2_fraction_below_cutoff(t2c, float(cutoff_ms))
     else:
@@ -221,9 +225,11 @@ def ffi_from_bins(
 
     Sums the bins above ``cutoff_ms``, the complement of
     :func:`bvi_from_bins`; ``partial_bins=False`` counts whole bins with
-    centre **>= cutoff_ms**.
+    centre **>= cutoff_ms**.  NaN when ``cutoff_ms`` is NaN.
     """
     t2c  = np.asarray(t2_centers, dtype=float)
+    if np.isnan(cutoff_ms):
+        return np.full(np.atleast_2d(bins).shape[0], np.nan)
     if partial_bins:
         weights = 1.0 - t2_fraction_below_cutoff(t2c, float(cutoff_ms))
     else:

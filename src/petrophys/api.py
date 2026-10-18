@@ -182,12 +182,13 @@ def plot(
         Well to plot. Passing the result of :func:`interpret` plots the
         interpreted well, including calculated curves.
     depth_range : (float, float), optional
-        Top and base depth of the plot window, in the well's depth unit.
-        Defaults to the full logged interval.
+        Top and base depth of the plot window, in the well's depth unit, in
+        either order. Defaults to the full logged interval.
     top, height : float, optional
         Alternative to ``depth_range``: window top and window height.
     tracks : sequence of str, optional
-        Track names to show, in order (e.g. ``["GR", "RESISTIVITY"]``).
+        Track names to show, in order (e.g. ``["GAMMA / HOLE", "RESISTIVITY"]``;
+        ``viewer.template.tracks`` lists a template's track names).
         Defaults to every track the template can fill.
     template : str, default "auto"
         Built-in layout. ``"auto"`` builds tracks from the curves present;
@@ -224,6 +225,9 @@ def plot(
     """
     from petrophys.visualization import create_log_viewer
 
+    if depth_range is not None:
+        # Depth increases downward whichever way round the window is given.
+        depth_range = cast(Tuple[float, float], tuple(sorted(depth_range)))
     viewer = create_log_viewer(
         cast("Well", getattr(well, "well", well)),
         template_xml_path=template_xml_path,
@@ -294,7 +298,8 @@ def interpret(
     Raises
     ------
     TypeError
-        If an option is not a DynamicWorkflowConfig setting.
+        If an option is not a DynamicWorkflowConfig setting, or ``well`` is
+        neither a Well nor a file path.
     ValueError
         If a setting has an invalid value.
 
@@ -325,8 +330,15 @@ def interpret(
             + ". See petrophys.DynamicWorkflowConfig for the available settings."
         )
 
+    from petrophys.model.well import Well
+
     if isinstance(well, (str, Path)):
         well = read(well) if depth_unit is None else read(well, depth_unit=depth_unit)
+    elif not isinstance(well, Well):
+        raise TypeError(
+            f"interpret() takes a Well or a well file path; got {type(well).__name__}. "
+            "Read files with petrophys.read()."
+        )
     else:
         if depth_unit is not None:
             raise ValueError("depth_unit only applies when interpret() reads a file.")

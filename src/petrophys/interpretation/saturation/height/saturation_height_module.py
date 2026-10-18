@@ -128,7 +128,10 @@ def fit_j_function(
 
 
 def fit_brooks_corey(pc_psi: ArrayLike, sw: ArrayLike, swir: Optional[float] = None) -> BrooksCoreyModel:
-    """Fit Brooks-Corey (Swir, Pd, lambda) to a drainage Pc curve."""
+    """Fit Brooks-Corey (Swir, Pd, lambda) to a drainage Pc curve.
+
+    A given ``swir`` is held fixed and only Pd and lambda are fitted.
+    """
     pc = np.asarray(pc_psi, dtype=float)
     sw = np.asarray(sw, dtype=float)
     ok = np.isfinite(pc) & np.isfinite(sw) & (pc > 0) & (sw > 0) & (sw <= 1.0)
@@ -142,13 +145,21 @@ def fit_brooks_corey(pc_psi: ArrayLike, sw: ArrayLike, swir: Optional[float] = N
             ratio = np.minimum(pd_ / pc_, 1.0)
             return swir_ + (1.0 - swir_) * np.power(ratio, lam_)
 
-        swir0 = float(np.min(sw)) if swir is None else float(swir)
-        p0 = [swir0, float(np.min(pc)), 0.5]
-        lower = [0.0, 1e-3, 1e-3]
-        upper = [min(0.9, float(np.min(sw)) + 0.2) if swir is None else swir0 + 1e-6,
-                 float(np.max(pc)), 10.0]
-        popt, _ = curve_fit(model, pc, sw, p0=p0, bounds=(lower, upper), maxfev=20000)
-        bc = BrooksCoreyModel(swir=float(popt[0]), pd=float(popt[1]), lam=float(popt[2]))
+        if swir is None:
+            swir0 = float(np.min(sw))
+            p0 = [swir0, float(np.min(pc)), 0.5]
+            lower = [0.0, 1e-3, 1e-3]
+            upper = [min(0.9, swir0 + 0.2), float(np.max(pc)), 10.0]
+            popt, _ = curve_fit(model, pc, sw, p0=p0, bounds=(lower, upper), maxfev=20000)
+            bc = BrooksCoreyModel(swir=float(popt[0]), pd=float(popt[1]), lam=float(popt[2]))
+        else:
+            swir0 = float(swir)
+            popt, _ = curve_fit(
+                lambda pc_, pd_, lam_: model(pc_, swir0, pd_, lam_), pc, sw,
+                p0=[float(np.min(pc)), 0.5],
+                bounds=([1e-3, 1e-3], [float(np.max(pc)), 10.0]), maxfev=20000,
+            )
+            bc = BrooksCoreyModel(swir=swir0, pd=float(popt[0]), lam=float(popt[1]))
     except Exception:
         # Fallback: fix Swir at min(Sw), linearize log((Sw-Swir)/(1-Swir)) vs log(Pc).
         swir0 = float(np.min(sw)) if swir is None else float(swir)

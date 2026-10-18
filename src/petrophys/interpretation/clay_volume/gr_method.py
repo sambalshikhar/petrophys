@@ -35,10 +35,12 @@ def vcl_linear(
     Returns
     -------
     float or np.ndarray
-        Linear clay volume indicator (IGR)
+        Linear clay volume indicator (IGR). Equal baselines leave the
+        indicator undefined and return NaN, including for missing GR.
     """
     if gr_max == gr_min:
-        return np.zeros_like(gr) if isinstance(gr, np.ndarray) else 0.0
+        result = np.full_like(np.asarray(gr, dtype=float), np.nan)
+        return float(result) if result.ndim == 0 else result
 
     igr = (gr - gr_min) / (gr_max - gr_min)
     return np.clip(igr, 0, 1)

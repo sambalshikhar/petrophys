@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Annotated, Any, Dict, Iterator, List, Literal, Optional, Sequence, Tuple, Union
 
 import numpy as np
-from pydantic import Field
 
 from petrophys.mcp.serialize import (
     compact,
@@ -33,6 +32,7 @@ from petrophys.mcp.serialize import (
 from petrophys.mcp.session import Session, SessionError, default_calculation_profile
 
 try:
+    from pydantic import Field
     from mcp.server.mcpserver import Image, MCPServer
     from mcp.server.mcpserver.exceptions import ToolError
     from mcp.types import CallToolResult, TextContent, ToolAnnotations
@@ -170,6 +170,19 @@ class _PetrophysServer(MCPServer):
         return tools
 
 
+def _use_headless_backend() -> None:
+    """Select matplotlib's Agg backend unless the host has chosen one.
+
+    Tools run in worker threads, where a GUI backend (TkAgg on Windows)
+    aborts the process when plot_well draws; plots are returned as PNGs.
+    """
+    import matplotlib
+
+    chosen = getattr(matplotlib.rcParams, "_get_backend_or_none", None)
+    if chosen is not None and chosen() is None:
+        matplotlib.use("Agg")
+
+
 def create_server(
     roots: Optional[Sequence[str | Path]] = None,
     *,
@@ -209,6 +222,7 @@ def create_server(
     from petrophys.mcp import catalog, reports
     from petrophys.version import __version__
 
+    _use_headless_backend()
     default_profile = default_calculation_profile(calculation_profile)
     state = session or Session(roots=[Path(root) for root in roots or []])
     server = _PetrophysServer(
@@ -403,7 +417,8 @@ def create_server(
         ] = None,
         well_id: Annotated[
             Optional[str],
-            Field(description="Id to store the well under; defaults to the well name."),
+            Field(description="Id to store the well under; defaults to the well name. An id "
+                              "already used by another file is refused."),
         ] = None,
     ) -> JsonReply:
         """Load a well file and summarize it.
@@ -875,7 +890,7 @@ def create_server(
                         raise
             table = reports.zone_table(well, formations=source, rank=rank, names=filters or None)
             if note:
-                table["note"] = note
+                table["note"] = note + (f" {table['note']}" if table.get("note") else "")
             return reply(table)
 
     @server.tool(annotations=READ_ONLY)

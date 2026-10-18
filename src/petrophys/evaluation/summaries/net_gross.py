@@ -4,6 +4,7 @@ Net-to-gross calculations.
 
 from typing import TYPE_CHECKING, Optional, List, Dict, Union
 from dataclasses import dataclass
+import warnings
 import numpy as np
 
 from petrophys._internal.analysis_helpers import (
@@ -38,10 +39,14 @@ def calculate_net_gross(
     bottom_depth: Optional[float] = None,
     net_pay_curve: str = "NET_PAY",
     net_reservoir_curve: str = "NET_RES",
-    net_rock_curve: str = "NET_ROCK"
+    net_rock_curve: str = "NET_ROCK",
+    include_bottom: bool = True,
 ) -> NetGrossResult:
     """
     Calculate net-to-gross ratios.
+
+    A net thickness whose flag curve is not on the well is NaN (unknown, not
+    zero), and so is a ratio with a zero or unknown denominator.
 
     Parameters
     ----------
@@ -57,6 +62,9 @@ def calculate_net_gross(
         Name of net reservoir flag curve
     net_rock_curve : str
         Name of net rock flag curve
+    include_bottom : bool
+        Count a sample at ``bottom_depth`` (False for a zone whose bottom is
+        the next zone's top)
 
     Returns
     -------
@@ -69,6 +77,8 @@ def calculate_net_gross(
 
     # Get depth mask
     mask = (depth >= top_depth) & (depth <= bottom_depth)
+    if not include_bottom:
+        mask &= depth < bottom_depth
     sample_thickness = cell_thickness(depth)
     gross_thickness = float(np.sum(sample_thickness[mask]))
     if gross_thickness <= 0 and np.any(mask):
@@ -79,9 +89,19 @@ def calculate_net_gross(
     net_res_c = well.get(net_reservoir_curve)
     net_rock_c = well.get(net_rock_curve)
 
-    net_rock_thick = 0.0
-    net_res_thick = 0.0
-    net_pay_thick = 0.0
+    missing = [
+        name for name, curve in ((net_rock_curve, net_rock_c), (net_reservoir_curve, net_res_c),
+                                 (net_pay_curve, net_pay_c)) if curve is None
+    ]
+    if missing:
+        warnings.warn(
+            f"Net flag curve(s) {', '.join(missing)} not on the well; their thicknesses and ratios are NaN",
+            UserWarning,
+            stacklevel=2,
+        )
+    net_rock_thick = np.nan
+    net_res_thick = np.nan
+    net_pay_thick = np.nan
     zone_thickness = sample_thickness[mask]
 
     if net_rock_c is not None:
@@ -94,11 +114,11 @@ def calculate_net_gross(
         net_pay_thick = float(np.sum(zone_thickness[net_pay_c.data[mask] > 0.5]))
 
     # Calculate ratios
-    ntg_rock = net_rock_thick / gross_thickness if gross_thickness > 0 else 0
-    ntg_reservoir = net_res_thick / gross_thickness if gross_thickness > 0 else 0
-    ntg_pay = net_pay_thick / gross_thickness if gross_thickness > 0 else 0
-    ntg_res_rock = net_res_thick / net_rock_thick if net_rock_thick > 0 else 0
-    ntg_pay_res = net_pay_thick / net_res_thick if net_res_thick > 0 else 0
+    ntg_rock = net_rock_thick / gross_thickness if gross_thickness > 0 else np.nan
+    ntg_reservoir = net_res_thick / gross_thickness if gross_thickness > 0 else np.nan
+    ntg_pay = net_pay_thick / gross_thickness if gross_thickness > 0 else np.nan
+    ntg_res_rock = net_res_thick / net_rock_thick if net_rock_thick > 0 else np.nan
+    ntg_pay_res = net_pay_thick / net_res_thick if net_res_thick > 0 else np.nan
 
     return NetGrossResult(
         gross_thickness=gross_thickness,
@@ -133,13 +153,16 @@ def calculate_ntg_by_zone(
         Dictionary mapping zone names to NetGrossResult
     """
     results = {}
+    tops = {float(zone["top"]) for zone in zones}
 
     for zone in zones:
         name = zone.get("name", f"Zone_{zone['top']}")
         result = calculate_net_gross(
             well,
             top_depth=zone["top"],
-            bottom_depth=zone["bottom"]
+            bottom_depth=zone["bottom"],
+            # A boundary sample shared with the next zone is counted once, in that zone.
+            include_bottom=float(zone["bottom"]) not in tops,
         )
         results[name] = result
 

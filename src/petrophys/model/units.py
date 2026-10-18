@@ -448,13 +448,18 @@ def temperature_unit(unit: Optional[str], *, strict: bool = False) -> Optional[s
     True
     """
     text = "" if unit is None else str(unit).lower().replace("°", " ").replace("º", " ")
+    # The single-character signs U+2103 (degree Celsius) and U+2109 (degree Fahrenheit)
+    text = text.replace("\u2103", " degc ").replace("\u2109", " degf ")
     tokens = re.findall(r"[a-z]+", text)
     joined = ["".join(tokens[i:i + 2]) for i in range(len(tokens))]
     words = set(tokens) | set(joined)
+    # "oF" is read as Fahrenheit only on its own, since "of" is also an English word
+    if tokens == ["of"]:
+        words.add("degf")
     scales = set()
     if words & {"f", "degf", "fahrenheit"}:
         scales.add("F")
-    if words & {"c", "degc", "celsius", "centigrade"}:
+    if words & {"c", "degc", "oc", "celsius", "centigrade"}:
         scales.add("C")
     if words & {"k", "degk", "kelvin"}:
         scales.add("K")

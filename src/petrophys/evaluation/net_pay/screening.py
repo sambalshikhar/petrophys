@@ -55,6 +55,7 @@ def grade_interval(
     marginal_lithologies: Iterable[str] = (),
     max_bad_hole_fraction: float = 0.5,
     min_thickness: float = 1.0,
+    depth_unit: str = "m",
 ) -> Tuple[str, List[str]]:
     """Screening confidence of a flagged interval.
 
@@ -73,6 +74,8 @@ def grade_interval(
         Bad-hole share above which the interval is low confidence.
     min_thickness : float
         Thickness below which the interval is below tool resolution.
+    depth_unit : str, default "m"
+        Unit of ``thickness`` and ``min_thickness``, for the reason text.
 
     Returns
     -------
@@ -94,7 +97,7 @@ def grade_interval(
     if bad_hole_fraction is not None and bad_hole_fraction > max_bad_hole_fraction:
         reasons.append(f"bad hole {100 * bad_hole_fraction:.0f}%")
     if thickness < min_thickness:
-        reasons.append(f"thinner than {min_thickness} m")
+        reasons.append(f"thinner than {min_thickness} {depth_unit}")
     return ("low" if reasons else "higher"), reasons
 
 
