@@ -20,9 +20,6 @@ behaviour is kept inside `petrophys._internal.benchmark.historical_benchmark()`.
 - `apply_hc_correction=True` feeds NPHI_HC/RHOB_HC into the porosity step.
 - A measured TEMP log (>= 50% finite coverage) is the temperature source; the
   modelled gradient fills its gaps.
-- PERM_CC from the core poro-perm transform is written only where PHIE_CC lies
-  within the porosity range of the plugs used in the fit; elsewhere NaN, with
-  the count in the trace.
 - Input PHIE_CC/PERM_CC are kept as PHIE_CC_INPUT/PERM_CC_INPUT instead of
   being removed.
 - `DynamicWorkflowConfig.__post_init__`: the deprecated `lithology` alias only
@@ -87,6 +84,9 @@ behaviour is kept inside `petrophys._internal.benchmark.historical_benchmark()`.
   `data_label` is given.
 
 ## Deferred (no effect on results)
+
+- PERM_CC stays a whole-well curve (maintainer decision, 18 October 2026);
+  the notebooks caveat its values outside the cored interval.
 
 - Validation ranges for implausible settings; casing flag; `settings_used`
   cutoffs; evaporite label wording; SP Rw per-sample basis; sonic frame

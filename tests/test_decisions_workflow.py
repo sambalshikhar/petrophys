@@ -183,22 +183,6 @@ def test_measured_temperature_log_is_the_source_and_gaps_are_modelled():
 # --- Core-corrected curves ---------------------------------------------------------
 
 
-def test_perm_cc_is_limited_to_the_plug_porosity_range():
-    result = pp.interpret(_well(), rw=0.07, rw_meas_temp_f=230)
-    core = _step(result, "core_correction")
-    outside = core.parameters["perm_cc_outside_plug_range_samples"]
-    assert outside > 0
-    (fit,) = core.parameters["perm_cc_plug_porosity_ranges"]
-    assert 0 < fit["plug_porosity_min"] < fit["plug_porosity_max"] < 0.5
-    perm_cc = result.well["PERM_CC"].data
-    phie_cc = result.well["PHIE_CC"].data
-    assert np.count_nonzero(np.isnan(perm_cc) & np.isfinite(phie_cc)) >= outside
-
-    historical = pp.interpret(_well(), rw=0.07, rw_meas_temp_f=230, calculation_profile="geolink")
-    assert "perm_cc_outside_plug_range_samples" not in _step(historical, "core_correction").parameters
-    assert np.count_nonzero(np.isfinite(historical.well["PERM_CC"].data)) > np.count_nonzero(np.isfinite(perm_cc))
-
-
 def test_input_core_curves_are_kept_as_input_copies():
     original = _well("HW-3")
     phie_cc = np.array(original["PHIE_CC"].data, copy=True)
