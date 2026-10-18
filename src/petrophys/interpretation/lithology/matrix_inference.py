@@ -1,8 +1,8 @@
 """Resolve a well's lithology / matrix when it isn't specified (``"auto"``).
 
-Reliable sources, in priority order (the PEF/N-D single-curve heuristics were
-dropped: on real data a single bad PEF curve produced confidently-wrong answers,
-while the two sources below agreed with vendor ground truth):
+Reliable sources, in priority order (single-curve PEF/N-D heuristics are not
+used: on real data a single bad PEF curve gives confidently wrong answers, while
+the two sources below agree with vendor ground truth):
 
   0. Vendor lithology log  -- a per-sample lithology-code curve in the LAS
        (e.g. LITHOLOGY_GEOLINK; see :func:`lithology_code_curve`), decoded via
@@ -94,7 +94,8 @@ _LITHOLOGY_NAME_DENY = ("LITHOSTAT", "LITHOSTATIC", "FLAG", "PRESS")
 
 # core (lab) porosity curves — ground-truth porosity that pins apparent matrix
 # density. PHIE_CC is a core-corrected log porosity (COSTA's is the renamed
-# upstream PHIE), not a core measurement; the benchmark packages read it as one.
+# upstream PHIE), not a core measurement; the benchmark context profiles also
+# read it, as the packages did.
 _CORE_POROSITY_CURVES = (
     "PHIT_CC", "CPOR", "CPOR_CC", "PHIC", "COREPHI", "CPORE",
 )

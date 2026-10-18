@@ -558,11 +558,10 @@ def solve_two_mineral(
     **kwargs,
 ) -> Dict[str, np.ndarray]:
     """
-    Backward-compatible convenience wrapper for a 2-mineral solve.
+    Convenience wrapper for a 2-mineral solve.
 
-    Older public imports exposed ``solve_two_mineral`` directly. The current
-    implementation routes through ``MultiMineralSolver`` and defaults VCL/PHIE
-    to zero when they are not provided.
+    It routes through ``MultiMineralSolver`` and defaults VCL/PHIE to zero
+    when they are not provided.
     """
     rhob_arr = np.atleast_1d(np.asarray(rhob, dtype=float))
     nphi_arr = None if nphi is None else np.atleast_1d(np.asarray(nphi, dtype=float))
@@ -588,10 +587,10 @@ def solve_three_mineral(
     **kwargs,
 ) -> Dict[str, np.ndarray]:
     """
-    Backward-compatible convenience wrapper for a 3-mineral solve.
+    Convenience wrapper for a 3-mineral solve.
 
-    Older modules import this symbol directly; keeping it here avoids import
-    failures while using the newer ``MultiMineralSolver`` implementation.
+    It routes through ``MultiMineralSolver`` and defaults VCL/PHIE to zero
+    when they are not provided.
     """
     rhob_arr = np.atleast_1d(np.asarray(rhob, dtype=float))
     nphi_arr = None if nphi is None else np.atleast_1d(np.asarray(nphi, dtype=float))

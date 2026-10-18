@@ -224,7 +224,7 @@ class Curve:
         """Create a derived curve with same depth and metadata.
 
         ``unit`` is the unit of the result (default: this curve's unit); it is
-        empty when it cannot be inferred. The benchmark reproduction keeps
+        empty when it cannot be inferred. The benchmark context profiles keep
         this curve's unit for every operation.
         """
         if unit is None or reproducing_benchmark():

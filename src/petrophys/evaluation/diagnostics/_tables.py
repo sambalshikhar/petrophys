@@ -35,7 +35,7 @@ def class_table_set(value: str) -> str:
     """Validate an analyzer's ``class_tables`` argument."""
     text = str(value).strip().lower()
     if text == "benchmark":
-        raise ValueError('class_tables "benchmark" is now "geolink": the GeoLink eval package\'s tables')
+        raise ValueError('class_tables "benchmark" is not a table set; use "geolink" for the GeoLink eval package\'s tables')
     if text not in CLASS_TABLE_SETS:
         raise ValueError(f"class_tables must be one of {CLASS_TABLE_SETS}, not {value!r}")
     return text

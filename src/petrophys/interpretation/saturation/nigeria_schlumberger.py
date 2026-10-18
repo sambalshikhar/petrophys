@@ -10,7 +10,8 @@ Rearranging:
     Sw^(n/2) = [1 / sqrt(Rt) - Vcl^c / sqrt(Rsh)] * sqrt(a * Rw) / phi^(m/2)
 
 with Sw = NaN where the shale term alone exceeds 1 / sqrt(Rt): the equation
-has no solution there (the benchmark packages gave Sw = 0).
+has no solution there. The benchmark context profiles keep the packages'
+original calculation.
 """
 
 from typing import Union

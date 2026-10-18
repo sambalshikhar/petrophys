@@ -254,7 +254,7 @@ create_fmi_panel(image, depth_range=(4052, 4058), orient=True, equalize="dynamic
 
 ## Specialist inputs and remaining tutorial work
 
-The Epslog collection now supplies core-scanner inputs for 15/12-20 S and a
+The Epslog collection supplies core-scanner inputs for 15/12-20 S and a
 same-well RealPore core extract. Discover them with `petrophys.list_samples("epslog")`;
 the collection README records curve mappings, units and depth-matching limits.
 These inputs and the Phillips reference tables do not by themselves complete

@@ -87,7 +87,7 @@ def _porosity_to_pu(
     unit: str = "",
     mnemonic: str = "",
 ) -> Optional[np.ndarray]:
-    """Return porosity in percent/porosity units, preserving old NMR semantics."""
+    """Return porosity in percent (porosity units), as the NMR calculations take it."""
     if values is None:
         return None
     arr = np.asarray(values, dtype=float).copy()

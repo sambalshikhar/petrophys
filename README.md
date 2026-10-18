@@ -194,7 +194,7 @@ carbonate.
 See the [context guide](https://petrophys.netlify.app/context.html) and [interpretation review guide](https://petrophys.netlify.app/data_quality.html).
 For GeoLink, COSTA and Danish benchmark reproduction, see the
 [benchmark context guide](docs/benchmark_context.md), with commands, required
-inputs, output layouts and known reproduction limits.
+inputs, output layouts and common errors.
 Net-pay output is cutoff screening, not confirmed pay; review warnings and calibration.
 
 ## Use with LLM agents (MCP)

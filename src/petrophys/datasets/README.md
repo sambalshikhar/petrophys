@@ -46,7 +46,7 @@ any user-owned path directly to `read_las()` or `read_dlis()`.
 
 ## Repository fixtures
 
-Large LAS/DLIS regression files use the same domain folders as the bundled
+Large LAS/DLIS test files use the same domain folders as the bundled
 samples but are explicitly catalogued and resolved separately, so they are
 never confused with installed samples:
 

@@ -173,7 +173,7 @@ Zone-only header parameters (`RW_Z1` with `TOP_Z1`/`BOT_Z1`) apply inside their 
 A measured `TEMP` log with at least half of its samples finite is the temperature source, with the modelled gradient filling its gaps; a sparser log is kept as `TEMP_LOG` and the modelled profile is used.
 With `apply_hc_correction=True`, the porosity step reads the hydrocarbon-corrected `NPHI_HC` and `RHOB_HC`.
 Input `PHIE_CC` and `PERM_CC` curves are kept as `PHIE_CC_INPUT` and `PERM_CC_INPUT` while the run rewrites them from its own core model, and `PERM_CC` is written only where the core-corrected porosity lies within the porosity range of the plugs behind the poro-perm fit (the samples set aside are counted in the trace).
-The `"geolink"` profile keeps the earlier behaviour in each case.
+The `"geolink"` profile keeps the GeoLink eval package's calculation in each case.
 
 ## Clay volume
 
@@ -213,7 +213,7 @@ That one curve gives the vendor lithology, the `"auto"` matrix and the per-depth
 `result.warnings` names a curve other than `LITHOLOGY_GEOLINK`; if it holds other codes, pass `lithology_source="computed"` or lithology intervals.
 
 The carbonate solve uses bulk density alone, so its calcite-dolomite split depends on the pore-fluid density `rho_fl` (1.0 g/cm3 by default) and on the matrix density behind the porosity.
-On HW-3 the generic defaults put almost every sample at the dolomite end member; set `rho_fl` for your brine, and use the field calibration on COSTA wells.
+On HW-3 the generic defaults put nearly nine samples in ten at the calcite end member, with no dolomite; set `rho_fl` for your brine, and use the field calibration on COSTA wells.
 Here the clastic run on 30/6-5 is set against a carbonate run on the COSTA well HW-3:
 
 ```{code-cell} python

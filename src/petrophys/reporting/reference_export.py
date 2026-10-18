@@ -788,7 +788,7 @@ def _convert_temperature_to_fahrenheit(data: np.ndarray, unit: str) -> np.ndarra
 def _fraction_data(curve) -> np.ndarray:
     """A volume or saturation curve in v/v; percent-labelled data is divided by 100.
 
-    The benchmark packages wrote the data unchanged under the v/v label.
+    The benchmark context profiles keep the packages' original calculation.
     """
     numeric = _normalize_numeric_array(curve.data)
     unit = str(curve.unit or "").strip().lower().replace(" ", "")
@@ -1665,7 +1665,7 @@ def _category_analysis_result(
         and workflow_result is not None
         and not _reproduces_benchmark_context(workflow_result)
     ):
-        # Group the GeoLink codes as the "current" calculations did.
+        # Group the GeoLink codes as the "current" calculations do.
         from petrophys.evaluation.diagnostics.lithology_analysis import CURRENT_GROUND_TRUTH_GROUPS
 
         options["ground_truth_groups"] = CURRENT_GROUND_TRUTH_GROUPS
@@ -8818,16 +8818,24 @@ def write_example_format_report(
     return report_file
 
 
+#: The description the benchmark packages carry in curve_name_mapping.json.
+_BENCHMARK_MAPPING_DESCRIPTION = (
+    "Mapping between the current LAS/JSON export mnemonics and the older/example naming "
+    "conventions used in prior reference files."
+)
+
+
 def write_reference_curve_name_mapping(
     output_dir: str | Path,
     file_name: str = "curve_name_mapping.json",
 ) -> Path:
-    """Write the mapping from current export curve names to the older ones.
+    """Write the mapping between the export curve names and the reference delivery names.
 
-    The JSON file lists the curves whose exported mnemonic changed (for
-    example ``SXO``, previously ``SWXO``), the method-specific legacy names,
-    explicit replacements and the key curves whose names did not change, so
-    that consumers of earlier reference deliveries can match curves.
+    The JSON file lists the curves whose exported mnemonic differs from the
+    reference deliveries (for example ``SXO``, ``SWXO`` there), the
+    method-specific reference names, explicit replacements and the key curves
+    whose names are the same, so that consumers of the reference deliveries
+    can match curves.
 
     Parameters
     ----------
@@ -8846,8 +8854,9 @@ def write_reference_curve_name_mapping(
     mapping_path = output_path / file_name
     payload = {
         "description": (
-            "Mapping between the current LAS/JSON export mnemonics and the older/example naming "
-            "conventions used in prior reference files."
+            _BENCHMARK_MAPPING_DESCRIPTION if reproducing_benchmark() else
+            "Mapping between the LAS/JSON export mnemonics and the example naming "
+            "conventions used in the reference files."
         ),
         "mapping": REFERENCE_CURVE_NAME_MAPPING,
     }

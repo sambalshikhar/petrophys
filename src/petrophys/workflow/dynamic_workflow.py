@@ -798,9 +798,9 @@ class DynamicWorkflowConfig:
     #: mineral-solving family and cutoff defaults; it is distinct from
     #: per-depth lithology.
     lithology_domain: Optional[str] = None
-    #: Deprecated alias for ``lithology_domain``. It remains accepted so old
-    #: notebooks fail gracefully while new inputs use the unambiguous name. It
-    #: fills ``lithology_domain`` only when that is unset, and a value that
+    #: Deprecated alias for ``lithology_domain``, the unambiguous name; the
+    #: alias is accepted. It fills ``lithology_domain`` only when that is
+    #: unset, and a value that
     #: differs from a set ``lithology_domain`` is an error.
     lithology: Optional[str] = None
     #: Lithology intervals CSV (``top,bottom,lithology``).
@@ -993,7 +993,7 @@ class DynamicWorkflowConfig:
     #: flag that picks the SWIRR_APP samples before permeability. False
     #: (default) recomputes the flag from this run's cutoffs and warns that the
     #: input flag was set aside, so an interpreted LAS fed back in cannot carry
-    #: an older run's cutoffs into Swirr and permeability. True keeps a supplied
+    #: another run's cutoffs into Swirr and permeability. True keeps a supplied
     #: flag, e.g. a vendor reservoir flag you mean to honour.
     reuse_input_resflag: bool = False
     #: Offset wells (``Well`` objects) whose core data calibrate permeability.
@@ -1085,11 +1085,11 @@ _CARBONATE_CALIBRATIONS = ("generic", "costa")
 #: DynamicWorkflowConfig.calculation_profile).
 _BENCHMARK_PROFILES = ("geolink",)
 _CALCULATION_PROFILES = ("current", *_BENCHMARK_PROFILES)
-#: The former name of the "geolink" profile, refused with a pointer to it.
+#: A profile name that is refused with a pointer to the "geolink" profile.
 _RENAMED_PROFILE = "benchmark"
 _RENAMED_PROFILE_MESSAGE = (
-    'calculation_profile "benchmark" is now "geolink": the calculations of the GeoLink '
-    'eval package. To reproduce a published context package, use context_profile '
+    'calculation_profile "benchmark" is not a profile; use "geolink" for the calculations '
+    'of the GeoLink eval package. To reproduce a published context package, use context_profile '
     '("geolink", "costa" or "danish") in export_context.'
 )
 #: The eval package's wells that its re-run interpreted, as compared by
@@ -1617,9 +1617,8 @@ class DynamicWorkflowResult:
 
     @property
     def success(self) -> bool:
-        # Honest success: no hard errors AND no executed step reported failure.
-        # Previously this only checked `errors`, which `run()` never populates,
-        # so a workflow in which every step threw still reported success=True.
+        # Success: no hard errors AND no executed step reported failure. Step
+        # failures are recorded on the steps, not in `errors`.
         step_failed = any(
             getattr(step, "success", True) is False
             for step in self.steps_executed
@@ -5699,8 +5698,8 @@ class DynamicWorkflow:
                 header_note = header["phi_cl_header_note"]
 
         if self._benchmark:
-            # The eval package took clay porosity from the mean PHIT of every
-            # shale-lithology sample, where today's resolution averages the
+            # The eval package takes clay porosity from the mean PHIT of every
+            # shale-lithology sample; the "current" profile averages the
             # neutron-density averaged shale samples only.
             lithology = self._build_lithology_log(well)
             phit_curve = well.get("PHIT")

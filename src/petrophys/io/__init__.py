@@ -33,9 +33,9 @@ __all__ = [
 ]
 
 
-# These names were historically exported from ``petrophys.io``. Keep them
-# lazy so existing callers continue to work without making the I/O layer
-# depend on interpretation or reporting during normal imports.
+# These names are also reachable from ``petrophys.io``, with a
+# DeprecationWarning that points to their module. They load lazily, so the
+# I/O layer does not depend on interpretation or reporting during normal imports.
 _COMPAT_EXPORTS = {
     "BoreholeImageData": ("petrophys.interpretation.borehole_imaging", "BoreholeImageData"),
     "read_borehole_image_dlis": ("petrophys.interpretation.borehole_imaging", "read_borehole_image_dlis"),

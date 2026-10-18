@@ -39,9 +39,8 @@ ALIAS_MAP: Dict[str, List[str]] = {
     ],
     # Medium Resistivity (RMED)
     # NOTE: AT10 (10in array induction) and RLLS (laterolog shallow) belong to RSHA,
-    # not here. They were duplicated across RMED/RSHA; with a last-write-wins reverse
-    # map that silently mislabeled them. AT30 (30in) is the medium curve and stays.
-    # RESS and SFLU moved to RSHA: the rest of the library (analysis, workflow
+    # not here: each alias maps to one standard curve. AT30 (30in) is the medium curve.
+    # RESS and SFLU are RSHA aliases: the rest of the library (analysis, workflow
     # gating, log viewer) treats RESS as shallow/flushed-zone, and SFL-family
     # curves are the shallow member of the classic DIL-SFL suite.
     "RMED": [
@@ -79,6 +78,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RMLL",
         "PL",
         "RESMIC",
+        "RMIC",
         "RXO8",
         "RXO82",
         "RXOI",
@@ -202,8 +202,9 @@ _BENCHMARK_ALIAS_MAP: Dict[str, List[str]] = {
     ],
     "GR": [*ALIAS_MAP["GR"][:ALIAS_MAP["GR"].index("HGR")], "HCGR", *ALIAS_MAP["GR"][ALIAS_MAP["GR"].index("HGR"):]],
     "CGR": [name for name in ALIAS_MAP["CGR"] if name != "HCGR"],
+    "RXO": [name for name in ALIAS_MAP["RXO"] if name != "RMIC"],
 }
-_BENCHMARK_REVERSE_MAP: Dict[str, str] = {"HCGR": "GR"}
+_BENCHMARK_REVERSE_MAP: Dict[str, str] = {"HCGR": "GR", "RMIC": "RMIC"}
 
 
 def get_standard_mnemonic(mnemonic: str) -> str:

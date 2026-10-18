@@ -1044,8 +1044,8 @@ CONSTANT_DOCS = {
     "templates (XML), keyed by name.",
 }
 
-#: Modules that had a page at ``/api/generated/<module>.html`` before the
-#: reference was grouped; ``docs/_extra/_redirects`` sends each to its new page.
+#: Modules with a page address ``/api/generated/<module>.html``;
+#: ``docs/_extra/_redirects`` sends each to its page in the grouped reference.
 OLD_MODULE_PAGES = """
 petrophys.api petrophys.exceptions petrophys.model petrophys.model.log_data
 petrophys.io petrophys.datasets petrophys.preprocessing.standardization
@@ -1762,9 +1762,9 @@ class _Writer:
         compat = getattr(_import("petrophys.io"), "_COMPAT_EXPORTS", {})
         if not compat:
             return []
-        lines = _heading("Old import paths", 2)
-        lines += ["These names still import from ``petrophys.io`` but raise a "
-                  "``DeprecationWarning``. Import them from their new home.", "",
+        lines = _heading("Deprecated import paths", 2)
+        lines += ["These names import from ``petrophys.io`` with a "
+                  "``DeprecationWarning``. Import them from the module listed.", "",
                   ".. list-table::", "   :header-rows: 1", "   :class: ph-api-compat", "",
                   "   * - Deprecated", "     - Use instead"]
         for name, (module, attr) in sorted(compat.items()):

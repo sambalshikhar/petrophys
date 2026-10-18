@@ -87,8 +87,8 @@ python scripts/generate_benchmark_context.py --dataset geolink --input-dir "PATH
 ```
 
 This reuses the interpreted curves. The raw files identify which curves were
-original inputs. Omit `--from-raw` in this mode. Using raw inputs for a complete
-reproduction is preferable when you also need to regenerate interpreted LAS.
+original inputs. Omit `--from-raw` in this mode. Start from the raw inputs when
+you also need to regenerate the interpreted LAS.
 
 ## What the script writes
 
@@ -138,7 +138,7 @@ The installed CLI also supports profiles:
 petrophys-context "PATH/danish/las" "outputs/danish_benchmark_json_01" --layout category_formation_lithology --profile danish --formations "PATH/Danish_formation_tops_for_context.xlsx" --lithology-codes "PATH/Litho_Nomenclature_Kingdom.xlsx"
 ```
 
-## Reproduction limits and common errors
+## Common errors
 
 - A `context_profile` fixes the collection's interpretation and grouping.
   Do not combine it with `workflow_config` or custom interpretation/grouping
@@ -151,10 +151,6 @@ petrophys-context "PATH/danish/las" "outputs/danish_benchmark_json_01" --layout 
   wells from one collection and supply its required workbooks.
 - Use a new output path. The public API rejects existing package directories;
   it supports `overwrite=True` only for single-well JSON files.
-- Reference ELECTROFACIES clustering was unseeded, so those statistics may
-  differ. Reference comparisons also record SO/note differences for GeoLink's
-  15/9-17 and 34/10-23, and three SW sample differences for 16/10-4. These are
-  reproduction limits; byte-identical output is not guaranteed.
 
 Dataset profiles apply the collection's configured interpretation parameters,
 calibration and grouping rules.

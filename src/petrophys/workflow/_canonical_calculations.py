@@ -1,10 +1,10 @@
 """Canonical saturation calculations of the "geolink" calculation profile.
 
 The ``"geolink"`` calculation profile reproduces the GeoLink eval package,
-whose shaly-sand saturation used the Indonesia and Dual Water variants below.
-They are not the published equations: the ``"current"`` profile uses
+whose shaly-sand saturation uses the Indonesia and Dual Water variants below.
+The ``"current"`` profile uses the published forms,
 :func:`~petrophys.interpretation.saturation.indonesia` (Poupon and Leveaux,
-1971) and :func:`~petrophys.interpretation.saturation.dual_water` instead.
+1971) and :func:`~petrophys.interpretation.saturation.dual_water`.
 
 The canonical mineral inversion is
 :class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`.
