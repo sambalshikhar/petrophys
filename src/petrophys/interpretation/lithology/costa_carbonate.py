@@ -29,9 +29,9 @@ def solve_costa_carbonate(well) -> LithologyResult:
     The implementation intentionally follows the source notebooks: bulk
     illite is a linear function of GR, the solid illite fraction is normalized
     by ``1 - PHIT``, and bounded SLSQP solves the density and closure
-    constraints. The historical notebooks did not clip the GR-derived illite
-    value before solving, so this function records infeasible rows through
-    ``qc_flag`` rather than silently changing the equation.
+    constraints. As in the source notebooks, the GR-derived illite value is
+    not clipped before solving; infeasible rows are recorded through
+    ``qc_flag`` and the equation is left as it is.
     """
     rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
     gr, _, _ = get_curve_data_depthwise(well, ["GR", "CGR", "SGR"])

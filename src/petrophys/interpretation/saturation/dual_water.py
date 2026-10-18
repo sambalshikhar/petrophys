@@ -109,8 +109,8 @@ def dual_water(
 
     # Bound-water saturation cannot exceed 1 (happens when Vcl*phi_cl > phi_t).
     # Clamp BEFORE it is used so the apparent-Rwt mixing term (1 - swb)/rw stays
-    # physical; previously rwt was built from the raw swb, giving a negative
-    # conductivity contribution and an invalid Rwt in that regime.
+    # physical: a raw swb above 1 would give a negative conductivity
+    # contribution and an invalid Rwt.
     swb_safe = (
         np.where(swb >= 1.0, 0.999, swb)
         if isinstance(swb, np.ndarray)

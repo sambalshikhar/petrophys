@@ -132,7 +132,7 @@ def add_standard_curve_aliases(
     """
     requested = [name.upper() for name in (standards or list(ALIAS_MAP))]
     alias_map: Dict[str, str] = {}
-    # The benchmark packages kept the sample-count choice between AT60 and AT90.
+    # The benchmark context profiles keep the sample-count choice between AT60 and AT90.
     prefer_deepest_array = prefer_deepest_array and not reproducing_benchmark()
     valid_bases = {
         base_curve_mnemonic(name)
@@ -450,7 +450,6 @@ class CurveStandardizer:
             if self.convert_units and standard_name in CORE_SATURATION_CURVES and not historical:
                 # Core saturations: percent values under a "frac" or blank
                 # label are detected and converted to v/v, with a warning.
-                # The benchmark packages left them as written.
                 try:
                     standardize_core_saturation(new_curve, inplace=True)
                 except ValueError as exc:
@@ -493,8 +492,7 @@ class CurveStandardizer:
                     and new_curve.valid_count() > existing.valid_count()
                 )
                 if historical:
-                    # The benchmark packages kept the loser under the incoming
-                    # mnemonic, or dropped the incoming curve.
+                    # The benchmark context profiles keep the packages' original calculation.
                     if wins:
                         new_curves[mnemonic] = existing
                         new_curves[standard_name] = new_curve

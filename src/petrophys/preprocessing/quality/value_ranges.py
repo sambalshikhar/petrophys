@@ -175,7 +175,7 @@ def rule_for_curve(
         return ("SXO", table["SXO"]) if "SXO" in table else None
     if rules is None:
         if upper == "DCAL" and reproducing_benchmark():
-            # The benchmark packages screened DCAL as an absolute caliper.
+            # The benchmark context profiles keep the packages' original calculation.
             return ("CALI", table["CALI"])
         return _RULE_LOOKUP.get(upper)
     for canonical, rule in rules.items():
@@ -193,8 +193,8 @@ def _qc_curve_data(
     below = finite & (arr < low)
     above = finite & (arr > high)
     if not reproducing_benchmark():
-        # +/-inf is outside every range and becomes NaN under clip rules too;
-        # the benchmark packages left infinities as they were.
+        # +/-inf is outside every range and becomes NaN under clip rules too.
+        # The benchmark context profiles keep the packages' original calculation.
         below |= np.isneginf(arr)
         above |= np.isposinf(arr)
     changed = below | above

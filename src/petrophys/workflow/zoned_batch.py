@@ -885,9 +885,9 @@ def run_dynamic_workflow_with_zones(
             )
     historical = _reproduces_benchmark(config) or reproducing_benchmark()
     if historical:
-        # The "geolink" profile filled uncovered intervals with the zones'
-        # common (or Z1) values; the current calculations keep zone values
-        # inside their zones and run the whole-well chain outside them.
+        # The "geolink" profile fills uncovered intervals with the zones'
+        # common (or Z1) values; the "current" profile keeps zone values
+        # inside their zones and runs the whole-well chain outside them.
         for field_name, value in zoned_default_overrides.items():
             if field_name not in global_overrides and _left_at_default(base_config, field_name):
                 _set_config_value(base_config, field_name, value)

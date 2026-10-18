@@ -51,7 +51,7 @@ def coates_denoo(
 
     k = 10000.0 * np.power(phi, 4.0) * np.power((1.0 - swi) / swi, 2.0)
     if not reproducing_benchmark():
-        # Swi > 1 is not a saturation; squaring (1 - Swi) made it a growing k.
+        # Swi > 1 is not a saturation; squaring (1 - Swi) would give it a growing k.
         k = np.where(swi > 1.0, np.nan, k)
         return k[()] if k.ndim == 0 else k
     return k

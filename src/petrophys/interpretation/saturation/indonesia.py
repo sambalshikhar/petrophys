@@ -58,8 +58,7 @@ def indonesia(
 
     # Normalize numeric inputs to arrays (0-d for scalars) and avoid division by zero.
     # Using np.asarray keeps scalar inputs working through the array code paths below
-    # (a 0-d array has .shape == () and supports np.where/np.power), which previously
-    # crashed with AttributeError on scalar rt.
+    # (a 0-d array has .shape == () and supports np.where/np.power).
     rt = np.asarray(rt, dtype=float)
     rt = np.where(rt <= 0, 1e-10, rt)
     # Infinite Rt (no conductivity reading) is missing, as in archie().

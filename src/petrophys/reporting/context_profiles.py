@@ -4,7 +4,7 @@ Each context profile computes its collection's JSON from raw LAS using the
 configured preparation, interpretation, calibration and grouping rules.
 GeoLink and Danish require their tops workbook and lithology codebook; COSTA
 uses bundled inputs and calibration data. See docs/benchmark_context.md for
-required inputs, examples and reference-comparison limits.
+required inputs and examples.
 """
 
 from __future__ import annotations

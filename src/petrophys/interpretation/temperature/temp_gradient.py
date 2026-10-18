@@ -16,7 +16,7 @@ from petrophys.model.units import UnitConverter, normalize_depth_unit, temperatu
 def _depth_unit_is_metres(depth_unit: str) -> bool:
     """True for a metre depth unit; unknown labels raise ``ValueError``.
 
-    The benchmark packages read every label other than "m" as feet.
+    The benchmark context profiles keep the packages' original unit handling.
     """
     if reproducing_benchmark():
         return depth_unit.lower() == "m"

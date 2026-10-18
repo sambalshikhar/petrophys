@@ -83,8 +83,7 @@ def rw_from_ssp(
     rw = rmf / np.power(10, -ssp / k)
 
     if reproducing_benchmark():
-        # The benchmark packages limited Rw to 0.01-10 ohm.m (and max/min
-        # turned a missing scalar into 0.01 ohm.m).
+        # The benchmark context profiles keep the packages' original calculation.
         if isinstance(rw, np.ndarray):
             return np.clip(rw, 0.01, 10.0)
         return max(0.01, min(rw, 10.0))
@@ -168,8 +167,8 @@ def rw_from_rxo_rt(
     where Sw = Sxo = 1.0
     """
     if not reproducing_benchmark():
-        # A zero or negative Rxo has no Rw. The benchmark packages replaced
-        # zero by 1e-10 ohm.m.
+        # A zero or negative Rxo has no Rw. The benchmark context profiles
+        # keep the packages' original calculation.
         rxo_arr = np.asarray(rxo, dtype=float)
         rxo_arr = np.where(rxo_arr > 0, rxo_arr, np.nan)
         rxo = rxo_arr if rxo_arr.ndim else float(rxo_arr)

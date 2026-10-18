@@ -153,9 +153,8 @@ def export_las(
 
     filepath = Path(filepath)
     historical = reproducing_benchmark()
-    # The benchmark packages were written with lasio's fixed five decimals,
-    # which print values below 5e-6 (permeability in mD) as 0; otherwise six
-    # significant figures keep them.
+    # Six significant figures keep small values such as permeability in mD;
+    # the benchmark context profiles keep the packages' five fixed decimals.
     kwargs.setdefault("fmt", "%.5f" if historical else "%.6g")
     depth_label = well.depth_unit
     if depth_unit_label:
@@ -323,8 +322,8 @@ def export_las(
             continue
         curve = well._curves[mnemonic]
 
-        # Replace non-finite values (NaN, +/-Inf) with the LAS null value.
-        # Inf was previously written literally as "inf", breaking re-read round-trips.
+        # Replace non-finite values (NaN, +/-Inf) with the LAS null value, so
+        # the file reads back with the same missing samples.
         data = curve.data.copy().astype(float)
         data = np.where(np.isfinite(data), data, -999.25)
         if keep is not None:

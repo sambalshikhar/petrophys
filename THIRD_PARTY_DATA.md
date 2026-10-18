@@ -3,9 +3,8 @@
 The MIT licence in `LICENSE` applies to Petrophys software. It does not replace
 the terms of third-party well data or grant rights that their suppliers do not
 grant. Preserve source attributions when redistributing data and derived files.
-Source records below were checked on 15 September 2026, with the Phillips and
-COSTA source-copy audit added on 1 October 2026; none implies supplier endorsement
-of Petrophys or its interpretations.
+Source records below were checked in September and October 2026; none implies
+supplier endorsement of Petrophys or its interpretations.
 
 ## COSTA
 

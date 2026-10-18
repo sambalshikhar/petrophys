@@ -69,8 +69,7 @@ def _as_fraction_if_percent(values: np.ndarray) -> np.ndarray:
     if not finite.size:
         return arr
     if reproducing_benchmark():
-        # The benchmark packages read the curve maximum, so one spike above
-        # 1.5 in a v/v curve rescaled the whole curve.
+        # The benchmark context profiles keep the packages' original calculation.
         level = np.nanmax(np.abs(finite))
         if level > 1.5 and level <= 100.0:
             arr = arr / 100.0
@@ -228,9 +227,9 @@ def estimate_apparent_swirr(
     phi_cutoff: float = 0.10
 ) -> tuple[np.ndarray, float, int]:
     """
-    Legacy Buckles-style Swirr estimate retained for direct callers.
+    Buckles-style Swirr estimate for direct callers.
 
-    The dynamic workflow no longer uses this fallback; it uses
+    The dynamic workflow does not use this estimate; it uses
     ``estimate_hc_swirr`` through ``resolve_swirr``.
     """
     phi = np.asarray(phi, dtype=float)

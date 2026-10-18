@@ -84,8 +84,7 @@ def simandoux(
         # A -> 0 (non-porous shale) and tends to C/B = Rcl / (Vcl * Rt).
         discriminant = np.maximum(B ** 2 + 4 * A * C, 0.0)
         if historical:
-            # The benchmark packages used the cancelling form, which gives 0
-            # where porosity is 0.
+            # The benchmark context profiles keep the packages' original calculation.
             sw = (-B + np.sqrt(discriminant)) / (2 * A)
         else:
             with np.errstate(divide="ignore", invalid="ignore"):

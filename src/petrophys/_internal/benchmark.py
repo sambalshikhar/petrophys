@@ -1,8 +1,9 @@
 """Whether the code runs to reproduce a benchmark context package.
 
-The GeoLink, COSTA and Danish context profiles reproduce packages computed by
-earlier versions of the library. Inside :func:`historical_benchmark` a few
-calculations keep those versions' behaviour; elsewhere the corrected one runs.
+The GeoLink, COSTA and Danish context profiles reproduce the published
+packages with the calculations those packages used. Inside
+:func:`historical_benchmark` a few calculations follow those packages; elsewhere
+the library's standard calculations run.
 """
 
 from __future__ import annotations
