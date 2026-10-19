@@ -23,6 +23,7 @@ except ImportError:
 
 
 ML_IMPUTATION_NOTES_PARAMETER = "ML_IMPUTATION_NOTES"
+VALUE_RANGE_QC_PARAMETER = "VALUE_RANGE_QC_REPORT"
 
 
 def _export_well_other_comments(las, well: "Well") -> None:
@@ -59,7 +60,7 @@ def _export_well_parameters(las, well: "Well") -> None:
             continue
         if "__" in name or name.startswith("_"):
             continue
-        if name in {ML_IMPUTATION_NOTES_PARAMETER, "LAS_OTHER"}:
+        if name in {ML_IMPUTATION_NOTES_PARAMETER, VALUE_RANGE_QC_PARAMETER, "LAS_OTHER"}:
             continue
 
         unit = parameters.get(f"{name}__UNIT", "")
