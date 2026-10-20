@@ -9,6 +9,7 @@ from typing import Union
 import numpy as np
 
 from petrophys.interpretation.saturation.archie import archie
+from petrophys.interpretation.saturation._inputs import check_resistivity_parameters
 
 
 def calculate_sxo(
@@ -43,8 +44,15 @@ def calculate_sxo(
     Returns
     -------
     float or np.ndarray
-        Flushed zone water saturation (0-1)
+        Flushed zone water saturation (0-1): a float for scalar inputs,
+        else an array. NaN where Rxo or an Rmf array is at or below zero.
+
+    Raises
+    ------
+    ValueError
+        If a scalar ``rmf`` is at or below zero.
     """
+    check_resistivity_parameters(rmf=rmf)
     return archie(rxo, rmf, phi, a, m, n)
 
 

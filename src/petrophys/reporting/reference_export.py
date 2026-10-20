@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
+import functools
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -2031,7 +2032,7 @@ def _missing_curve_reason(
             "CROSSOVER_FLAG": _has_finite_curve(well, "CROSSOVER_FLAG"),
             "VP_VS_RATIO": _has_finite_curve(well, "VP_VS_RATIO"),
             "selected effective porosity": _has_finite_any_curve(well, ("PHIE_CC", "PHIE")),
-            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
+            _perm_inputs_label(): _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
         }
         missing_inputs = [name for name, present in required.items() if not present]
         if missing_inputs:
@@ -2042,7 +2043,7 @@ def _missing_curve_reason(
         required = {
             "NET_PAY": _has_finite_curve(well, "NET_PAY"),
             "selected effective porosity": _has_finite_any_curve(well, ("PHIE_CC", "PHIE")),
-            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
+            _perm_inputs_label(): _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
         }
         missing_inputs = [name for name, present in required.items() if not present]
         if missing_inputs:
@@ -2131,7 +2132,7 @@ def _missing_curve_reason(
     if curve == "PORO_QUALITY_INDEX":
         reason = missing_required({
             "PHIT": _has_finite_curve(well, "PHIT"),
-            "PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
+            _perm_inputs_label(): _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC"),
         })
         return reason or "porosity analysis did not write PORO_QUALITY_INDEX"
 
@@ -2149,7 +2150,7 @@ def _missing_curve_reason(
         return f"{curve} was not written after resistivity-ratio screening"
 
     if curve == "KH":
-        reason = missing_required({"PERM or PERM_CC": _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC")})
+        reason = missing_required({_perm_inputs_label(): _has_finite_curve(well, "PERM") or _has_finite_curve(well, "PERM_CC")})
         return reason or "permeability analysis did not write KH"
 
     if curve == "PERM_QUALITY_INDEX":
@@ -2159,7 +2160,7 @@ def _missing_curve_reason(
             or _has_finite_curve(well, "RQI")
             or _has_finite_curve(well, "FZI")
         ):
-            return "required input curves unavailable: PERM/PERM_CC, RQI, or FZI"
+            return f"required input curves unavailable: {_perm_inputs_label('/')}, RQI, or FZI"
         return "permeability analysis did not write PERM_QUALITY_INDEX"
 
     if curve.endswith("_GRAD"):
@@ -2817,7 +2818,9 @@ def _write_context_workflow_las(
     statistics of exactly these curves over each group's samples. The trace
     records both as ``post_workflow_steps``, its ``final_curve_summaries``
     describe the saved curves, ``source_file`` names the well's raw LAS and
-    ``input_file`` the LAS this workflow read.
+    ``input_file`` the LAS this workflow read. The GeoLink training profile
+    writes the curve values at full precision (17 significant digits), the
+    others at five decimals.
     """
     import dataclasses
 
@@ -2854,11 +2857,18 @@ def _write_context_workflow_las(
         else:
             same = (old == after) | (np.isnan(old) & np.isnan(after))
             recomputed[name] = int((~same).sum())
+    precision = {}
+    if _context_dataset() == "geolink_train":
+        # The GeoLink training package's statistics are those of the curves
+        # at full precision: 17 significant digits read back as the same
+        # float64 values; the depths keep the package's five decimals.
+        precision = {"fmt": "%.17g", "column_fmt": {0: "%.5f"}}
     export_las(
         checked,
         target,
         depth_unit_label=getattr(source_well, "_source_depth_unit_label", None),
         pad_header_by_bytes=_reproduces_benchmark_context(workflow_result),
+        **precision,
     )
     output_curves = sorted(checked.curves)
     trace_path = _write_json_log(
@@ -3218,7 +3228,8 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
         pef_max=DefaultParameters.PEF_MAX,
         pef_min=DefaultParameters.PEF_MIN,
         large_hole_threshold=DefaultParameters.LARGE_HOLE_BS,
-        drho_alone=current,
+        # The GeoLink training package flags |DRHO| alone where no bit size is known.
+        drho_alone=current or (bit_size_for_flags is None and _context_dataset() == "geolink_train"),
     )
 
     depth = np.asarray(well.depth, dtype=float) if well.depth is not None else np.array([], dtype=float)
@@ -4343,76 +4354,22 @@ def _rejected_core_model_text(params: Mapping[str, Any]) -> str:
     return "; rejected model " + ", ".join(parts) if parts else ""
 
 
-#: The Danish package's note order for the names outside
-#: REFERENCE_DERIVED_LOG_TARGETS (its context was written by a different run
-#: from the GeoLink main run's, see CATEGORY_CONTEXT_SPECS).
-_DANISH_STATUS_TARGET_ORDER = {
-    "hydrocarbon": (
-        "PRIME_GAS_TARGET",
-        "PRIME_OIL_TARGET",
-        "RWA",
-    ),
-    "saturation": (
-        "PHIT_GAS_CORR",
-        "ND_SEPARATION",
-        "RWA",
-    ),
-    "permeability": (
-        "PERM_QUALITY_INDEX",
-        "KH",
-        "RXO_RDEP_RATIO",
-    ),
-    "porosity": (
-        "DS_SEPARATION",
-        "PORO_QUALITY_INDEX",
-    ),
-    "numerical": (
-        "CONSISTENCY_RATIO",
-        "PP_HYDROSTATIC",
-        "NPHI_GRAD",
-        "YOUNG_MOD",
-        "RDEP_GRAD",
-        "DATA_COMPLETENESS",
-        "RHOB_GRAD",
-        "DTC_GRAD",
-        "S_V",
-        "POISSON_RATIO",
-        "ACOUSTIC_IMPEDANCE",
-        "ELECTROFACIES",
-        "SH_MIN",
-        "BRITTLENESS_INDEX",
-        "GR_GRAD",
-    ),
-    "lithology": (
-        "LITHOLOGY_NAME",
-        "GR_CLAY_INDICATOR",
-        "PEF_CLAY_INDICATOR",
-        "DOLOMITE_INDICATOR",
-        "LITHOLOGY_GROUP",
-        "GT_LITHOLOGY_GROUP_CODE",
-        "NPHI_CLAY_INDICATOR",
-        "COMPOSITE_CLAY_INDICATOR",
-        "LIMESTONE_INDICATOR",
-        "CONSISTENCY_SCORE",
-        "CARBONATE_INDICATOR",
-        "COMPOSITE_CLAY",
-    ),
-}
+def _category_status_targets(category: str, well_stem: Optional[str] = None) -> tuple:
+    """The status targets of ``category``."""
+    return tuple(CATEGORY_CONTEXT_SPECS[category]["targets"])
 
 
-def _category_status_targets(category: str) -> tuple:
-    """The status targets of ``category``, in the note order of the package being reproduced."""
-    targets = tuple(CATEGORY_CONTEXT_SPECS[category]["targets"])
-    extras = _DANISH_STATUS_TARGET_ORDER.get(category) if _context_dataset() == "danish" else None
-    if not extras:
-        return targets
-    return tuple(name for name in targets if name not in extras) + tuple(extras)
+def _perm_inputs_label(separator: str = " or ") -> str:
+    """How the context notes name the permeability inputs: the GeoLink training
+    package names PERM_CC first ("PERM_CC or PERM"), the others PERM first."""
+    names = ("PERM_CC", "PERM") if _context_dataset() == "geolink_train" else ("PERM", "PERM_CC")
+    return separator.join(names)
 
 
 def _context_dataset() -> Optional[str]:
-    """The published package being reproduced besides GeoLink's: "danish", "costa" or None.
+    """The published package being reproduced besides GeoLink's eval package, else None.
 
-    Set by the Danish and COSTA context paths (see
+    "danish", "costa" or "geolink_train", set by those context paths (see
     :func:`petrophys.workflow.dynamic_workflow._dataset_calculations`). Those
     packages were written by a later version of this exporter than the
     GeoLink main run's context, whose notes differ where this module tests it.
@@ -7114,6 +7071,63 @@ def _synchronize_post_qc_dependent_curves(well: "Well", *, benchmark: bool = Fal
         _set_or_add_curve(well, "PHI_Z", phi_norm.copy(), "fraction", "Normalized Porosity")
 
 
+#: Curves the GeoLink training package's context neither lists as input or
+#: derived logs nor gives statistics: the bit size and the oil saturation.
+_GEOLINK_TRAIN_UNLISTED_CURVES = ("BS", "SO")
+
+
+def _geolink_train_bad_hole_qc(qc: dict[str, Any], well: "Well") -> dict[str, Any]:
+    """BADHOLE_QC_CHECK as the GeoLink training package wrote it.
+
+    The bit size is named in words ("caliper-minus-bit-size", "bit size");
+    without a bit size the caliper and large-hole tests are written as
+    skipped, with a null ``bit_size_source``; and a segment without caliper
+    or DRHO reports BS available where the well has a BS curve.
+    """
+    params = qc.get("parameters_used") or {}
+    if not params:
+        qc["log_availability"] = {**qc.get("log_availability", {}), "BS": well.get("BS") is not None}
+        return qc
+    no_bit_size = params.get("bit_size_used_in") is None
+    washout = str(params.get("washout_formula", ""))
+    if no_bit_size:
+        washout = re.sub(
+            r"^\(CALI - BS\) > [0-9.]+ in", "caliper-minus-bit-size skipped because bit size unavailable", washout
+        )
+        large_hole = "skipped because bit size unavailable"
+    else:
+        washout = washout.replace("(CALI - BS)", "(caliper-minus-bit-size)")
+        large_hole = str(params.get("large_hole_formula", "")).replace("BS > ", "bit size > ")
+    presented: dict[str, Any] = {}
+    for key, value in params.items():
+        presented[key] = value
+        if key == "bit_size_used_in" and no_bit_size:
+            presented["bit_size_source"] = None
+    presented["washout_formula"] = washout
+    presented["large_hole_formula"] = large_hole
+    qc["parameters_used"] = presented
+    return qc
+
+
+def _geolink_train_bad_hole_note(note: str, qc: Mapping[str, Any]) -> str:
+    """The BAD_HOLE note in the GeoLink training package's bit-size wording."""
+    if not note.startswith("BAD_HOLE: washout=(CALI-BS)>"):
+        return note
+    params = qc.get("parameters_used") or {}
+    if params and params.get("bit_size_used_in") is None:
+        drho = re.search(r" or \|DRHO\|>[0-9.]+ g/cc", note)
+        head = "BAD_HOLE: washout=caliper-minus-bit-size skipped because bit size unavailable"
+        if drho and qc.get("log_availability", {}).get("DRHO"):
+            head += drho.group(0)
+        return head + "; large_hole skipped because bit size unavailable; rule=" + note.split("; rule=", 1)[1]
+    return (
+        note.replace("washout=(CALI-BS)>", "washout=(caliper-minus-bit-size)>")
+        .replace("large_hole=BS>", "large_hole=bit_size>")
+        .replace("; BS values=", "; bit-size values=")
+        .replace("; BS=", "; bit size=")
+    )
+
+
 def _build_reference_json_payload(
     well: "Well",
     workflow_result,
@@ -7157,6 +7171,9 @@ def _build_reference_json_payload(
             if _has_finite_any_curve(well, _target_curve_candidates(name))
             or _has_finite_extra_curve((extra_statistics_curves or {}).get(name))
         ]
+    train = _context_dataset() == "geolink_train"
+    if train:
+        derived_logs = [name for name in derived_logs if name not in _GEOLINK_TRAIN_UNLISTED_CURVES]
     status_targets = list(
         _ordered_unique(
             [
@@ -7186,6 +7203,7 @@ def _build_reference_json_payload(
             for name in PRIMARY_LOGS_FOR_COMPLETENESS
             if _canonical_delivery_curve_name(name) not in CORE_ONLY_CONTEXT_CURVES
             and not _primary_log_present(well, workflow_result, name, original_curves)
+            and not (train and name in _GEOLINK_TRAIN_UNLISTED_CURVES)
         ],
         "derived_log_computation_notes": computation_notes,
     }
@@ -7236,6 +7254,18 @@ def _build_reference_json_payload(
         # Depths and thicknesses are in the well's depth unit, as the interval strings say.
         payload["formation_info"]["depth_unit"] = well.depth_unit
         payload["analysis_results"]["lithology_group_info"]["depth_unit"] = well.depth_unit
+    if train:
+        results = payload["analysis_results"]
+        for name in _GEOLINK_TRAIN_UNLISTED_CURVES:
+            results["statistics"].pop(f"{name}_overall", None)
+        results["input_logs_present"] = [
+            name for name in results["input_logs_present"] if name not in _GEOLINK_TRAIN_UNLISTED_CURVES
+        ]
+        qc = _geolink_train_bad_hole_qc(results["BADHOLE_QC_CHECK"], well)
+        results["BADHOLE_QC_CHECK"] = qc
+        data_completeness["derived_log_computation_notes"] = [
+            _geolink_train_bad_hole_note(note, qc) for note in computation_notes
+        ]
     return payload
 
 
@@ -8441,6 +8471,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
     group_layout: Optional[Mapping[str, Sequence[Mapping[str, Any]]]] = None,
     processed_las_dir: Optional[str | Path] = None,
     prepare_input: Optional[Any] = None,
+    processed_las_only: bool = False,
 ) -> List[ExampleFormatExportResult]:
     """Generate category contexts from well files and optional geology inputs.
 
@@ -8459,7 +8490,9 @@ def export_reference_json_work_package_by_category_formation_lithology(
 
     ``processed_las_dir`` saves, per well, the interpretation the context is
     computed from (LAS plus ``workflow_json`` trace). Each context statistic
-    is then the statistic of that LAS over the group's depth window.
+    is then the statistic of that LAS over the group's depth window. With
+    ``processed_las_only`` only those LAS and traces are written: no context
+    JSON, and one result per well whose ``output_file`` is its LAS.
 
     ``prepare_input(file_path, well)`` runs on each well after it is read and
     before the workflow; it may add input curves and returns the trace entries
@@ -8479,9 +8512,12 @@ def export_reference_json_work_package_by_category_formation_lithology(
     """
     from petrophys.workflow.zoned_batch import _finalize_export_curves
 
+    if processed_las_only and processed_las_dir is None:
+        raise ValueError("processed_las_only requires processed_las_dir")
     input_path = Path(input_dir)
     output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    if not processed_las_only:
+        output_path.mkdir(parents=True, exist_ok=True)
     files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
     files = _filter_input_files_by_well_names(files, well_names)
     raw_context_dir = Path(raw_input_dir) if raw_input_dir is not None else _raw_input_dir_for_processed(input_path)
@@ -8548,7 +8584,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     if raw_context_dir is not None and (raw_context_dir / file_path.name).exists()
                     else None
                 )
-                _write_context_workflow_las(
+                processed_las = _write_context_workflow_las(
                     file_path,
                     input_path,
                     processed_las_dir,
@@ -8559,6 +8595,17 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     source_file=raw_source,
                     preparatory_steps=preparatory_steps,
                 )
+                if processed_las_only:
+                    results.append(
+                        ExampleFormatExportResult(
+                            source_file=str(file_path),
+                            output_file=str(processed_las),
+                            success=not errors,
+                            warnings=warnings,
+                            errors=errors,
+                        )
+                    )
+                    continue
 
             well_top = float(full_well.top) if full_well.top is not None else None
             well_bottom = float(full_well.bottom) if full_well.bottom is not None else None
@@ -8627,7 +8674,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                         lithology_mapping=lithology_mapping,
                         analysis_summary_override=category_result.to_dict(),
                         derived_logs_override=derived_logs,
-                        status_targets_override=_category_status_targets(category_name),
+                        status_targets_override=_category_status_targets(category_name, file_path.stem),
                         include_derived_log_status=False,
                         extra_statistics_curves=category_result.derived_curves,
                     )
@@ -8754,6 +8801,8 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 )
             )
 
+    if processed_las_only:
+        return results
     try:
         write_reference_curve_name_mapping(output_path)
     except OSError:

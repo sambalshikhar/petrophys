@@ -366,6 +366,13 @@ def build_section(
     )
 
 
+def _geolink_train_steps() -> bool:
+    """True while the GeoLink training context profile computes its package."""
+    from petrophys.workflow.dynamic_workflow import _DATASET_CALCULATIONS_REQUESTED
+
+    return _DATASET_CALCULATIONS_REQUESTED.get() == "geolink_train"
+
+
 def depth_step_array(depth: np.ndarray, max_gap_factor: float = 3.0) -> np.ndarray:
     """Return per-sample depth increments using the actual depth spacing.
 
@@ -374,7 +381,8 @@ def depth_step_array(depth: np.ndarray, max_gap_factor: float = 3.0) -> np.ndarr
     ``max_gap_factor`` times the median sampling are capped to the median, so a
     gap is not counted as a thick cell. The per-sample diagnostics (KH, S_V)
     use this capped backward step; thickness sums use :func:`cell_thickness`,
-    which also integrates a change of sampling rate.
+    which also integrates a change of sampling rate. The GeoLink training
+    context profile keeps its package's uncapped step.
     """
     depth_arr = np.asarray(depth, dtype=float)
     if depth_arr.size == 0:
@@ -382,6 +390,14 @@ def depth_step_array(depth: np.ndarray, max_gap_factor: float = 3.0) -> np.ndarr
     if depth_arr.size == 1:
         return np.ones(1, dtype=float)
     dz = np.abs(np.diff(depth_arr, prepend=depth_arr[0]))
+    if _geolink_train_steps():
+        # The GeoLink training package used every backward step as it is:
+        # the first sample takes the median of the others, a zero step the
+        # median of the positive steps, and no gap is capped.
+        if dz.size > 1 and dz[0] == 0.0:
+            dz[0] = float(np.nanmedian(dz[1:])) if np.any(dz[1:] > 0) else 1.0
+        dz[dz <= 0.0] = float(np.nanmedian(dz[dz > 0.0])) if np.any(dz > 0.0) else 1.0
+        return dz
     positive = dz[np.isfinite(dz) & (dz > 0.0)]
     median_step = float(np.median(positive)) if positive.size else 1.0
     dz[~np.isfinite(dz) | (dz <= 0.0)] = median_step

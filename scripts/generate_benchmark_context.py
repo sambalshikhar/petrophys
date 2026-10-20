@@ -1,9 +1,10 @@
-"""Generate dataset-specific benchmark context for GeoLink, COSTA or Danish.
+"""Generate dataset-specific benchmark context for GeoLink, GeoLink training, COSTA or Danish.
 
 Pass one LAS file or a folder and select a dataset, or let the script detect
 it from well names. Dataset profiles supply the interpretation parameters,
 calibration and grouping rules. Raw GeoLink folders require --from-raw;
-GeoLink and Danish also require their tops workbook and lithology codebook.
+GeoLink, GeoLink training and Danish also require their tops workbook and
+lithology codebook.
 <output-dir>/processed_las holds the LAS (and workflow traces) the context is
 computed from, so each context statistic is the statistic of that LAS over the
 group's depth window. A --calculation-profile current run from raw LAS keeps
@@ -52,7 +53,7 @@ REPRODUCE_COMMAND = (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Reproduce category-first context JSON for GeoLink, COSTA, or Danish "
+            "Reproduce category-first context JSON for GeoLink, GeoLink training, COSTA, or Danish "
             "eval wells. The collection is detected automatically."
         ),
         epilog=f"Reproduce the whole package from the raw LAS files:\n  {REPRODUCE_COMMAND}",
@@ -66,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--dataset",
-        choices=("auto", "geolink", "costa", "danish"),
+        choices=("auto", "geolink", "geolink_train", "costa", "danish"),
         default="auto",
         help="Eval collection (default: detect from the well names).",
     )
@@ -190,7 +191,7 @@ def _detect_dataset(
     if profile is not None:
         return profile.name.removesuffix("_v1")
     parser.error(
-        "could not identify the eval collection. Use a recognized GeoLink, COSTA, "
+        "could not identify the eval collection. Use a recognized GeoLink, GeoLink training, COSTA, "
         "or Danish LAS file, or set --dataset explicitly."
     )
     raise AssertionError("argparse.error did not exit")
@@ -227,7 +228,7 @@ def _export_profile(
         parser.error(f"the {dataset} package fixes its grouping and inputs; "
                      "drop --min-thickness and --raw-input-dir")
     tops_file = lithology_mapping_file = None
-    if dataset == "geolink":
+    if dataset in {"geolink", "geolink_train"}:
         tops_file = args.tops_file or input_dir.parent / "NPD stratigraphic picks north sea.xlsx"
         lithology_mapping_file = args.lithology_mapping_file or input_dir.parent / "Litho_Nomenclature_Kingdom.xlsx"
     elif dataset == "danish":
@@ -273,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     dataset = _detect_dataset(parser, args, input_path, input_dir, well_names)
 
-    if dataset in {"costa", "danish"}:
+    if dataset in {"costa", "danish", "geolink_train"}:
         return _export_profile(parser, args, dataset, input_dir, well_names)
     from_raw = args.from_raw or (
         single_file and not _looks_like_processed_geolink(input_path)

@@ -10,11 +10,13 @@ your own wells, follow the {doc}`context` guide.
 | Collection | Profile | Required inputs |
 |---|---|---|
 | GeoLink | `geolink` (`geolink_v1`) | Raw eval LAS, `NPD stratigraphic picks north sea.xlsx`, and `Litho_Nomenclature_Kingdom.xlsx` |
+| GeoLink training | `geolink_train` (`geolink_train_v1`) | Raw `LAS_with_petrophys_params` LAS, `NPD stratigraphic picks north sea.xlsx`, and `Litho_Nomenclature_Kingdom.xlsx` |
 | COSTA | `costa` (`costa_v1`) | COSTA LAS; bundled well parameters and reference carbonate volumes are used automatically |
 | Danish | `danish` (`danish_v1`) | Raw Danish LAS, `Danish_formation_tops_for_context.xlsx`, and `Litho_Nomenclature_Kingdom.xlsx` |
 
-The profiles cover 32 GeoLink wells, 17 COSTA wells and five Danish wells.
-The external GeoLink and Danish deliveries/workbooks must be supplied by you.
+The profiles cover 32 GeoLink wells, 191 GeoLink training wells, 17 COSTA
+wells and five Danish wells. The external GeoLink, GeoLink training and Danish
+deliveries/workbooks must be supplied by you.
 Inspect supported well names and required inputs in Python:
 
 ```python
@@ -64,6 +66,31 @@ python scripts/generate_benchmark_context.py --dataset danish --input-dir "PATH/
 The Danish profile sets the input curves and depth units as a preparatory
 step, interprets each well, then exports the formation groups used by the
 benchmark.
+
+### GeoLink training: raw LAS with header parameters
+
+```bash
+python scripts/generate_benchmark_context.py --dataset geolink_train --input-dir "PATH/LAS_with_petrophys_params" --tops-file "PATH/NPD stratigraphic picks north sea.xlsx" --lithology-mapping-file "PATH/Litho_Nomenclature_Kingdom.xlsx" --output-dir "outputs/geolink_train_run_01"
+```
+
+The context's input logs are the logged curves of each LAS: the profile
+leaves out the core data the package's LAS carry (`PHIC`, `GDEN`, `KH_CORE`,
+`KV_CORE`, `SWC`, `SOC`) and, as the package did, the bit size `BS`, which
+also gets no statistics. `processed_las/` holds the interpreted curves at full
+precision (17 significant digits), so each statistic computed from them,
+mode and geometric and harmonic means included, is the context's statistic.
+
+To write only the interpreted LAS and their workflow traces, without the
+context JSON, call the profile's LAS function:
+
+```python
+from petrophys.reporting._geolink_train_context import process_geolink_train_las
+
+process_geolink_train_las("PATH/LAS_with_petrophys_params", "outputs/geolink_train_las_01")
+```
+
+The statistics of each of those LAS over a context group's samples are the
+group's context statistics.
 
 ### One well or a subset
 
@@ -127,7 +154,7 @@ records = pp.export_context(
 print(len(records), "context files")
 ```
 
-For GeoLink or Danish, replace `None` with the raw LAS directory and provide
+For GeoLink, GeoLink training or Danish, replace `None` with the raw LAS directory and provide
 `tops_file` and `lithology_mapping_file` from the input table above.
 `pp.export_context` keeps intermediate files in temporary storage and delivers
 only the JSON package. Use the repository script to retain processed LAS.
@@ -136,6 +163,7 @@ The installed CLI also supports profiles:
 
 ```bash
 petrophys-context "PATH/danish/las" "outputs/danish_benchmark_json_01" --layout category_formation_lithology --profile danish --formations "PATH/Danish_formation_tops_for_context.xlsx" --lithology-codes "PATH/Litho_Nomenclature_Kingdom.xlsx"
+petrophys-context "PATH/LAS_with_petrophys_params" "outputs/geolink_train_json_01" --layout category_formation_lithology --profile geolink_train --formations "PATH/NPD stratigraphic picks north sea.xlsx" --lithology-codes "PATH/Litho_Nomenclature_Kingdom.xlsx"
 ```
 
 ## Common errors

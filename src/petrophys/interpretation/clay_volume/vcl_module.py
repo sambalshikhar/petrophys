@@ -5,7 +5,7 @@ This module provides the VclModule class that combines multiple
 VCL methods and selects the minimum value.
 """
 
-from typing import Optional, List, Dict, Any, Tuple, Union
+from typing import Optional, List, Dict, Any, Sequence, Tuple, Union
 from dataclasses import dataclass
 import warnings
 import numpy as np
@@ -97,6 +97,10 @@ class VclModule:
         e.g. undercompacted mudstones at NPHI 0.45-0.55, lie outside the
         triangle the three-point formula interpolates in and read as clean
         rock there; the minimum then takes the other indicators.
+    gr_curves : sequence of str, optional
+        Gamma-ray mnemonics read depth by depth, in order. Default: the
+        ``curves`` mapping's GR curve, or for ``"GR"`` the GR family (GR,
+        then CGR, SGR, HSGR, HCGR and GAMMA where GR has no value).
 
     Examples
     --------
@@ -120,6 +124,7 @@ class VclModule:
         sp_fallback_only: bool = False,
         nd_clay: Optional[Tuple[float, float]] = None,
         nd_triangle_only: bool = False,
+        gr_curves: Optional[Sequence[str]] = None,
     ):
         self.gr_min = gr_min
         self.gr_max = gr_max
@@ -141,6 +146,7 @@ class VclModule:
         self.sp_fallback_only = bool(sp_fallback_only)
         self.nd_clay = nd_clay
         self.nd_triangle_only = bool(nd_triangle_only)
+        self.gr_curves = tuple(gr_curves) if gr_curves is not None else None
 
     def _resolve_gr_baselines(self, gr_data: np.ndarray) -> tuple[float, float]:
         """
@@ -284,7 +290,10 @@ class VclModule:
         # GR family (computed/spectral) so a well that only carries CGR/SGR is still
         # usable -- alias_map keeps SGR/CGR as their own standards, so a plain "GR"
         # lookup would otherwise miss them.
-        gr_candidates = [gr_name] if gr_name != "GR" else ["GR", "CGR", "SGR", "HSGR", "HCGR", "GAMMA"]
+        if self.gr_curves is not None:
+            gr_candidates = list(self.gr_curves)
+        else:
+            gr_candidates = [gr_name] if gr_name != "GR" else ["GR", "CGR", "SGR", "HSGR", "HCGR", "GAMMA"]
         gr_data, _, _ = get_curve_data_depthwise(well, gr_candidates)
         if gr_data is not None:
             gr_min, gr_max = self._resolve_gr_baselines(gr_data)

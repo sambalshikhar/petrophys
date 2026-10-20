@@ -7,6 +7,11 @@ This module provides the classic Archie equation for clean formations.
 from typing import Union
 import numpy as np
 
+from petrophys.interpretation.saturation._inputs import (
+    check_resistivity_parameters,
+    nonpositive_resistivity,
+)
+
 
 def archie(
     rt: Union[float, np.ndarray],
@@ -39,23 +44,35 @@ def archie(
     Returns
     -------
     float or np.ndarray
-        Water saturation (0-1)
+        Water saturation (0-1): a float for scalar inputs, else an array.
+        NaN where Rt or an Rw array is at or below zero.
+
+    Raises
+    ------
+    ValueError
+        If a scalar ``rw`` is at or below zero.
 
     Examples
     --------
     >>> sw = archie(rt=10, rw=0.05, phi=0.20)
     >>> print(f"Sw = {sw:.2f}")
     """
+    check_resistivity_parameters(rw=rw)
+    rt = np.asarray(rt, dtype=float)
+    rw = np.asarray(rw, dtype=float)
+    phi = np.asarray(phi, dtype=float)
     finite = np.isfinite(rt) & np.isfinite(rw) & np.isfinite(phi)
+    finite &= ~nonpositive_resistivity(rt, rw)
     # Avoid division by zero
-    rt = np.where(rt <= 0, 1e-10, rt) if isinstance(rt, np.ndarray) else max(rt, 1e-10)
-    phi = np.where(phi <= 0, 1e-10, phi) if isinstance(phi, np.ndarray) else max(phi, 1e-10)
+    rt = np.where(rt <= 0, 1e-10, rt)
+    phi = np.where(phi <= 0, 1e-10, phi)
 
-    # Archie equation
-    sw_n = a * rw / (np.power(phi, m) * rt)
+    with np.errstate(invalid="ignore"):
+        # Archie equation
+        sw_n = a * rw / (np.power(phi, m) * rt)
 
-    # Solve for Sw
-    sw = np.power(sw_n, 1 / n)
+        # Solve for Sw
+        sw = np.power(sw_n, 1 / n)
 
     result = np.where(finite, np.clip(sw, 0, 1), np.nan)
     return float(result) if result.ndim == 0 else result

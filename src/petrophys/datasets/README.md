@@ -35,6 +35,8 @@ any user-owned path directly to `read_las()` or `read_dlis()`.
 | `geolink/15_9-14.las` | Mineral-solver tutorial well with vendor lithology. |
 | `geolink/25_5-1.las` | Core-bearing North Sea example with PHIC, permeability, saturation, and grain-density curves. |
 | `kgs/1046123714.las` | Morgan No. 1-17 legacy LAS example with generic CSV formation tops. |
+| `taranaki/` | Cheal-1 and Tuhua-7, onshore Taranaki Basin (New Zealand), with formation intervals; CDLA-Sharing-1.0. See `taranaki/README.md`. |
+| `teapot/` | Two 1970s Teapot Dome (Wyoming) wells as delivered, logged in feet, with casing near 500 ft. See `teapot/README.md`. |
 | `daydream/daydream1_cmr.las` | Daydream 1 processed CMR summary, 3755-4145 m. |
 | `daydream/daydream1_cmr_shallow.las` | Daydream 1 processed CMR summary, 2860-3050 m. |
 | `phillips/` | Six small NMR, paired core and COSTA capillary-pressure reference datasets from Craig Phillips. See `phillips/README.md` for provenance, units and limitations; CSV and Excel paths are available through `sample()`. |

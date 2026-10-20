@@ -9,6 +9,10 @@ from typing import Union
 import numpy as np
 
 from petrophys._internal.benchmark import reproducing_benchmark
+from petrophys.interpretation.saturation._inputs import (
+    check_resistivity_parameters,
+    nonpositive_resistivity,
+)
 
 
 #: Highest plausible whole-rock cation exchange capacity, meq/100 g: that of
@@ -129,8 +133,15 @@ def waxman_smits(
     Returns
     -------
     float or np.ndarray
-        Water saturation Sw (fraction, clipped 0-1)
+        Water saturation Sw (fraction, clipped 0-1); NaN where Rt or an Rw
+        array is at or below zero.
+
+    Raises
+    ------
+    ValueError
+        If a scalar ``rw`` is at or below zero.
     """
+    check_resistivity_parameters(rw=rw)
     scalar_input = np.isscalar(phi_t) and np.isscalar(rt) and np.isscalar(rw)
 
     phi_t, rt = np.broadcast_arrays(
@@ -140,6 +151,7 @@ def waxman_smits(
     phi_t = np.atleast_1d(phi_t.astype(float, copy=False))
     rt = np.atleast_1d(rt.astype(float, copy=False))
 
+    invalid = nonpositive_resistivity(rt, rw)
     phi_safe = np.where(phi_t <= 0, 1e-10, phi_t)
     rt_safe  = np.where(rt    <= 0, 1e-10, rt)
     rw_array = np.asarray(rw, dtype=float)
@@ -165,5 +177,5 @@ def waxman_smits(
     sw = np.clip(sw, 0.0, 1.0)
     # Infinite Rt (no conductivity reading) is missing, as in archie().
     if not reproducing_benchmark():
-        sw = np.where(np.isinf(rt), np.nan, sw)
+        sw = np.where(np.isinf(rt) | invalid, np.nan, sw)
     return float(sw[0]) if scalar_input else sw

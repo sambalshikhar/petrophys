@@ -115,6 +115,11 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "NEU",
         "APLC",
         "PHIS_NEU",
+        "NPHI_LS",
+        # Sandstone-referenced neutron: see NEUTRON_MATRIX_REFERENCE.
+        "NPSS",
+        "CNSS",
+        "NPHI_SS",
     ],
     # Compressional Sonic (DTC)
     "DTC": [
@@ -192,9 +197,22 @@ for standard, aliases in ALIAS_MAP.items():
         _REVERSE_MAP[alias.upper()] = standard
     _REVERSE_MAP[standard.upper()] = standard
 
+#: Neutron aliases of NPHI recorded on a matrix other than limestone, which
+#: NPHI is read on. The curve keeps the reference in its description and in
+#: ``metadata.custom["neutron_matrix_reference"]``.
+NEUTRON_MATRIX_REFERENCE: Dict[str, str] = {
+    "NPSS": "sandstone",
+    "CNSS": "sandstone",
+    "NPHI_SS": "sandstone",
+}
+
+#: NPHI aliases the benchmark context packages did not have.
+_BENCHMARK_MISSING_NPHI_ALIASES = ("NPHI_LS", "NPSS", "CNSS", "NPHI_SS")
+
 #: Alias lists the benchmark context packages were computed with, where they
-#: differ from :data:`ALIAS_MAP`: RDEP ranked AT60 before AT90, and HCGR was
-#: a GR alias. Used inside ``historical_benchmark()``.
+#: differ from :data:`ALIAS_MAP`: RDEP ranked AT60 before AT90, HCGR was
+#: a GR alias, and NPHI had no NPHI_LS or sandstone-referenced aliases. Used
+#: inside ``historical_benchmark()``.
 _BENCHMARK_ALIAS_MAP: Dict[str, List[str]] = {
     "RDEP": [
         name if name not in ("AT60", "AT90") else {"AT60": "AT90", "AT90": "AT60"}[name]
@@ -203,8 +221,13 @@ _BENCHMARK_ALIAS_MAP: Dict[str, List[str]] = {
     "GR": [*ALIAS_MAP["GR"][:ALIAS_MAP["GR"].index("HGR")], "HCGR", *ALIAS_MAP["GR"][ALIAS_MAP["GR"].index("HGR"):]],
     "CGR": [name for name in ALIAS_MAP["CGR"] if name != "HCGR"],
     "RXO": [name for name in ALIAS_MAP["RXO"] if name != "RMIC"],
+    "NPHI": [name for name in ALIAS_MAP["NPHI"] if name not in _BENCHMARK_MISSING_NPHI_ALIASES],
 }
-_BENCHMARK_REVERSE_MAP: Dict[str, str] = {"HCGR": "GR", "RMIC": "RMIC"}
+_BENCHMARK_REVERSE_MAP: Dict[str, str] = {
+    "HCGR": "GR",
+    "RMIC": "RMIC",
+    **{name: name for name in _BENCHMARK_MISSING_NPHI_ALIASES},
+}
 
 
 def get_standard_mnemonic(mnemonic: str) -> str:

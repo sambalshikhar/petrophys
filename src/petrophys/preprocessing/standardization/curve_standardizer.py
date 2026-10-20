@@ -18,6 +18,7 @@ from petrophys.preprocessing.standardization.alias_map import (
     get_standard_unit,
     base_curve_mnemonic,
     ALIAS_MAP,
+    NEUTRON_MATRIX_REFERENCE,
 )
 from petrophys.preprocessing.standardization.unit_converter import (
     CORE_SATURATION_CURVES,
@@ -185,6 +186,7 @@ def add_standard_curve_aliases(
         custom = dict(getattr(canonical.metadata, "custom", {}) or {})
         custom["working_alias_source"] = source_name
         canonical.metadata.custom = custom
+        _note_neutron_matrix_reference(canonical, source_name, standard)
         well._curves[standard] = canonical
         alias_map[source_name] = standard
 
@@ -239,6 +241,43 @@ def _range_screening_message(mnemonic: str, report: Dict[str, Any]) -> str:
     return message + "."
 
 
+def _check_sonic_scale(curve: "Curve", data: np.ndarray, source_unit: Optional[str]) -> None:
+    """Warn when a compressional slowness looks like us/m values under a us/ft label.
+
+    That is when its median and 5th percentile both lie outside
+    :data:`SONIC_ROCK_BAND_US_FT` and inside it once divided by
+    :data:`US_PER_M_IN_US_PER_FT`. The values are left unchanged; the finding
+    is recorded in ``curve.metadata.custom["unit_scale_check"]``.
+    """
+    finite = data[np.isfinite(data)]
+    if finite.size == 0:
+        return
+    low, high = SONIC_ROCK_BAND_US_FT
+    median, p5 = float(np.median(finite)), float(np.percentile(finite, 5))
+
+    def inside(value: float) -> bool:
+        return low <= value <= high
+
+    if inside(median) or inside(p5):
+        return
+    if not (inside(median / US_PER_M_IN_US_PER_FT) and inside(p5 / US_PER_M_IN_US_PER_FT)):
+        return
+    curve.metadata.custom["unit_scale_check"] = {
+        "suspected_unit": "us/m",
+        "median": median,
+        "p5": p5,
+        "factor": US_PER_M_IN_US_PER_FT,
+    }
+    warnings.warn(
+        f"{curve.mnemonic}: median {median:.0f} and 5th percentile {p5:.0f} lie outside the "
+        f"{low:g}-{high:g} us/ft of rock but inside it divided by {US_PER_M_IN_US_PER_FT}; the values "
+        f"look like us/m labelled {source_unit!r}. They are not converted: relabel the curve us/m "
+        f"(or divide it by {US_PER_M_IN_US_PER_FT}) if so.",
+        DataQualityWarning,
+        stacklevel=4,
+    )
+
+
 def _screen_standard_curve_values(
     curve: "Curve",
     standard_name: str,
@@ -261,6 +300,8 @@ def _screen_standard_curve_values(
     data = np.asarray(curve.data, dtype=float).copy()
     data[np.isfinite(data) & (data <= -900.0)] = np.nan
     data = _maybe_convert_percent_porosity(data, name)
+    if name == "DTC" and not reproducing_benchmark():
+        _check_sonic_scale(curve, data, source_unit if source_unit is not None else curve.unit)
 
     low, high = limits
     scale = temperature_unit(curve.unit) if name in TEMPERATURE_CURVES else None
@@ -307,6 +348,167 @@ def _standard_conversion_factor(unit: str, standard_unit: str, standard_name: st
     """
     spellings = not _benchmark_units() and standard_name.upper() not in CORE_SATURATION_CURVES
     return _conversion_factor(unit, standard_unit, spellings=spellings)
+
+
+#: Resistivity curves. A unit label with no conversion to ohm.m keeps such a
+#: curve out of its standard slot, except a conductivity, which is inverted.
+RESISTIVITY_CURVES = {"RDEP", "RMED", "RSHA", "RXO"}
+
+#: Conductivity units (lower case) and the resistivity in ohm.m of a reading
+#: of 1 in them: ohm.m = numerator / conductivity.
+CONDUCTIVITY_UNITS = {
+    "mmho/m": 1000.0,
+    "mmhos/m": 1000.0,
+    "ms/m": 1000.0,
+    "mho/m": 1.0,
+    "mhos/m": 1.0,
+    "s/m": 1.0,
+}
+
+#: Compressional slowness from rock matrix (about 40 us/ft) to shale (about
+#: 200 us/ft). A DTC whose median and 5th percentile both lie outside it,
+#: but inside it once divided by :data:`US_PER_M_IN_US_PER_FT`, looks like
+#: us/m values under a us/ft label.
+SONIC_ROCK_BAND_US_FT = (40.0, 200.0)
+US_PER_M_IN_US_PER_FT = 3.2808
+
+
+def _resistivity_from_conductivity(data: np.ndarray, unit: str) -> Optional[np.ndarray]:
+    """Resistivity (ohm.m) of conductivity ``data`` in ``unit``, or None for another unit.
+
+    Readings at or below zero, which have no finite resistivity, are NaN.
+    """
+    numerator = CONDUCTIVITY_UNITS.get(str(unit).strip().lower().replace(" ", ""))
+    if numerator is None:
+        return None
+    data = np.asarray(data, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(data > 0.0, numerator / data, np.nan)
+
+
+def _percent_label_holds_fractions(data: np.ndarray, standard_name: str) -> bool:
+    """True when a porosity curve under a percent label holds fractions.
+
+    That is when the median of its valid samples is below 1 and its 95th
+    percentile at most 1: a porosity in percent reads above 1 pu in most rock.
+    """
+    if standard_name.upper() not in POROSITY_FRACTION_CURVES:
+        return False
+    values = np.asarray(data, dtype=float)
+    values = values[np.isfinite(values) & (values > -900.0)]
+    if values.size == 0:
+        return False
+    return float(np.median(values)) < 1.0 and float(np.percentile(values, 95)) <= 1.0
+
+
+def _convert_to_standard_unit(
+    new_curve: "Curve",
+    source_unit: str,
+    mnemonic: str,
+    standard_name: str,
+    standard_unit: str,
+    *,
+    relabel_equivalent_units: bool,
+    historical: bool,
+) -> bool:
+    """Convert ``new_curve`` from ``source_unit`` to ``standard_unit`` in place.
+
+    Outside the benchmark reproduction a unit with no conversion raises a
+    :class:`~petrophys.exceptions.DataQualityWarning`: a resistivity curve in
+    a conductivity unit is inverted to ohm.m; another resistivity curve is
+    left unconverted and marked (``standardization_priority`` -1) to stay out
+    of its standard slot; other curves are used unconverted. A porosity curve
+    under a percent label whose values are fractions is used as fractions,
+    with a warning. Returns False when the curve stays out of the standard slot.
+    """
+    kind = get_standard_mnemonic(standard_name)
+    factor = _standard_conversion_factor(source_unit, standard_unit, standard_name)
+    if factor is not None:
+        if factor == 0.01 and not historical and _percent_label_holds_fractions(new_curve._data, kind):
+            values = np.asarray(new_curve._data, dtype=float)
+            median = float(np.nanmedian(values[values > -900.0]))
+            warnings.warn(
+                f"{mnemonic}: unit {source_unit!r} is percent but the values (median {median:.3g}) "
+                f"are fractions; they are used as {standard_unit} without dividing by 100. "
+                "Check the unit label.",
+                DataQualityWarning,
+                stacklevel=3,
+            )
+            new_curve.unit = standard_unit
+        elif factor != 1.0:
+            new_curve._data = new_curve._data * factor
+            new_curve.unit = standard_unit
+        elif relabel_equivalent_units:
+            new_curve.unit = standard_unit
+    elif _converts_temperature(source_unit, standard_unit):
+        # e.g. degC to F. Labels of the standard scale, such
+        # as degF, are left as written.
+        new_curve._data = convert_units(new_curve._data, source_unit, standard_unit)
+        new_curve.unit = standard_unit
+    elif temperature_unit(source_unit) is not None and temperature_unit(source_unit) == temperature_unit(standard_unit):
+        # Another spelling of the standard temperature scale (degF, DEGF, deg F):
+        # already in the standard unit, and the label is left as written.
+        pass
+    elif not historical:
+        resistivity = (
+            _resistivity_from_conductivity(new_curve._data, source_unit)
+            if kind in RESISTIVITY_CURVES
+            else None
+        )
+        if resistivity is not None:
+            new_curve._data = resistivity
+            new_curve.unit = standard_unit
+            message = (
+                f"{mnemonic}: unit {source_unit!r} is a conductivity; converted to resistivity "
+                f"in {standard_unit} for {kind}."
+            )
+        elif kind in RESISTIVITY_CURVES:
+            new_curve.metadata.custom["standardization_priority"] = -1
+            new_curve.metadata.custom["unconvertible_unit"] = source_unit
+            message = (
+                f"{mnemonic}: unit {source_unit!r} cannot be converted to {standard_unit!r}; "
+                f"the curve is kept as {_unconverted_name(mnemonic, standard_name)} and not used "
+                f"as {kind}."
+            )
+        else:
+            message = (
+                f"{mnemonic}: unit {source_unit!r} cannot be converted to {standard_unit!r}; "
+                f"the values are used as {kind} unconverted. Check the unit label."
+            )
+        warnings.warn(message, DataQualityWarning, stacklevel=3)
+        return resistivity is not None or kind not in RESISTIVITY_CURVES
+    return True
+
+
+def _unconverted_name(mnemonic: str, standard_name: str) -> str:
+    """Name of a curve kept out of the standard slot ``standard_name``: its own, or <name>_UNCONVERTED."""
+    return f"{mnemonic}_UNCONVERTED" if mnemonic == standard_name else mnemonic
+
+
+def _note_neutron_matrix_reference(curve: "Curve", source_mnemonic: str, standard_name: str) -> None:
+    """Record the matrix of a neutron alias read on another matrix than limestone.
+
+    The reference goes into the curve description and
+    ``metadata.custom["neutron_matrix_reference"]``, with a
+    :class:`~petrophys.exceptions.DataQualityWarning` the first time.
+    """
+    reference = NEUTRON_MATRIX_REFERENCE.get(base_curve_mnemonic(source_mnemonic))
+    if standard_name != "NPHI" or reference is None or reproducing_benchmark():
+        return
+    custom = curve.metadata.custom
+    if custom.get("neutron_matrix_reference"):
+        return
+    custom["neutron_matrix_reference"] = reference
+    note = f"{reference}-referenced neutron porosity ({base_curve_mnemonic(source_mnemonic)})"
+    description = str(curve.metadata.description or "").strip()
+    curve.metadata.description = f"{description}; {note}" if description else note
+    warnings.warn(
+        f"{source_mnemonic} is a {note} and is used as NPHI, which interpretation reads on "
+        f"the limestone scale; porosities from it are offset by the difference between the "
+        f"{reference} and limestone scales.",
+        DataQualityWarning,
+        stacklevel=3,
+    )
 
 
 class CurveStandardizer:
@@ -429,6 +631,7 @@ class CurveStandardizer:
             standard_name = self.get_standard_name(mnemonic)
             source_priority = _curve_standardization_priority(curve)
             eligible_for_standard_slot = source_priority >= 0
+            own_name = mnemonic
 
             # Preserve original if requested
             if self.preserve_originals and standard_name != mnemonic:
@@ -460,20 +663,26 @@ class CurveStandardizer:
                     )
             elif self.convert_units:
                 standard_unit = get_standard_unit(standard_name)
-                if standard_unit and curve.unit:
-                    factor = _standard_conversion_factor(curve.unit, standard_unit, standard_name)
-                    if factor is not None:
-                        if factor != 1.0:
-                            new_curve._data = new_curve._data * factor
-                            new_curve.unit = standard_unit
-                        elif self.relabel_equivalent_units:
-                            new_curve.unit = standard_unit
-                    elif _converts_temperature(curve.unit, standard_unit):
-                        # e.g. degC to F. Labels of the standard scale, such
-                        # as degF, are left as written.
-                        new_curve._data = convert_units(new_curve._data, curve.unit, standard_unit)
-                        new_curve.unit = standard_unit
+                if standard_unit and curve.unit and not _convert_to_standard_unit(
+                    new_curve,
+                    curve.unit,
+                    mnemonic,
+                    standard_name,
+                    standard_unit,
+                    relabel_equivalent_units=self.relabel_equivalent_units,
+                    historical=historical,
+                ):
+                    # Unconvertible resistivity unit: the curve keeps its own
+                    # name, and a curve that already has the standard name
+                    # moves aside to <name>_UNCONVERTED.
+                    eligible_for_standard_slot = False
+                    rename_map.pop(mnemonic, None)
+                    own_name = _unconverted_name(mnemonic, standard_name)
+                    if own_name != mnemonic:
+                        rename_map[mnemonic] = own_name
+                    new_curve.mnemonic = own_name
 
+            _note_neutron_matrix_reference(new_curve, mnemonic, standard_name)
             _screen_standard_curve_values(new_curve, standard_name, curve.unit, self.plausible_ranges)
 
             # Handle duplicate standard names: the incoming curve takes the
@@ -521,7 +730,7 @@ class CurveStandardizer:
                 target_name = (
                     standard_name
                     if self.rename_curves and eligible_for_standard_slot
-                    else mnemonic
+                    else own_name
                 )
                 new_curves[target_name] = new_curve
                 slot_source[target_name] = mnemonic
@@ -570,15 +779,17 @@ class CurveStandardizer:
 
         if convert:
             standard_unit = get_standard_unit(standard_name)
-            if standard_unit and curve.unit:
-                factor = _standard_conversion_factor(curve.unit, standard_unit, standard_name)
-                if factor is not None:
-                    if factor != 1.0:
-                        new_curve._data = new_curve._data * factor
-                    new_curve.unit = standard_unit
-                elif _converts_temperature(curve.unit, standard_unit):
-                    new_curve._data = convert_units(new_curve._data, curve.unit, standard_unit)
-                    new_curve.unit = standard_unit
+            if standard_unit and curve.unit and not _convert_to_standard_unit(
+                new_curve,
+                curve.unit,
+                curve.mnemonic,
+                standard_name,
+                standard_unit,
+                relabel_equivalent_units=True,
+                historical=reproducing_benchmark(),
+            ):
+                # Unconvertible resistivity unit: the curve keeps its own name.
+                new_curve.mnemonic = _unconverted_name(curve.mnemonic, standard_name)
 
         _screen_standard_curve_values(new_curve, standard_name, curve.unit, self.plausible_ranges)
 

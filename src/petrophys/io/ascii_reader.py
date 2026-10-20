@@ -26,6 +26,19 @@ def _require_depth_unit(depth_unit: Optional[str], source: str) -> str:
     return normalize_depth_unit(depth_unit)
 
 
+def _check_case_duplicates(columns: Any, source: str) -> None:
+    """Raise ValueError when two columns become the same (upper-case) curve name."""
+    seen: Dict[str, Any] = {}
+    for column in columns:
+        key = str(column).strip().upper()
+        if key in seen:
+            raise ValueError(
+                f"{source}: columns {seen[key]!r} and {column!r} both become curve {key!r}; "
+                "rename one of them."
+            )
+        seen[key] = column
+
+
 def _warn_on_coerced_values(df: pd.DataFrame, skip: List[str], source: str) -> None:
     """Warn when text in mostly numeric columns is read as missing (NaN)."""
     coerced = {}
@@ -74,13 +87,25 @@ def read_csv(
         Number of rows to skip at start
     null_values : list of str, optional
         Additional strings to recognize as null
+    well_column : str, optional
+        Column identifying the well (default: the first of WELL, WELLNAME,
+        WELL_NAME, UWI and API present). It is read as text, so identifiers
+        keep their leading zeros, names the well and is not a curve; a UWI
+        or API column also sets ``header.uwi`` or ``header.api``.
     **kwargs
-        Additional arguments passed to pd.read_csv
+        Additional arguments passed to pd.read_csv (e.g. ``thousands=","``
+        or ``decimal=","``)
 
     Returns
     -------
     Well
         Well object with loaded data
+
+    Raises
+    ------
+    ValueError
+        If the depth column is missing or has no numeric value, or two
+        columns differ only in case.
 
     Examples
     --------
@@ -97,6 +122,20 @@ def read_csv(
     na_values = ["-999", "-999.25", "-999.0", "null", "NULL", "NaN", "nan", ""]
     if null_values:
         na_values.extend(null_values)
+
+    # Read the well identifier column as text, so a numeric UWI keeps its
+    # leading zeros.
+    header_options = {
+        key: value for key, value in kwargs.items()
+        if key not in {"nrows", "dtype", "converters", "usecols", "chunksize", "iterator"}
+    }
+    raw_columns = pd.read_csv(filepath, skiprows=skiprows, nrows=0, **header_options).columns
+    source = f"CSV file {filepath.name!r}"
+    _check_case_duplicates(raw_columns, source)
+    raw_by_upper = {str(column).strip().upper(): column for column in raw_columns}
+    resolved = _resolve_well_column(pd.DataFrame(columns=list(raw_by_upper)), well_column)
+    if resolved is not None and not isinstance(kwargs.get("dtype"), (str, type)):
+        kwargs["dtype"] = {**(kwargs.get("dtype") or {}), raw_by_upper[resolved]: str}
 
     # Read CSV
     df = pd.read_csv(
@@ -132,12 +171,16 @@ def read_csv(
     _warn_on_coerced_values(
         df, [c for c in (candidate_well_column,) if c], f"CSV file {filepath.name!r}"
     )
+    if candidate_well_column is not None and candidate_well_column != depth_column:
+        df = df.drop(columns=[candidate_well_column])
     well = Well.from_dataframe(
         df,
         depth_column=depth_column.upper(),
         depth_unit=_require_depth_unit(depth_unit, f"CSV file {filepath.name!r}"),
         name=well_name
     )
+    if candidate_well_column in ("UWI", "API") and len(identifiers) == 1:
+        setattr(well.header, candidate_well_column.lower(), identifiers[0])
 
     return well
 
@@ -197,6 +240,7 @@ def read_csv_wells(
         if key not in {"nrows", "dtype", "converters", "usecols"}
     }
     raw_columns = pd.read_csv(path, skiprows=skiprows, nrows=0, **header_options).columns
+    _check_case_duplicates(raw_columns, f"CSV file {path.name!r}")
     raw_by_upper = {str(column).strip().upper(): column for column in raw_columns}
     resolved = _resolve_well_column(pd.DataFrame(columns=list(raw_by_upper)), well_column)
     if resolved is not None and not isinstance(kwargs.get("dtype"), (str, type)):
@@ -279,7 +323,8 @@ def read_ascii(
     well_name : str, optional
         Name for the well
     delimiter : str, optional
-        Column delimiter (default: auto-detect)
+        Column delimiter (default: auto-detect tab, semicolon, comma or
+        whitespace from the first data row)
     header_line : int, optional
         Line number containing column headers (0-indexed)
     skiprows : int, optional
@@ -290,11 +335,20 @@ def read_ascii(
         Column names if not in file
     units_line : int, optional
         Line number containing units
+    **kwargs
+        Additional arguments passed to pd.read_csv (e.g. ``decimal=","``
+        or ``thousands=","``)
 
     Returns
     -------
     Well
         Well object with loaded data
+
+    Raises
+    ------
+    ValueError
+        If the depth column is missing or has no numeric value, or two
+        columns differ only in case.
     """
     from petrophys.model.well import Well
 
@@ -322,11 +376,16 @@ def read_ascii(
     # Auto-detect delimiter if not specified
     if delimiter is None:
         sample_line = lines[header_line + skiprows + 1] if len(lines) > header_line + skiprows + 1 else lines[-1]
+        header_text = lines[header_line + skiprows] if len(lines) > header_line + skiprows else ""
         if '\t' in sample_line:
             delimiter = '\t'
-        elif ',' in sample_line:
+        elif ';' in sample_line:
+            delimiter = ';'
+        elif ',' in sample_line and (column_names or ',' in header_text):
             delimiter = ','
         else:
+            # Whitespace, also for rows with decimal commas ("2000,5 45,3")
+            # under a header without commas.
             delimiter = r'\s+'  # whitespace
 
     if column_names:
@@ -363,6 +422,7 @@ def read_ascii(
         )
 
     # Clean column names
+    _check_case_duplicates(df.columns, f"ASCII file {filepath.name!r}")
     df.columns = [str(c).strip().upper() for c in df.columns]
 
     # Get units if available

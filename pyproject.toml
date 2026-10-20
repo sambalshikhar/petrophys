@@ -8,7 +8,12 @@ version = "3.0.0"
 description = "A comprehensive petrophysics library for well log analysis and formation evaluation"
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE", "THIRD_PARTY_DATA.md", "src/petrophys/datasets/phillips/LICENSE-*.txt"]
+license-files = [
+    "LICENSE",
+    "THIRD_PARTY_DATA.md",
+    "src/petrophys/datasets/phillips/LICENSE-*.txt",
+    "src/petrophys/datasets/taranaki/LICENSE-*.txt",
+]
 requires-python = ">=3.9"
 authors = [
     {name = "Petrophys Contributors"}
@@ -129,6 +134,12 @@ petrophys = [
     "datasets/phillips/*.json",
     "datasets/phillips/*.md",
     "datasets/phillips/*.txt",
+    "datasets/taranaki/*.las",
+    "datasets/taranaki/*.csv",
+    "datasets/taranaki/*.md",
+    "datasets/taranaki/*.txt",
+    "datasets/teapot/*.las",
+    "datasets/teapot/*.md",
 ]
 
 [tool.black]

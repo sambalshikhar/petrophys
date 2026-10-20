@@ -28,7 +28,7 @@ from petrophys.interpretation.lithology.matrix_inference import (
     interpreted_lithology_code_curve,
 )
 from petrophys.io import export_las, read_las
-from petrophys.model.units import temperature_to_fahrenheit
+from petrophys.model.units import normalize_depth_unit, temperature_to_fahrenheit
 from petrophys.preprocessing.standardization import standardize_curves
 from petrophys.workflow.dynamic_workflow import (
     _BENCHMARK_PROFILES,
@@ -286,22 +286,29 @@ def _prepare_batch_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWor
     return prepared
 
 
-def _depth_unit_is_metric(unit: str) -> bool:
-    text = (unit or "").strip().lower()
-    return text in {"m", "meter", "meters", "metre", "metres"}
+def _depth_unit_is_metric(unit: str, *, benchmark: bool = False) -> bool:
+    """True for a metre label, as :func:`~petrophys.model.units.normalize_depth_unit`
+    reads it (``"M"``, ``"MTR"``, ``"metres"``, ...); ``benchmark`` (the
+    "geolink" profile) keeps the benchmark packages' shorter list."""
+    if benchmark:
+        text = (unit or "").strip().lower()
+        return text in {"m", "meter", "meters", "metre", "metres"}
+    return normalize_depth_unit(unit, strict=False) == "m"
 
 
-def _depth_to_ft(value: float, unit: str) -> float:
-    if _depth_unit_is_metric(unit):
+def _depth_to_ft(value: float, unit: str, *, benchmark: bool = False) -> float:
+    if _depth_unit_is_metric(unit, benchmark=benchmark):
         return float(value) * 3.28084
     return float(value)
 
 
-def _convert_depth_between_units(value: float, from_unit: str, to_unit: str) -> float:
+def _convert_depth_between_units(
+    value: float, from_unit: str, to_unit: str, *, benchmark: bool = False
+) -> float:
     if not from_unit or not to_unit or from_unit.lower() == to_unit.lower():
         return float(value)
-    from_is_metric = _depth_unit_is_metric(from_unit)
-    to_is_metric = _depth_unit_is_metric(to_unit)
+    from_is_metric = _depth_unit_is_metric(from_unit, benchmark=benchmark)
+    to_is_metric = _depth_unit_is_metric(to_unit, benchmark=benchmark)
     if from_is_metric and not to_is_metric:
         return float(value) * 3.28084
     if not from_is_metric and to_is_metric:
@@ -322,21 +329,23 @@ def _parse_bool(value: Any) -> bool:
     return text in {"1", "true", "t", "yes", "y", "on"}
 
 
-def _salinity_to_ppm(value: float, unit: str, *, benchmark: bool = False) -> float:
-    """A header salinity in ppm by weight.
+def _salinity_to_ppm(value: float, unit: str, *, benchmark: bool = False) -> Optional[float]:
+    """A header salinity in ppm by weight, or None for a unit it does not know.
 
     Per-volume units (mg/l, g/l, kg/m3) are converted with the brine density
-    and g/kg is scaled to ppm, except for ``benchmark`` (the "geolink"
-    profile), which keeps the benchmark packages' reading of mg/l and g/l as
-    ppm.
+    and g/kg and ppt (parts per thousand) are scaled to ppm, except for
+    ``benchmark`` (the "geolink" profile), which keeps the benchmark
+    packages' reading of mg/l and g/l as ppm and reads any other unit as ppm.
     """
     text = (unit or "").strip().lower()
     if not text:
         return float(value)
     if not benchmark:
         compact = "".join(text.replace("\\", "/").split())
-        if compact == "g/kg":
+        if compact in {"g/kg", "ppt", "ppth"}:
             return float(value) * 1000.0
+        if compact == "mg/kg":
+            return float(value)
         if "mg/l" in compact:
             return salinity_mg_per_l_to_ppm(float(value))
         if "g/l" in compact or compact in {"kg/m3", "kg/m^3"}:
@@ -349,6 +358,8 @@ def _salinity_to_ppm(value: float, unit: str, *, benchmark: bool = False) -> flo
         return float(value) * 1000.0
     if "%" in text and "/" not in text:
         return float(value) * 10000.0
+    if not benchmark:
+        return None
     return float(value)
 
 
@@ -373,15 +384,26 @@ def _chlorides_to_mg_per_l(value: float, unit: str) -> float:
     return chlorides_ppm * brine_density(NACL_PER_CHLORIDE * chlorides_ppm)
 
 
+#: Density unit labels (lower case, without spaces, ``^`` or ``**``) of kg/m3
+#: and lb/ft3; g/cm3 labels (g/cc, g/cm3, gm/cc, ...) need no conversion.
+_KG_PER_M3_UNITS = {"kg/m3", "k/m3", "kgm3", "kg.m-3", "kgm-3"}
+_LB_PER_FT3_UNITS = {"lb/ft3", "lbm/ft3", "lbs/ft3", "lb/cuft", "lbm/cuft", "pcf"}
+#: g/cm3 in one lb/ft3.
+_G_PER_CM3_PER_LB_PER_FT3 = 0.016018463
+
+
 def _density_to_g_per_cm3(value: float, unit: str) -> float:
     """A header density in g/cm3, the unit of the density settings.
 
-    kg/m3 is divided by 1000; g/cm3, g/cc and a value without a unit are taken
-    as they stand.
+    kg/m3 (``KG/M3``, or ``K/M3`` as LAS 2.0 files write it) is divided by
+    1000 and lb/ft3 multiplied by 0.016018463; g/cm3, g/cc and a value
+    without a unit are taken as they stand.
     """
-    text = "".join((unit or "").lower().split())
-    if text in {"kg/m3", "kg/m^3", "kg/m**3"}:
+    text = "".join((unit or "").lower().split()).replace("**", "").replace("^", "")
+    if text in _KG_PER_M3_UNITS:
         return float(value) / 1000.0
+    if text in _LB_PER_FT3_UNITS:
+        return float(value) * _G_PER_CM3_PER_LB_PER_FT3
     return float(value)
 
 
@@ -520,6 +542,64 @@ def _merge_curve_into_well(parent_well: "Well", interval_well: "Well", top: floa
             target_curve = parent_well.get(mnemonic)
 
         target_curve._data[mask] = source_data
+
+
+def _clear_curves_not_computed(
+    parent_well: "Well",
+    interval_well: "Well",
+    input_curves: Dict[str, Any],
+    top: float,
+    bottom: float,
+) -> List[str]:
+    """Blank, over a zone, the parent's curves that its zone run did not compute ("current").
+
+    A curve the whole-well run wrote (or an input the zone run set aside as
+    ``<NAME>_INPUT``) that is missing from the zone run would otherwise keep
+    its whole-well values inside the zone, next to zone curves computed
+    without it. Input curves are left as they are. Returns the names blanked.
+    """
+    mask = (parent_well.depth >= top) & (parent_well.depth <= bottom)
+    if not np.any(mask):
+        return []
+    cleared = []
+    for name in parent_well.curves:
+        if interval_well.get(name) is not None:
+            continue
+        curve = parent_well.get(name)
+        if curve is None:
+            continue
+        untouched_input = input_curves.get(name) is curve
+        if untouched_input and interval_well.get(f"{name}_INPUT") is None:
+            continue
+        data = curve._data
+        if np.issubdtype(np.asarray(data).dtype, np.number):
+            if not np.issubdtype(np.asarray(data).dtype, np.floating):
+                curve._data = data = np.asarray(data, dtype=float)
+            data[mask] = np.nan
+        else:
+            data[mask] = None
+        cleared.append(name)
+    return cleared
+
+
+def _whole_well_zone_notes(
+    well: "Well", zone: ZonedParameterInterval, base_config: DynamicWorkflowConfig
+) -> List[str]:
+    """Warnings for a zone that covers the whole well and changes a whole-well setting."""
+    depth = np.asarray(well.depth, dtype=float)
+    finite = depth[np.isfinite(depth)]
+    if finite.size == 0 or zone.top > finite.min() or zone.bottom < finite.max():
+        return []
+    notes = []
+    for field_name, value in sorted(zone.config_overrides.items()):
+        current = getattr(base_config, field_name, None)
+        if current is None or _value_signature(current) == _value_signature(value):
+            continue
+        notes.append(
+            f"Zone Z{zone.index} ({zone.top:g}-{zone.bottom:g} {well.depth_unit}) covers the whole well: "
+            f"its {field_name}={value!r} replaces the whole-well {field_name}={current!r} at every depth."
+        )
+    return notes
 
 
 def _apply_interval_metadata(interval_well: "Well", zone: ZonedParameterInterval) -> None:
@@ -713,9 +793,19 @@ def _apply_parameter_alias(
     if target in {"bht_f", "rmf_meas_temp_f", "rm_meas_temp_f", "rw_meas_temp_f"}:
         overrides[target] = temperature_to_fahrenheit(numeric_value, unit)
     elif target in {"td_ft"}:
-        overrides[target] = _depth_to_ft(numeric_value, unit)
+        overrides[target] = _depth_to_ft(numeric_value, unit, benchmark=benchmark)
     elif target in {"salinity_ppm", "rmf_salinity_ppm"}:
-        overrides[target] = _salinity_to_ppm(numeric_value, unit, benchmark=benchmark)
+        salinity = _salinity_to_ppm(numeric_value, unit, benchmark=benchmark)
+        if salinity is None:
+            _warn(
+                f"LAS parameter {base_name} = {value} {unit}: the salinity unit is not recognised "
+                "(ppm, mg/kg, ppk or kppm, ppt or g/kg, mg/l, g/l, kg/m3, %), so the value is not used.",
+                UserWarning,
+                stacklevel=2,
+            )
+            unmapped_parameters.append(base_name)
+        else:
+            overrides[target] = salinity
     elif target in {"rho_ma", "rho_fl", "rho_cl"} and not benchmark:
         overrides[target] = _density_to_g_per_cm3(numeric_value, unit)
     elif target == "rmf_chlorides_mg_l":
@@ -731,6 +821,7 @@ def _extract_global_parameter_overrides(
 ) -> tuple[Dict[str, Any], List[str]]:
     overrides: Dict[str, Any] = {}
     unmapped: List[str] = []
+    benchmark = calculation_profile in _BENCHMARK_PROFILES or reproducing_benchmark()
 
     for key, value in getattr(well, "_parameters", {}).items():
         if not isinstance(key, str) or "__" in key:
@@ -740,6 +831,9 @@ def _extract_global_parameter_overrides(
         if ZONE_VALUE_RE.match(key):
             continue
         unit = _parameter_text(well, f"{key}__UNIT")
+        if not unit and not benchmark and key.upper() == "TD":
+            # A total depth without a unit is in the depth unit of the well.
+            unit = well.depth_unit or ""
         _apply_parameter_alias(
             key, value, unit, overrides, {}, unmapped,
             calculation_profile=calculation_profile,
@@ -772,6 +866,7 @@ def extract_zoned_parameters(
         Zones in index order; zones without both depths are ignored.
     """
     grouped: Dict[int, Dict[str, Any]] = {}
+    benchmark = calculation_profile in _BENCHMARK_PROFILES or reproducing_benchmark()
 
     for key, value in getattr(well, "_parameters", {}).items():
         if not isinstance(key, str) or "__" in key:
@@ -804,8 +899,8 @@ def extract_zoned_parameters(
         except (TypeError, ValueError):
             continue
 
-        top = _convert_depth_between_units(top_value, top_unit, well.depth_unit)
-        bottom = _convert_depth_between_units(bottom_value, bottom_unit, well.depth_unit)
+        top = _convert_depth_between_units(top_value, top_unit, well.depth_unit, benchmark=benchmark)
+        bottom = _convert_depth_between_units(bottom_value, bottom_unit, well.depth_unit, benchmark=benchmark)
 
         overrides: Dict[str, Any] = {}
         injected_parameters: Dict[str, Any] = {}
@@ -913,6 +1008,13 @@ def run_dynamic_workflow_with_zones(
     if base_config.td_ft is None and well.bottom is not None:
         base_config.td_ft = _depth_to_ft(well.bottom, well.depth_unit)
 
+    # Under "current" each zone is re-run from the input curves, sliced
+    # before the whole-well run adds its own (PHIE_CC, PERM_CC, SW, ...).
+    input_curves = {name: well.get(name) for name in well.curves}
+    zone_inputs = (
+        {} if historical
+        else {zone.index: well.depth_slice(top=zone.top, bottom=zone.bottom) for zone in zones}
+    )
     base_result = run_dynamic_workflow(well, base_config)
     well_nd_clay = _well_nd_clay_point(base_config, base_result)
     well_code_curve = _well_lithology_code_curve(base_config, well)
@@ -923,8 +1025,13 @@ def run_dynamic_workflow_with_zones(
         warnings.append(f"Unmapped global LAS parameters: {', '.join(global_unmapped)}")
 
     for zone in zones:
-        interval_well = well.depth_slice(top=zone.top, bottom=zone.bottom)
+        if zone.index in zone_inputs:
+            interval_well = zone_inputs[zone.index]
+        else:
+            interval_well = well.depth_slice(top=zone.top, bottom=zone.bottom)
         interval_config = _clone_config(base_config)
+        if not historical:
+            warnings.extend(_whole_well_zone_notes(well, zone, base_config))
 
         for field_name, value in zone.config_overrides.items():
             _set_config_value(interval_config, field_name, value)
@@ -944,6 +1051,14 @@ def run_dynamic_workflow_with_zones(
         _apply_interval_metadata(interval_well, zone)
         zone_result = run_dynamic_workflow(interval_well, interval_config)
         _merge_curve_into_well(well, interval_well, zone.top, zone.bottom)
+        if not historical:
+            cleared = _clear_curves_not_computed(well, interval_well, input_curves, zone.top, zone.bottom)
+            if cleared:
+                warnings.append(
+                    f"Zone Z{zone.index} ({zone.top:g}-{zone.bottom:g} {well.depth_unit}) did not compute "
+                    f"{', '.join(cleared)}; the merged curves are NaN there, as the zone's SW, BVW and "
+                    "net pay were computed without them."
+                )
         zone_results.append(zone_result)
 
         if zone.unmapped_parameters:
