@@ -10,6 +10,10 @@ from typing import Union
 import numpy as np
 
 from petrophys._internal.benchmark import reproducing_benchmark
+from petrophys.interpretation.saturation._inputs import (
+    check_resistivity_parameters,
+    nonpositive_resistivity,
+)
 
 
 def dual_water(
@@ -83,27 +87,36 @@ def dual_water(
     Returns
     -------
     float or np.ndarray
-        Effective water saturation Swe (fraction, clipped 0-1)
+        Effective water saturation Swe (fraction, clipped 0-1): a float for
+        scalar inputs, else an array. NaN where Rt or an Rw or Rwb array is
+        at or below zero.
+
+    Raises
+    ------
+    ValueError
+        If a scalar ``rw`` or ``rwb`` is at or below zero.
     """
+    check_resistivity_parameters(rw=rw, rwb=rwb)
+    scalar_input = all(np.ndim(value) == 0 for value in (phi_t, rt, rw, rwb, vcl, phi_cl))
+    phi_t, rt, rw, rwb, vcl = (np.asarray(value, dtype=float) for value in (phi_t, rt, rw, rwb, vcl))
+    invalid = nonpositive_resistivity(rt, rw, rwb)
+
+    def _result(swe):
+        swe = np.clip(swe, 0.0, 1.0)
+        return float(swe) if scalar_input else swe
+
     phi_bw = vcl * phi_cl
 
-    phi_t_safe = (
-        np.where(phi_t <= 0, 1e-10, phi_t)
-        if isinstance(phi_t, np.ndarray)
-        else max(phi_t, 1e-10)
-    )
+    phi_t_safe = np.where(phi_t <= 0, 1e-10, phi_t)
 
     # Guard the resistivities against zero/negative (matches the other Sw models),
     # otherwise rwt and swt divide by zero on a scalar 0 or propagate NaN.
-    rw_safe = np.where(rw <= 0, 1e-10, rw) if isinstance(rw, np.ndarray) else max(rw, 1e-10)
-    rwb_safe = np.where(rwb <= 0, 1e-10, rwb) if isinstance(rwb, np.ndarray) else max(rwb, 1e-10)
-    rt_safe = np.where(rt <= 0, 1e-10, rt) if isinstance(rt, np.ndarray) else max(rt, 1e-10)
+    rw_safe = np.where(rw <= 0, 1e-10, rw)
+    rwb_safe = np.where(rwb <= 0, 1e-10, rwb)
+    rt_safe = np.where(rt <= 0, 1e-10, rt)
     # Infinite Rt (no conductivity reading) is missing, as in archie().
     if not reproducing_benchmark():
-        if isinstance(rt_safe, np.ndarray):
-            rt_safe = np.where(np.isinf(rt_safe), np.nan, rt_safe)
-        elif np.isinf(rt_safe):
-            rt_safe = np.nan
+        rt_safe = np.where(np.isinf(rt_safe), np.nan, rt_safe)
 
     swb = phi_bw / phi_t_safe
 
@@ -111,11 +124,7 @@ def dual_water(
     # Clamp BEFORE it is used so the apparent-Rwt mixing term (1 - swb)/rw stays
     # physical: a raw swb above 1 would give a negative conductivity
     # contribution and an invalid Rwt.
-    swb_safe = (
-        np.where(swb >= 1.0, 0.999, swb)
-        if isinstance(swb, np.ndarray)
-        else min(swb, 0.999)
-    )
+    swb_safe = np.where(swb >= 1.0, 0.999, swb)
 
     if reproducing_benchmark():
         # Wet-zone form: apparent water resistivity mixed from Swb, then
@@ -123,7 +132,7 @@ def dual_water(
         rwt = 1.0 / (swb_safe / rwb_safe + (1.0 - swb_safe) / rw_safe)
         swt = ((a * rwt) / (phi_t_safe ** m * rt_safe)) ** (1.0 / n)
         swe = (swt - swb_safe) / (1.0 - swb_safe)
-        return np.clip(swe, 0.0, 1.0)
+        return _result(swe)
 
     # Clavier-Coates-Dumanoir: the bound water is the fraction Swb/Swt of the
     # pore water, 1/Rt = phi_t^m/a * Swt^n * [Cw + (Swb/Swt) (Cwb - Cw)].
@@ -143,5 +152,6 @@ def dual_water(
 
     # Convert to effective Sw
     swe = (swt - swb_safe) / (1.0 - swb_safe)
+    swe = np.where(invalid, np.nan, swe)
 
-    return np.clip(swe, 0.0, 1.0)
+    return _result(swe)

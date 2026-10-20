@@ -19,7 +19,7 @@ It holds no depth-by-depth arrays and is built locally, with no LLM or network c
 | Summarize an interpretation you already ran | `pp.build_context(result)` or `pp.export_context(result, "well_context.json")` |
 | Interpret your own well and write one JSON | `petrophys-context "well.las" "well_context.json"` |
 | Generate six category contexts across wells, formations and lithology groups | `pp.export_context(..., layout="category_formation_lithology")` or the CLI with that layout |
-| Reproduce the GeoLink, COSTA or Danish benchmark | Use the collection's `context_profile`; see {doc}`benchmark_context` for complete commands and required inputs |
+| Reproduce the GeoLink, GeoLink training, COSTA or Danish benchmark | Use the collection's `context_profile`; see {doc}`benchmark_context` for complete commands and required inputs |
 
 For a source checkout, install with `python -m pip install -e .` before using
 the public API or installed CLI. For a package installation, use
@@ -173,6 +173,13 @@ rules. Select the profile that matches your dataset.
   (`NPD stratigraphic picks north sea.xlsx`) and the GeoLink lithology
   codebook (`Litho_Nomenclature_Kingdom.xlsx`), and computes the interpreted
   curves and category context.
+- `geolink_train_v1` (alias `geolink_train`) covers the 191 GeoLink training
+  wells. It reads their raw LAS with header interpretation parameters (the
+  `LAS_with_petrophys_params` folder), the NPD formation tops workbook and the
+  GeoLink lithology codebook. Each well is interpreted once; a preparatory
+  step computes the reservoir flag of the package's first interpretation.
+  The input logs are the logged curves, without the core data the LAS carry
+  and without the bit size, which the package's context did not list.
 - `costa_v1` (alias `costa`) covers the 17 COSTA wells. Its inputs ship with
   petrophys: the COSTA LAS files (`petrophys/datasets/costa`), the per-well
   interpretation parameters and reference calcite and dolomite volumes
@@ -234,9 +241,10 @@ LAS over the group's depth window. Each well is interpreted once from its raw
 LAS; a preparatory step, recorded in the trace, computes the curves the
 package's settings take from a first run: for GeoLink and Danish the reservoir
 flag that selects the SWIRR_APP samples and the bad-hole flag BADHOLEFLAG, for
-COSTA its precomputed curves (PERM, VCL, carbonate volumes and lithology).
+the GeoLink training package that reservoir flag, for COSTA its precomputed
+curves (PERM, VCL, carbonate volumes and lithology).
 Given one LAS file or a folder, it
-recognizes GeoLink, COSTA or Danish wells by name (`--dataset` overrides):
+recognizes GeoLink, GeoLink training, COSTA or Danish wells by name (`--dataset` overrides):
 
 ```bash
 python scripts/generate_benchmark_context.py --input-dir PATH/HW-31.las --output-dir outputs/HW-31
@@ -341,7 +349,7 @@ petrophys-context logs outputs/context_run_01 --layout category_formation_lithol
 | `--well WELL` | export only these wells (repeatable) |
 | `--recursive`, `--pattern` | search nested folders; choose which files to read |
 | `--min-thickness` | override the grouping threshold |
-| `--profile` | compute the published `geolink`, `costa` or `danish` package from its raw LAS (geolink and danish also need `--formations` and `--lithology-codes`); omit it to interpret with your supplied settings |
+| `--profile` | compute the published `geolink`, `geolink_train`, `costa` or `danish` package from its raw LAS (geolink, geolink_train and danish also need `--formations` and `--lithology-codes`); omit it to interpret with your supplied settings |
 | `--tops-rank`, `--tops-sheet` | pick the formation level (`group`, `formation`, `member`) and the Excel sheet |
 | `--lithology-domain` | broad mineral-solving domain: `clastic`, `carbonate`, `evaporite` or `auto` |
 | `--max-bytes`, `--max-total-bytes` | change the size limits |

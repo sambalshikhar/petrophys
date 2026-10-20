@@ -1101,11 +1101,19 @@ _RERUN_WELLS = frozenset({"15_9-17", "34_10-23"})
 _RERUN_CALCULATIONS_REQUESTED: ContextVar[bool] = ContextVar(
     "petrophys_rerun_calculations_requested", default=False
 )
-#: The published context packages besides GeoLink's whose calculations the
-#: "geolink" profile keeps. Both were interpreted with the calculations of the
-#: GeoLink re-run; the COSTA package also with the two saturation rules of
-#: :meth:`DynamicWorkflow._costa_saturation`.
-_DATASET_CALCULATIONS = ("danish", "costa")
+#: The published context packages besides GeoLink's eval package whose
+#: calculations the "geolink" profile keeps. All were interpreted with the
+#: calculations of the GeoLink re-run; the COSTA package also with the two
+#: saturation rules of :meth:`DynamicWorkflow._costa_saturation`. The GeoLink
+#: training package ("geolink_train") also corrected Rw estimates for
+#: temperature with Arps (:meth:`DynamicWorkflow._train_rw_curve`), calibrated
+#: core porosity only together with core permeability
+#: (:meth:`DynamicWorkflow._train_lacks_core_permeability`,
+#: :meth:`DynamicWorkflow._train_core_porosity`), read GR alone for VCL,
+#: grouped a well without lithology codes by the LITHO of its lithology step
+#: (:meth:`DynamicWorkflow._train_lithology_codes`), and flagged bad hole
+#: from |DRHO| alone where the well records no bit size.
+_DATASET_CALCULATIONS = ("danish", "costa", "geolink_train")
 #: The dataset inside :func:`_dataset_calculations`, else None.
 _DATASET_CALCULATIONS_REQUESTED: ContextVar[Optional[str]] = ContextVar(
     "petrophys_dataset_calculations_requested", default=None
@@ -1169,6 +1177,11 @@ _FINITE_FIELDS = (
 #: the 5% significance level of the correlation.
 _CORE_POROSITY_MIN_R_SQUARED = 0.5
 
+#: Core porosity mnemonics that let the "current" core-correction step run:
+#: those core_data_from_well reads core porosity from. The "geolink" profile
+#: ran the step on PHIC and CPOR only.
+_CORE_POROSITY_CURVES = ("PHIC", "CPOR", "CPOR-AMB", "CPOR_AMB")
+
 #: Why the current profile writes no SXO or MHI for oil-based mud.
 _OBM_FLUSHED_ZONE_NOTE = (
     "mud_type='OBM' (SXO and MHI describe flushing by a conductive water-based "
@@ -1188,6 +1201,69 @@ def _cec_range_error(cec: Any) -> Optional[str]:
         f"cec must be between 0 and {MAX_CEC_MEQ_PER_100G:g} meq/100 g "
         f"(pure smectite is 80-150 meq/100 g); got {cec!r}"
     )
+
+
+#: Absolute zero in degrees Fahrenheit.
+_ABSOLUTE_ZERO_F = -459.67
+#: Plausible ranges of the "current" matrix and fluid settings: a whole-well
+#: matrix density lies within 1.5-3.5 g/cm3 (sylvite 1.99, quartz 2.65,
+#: anhydrite 2.98), a pore fluid is lighter than 2 g/cm3 (saturated brine
+#: about 1.2) and a matrix neutron reading lies within -0.1 and 0.5 v/v.
+_RHO_MA_RANGE = (1.5, 3.5)
+_RHO_FL_MAX = 2.0
+_NPHI_MA_RANGE = (-0.1, 0.5)
+#: Most dissolved salt a formation water holds, in ppm (halite saturation is
+#: about 260,000 ppm NaCl; CaCl2 brines reach about 400,000 ppm).
+_MAX_SALINITY_PPM = 400_000.0
+
+
+def _physical_range_errors(config: "DynamicWorkflowConfig") -> List[str]:
+    """Messages for "current" settings outside their physical range.
+
+    Temperatures below absolute zero, a bottom-hole temperature below the
+    surface temperature, densities and matrix neutron values no rock has,
+    a matrix lighter than its pore fluid and a salinity outside 0-400,000 ppm
+    are refused; most are a unit slip (kg/m3 for g/cm3, degC for degF).
+    """
+    def number(name: str) -> Optional[float]:
+        value = getattr(config, name, None)
+        if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, float, np.integer, np.floating)):
+            return None
+        return float(value) if np.isfinite(value) else None
+
+    errors = []
+    for name in ("surface_temp_f", "bht_f", "rw_meas_temp_f", "rmf_meas_temp_f", "rm_meas_temp_f"):
+        value = number(name)
+        if value is not None and value < _ABSOLUTE_ZERO_F:
+            errors.append(
+                f"{name} must be a temperature in degF, at or above absolute zero ({_ABSOLUTE_ZERO_F} degF); "
+                f"got {value!r}"
+            )
+    bht, surface = number("bht_f"), number("surface_temp_f")
+    if bht is not None and surface is not None and _ABSOLUTE_ZERO_F <= bht < surface:
+        errors.append(
+            f"bht_f ({bht:g} degF) must not be below surface_temp_f ({surface:g} degF): temperature "
+            "rises with depth (set surface_temp_f for a cold surface or seabed)"
+        )
+    rho_ma, rho_fl, nphi_ma = number("rho_ma"), number("rho_fl"), number("nphi_ma")
+    if rho_ma is not None and not _RHO_MA_RANGE[0] <= rho_ma <= _RHO_MA_RANGE[1]:
+        errors.append(
+            f"rho_ma must be a matrix density of {_RHO_MA_RANGE[0]:g}-{_RHO_MA_RANGE[1]:g} g/cm3 "
+            f"(2650 kg/m3 is 2.65 g/cm3); got {rho_ma!r}"
+        )
+    if rho_fl is not None and not 0.0 < rho_fl <= _RHO_FL_MAX:
+        errors.append(f"rho_fl must be a fluid density above 0 and at most {_RHO_FL_MAX:g} g/cm3; got {rho_fl!r}")
+    if rho_ma is not None and rho_fl is not None and rho_ma <= rho_fl:
+        errors.append(f"rho_ma ({rho_ma:g} g/cm3) must be greater than rho_fl ({rho_fl:g} g/cm3)")
+    if nphi_ma is not None and not _NPHI_MA_RANGE[0] <= nphi_ma <= _NPHI_MA_RANGE[1]:
+        errors.append(
+            f"nphi_ma must be a matrix neutron porosity of {_NPHI_MA_RANGE[0]:g} to {_NPHI_MA_RANGE[1]:g} v/v; "
+            f"got {nphi_ma!r}"
+        )
+    salinity = number("salinity_ppm")
+    if salinity is not None and not 0.0 <= salinity <= _MAX_SALINITY_PPM:
+        errors.append(f"salinity_ppm must be between 0 and {_MAX_SALINITY_PPM:,.0f} ppm; got {salinity!r}")
+    return errors
 
 
 def _choice_error(name: str, value: Any, choices: Sequence[str]) -> str:
@@ -1325,9 +1401,10 @@ def _rerun_calculations(enabled: bool = True) -> Iterator[None]:
 def _dataset_calculations(dataset: str) -> Iterator[None]:
     """Give every "geolink" run inside the block the calculations of ``dataset``'s package.
 
-    ``dataset`` is ``"danish"`` or ``"costa"`` (:data:`_DATASET_CALCULATIONS`).
-    Both packages were interpreted with the calculations of the GeoLink
-    re-run, so every run inside the block also gets those.
+    ``dataset`` is ``"danish"``, ``"costa"`` or ``"geolink_train"``
+    (:data:`_DATASET_CALCULATIONS`). These packages were interpreted with the
+    calculations of the GeoLink re-run, so every run inside the block also
+    gets those.
     """
     if dataset not in _DATASET_CALCULATIONS:
         raise ValueError(f"dataset must be one of {_DATASET_CALCULATIONS}, got {dataset!r}")
@@ -1512,6 +1589,7 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
         cec_error = _cec_range_error(config.cec)
         if cec_error:
             errors.append(cec_error)
+        errors.extend(_physical_range_errors(config))
 
     if errors:
         raise ValueError(
@@ -2091,6 +2169,9 @@ class DynamicWorkflow:
         # resolved per run by _start_result.
         self._rerun_selected = False
         self._dataset: Optional[str] = None
+        # Input PHIE_CC/PERM_CC that every step of the run reads as they
+        # stand; decided once per run (_input_core_curves_kept).
+        self._input_core_basis: Tuple[str, ...] = ()
 
     def _start_result(self, well: "Well") -> DynamicWorkflowResult:
         """Open the result of a run on ``well``, resolving its benchmark calculations.
@@ -2519,9 +2600,10 @@ class DynamicWorkflow:
     def _keep_input_core_curves(self, well: "Well", names: List[str]) -> str:
         """Keep input PHIE_CC/PERM_CC as PHIE_CC_INPUT/PERM_CC_INPUT (``"current"``).
 
-        The run rewrites the core-corrected curves from its own core model;
-        the input curves are renamed rather than removed. Returns the trace
-        line, and records the warning.
+        The run fits its own core model, so the input curves are set aside
+        (renamed rather than removed) and PHIE_CC/PERM_CC come only from that
+        model, where its fit is accepted. Returns the trace line, and records
+        the warning.
         """
         kept = []
         for name in names:
@@ -2532,11 +2614,103 @@ class DynamicWorkflow:
             well.rename_curve(name, f"{name}_INPUT")
             kept.append(f"{name}_INPUT")
         message = (
-            f"Input curves {', '.join(names)} were kept as {', '.join(kept)}: core-corrected "
-            "curves are rewritten from this run's core model."
+            f"Input curves {', '.join(names)} were kept as {', '.join(kept)} and not used: this run "
+            "fits its own core model, and PHIE_CC/PERM_CC are written only where that model's fit "
+            "is accepted."
         )
         self._warn_assumed(message)
         return message
+
+    def _core_porosity_names(self) -> Tuple[str, ...]:
+        """Core porosity mnemonics that let the core-correction step run."""
+        return ("PHIC", "CPOR") if self._historical else _CORE_POROSITY_CURVES
+
+    def _peer_core_available(self) -> bool:
+        """True when peer-well core is requested and peer wells are given (``"current"``)."""
+        return (
+            not self._historical
+            and bool(self.config.use_peer_core)
+            and bool(self.config.peer_wells)
+        )
+
+    def _input_core_curves_kept(self, well: "Well") -> Tuple[str, ...]:
+        """Input PHIE_CC/PERM_CC that the whole run reads as they stand (``"current"``).
+
+        Decided once, before any step. When the run fits no core model before
+        saturation (no core porosity and no peer-well core, or
+        ``core_correction`` in ``skip_steps``), input core-corrected curves are
+        the run's core-corrected curves: SW, BVW, net pay and RQI read the
+        same PHIE_CC, and no step renames or replaces them. Empty under the
+        "geolink" profile and when the run fits its own model, whose
+        core-correction step sets the inputs aside as PHIE_CC_INPUT/PERM_CC_INPUT.
+        """
+        if self._historical:
+            return ()
+        present = tuple(name for name in ("PHIE_CC", "PERM_CC") if well.get(name) is not None)
+        if not present:
+            return ()
+        skipped = WorkflowStep.CORE_CORRECTION.value in self.config.skip_steps
+        has_core = self._has_curve(well, *self._core_porosity_names()) or self._peer_core_available()
+        if has_core and not skipped:
+            return ()
+        reason = (
+            "core_correction is in skip_steps"
+            if skipped else "the well has no core porosity and no peer-well core to fit its own core model"
+        )
+        self._warn_assumed(
+            f"Input curves {', '.join(present)} are used as they stand by every step (SW, BVW, net pay, "
+            f"RQI): {reason}."
+        )
+        return present
+
+    def _core_peer_wells(self, well: "Well", decisions: List[str]) -> Optional[List["Well"]]:
+        """Peer wells for core calibration.
+
+        Under ``"current"`` a peer needs a log porosity (PHIE or PHIT) to fit
+        its core to; a peer without one (not yet interpreted) is left out with
+        a trace line and a warning. A peer whose formations were attached by
+        :func:`petrophys.read` and not stored as its ``formation_tops``
+        parameter is passed as a copy that carries them. The "geolink" profile
+        passes the peer wells as they are.
+        """
+        import copy
+
+        peers = self.config.peer_wells
+        if self._historical or not peers or not self.config.use_peer_core:
+            return peers
+        prepared = []
+        for peer in peers:
+            if peer is None or peer is well:
+                prepared.append(peer)
+                continue
+            name = getattr(peer, "name", None) or "unnamed"
+            if get_curve(peer, ["PHIE", "PHIT"]) is None:
+                message = (
+                    f"Peer well {name} was not used for core calibration: it has no PHIE or PHIT "
+                    "to fit its core to. Interpret it first (petrophys.interpret(peer).well)."
+                )
+                decisions.append(message)
+                self._warn_assumed(message)
+                continue
+            if peer.get_parameter("formation_tops") is None:
+                records = (peer.get_parameter("_geology_context") or {}).get("formations")
+                if records:
+                    try:
+                        tops = _attached_formation_tops(records, float(np.nanmax(peer.depth)))
+                    except ValueError as exc:
+                        reason = " ".join(line.strip() for line in str(exc).splitlines()[:1])
+                        decisions.append(
+                            f"Peer well {name}: attached formations not used for core calibration: {reason}"
+                        )
+                    else:
+                        peer = copy.copy(peer)
+                        peer._parameters = {**peer._parameters, "formation_tops": tops}
+                        decisions.append(
+                            f"Peer well {name}: its {len(tops.intervals)} attached formation intervals "
+                            "are used for formation-matched core calibration"
+                        )
+            prepared.append(peer)
+        return prepared
 
     def _core_porosity_decisions(self, metadata: Dict[str, Any], phie_cc_written: bool) -> List[str]:
         """Trace lines for the "current" core porosity correction and its gate."""
@@ -2869,6 +3043,7 @@ class DynamicWorkflow:
         self._last_phit_nd_average_mask = None
         self._last_phi_cl_info = None
         self._lithology_resolution = None
+        self._input_core_basis = ()
         try:
             self._prepare_input_context(well)
             self._resolve_lithology_domain(well)
@@ -2877,6 +3052,7 @@ class DynamicWorkflow:
                 raise
             self._result.errors.append(f"input_context: {exc}")
             return self._result
+        self._input_core_basis = self._input_core_curves_kept(well)
 
         allowed = set(steps)
 
@@ -2948,6 +3124,7 @@ class DynamicWorkflow:
         self._last_phit_nd_average_mask = None
         self._last_phi_cl_info = None
         self._lithology_resolution = None
+        self._input_core_basis = ()
 
         input_error = self._input_validation_error(well)
         if input_error is not None:
@@ -2982,6 +3159,7 @@ class DynamicWorkflow:
                 raise
             self._result.errors.append(str(exc))
             return self._result
+        self._input_core_basis = self._input_core_curves_kept(well)
 
         # Tiers 0-1: resolve auto lithology from raw-input sources up front (a vendor
         # lithology log, else core-porosity apparent matrix density), so it drives the
@@ -3024,6 +3202,16 @@ class DynamicWorkflow:
             if step_enum is WorkflowStep.NORMALIZATION and normalization_done:
                 continue
 
+            if (
+                step_enum is WorkflowStep.CORE_CORRECTION
+                and self._lithology_pending
+                and not self._historical
+            ):
+                # Settle an "auto" lithology before Rw and saturation read the
+                # domain's Archie coefficients, with the resolution the end of
+                # the run would apply, so result.config is what they used.
+                self._resolve_pending_lithology(well)
+
             if step_name in self.config.skip_steps:
                 self._result.steps_skipped.append(step_name)
                 self._result.specific_steps_skipped[step_name] = "Disabled in skip_steps"
@@ -3056,16 +3244,46 @@ class DynamicWorkflow:
         # Fallback: if auto lithology is still unresolved (no vendor log, solver
         # skipped), apply the default (sandstone/clastic) with a warning.
         if self._lithology_pending:
-            from petrophys.interpretation.lithology.matrix_inference import (
-                _default, resolve_from_minerals,
-            )
-            self._apply_lithology_resolution(
-                resolve_from_minerals(well, warn=False) or _default(warn=False)
-            )
-            if not self._reproducing_benchmark:
-                self._warn_provisional_clean_line()
+            self._resolve_pending_lithology(well)
 
         return self._result
+
+    def _resolve_pending_lithology(self, well: "Well") -> None:
+        """Resolve an "auto" lithology from the solver minerals, else the default.
+
+        Under ``"current"`` it runs before the core-correction step (after the
+        porosity and lithology steps): Rw, saturation and net pay then use the
+        resolved domain and matrix, and a warning names any earlier step that
+        used a provisional matrix with another clean line or endpoint.
+        """
+        from petrophys.interpretation.lithology.matrix_inference import (
+            _default, resolve_from_minerals,
+        )
+        # The matrix an unresolved "auto" stood for so far (_resolve_matrix_arrays).
+        domain = str(self.config.lithology_domain).strip().lower()
+        provisional = _DOMAIN_MATRICES.get(domain, ("sandstone",))[0]
+        self._apply_lithology_resolution(
+            resolve_from_minerals(well, warn=False) or _default(warn=False)
+        )
+        if not self._reproducing_benchmark:
+            self._warn_provisional_clean_line()
+        if self._historical or self.config.rho_ma is not None:
+            return
+        porosity = next(
+            (item for item in self._result.steps_executed if item.step == "porosity" and item.success),
+            None,
+        )
+        constant_auto = (
+            porosity is not None
+            and porosity.parameters.get("matrix_mode") == "constant"
+            and str(porosity.parameters.get("matrix_source")) == "config_or_default[auto]"
+        )
+        if constant_auto and provisional != self.config.matrix_type:
+            self._result.warnings.append(
+                f"The matrix was resolved ({self.config.matrix_type}) after the porosity step, which "
+                f"used the provisional {provisional} matrix. Set matrix_type='{self.config.matrix_type}' "
+                f"to compute porosity with the {self.config.matrix_type} matrix."
+            )
 
     def _warn_provisional_clean_line(self) -> None:
         """Warn when VCL_ND used another clean line than the matrix resolved late in the run."""
@@ -3140,6 +3358,19 @@ class DynamicWorkflow:
         if step is WorkflowStep.BAD_HOLE:
             if self._reproducing_benchmark:
                 return "Needs a caliper (CALI) or density-correction (DRHO) curve"
+            header_bit_size = getattr(well.header, "bit_size", None)
+            if (
+                header_bit_size is not None
+                and _plausible_bit_size(header_bit_size) is None
+                and self._has_curve(well, "CALI", "CAL")
+            ):
+                message = (
+                    f"Header bit size {header_bit_size} is not a hole size in inches (3-36 in): "
+                    "a null value or another unit, so it is ignored and the caliper washout test "
+                    "does not run; bad hole is not assessed."
+                )
+                self._warn_assumed(message)
+                return message
             return (
                 "Needs a density-correction (DRHO) curve, or a caliper (CALI) and a bit size "
                 "(BS curve or a 3-36 in header bit size)"
@@ -3208,11 +3439,16 @@ class DynamicWorkflow:
                 return "The porosity step is disabled in skip_steps"
             return "Not run by the interpretation workflow; porosity is computed once in the porosity step"
         elif step is WorkflowStep.CORE_CORRECTION:
-            missing = self._missing(
-                well,
-                porosity,
-                ("core porosity (PHIC/CPOR)", "PHIC", "CPOR"),
-            )
+            if self._historical:
+                core = ("core porosity (PHIC/CPOR)", "PHIC", "CPOR")
+            else:
+                core = (
+                    "core porosity (PHIC/CPOR/CPOR-AMB) or peer-well core (use_peer_core with peer_wells)",
+                    *self._core_porosity_names(),
+                )
+            missing = self._missing(well, porosity, core)
+            if self._peer_core_available() and core[0] in missing:
+                missing.remove(core[0])
         elif step is WorkflowStep.SATURATION:
             missing = self._missing(well, ("effective porosity (PHIE)", "PHIE_CC", "PHIE"), deep_res)
             if self._result is not None and self._result.rw_computed is None:
@@ -3471,10 +3707,38 @@ class DynamicWorkflow:
         return False
 
     def _can_core_correction(self, well: "Well") -> bool:
+        if self._train_lacks_core_permeability(well):
+            return False
         return (
             self._has_curve(well, "PHIE", "PHIT")
-            and self._has_curve(well, "PHIC", "CPOR")
+            and (self._has_curve(well, *self._core_porosity_names()) or self._peer_core_available())
         )
+
+    def _train_lacks_core_permeability(self, well: "Well") -> bool:
+        """True when the GeoLink training package would not run the core-correction step.
+
+        That package ran the step only on a well with core permeability
+        (KH_CORE, CPERM, K_CORE or PERM_CORE) as well as core porosity, so a
+        well with core porosity alone has no PHIE_CC.
+        """
+        return self._dataset == "geolink_train" and not self._has_curve(
+            well, "KH_CORE", "CPERM", "K_CORE", "PERM_CORE"
+        )
+
+    @staticmethod
+    def _train_core_porosity(
+        phi_corecal: Optional[np.ndarray], perm_core: Optional[np.ndarray]
+    ) -> Optional[np.ndarray]:
+        """Core-calibrated porosity as the GeoLink training package kept it.
+
+        That package's core calibration gave porosity only together with
+        permeability: PHIE_CC holds the calibrated porosity where the
+        calibrated permeability is finite, and there is none without it.
+        """
+        if phi_corecal is None or perm_core is None:
+            return None
+        kept = np.where(np.isfinite(np.asarray(perm_core, dtype=float)), phi_corecal, np.nan)
+        return kept if np.any(np.isfinite(kept)) else None
 
     def _can_saturation(self, well: "Well") -> bool:
         has_porosity = self._has_curve(well, "PHIE_CC", "PHIE")
@@ -3668,7 +3932,16 @@ class DynamicWorkflow:
             bit_size = representative_bit_size
             bit_size_unique_values = [float(representative_bit_size)]
 
-        flags = generate_bad_hole_flags(well, bit_size=bit_size)
+        if self._dataset == "geolink_train" and bit_size_source == "fallback_8.5":
+            # The GeoLink training package assumes no bit size where the well
+            # records none: |DRHO| alone flags washout, and the caliper and
+            # large-hole tests are skipped.
+            representative_bit_size = bit_size = bit_size_source = None
+            bit_size_unique_values = []
+            trace.decisions.append("No BS curve or header bit size found; CALI-BS and large-hole criteria skipped")
+            flags = generate_bad_hole_flags(well, bit_size=None, drho_alone=True)
+        else:
+            flags = generate_bad_hole_flags(well, bit_size=bit_size)
         well.add_curve("BAD_HOLE", flags["bad_hole"].astype(float), "", "Bad Hole Flag")
         if self._benchmark:
             # The eval package carried the flag twice, under both mnemonics.
@@ -4069,7 +4342,10 @@ class DynamicWorkflow:
         gr_min_source = "user" if gr_min is not None else "auto"
         gr_max_source = "user" if gr_max is not None else "auto"
 
-        gr_candidates = ["GR", "CGR", "SGR", "HSGR", "HCGR", "CGR_CALC"]
+        # The GeoLink training package read GR alone, without the other
+        # gamma-ray curves where GR has no value.
+        train_gr = ("GR",) if self._dataset == "geolink_train" else None
+        gr_candidates = list(train_gr or ("GR", "CGR", "SGR", "HSGR", "HCGR", "CGR_CALC"))
         gr_curve = get_curve(well, gr_candidates)
         gr_curve_name = gr_curve.mnemonic if gr_curve is not None else None
 
@@ -4161,6 +4437,7 @@ class DynamicWorkflow:
             rho_fl=self.config.rho_fl,
             sp_fallback_only=not sp_in_vcl,
             nd_triangle_only=not self._reproducing_benchmark,
+            gr_curves=train_gr,
         )
         curve_mapping = {"gr": gr_curve_name} if gr_curve_name else None
         result = vcl_module.calculate(well, curves=curve_mapping)
@@ -4387,6 +4664,50 @@ class DynamicWorkflow:
             )
         return trace
 
+    @staticmethod
+    def _train_lithology_codes(well: "Well", result: Any) -> np.ndarray:
+        """LITHO codes as the GeoLink training package inferred them.
+
+        Every sample with RHOB and a neutron reading is classified by the log
+        cutoff tree of :meth:`LithologyModule._classify_sample` from RHOB,
+        NPHI, GR, the screened DTC, VCL and the solved mineral volumes of
+        ``result``; any other sample is unknown (code 0).
+        """
+        from petrophys.interpretation.lithology.lithology_module import LithologyModule
+
+        n_samples = well.n_samples
+
+        def log(names: List[str]) -> np.ndarray:
+            data, _, _ = get_curve_data_depthwise(well, names)
+            return np.asarray(data, dtype=float) if data is not None else np.full(n_samples, np.nan)
+
+        rhob, nphi, gr = log(["RHOB"]), log(["NPHI", "PHIN"]), log(["GR"])
+        dtc = LithologyModule._screen_dtc(log(["DTC", "DT"]))
+        vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
+        vcl = np.asarray(vcl, dtype=float) if vcl is not None else np.zeros(n_samples)
+        volumes = [
+            np.asarray(values, dtype=float)
+            for values in (result.v_quartz, result.v_calcite, result.v_dolomite, result.v_anhydrite)
+        ]
+        classifier = LithologyModule(lithology="auto")
+        codes = np.zeros(n_samples, dtype=int)
+        for i in range(n_samples):
+            name = "unknown"
+            if np.isfinite(rhob[i]) and np.isfinite(nphi[i]):
+                name = classifier._classify_sample(
+                    rhob=float(rhob[i]),
+                    nphi=float(nphi[i]),
+                    gr=float(gr[i]),
+                    dtc=float(dtc[i]),
+                    vcl=float(vcl[i]),
+                    v_quartz=float(volumes[0][i]),
+                    v_calcite=float(volumes[1][i]),
+                    v_dolomite=float(volumes[2][i]),
+                    v_anhydrite=float(volumes[3][i]),
+                )
+            codes[i] = LithologyModule.LITHOLOGY_CODES.get(name, LithologyModule.LITHOLOGY_CODES["mixed"])
+        return codes
+
     def _step_lithology(self, well: "Well") -> StepResult:
         from petrophys.interpretation.lithology.lithology_module import LithologyModule
 
@@ -4480,9 +4801,14 @@ class DynamicWorkflow:
         if costa_carbonate:
             well.add_curve("VILL", result.v_clay, "v/v", "Illite Volume")
         if write_lithology_code:
+            codes = (
+                self._train_lithology_codes(well, result)
+                if self._dataset == "geolink_train"
+                else result.lithology_code
+            )
             well.add_curve(
                 "LITHO",
-                result.lithology_code.astype(float),
+                codes.astype(float),
                 "",
                 "Lithology Code",
             )
@@ -4512,6 +4838,12 @@ class DynamicWorkflow:
             trace.decisions.append(
                 "No GeoLink or CSV lithology was available -> inferred LITHO from mineral volumes"
             )
+            if self._dataset == "geolink_train":
+                trace.decisions.append(
+                    "LITHO from the log cutoff tree (RHOB, NPHI, GR, DTC, VCL and the mineral volumes) "
+                    "at samples with RHOB and NPHI, else unknown (0); the later steps read their "
+                    "lithology groups from it"
+                )
         else:
             trace.decisions.append(
                 "Input lithology was available -> mineral volumes computed, LITHO not inferred or overwritten"
@@ -5026,6 +5358,62 @@ class DynamicWorkflow:
             },
         )
 
+    def _covering_zone_rw(
+        self,
+        well: "Well",
+        header_rw: float,
+        header_temp_f: Optional[float],
+        decisions: List[str],
+    ) -> Tuple[float, Optional[float]]:
+        """The Rw (and its temperature) of a bounded ``RW_Z<n>`` zone that covers the whole well.
+
+        :func:`~petrophys.workflow.zoned_batch.run_dynamic_workflow_with_zones`
+        re-runs such a zone with its own Rw over every sample, so the single
+        run takes it too, in place of the header RW, and warns where the two
+        differ. The header values are returned when no zone covers the well.
+        """
+        covering = [
+            zone for zone in self._bounded_zone_parameters(well, "RW")
+            if self._zone_covers_well(well, zone)
+        ]
+        if len({zone["value"] for zone in covering}) != 1:
+            return header_rw, header_temp_f
+        zone = covering[0]
+        zone_temp_f = _parameter_temperature_f(well, f"RWT_Z{zone['index']}")
+        if zone_temp_f is None:
+            zone_temp_f = header_temp_f
+        if not np.isclose(zone["value"], header_rw):
+            message = (
+                f"RW_Z{zone['index']} = {zone['value']:g} ohm.m covers the whole well "
+                f"({zone['top']:g}-{zone['bottom']:g} {well.depth_unit}) and differs from the header "
+                f"RW {header_rw:g} ohm.m; the zone value is used, as run_dynamic_workflow_with_zones "
+                "applies it."
+            )
+            decisions.append(message)
+            self._warn_assumed(message)
+        return zone["value"], zone_temp_f
+
+    @staticmethod
+    def _train_rw_curve(
+        estimates: np.ndarray,
+        sample_temps: np.ndarray,
+        temp_profile: np.ndarray,
+        statistic: Callable[[np.ndarray], float],
+    ) -> Tuple[float, float, np.ndarray]:
+        """Rw along ``temp_profile`` from Rw estimates, as the GeoLink training package computed it.
+
+        Each estimate is corrected with Arps from its sample's temperature
+        (``sample_temps``) to the median of those temperatures, Tref;
+        ``statistic`` of the corrected estimates is Rw at Tref, which Arps
+        carries along the profile: RW(T) = RW(Tref) * (Tref + 6.77) / (T + 6.77)
+        in degF. Returns (Tref, Rw at Tref, the Rw curve).
+        """
+        from petrophys.interpretation.electrical.rw.temp_correction import correct_rw_temperature
+
+        reference_temp = float(np.nanmedian(sample_temps))
+        at_reference = float(statistic(correct_rw_temperature(estimates, sample_temps, reference_temp, "F")))
+        return reference_temp, at_reference, correct_rw_temperature(at_reference, reference_temp, temp_profile, "F")
+
     def _step_rw(self, well: "Well") -> StepResult:
         from petrophys.interpretation.electrical.rw.rw_module import RwModule
         from petrophys.interpretation.electrical.rw.salinity_rw import rw_from_salinity, salinity_from_rw
@@ -5132,8 +5520,17 @@ class DynamicWorkflow:
             )
 
         las_rw = _parameter_float(well, "RW")
+        if las_rw is not None and not self._historical:
+            las_rw, las_rw_temp_f = self._covering_zone_rw(well, las_rw, las_rw_temp_f, decisions)
         if las_rw is None:
             las_rw = self._zoned_constant(well, "RW")
+        if las_rw is not None and las_rw_temp_f is None and not self._historical:
+            if self.config.rw_meas_temp_f is not None:
+                # rw_meas_temp_f without rw is the measurement temperature of the header Rw.
+                las_rw_temp_f = float(self.config.rw_meas_temp_f)
+                decisions.append(
+                    f"Header Rw has no RWT: rw_meas_temp_f = {las_rw_temp_f:g} degF is its measurement temperature"
+                )
         if las_rw is not None:
             if las_rw_temp_f is not None:
                 salinity_est = float(salinity_from_rw(float(las_rw), las_rw_temp_f))
@@ -5277,11 +5674,19 @@ class DynamicWorkflow:
 
             try:
                 from petrophys.interpretation.electrical.rw.sp_rw import rw_from_rxo_rt
-                rxo = get_curve(well, ["RSHA", "RXO", "RESS"])
                 rt = get_curve(well, ["RDEP", "RT"])
-                if rxo is None or rt is None:
+                if self._historical:
+                    # The "geolink" profile read the shallow RSHA first.
+                    rxo = get_curve(well, ["RSHA", "RXO", "RESS"])
+                    rxo_data = None if rxo is None else np.asarray(rxo.data, dtype=float)
+                    rxo_source = "RSHA"
+                else:
+                    # The flushed-zone RXO first, as the invasion step reads
+                    # it, with RSHA/RESS where RXO has no reading.
+                    rxo_data, rxo_source, _ = get_curve_data_depthwise(well, ["RXO", "RSHA", "RESS"])
+                if rxo_data is None or rt is None:
                     raise ValueError("Rxo/Rt curves unavailable")
-                rxo_data = np.asarray(rxo.data, dtype=float)
+                rxo_data = np.asarray(rxo_data, dtype=float)
                 rt_data = np.asarray(rt.data, dtype=float)
                 clean_mask = RwModule()._build_clean_water_mask(well)
                 if clean_mask is not None:
@@ -5291,6 +5696,27 @@ class DynamicWorkflow:
                 if not np.any(valid):
                     raise ValueError("No valid clean-water Rxo/Rt samples")
                 rw_clean = rw_from_rxo_rt(rxo_data[valid], rt_data[valid], rmf_curve[valid])
+                if self._dataset == "geolink_train":
+                    rw_reference_temp, rw_at_reference, rw_curve = self._train_rw_curve(
+                        rw_clean, temp_profile[valid], temp_profile, np.nanmedian
+                    )
+                    decisions.append(
+                        f"Rw via Rxo/Rt clean-water method using {int(np.count_nonzero(valid))} valid samples "
+                        "and direct Arps temperature correction"
+                    )
+                    return _finalize_rw(
+                        "rxo_rt_clean_water",
+                        rw_curve,
+                        {
+                            "rmf_min": float(np.nanmin(rmf_curve)),
+                            "rmf_max": float(np.nanmax(rmf_curve)),
+                            "rw_at_reference_temp": rw_at_reference,
+                            "rw_reference_temp_f": rw_reference_temp,
+                            "n_points": int(np.count_nonzero(valid)),
+                            "source_priority": "rmf -> rxo_rt",
+                        },
+                        ["RSHA", "RDEP"],
+                    )
                 salinity_est = float(np.nanmedian(salinity_from_rw(rw_clean, temp_profile[valid])))
                 rw_curve = rw_from_salinity(salinity_est, temp_profile)
                 if not self._historical:
@@ -5310,7 +5736,7 @@ class DynamicWorkflow:
                         "n_points": int(np.count_nonzero(valid)),
                         "source_priority": "rmf -> rxo_rt",
                     },
-                    ["RSHA", "RDEP"],
+                    ["RSHA", "RDEP"] if self._historical else [rxo_source, rt.mnemonic],
                 )
             except Exception as exc:
                 message = f"Rw log heuristic failed: {exc}"
@@ -5342,16 +5768,25 @@ class DynamicWorkflow:
                 rwa = rdep * np.power(phie, archie_m) / archie_a
             valid = clean_wet_mask & np.isfinite(rwa) & (rwa > 0)
             if np.any(valid):
-                rw_value = float(np.percentile(rwa[valid], 5))
-                rwa_reference_temp = float(np.nanmedian(temp_profile[valid]))
-                salinity_est = float(salinity_from_rw(rw_value, rwa_reference_temp))
-                rw_curve = rw_from_salinity(salinity_est, temp_profile)
+                if self._dataset == "geolink_train":
+                    rwa_reference_temp, rw_value, rw_curve = self._train_rw_curve(
+                        rwa[valid], temp_profile[valid], temp_profile, lambda values: np.percentile(values, 5)
+                    )
+                    temperature_text = "then direct Arps temperature correction"
+                    estimate = {}
+                else:
+                    rw_value = float(np.percentile(rwa[valid], 5))
+                    rwa_reference_temp = float(np.nanmedian(temp_profile[valid]))
+                    salinity_est = float(salinity_from_rw(rw_value, rwa_reference_temp))
+                    rw_curve = rw_from_salinity(salinity_est, temp_profile)
+                    temperature_text = "then depth-wise temperature correction"
+                    estimate = {"salinity_ppm_estimated": salinity_est}
                 decisions.append(
                     "Rw from Rwa clean-wet fallback: P5 of "
                     f"{rt_curve.mnemonic} * {phie_curve.mnemonic}^m / a "
                     f"where VCL < 0.3 and {phie_curve.mnemonic} > 0.05 (n={int(np.count_nonzero(valid))}), "
                     "using lithology-dependent Archie coefficients, "
-                    "then depth-wise temperature correction"
+                    f"{temperature_text}"
                 )
                 self._warn_assumed(
                     f"Rw {rw_value:.4g} ohm.m at {rwa_reference_temp:.1f} degF is estimated from the "
@@ -5372,7 +5807,7 @@ class DynamicWorkflow:
                         "archie_coefficients": archie_summary,
                         "archie_lithology_source": self._lithology_source,
                         "rwa_reference_temp_f": rwa_reference_temp,
-                        "salinity_ppm_estimated": salinity_est,
+                        **estimate,
                         "vcl_cutoff": 0.3,
                         "phie_cutoff": 0.05,
                         "source_priority": "Rwa clean-wet fallback",
@@ -5399,7 +5834,15 @@ class DynamicWorkflow:
         decisions.append(
             "All Rw priority sources failed (config/LAS RW, salinity, SP, Rxo/Rt, Rwa clean-wet fallback) -> default 0.05"
         )
-        rw_curve = rw_from_salinity(float(salinity_from_rw(0.05, reference_temp)), temp_profile)
+        if self._dataset == "geolink_train":
+            # The training package took the default at 75 degF and corrected
+            # it with Arps.
+            from petrophys.interpretation.electrical.rw.temp_correction import correct_rw_temperature
+
+            reference_temp = DEFAULT_RESISTIVITY_REFERENCE_TEMP_F
+            rw_curve = correct_rw_temperature(0.05, reference_temp, temp_profile, "F")
+        else:
+            rw_curve = rw_from_salinity(float(salinity_from_rw(0.05, reference_temp)), temp_profile)
         return _finalize_rw(
             "default_fallback_profile",
             rw_curve,
@@ -6306,12 +6749,14 @@ class DynamicWorkflow:
         )
         result = perm_module.calculate_core_correction(
             well,
-            peer_wells=self.config.peer_wells,
+            peer_wells=self._core_peer_wells(well, decisions),
             formation_tops=self.config.formation_tops,
         )
 
         phi_corecal = result.metadata.get("phi_corecal")
         perm_core = result.metadata.get("perm_core")
+        if self._dataset == "geolink_train":
+            phi_corecal = self._train_core_porosity(phi_corecal, perm_core)
         if phi_corecal is not None and not self._reproducing_benchmark:
             phi_corecal = self._effective_core_porosity(well, phi_corecal)
         if phi_corecal is not None:
@@ -6668,8 +7113,9 @@ class DynamicWorkflow:
             )
         if so_valid is not None and np.any(so_valid):
             trace.decisions.append("SO = 1 - SW where SW is finite")
+        invaded_curves = "RSHA/RXO/RESS" if self._historical else "RXO/RSHA/RESS"
         if sxo_method == "archie_rxo_rmf":
-            trace.decisions.append("SXO from Archie invaded-zone equation using RSHA/RXO/RESS and RMF")
+            trace.decisions.append(f"SXO from Archie invaded-zone equation using {invaded_curves} and RMF")
         elif sxo_method == "archie_rxo_rmf+fifth_root_quicklook":
             counts = sxo_method_counts
             count_text = (
@@ -6679,7 +7125,7 @@ class DynamicWorkflow:
                 if counts else ""
             )
             trace.decisions.append(
-                "SXO from invaded-zone Archie where RSHA/RXO/RESS and RMF were finite; "
+                f"SXO from invaded-zone Archie where {invaded_curves} and RMF were finite; "
                 "SXO = SW^(1/5) elsewhere"
                 + count_text
             )
@@ -6740,9 +7186,17 @@ class DynamicWorkflow:
             step.step == "core_correction" and step.success and "PHIE_CC" in step.output_curves
             for step in self._result.steps_executed
         )
+        # Under "current" PHIE_CC is the porosity saturation read (from the
+        # core-correction step, or an input kept for the whole run), so the
+        # step neither clears nor replaces it; an input PERM_CC kept for the
+        # whole run is left as well.
+        kept_core_curves = set(self._input_core_basis)
+        if not self._historical:
+            kept_core_curves.add("PHIE_CC")
         stale_core_curves = [
             name for name in ("PHIE_CC", "PERM_CC")
             if well.get(name) is not None and not (name == "PHIE_CC" and core_phi_generated)
+            and name not in kept_core_curves
         ]
         if stale_core_curves:
             written = {
@@ -6778,7 +7232,7 @@ class DynamicWorkflow:
             well,
             swi=self.config.swirr,
             lithology=lithology,
-            peer_wells=self.config.peer_wells,
+            peer_wells=self._core_peer_wells(well, decisions),
             formation_tops=self.config.formation_tops,
         )
         empirical_perm = result.metadata.get("empirical_perm")
@@ -6790,6 +7244,19 @@ class DynamicWorkflow:
         outputs.append("PERM")
         phi_corecal = result.metadata.get("phi_corecal")
         perm_core = result.metadata.get("perm_core")
+        if phi_corecal is not None and not self._historical:
+            # PHIE_CC comes from the core-correction step alone, before
+            # saturation, so SW, BVW, net pay and RQI share one porosity.
+            if not core_phi_generated:
+                decisions.append(
+                    "Core-calibrated porosity of the permeability fit not written as PHIE_CC: "
+                    "saturation ran without it, and BVW, net pay and RQI keep the porosity SW used"
+                )
+            phi_corecal = None
+        if self._dataset == "geolink_train":
+            phi_corecal = self._train_core_porosity(phi_corecal, perm_core)
+        if "PERM_CC" in self._input_core_basis:
+            perm_core = None
         if phi_corecal is not None and not self._reproducing_benchmark:
             phi_corecal = self._effective_core_porosity(well, phi_corecal)
         if phi_corecal is not None:
@@ -6826,7 +7293,11 @@ class DynamicWorkflow:
             else [result.metadata.get("porosity_curve", "PHIE")]
         )
         if empirical_method != "lith_vcl" and result.swi_source in {"hc_mask_p5", "default_0.20"}:
-            input_curves.append("SW")
+            if self._historical or get_curve(well, ["SW"]) is not None:
+                input_curves.append("SW")
+            elif result.swi_source == "default_0.20":
+                # The assumed Swirr of 0.20 is a constant, read from no curve.
+                input_curves = [name for name in input_curves if name != "SWIRR/SW"]
             rt_curve = swirr_metadata.get("rt_curve")
             if rt_curve:
                 input_curves.append(rt_curve)
@@ -7214,6 +7685,14 @@ class DynamicWorkflow:
         if vcl is None:
             vcl_data = np.zeros(well.n_samples, dtype=float)
             vcl_source = "VCL default 0"
+            if not self._historical:
+                message = (
+                    "No clay volume (no gamma-ray, SP or neutron-density curves): net pay assumes "
+                    "VCL = 0, so the clay cutoff removes no sample and NET_ROCK, NET_RES and NET_PAY "
+                    "rest on porosity and saturation alone."
+                )
+                trace.decisions.append(message)
+                self._warn_assumed(message)
         else:
             vcl_data = np.asarray(vcl, dtype=float)
         seal_flag = np.full(vcl_data.shape, np.nan, dtype=float)
@@ -7361,6 +7840,16 @@ class DynamicWorkflow:
                 return self._lithology_log
             except (TypeError, ValueError):
                 pass
+
+        computed_curve = get_curve(well, ["LITHO"]) if self._dataset == "geolink_train" else None
+        if computed_curve is not None:
+            # The GeoLink training package grouped a well without lithology
+            # codes by the LITHO its lithology step inferred, once written.
+            self._lithology_log = _group_array_from_numeric_codes(
+                np.asarray(computed_curve.data, dtype=float), COMPUTED_LITHO_CODE_TO_GROUP
+            )
+            self._lithology_source = "computed_lithology_curve"
+            return self._lithology_log
 
         self._lithology_source = "config"
         return self.config.lithology_domain

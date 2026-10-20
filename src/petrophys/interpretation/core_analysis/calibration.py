@@ -123,6 +123,44 @@ def interpolate_log_at_core(
     return _log_at_depth(depth, values, core.depth)
 
 
+#: Core permeability units (lower case, spaces removed) and their size in mD.
+#: 1 um2 = 1.01325 D (API RP 40).
+CORE_PERMEABILITY_UNITS_MD = {
+    "md": 1.0,
+    "mdarcy": 1.0,
+    "millidarcy": 1.0,
+    "millidarcies": 1.0,
+    "d": 1000.0,
+    "darcy": 1000.0,
+    "darcies": 1000.0,
+    "um2": 1013.25,
+    "µm2": 1013.25,
+    "μm2": 1013.25,
+    "micron2": 1013.25,
+}
+
+
+def _core_permeability_to_md(values: np.ndarray, unit: Optional[str], mnemonic: str) -> np.ndarray:
+    """Core permeability in mD from ``values`` in ``unit``.
+
+    Darcy and square-micrometre units are converted. A blank label is read
+    as mD; another label is read as mD with a ``UserWarning``.
+    """
+    label = str(unit or "").strip().lower().replace(" ", "").replace("^", "")
+    if label in ("", "-", "none", "nan"):
+        return values
+    factor = CORE_PERMEABILITY_UNITS_MD.get(label)
+    if factor is None:
+        warnings.warn(
+            f"{mnemonic}: unknown core permeability unit {unit!r}; the values are read as mD. "
+            "Verify source units.",
+            UserWarning,
+            stacklevel=3,
+        )
+        return values
+    return values * factor if factor != 1.0 else values
+
+
 def core_data_from_well(
     well,
     porosity_curves: Iterable[str] = ("PHIC", "CPOR", "CPOR-AMB", "CPOR_AMB"),
@@ -157,7 +195,10 @@ def core_data_from_well(
     fractions (see :func:`petrophys.model.units.core_saturation_to_fraction`);
     each conversion raises a ``UserWarning`` and is recorded in
     ``metadata["core_porosity_normalization"]``, ``metadata["core_sw_normalization"]``
-    and ``metadata["core_so_normalization"]``.
+    and ``metadata["core_so_normalization"]``. A unit problem on one of
+    these curves leaves that curve out with a warning, not the others.
+    Core permeability is returned in mD: darcy and um2 values are converted
+    and an unknown unit label is read as mD with a warning.
 
     ``CoreData.lithology`` holds the codes of the first of ``lithology_curves``
     on the well; by default, of the well's lithology code curve
@@ -180,14 +221,37 @@ def core_data_from_well(
     sw, sw_source = _first_curve(sw_curves)
     so, so_source = _first_curve(so_curves)
 
+    historical = reproducing_benchmark()
+    if permeability is not None and not historical:
+        permeability = _core_permeability_to_md(
+            permeability, get_curve(well, list(perm_curves)).unit, permeability_source
+        )
+
     normalization = {}
     for key, source, names in (("porosity", porosity_source, porosity_curves),
                                ("sw", sw_source, sw_curves), ("so", so_source, so_curves)):
         if source is None:
             continue
         curve = get_curve(well, list(names))
-        fractions, record = core_saturation_to_fraction(curve.data, curve.unit, mnemonic=source)
-        for message in record["warnings"]:
+        if historical:
+            fractions, record = core_saturation_to_fraction(curve.data, curve.unit, mnemonic=source)
+        else:
+            try:
+                fractions, record = core_saturation_to_fraction(
+                    curve.data, curve.unit, mnemonic=source,
+                    quantity="porosity" if key == "porosity" else "saturation",
+                )
+            except ValueError as exc:
+                # A unit problem on one core curve leaves the others usable.
+                warnings.warn(f"{exc} The curve is not used.", UserWarning, stacklevel=2)
+                fractions, record = None, None
+                if key == "porosity":
+                    porosity_source = None
+                elif key == "sw":
+                    sw_source = None
+                else:
+                    so_source = None
+        for message in (record["warnings"] if record else []):
             warnings.warn(message, UserWarning, stacklevel=2)
         normalization[key] = record
         if key == "porosity":

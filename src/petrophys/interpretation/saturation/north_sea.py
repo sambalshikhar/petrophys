@@ -20,6 +20,10 @@ from typing import Union
 import numpy as np
 
 from petrophys._internal.benchmark import reproducing_benchmark
+from petrophys.interpretation.saturation._inputs import (
+    check_resistivity_parameters,
+    nonpositive_resistivity,
+)
 
 
 def north_sea_shaly_sand(
@@ -60,14 +64,22 @@ def north_sea_shaly_sand(
     Returns
     -------
     float or np.ndarray
-        Water saturation (0-1); NaN where the shale term alone exceeds 1/Rt
+        Water saturation (0-1); NaN where the shale term alone exceeds 1/Rt,
+        and where Rt or an Rw array is at or below zero.
+
+    Raises
+    ------
+    ValueError
+        If a scalar ``rw`` or ``rtsh`` is at or below zero.
     """
+    check_resistivity_parameters(rw=rw, rtsh=rtsh)
     scalar = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vsh)
 
     rt = np.atleast_1d(np.asarray(rt, dtype=float))
     phi = np.atleast_1d(np.asarray(phi, dtype=float))
     vsh = np.atleast_1d(np.asarray(vsh, dtype=float))
 
+    invalid = nonpositive_resistivity(rt, rw)
     rt = np.where(rt <= 0, 1e-10, rt)
     # Infinite Rt (no conductivity reading) is missing, as in archie().
     if not reproducing_benchmark():
@@ -90,6 +102,7 @@ def north_sea_shaly_sand(
         # The shale alone conducts more than the rock: no Sw solves the equation.
         sw_n = np.where(sw_n < 0, np.nan, sw_n)
     sw = np.power(sw_n, 1.0 / n)
+    sw = np.where(invalid, np.nan, sw)
     sw = np.clip(sw, 0.0, 1.0)
 
     return float(sw[0]) if scalar else sw

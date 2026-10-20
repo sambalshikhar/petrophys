@@ -5,8 +5,10 @@ This module provides functions to export Well data to various
 file formats including LAS, CSV, and Excel.
 """
 
-from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any
+from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any, Set
 from pathlib import Path
+import io
+import re
 import warnings
 import numpy as np
 
@@ -24,6 +26,38 @@ except ImportError:
 
 ML_IMPUTATION_NOTES_PARAMETER = "ML_IMPUTATION_NOTES"
 VALUE_RANGE_QC_PARAMETER = "VALUE_RANGE_QC_REPORT"
+
+#: LAS versions export_las writes.
+LAS_EXPORT_VERSIONS = (1.2, 2.0)
+
+
+def _las_mnemonic(name: Any, used: Set[str], renamed: Dict[str, str]) -> str:
+    """``name`` as a LAS mnemonic, unique (case-insensitively) among ``used``.
+
+    '.', ':' and whitespace, which delimit LAS header fields, become '_'
+    (lasio names duplicate mnemonics ``GR:1``, ``GR:2``; they are written
+    ``GR_1``, ``GR_2``). Changed names are recorded in ``renamed``.
+    """
+    text = str(name).strip()
+    base = re.sub(r"[.:\s]", "_", text) or "UNNAMED"
+    candidate = base
+    number = 1
+    while candidate.upper() in used:
+        candidate = f"{base}_{number}"
+        number += 1
+    used.add(candidate.upper())
+    if candidate != text:
+        renamed[text] = candidate
+    return candidate
+
+
+def _index_format(depth: np.ndarray) -> str:
+    """The fixed-decimal format that writes every depth exactly, at most six decimals."""
+    finite = depth[np.isfinite(depth)]
+    for decimals in range(1, 6):
+        if np.all(np.abs(np.round(finite, decimals) - finite) <= 1e-9):
+            return f"%.{decimals}f"
+    return "%.6f"
 
 
 def _export_well_other_comments(las, well: "Well") -> None:
@@ -49,8 +83,12 @@ def _export_well_other_comments(las, well: "Well") -> None:
         las.other = "\n".join(lines)
 
 
-def _export_well_parameters(las, well: "Well") -> None:
-    """Preserve Well parameters in the LAS ~Params section."""
+def _export_well_parameters(las, well: "Well", used: Optional[Set[str]] = None,
+                            renamed: Optional[Dict[str, str]] = None) -> None:
+    """Preserve Well parameters in the LAS ~Params section.
+
+    With ``used``, mnemonics are written as :func:`_las_mnemonic` gives them.
+    """
     parameters = getattr(well, "_parameters", {})
     if not parameters:
         return
@@ -77,12 +115,39 @@ def _export_well_parameters(las, well: "Well") -> None:
 
         las.params.append(
             lasio.HeaderItem(
-                mnemonic=name,
+                mnemonic=name if used is None else _las_mnemonic(name, used, renamed),
                 unit=unit or "",
                 value=value,
                 descr=descr or "",
             )
         )
+
+
+def _export_header_items(las, well: "Well", depth_label: str) -> None:
+    """Write header TD, BS, BHT and the LAS ~Well items the reader kept into ~Well.
+
+    TD is written in the depth unit and BS in inches, as the header holds
+    them; BHT, BS and TD that are well parameters are left to ~Params.
+    """
+    header = well.header
+    parameters = getattr(well, "_parameters", {}) or {}
+    items = [
+        ("TD", depth_label, header.td, "TOTAL DEPTH"),
+        ("BS", "IN", header.bit_size, "BIT SIZE"),
+        ("BHT", header.bht_unit or "F", header.bht, "BOTTOM HOLE TEMPERATURE"),
+    ]
+    items = [item for item in items if item[2] is not None and item[0] not in parameters]
+    for mnemonic, entry in (getattr(header, "las_well_items", None) or {}).items():
+        items.append((mnemonic, entry.get("unit", ""), entry.get("value"), entry.get("descr", "")))
+    used = {item.mnemonic.upper() for item in las.well if str(item.value).strip()}
+    renamed: Dict[str, str] = {}
+    for mnemonic, unit, value, descr in items:
+        if str(mnemonic).strip().upper() in used:
+            continue
+        if isinstance(value, np.generic):
+            value = value.item()
+        name = _las_mnemonic(mnemonic, used, renamed)
+        las.well[name] = lasio.HeaderItem(mnemonic=name, unit=str(unit or ""), value=value, descr=str(descr or ""))
 
 
 def export_las(
@@ -108,7 +173,8 @@ def export_las(
     filepath : str or Path
         Output file path
     version : float, optional
-        LAS version (1.2 or 2.0, default: 2.0)
+        LAS version (1.2 or 2.0, default: 2.0). Another version raises
+        ValueError before the file is opened.
     wrap : bool, optional
         Whether to wrap long lines (default: False)
     curves : list of str, optional
@@ -133,13 +199,27 @@ def export_las(
         (e.g. ``fmt="%.8f"`` to control numeric precision). Without
         ``fmt`` the values are written with six significant figures
         (``%.6g``), or lasio's fixed five decimals when reproducing a
-        benchmark context package.
+        benchmark context package. The depth index (and STRT, STOP, STEP)
+        is written with the fewest fixed decimals (at most six) that keep
+        every depth, unless ``column_fmt`` is given.
+
+    Raises
+    ------
+    ValueError
+        If ``version`` is not 1.2 or 2.0, or ``depth_unit_label`` names
+        another unit; the file is not opened then. The file is written only
+        once its content is complete.
 
     Notes
     -----
     Irregularly sampled depths are written with ``STEP 0`` as LAS 2.0
     requires, and samples without a finite depth are left out (a LAS index
     cannot be null). Non-scalar well parameters (dicts, lists) are not written.
+    Header TD (in the depth unit), BS (in inches), BHT and the other ~Well
+    items the LAS reader kept (``header.las_well_items``) are written to
+    ~Well, and the ``LAS_OTHER`` parameter to ~Other. Mnemonics that are not
+    valid in LAS, such as lasio's ``GR:1``/``GR:2`` for duplicates, are
+    written with '_' (``GR_1``, ``GR_2``) with a warning.
 
     Examples
     --------
@@ -150,6 +230,10 @@ def export_las(
         raise ImportError(
             "lasio is required for LAS file export. "
             "Install with: pip install lasio"
+        )
+    if version not in LAS_EXPORT_VERSIONS:
+        raise ValueError(
+            f"export_las writes LAS version 1.2 or 2.0, not version={version!r}."
         )
 
     filepath = Path(filepath)
@@ -228,6 +312,7 @@ def export_las(
         ):
             if value:
                 setattr(las.well, mnemonic, lasio.HeaderItem(mnemonic=mnemonic, value=value, descr=descr))
+        _export_header_items(las, well, depth_label)
 
     # A LAS index is never null: samples without a finite depth are left out.
     keep = None
@@ -280,11 +365,14 @@ def export_las(
         descr="NULL VALUE"
     )
 
-    _export_well_parameters(las, well)
+    renamed: Dict[str, str] = {}
+    parameter_names: Optional[Set[str]] = None if historical else set()
+    _export_well_parameters(las, well, parameter_names, renamed)
     for item in extra_parameters or []:
+        mnemonic = str(item["mnemonic"])
         las.params.append(
             lasio.HeaderItem(
-                mnemonic=str(item["mnemonic"]),
+                mnemonic=mnemonic if historical else _las_mnemonic(mnemonic, parameter_names, renamed),
                 unit=str(item.get("unit", "") or ""),
                 value=item.get("value", ""),
                 descr=str(item.get("descr", "") or ""),
@@ -295,13 +383,28 @@ def export_las(
         las.other = "\n".join(part for part in (las.other, other) if part)
 
     # Add depth curve
+    curve_names = {"DEPT"}
     if well.depth is not None:
+        written_depth = well.depth if keep is None else np.asarray(well.depth, dtype=float)[keep]
         las.append_curve(
             "DEPT",
-            well.depth if keep is None else np.asarray(well.depth, dtype=float)[keep],
+            written_depth,
             unit=depth_label,
             descr="DEPTH"
         )
+        if not historical and "column_fmt" not in kwargs:
+            # The index at full precision: six significant figures would
+            # shift 0.25 ft steps below 10,000 ft into irregular depths.
+            written_depth = np.asarray(written_depth, dtype=float)
+            index_fmt = _index_format(written_depth)
+            kwargs["column_fmt"] = {0: index_fmt}
+            if written_depth.size:
+                kwargs.setdefault("STRT", index_fmt % written_depth[0])
+                kwargs.setdefault("STOP", index_fmt % written_depth[-1])
+                if irregular:
+                    kwargs.setdefault("STEP", index_fmt % 0.0)
+                elif written_depth.size > 1:
+                    kwargs.setdefault("STEP", index_fmt % (written_depth[1] - written_depth[0]))
 
     # Get curves to export
     if curves is None:
@@ -331,10 +434,18 @@ def export_las(
             data = data[keep]
 
         las.append_curve(
-            mnemonic,
+            mnemonic if historical else _las_mnemonic(mnemonic, curve_names, renamed),
             data,
             unit=curve.unit,
             descr=curve.metadata.description
+        )
+
+    if renamed:
+        warnings.warn(
+            "export_las: mnemonics that are not valid in LAS are written as "
+            + ", ".join(f"{old} -> {new}" for old, new in renamed.items()),
+            UserWarning,
+            stacklevel=2,
         )
 
     if irregular and kwargs.get("STEP") is None:
@@ -357,11 +468,15 @@ def export_las(
                 item.descr = as_bytes(item.descr)
                 item.unit = as_bytes(item.unit)
         las.other = as_bytes(las.other)
-        with open(filepath, "w", encoding="latin-1") as handle:
-            las.write(handle, version=version, **kwargs)
-        return
-    with open(filepath, "w", encoding="utf-8") as handle:
-        las.write(handle, version=version, **kwargs)
+        encoding = "latin-1"
+    else:
+        encoding = "utf-8"
+    # The content is complete before the file is opened, so a failed export
+    # leaves an existing file as it was.
+    buffer = io.StringIO()
+    las.write(buffer, version=version, **kwargs)
+    with open(filepath, "w", encoding=encoding) as handle:
+        handle.write(buffer.getvalue())
 
 
 def export_csv(

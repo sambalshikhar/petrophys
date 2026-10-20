@@ -1,10 +1,10 @@
-"""Dataset-specific benchmark context for GeoLink, COSTA and Danish.
+"""Dataset-specific benchmark context for GeoLink, the GeoLink training package, COSTA and Danish.
 
 Each context profile computes its collection's JSON from raw LAS using the
 configured preparation, interpretation, calibration and grouping rules.
-GeoLink and Danish require their tops workbook and lithology codebook; COSTA
-uses bundled inputs and calibration data. See docs/benchmark_context.md for
-required inputs and examples.
+GeoLink, the GeoLink training package and Danish require their tops workbook
+and lithology codebook; COSTA uses bundled inputs and calibration data. See
+docs/benchmark_context.md for required inputs and examples.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from typing import Optional, Sequence
 from petrophys.reporting._costa_context import COSTA_WELLS
 from petrophys.reporting._danish_context import DANISH_WELLS
 from petrophys.reporting._geolink_context import GEOLINK_WELLS
+from petrophys.reporting._geolink_train_context import GEOLINK_TRAIN_WELLS
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,18 @@ _PROFILES = {
             "their raw LAS files, the NPD formation tops workbook and the GeoLink lithology codebook."
         ),
         well_names=GEOLINK_WELLS,
+        required_inputs=("tops_file", "lithology_mapping_file"),
+    ),
+    "geolink_train_v1": ContextProfile(
+        name="geolink_train_v1",
+        aliases=("geolink_train", "geolink-train", "geolink-train-v1"),
+        description=(
+            "The GeoLink training six-category context package for 191 Norwegian wells, computed "
+            "from their raw LAS files with header interpretation parameters "
+            "(LAS_with_petrophys_params), the NPD formation tops workbook and the GeoLink "
+            "lithology codebook."
+        ),
+        well_names=GEOLINK_TRAIN_WELLS,
         required_inputs=("tops_file", "lithology_mapping_file"),
     ),
     "costa_v1": ContextProfile(
@@ -149,19 +162,21 @@ def export_context_profile(
     tops_file: Optional[str | Path] = None,
     lithology_mapping_file: Optional[str | Path] = None,
 ):
-    """Compute a published GeoLink, COSTA or Danish context package from its LAS files.
+    """Compute a published GeoLink, GeoLink training, COSTA or Danish context package from its LAS files.
 
     Parameters
     ----------
     input_dir : str or Path or None
-        The delivery's raw LAS files: the GeoLink ``eval`` folder, the Danish
+        The delivery's raw LAS files: the GeoLink ``eval`` folder, the GeoLink
+        training package's ``LAS_with_petrophys_params`` folder, the Danish
         raw LAS, or the COSTA LAS (None for the COSTA copies bundled with
         petrophys).
     output_dir : str or Path
         Folder for the category context JSON.
     context_profile : str
-        ``"geolink_v1"``, ``"costa_v1"`` or ``"danish_v1"`` (aliases
-        ``"geolink"``, ``"costa"``, ``"danish"``).
+        ``"geolink_v1"``, ``"geolink_train_v1"``, ``"costa_v1"`` or
+        ``"danish_v1"`` (aliases ``"geolink"``, ``"geolink_train"``,
+        ``"costa"``, ``"danish"``).
     work_dir : str or Path
         Folder for ``processed_las``: the interpreted LAS the context is
         computed from, with workflow traces.
@@ -170,9 +185,10 @@ def export_context_profile(
     pattern : str, default ``"*.las"``
         The delivery files to read; the packages were made from LAS files.
     tops_file, lithology_mapping_file : str or Path, optional
-        Required by the GeoLink and Danish profiles: the formation tops
-        workbook (the NPD picks for GeoLink, the Danish tops workbook) and the
-        GeoLink/Kingdom lithology codebook.
+        Required by the GeoLink, GeoLink training and Danish profiles: the
+        formation tops workbook (the NPD picks for GeoLink and the training
+        package, the Danish tops workbook) and the GeoLink/Kingdom lithology
+        codebook.
 
     Returns
     -------
@@ -207,6 +223,18 @@ def export_context_profile(
         raise ValueError(f"Context profile {profile.name} requires {', '.join(missing)}")
     if input_dir is None:
         raise ValueError(f"Context profile {profile.name} requires the folder of its raw LAS files")
+    if profile.name == "geolink_train_v1":
+        from petrophys.reporting._geolink_train_context import reproduce_geolink_train_context
+
+        return reproduce_geolink_train_context(
+            input_dir,
+            output_dir,
+            tops_file=tops_file,
+            lithology_mapping_file=lithology_mapping_file,
+            work_dir=work_dir,
+            well_names=well_names,
+            pattern=pattern,
+        )
     if profile.name == "geolink_v1":
         from petrophys.reporting._geolink_context import reproduce_geolink_context
 

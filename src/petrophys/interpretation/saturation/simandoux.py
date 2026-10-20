@@ -10,6 +10,10 @@ import numpy as np
 from scipy.optimize import brentq
 
 from petrophys._internal.benchmark import reproducing_benchmark
+from petrophys.interpretation.saturation._inputs import (
+    check_resistivity_parameters,
+    nonpositive_resistivity,
+)
 
 
 def simandoux(
@@ -52,8 +56,15 @@ def simandoux(
     Returns
     -------
     float or np.ndarray
-        Water saturation (0-1)
+        Water saturation (0-1).
+        NaN where Rt or an Rw array is at or below zero.
+
+    Raises
+    ------
+    ValueError
+        If a scalar ``rw`` or ``rcl`` is at or below zero.
     """
+    check_resistivity_parameters(rw=rw, rcl=rcl)
     scalar = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vcl)
 
     rt, phi, vcl = np.broadcast_arrays(
@@ -65,6 +76,7 @@ def simandoux(
     phi = np.atleast_1d(phi.astype(float, copy=False))
     vcl = np.atleast_1d(vcl.astype(float, copy=False))
 
+    invalid = nonpositive_resistivity(rt, rw)
     rt  = np.where(rt  <= 0, 1e-10, rt)
     # Infinite Rt (no conductivity reading) is missing, as in archie().
     historical = reproducing_benchmark()
@@ -115,5 +127,6 @@ def simandoux(
             except ValueError:
                 sw[i] = 1.0
 
+    sw = np.where(invalid, np.nan, sw)
     sw = np.clip(sw, 0, 1)
     return float(sw[0]) if scalar else sw

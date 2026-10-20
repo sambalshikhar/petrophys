@@ -7,6 +7,7 @@ container for well log data, header information, and computed results.
 
 from typing import Optional, Union, Dict, List, Any, Iterator
 import copy
+import warnings
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -19,6 +20,23 @@ from petrophys.model.units import normalize_depth_unit
 
 #: Header parameters reported by :meth:`Well.describe` when present.
 _DESCRIBED_PARAMETERS = ("BHT", "RW", "RWT", "RMF", "RMFT", "RM", "RMT", "MUD", "DFD", "BS", "TD")
+
+
+def _raise_non_numeric_depth(series: pd.Series, depth_column: Any) -> None:
+    """Raise ValueError for a depth column without a numeric value."""
+    values = series.dropna().astype(str).str.strip()
+    values = values[values != ""]
+    if values.empty:
+        raise ValueError(f"Depth column {depth_column!r} has no values.")
+    examples = values.unique()[:3].tolist()
+    hint = ""
+    if values.str.fullmatch(r"[+-]?\d{1,3}(,\d{3})+(\.\d+)?").any():
+        hint = " The values use thousands separators; pass thousands=','."
+    elif values.str.contains(",", regex=False).any():
+        hint = " The values use decimal commas; pass decimal=','."
+    raise ValueError(
+        f"Depth column {depth_column!r} has no numeric values (e.g. {examples}).{hint}"
+    )
 
 
 class WellHeader:
@@ -54,7 +72,18 @@ class WellHeader:
     gl_elevation : float
         Ground level elevation
     td : float
-        Total depth
+        Total depth in the well's depth unit (``Well.depth_unit``)
+    td_source_unit : str
+        TD unit as the source file wrote it (the LAS reader converts TD
+        from it)
+    bit_size : float
+        Bit size in inches
+    bit_size_source_unit : str
+        Bit size unit as the source file wrote it (the LAS reader converts
+        mm, cm and m to inches)
+    las_well_items : dict
+        Other LAS ~Well items (e.g. SRVC, DATE, EKB), mnemonic to
+        ``{"unit", "value", "descr"}``, which ``export_las`` writes back
     custom : dict
         Additional custom header values
     """
@@ -73,7 +102,8 @@ class WellHeader:
         self.longitude: Optional[float] = None
         self.kb_elevation: Optional[float] = None
         self.gl_elevation: Optional[float] = None
-        self.td: Optional[float] = None
+        self.td: Optional[float] = None  # In the well's depth unit
+        self.td_source_unit: str = ""
         self.bht: Optional[float] = None  # Bottom hole temperature
         self.bht_unit: str = "F"
         self.rm: Optional[float] = None  # Mud resistivity
@@ -81,7 +111,9 @@ class WellHeader:
         self.rmc: Optional[float] = None  # Mud cake resistivity
         self.rm_temp: Optional[float] = None  # Temperature at which Rm was measured
         self.bit_size: Optional[float] = None  # Bit size in inches
+        self.bit_size_source_unit: str = ""
         self.mud_type: str = ""  # WBM, OBM, etc.
+        self.las_well_items: Dict[str, Dict[str, Any]] = {}
         self.custom: Dict[str, Any] = {}
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -453,7 +485,9 @@ class Well:
         Returns
         -------
         pd.DataFrame
-            DataFrame with curve data
+            DataFrame with curve data. The depth index is the first column,
+            ``DEPTH``; a curve named DEPTH is the column ``DEPTH_CURVE``
+            then, with a warning.
 
         Raises
         ------
@@ -473,7 +507,18 @@ class Well:
 
         for mnemonic in curves:
             if mnemonic.upper() in self._curves:
-                data[mnemonic.upper()] = self._curves[mnemonic.upper()].data
+                column = mnemonic.upper()
+                if column in data and not reproducing_benchmark():
+                    column = f"{column}_CURVE"
+                    while column in data or column in self._curves:
+                        column += "_"
+                    warnings.warn(
+                        f"Curve {mnemonic.upper()!r} has the name of the depth column; "
+                        f"it is the column {column!r}.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                data[column] = self._curves[mnemonic.upper()].data
 
         return pd.DataFrame(data)
 
@@ -512,7 +557,8 @@ class Well:
         Raises
         ------
         ValueError
-            If two columns differ only in case (curve names are upper case).
+            If two columns differ only in case (curve names are upper case),
+            or the depth column is missing or has no numeric value.
         """
         well = cls(name=name)
 
@@ -530,6 +576,17 @@ class Well:
                 ):
                     df = df.reset_index()
                     depth_column = df.columns[0]
+            if depth_column not in df.columns:
+                hint = ""
+                if len(df.columns) == 1 and any(sep in str(df.columns[0]) for sep in (";", ",", "\t", "|", " ")):
+                    hint = (
+                        f" The header was read as the single column {str(df.columns[0])!r}; "
+                        "pass the delimiter the file uses (e.g. delimiter=';')."
+                    )
+                raise ValueError(
+                    f"Depth column {depth_column!r} not found. Available columns: "
+                    f"{[str(col) for col in df.columns]}. Set depth_column explicitly.{hint}"
+                )
             seen: Dict[str, Any] = {}
             for col in df.columns:
                 if col == depth_column:
@@ -552,6 +609,8 @@ class Well:
                 df[depth_column],
                 errors="coerce",
             ).to_numpy(dtype=float)
+            if checked and len(well._depth) and not np.isfinite(well._depth).any():
+                _raise_non_numeric_depth(df[depth_column], depth_column)
             well._depth_unit = normalize_depth_unit(depth_unit)
 
         skipped_non_numeric: Dict[str, List[str]] = {}

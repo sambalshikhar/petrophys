@@ -80,12 +80,16 @@ def build_package_parser(layout: str) -> argparse.ArgumentParser:
         parser.add_argument(
             "--profile",
             dest="context_profile",
-            choices=("geolink", "geolink_v1", "costa", "costa_v1", "danish", "danish_v1"),
+            choices=(
+                "geolink", "geolink_v1", "geolink_train", "geolink_train_v1", "costa", "costa_v1",
+                "danish", "danish_v1",
+            ),
             help=(
                 "Compute a published context package with its own pipeline from the input "
-                "directory's raw LAS (GeoLink eval, COSTA or Danish); geolink and danish also "
-                "need --formations (their tops workbook) and --lithology-codes (the GeoLink "
-                "codebook). Omit it to interpret with your supplied settings."
+                "directory's raw LAS (GeoLink eval, GeoLink training, COSTA or Danish); geolink, "
+                "geolink_train and danish also need --formations (their tops workbook) and "
+                "--lithology-codes (the GeoLink codebook). Omit it to interpret with your "
+                "supplied settings."
             ),
         )
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))
@@ -194,11 +198,15 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--profile",
         dest="context_profile",
-        choices=("geolink", "geolink_v1", "costa", "costa_v1", "danish", "danish_v1"),
+        choices=(
+            "geolink", "geolink_v1", "geolink_train", "geolink_train_v1", "costa", "costa_v1",
+            "danish", "danish_v1",
+        ),
         help=(
-            "Compute a published category context package (geolink, costa or danish) from "
-            "its raw LAS directory; geolink and danish also need --formations and "
-            "--lithology-codes. Omit it to interpret with your supplied settings."
+            "Compute a published category context package (geolink, geolink_train, costa or "
+            "danish) from its raw LAS directory; geolink, geolink_train and danish also "
+            "need --formations and --lithology-codes. Omit it to interpret with your "
+            "supplied settings."
         ),
     )
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))

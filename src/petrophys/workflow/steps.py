@@ -1412,7 +1412,8 @@ def permeability(method: str = "coates", *, swirr: Optional[float] = None,
     min_core_points : int, optional
         Minimum core samples to fit a transform (``"auto"`` only); default 3.
     phie_curve : str, default "PHIE"
-        Porosity curve.
+        Porosity curve; with ``"auto"`` also the log porosity the core
+        poro-perm model is fitted on.
     name : str, optional
         Step name; defaults to ``"permeability"``.
 
@@ -1468,9 +1469,11 @@ def _run_permeability(ctx: _StepContext, *, method: str, swirr: Optional[float],
                       phie_curve: str) -> None:
     from petrophys.interpretation.permeability import PermeabilityModule
 
+    # The core poro-perm model is fitted on, and applied to, the step's porosity curve.
     module = PermeabilityModule(
         method=method, fallback_method=fallback_method or "coates",
         min_core_points=int(min_core_points) if min_core_points is not None else 3,
+        core_porosity_curve=ctx.curve_name(phie_curve),
     )
     phi = ctx.data(phie_curve)
     result = module.calculate(ctx.well, swi=swirr, phi=phi)

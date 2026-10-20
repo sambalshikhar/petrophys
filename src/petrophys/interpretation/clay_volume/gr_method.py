@@ -180,6 +180,9 @@ def vcl_from_gr(
     # If calculated GR_min > 20  → force GR_min = 20
     gr_max = max(gr_max, 100.0)
     gr_min = min(gr_min, 20.0)
+    if np.ndim(gr):
+        # Array-likes (pandas Series, Curve) are computed and returned as arrays.
+        gr = np.asarray(gr, dtype=float)
 
     # First calculate linear index
     igr = vcl_linear(gr, gr_min, gr_max)

@@ -507,6 +507,16 @@ PERCENT_SATURATION_UNITS = frozenset({"%", "percent", "percentage", "pct", "pu",
 FRACTION_SATURATION_UNITS = frozenset(
     {"v/v", "frac", "fraction", "decimal", "m3/m3", "ft3/ft3", "1"}
 )
+#: Further words of fraction labels, e.g. "dec", "cfcf", "frac." or "v/v decimal".
+_FRACTION_LABEL_WORDS = FRACTION_SATURATION_UNITS | {
+    "dec", "unitless", "cfcf", "vol/vol", "ratio", "fract", "pv/pv",
+}
+
+
+def _is_fraction_label(label: str) -> bool:
+    """True when every word of ``label`` (dots read as spaces) names a fraction."""
+    words = label.replace(".", " ").split()
+    return bool(words) and all(word in _FRACTION_LABEL_WORDS for word in words)
 
 
 def core_saturation_to_fraction(
@@ -515,6 +525,7 @@ def core_saturation_to_fraction(
     *,
     mnemonic: str = "saturation",
     source_unit: Optional[str] = None,
+    quantity: str = "saturation",
 ):
     """Convert core saturation values to fractions (v/v).
 
@@ -524,6 +535,17 @@ def core_saturation_to_fraction(
     core laboratories often label percentages as fractions. Mixed or sparse
     ambiguous data are not rescaled. Values outside 0-1 after conversion are
     masked (never clipped), and ``-999``-style nulls become NaN.
+
+    Fraction labels include variants such as ``dec``, ``unitless``, ``cfcf``,
+    ``vol/vol``, ``frac.`` and ``v/v decimal``. An unrecognized label is read
+    like a missing one, with the scale inferred from the values and a warning.
+    With ``quantity="porosity"``, a percent label on values that are
+    fractions (median below 1, none above 1) is overridden with a warning
+    and the values are used as fractions. Inside the benchmark reproduction
+    (:func:`~petrophys._internal.benchmark.reproducing_benchmark`) only the
+    labels of :data:`PERCENT_SATURATION_UNITS` and
+    :data:`FRACTION_SATURATION_UNITS` are read, an unrecognized label raises
+    and a percent label is always divided by 100.
 
     Parameters
     ----------
@@ -535,6 +557,8 @@ def core_saturation_to_fraction(
         Name used in messages.
     source_unit : str, optional
         ``"%"`` or ``"v/v"`` to override the label and skip inference.
+    quantity : str
+        ``"saturation"`` or ``"porosity"``.
 
     Returns
     -------
@@ -548,13 +572,19 @@ def core_saturation_to_fraction(
     Raises
     ------
     ValueError
-        If the unit label is not a recognized percent or fraction unit.
+        If ``source_unit`` is not a recognized percent or fraction unit, or,
+        inside the benchmark reproduction, the unit label is not.
     """
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    historical = reproducing_benchmark()
     original_unit = str(unit or "")
     label = str(source_unit if source_unit is not None else original_unit).strip().lower()
-    if label not in PERCENT_SATURATION_UNITS | FRACTION_SATURATION_UNITS | {"", "-", "none", "nan"}:
+    known = PERCENT_SATURATION_UNITS | FRACTION_SATURATION_UNITS | {"", "-", "none", "nan"}
+    unknown_label = label not in known and (historical or not _is_fraction_label(label))
+    if unknown_label and (historical or source_unit is not None):
         raise ValueError(
-            f"{mnemonic}: unknown core saturation unit {label!r}; "
+            f"{mnemonic}: unknown core {'saturation' if historical else quantity} unit {label!r}; "
             "specify source_unit='%' or source_unit='v/v'."
         )
 
@@ -563,8 +593,23 @@ def core_saturation_to_fraction(
     factor = 0.01 if label in PERCENT_SATURATION_UNITS else 1.0
     reason = "declared_percent" if factor == 0.01 else "fraction"
     messages = []
+    if unknown_label:
+        reason = "unknown_unit"
+        messages.append(
+            f"{mnemonic}: unknown core {quantity} unit {original_unit!r}; "
+            "the scale is inferred from the values. Verify source units."
+        )
     if source_unit is not None:
         reason = "explicit_override"
+    elif factor == 0.01 and quantity == "porosity" and not historical:
+        positive = data[np.isfinite(data) & (data > 0.0)]
+        if positive.size >= 2 and np.median(positive) < 1.0 and np.max(positive) <= 1.0:
+            factor, reason = 1.0, "fraction_despite_percent_unit"
+            messages.append(
+                f"{mnemonic}: core {quantity} labelled {original_unit!r} holds fractions "
+                f"(median {float(np.median(positive)):.3g}); used as v/v without dividing "
+                "by 100. Verify source units."
+            )
     elif factor == 1.0:
         plausible = data[np.isfinite(data) & (data >= 0.0) & (data <= 100.0)]
         above_one = np.count_nonzero(plausible > 1.0)

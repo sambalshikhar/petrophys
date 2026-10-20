@@ -9,6 +9,10 @@ from typing import Union
 import numpy as np
 
 from petrophys._internal.benchmark import reproducing_benchmark
+from petrophys.interpretation.saturation._inputs import (
+    check_resistivity_parameters,
+    nonpositive_resistivity,
+)
 
 
 def indonesia(
@@ -51,8 +55,15 @@ def indonesia(
     Returns
     -------
     float or np.ndarray
-        Water saturation (0-1)
+        Water saturation (0-1).
+        NaN where Rt or an Rw array is at or below zero.
+
+    Raises
+    ------
+    ValueError
+        If a scalar ``rw`` or ``rcl`` is at or below zero.
     """
+    check_resistivity_parameters(rw=rw, rcl=rcl)
     # Track whether the caller passed scalars so we return a scalar
     scalar_input = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vcl)
 
@@ -60,6 +71,7 @@ def indonesia(
     # Using np.asarray keeps scalar inputs working through the array code paths below
     # (a 0-d array has .shape == () and supports np.where/np.power).
     rt = np.asarray(rt, dtype=float)
+    invalid = nonpositive_resistivity(rt, rw)
     rt = np.where(rt <= 0, 1e-10, rt)
     # Infinite Rt (no conductivity reading) is missing, as in archie().
     if not reproducing_benchmark():
@@ -95,6 +107,7 @@ def indonesia(
 
     sw_half_n = (1.0 / np.sqrt(rt)) / denom
     sw = np.power(sw_half_n, 2 / n)
+    sw = np.where(invalid, np.nan, sw)
 
     sw = np.clip(sw, 0, 1)
     return float(sw) if scalar_input else sw

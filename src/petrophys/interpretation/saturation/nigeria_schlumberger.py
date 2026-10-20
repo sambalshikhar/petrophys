@@ -19,6 +19,10 @@ from typing import Union
 import numpy as np
 
 from petrophys._internal.benchmark import reproducing_benchmark
+from petrophys.interpretation.saturation._inputs import (
+    check_resistivity_parameters,
+    nonpositive_resistivity,
+)
 
 
 def nigeria_schlumberger(
@@ -60,14 +64,22 @@ def nigeria_schlumberger(
     -------
     float or np.ndarray
         Water saturation (0-1); NaN where the shale term alone exceeds
-        1/sqrt(Rt)
+        1/sqrt(Rt),
+        and where Rt or an Rw array is at or below zero.
+
+    Raises
+    ------
+    ValueError
+        If a scalar ``rw`` or ``rsh`` is at or below zero.
     """
+    check_resistivity_parameters(rw=rw, rsh=rsh)
     scalar = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vcl)
 
     rt = np.atleast_1d(np.asarray(rt, dtype=float))
     phi = np.atleast_1d(np.asarray(phi, dtype=float))
     vcl = np.atleast_1d(np.asarray(vcl, dtype=float))
 
+    invalid = nonpositive_resistivity(rt, rw)
     rt = np.where(rt <= 0, 1e-10, rt)
     # Infinite Rt (no conductivity reading) is missing, as in archie().
     if not reproducing_benchmark():
@@ -94,6 +106,7 @@ def nigeria_schlumberger(
 
     sw_half_n = lhs / sand_term_base
     sw = np.power(sw_half_n, 2.0 / n)
+    sw = np.where(invalid, np.nan, sw)
     sw = np.clip(sw, 0.0, 1.0)
 
     return float(sw[0]) if scalar else sw

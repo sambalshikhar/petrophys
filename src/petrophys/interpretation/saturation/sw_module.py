@@ -257,9 +257,14 @@ class SaturationModule:
         """
         # Get required curves
         rt_data, rt_mnemonic, rt_meta = get_curve_data_depthwise(well, ["RDEP", "RT"])
-        rxo_existing = get_curve(well, ["RSHA", "RXO", "RESS"], require_finite=False)
+        # The flushed-zone RXO is read before the shallow RSHA; the benchmark
+        # packages read RSHA first.
+        invaded_zone_curves = (
+            ["RSHA", "RXO", "RESS"] if reproducing_benchmark() else ["RXO", "RSHA", "RESS"]
+        )
+        rxo_existing = get_curve(well, invaded_zone_curves, require_finite=False)
         if self.depthwise_curve_merge:
-            rxo_data, rxo_mnemonic, rxo_meta = get_curve_data_depthwise(well, ["RSHA", "RXO", "RESS"])
+            rxo_data, rxo_mnemonic, rxo_meta = get_curve_data_depthwise(well, invaded_zone_curves)
         elif rxo_existing is None:
             rxo_data, rxo_mnemonic, rxo_meta = None, None, {}
         else:
@@ -617,8 +622,10 @@ class SaturationModule:
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 val = float(np.nanmean(rt[shale_mask]))
             # Shale samples may have no finite RT; a NaN Rcl would poison
-            # every shaly-routed Sw in the well, so fall through to the default.
-            if np.isfinite(val):
+            # every shaly-routed Sw in the well, so fall through to the
+            # default, as for an Rcl at or below zero outside the benchmark
+            # reproduction.
+            if np.isfinite(val) and (val > 0.0 or reproducing_benchmark()):
                 return val
         return 5.0  # Default
 

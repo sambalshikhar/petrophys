@@ -81,6 +81,10 @@ def total_porosity(
     """
     if gas_method not in ("rms", "density"):
         raise ValueError(f"gas_method must be 'rms' or 'density'; got {gas_method!r}")
+    if np.ndim(nphi) or np.ndim(phi_d):
+        # Array-likes (pandas Series, Curve) are computed and returned as arrays.
+        nphi = np.asarray(nphi, dtype=float)
+        phi_d = np.asarray(phi_d, dtype=float)
 
     if method == "average":
         return (nphi + phi_d) / 2

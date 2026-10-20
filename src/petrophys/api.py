@@ -316,6 +316,7 @@ def interpret(
         DynamicWorkflowConfig,
         run_dynamic_workflow,
     )
+    from petrophys._internal.benchmark import reproducing_benchmark
     from petrophys.workflow.zoned_batch import _extract_global_parameter_overrides
 
     known = {item.name for item in dataclasses.fields(DynamicWorkflowConfig)}
@@ -352,9 +353,12 @@ def interpret(
     # These values have native LAS routes in DynamicWorkflow. Leaving them on
     # the well preserves source provenance (for example, ``las.RW`` instead of
     # ``config.rw``) and lets each step apply its own unit/reference handling.
+    # A header TD is kept, converted to feet from its own unit (the "geolink"
+    # profile read it from the well header instead).
+    historical = profile in _BENCHMARK_PROFILES or reproducing_benchmark()
     for native_field in (
         "bht_f",
-        "td_ft",
+        *(("td_ft",) if historical else ()),
         "rmf_at_meas_temp",
         "rmf_meas_temp_f",
         "rm",

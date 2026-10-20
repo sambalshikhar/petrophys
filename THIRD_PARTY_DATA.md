@@ -165,6 +165,26 @@ conflicting source/basin fields; see the collection README. Confirm provenance
 of the companion metadata and formation picks before redistributing them as
 KGS-authored material.
 
+## Taranaki Basin Curated Well Logs Dataset
+
+Files: `src/petrophys/datasets/taranaki/` (Cheal-1, Tuhua-7 and their formation
+intervals). Source: Taranaki Basin Curated Well Logs Dataset, IBM Developer Data
+Asset eXchange, curated from the New Zealand Petroleum & Minerals Online
+Exploration Database and Petlab (GNS Science). Licence: Community Data License
+Agreement - Sharing 1.0, included as `LICENSE-CDLA-Sharing-1.0.txt`; these files
+and data derived from them remain under that licence. The files are a modified
+extract (two wells, four columns removed, written as LAS 2.0 with the dataset's
+documented units, formation intervals derived); log values are unchanged. See
+the collection README.
+
+## Teapot Dome (NPR-3)
+
+Files: `src/petrophys/datasets/teapot/` (Fenix WX #17-21 and Fenix MDX #44-10).
+Source: Teapot Dome data set released by the Rocky Mountain Oilfield Testing
+Center (RMOTC), U.S. Department of Energy, as non-proprietary data; logs
+acquired by Schlumberger for Fenix & Scisson. The LAS files are the original
+deliveries, renamed. Supplied without warranty.
+
 ## Pretrained imputation model
 
 File: `src/petrophys/preprocessing/imputation/pretrained/geolink_curve_imputation.joblib`.
