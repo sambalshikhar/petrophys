@@ -75,8 +75,21 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
   calculations, then the context's value-range QC and dependent-curve
   recomputation. The statistics of `result.well` over a context group's
   depths are that group's statistics. The Danish profile also takes
-  `tops_file`. The same is available as
+  `tops_file`. `result.steps_executed` records every calculation: the
+  profile's preparation (COSTA's clay volume, carbonate volumes and
+  lithology, and permeability under the workflow's step names; the
+  preparatory interpretation's RESFLAG, the Danish input preparation and
+  input standardization as `preparation_*` steps, starting with
+  `preparation_input_reading`: the renames, unit conversions and range
+  screening of reading the raw LAS), the workflow, and the context's export
+  finalization, QC and recomputation (`context_*` steps). Every curve of
+  `result.well` is an unchanged raw curve or the output of a recorded step. The same is available as
   `petrophys.reporting.context_profiles.interpret_with_context_profile`.
+- `petrophys.reporting.context_profiles.context_group_statistics(result, top, bottom)`
+  computes one context group's statistics from such a result, per category
+  file, including the curves each category's analysis derives within the
+  group (indicators, gradients, completeness, and MHI, BVW, RQI, FZI or
+  PHI_NORM where the group has none).
 
 - The published GeoLink, COSTA and Danish context packages are computed by
   context profiles, `geolink_v1`, `costa_v1` and `danish_v1` (aliases
@@ -183,6 +196,15 @@ wherever the package used the function.
 - More legacy mnemonics are recognized: the density and microlog calipers
   CALD, DCAL and MCAL (CALI), the density correction CORR (DRHO), the medium
   induction RILM (RMED) and the shallow laterolog LL3/RLL3 (RSHA).
+- Every workflow step records every curve it created, changed or removed:
+  the curves are compared before and after each step, and any it wrote
+  without listing (such as PRIME_OIL_TARGET from the net-pay step's
+  hydrocarbon analysis, TEMP_LOG from the temperature step, or BADHOLEFLAG)
+  join its `output_curves`; removed curves are in `curves_removed`. The
+  normalization step lists the curves it created or changed rather than
+  every curve of the well. Under the benchmark profiles `output_curves`
+  keeps the eval package's list, which its context records repeat, and the
+  further curves are in the step's `also_written`.
 - A logged vendor density porosity (DPOR, DPHI, DPHZ, PORD) or sonic porosity
   (SPOR, SPHI, PORS) gives PHID or PHIS wherever its value, in v/v or
   converted from percent, lies within 0-0.5; the computed porosity fills the

@@ -291,10 +291,14 @@ def interpret_with_context_profile(
     -------
     DynamicWorkflowResult
         The interpreted well (``result.well``) after the context's value-range
-        QC and dependent-curve recomputation, with the trace of the context's
-        interpretation; ``result.context_profile`` names the profile,
-        ``result.preparatory_steps`` records the profile's preparatory step
-        and ``result.post_workflow_steps`` the QC and recomputation.
+        QC and dependent-curve recomputation. ``result.steps_executed`` holds
+        every calculation: the profile's preparation (for COSTA under the
+        workflow's step names: core curves, clay volume, carbonate volumes and
+        lithology, permeability, crossover flag; otherwise ``preparation_*``
+        steps), the workflow's steps, then ``context_value_range_qc`` and
+        ``context_dependent_curve_recompute``. ``result.context_profile``
+        names the profile; ``result.preparatory_steps`` and
+        ``result.post_workflow_steps`` keep the package's own trace entries.
     """
     import tempfile
 
@@ -318,12 +322,14 @@ def interpret_with_context_profile(
 
     captured: dict = {}
 
-    def keep(_file_path, workflow_result, preparatory_steps):
+    def keep(_file_path, workflow_result, preparatory_steps, raw_curves):
         # The context's value-range QC and dependent-curve recomputation, as
         # every context group gets them before its statistics, under the
         # profile's own rules (applied while its calculations are active).
         checked, post_workflow_steps = context_checked_well(workflow_result)
-        captured.update(run=workflow_result, well=checked, steps=preparatory_steps, post=post_workflow_steps)
+        captured.update(
+            run=workflow_result, well=checked, steps=preparatory_steps, post=post_workflow_steps, raw=raw_curves
+        )
 
     options = dict(
         well_names=[path.stem],
@@ -360,22 +366,246 @@ def interpret_with_context_profile(
 
             _export_danish(path.parent, unused_output, tops=read_danish_tops(tops_file), **options)
 
+    import copy
+
     run = captured["run"]
-    result = run.base_result
+    result = copy.copy(run.base_result)
     result.well = captured["well"]
+    result.warnings = list(result.warnings)
     for warning in [*run.warnings, *(w for zone in run.zone_results for w in zone.warnings)]:
         if warning not in result.warnings:
             result.warnings.append(warning)
     result.context_profile = profile.name
     result.preparatory_steps = list(captured["steps"] or [])
     result.post_workflow_steps = captured["post"]
+    # Every calculation as a step: the preparation first, then the workflow,
+    # then the context's QC and recomputation.
+    preparation = [
+        *_input_reading_step_results(getattr(run, "input_reading", None)),
+        *_preparation_step_results(profile.name, path, result, captured["raw"] or ()),
+    ]
+    names = {step.step for step in preparation}
+    result.steps_executed = [
+        *preparation,
+        *result.steps_executed,
+        *_finalization_step_results(getattr(run, "export_finalization", None)),
+        *_post_workflow_step_results(result.post_workflow_steps),
+    ]
+    result.steps_skipped = [name for name in result.steps_skipped if name not in names]
+    # The context's run, from which context_group_statistics takes a group's samples.
+    result._context_run = run
     return result
+
+
+def _preparation_step_results(profile_name: str, path: Path, result, raw_curves) -> list:
+    """The profile's preparatory calculations as workflow step records.
+
+    COSTA's precomputed curves (core curve mapping, clay volume, carbonate
+    volumes and lithology, permeability, crossover flag) are recorded under
+    the workflow's step names with the package's methods and parameters.
+    Every other entry of the preparatory step (input standardization, the
+    Danish input preparation, the curves taken from the preparatory
+    interpretation, such as RESFLAG and BADHOLEFLAG) becomes a
+    ``preparation_*`` step; ``calculation_steps`` in its parameters lists the
+    preparatory interpretation's own steps.
+    """
+    from petrophys.workflow.dynamic_workflow import StepResult
+
+    records = []
+    covered: set = set()
+    if profile_name == "costa_v1":
+        from petrophys.reporting._costa_context import load_costa_parameters, precomputed_step_results
+
+        recorded = [curve for step in result.steps_executed for curve in (step.output_curves or [])]
+        parameters = load_costa_parameters()[path.stem.upper()]
+        records = precomputed_step_results(result.well, parameters, raw_curves, recorded)
+        covered = {curve.upper() for step in records for curve in step.output_curves}
+    for entry in result.preparatory_steps:
+        name = str(entry.get("step", ""))
+        if name == "costa_precomputed_steps":
+            continue  # recorded above under the workflow's step names
+        outputs = [curve for curve in entry.get("output_curves") or [] if curve.upper() not in covered]
+        if entry.get("output_curves") and not outputs:
+            continue
+        inputs: list = []
+        removed: list = []
+        if name == "input_standardization":
+            # The input curves it rounded to the package's precision, and the
+            # duplicates it set aside.
+            outputs = sorted(entry.get("samples_rounded") or {})
+            removed = list(entry.get("curves_set_aside") or [])
+        if name == "danish_input_preparation":
+            # The curves it adds to the raw LAS: the tops' lithology where the
+            # LAS has none, and RSHAL under its standard name.
+            import lasio
+
+            raw = {item.mnemonic.upper() for item in lasio.read(str(path), ignore_data=True).curves}
+            if "LITHOLOGY_GEOLINK" not in raw and result.well.get("LITHOLOGY_GEOLINK") is not None:
+                outputs.append("LITHOLOGY_GEOLINK")
+                inputs.append("formation tops (MajorityLithology)")
+            if "RSHAL" in raw and result.well.get("RSHA") is not None:
+                outputs.append("RSHA")
+                inputs.append("RSHAL")
+        details = {
+            key: value
+            for key, value in entry.items()
+            if key not in {"step", "method", "description", "output_curves"}
+        }
+        records.append(StepResult(
+            step=f"preparation_{name}",
+            success=True,
+            method=str(entry.get("method", "")),
+            input_curves=inputs,
+            output_curves=outputs,
+            parameters=details,
+            decisions=[str(entry["description"])] if entry.get("description") else [],
+            curves_removed=removed,
+        ))
+    return records
+
+
+def _input_reading_step_results(reading) -> list:
+    """How the context read the raw LAS, as a step record (renames, unit conversion, range screening)."""
+    from petrophys.workflow.dynamic_workflow import StepResult
+
+    if not reading or not (reading["created"] or reading["changed"] or reading["removed"]):
+        return []
+    decisions = [
+        "Curves read with the profile's standardization: standard mnemonics, unit conversion, "
+        "value-range screening and duplicate handling."
+    ]
+    for old, new in reading["rename_map"].items():
+        decisions.append(f"{old} read as {new}")
+    for name, item in reading["range_screening"].items():
+        decisions.append(f"{name}: {item['masked']} samples outside {item['low']:g}-{item['high']:g} set to NaN")
+    return [StepResult(
+        step="preparation_input_reading",
+        success=True,
+        method="context input reading and standardization",
+        input_curves=sorted({*reading["rename_map"], *reading["changed"]}),
+        output_curves=[*reading["created"], *reading["changed"]],
+        parameters={"rename_map": reading["rename_map"], "range_screening": reading["range_screening"]},
+        decisions=decisions,
+        curves_removed=list(reading["removed"]),
+    )]
+
+
+def _finalization_step_results(finalization) -> list:
+    """The export finalization of the context's interpretation as a step record.
+
+    It takes SW and SXO from the workflow's saturation aliases where those are
+    missing, sets VCL to the smallest of the clay-volume methods the workflow
+    let set it, and removes the method curves and aliases the package's LAS
+    did not carry.
+    """
+    from petrophys.workflow.dynamic_workflow import StepResult
+
+    if not finalization or not (finalization["written"] or finalization["removed"]):
+        return []
+    return [StepResult(
+        step="context_export_finalization",
+        success=True,
+        method="export curve finalization",
+        input_curves=[],
+        output_curves=list(finalization["written"]),
+        decisions=[
+            "SW and SXO from the saturation aliases where missing; VCL = the smallest of the clay-volume "
+            "methods that set it; method curves and aliases the package's LAS did not carry are removed."
+        ],
+        curves_removed=list(finalization["removed"]),
+    )]
+
+
+def _post_workflow_step_results(entries) -> list:
+    """The context's value-range QC and dependent-curve recomputation as workflow step records."""
+    from petrophys.workflow.dynamic_workflow import StepResult
+
+    records = []
+    for entry in entries:
+        if entry["step"] == "value_range_qc":
+            changed = sorted({str(item.get("curve")) for item in entry.get("changes", []) if item.get("curve")})
+            parameters = {"changes": entry.get("changes", [])}
+        else:
+            changed = sorted(name for name, count in entry.get("samples_changed", {}).items() if count)
+            parameters = {"samples_changed": entry.get("samples_changed", {})}
+        records.append(StepResult(
+            step=f"context_{entry['step']}",
+            success=True,
+            method=str(entry.get("method", "")),
+            input_curves=changed,
+            output_curves=changed,
+            parameters=parameters,
+            decisions=[str(entry["description"])] if entry.get("description") else [],
+        ))
+    return records
+
+
+#: The dataset calculations each profile's context runs under.
+_PROFILE_DATASET = {"costa_v1": "costa", "danish_v1": "danish", "geolink_train_v1": "geolink_train"}
+
+
+def context_group_statistics(result, top: float, bottom: float, *, tolerance: float = 5e-5) -> dict:
+    """Statistics of one context group, from a context-profile interpretation.
+
+    Computes, for the samples of ``result.well`` from ``top`` to ``bottom``,
+    what the context's six category files of that group hold under
+    ``statistics``: the interpreted curves after the context's QC and, per
+    category, the curves that category's analysis derives within the group
+    (indicators, gradients, completeness, and MHI, BVW, RQI, FZI or PHI_NORM
+    where the group has none). These depend on the group's samples, so they
+    are computed per group, as the context does.
+
+    Parameters
+    ----------
+    result : DynamicWorkflowResult
+        From ``petrophys.interpret(path, context_profile=...)`` or
+        :func:`interpret_with_context_profile`.
+    top, bottom : float
+        The group's depth window, e.g. ``start_depth`` and ``end_depth`` of
+        the context file's ``lithology_group_info``, in the well's depth unit.
+    tolerance : float, default 5e-5
+        Depths within this of the window belong to it; the context files
+        round group depths to four decimals.
+
+    Returns
+    -------
+    dict
+        ``{category: statistics}`` for the six categories.
+    """
+    from contextlib import nullcontext
+
+    import numpy as np
+
+    from petrophys._internal.benchmark import historical_benchmark
+    from petrophys.reporting.reference_export import _well_mask_slice, context_group_statistics_for_well
+    from petrophys.workflow.dynamic_workflow import _dataset_calculations
+
+    run = getattr(result, "_context_run", None)
+    if run is None or getattr(result, "context_profile", None) is None:
+        raise ValueError("context_group_statistics needs the result of petrophys.interpret(..., context_profile=...)")
+    depth = np.asarray(run.well.depth, dtype=float)
+    mask = (depth >= float(top) - tolerance) & (depth <= float(bottom) + tolerance)
+    if not mask.any():
+        raise ValueError(f"No samples of {result.well.name} between {top} and {bottom}")
+    dataset = _PROFILE_DATASET.get(result.context_profile)
+    with historical_benchmark(), (_dataset_calculations(dataset) if dataset else nullcontext()):
+        statistics = context_group_statistics_for_well(_well_mask_slice(run.well, mask), run)
+    if result.context_profile == "costa_v1":
+        # The COSTA package leaves these curves out of its context files.
+        from petrophys.reporting._costa_context import _DROP_CONTEXT_CURVES
+
+        for category in statistics.values():
+            for key in list(category):
+                if str(key).split("_overall", 1)[0].upper() in _DROP_CONTEXT_CURVES:
+                    del category[key]
+    return statistics
 
 
 __all__ = [
     "ContextProfile",
     "describe_context_profile",
     "export_context_profile",
+    "context_group_statistics",
     "interpret_with_context_profile",
     "get_context_profile",
     "identify_context_profile",

@@ -185,10 +185,25 @@ result = pp.interpret("PATH/danish/las/ida-1.las", context_profile="danish",
 
 The well must belong to the profile's package, and the profile fixes the
 settings. `result.preparatory_steps` and `result.post_workflow_steps` record
-the steps around the workflow; both appear in `result.to_trace_dict()`. The
-category analyses each context group adds (electrofacies, gradients, clay
-indicators, completeness) are computed within the group, so they belong to
-the context, not to the interpretation.
+the steps around the workflow; both appear in `result.to_trace_dict()`.
+
+Each context group also gets its category analyses, computed within the
+group: indicators, gradients, completeness, electrofacies, and MHI, BVW, RQI,
+FZI or PHI_NORM where the interpretation leaves the group without them. They
+depend on the group's samples, so they are not curves of `result.well`.
+`context_group_statistics` computes a group's full statistics, as its
+context files hold them:
+
+```python
+from petrophys.reporting.context_profiles import context_group_statistics
+
+info = context_file["analysis_results"]["lithology_group_info"]
+stats = context_group_statistics(result, info["start_depth"], info["end_depth"])
+stats["saturation"]["MHI_overall"]   # one dict per category file
+```
+
+ELECTROFACIES is the exception: the published packages clustered it without a
+seed, so only its range is reproducible.
 
 ## Common errors
 
