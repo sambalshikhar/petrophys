@@ -89,10 +89,31 @@ def reproduce_geolink_context(
     list of ExampleFormatExportResult
         One per context file.
     """
-    from petrophys.reporting.reference_export import (
-        export_reference_json_work_package_by_category_formation_lithology,
-        write_reference_curve_name_mapping,
+    from petrophys.reporting.reference_export import write_reference_curve_name_mapping
+
+    results = _export_geolink(
+        input_dir,
+        output_dir,
+        processed_las_dir=Path(work_dir) / "processed_las",
+        well_names=well_names,
+        pattern=pattern,
+        tops_file=tops_file,
+        lithology_mapping_file=lithology_mapping_file,
     )
+    write_reference_curve_name_mapping(output_dir)
+    return results
+
+
+def _export_geolink(
+    input_dir: str | Path,
+    output_dir: str | Path,
+    *,
+    well_names: Optional[Sequence[str]],
+    pattern: str,
+    **options,
+):
+    """Interpret the GeoLink raw LAS with the package's calculations; see the module docstring."""
+    from petrophys.reporting.reference_export import export_reference_json_work_package_by_category_formation_lithology
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
 
     if not any(Path(input_dir).glob(pattern)):
@@ -100,15 +121,13 @@ def reproduce_geolink_context(
     results = export_reference_json_work_package_by_category_formation_lithology(
         input_dir=input_dir,
         output_dir=output_dir,
-        tops_file=tops_file,
         pattern=pattern,
         well_names=well_names,
-        lithology_mapping_file=lithology_mapping_file,
         # SWIRR_APP is picked from the reservoir flag of the preparatory step.
         workflow_config=DynamicWorkflowConfig(calculation_profile="geolink", reuse_input_resflag=True),
         raw_input_dir=input_dir,
-        processed_las_dir=Path(work_dir) / "processed_las",
         prepare_input=_first_run_flags,
+        **options,
     )
     failed = [item for item in results if not item.success]
     if failed:
@@ -116,5 +135,4 @@ def reproduce_geolink_context(
             "GeoLink context failed: "
             + "; ".join(f"{Path(item.source_file).stem}: {' | '.join(item.errors)}" for item in failed[:5])
         )
-    write_reference_curve_name_mapping(output_dir)
     return results

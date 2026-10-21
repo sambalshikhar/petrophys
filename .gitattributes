@@ -9,3 +9,4 @@ src/petrophys/datasets/epslog/*.las -text
 src/petrophys/datasets/epslog/*.csv -text
 src/petrophys/datasets/formation_pressure/*.las -text
 src/petrophys/datasets/formation_pressure/*.csv -text
+src/petrophys/datasets/formation_pressure/*.DLIS binary

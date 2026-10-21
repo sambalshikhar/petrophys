@@ -252,6 +252,8 @@ def interpret(
     *,
     inplace: bool = False,
     depth_unit: Optional[str] = None,
+    context_profile: Optional[str] = None,
+    tops_file: Optional[PathLike] = None,
     **options: Any,
 ) -> "DynamicWorkflowResult":
     """Run the full petrophysical interpretation on one well.
@@ -282,6 +284,17 @@ def interpret(
     depth_unit : {"m", "ft"}, optional
         Depth unit of a CSV/TSV file given as ``well``. Only used when
         reading a file.
+    context_profile : str, optional
+        ``"geolink"``, ``"geolink_train"``, ``"costa"`` or ``"danish"``:
+        interpret a well of that context package exactly as its context does
+        (:func:`petrophys.reporting.context_profiles.interpret_with_context_profile`),
+        so the statistics of ``result.well`` over a context group's depths
+        are that group's context statistics. ``well`` must be the well's raw
+        LAS file from the package's delivery; the profile fixes the settings,
+        so ``config`` and ``options`` are not accepted.
+    tops_file : str or Path, optional
+        With ``context_profile="danish"``: the Danish tops workbook, which
+        supplies the lithology of wells without a lithology log.
     **options
         Individual :class:`~petrophys.workflow.DynamicWorkflowConfig` settings,
         e.g. ``rw=0.07, rw_meas_temp_f=230`` or ``sw_model="indonesia"``. With ``config``, they
@@ -318,6 +331,32 @@ def interpret(
     )
     from petrophys._internal.benchmark import reproducing_benchmark
     from petrophys.workflow.zoned_batch import _extract_global_parameter_overrides
+
+    if context_profile is not None:
+        from petrophys.reporting.context_profiles import interpret_with_context_profile
+
+        if config is not None or options:
+            raise TypeError(
+                "context_profile fixes its package's settings; config and other settings are not accepted."
+            )
+        if depth_unit is not None or inplace:
+            raise TypeError("context_profile reads the well's LAS file; depth_unit and inplace do not apply.")
+        if not isinstance(well, (str, Path)):
+            raise TypeError(
+                "context_profile interprets a package well from its raw LAS file; pass the file path, "
+                f"not a {type(well).__name__}."
+            )
+        return interpret_with_context_profile(well, context_profile, tops_file=tops_file)
+    if tops_file is not None:
+        raise TypeError("tops_file applies only with context_profile.")
+    requested_profile = options.get("calculation_profile", getattr(config, "calculation_profile", None))
+    if str(requested_profile or "").strip().lower().replace("-", "_") in {
+        "geolink_train", "geolink_train_v1", "costa", "costa_v1", "danish", "danish_v1", "geolink_v1",
+    }:
+        raise ValueError(
+            f"{requested_profile!r} is a context profile: pass context_profile={requested_profile!r} with the "
+            "well's raw LAS file. calculation_profile is 'current' or 'geolink'."
+        )
 
     known = {item.name for item in dataclasses.fields(DynamicWorkflowConfig)}
     unknown = sorted(set(options) - known)

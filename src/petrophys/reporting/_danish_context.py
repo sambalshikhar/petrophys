@@ -233,37 +233,68 @@ def reproduce_danish_context(
     list of ExampleFormatExportResult
         One per context file.
     """
+    from petrophys.reporting.reference_export import write_reference_curve_name_mapping
+
+    tops = read_danish_tops(tops_file)
+    results = _export_danish(
+        input_dir,
+        output_dir,
+        tops=tops,
+        group_layout=lambda files: {
+            raw_file.stem: danish_group_layout(raw_file, tops.get(raw_file.stem.lower(), [])) for raw_file in files
+        },
+        well_names=well_names,
+        pattern=pattern,
+        recursive=recursive,
+        lithology_mapping_file=lithology_mapping_file,
+        processed_las_dir=Path(work_dir) / "processed_las",
+    )
+    write_reference_curve_name_mapping(output_dir)
+    return results
+
+
+def _export_danish(
+    input_dir: str | Path,
+    output_dir: str | Path,
+    *,
+    tops: Mapping[str, Sequence[Mapping[str, Any]]],
+    well_names: Optional[Sequence[str]],
+    pattern: str,
+    recursive: bool = False,
+    group_layout=None,
+    **options,
+):
+    """Interpret the Danish raw LAS with the package's preparation and calculations.
+
+    ``tops`` (from :func:`read_danish_tops`) prepare each well's input;
+    ``group_layout(files)``, when given, returns the context groups.
+    """
     from petrophys.reporting.reference_export import (
         _filter_input_files_by_well_names,
         export_reference_json_work_package_by_category_formation_lithology,
-        write_reference_curve_name_mapping,
     )
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, _dataset_calculations
 
     source = Path(input_dir)
-    work = Path(work_dir)
     files = sorted(source.rglob(pattern) if recursive else source.glob(pattern))
     files = _filter_input_files_by_well_names(files, well_names)
     if not files:
         raise FileNotFoundError(f"No Danish LAS files matching {pattern!r} in {source}")
-    tops = read_danish_tops(tops_file)
-    layout = {raw_file.stem: danish_group_layout(raw_file, tops.get(raw_file.stem.lower(), [])) for raw_file in files}
+    if group_layout is not None:
+        options["group_layout"] = group_layout(files)
 
-    stems = [raw_file.stem for raw_file in files]
     with _dataset_calculations("danish"):
         results = export_reference_json_work_package_by_category_formation_lithology(
             input_dir=source,
             output_dir=output_dir,
             pattern=pattern,
             recursive=recursive,
-            well_names=stems,
-            lithology_mapping_file=lithology_mapping_file,
+            well_names=[raw_file.stem for raw_file in files],
             # SWIRR_APP is picked from the reservoir flag of the preparatory step.
             workflow_config=DynamicWorkflowConfig(calculation_profile="geolink", reuse_input_resflag=True),
             raw_input_dir=source,
-            group_layout=layout,
-            processed_las_dir=work / "processed_las",
             prepare_input=_danish_preparation(tops),
+            **options,
         )
     failed = [item for item in results if not item.success]
     if failed:
@@ -271,5 +302,4 @@ def reproduce_danish_context(
             "Danish context failed: "
             + "; ".join(f"{Path(item.source_file).stem}: {' | '.join(item.errors)}" for item in failed[:5])
         )
-    write_reference_curve_name_mapping(output_dir)
     return results

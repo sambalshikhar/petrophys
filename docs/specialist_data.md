@@ -278,19 +278,24 @@ separation, competing models or ambiguous fluid identities do not yield a defini
 FWL. Density bounds and pressure error are configurable interpretation assumptions.
 Do not use an old fluid-dependent selection mask as measurement QC.
 
-Tutorial 15 removes the bundled report-derived fluid labels. For 35/11-13 it uses
-all 21 tests marked `ok`, including the shallow gas points, and obtains a two-branch
-oil/water candidate near 3113.2 m (report: 3112.6 m TVD MSL). The two-point gas leg
-is not resolved separately. For 35/11-10 Fensfjord the digitized subset produces
-a candidate near 2289.1 m but ambiguous fluid hypotheses, so `fwl_depth` is `None`.
-The report's 2290 m contact is used only for external comparison. These are limited
-unlabeled reproduction checks, not validation across unseen reservoirs.
+The bundled station files carry measurements only, without fluid labels. In
+Tutorial 15, 35/11-13 uses the 21 tests with `QC` 0, including the shallow gas
+points, and gives an oil/water FWL near 3113.2 m (report: 3112.6 m TVD MSL); the
+two-point gas leg is not resolved separately. For 35/11-10 the tutorial selects the
+static pretests of the Fensfjord interval (2250-2352 m TVD MSL): the oil/water
+candidate is near 2290.7 m, with ambiguous fluid
+hypotheses, so `fwl_depth` is `None`. Report contacts are used only for external
+comparison. These are limited reproduction checks, not validation across unseen
+reservoirs.
 
-Raw MDT pretest picking is supported for user-owned time-indexed LAS, CSV or
-DataFrame inputs through `read_mdt_pretest`. The repository keeps only the two
-normalized station LAS examples described above; raw acquisition traces and
-report extracts are not bundled. After a user supplies verified TVD values,
-`formation_pressures_from_mdt` builds station data for `.infer_contacts()`.
+Raw MDT pretest picking works on time-indexed DLIS, LAS, CSV or DataFrame
+inputs through `read_mdt_pretest`. Three original MDT pretest DLIS files from
+IODP Hole C0009A are bundled with LAS copies (`319-C0009A_MDT_059LTP` and
+`c0009a_mdt_059`, likewise 067 and 078). `pick_pressure()` accepts 4102.13 psi
+for file 059; the low-mobility test 067 and the unstable-baseline test 078 are
+returned for review. DLIS input needs the `dlis` extra. After a user
+supplies verified TVD values, `formation_pressures_from_mdt` builds station
+data for `.infer_contacts()`.
 
 For already interpreted fluid labels, `.fit_fwl()`, `fit_pressure_fwl` and
 `create_formation_pressure_plot` remain available. Images and report contacts

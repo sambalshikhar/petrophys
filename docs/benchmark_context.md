@@ -166,6 +166,30 @@ petrophys-context "PATH/danish/las" "outputs/danish_benchmark_json_01" --layout 
 petrophys-context "PATH/LAS_with_petrophys_params" "outputs/geolink_train_json_01" --layout category_formation_lithology --profile geolink_train --formations "PATH/NPD stratigraphic picks north sea.xlsx" --lithology-codes "PATH/Litho_Nomenclature_Kingdom.xlsx"
 ```
 
+## Interpret one package well as its context does
+
+`pp.interpret` with `context_profile` runs one well's raw LAS through its
+profile's preparation, calculations, value-range QC and dependent-curve
+recomputation, and writes nothing. The statistics of `result.well` over a
+context group's depths are that group's statistics in the package:
+
+```python
+import petrophys as pp
+
+result = pp.interpret(pp.sample("HW-10"), context_profile="costa")
+result = pp.interpret("PATH/LAS_with_petrophys_params/15_9-9.las", context_profile="geolink_train")
+result = pp.interpret("PATH/eval/15_9-17.las", context_profile="geolink")
+result = pp.interpret("PATH/danish/las/ida-1.las", context_profile="danish",
+                      tops_file="PATH/Danish_formation_tops_for_context.xlsx")
+```
+
+The well must belong to the profile's package, and the profile fixes the
+settings. `result.preparatory_steps` and `result.post_workflow_steps` record
+the steps around the workflow; both appear in `result.to_trace_dict()`. The
+category analyses each context group adds (electrofacies, gradients, clay
+indicators, completeness) are computed within the group, so they belong to
+the context, not to the interpretation.
+
 ## Common errors
 
 - A `context_profile` fixes the collection's interpretation and grouping.

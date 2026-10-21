@@ -32,16 +32,28 @@ def _plausible_bit_size(value: Any) -> Optional[float]:
 def _known_bit_size(well: "Well") -> np.ndarray:
     """The bit size of every sample in inches, NaN where the well records none.
 
-    The BS curve where it has a value, else the header bit size when it is a
-    hole size in inches (:func:`_plausible_bit_size`). No size is assumed.
+    The BS curve where it has a value, else the size of the bit run that
+    drilled the sample's depth (``header.bit_size_intervals``), else the
+    header bit size, each when it is a hole size in inches
+    (:func:`_plausible_bit_size`). No size is assumed.
     """
     bit_size, _, _ = get_curve_data_depthwise(well, ["BS"])
     if bit_size is None:
         bit_size = np.full(well.n_samples, np.nan)
+    bit_size = np.asarray(bit_size, dtype=float)
+    intervals = getattr(well.header, "bit_size_intervals", None) or []
+    if intervals and well.depth is not None:
+        depth = np.asarray(well.depth, dtype=float)
+        for top, bottom, size in intervals:
+            size = _plausible_bit_size(size)
+            if size is not None:
+                drilled = (depth > top) & (depth <= bottom) & ~np.isfinite(bit_size)
+                bit_size = np.where(drilled, size, bit_size)
+        return bit_size
     header = _plausible_bit_size(getattr(well.header, "bit_size", None))
     if header is not None:
         bit_size = np.where(np.isfinite(bit_size), bit_size, header)
-    return np.asarray(bit_size, dtype=float)
+    return bit_size
 
 
 def generate_washout_flag(

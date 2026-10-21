@@ -929,34 +929,59 @@ def reproduce_costa_context(
     list of ExampleFormatExportResult
         One per context file.
     """
-    from petrophys.reporting.reference_export import (
-        export_reference_json_work_package_by_category_formation_lithology,
-        write_reference_curve_name_mapping,
-    )
-    from petrophys.workflow.dynamic_workflow import _dataset_calculations
+    from petrophys.reporting.reference_export import write_reference_curve_name_mapping
 
     parameters = load_costa_parameters(parameters_file)
-    reference = load_costa_reference_volumes(reference_volumes_file)
-    if input_dir is None:
-        source = Path(str(resources.files("petrophys").joinpath("datasets/costa")))
-    else:
-        source = Path(input_dir)
+    source = _costa_source(input_dir)
     work = Path(work_dir)
-    # One formation from each well's first logged sample, as the package's.
-    tops_file = write_costa_formation_tops(source, work / "costa_formation_tops_whole_well.xlsx")
+    results = _export_costa(
+        source,
+        output_dir,
+        parameters=parameters,
+        reference=load_costa_reference_volumes(reference_volumes_file),
+        well_names=well_names,
+        pattern=pattern,
+        # One formation from each well's first logged sample, as the package's.
+        tops_file=write_costa_formation_tops(source, work / "costa_formation_tops_whole_well.xlsx"),
+        processed_las_dir=work / "processed_las",
+    )
+    write_reference_curve_name_mapping(output_dir)
+    patch_costa_context_notes(output_dir, parameters)
+    return results
+
+
+def _costa_source(input_dir: Optional[str | Path]) -> Path:
+    """The COSTA LAS folder: ``input_dir``, or the copies bundled with petrophys."""
+    if input_dir is None:
+        return Path(str(resources.files("petrophys").joinpath("datasets/costa")))
+    return Path(input_dir)
+
+
+def _export_costa(
+    source: Path,
+    output_dir: str | Path,
+    *,
+    parameters,
+    reference,
+    well_names: Optional[Sequence[str]],
+    pattern: str,
+    **options,
+):
+    """Interpret the COSTA LAS with the package's preparation and calculations."""
+    from petrophys.reporting.reference_export import export_reference_json_work_package_by_category_formation_lithology
+    from petrophys.workflow.dynamic_workflow import _dataset_calculations
 
     with _dataset_calculations("costa"):
         results = export_reference_json_work_package_by_category_formation_lithology(
             input_dir=source,
             output_dir=output_dir,
-            tops_file=tops_file,
             pattern=pattern,
             minimum_group_thickness=_MIN_GROUP_THICKNESS_FT,
             well_names=well_names,
             raw_input_dir=source,
             workflow_config=costa_workflow_config(),
-            processed_las_dir=work / "processed_las",
             prepare_input=_costa_preparation(parameters, reference),
+            **options,
         )
     if not results:
         raise FileNotFoundError(f"No COSTA LAS files matching {pattern!r} in {source}")
@@ -966,6 +991,4 @@ def reproduce_costa_context(
             "COSTA context failed: "
             + "; ".join(f"{Path(item.source_file).stem}: {' | '.join(item.errors)}" for item in failed[:5])
         )
-    write_reference_curve_name_mapping(output_dir)
-    patch_costa_context_notes(output_dir, parameters)
     return results

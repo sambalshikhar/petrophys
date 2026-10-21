@@ -437,7 +437,9 @@ class LASReader:
           converted from the TD unit; ``header.td_source_unit`` is the TD unit
           as written.
         - ``header.bit_size``: bit size in inches, converted from mm, cm or m;
-          ``header.bit_size_source_unit`` is the BS unit as written.
+          ``header.bit_size_source_unit`` is the BS unit as written. Without
+          a BS item, numbered bit runs (BS1, BS2, ... with the depths BSD1,
+          BSD2, ... they drilled) give ``header.bit_size_intervals``.
 
         A TD or BS whose unit is not recognised is left unset (None) with a
         warning; one without a unit is taken to be in the depth unit or in
@@ -666,6 +668,71 @@ class LASReader:
                 well.header.bit_size = None
             else:
                 well.header.bit_size = round(well.header.bit_size * factor, 6)
+        if well.header.bit_size is None:
+            self._set_numbered_bit_sizes(well)
+
+    def _set_numbered_bit_sizes(self, well: "Well") -> None:
+        """Bit sizes of numbered bit runs (BS1, BS2, ...) over the depths each drilled.
+
+        Some service companies write each bit run's size as BS1, BS2, ... and
+        the depth it drilled to as BSD1, BSD2, ... Bit k covers the hole from
+        the previous bit's depth down to BSDk, in ``header.bit_size_intervals``
+        as (top, bottom, inches) in the well's depth unit. A single bit covers
+        the whole well and is also ``header.bit_size``. Several bits without a
+        depth for each cannot be placed and are left unset with a warning.
+        """
+        bits = []
+        for section in (self._las.well, self._las.params):
+            for item in section:
+                match = re.fullmatch(r"BS(\d+)", str(item.mnemonic).strip().upper())
+                size = self._parse_float(item.value) if match else None
+                if size is None:
+                    continue
+                unit = str(item.unit or "").strip()
+                factor = (
+                    _INCHES_PER_UNIT.get(unit.lower().replace(".", "").replace(" ", ""))
+                    if unit else 1.0
+                )
+                if factor is None:
+                    continue
+                depth = self._bit_depth(well, f"BSD{match.group(1)}")
+                bits.append((size * factor, depth, item.mnemonic))
+        if not bits:
+            return
+        if len(bits) == 1:
+            size, depth, _ = bits[0]
+            well.header.bit_size = round(size, 6)
+            bottom = np.inf if depth is None else depth
+            well.header.bit_size_intervals = [(-np.inf, bottom, round(size, 6))]
+            return
+        if any(depth is None for _, depth, _ in bits):
+            warnings.warn(
+                f"{self.filepath.name}: bit sizes {', '.join(name for _, _, name in bits)} lack the "
+                "depths each bit drilled (BSD1, BSD2, ...), so the bit size of each depth is "
+                "unknown and none is used.",
+                UserWarning,
+                stacklevel=4,
+            )
+            return
+        top = -np.inf
+        intervals = []
+        for size, depth, _ in sorted(bits, key=lambda bit: bit[1]):
+            intervals.append((top, depth, round(size, 6)))
+            top = depth
+        well.header.bit_size_intervals = intervals
+
+    def _bit_depth(self, well: "Well", key: str) -> Optional[float]:
+        """Header depth ``key`` in the well's depth unit (a blank unit is that unit), or None."""
+        depth = self._parse_float(self.get_header_value(key))
+        if depth is None:
+            return None
+        unit = self.get_header_unit(key).strip()
+        source = normalize_depth_unit(unit, strict=False) if unit else well.depth_unit
+        if source not in {"m", "ft"} or well.depth_unit not in {"m", "ft"}:
+            return None if unit else depth
+        if source != well.depth_unit:
+            depth = depth * 0.3048 if source == "ft" else depth / 0.3048
+        return depth
 
     def _header_value(self, section: str, item: Any, occurrence: int) -> Any:
         """``item.value``, or its text as written when lasio read a number written with leading zeros."""
