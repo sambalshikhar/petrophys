@@ -2884,6 +2884,68 @@ def _write_context_workflow_las(
     return target
 
 
+def _input_reading_record(file_path: Path, well: "Well") -> dict[str, Any]:
+    """How reading ``file_path`` for a context changed its curves.
+
+    Compares the LAS as written with ``well`` as the context read it: curves
+    renamed to standard mnemonics, unit conversions and value-range screening
+    (``changed``), new names (``created``) and curves set aside
+    (``removed``).
+    """
+    import lasio
+
+    raw = {item.mnemonic: np.asarray(item.data, dtype=float) for item in lasio.read(str(file_path)).curves[1:]}
+    raw_upper = {name.upper(): values for name, values in raw.items()}
+    created, changed = [], []
+    for name in well.curves:
+        values = np.asarray(well.get(name).data, dtype=float)
+        source = raw_upper.get(name.upper())
+        if source is None:
+            created.append(name)
+        elif source.shape != values.shape or not np.array_equal(source, values, equal_nan=True):
+            changed.append(name)
+    present = {name.upper() for name in well.curves}
+    return {
+        "created": created,
+        "changed": changed,
+        "removed": [name for name in raw if name.upper() not in present],
+        "rename_map": dict(well.get_parameter("_rename_map") or {}),
+        "range_screening": {
+            name: {key: well.get(name).metadata.custom["range_screening"].get(key) for key in ("masked", "low", "high")}
+            for name in well.curves
+            if well.get(name).metadata.custom.get("range_screening")
+        },
+    }
+
+
+def context_group_statistics_for_well(group_well: "Well", workflow_result) -> dict[str, dict[str, Any]]:
+    """The statistics of each category file of one context group, as the context computes them.
+
+    ``group_well`` is the group's samples of ``workflow_result.well`` (the
+    interpretation before the context's QC); it is modified as the context
+    modifies it. Per category, in the context's order: the category's
+    analysis, whose derived curves (indicators, gradients, MHI or BVW where
+    the group has none, ...) join the statistics, then the statistics of the
+    group's curves. Returns ``{category: statistics}``.
+    """
+    benchmark = _reproduces_benchmark_context(workflow_result)
+    rules = _context_value_range_rules(workflow_result)
+    apply_value_range_qc(group_well, rules=rules)
+    if not benchmark:
+        _synchronize_post_qc_dependent_curves(group_well)
+    families = None if benchmark else _context_lithology_families(group_well, workflow_result, None)
+    statistics: dict[str, dict[str, Any]] = {}
+    for category_name in CATEGORY_CONTEXT_SPECS:
+        category_result = _category_analysis_result(
+            category_name, group_well, workflow_result, lithology_family=families
+        )
+        extra = category_result.derived_curves
+        _apply_value_range_qc_to_extra_curves(extra, rules)
+        _synchronize_post_qc_dependent_curves(group_well, benchmark=benchmark)
+        statistics[category_name] = _build_reference_statistics(group_well, extra)
+    return statistics
+
+
 def context_checked_well(workflow_result) -> tuple["Well", list[dict[str, Any]]]:
     """The interpreted well as a context computes its statistics from, and how it got there.
 
@@ -8564,9 +8626,9 @@ def export_reference_json_work_package_by_category_formation_lithology(
     ``processed_las_only`` only those LAS and traces are written: no context
     JSON, and one result per well whose ``output_file`` is its LAS.
 
-    ``on_interpreted(file_path, workflow_result, preparatory_steps)`` receives
-    each well's interpretation, the one the context statistics are computed
-    from. With ``processed_las_only`` and no ``processed_las_dir`` nothing is
+    ``on_interpreted(file_path, workflow_result, preparatory_steps, raw_curves)``
+    receives each well's interpretation, the one the context statistics are
+    computed from, and the names of the raw LAS curves. With ``processed_las_only`` and no ``processed_las_dir`` nothing is
     written: the wells are only interpreted.
 
     ``prepare_input(file_path, well)`` runs on each well after it is read and
@@ -8619,6 +8681,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 lithology_domain=lithology_domain,
                 reader_options=reader_options,
             )
+            input_reading = _input_reading_record(file_path, full_well) if on_interpreted is not None else None
             preparation = prepare_input(file_path, full_well) if prepare_input is not None else None
             after_workflow = None
             preparatory_steps = preparation
@@ -8650,16 +8713,29 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 warnings.append(
                     f"Raw LAS not found in {raw_context_dir}; input_logs_present fell back to processed LAS curves."
                 )
+            from petrophys.workflow.dynamic_workflow import _curve_snapshot, _same_curve_values
+
+            before_finalize = _curve_snapshot(workflow_result.well)
             _finalize_export_curves(
                 workflow_result.well,
                 processed_original_curves,
                 # The computed lithology names the groups of a well without input lithology.
                 retain_computed_lithology=not _reproduces_benchmark_context(workflow_result),
             )
+            # What the export finalization wrote and removed, for the step record
+            # of a context-profile interpretation (not written to the context).
+            workflow_result.export_finalization = {
+                "written": [
+                    name for name, curve in workflow_result.well._curves.items()
+                    if name not in before_finalize or not _same_curve_values(before_finalize[name], curve.data)
+                ],
+                "removed": [name for name in before_finalize if workflow_result.well.get(name) is None],
+            }
             if after_workflow is not None:
                 after_workflow(workflow_result.well)
             if on_interpreted is not None:
-                on_interpreted(file_path, workflow_result, preparatory_steps)
+                workflow_result.input_reading = input_reading
+                on_interpreted(file_path, workflow_result, preparatory_steps, raw_original_curves)
                 if processed_las_only and processed_las_dir is None:
                     results.append(
                         ExampleFormatExportResult(

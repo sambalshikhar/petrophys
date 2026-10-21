@@ -1638,10 +1638,16 @@ class StepResult:
     parameters: Dict[str, Any] = field(default_factory=dict)
     decisions: List[str] = field(default_factory=list)
     data: Optional[Dict[str, Any]] = None
+    #: Under a benchmark profile, curves the step also wrote beyond the
+    #: package's own ``output_curves`` list (which those packages' context
+    #: records keep); under ``"current"`` they are in ``output_curves``.
+    also_written: List[str] = field(default_factory=list)
+    #: Curves the step removed from the well.
+    curves_removed: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-safe representation of this workflow step trace."""
-        return {
+        payload = {
             "step": self.step,
             "success": bool(self.success),
             "method": self.method,
@@ -1652,6 +1658,58 @@ class StepResult:
             "message": self.message,
             "data": _json_safe_trace_value(self.data or {}),
         }
+        if self.also_written:
+            payload["also_written"] = list(self.also_written)
+        if self.curves_removed:
+            payload["curves_removed"] = list(self.curves_removed)
+        return payload
+
+
+def _curve_snapshot(well: "Well") -> Dict[str, np.ndarray]:
+    """A copy of every curve's values, to tell which curves a step wrote."""
+    return {name: np.array(curve.data, copy=True) for name, curve in well._curves.items()}
+
+
+def _same_curve_values(old: np.ndarray, new: Any) -> bool:
+    new = np.asarray(new)
+    if old.shape != new.shape:
+        return False
+    try:
+        return bool(np.array_equal(old, new, equal_nan=True))
+    except TypeError:
+        return bool(np.all(old == new))
+
+
+def _account_step_curves(
+    trace: "StepResult",
+    before: Dict[str, np.ndarray],
+    well: "Well",
+    *,
+    benchmark: bool,
+    exact_outputs: bool = False,
+) -> None:
+    """Record on ``trace`` every curve its step created, changed or removed.
+
+    Under ``"current"`` the curves the step wrote but did not list join
+    ``output_curves``; with ``exact_outputs`` (the normalization step) the
+    list becomes exactly the curves it created or changed. Under a benchmark
+    profile ``output_curves`` keeps the package's own list and the others go
+    to ``also_written``.
+    """
+    written = [
+        name for name, curve in well._curves.items()
+        if name not in before or not _same_curve_values(before[name], curve.data)
+    ]
+    trace.curves_removed = [name for name in before if name not in well._curves]
+    if exact_outputs and not benchmark:
+        trace.output_curves = written
+        return
+    listed = {str(curve).upper() for curve in trace.output_curves or []}
+    unlisted = [name for name in written if name.upper() not in listed]
+    if benchmark:
+        trace.also_written = unlisted
+    else:
+        trace.output_curves = [*(trace.output_curves or []), *unlisted]
 
 
 @dataclass
@@ -1849,16 +1907,6 @@ class DynamicWorkflowResult:
             "has_usable_interpretation": self.has_usable_interpretation,
             "lithology_domain": self.lithology_domain,
             **({"context_profile": self.context_profile} if self.context_profile else {}),
-            **(
-                {"preparatory_steps": _json_safe_trace_value(self.preparatory_steps)}
-                if self.preparatory_steps
-                else {}
-            ),
-            **(
-                {"post_workflow_steps": _json_safe_trace_value(self.post_workflow_steps)}
-                if self.post_workflow_steps
-                else {}
-            ),
             "executed_steps": [step.step for step in self.steps_executed],
             "skipped_steps": list(self.steps_skipped),
             "specific_steps_skipped": _json_safe_trace_value(self.specific_steps_skipped),
@@ -3072,7 +3120,9 @@ class DynamicWorkflow:
         self._lithology_resolution = None
         self._input_core_basis = ()
         try:
+            before = _curve_snapshot(well)
             self._prepare_input_context(well)
+            self._account_input_context(before, well)
             self._resolve_lithology_domain(well)
         except (ValueError, FileNotFoundError) as exc:
             if self.config.raise_on_error:
@@ -3089,10 +3139,15 @@ class DynamicWorkflow:
 
             step_name = step_enum.value
             try:
+                before = _curve_snapshot(well)
                 step_trace = step_fn(well)
                 if step_trace is None:
                     step_trace = StepResult(step=step_name, success=True)
                 step_trace.step = step_name
+                _account_step_curves(
+                    step_trace, before, well, benchmark=self._reproducing_benchmark,
+                    exact_outputs=step_enum is WorkflowStep.NORMALIZATION,
+                )
                 # Record a StepResult (same type as run()) for consistent consumers.
                 self._result.steps_executed.append(step_trace)
                 if not step_trace.success:
@@ -3166,7 +3221,12 @@ class DynamicWorkflow:
             and WorkflowStep.NORMALIZATION.value not in self.config.skip_steps
         ):
             try:
-                self._result.steps_executed.append(self._step_normalization(well))
+                before = _curve_snapshot(well)
+                trace = self._step_normalization(well)
+                _account_step_curves(
+                    trace, before, well, benchmark=self._reproducing_benchmark, exact_outputs=True
+                )
+                self._result.steps_executed.append(trace)
                 normalization_done = True
             except Exception as exc:
                 if self.config.raise_on_error or isinstance(exc, Warning):
@@ -3179,7 +3239,9 @@ class DynamicWorkflow:
                 return self._result
 
         try:
+            before = _curve_snapshot(well)
             self._prepare_input_context(well)
+            self._account_input_context(before, well)
             self._resolve_lithology_domain(well)
         except (ValueError, FileNotFoundError) as exc:
             if self.config.raise_on_error:
@@ -3246,10 +3308,15 @@ class DynamicWorkflow:
 
             if can_fn(well):
                 try:
+                    before = _curve_snapshot(well)
                     step_trace = step_fn(well)
                     if step_trace is None:
                         step_trace = StepResult(step=step_name, success=True)
                     step_trace.step = step_name
+                    _account_step_curves(
+                        step_trace, before, well, benchmark=self._reproducing_benchmark,
+                        exact_outputs=step_enum is WorkflowStep.NORMALIZATION,
+                    )
                     self._result.steps_executed.append(step_trace)
                     if not step_trace.success:
                         self._result.errors.append(f"{step_name}: {step_trace.message}")
@@ -3274,6 +3341,12 @@ class DynamicWorkflow:
             self._resolve_pending_lithology(well)
 
         return self._result
+
+    def _account_input_context(self, before: Dict[str, np.ndarray], well: "Well") -> None:
+        """Record on the input_context step the curves it created or changed."""
+        step = next((s for s in reversed(self._result.steps_executed) if s.step == "input_context"), None)
+        if step is not None:
+            _account_step_curves(step, before, well, benchmark=self._reproducing_benchmark)
 
     def _resolve_pending_lithology(self, well: "Well") -> None:
         """Resolve an "auto" lithology from the solver minerals, else the default.
