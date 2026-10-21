@@ -45,6 +45,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
     # curves are the shallow member of the classic DIL-SFL suite.
     "RMED": [
         "ILM",
+        "RILM",
         "AT30",
         "RM",
         "RMED",
@@ -67,6 +68,8 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RSHAL",
         "RSHALLOW",
         "RVSR",
+        "LL3",
+        "RLL3",
     ],
     # Flushed zone Resistivity (RXO)
     "RXO": [
@@ -100,7 +103,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RHOI",
     ],
     # Density Correction (DRHO)
-    "DRHO": ["DRHO", "DCOR", "HDRA", "DENC", "RHOC"],
+    "DRHO": ["DRHO", "DCOR", "HDRA", "DENC", "RHOC", "CORR"],
     # Neutron Porosity (NPHI)
     "NPHI": [
         "NPHI",
@@ -141,7 +144,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
     # Photoelectric Factor (PEF)
     "PEF": ["PE", "PEF", "PEFZ", "PEFL", "PEF8", "PHOTO"],
     # Caliper (CALI)
-    "CALI": ["CALI", "HCAL", "CAL", "CALIPER", "C1", "C2", "HD1_PPC1", "HD2_PPC1"],
+    "CALI": ["CALI", "HCAL", "CAL", "CALIPER", "C1", "C2", "HD1_PPC1", "HD2_PPC1", "CALD", "DCAL", "MCAL"],
     # Gamma Ray (GR)
     "GR": [
         "GR",
@@ -208,6 +211,15 @@ NEUTRON_MATRIX_REFERENCE: Dict[str, str] = {
 
 #: NPHI aliases the benchmark context packages did not have.
 _BENCHMARK_MISSING_NPHI_ALIASES = ("NPHI_LS", "NPSS", "CNSS", "NPHI_SS")
+#: Other aliases the benchmark context packages did not have: the density and
+#: microlog calipers, the density correction CORR, the medium induction RILM
+#: and the shallow laterolog-3.
+_BENCHMARK_MISSING_ALIASES: Dict[str, tuple] = {
+    "CALI": ("CALD", "DCAL", "MCAL"),
+    "DRHO": ("CORR",),
+    "RMED": ("RILM",),
+    "RSHA": ("LL3", "RLL3"),
+}
 
 #: Alias lists the benchmark context packages were computed with, where they
 #: differ from :data:`ALIAS_MAP`: RDEP ranked AT60 before AT90, HCGR was
@@ -222,11 +234,16 @@ _BENCHMARK_ALIAS_MAP: Dict[str, List[str]] = {
     "CGR": [name for name in ALIAS_MAP["CGR"] if name != "HCGR"],
     "RXO": [name for name in ALIAS_MAP["RXO"] if name != "RMIC"],
     "NPHI": [name for name in ALIAS_MAP["NPHI"] if name not in _BENCHMARK_MISSING_NPHI_ALIASES],
+    **{
+        standard: [name for name in ALIAS_MAP[standard] if name not in missing]
+        for standard, missing in _BENCHMARK_MISSING_ALIASES.items()
+    },
 }
 _BENCHMARK_REVERSE_MAP: Dict[str, str] = {
     "HCGR": "GR",
     "RMIC": "RMIC",
     **{name: name for name in _BENCHMARK_MISSING_NPHI_ALIASES},
+    **{name: name for names in _BENCHMARK_MISSING_ALIASES.values() for name in names},
 }
 
 

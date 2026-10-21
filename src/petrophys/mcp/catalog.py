@@ -24,7 +24,11 @@ COLLECTIONS: Dict[str, str] = {
     ),
     "kgs": "Kansas legacy LAS (Morgan No. 1-17), depth in ft",
     "daydream": "Daydream 1 (Australia) processed CMR/NMR summaries, depth in m",
-    "formation_pressure": "Formation-pressure (MDT) stations as LAS, not log suites",
+    "formation_pressure": (
+        "MDT data, not log suites: pressure stations (35/11-13, "
+        "35/11-10; depth-indexed) and raw pretest records (IODP C0009A DLIS "
+        "and LAS copies; time-indexed, read with read_mdt_pretest)"
+    ),
     "epslog": "15/12-20 S core-scanner data (XRF, grain size, strength), not log suites",
 }
 

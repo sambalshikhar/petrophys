@@ -5,7 +5,7 @@ This module provides the Well class which serves as the primary
 container for well log data, header information, and computed results.
 """
 
-from typing import Optional, Union, Dict, List, Any, Iterator
+from typing import Optional, Union, Dict, List, Any, Iterator, Tuple
 import copy
 import warnings
 from pathlib import Path
@@ -81,6 +81,10 @@ class WellHeader:
     bit_size_source_unit : str
         Bit size unit as the source file wrote it (the LAS reader converts
         mm, cm and m to inches)
+    bit_size_intervals : list of (float, float, float)
+        Bit size of each bit run as (top, bottom, inches) in the well's depth
+        unit, the hole each bit drilled (top exclusive, bottom inclusive);
+        empty when the source records no numbered bit runs
     las_well_items : dict
         Other LAS ~Well items (e.g. SRVC, DATE, EKB), mnemonic to
         ``{"unit", "value", "descr"}``, which ``export_las`` writes back
@@ -112,6 +116,7 @@ class WellHeader:
         self.rm_temp: Optional[float] = None  # Temperature at which Rm was measured
         self.bit_size: Optional[float] = None  # Bit size in inches
         self.bit_size_source_unit: str = ""
+        self.bit_size_intervals: List[Tuple[float, float, float]] = []
         self.mud_type: str = ""  # WBM, OBM, etc.
         self.las_well_items: Dict[str, Dict[str, Any]] = {}
         self.custom: Dict[str, Any] = {}

@@ -124,6 +124,7 @@ petrophys = [
     "datasets/epslog/*.json",
     "datasets/epslog/*.md",
     "datasets/formation_pressure/*.las",
+    "datasets/formation_pressure/*.DLIS",
     "datasets/formation_pressure/*.md",
     "datasets/kgs/*.las",
     "datasets/kgs/*.csv",

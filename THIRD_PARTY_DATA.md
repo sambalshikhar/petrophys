@@ -97,23 +97,32 @@ software licence does not relicense these measurements.
 
 ## Formation pressure: 35/11-13 and 35/11-10
 
-Files: `src/petrophys/datasets/formation_pressure/`.
+Files: `src/petrophys/datasets/formation_pressure/35_11_*_mdt.las`.
 
-Originator: **Norsk Hydro**. Source: *Final Well Report, well 35/11-13*,
-NH/OD-B-4522/05 Rev 1, dated 13 December 2005; Norwegian Offshore Directorate
-wellbore ID **5063**. The user supplied the local North Sea Reports copy.
-The bundled LAS is a Petrophys transcription of the report's pressure stations;
-interpreted fluid labels and fit-selection flags are Petrophys additions
-identified separately from the measurements. The data are not relicensed as MIT
-software.
-The supplied copy does not provide a separate redistribution licence. No claim
-of supplier endorsement or independent validation of the reported contact is made.
+Originator: **Norsk Hydro**. MDT pressure stations of well 35/11-13 (run 1A,
+2005; Norwegian Offshore Directorate wellbore ID **5063**) and well 35/11-10
+(runs 1A-2E, June 1997; wellbore ID **3042**), as published by the Norwegian
+Offshore Directorate. Each LAS holds the station depths, formation and mud
+pressures, temperatures (35/11-10), mobility and test quality; no fluid
+interpretation is included. No separate redistribution licence is stated for
+these data, and they are not relicensed as MIT software. No claim of supplier
+endorsement is made.
 
-The second source is Norsk Hydro's *Final Well Report, well 35/11-10*, dated
-12 December 1997 (wellbore ID **3042**), supplied in the same local collection.
-The Fensfjord LAS contains ten station markers digitized from Figure 8.2, not
-values sampled from drawn gradient lines. These derivatives have the same
-attribution and licence qualification stated above.
+## Formation pressure: IODP Hole C0009A MDT pretests
+
+Files: `src/petrophys/datasets/formation_pressure/319-C0009A_MDT_*LTP.DLIS`
+and `c0009a_mdt_*.las`.
+
+Data: Integrated Ocean Drilling Program (IODP) Expedition 319, Hole C0009A,
+acquired by Schlumberger for CDEX/JAMSTEC in July 2009 and published in the
+JAMSTEC CDEX well-logging archive
+(<https://www.jamstec.go.jp/sio7/well-logging/319/C0009A/ORIGINAL/DATA/>).
+The DLIS files are the original archive files, unchanged. Each LAS is a
+Petrophys conversion of the matching DLIS (frame 600T); six channels were kept
+and their values are unchanged. Cite: Saffer, D., McNeill, L., Byrne, T.,
+Araki, E., Toczko, S., Eguchi, N., Takahashi, K., and the Expedition 319
+Scientists, 2010. *Proc. IODP*, 319. doi:10.2204/iodp.proc.319.2010. The data
+are not relicensed as MIT software.
 
 ## GeoLink
 

@@ -26,7 +26,10 @@ from petrophys.evaluation.diagnostics import (
     PorosityAnalysis,
     SaturationAnalysis,
 )
-from petrophys.interpretation.lithology.matrix_inference import interpreted_lithology_code_curve
+from petrophys.interpretation.lithology.matrix_inference import (
+    _recorded_code_curve,
+    interpreted_lithology_code_curve,
+)
 from petrophys.io.las_reader import read_las
 from petrophys.preprocessing.quality.value_ranges import (
     VALUE_RANGE_QC_PARAMETER,
@@ -2834,29 +2837,7 @@ def _write_context_workflow_las(
         relative = Path(file_path.name)
     target = root / relative
     target.parent.mkdir(parents=True, exist_ok=True)
-    benchmark = _reproduces_benchmark_context(workflow_result)
-    checked = copy.deepcopy(workflow_result.well)
-    apply_value_range_qc(checked, rules=_context_value_range_rules(workflow_result))
-    qc_report = list(checked.get_parameter(VALUE_RANGE_QC_PARAMETER, []) or [])
-    dependent = ("BVW", "PHI_NORM", "RQI", "FZI", "PHI_Z")
-    before = {
-        name: np.array(checked.get(name).data, dtype=float)
-        for name in dependent
-        if checked.get(name) is not None
-    }
-    _synchronize_post_qc_dependent_curves(checked, benchmark=benchmark)
-    recomputed = {}
-    for name in dependent:
-        curve = checked.get(name)
-        if curve is None:
-            continue
-        after = np.asarray(curve.data, dtype=float)
-        old = before.get(name)
-        if old is None:
-            recomputed[name] = int(np.isfinite(after).sum())
-        else:
-            same = (old == after) | (np.isnan(old) & np.isnan(after))
-            recomputed[name] = int((~same).sum())
+    checked, post_workflow_steps = context_checked_well(workflow_result)
     precision = {}
     if _context_dataset() == "geolink_train":
         # The GeoLink training package's statistics are those of the curves
@@ -2898,6 +2879,43 @@ def _write_context_workflow_las(
             "The input LAS is an interpretation of source_file; its RESFLAG selects "
             "the SWIRR_APP samples (reuse_input_resflag)."
         )
+    trace["post_workflow_steps"] = post_workflow_steps
+    Path(trace_path).write_text(json.dumps(trace, indent=2, ensure_ascii=False), encoding="utf-8")
+    return target
+
+
+def context_checked_well(workflow_result) -> tuple["Well", list[dict[str, Any]]]:
+    """The interpreted well as a context computes its statistics from, and how it got there.
+
+    A copy of ``workflow_result.well`` gets the context's value-range QC and
+    the recomputation of the curves that depend on its inputs (BVW, PHI_NORM,
+    PHI_Z, RQI, FZI), as every context group does before its statistics.
+    Returns the copy and the trace entries of both steps
+    (``post_workflow_steps``).
+    """
+    benchmark = _reproduces_benchmark_context(workflow_result)
+    checked = copy.deepcopy(workflow_result.well)
+    apply_value_range_qc(checked, rules=_context_value_range_rules(workflow_result))
+    qc_report = list(checked.get_parameter(VALUE_RANGE_QC_PARAMETER, []) or [])
+    dependent = ("BVW", "PHI_NORM", "RQI", "FZI", "PHI_Z")
+    before = {
+        name: np.array(checked.get(name).data, dtype=float)
+        for name in dependent
+        if checked.get(name) is not None
+    }
+    _synchronize_post_qc_dependent_curves(checked, benchmark=benchmark)
+    recomputed = {}
+    for name in dependent:
+        curve = checked.get(name)
+        if curve is None:
+            continue
+        after = np.asarray(curve.data, dtype=float)
+        old = before.get(name)
+        if old is None:
+            recomputed[name] = int(np.isfinite(after).sum())
+        else:
+            same = (old == after) | (np.isnan(old) & np.isnan(after))
+            recomputed[name] = int((~same).sum())
     recompute_text = (
         "BVW = porosity x SW (porosity PHIE_CC, then PHIE, then PHIT; SW, then SWA); "
         "PHI_NORM = porosity/(1-porosity); RQI = 0.0314*sqrt(permeability/porosity) "
@@ -2905,7 +2923,7 @@ def _write_context_workflow_las(
     )
     if benchmark:
         recompute_text += "; without porosity or permeability the workflow's PHI_NORM, RQI and FZI are kept"
-    trace["post_workflow_steps"] = [
+    steps = [
         {
             "step": "value_range_qc",
             "method": "context value-range rules",
@@ -2919,8 +2937,7 @@ def _write_context_workflow_las(
             "samples_changed": recomputed,
         },
     ]
-    Path(trace_path).write_text(json.dumps(trace, indent=2, ensure_ascii=False), encoding="utf-8")
-    return target
+    return checked, steps
 
 
 def _method_label(name: str) -> str:
@@ -3711,6 +3728,8 @@ def _build_lithology_method_notes(
             f"unique lithologies={', '.join(info['unique_lithologies']) if info['unique_lithologies'] else 'none'}."
         ),
     ]
+    if "source" in info:
+        notes.append(_COMPUTED_LITHOLOGY_NOTE)
     if info["nan_count"] or info["sentinel_count"] or not info["has_valid_lithology"]:
         notes.append(
             "LITHOLOGY FALLBACK USED: invalid or missing lithology rows were routed to the generic clean-rock/sandstone-style defaults recorded in constants."
@@ -3794,6 +3813,7 @@ def _compact_lithology_notes(
             f"({info['valid_lithology_percentage']:.0f}%), NaN={info['nan_count']}, "
             f"sentinel={info['sentinel_count']}, unique={unique}."
         ),
+        *([_COMPUTED_LITHOLOGY_NOTE] if "source" in info else []),
         "Lithology fallback: "
         + (
             "generic clean-rock defaults used for invalid/missing rows."
@@ -6629,7 +6649,11 @@ def _context_lithology_curve(well: "Well"):
     selected = (well.get_parameter("_geology_context") or {}).get("selected_lithology_source")
     external = well.get("LITHO_CLASS") if selected == "external" else None
     if external is None:
-        return well.get(interpreted_lithology_code_curve(well))
+        code_curve = well.get(interpreted_lithology_code_curve(well))
+        # Only "current" runs record their code curve; the benchmark profiles keep their groups.
+        if code_curve is None and selected == "computed" and _recorded_code_curve(well)[0]:
+            return _computed_lithology_labels(well)
+        return code_curve
     categories = external.metadata.custom.get("category_labels", {})
     labels = []
     for value in np.asarray(external.data, dtype=object):
@@ -6638,6 +6662,44 @@ def _context_lithology_curve(well: "Well"):
             label = categories.get(value, categories.get(str(value)))
         labels.append(np.nan if label is None else str(label))
     return SimpleNamespace(data=np.asarray(labels, dtype=object), metadata=external.metadata)
+
+
+#: ``metadata.custom["lithology_source"]`` of the lithology the interpretation
+#: computed from the logs, used where a well has no input lithology.
+COMPUTED_LITHOLOGY_SOURCE = "computed"
+
+
+def _computed_lithology_labels(well: "Well"):
+    """The per-sample lithology the interpretation computed (LITHO), as text labels.
+
+    Used when the well has no input lithology (no lithology-code curve and no
+    lithology intervals). Unclassified samples (code 0) are NaN. None when the
+    run wrote no LITHO curve.
+    """
+    from petrophys.interpretation.lithology.lithology_module import LithologyModule
+
+    curve = well.get("LITHO")
+    if curve is None:
+        return None
+    names = {code: name for name, code in LithologyModule.LITHOLOGY_CODES.items() if code != 0}
+    labels = []
+    for value in np.asarray(curve.data, dtype=float):
+        name = names.get(int(round(value))) if np.isfinite(value) else None
+        labels.append(np.nan if name is None else name)
+    metadata = SimpleNamespace(custom={"lithology_source": COMPUTED_LITHOLOGY_SOURCE})
+    return SimpleNamespace(data=np.asarray(labels, dtype=object), metadata=metadata)
+
+
+_COMPUTED_LITHOLOGY_NOTE = (
+    "Lithology source: computed from the logs by the interpretation (LITHO); "
+    "no input lithology was supplied."
+)
+
+
+def _computed_lithology(curve) -> bool:
+    """Whether ``curve`` (from :func:`_context_lithology_curve`) is the computed lithology."""
+    custom = getattr(getattr(curve, "metadata", None), "custom", None) or {}
+    return custom.get("lithology_source") == COMPUTED_LITHOLOGY_SOURCE
 
 
 def _valid_lithology_labels(
@@ -6707,7 +6769,9 @@ def _build_reference_lithology_info(
 
     valid_count = len(valid_labels)
     unique_lithologies = sorted(_ordered_unique(valid_labels))
+    source = {"source": "computed from logs"} if _computed_lithology(curve) else {}
     return {
+        **source,
         "column_present": True,
         "total_rows": total_rows,
         "valid_lithology_count": valid_count,
@@ -6775,6 +6839,9 @@ def _reference_statistics_curve_key(mnemonic: str, well: "Well") -> Optional[str
     if canonical in CORE_ONLY_CONTEXT_CURVES:
         return None
     if upper == "LITHOLOGY_GEOLINK" or upper == interpreted_lithology_code_curve(well):
+        return None
+    if upper == "LITHO" and _recorded_code_curve(well)[0]:
+        # A lithology code; its distribution is reported, not its statistics.
         return None
     if upper == "DCAL" and well.get("CALI") is not None:
         return None
@@ -7235,7 +7302,9 @@ def _build_reference_json_payload(
                 "data_points": depth_info["data_points"],
                 "median_dz": depth_info["median_dz"],
             },
-            "ground_truth_lithology_present": lithology_info["has_valid_lithology"],
+            "ground_truth_lithology_present": (
+                lithology_info["has_valid_lithology"] and "source" not in lithology_info
+            ),
             "core_phi_present": core_phi_used,
             "core_k_present": core_k_used,
             "derived_logs_computed": derived_logs,
@@ -8472,6 +8541,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
     processed_las_dir: Optional[str | Path] = None,
     prepare_input: Optional[Any] = None,
     processed_las_only: bool = False,
+    on_interpreted: Optional[Any] = None,
 ) -> List[ExampleFormatExportResult]:
     """Generate category contexts from well files and optional geology inputs.
 
@@ -8494,6 +8564,11 @@ def export_reference_json_work_package_by_category_formation_lithology(
     ``processed_las_only`` only those LAS and traces are written: no context
     JSON, and one result per well whose ``output_file`` is its LAS.
 
+    ``on_interpreted(file_path, workflow_result, preparatory_steps)`` receives
+    each well's interpretation, the one the context statistics are computed
+    from. With ``processed_las_only`` and no ``processed_las_dir`` nothing is
+    written: the wells are only interpreted.
+
     ``prepare_input(file_path, well)`` runs on each well after it is read and
     before the workflow; it may add input curves and returns the trace entries
     of what it computed (a list, recorded as ``preparatory_steps``), or a
@@ -8512,7 +8587,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
     """
     from petrophys.workflow.zoned_batch import _finalize_export_curves
 
-    if processed_las_only and processed_las_dir is None:
+    if processed_las_only and processed_las_dir is None and on_interpreted is None:
         raise ValueError("processed_las_only requires processed_las_dir")
     input_path = Path(input_dir)
     output_path = Path(output_dir)
@@ -8575,9 +8650,27 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 warnings.append(
                     f"Raw LAS not found in {raw_context_dir}; input_logs_present fell back to processed LAS curves."
                 )
-            _finalize_export_curves(workflow_result.well, processed_original_curves)
+            _finalize_export_curves(
+                workflow_result.well,
+                processed_original_curves,
+                # The computed lithology names the groups of a well without input lithology.
+                retain_computed_lithology=not _reproduces_benchmark_context(workflow_result),
+            )
             if after_workflow is not None:
                 after_workflow(workflow_result.well)
+            if on_interpreted is not None:
+                on_interpreted(file_path, workflow_result, preparatory_steps)
+                if processed_las_only and processed_las_dir is None:
+                    results.append(
+                        ExampleFormatExportResult(
+                            source_file=str(file_path),
+                            output_file="",
+                            success=not errors,
+                            warnings=warnings,
+                            errors=errors,
+                        )
+                    )
+                    continue
             if processed_las_dir is not None:
                 raw_source = (
                     raw_context_dir / file_path.name

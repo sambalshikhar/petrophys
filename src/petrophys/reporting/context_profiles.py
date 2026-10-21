@@ -261,10 +261,122 @@ def export_context_profile(
     )
 
 
+def interpret_with_context_profile(
+    file_path: str | Path,
+    context_profile: str,
+    *,
+    tops_file: Optional[str | Path] = None,
+):
+    """Interpret one well of a context package as the package's context interprets it.
+
+    The well's raw LAS goes through its profile's preparation and
+    calculations, as :func:`export_context_profile` runs them, so the
+    statistics of the returned curves over a context group's depths are that
+    group's context statistics. Nothing is written.
+
+    Parameters
+    ----------
+    file_path : str or Path
+        The well's raw LAS file from the package's delivery (for COSTA, e.g.
+        the bundled copy ``petrophys.sample("HW-10")``).
+    context_profile : str
+        ``"geolink"``, ``"geolink_train"``, ``"costa"`` or ``"danish"`` (or
+        their ``_v1`` names). The well must belong to the profile's package.
+    tops_file : str or Path, optional
+        Required by the Danish profile: its tops workbook, which supplies the
+        lithology of wells without a lithology log. The other profiles' tops
+        only group the context.
+
+    Returns
+    -------
+    DynamicWorkflowResult
+        The interpreted well (``result.well``) after the context's value-range
+        QC and dependent-curve recomputation, with the trace of the context's
+        interpretation; ``result.context_profile`` names the profile,
+        ``result.preparatory_steps`` records the profile's preparatory step
+        and ``result.post_workflow_steps`` the QC and recomputation.
+    """
+    import tempfile
+
+    from petrophys._internal.benchmark import historical_benchmark
+
+    profile = get_context_profile(context_profile)
+    path = Path(file_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"No LAS file {path}")
+    if path.suffix.lower() != ".las":
+        raise ValueError(f"Context profile {profile.name} interprets the package's LAS files, got {path.name}")
+    if _selector(path.stem) not in {_selector(name) for name in profile.well_names}:
+        raise ValueError(
+            f"{path.stem} is not a well of context profile {profile.name}; its calculations are specific "
+            "to the package's wells."
+        )
+    if profile.name == "danish_v1" and tops_file is None:
+        raise ValueError("Context profile danish_v1 requires tops_file (the Danish tops workbook)")
+
+    from petrophys.reporting.reference_export import context_checked_well
+
+    captured: dict = {}
+
+    def keep(_file_path, workflow_result, preparatory_steps):
+        # The context's value-range QC and dependent-curve recomputation, as
+        # every context group gets them before its statistics, under the
+        # profile's own rules (applied while its calculations are active).
+        checked, post_workflow_steps = context_checked_well(workflow_result)
+        captured.update(run=workflow_result, well=checked, steps=preparatory_steps, post=post_workflow_steps)
+
+    options = dict(
+        well_names=[path.stem],
+        pattern=path.name,
+        processed_las_dir=None,
+        processed_las_only=True,
+        on_interpreted=keep,
+    )
+    with historical_benchmark(), tempfile.TemporaryDirectory(prefix="petrophys-profile-") as unused_output:
+        if profile.name == "costa_v1":
+            from petrophys.reporting._costa_context import (
+                _export_costa,
+                load_costa_parameters,
+                load_costa_reference_volumes,
+            )
+
+            _export_costa(
+                path.parent,
+                unused_output,
+                parameters=load_costa_parameters(),
+                reference=load_costa_reference_volumes(),
+                **options,
+            )
+        elif profile.name == "geolink_train_v1":
+            from petrophys.reporting._geolink_train_context import _export_geolink_train
+
+            _export_geolink_train(path.parent, unused_output, **options)
+        elif profile.name == "geolink_v1":
+            from petrophys.reporting._geolink_context import _export_geolink
+
+            _export_geolink(path.parent, unused_output, **options)
+        else:
+            from petrophys.reporting._danish_context import _export_danish, read_danish_tops
+
+            _export_danish(path.parent, unused_output, tops=read_danish_tops(tops_file), **options)
+
+    run = captured["run"]
+    result = run.base_result
+    result.well = captured["well"]
+    for warning in [*run.warnings, *(w for zone in run.zone_results for w in zone.warnings)]:
+        if warning not in result.warnings:
+            result.warnings.append(warning)
+    result.context_profile = profile.name
+    result.preparatory_steps = list(captured["steps"] or [])
+    result.post_workflow_steps = captured["post"]
+    return result
+
+
 __all__ = [
     "ContextProfile",
     "describe_context_profile",
     "export_context_profile",
+    "interpret_with_context_profile",
     "get_context_profile",
     "identify_context_profile",
     "list_context_profiles",

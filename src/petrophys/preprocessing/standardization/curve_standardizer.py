@@ -336,7 +336,59 @@ def _screen_standard_curve_values(
         curve._data = data
     elif not np.array_equal(curve.data, data):
         curve._data = data
+    if name in RESISTIVITY_CURVES and not reproducing_benchmark():
+        _screen_resistivity_ceiling(curve)
     return curve
+
+
+#: A resistivity whose maximum is at least this (ohm.m) and repeats in at least
+#: RESISTIVITY_CEILING_MIN_SAMPLES samples is read as a ceiling, not a reading.
+RESISTIVITY_CEILING_MIN_OHMM = 1000.0
+RESISTIVITY_CEILING_MIN_SAMPLES = 3
+
+
+def _screen_resistivity_ceiling(curve: "Curve") -> None:
+    """Mask the samples of a resistivity curve that sit at a ceiling value.
+
+    A tool saturated at its upper limit, or a resistivity computed as
+    1000/conductivity and capped where the conductivity is zero, writes the
+    same maximum value at every such sample (for example 100000 ohm.m). Those
+    samples carry no resistivity. They are set to NaN and recorded in
+    ``curve.metadata.custom["ceiling_screening"]``, with a
+    :class:`~petrophys.exceptions.DataQualityWarning`.
+    """
+    data = np.asarray(curve.data, dtype=float)
+    finite = data[np.isfinite(data)]
+    if finite.size == 0:
+        return
+    ceiling = float(finite.max())
+    at_ceiling = data == ceiling
+    masked = int(np.count_nonzero(at_ceiling))
+    if ceiling < RESISTIVITY_CEILING_MIN_OHMM or masked < RESISTIVITY_CEILING_MIN_SAMPLES:
+        return
+    data = data.copy()
+    data[at_ceiling] = np.nan
+    curve._data = data
+    curve.metadata.custom["ceiling_screening"] = {
+        "value": ceiling,
+        "unit": curve.unit,
+        "masked": masked,
+        "finite": int(finite.size),
+    }
+    warnings.warn(
+        _ceiling_screening_message(curve.mnemonic, curve.metadata.custom["ceiling_screening"]),
+        DataQualityWarning,
+        stacklevel=4,
+    )
+
+
+def _ceiling_screening_message(mnemonic: str, report: Dict[str, Any]) -> str:
+    """Warning text for a resistivity curve whose ceiling samples were removed."""
+    return (
+        f"{mnemonic}: {report['masked']} of {report['finite']} samples sit at the curve's "
+        f"maximum {report['value']:g} {report['unit'] or 'ohm.m'}, a tool or computation "
+        "ceiling rather than a reading, and were removed."
+    )
 
 
 def _standard_conversion_factor(unit: str, standard_unit: str, standard_name: str) -> Optional[float]:

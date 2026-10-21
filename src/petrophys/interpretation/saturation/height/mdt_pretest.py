@@ -256,19 +256,57 @@ def pick_mdt_pressure(time, pressure, *, depth=None, time_unit="s",
     return output(flags, cycles, len(cycles)-1 if not flags else None, **baseline)
 
 
+def _read_dlis_pretest(path, frame_name, pressure_column):
+    """Scalar channels, units and index name of the DLIS time frame holding the pressure."""
+    from petrophys.io.dlis_reader import DLISReader, _clean_numeric
+
+    with DLISReader(path) as reader:
+        frames = [f for f in reader.active_file.frames
+                  if frame_name is None or f.name == frame_name]
+        if frame_name is None:
+            frames = [f for f in frames if str(f.index_type or "").upper() == "TIME"
+                      or (f.channels and f.channels[0].name.upper() == "TIME")]
+            if pressure_column is not None:
+                frames = [f for f in frames if any(
+                    c.name.upper() == str(pressure_column).upper() for c in f.channels)]
+        if len(frames) != 1:
+            names = [f.name for f in frames] or [f.name for f in reader.active_file.frames]
+            raise ValueError(f"Specify frame_name (and pressure_column); frames: {names}")
+        frame = frames[0]
+        curves = frame.curves()
+        data, units = {}, {}
+        for channel in frame.channels:
+            values = curves[channel.name]
+            if values.ndim != 1 or channel.name in data:
+                continue
+            values = _clean_numeric(np.asarray(values, dtype=float))
+            unit = str(channel.units or "").strip()
+            if unit.lower() == "0.1 in":
+                values, unit = values / 120.0, "ft"
+            data[channel.name] = values
+            units[channel.name] = unit
+        index = frame.channels[0].name
+    return pd.DataFrame(data), units, index
+
+
 def read_mdt_pretest(source, *, time_column=None, pressure_column=None,
                      depth_column=None, time_unit=None, pressure_unit=None,
-                     depth_unit=None, depth_reference="MD", csv_kwargs=None):
-    """Read one raw MDT pretest from LAS/CSV, lasio.LASFile or DataFrame.
+                     depth_unit=None, depth_reference="MD", csv_kwargs=None,
+                     frame_name=None):
+    """Read one raw MDT pretest from LAS/CSV/DLIS, lasio.LASFile or DataFrame.
 
     The inspected native schema TIME/PQQP1/PQDVP1 is recognized. Custom columns
     are configurable; ambiguous pressure channels require explicit selection.
-    Units come from LAS headers or explicit arguments/CSV names (TIME_S,
+    Units come from LAS/DLIS headers or explicit arguments/CSV names (TIME_S,
     PRES_BAR, DEPTH_M, etc.). Probe depth defaults to MD, never assumed TVD.
+    A DLIS file is read from its time-indexed frame that holds the pressure
+    channel (``frame_name`` selects one explicitly); DLIS depth in 0.1 in is
+    converted to ft. DLIS input needs the ``dlis`` extra.
     """
     import lasio
 
     las = None
+    units = {}
     label = "in-memory pretest"
     if isinstance(source, pd.DataFrame):
         frame = source.copy()
@@ -282,10 +320,16 @@ def read_mdt_pretest(source, *, time_column=None, pressure_column=None,
                 las = lasio.read(str(path))
             elif path.suffix.lower() == ".csv":
                 frame = pd.read_csv(path, **(csv_kwargs or {}))
+            elif path.suffix.lower() == ".dlis":
+                frame, units, index = _read_dlis_pretest(path, frame_name,
+                                                         pressure_column)
+                if time_column is None:
+                    time_column = index
             else:
-                raise ValueError("Supply a LAS/CSV path, LASFile or DataFrame")
+                raise ValueError("Supply a LAS/CSV/DLIS path, LASFile or DataFrame")
         if las is not None:
             frame = las.df().reset_index()
+            units = {c.mnemonic: c.unit for c in las.curves}
     columns = {str(c).upper(): c for c in frame.columns}
     if len(columns) != len(frame.columns):
         raise ValueError("Column names must be unique (case insensitive)")
@@ -305,14 +349,14 @@ def read_mdt_pretest(source, *, time_column=None, pressure_column=None,
     tc = choose(time_column, ["TIME", "TIME_S", "TIME_MS", "TIME_MIN", "ETIM"], "time")
     pc = choose(pressure_column, ["PQQP1", "PRES", "PRESSURE", "PRES_BAR", "PRES_PSI",
                                  "PRES_KPA", "PRES_MPA"], "pressure")
-    dc = choose(depth_column, ["PQDVP1", "DEPTH", "DEPT", "DEPTH_M", "DEPTH_FT"], "depth", True)
+    dc = choose(depth_column, ["PQDVP1", "TDEP", "DEPTH", "DEPT", "DEPTH_M", "DEPTH_FT"], "depth", True)
     aliases = {"s": "s", "sec": "s", "ms": "ms", "min": "min", "m": "m",
                "ft": "ft", "psi": "psi", "bar": "bar", "kpa": "kPa", "mpa": "MPa"}
 
     def unit(explicit, col, valid):
         text = explicit
-        if text is None and las is not None and col is not None:
-            text = las.curves[col].unit
+        if text is None and col is not None and units.get(col):
+            text = units[col]
         if text is None and col is not None:
             text = str(col).rsplit("_", 1)[-1]
         value = aliases.get(str(text).strip().lower())

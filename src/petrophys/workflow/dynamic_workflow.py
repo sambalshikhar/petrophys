@@ -1076,6 +1076,14 @@ _MUD_WATERS = ("fresh", "salt")
 _LITHOLOGY_FAMILIES = ("auto", "clastic", "carbonate", "evaporite")
 #: ``lithology_domain`` when neither it nor the deprecated alias is set.
 _DEFAULT_LITHOLOGY_DOMAIN = "clastic"
+#: Logged vendor density and sonic porosities, in order of preference, that
+#: PHID and PHIS take where their values are in :data:`_POROSITY_RANGE`.
+_VENDOR_DENSITY_POROSITY = ("DPOR", "DPHI", "DPHZ", "PORD")
+_VENDOR_SONIC_POROSITY = ("SPOR", "SPHI", "PORS")
+#: Porosity range (v/v) of the computed PHID and PHIS, which a vendor value must lie in.
+_POROSITY_RANGE = (0.0, 0.5)
+_PERCENT_UNITS = {"%", "pu", "p.u.", "percent", "pct"}
+_FRACTION_UNITS = {"v/v", "frac", "fraction", "dec", "decimal", "m3/m3", "ft3/ft3"}
 _LITHOLOGY_SOURCES = ("auto", "external", "vendor", "computed", "config")
 _HC_TYPES = ("oil", "gas")
 _SWIRR_FLAG_PHI_CL = ("workflow", "all_shale_phit")
@@ -1668,6 +1676,14 @@ class DynamicWorkflowResult:
     _benchmark_calculations: Optional[str] = field(
         default=None, init=False, repr=False, compare=False
     )
+    #: The context profile whose context interpretation this is
+    #: (``petrophys.interpret(..., context_profile=...)``), else None.
+    context_profile: Optional[str] = None
+    #: Trace entries of the context profile's preparatory step.
+    preparatory_steps: List[Dict[str, Any]] = field(default_factory=list)
+    #: Trace entries of the context's value-range QC and dependent-curve
+    #: recomputation, applied to ``well`` after the workflow.
+    post_workflow_steps: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def has_usable_interpretation(self) -> bool:
@@ -1832,6 +1848,17 @@ class DynamicWorkflowResult:
             "status": self.status,
             "has_usable_interpretation": self.has_usable_interpretation,
             "lithology_domain": self.lithology_domain,
+            **({"context_profile": self.context_profile} if self.context_profile else {}),
+            **(
+                {"preparatory_steps": _json_safe_trace_value(self.preparatory_steps)}
+                if self.preparatory_steps
+                else {}
+            ),
+            **(
+                {"post_workflow_steps": _json_safe_trace_value(self.post_workflow_steps)}
+                if self.post_workflow_steps
+                else {}
+            ),
             "executed_steps": [step.step for step in self.steps_executed],
             "skipped_steps": list(self.steps_skipped),
             "specific_steps_skipped": _json_safe_trace_value(self.specific_steps_skipped),
@@ -3490,6 +3517,7 @@ class DynamicWorkflow:
         from petrophys.preprocessing.standardization.curve_standardizer import (
             CURVE_PLAUSIBLE_RANGES,
             RANGE_SCREENING_WARNING_FRACTION,
+            _ceiling_screening_message,
             _range_screening_message,
         )
         from petrophys.preprocessing.standardization.unit_converter import benchmark_unit_table
@@ -3546,6 +3574,16 @@ class DynamicWorkflow:
                 if item["hint"]:
                     message += f"; {item['hint']}, check the unit label {item['source_unit']!r}"
                 self._result.warnings.append(message + ".")
+        ceiling_screening = {
+            name: dict(curve.metadata.custom["ceiling_screening"])
+            for name in well.curves
+            for curve in [well.get(name)]
+            if "ceiling_screening" in curve.metadata.custom
+            # A working alias copies its source curve's record.
+            and "working_alias_source" not in curve.metadata.custom
+        }
+        for name, item in ceiling_screening.items():
+            self._result.warnings.append(_ceiling_screening_message(name, item))
 
         return StepResult(
             step="normalization",
@@ -3566,6 +3604,7 @@ class DynamicWorkflow:
                     if "core_saturation_normalization" in curve.metadata.custom
                 },
                 "range_screening": range_screening,
+                **({"ceiling_screening": ceiling_screening} if ceiling_screening else {}),
             },
             decisions=[
                 "Standardized curve units, nulls, and plausible ranges before routing",
@@ -4000,8 +4039,11 @@ class DynamicWorkflow:
         assessed = caliper_test | has_drho | np.asarray(flags["large_hole"], dtype=bool)
 
         unique_values = sorted({float(value) for value in np.round(bit_size[known], 4)})
+        header_source = (
+            "well_header_bit_runs" if getattr(well.header, "bit_size_intervals", None) else "well_header"
+        )
         if not from_curve.any():
-            source = "well_header" if known.any() else "none"
+            source = header_source if known.any() else "none"
         elif (known & ~from_curve).any():
             source = "BS_curve_and_well_header"
         else:
@@ -6290,6 +6332,63 @@ class DynamicWorkflow:
             },
         }
 
+    def _prefer_vendor_porosity(
+        self,
+        well: "Well",
+        name: str,
+        computed: Optional[np.ndarray],
+        vendor_names: Sequence[str],
+        description: str,
+        inputs: List[str],
+        outputs: List[str],
+        decisions: List[str],
+    ) -> Optional[np.ndarray]:
+        """``name`` from a logged vendor porosity where it is in range, else ``computed``.
+
+        The first of ``vendor_names`` on the well is read in v/v (a percent
+        label, or values with a median above 1, are divided by 100). Its
+        samples within :data:`_POROSITY_RANGE` replace the computed porosity;
+        the computed value stays elsewhere. Returns the porosity used.
+        """
+        vendor_name = next((n for n in vendor_names if well.get(n) is not None), None)
+        if vendor_name is None:
+            return computed
+        curve = well.get(vendor_name)
+        values = np.asarray(curve.data, dtype=float).copy()
+        values[values <= -900.0] = np.nan
+        unit = str(curve.unit or "").strip().lower()
+        finite = values[np.isfinite(values)]
+        percent = unit in _PERCENT_UNITS or (
+            unit not in _FRACTION_UNITS and finite.size and float(np.median(finite)) > 1.0
+        )
+        if percent:
+            values = values / 100.0
+        low, high = _POROSITY_RANGE
+        valid = np.isfinite(values) & (values >= low) & (values <= high)
+        if not valid.any():
+            decisions.append(
+                f"{name}: the logged {vendor_name} has no sample within {low:g}-{high:g} v/v; "
+                f"{name} is computed"
+            )
+            return computed
+        base = (
+            np.full(well.n_samples, np.nan)
+            if computed is None
+            else np.asarray(computed, dtype=float)
+        )
+        merged = np.where(valid, values, base)
+        well.add_curve(name, merged, "v/v", f"{description} ({vendor_name} where in range)")
+        if name not in outputs:
+            outputs.append(name)
+        inputs.append(vendor_name)
+        n_vendor = int(np.count_nonzero(valid))
+        n_computed = int(np.count_nonzero(~valid & np.isfinite(base)))
+        decisions.append(
+            f"{name} = {vendor_name}{' / 100' if percent else ''} (logged {description.lower()}) at "
+            f"{n_vendor} samples within {low:g}-{high:g} v/v; computed at {n_computed} other samples"
+        )
+        return merged
+
     def _step_porosity_refinement(self, well: "Well") -> StepResult:
         self._lithology_log = None
         self._lithology_source = "config"
@@ -6436,6 +6535,16 @@ class DynamicWorkflow:
             phis = existing_phis_curve.data
             inputs.append("PHIS")
             decisions.append("PHIS reused from existing well curve")
+
+        if not self._reproducing_benchmark:
+            # A logged vendor density or sonic porosity takes precedence where
+            # its value is a porosity the workflow would accept.
+            phid = self._prefer_vendor_porosity(
+                well, "PHID", phid, _VENDOR_DENSITY_POROSITY, "Density Porosity", inputs, outputs, decisions
+            )
+            phis = self._prefer_vendor_porosity(
+                well, "PHIS", phis, _VENDOR_SONIC_POROSITY, "Sonic Porosity", inputs, outputs, decisions
+            )
 
         if phid is not None and phin is not None:
             gas_method = self._crossover_gas_method

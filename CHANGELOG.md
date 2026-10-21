@@ -69,6 +69,15 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
 
 ### Benchmark context packages
 
+- `petrophys.interpret(path, context_profile=...)` interprets one well of
+  the GeoLink, GeoLink training, COSTA or Danish package from its raw LAS
+  exactly as the package's context does: the profile's preparation and
+  calculations, then the context's value-range QC and dependent-curve
+  recomputation. The statistics of `result.well` over a context group's
+  depths are that group's statistics. The Danish profile also takes
+  `tops_file`. The same is available as
+  `petrophys.reporting.context_profiles.interpret_with_context_profile`.
+
 - The published GeoLink, COSTA and Danish context packages are computed by
   context profiles, `geolink_v1`, `costa_v1` and `danish_v1` (aliases
   `geolink`, `costa`, `danish`), each running its package's own pipeline from
@@ -166,6 +175,21 @@ wherever the package used the function.
   implausible values are removed with a `DataQualityWarning`. The screening
   also removes compressional slowness below 38.5 us/ft, faster than any
   rock matrix, and SP beyond +/-500 mV.
+- A resistivity curve whose maximum of 1000 ohm.m or more repeats in three or
+  more samples, such as a tool saturated at 2000 ohm.m or a 1000/conductivity
+  resistivity capped at 100000 ohm.m where the conductivity reads zero, has
+  those ceiling samples removed, with a `DataQualityWarning`. The
+  normalization step records them under `ceiling_screening`.
+- More legacy mnemonics are recognized: the density and microlog calipers
+  CALD, DCAL and MCAL (CALI), the density correction CORR (DRHO), the medium
+  induction RILM (RMED) and the shallow laterolog LL3/RLL3 (RSHA).
+- A logged vendor density porosity (DPOR, DPHI, DPHZ, PORD) or sonic porosity
+  (SPOR, SPHI, PORS) gives PHID or PHIS wherever its value, in v/v or
+  converted from percent, lies within 0-0.5; the computed porosity fills the
+  other samples. The porosity step records how many samples each came from.
+- A LAS header without BS takes its bit sizes from numbered bit runs (BS1,
+  BS2, ...), each over the depths it drilled (BSD1, BSD2, ...); bad hole
+  compares the caliper with the bit of each depth.
 - TEMP and TMPC curves are read in the unit their label gives, and
   `standardize_curves` converts a degC or K temperature curve to F and
   screens it on its own scale.
@@ -267,6 +291,12 @@ wherever the package used the function.
 - GeoLink code 10 ("Porous Limestone") takes limestone endpoints and code 26
   ("Gap", no lithology recorded) no lithology group; context exports name
   them so.
+- A context package of a well without input lithology (no lithology-code
+  log and no lithology intervals) groups each formation by the lithology the
+  interpretation computed (LITHO), bed by bed; beds of the minimum group
+  thickness or less are left out, as for input lithology. The context records
+  the lithology as computed from the logs, not as ground truth, and reports
+  its distribution rather than LITHO statistics.
 - In neutron-density crossover (PHID > PHIN + 0.05), PHIT is the
   root-mean-square of PHID and PHIN (Gaymard and Poupon, 1968) only with
   `hc_type="gas"`; in oil wells it is the density porosity.
@@ -618,11 +648,12 @@ wherever the package used the function.
   only with clay porosity from the mean PHIT of all shale-lithology samples,
   as the eval package's main run computed PHIE. The trace records the rule
   and its phi_cl.
-- Raw MDT pretest pressure picking through `read_mdt_pretest` and
-  `pick_mdt_pressure`, configurable buildup QC, review flags, and a library
-  plot of selected windows. `formation_pressures_from_mdt` passes accepted
-  picks to station interpretation with explicit TVD metadata. Tutorial 15
-  verifies the picker against 35 native C0020A LAS traces and their report.
+- Raw MDT pretest pressure picking through `read_mdt_pretest` (DLIS, LAS,
+  CSV or DataFrame) and `pick_mdt_pressure`, configurable buildup QC, review
+  flags, and a library plot of selected windows. `formation_pressures_from_mdt`
+  passes accepted picks to station interpretation with explicit TVD metadata.
+  Three original MDT pretest DLIS files from IODP Hole C0009A are bundled with
+  LAS copies.
 - Unlabeled station-pressure contact inference through `infer_contacts`,
   exposing competing fluid hypotheses and unresolved contacts, alongside the
   labeled FWL fit.
