@@ -43,7 +43,7 @@ print("30/6-5 interpreted:", result.status, "|", len(result.steps_executed), "st
 | --- | --- |
 | Lithology domain | The mineral model for the whole run: `clastic`, `carbonate`, `evaporite` or `auto` (`lithology_domain`). Not a per-depth label. |
 | Lithology intervals | Optional per-depth rock labels from a table. They override labels in the LAS and from the mineral solve. |
-| Lithology code curve | A per-sample curve of lithology codes in the LAS: the curve named by `lithology_curve`, else `LITHOLOGY_GEOLINK`, else a curve under another lithology-code name such as `LITHOLOGY` or `FACIES`. Its codes are decoded with the GeoLink/Kingdom code table; see {doc}`input_templates`. |
+| Lithology code curve | A per-sample curve of lithology codes in the LAS: the curve named by `lithology_curve`, else `LITHOLOGY_GEOLINK`, else a curve under another lithology-code name such as `LITHOLOGY` or `FACIES`. Its codes are decoded with the GeoLink/Kingdom code table, or with a user codebook passed as `lithology_codes`; see {doc}`input_templates`. |
 | Formations | Optional named depth intervals (groups, formations, members) for summaries, plots and core calibration. |
 | Rw | Formation-water resistivity in ohm.m, at a stated temperature (`rw_meas_temp_f`). The workflow corrects it to formation temperature. |
 | Cutoffs | Limits on clay volume, porosity and water saturation (`vcl_cutoff`, `phie_cutoff`, `sw_cutoff`). Left unset, each sample takes the standard of its lithology family, clastic or carbonate. |

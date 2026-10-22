@@ -16,7 +16,10 @@ from petrophys.version import __version__
 
 CONTEXT_SCHEMA_VERSION = "1.0"
 DEFAULT_MAX_BYTES = 1_000_000
-DEFAULT_MAX_TOTAL_BYTES = 50_000_000
+#: No limit on a package's total size by default: a package holds one file per
+#: group and category (the published GeoLink package is about 740 MB); each
+#: file is held to ``max_bytes``.
+DEFAULT_MAX_TOTAL_BYTES: Optional[int] = None
 
 
 class ContextSizeError(ValueError):
@@ -163,7 +166,7 @@ def export_context(
     *,
     layout: str = "well",
     max_bytes: int = DEFAULT_MAX_BYTES,
-    max_total_bytes: int = DEFAULT_MAX_TOTAL_BYTES,
+    max_total_bytes: Optional[int] = DEFAULT_MAX_TOTAL_BYTES,
     overwrite: bool = False,
     context_profile: Optional[str] = None,
     **options: Any,
@@ -196,7 +199,8 @@ def export_context(
     only the context JSON is written to ``output_path``.
     """
     _validate_limit(max_bytes, "max_bytes")
-    _validate_limit(max_total_bytes, "max_total_bytes")
+    if max_total_bytes is not None:
+        _validate_limit(max_total_bytes, "max_total_bytes")
     output = Path(output_path)
     if layout == "well":
         if context_profile is not None:
@@ -318,7 +322,7 @@ def export_context(
                         "no package was published"
                     )
             total += path.stat().st_size
-            if total > max_total_bytes:
+            if max_total_bytes is not None and total > max_total_bytes:
                 raise ContextSizeError(
                     f"Package exceeds max_total_bytes={max_total_bytes}; "
                     "no package was published"

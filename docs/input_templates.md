@@ -159,6 +159,7 @@ lithology
 | --- | --- |
 | Required columns | `top`, `bottom`, `lithology` (aliases `from`, `to`, `base`, `lith`, `rock`, `rocktype`) |
 | Rock names | Kept as written; known names get the plot's colours and patterns |
+| Lithology group | Read from the name's main rock word: abbreviations (`Sst`, `SH`, `LST`, `DOL`, `ANH`), modifiers (`shaly sandstone`, `argillaceous limestone`, `Sandstone, calcareous`), carbonate textures, coal and igneous names. Mixed names (`sand/shale`, `sandstone and shale`) and unrecognized names get no group, with a warning listing them |
 | Overlaps, zero or reversed intervals, empty names | Error naming the row |
 | Gaps | Left unfilled |
 | Mixtures (several percentages at one depth) | Not accepted; keep them as separate data |
@@ -177,8 +178,13 @@ whole numbers from 0 to 99 with at most 50 distinct values, and half or more of
 the samples GeoLink codes. Other curves whose names contain LITH or FACIES are
 not read. Whatever the curve is called, its codes are decoded with the
 GeoLink/Kingdom code table, and a warning says so for a curve other than
-`LITHOLOGY_GEOLINK`. `pp.interpret` takes no codebook: a codebook names the
-codes in plots and context. The "geolink" calculation profile
+`LITHOLOGY_GEOLINK`. When the curve holds other codes, pass its codebook as
+the `lithology_codes` setting, most simply a CSV or Excel file of code and
+rock name: `pp.interpret(well, lithology_codes="my_codes.xlsx")`. A mapping
+`{1: "Shale", 2: "Sst"}` or a DataFrame also works. Each code's group then
+comes from its rock name, as for lithology intervals, and a warning lists
+codes whose name is no recognized rock. The
+"geolink" calculation profile
 ({ref}`calculation profiles <calculation-profiles>`) keeps the eval package's
 search unless `lithology_curve` is set.
 
