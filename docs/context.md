@@ -406,7 +406,7 @@ matches the intended interval and cutoffs.
 | Single-well schema | `1.0`: `schema_version`, `petrophys_version`, `context_kind`, `well`, `interpretation`, `geology`, and `include_raw_traces_in_context`, always `false` |
 | Missing numbers | JSON `null`, never NaN |
 | `max_bytes` | 1,000,000 UTF-8 bytes per JSON document |
-| `max_total_bytes` | 50,000,000 bytes per package, ancillary files included |
+| `max_total_bytes` | No limit by default; set it to cap a package's total size, ancillary files included |
 | Too large | raises {class}`pp.ContextSizeError <petrophys.reporting.context.ContextSizeError>`; nothing is truncated |
 | Existing package folder | never overwritten |
 | Failed package run | staged and validated first, so no partial folder is left |

@@ -534,7 +534,7 @@ def calculate_temperature_profile(
             temp_unit=surface_temp_unit,
             source="specified_gradient",
         )
-    elif bht is not None and td is not None:
+    elif bht is not None and td is not None and not _td_at_surface(td):
         profile = TemperatureProfile.from_bht(
             bht=bht,
             td=td,
@@ -544,6 +544,17 @@ def calculate_temperature_profile(
             surface_temp_unit=surface_temp_unit,
         )
     else:
+        if bht is not None and td is not None:
+            import warnings
+
+            from petrophys.exceptions import DataQualityWarning
+
+            warnings.warn(
+                f"BHT {bht:g} is given at total depth {td:g}, at or above the surface, so it sets no "
+                f"temperature gradient; the default {fallback_gradient_c_per_km:g} C/km gradient is used.",
+                DataQualityWarning,
+                stacklevel=2,
+            )
         profile = TemperatureProfile.from_gradient_c_per_km(
             fallback_gradient_c_per_km,
             surface_temp=surface_temp,
@@ -551,3 +562,17 @@ def calculate_temperature_profile(
         )
 
     return profile.calculate(well.depth, depth_unit)
+
+
+def _td_at_surface(td: float) -> bool:
+    """True when a total depth at or above the surface gives a BHT no gradient.
+
+    The benchmark context profiles keep the packages' handling (a zero gradient).
+    """
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    try:
+        value = float(td)
+    except (TypeError, ValueError):
+        return False
+    return not reproducing_benchmark() and (not np.isfinite(value) or value <= 0.0)

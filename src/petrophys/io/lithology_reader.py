@@ -9,24 +9,46 @@ from petrophys.io.geology_reader import _key, _prepare_table, _read_table, _vali
 from petrophys.exceptions import DataQualityWarning
 
 
+#: Codebook headers (compared without case, spaces or punctuation) of the code
+#: column and of the rock-name column, in order of preference.
+_CODE_COLUMNS = ("code", "abbreviation", "lithologycode", "lithcode", "faciescode", "codes", "id", "value")
+_LABEL_COLUMNS = (
+    "lithology", "attribute", "lithologyattribute", "rock", "rocktype", "rockname", "lith",
+    "lithologyname", "facies", "faciesname", "name", "label", "description",
+)
+
+
 def read_lithology_codes(source, *, code_column=None, label_column=None, sheet_name=None, sep=None):
     """Read a codebook without confusing rock names with grouping columns.
 
-    CSV/TSV/Excel/DataFrames are supported. Canonical ``code,lithology`` and
-    Kingdom ``Abbreviation,Attribute`` are recognized. ``Attribute`` takes
-    precedence over ``Lithology Attribute``; pass label_column explicitly to
-    select a different grouping. Empty labels and duplicate codes are errors.
+    CSV/TSV/Excel/DataFrames are supported. The code column is found under
+    ``code``, ``abbreviation``, ``lithology code``, ``lith code``,
+    ``facies code``, ``id`` or ``value``; the rock name under ``lithology``,
+    ``attribute``, ``lithology attribute``, ``rock``, ``rock type``,
+    ``rock name``, ``lith``, ``facies``, ``name``, ``label`` or
+    ``description`` (case, spaces and punctuation ignored), so Kingdom
+    ``Abbreviation,Attribute`` tables read as they are. A table of two other
+    columns is read as code, then name. ``Attribute`` takes precedence over
+    ``Lithology Attribute``; pass label_column explicitly to select a
+    different grouping. Empty labels and duplicate codes are errors.
     """
     table = _read_table(source, sheet_name=sheet_name, sep=sep)
     columns = {_key(column): column for column in table.columns}
     if len(columns) != len(table.columns):
         raise ValueError("Duplicate lithology codebook column names")
     code = code_column if code_column is not None else next(
-        (columns[name] for name in ("code", "abbreviation", "lithologycode") if name in columns), None)
+        (columns[name] for name in _CODE_COLUMNS if name in columns), None)
     label = label_column if label_column is not None else next(
-        (columns[name] for name in ("lithology", "attribute", "lithologyattribute", "name", "description") if name in columns), None)
+        (columns[name] for name in _LABEL_COLUMNS if name in columns and columns[name] != code), None)
+    if code_column is None and label_column is None and (code is None or label is None) and len(table.columns) == 2:
+        # Two columns under other names: the code, then the rock name.
+        code, label = table.columns[0], table.columns[1]
     if code not in table or label not in table:
-        raise ValueError("Lithology codebook requires code/lithology or Abbreviation/Attribute columns; specify code_column and label_column")
+        raise ValueError(
+            "Lithology codebook needs a code column (code, abbreviation, lithology code, id, ...) and a "
+            "rock-name column (lithology, attribute, rock type, name, ...); found "
+            f"{', '.join(map(str, table.columns))}. Pass code_column and label_column, or a two-column table."
+        )
     if table.empty:
         raise ValueError("Lithology codebook contains no rows")
     if label_column is None and "attribute" in columns and "lithologyattribute" in columns:

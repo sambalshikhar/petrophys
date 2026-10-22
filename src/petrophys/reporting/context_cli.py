@@ -95,7 +95,10 @@ def build_package_parser(layout: str) -> argparse.ArgumentParser:
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))
     parser.add_argument("--tops-sheet", help="Explicit formation Excel sheet name")
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
-    parser.add_argument("--max-total-bytes", type=int, default=DEFAULT_MAX_TOTAL_BYTES)
+    parser.add_argument(
+        "--max-total-bytes", type=int, default=DEFAULT_MAX_TOTAL_BYTES,
+        help="Cap on the package's total size in bytes (no cap by default)",
+    )
     return parser
 
 
@@ -212,7 +215,10 @@ def main(argv=None) -> int:
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))
     parser.add_argument("--tops-sheet", help="Explicit formation Excel sheet name")
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
-    parser.add_argument("--max-total-bytes", type=int, default=DEFAULT_MAX_TOTAL_BYTES)
+    parser.add_argument(
+        "--max-total-bytes", type=int, default=DEFAULT_MAX_TOTAL_BYTES,
+        help="Cap on the package's total size in bytes (no cap by default)",
+    )
     parser.add_argument(
         "--overwrite",
         action="store_true",

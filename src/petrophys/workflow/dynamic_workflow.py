@@ -269,6 +269,9 @@ _CURRENT_LITHOLOGY_GROUP_TO_MATRIX = {
     "kainite": "kainite",
 }
 
+#: Lithology groups counted as clastic when a codebook resolves the lithology domain.
+_CLASTIC_GROUPS = frozenset({"sandstone", "silt", "shale", "clastic_coarse", "calcareous_shale"})
+
 #: Lithology groups that are evaporites (halite and other salts, anhydrite,
 #: gypsum). A "current" run never counts them as net reservoir or net pay.
 EVAPORITE_LITHOLOGY_GROUPS = frozenset({
@@ -825,6 +828,15 @@ class DynamicWorkflowConfig:
     #: "geolink" profile takes its per-depth lithology groups from
     #: ``LITHOLOGY_GEOLINK`` alone (see ``calculation_profile``).
     lithology_curve: Optional[str] = None
+    #: The codebook of the lithology code curve, when its codes are not the
+    #: GeoLink/Kingdom codes: a mapping of code to rock name, or a table
+    #: (path or DataFrame) that :func:`petrophys.read_lithology_codes` reads.
+    #: Each rock name is read as a lithology group by
+    #: :func:`petrophys.interpretation.lithology.labels.lithology_group_for_label`
+    #: ("Sst", "shaly sandstone", "LST", "Dolostone", ...); codes whose name
+    #: is no recognized rock are left without a group, with a warning. Not
+    #: used by the benchmark profiles.
+    lithology_codes: Optional[Any] = None
     #: Mineral solver for the clastic mineral step. ``1`` (default) is
     #: :class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`, the
     #: original solver: VCL and PHIE are fixed inputs, each equation row is
@@ -2327,25 +2339,15 @@ class DynamicWorkflow:
             labels = list(dict.fromkeys(table["lithology"]))
             codes = np.full(well.depth.shape, np.nan)
             groups = np.full(well.depth.shape, None, dtype=object)
-            aliases = {
-                "sand": "sandstone", "sst": "sandstone", "ss": "sandstone",
-                "clastic": "sandstone", "clastics": "sandstone",
-                "siltstone": "silt", "mudstone": "shale", "claystone": "shale",
-                "chalk": "limestone", "carbonate": "limestone", "carb": "limestone",
-                "marl": "limestone", "marlstone": "limestone", "lime": "limestone", "ls": "limestone",
-                "dolo": "dolomite", "salt": "halite",
-                # Potash: sylvite (KCl) and the sylvite-halite rock sylvinite.
-                "sylvite": "sylvinite", "sylvine": "sylvinite",
-                "potash": "sylvinite", "potash salt": "sylvinite",
-            }
+            from petrophys.interpretation.lithology.labels import lithology_group_for_label
+
             unknown = set()
             category_groups = {}
             for row in table.itertuples():
-                key = str(row.lithology).strip().lower()
-                group = aliases.get(key, key)
-                if group not in self._group_to_matrix:
+                # The rock the name describes ("Sst", "shaly sandstone", "LST", ...).
+                group = lithology_group_for_label(row.lithology, known=self._group_to_matrix)
+                if group is None:
                     unknown.add(row.lithology)
-                    group = None
                 mask = (well.depth >= row.top) & (well.depth < row.bottom)
                 if row.bottom == table["bottom"].max():
                     mask |= well.depth == row.bottom
@@ -2424,6 +2426,39 @@ class DynamicWorkflow:
             self._code_curve_well = well
         return self._code_curve
 
+    def _user_code_groups(self) -> Optional[Dict[Any, Optional[str]]]:
+        """Lithology group of each code of ``lithology_codes``, or None when it is not set.
+
+        Not used by the benchmark profiles. Read once per run.
+        """
+        if self.config.lithology_codes is None or self._reproducing_benchmark:
+            return None
+        if getattr(self, "_user_codes_source", None) is not self.config.lithology_codes:
+            from collections.abc import Mapping
+
+            from petrophys.interpretation.lithology.labels import lithology_group_for_label
+            from petrophys.io.lithology_reader import read_lithology_codes
+
+            source = self.config.lithology_codes
+            if isinstance(source, Mapping):
+                labels = {}
+                for code, label in source.items():
+                    try:
+                        number = float(code)
+                        key = int(number) if number.is_integer() else code
+                    except (TypeError, ValueError):
+                        key = code
+                    labels[key] = str(label)
+            else:
+                labels = read_lithology_codes(source)
+            self._user_code_labels = labels
+            self._user_code_group_map = {
+                code: lithology_group_for_label(label, known=self._group_to_matrix)
+                for code, label in labels.items()
+            }
+            self._user_codes_source = source
+        return self._user_code_group_map
+
     def _warn_code_curve(self, code_curve: Optional[str]) -> None:
         """Say which curve the lithology codes are read from, when it is not LITHOLOGY_GEOLINK."""
         requested = self.config.lithology_curve
@@ -2432,15 +2467,24 @@ class DynamicWorkflow:
             self._result.warnings.append(
                 f"lithology_curve={requested!r}: the well has no such curve with finite samples; {instead}."
             )
-        if code_curve is not None and code_curve != "LITHOLOGY_GEOLINK":
+        user_groups = self._user_code_groups()
+        if code_curve is not None and user_groups is not None:
+            unmapped = sorted(
+                f"{code} ({self._user_code_labels[code]})" for code, group in user_groups.items() if group is None
+            )
+            note = f"Lithology codes are read from {code_curve} and decoded with lithology_codes."
+            if unmapped:
+                note += " Codes whose name is no recognized rock get no lithology group: " + ", ".join(unmapped) + "."
+            self._result.warnings.append(note)
+        elif code_curve is not None and code_curve != "LITHOLOGY_GEOLINK":
             note = (
                 f"Lithology codes are read from {code_curve} and decoded with the GeoLink/Kingdom "
                 "lithology code table, as LITHOLOGY_GEOLINK codes are."
             )
             if code_curve != requested:
                 note += (
-                    " If the curve holds other codes, pass lithology_source='computed' or "
-                    "lithology intervals."
+                    " If the curve holds other codes, pass their codebook as lithology_codes, "
+                    "or lithology_source='computed' or lithology intervals."
                 )
             self._result.warnings.append(note)
 
@@ -2453,6 +2497,20 @@ class DynamicWorkflow:
         code_curve = self._lithology_code_curve(well)
         if code_curve is None:
             return None
+        user_groups = self._user_code_groups()
+        if user_groups is not None:
+            from petrophys.interpretation.lithology.matrix_inference import _finalize
+
+            data = np.asarray(well.get(code_curve).data, dtype=float)
+            groups = [
+                user_groups.get(int(code)) for code in np.round(data[np.isfinite(data)]).astype(int)
+            ]
+            clastic = sum(group in _CLASTIC_GROUPS for group in groups)
+            carbonate = sum(group == "limestone" for group in groups)
+            dolomite = sum(group == "dolomite" for group in groups)
+            return _finalize(
+                clastic, carbonate, dolomite, "vendor_log_codebook", clastic + carbonate + dolomite, False
+            )
         return resolve_from_lithology_log(well, warn=False, code_curve=code_curve)
 
     @property
@@ -8007,7 +8065,14 @@ class DynamicWorkflow:
         if gt_curve is not None:
             try:
                 gt_data = np.asarray(gt_curve.data, dtype=float)
-                if self._reproducing_benchmark:
+                user_groups = self._user_code_groups()
+                if user_groups is not None:
+                    mapping = {code: group for code, group in user_groups.items() if isinstance(code, int)}
+                    gt_curve.metadata.custom["category_groups"] = dict(mapping)
+                    gt_curve.metadata.custom["category_labels"] = {
+                        code: label for code, label in self._user_code_labels.items() if isinstance(code, int)
+                    }
+                elif self._reproducing_benchmark:
                     mapping = GROUND_TRUTH_CODE_TO_GROUP
                 else:
                     mapping = _CURRENT_GROUND_TRUTH_CODE_TO_GROUP

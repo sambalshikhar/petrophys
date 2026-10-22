@@ -205,6 +205,22 @@ wherever the package used the function.
   every curve of the well. Under the benchmark profiles `output_curves`
   keeps the eval package's list, which its context records repeat, and the
   further curves are in the step's `also_written`.
+- Lithology interval names are read for the rock they describe
+  (`petrophys.interpretation.lithology.labels.lithology_group_for_label`):
+  abbreviations (Sst, SH, LST, DOL, ANH), modified names (shaly sandstone,
+  argillaceous limestone, "Sandstone, calcareous"), carbonate textures, coal
+  and igneous rocks. Mixed names stay without a group, as before for
+  unrecognized names.
+- `DynamicWorkflowConfig.lithology_codes` takes the codebook of a lithology
+  code curve whose codes are not GeoLink/Kingdom codes: a CSV or Excel
+  codebook, a DataFrame or a code-to-name mapping. Its rock names give each
+  code's lithology group and the lithology domain.
+- `read_lithology_codes` recognizes more codebook headers (rock type, rock
+  name, facies, lith code, id, label, ...) and reads a table of two other
+  columns as code, then rock name.
+- A BHT at a total depth at or above the surface (a well logged from 0 only)
+  no longer fails the temperature step: the default gradient is used, with a
+  warning.
 - A logged vendor density porosity (DPOR, DPHI, DPHZ, PORD) or sonic porosity
   (SPOR, SPHI, PORS) gives PHID or PHIS wherever its value, in v/v or
   converted from percent, lies within 0-0.5; the computed porosity fills the
@@ -682,7 +698,11 @@ wherever the package used the function.
 - Public `build_context` / `export_context` and `petrophys-context` CLI with
   schema version 1.0, UTF-8 byte budgets, staged package publication and
   overwrite protection. The CLI always computes its context from input data,
-  with the same workflow as direct interpretations.
+  with the same workflow as direct interpretations. Each JSON file is held to
+  `max_bytes` (1,000,000 by default); a package's total size is not limited
+  unless `max_total_bytes` is set, since a package of many wells or thin
+  lithology beds holds thousands of files (the GeoLink package is about
+  740 MB).
 - Standardized well-parameter and core-measurement readers and templates.
   Package generation accepts these alongside optional formation, lithology,
   and lithology-code tables.
