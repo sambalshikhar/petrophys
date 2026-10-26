@@ -89,7 +89,79 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
   computes one context group's statistics from such a result, per category
   file, including the curves each category's analysis derives within the
   group (indicators, gradients, completeness, and MHI, BVW, RQI, FZI or
-  PHI_NORM where the group has none).
+  PHI_NORM where the group has none). `context_group_record` returns the
+  group's six context documents in full, notes included (saturation routing,
+  Archie coefficients per lithology, Rw, Rcl, SXO route, cutoffs per
+  lithology family), as the package writes them; the exporter writes the same
+  documents.
+- `result.group_records()` gives each formation and lithology group of an
+  interpretation its own record, as its context files hold it: saturation
+  routing and reasons, Archie coefficients per lithology, Rw, Rcl, SXO route,
+  cutoffs per lithology family (`documents=True` for the six documents). The
+  groups are those of the context package; the exporter and this method share
+  the grouping and the documents.
+- A context package interprets each well as `petrophys.interpret` does with
+  the same inputs: its formation tops are attached for per-formation core
+  calibration, header Rw, Rmf, Rm and BHT stay on the well (recorded as LAS
+  metadata), TD comes from the header, and the hydrocarbon-correction step is
+  left to the workflow. Benchmark profiles keep their packages' handling.
+- `pp.plot(result)` shows the interpretation it is given: the tops,
+  lithology intervals and lithology codebook passed to `pp.interpret`, and
+  the curve values the interpretation used (units converted for display, no
+  value screened again). The automatic layout draws the mineral volumes
+  whenever they exist, and RQI/FZI. The computed temperature profile and
+  Rw/Rmf tracks are optional: `viewer.diagnostics["optional_tracks"]` lists
+  them and `tracks=` draws them (a logged temperature keeps its track).
+- Plots of a raw well show every logged curve: SP joins the gamma track,
+  GAM, MTEM, core porosity and permeability (CORE_POR, CPERM, ...) and vendor
+  porosities (DPOR, SPOR, drawn in v/v when given in percent) fill their
+  tracks, and curves no track takes go to up to four generic tracks; the
+  viewer warns about any it still leaves out, and about curves whose values
+  all lie outside their plausible range. A curve drawn under an alias keeps
+  its own name in the header (DPOR, not PHID). Generic tracks leave out
+  interpretation intermediates (VCL_GR, PHI_SEC, RESFLAG, ...), the
+  lithology code curve and exact copies of a drawn curve (a working alias
+  such as DTC for DT); a curve is not drawn twice under another family's
+  alias (NPHI as PHIN). Core grain density joins the density track, core oil
+  saturation and a vendor SW_INPUT the saturation track.
+- The automatic layout scales SP to the well's own baseline (at least 100 mV
+  wide) instead of a fixed -160 to 40 mV, which missed SP curves with a
+  positive offset (30/6-5 reads 50-110 mV); FZI uses 0.01-1000 microns.
+- Log display conventions in the automatic layout: on a well without a
+  bad-hole flag (a raw well), washout shading where the caliper exceeds bit
+  size; a flagged well keeps the bad-hole band across all tracks as its only
+  hole-condition signal; density-neutron crossover (yellow) and shale
+  separation (grey) on compatible sandstone scales; neutron dashed; medium,
+  shallow and flushed-zone resistivity dashed, dotted and dash-dotted; sonic
+  in its own SONIC track (DTC, DTS); BVW on the porosity scale, so PHIE to
+  BVW shows hydrocarbon and BVW to zero water; VCL drawn as a line (clay
+  volume is shaded in the mineral volumes track). Header height follows the
+  number of curves, so labels no longer overlap on short figures, and
+  generic-track scales are rounded (60-180, not 68.3032-170.051).
+- `pp.plot(..., curve_styles={"GR": {"color": "black", "right": 200}})`
+  changes a curve's colour, scale, line, fill or marker without an XML
+  template; unknown keys raise an error, names no track draws a warning.
+- `pp.plot(..., curves=[...])` plots only the named curves, each in its usual
+  track; a curve no track takes gets a generic track.
+- Curve-name mappings for mnemonics no alias table knows:
+  `pp.read`, `pp.interpret` and `pp.plot` take `curve_aliases=` (a dict, or a
+  CSV/Excel table of curve and standard name), stored on the well so reading,
+  interpretation and plotting all use it; a mapped curve outranks other
+  candidates. `petrophys-context` takes `--curve-aliases FILE`.
+- `create_histogram_comparison` takes `value_range` and `histtype="step"`;
+  the multi-well overlay labels its depth unit and draws legible legend
+  lines. The NMR panel titles its first track "GR / Tension" (CDF and TENS
+  are cable tension) and states a constant T2 cutoff in the Swirr title.
+- DCAL is read as a caliper only when its values are a hole diameter (median
+  of 4 in or more); a differential caliper (caliper minus bit size) under that
+  name is not used as CALI.
+- Plots recognize the interpreted-curve names of other packages (Techlog,
+  Geolog, IP, ELAN: VWCL, PIGN, SWE, SUWI, KLOGH, KINT, PAYFLAG, NETRES, ...);
+  flag names such as PAY or RES are taken only for 0/1 curves. `LITH` is
+  read as a lithology-code curve name.
+- Under the benchmark profiles the saturation step names the equations its
+  samples were routed to, with their counts, instead of a fixed "Canonical
+  Indonesia and Dual Water equations used".
 
 - The published GeoLink, COSTA and Danish context packages are computed by
   context profiles, `geolink_v1`, `costa_v1` and `danish_v1` (aliases

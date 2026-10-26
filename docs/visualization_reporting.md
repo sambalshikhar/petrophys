@@ -329,12 +329,15 @@ focus.show()
 | Control or attribute | What it does |
 | --- | --- |
 | `depth_range=(top, base)`, or `top=` and `height=` | Window in the well's depth unit |
-| `tracks=[...]` | Track display names to keep, in order |
+| `tracks=[...]` | Track display names to keep, in order; also draws the optional TEMPERATURE and RW / RMF tracks |
+| `curves=[...]` | Only these curves, each in its usual track; a curve no track takes gets a generic track |
+| `curve_styles={"GR": {"color": "black", "right": 200}}` | Colour, scale, line, fill or marker of single curves, without an XML template |
+| `curve_aliases=` | Your mnemonics to standard names: a dict, or a CSV/Excel table with `curve` and `standard` columns |
 | `template=` / `template_xml_path=` | Named layout, or an XML file with your own tracks, scales and fills |
 | `formation_tops=`, `lithology_intervals=` | Geology for this plot only; geology passed to `pp.read` also feeds the interpretation |
 | `strict=True` | Fail when a fixed template needs a missing curve, instead of skipping the track |
 | `viewer.omitted_tracks` | Tracks left out because their curves are missing |
-| `viewer.diagnostics` | Imports, curve choices, omitted empty tracks, and labels suppressed to avoid crowding |
+| `viewer.diagnostics` | Imports, curve choices, omitted empty tracks, optional tracks left out, and labels suppressed to avoid crowding |
 | `viewer.warnings` | Plot-only warnings |
 | `viewer.save(path)`, `.show()`, `.close()` | Output |
 

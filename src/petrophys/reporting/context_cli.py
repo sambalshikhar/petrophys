@@ -69,6 +69,10 @@ def build_package_parser(layout: str) -> argparse.ArgumentParser:
     parser.add_argument("--well", dest="well_names", action="append", default=[])
     parser.add_argument("--pattern", default="*.las", help="Input glob; use *.dlis for DLIS")
     parser.add_argument("--depth-unit", choices=("m", "ft"), help="Required for tabular well logs")
+    parser.add_argument(
+        "--curve-aliases", type=Path,
+        help="CSV/Excel table of your curve names and the standard names they stand for (curve,standard)",
+    )
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument(
         "--min-thickness",
@@ -136,6 +140,8 @@ def _reader_options(args: argparse.Namespace) -> dict:
         if not 0 < args.dlis_step < float("inf"):
             raise ValueError("--dlis-step must be finite and positive")
         options["step"] = args.dlis_step
+    if getattr(args, "curve_aliases", None) is not None:
+        options["curve_aliases"] = args.curve_aliases
     return options
 
 
@@ -194,6 +200,10 @@ def main(argv=None) -> int:
     )
     _add_standard_inputs(parser)
     parser.add_argument("--depth-unit", choices=("m", "ft"), help="Required for tabular well logs")
+    parser.add_argument(
+        "--curve-aliases", type=Path,
+        help="CSV/Excel table of your curve names and the standard names they stand for (curve,standard)",
+    )
     parser.add_argument("--well", action="append", help="Package well filter; repeat for multiple wells")
     parser.add_argument("--pattern", default="*.las", help="Input glob; use *.dlis for DLIS")
     parser.add_argument("--recursive", action="store_true")

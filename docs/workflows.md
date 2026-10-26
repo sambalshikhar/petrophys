@@ -102,6 +102,21 @@ skipped.style.hide(axis="index")
 
 {meth}`~petrophys.workflow.DynamicWorkflowResult.print_trace` prints the full record, and {meth}`~petrophys.workflow.DynamicWorkflowResult.to_json` saves it.
 
+The trace covers the whole well. {meth}`~petrophys.workflow.DynamicWorkflowResult.group_records`
+splits it as a context package does, each formation into groups of one
+lithology, and gives every group its own record: the saturation routing and
+its reasons, Archie coefficients per lithology, Rw at temperature, Rcl, the
+SXO route and the cutoffs of its lithology family. These are the notes of the
+group's context files:
+
+```python
+for group in result.group_records():
+    print(group["formation"], group["group"], group["top"], group["bottom"])
+    print(group["notes"]["saturation"])
+```
+
+`documents=True` adds the group's six context documents in full.
+
 ## The steps
 
 The pipeline runs in this order. Use these names in `skip_steps`.

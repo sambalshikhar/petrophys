@@ -392,8 +392,11 @@ def interpret_with_context_profile(
         *_post_workflow_step_results(result.post_workflow_steps),
     ]
     result.steps_skipped = [name for name in result.steps_skipped if name not in names]
-    # The context's run, from which context_group_statistics takes a group's samples.
+    # The context's run, from which context_group_statistics and
+    # context_group_record take a group's samples.
     result._context_run = run
+    result._context_source = path
+    result._context_raw_curves = set(captured["raw"] or ())
     return result
 
 
@@ -540,6 +543,296 @@ def _post_workflow_step_results(entries) -> list:
     return records
 
 
+def context_group_record(
+    result,
+    top: float,
+    bottom: float,
+    *,
+    formation_name: str,
+    group_name: str,
+    lithology: str,
+    formation_info: Optional[dict] = None,
+    lithology_mapping_file: Optional[str | Path] = None,
+    tolerance: float = 5e-5,
+) -> dict:
+    """The six context documents of one group, as the context package writes them.
+
+    Each document holds the group's computation record as the context gives
+    it: the per-group notes (saturation routing with its reasons, Archie
+    coefficients per lithology, Rw at temperature, Rcl, the SXO route, the
+    cutoffs per lithology family, ...), the curve lists and status, and the
+    statistics, including the curves the category's analysis derives within
+    the group.
+
+    Parameters
+    ----------
+    result : DynamicWorkflowResult
+        From ``petrophys.interpret(path, context_profile=...)`` or
+        :func:`interpret_with_context_profile`.
+    top, bottom : float
+        The group's depth window, e.g. ``start_depth`` and ``end_depth`` of a
+        context file's ``lithology_group_info``.
+    formation_name, group_name, lithology : str
+        The group's names as the context files give them: ``formation_info``
+        ``name``, and ``lithology group`` and ``lithology`` of
+        ``analysis_results``.
+    formation_info : dict, optional
+        The formation's depth summary (``min_depth``, ``max_depth``,
+        ``thickness``, ...), e.g. a context file's ``formation_info``.
+        Default: the group's own depths.
+    lithology_mapping_file : str or Path, optional
+        The lithology codebook the profile's context used (the GeoLink
+        codebook for GeoLink, GeoLink training and Danish), for its lithology
+        names.
+    tolerance : float, default 5e-5
+        Depths within this of the window belong to it.
+
+    Returns
+    -------
+    dict
+        ``{category: document}`` for the six categories, as JSON-safe dicts.
+    """
+    import json
+    from contextlib import nullcontext
+
+    import numpy as np
+
+    from petrophys._internal.benchmark import historical_benchmark
+    from petrophys.reporting.reference_export import (
+        _depth_summary,
+        _json_safe,
+        _load_lithology_mapping_workbook,
+        _well_mask_slice,
+        iter_context_group_payloads,
+    )
+    from petrophys.workflow.dynamic_workflow import _dataset_calculations
+
+    run = getattr(result, "_context_run", None)
+    if run is None or getattr(result, "context_profile", None) is None:
+        raise ValueError("context_group_record needs the result of petrophys.interpret(..., context_profile=...)")
+    depth = np.asarray(run.well.depth, dtype=float)
+    mask = (depth >= float(top) - tolerance) & (depth <= float(bottom) + tolerance)
+    if not mask.any():
+        raise ValueError(f"No samples of {result.well.name} between {top} and {bottom}")
+    mapping = _load_lithology_mapping_workbook(lithology_mapping_file) if lithology_mapping_file else None
+    dataset = _PROFILE_DATASET.get(result.context_profile)
+    documents = {}
+    with historical_benchmark(), (_dataset_calculations(dataset) if dataset else nullcontext()):
+        group_well = _well_mask_slice(run.well, mask)
+        for category, payload in iter_context_group_payloads(
+            group_well,
+            run,
+            result._context_source,
+            result._context_raw_curves,
+            formation_name=formation_name,
+            formation_depth_info=dict(formation_info) if formation_info else _depth_summary(group_well),
+            group_name=group_name,
+            lithology_name=lithology,
+            lithology_mapping=mapping,
+        ):
+            documents[category] = json.loads(json.dumps(_json_safe(payload)))
+    if result.context_profile == "costa_v1":
+        from petrophys.reporting._costa_context import load_costa_parameters, patch_costa_payload
+
+        parameters = load_costa_parameters()
+        for document in documents.values():
+            patch_costa_payload(document, parameters)
+    return documents
+
+
+def interpretation_group_records(
+    result,
+    *,
+    tops_file: Optional[str | Path] = None,
+    lithology_mapping_file: Optional[str | Path] = None,
+    minimum_group_thickness: float = 2.0,
+    documents: bool = False,
+) -> list:
+    """The interpretation's record of each formation and lithology group, as its context gives it.
+
+    The well is split as a context package splits it: each formation into
+    groups of one lithology thicker than ``minimum_group_thickness``, the
+    whole well (``WHOLE_WELL``) without formation tops. Each group's record
+    holds the notes of its six context files: saturation routing and its
+    reasons, Archie coefficients per lithology, Rw at temperature, Rcl, the
+    SXO route, the cutoffs of its lithology family, and the rest of the
+    context's computation notes.
+
+    Parameters
+    ----------
+    result : DynamicWorkflowResult
+        From :func:`petrophys.interpret`, including with ``context_profile``.
+    tops_file : str or Path, optional
+        For a context-profile result, the profile's tops workbook (GeoLink,
+        GeoLink training, Danish). A result of ``petrophys.interpret`` uses the
+        formation tops it was given.
+    lithology_mapping_file : str or Path, optional
+        The lithology codebook naming lithology codes (the GeoLink codebook for
+        the GeoLink, GeoLink training and Danish profiles).
+    minimum_group_thickness : float, default 2.0
+        Groups this thick or thinner are left out, as in the context
+        (COSTA's context uses 2 m in feet).
+    documents : bool, default False
+        Also return the six full context documents of each group.
+
+    Returns
+    -------
+    list of dict
+        One per group, in depth order: ``formation``, ``group``,
+        ``lithology``, ``top``, ``bottom``, ``thickness``, ``samples``,
+        ``file_stem`` (the name of the group's context files) and ``notes``
+        (``{category: [note, ...]}``), with ``documents`` when asked.
+    """
+    import copy
+    import json
+    import tempfile
+    from contextlib import nullcontext
+
+    from petrophys._internal.benchmark import historical_benchmark
+    from petrophys.reporting.reference_export import (
+        _formation_segments_for_well,
+        _json_safe,
+        _load_excel_formation_segments,
+        _load_lithology_mapping_workbook,
+        iter_context_group_payloads,
+        iter_context_groups,
+    )
+    from petrophys.workflow.dynamic_workflow import _dataset_calculations
+    from petrophys.workflow.zoned_batch import _finalize_export_curves
+
+    mapping = _load_lithology_mapping_workbook(lithology_mapping_file) if lithology_mapping_file else None
+    profile = getattr(result, "context_profile", None)
+    layout = None
+    segments: list = []
+    if profile is not None:
+        run = result._context_run
+        source = Path(result._context_source)
+        raw_curves = set(result._context_raw_curves)
+        if profile == "costa_v1":
+            from petrophys.reporting._costa_context import _MIN_GROUP_THICKNESS_FT, write_costa_formation_tops
+
+            minimum_group_thickness = _MIN_GROUP_THICKNESS_FT
+            with tempfile.TemporaryDirectory(prefix="petrophys-costa-tops-") as folder:
+                staged = Path(folder) / source.name
+                staged.write_bytes(source.read_bytes())
+                tops = _load_excel_formation_segments(write_costa_formation_tops(folder, Path(folder) / "tops.xlsx"))
+            segments = _formation_segments_for_well(source, run.well, tops)
+        elif profile == "danish_v1":
+            from petrophys.reporting._danish_context import danish_group_layout, read_danish_tops
+
+            if tops_file is None:
+                raise ValueError("The Danish profile's groups come from its tops workbook: pass tops_file")
+            layout = danish_group_layout(source, read_danish_tops(tops_file).get(source.stem.lower(), []))
+        else:
+            if tops_file is None:
+                raise ValueError(f"The {profile} profile's groups come from its tops workbook: pass tops_file")
+            segments = _formation_segments_for_well(source, run.well, _load_excel_formation_segments(tops_file))
+        dataset = _PROFILE_DATASET.get(profile)
+        environment = lambda: _profile_environment(historical_benchmark, _dataset_calculations, dataset)  # noqa: E731
+    else:
+        # The context interprets the well as pp.interpret does, then finalizes the
+        # export curves; its groups are split from that well.
+        well = copy.deepcopy(result.well)
+        normalization = next((step for step in result.steps_executed if step.step == "normalization"), None)
+        raw_curves = set(normalization.input_curves) if normalization is not None else set(well.curves)
+        # The context reads vendor curves under their standard names (RILD as
+        # RDEP); pp.interpret keeps them and adds the standard name as an alias.
+        aliases = dict((normalization.parameters or {}).get("working_aliases") or {}) if normalization else {}
+        for vendor, standard in aliases.items():
+            if vendor != standard and well.get(standard) is not None and well.get(vendor) is not None:
+                well.remove_curve(vendor)
+                well.get(standard).metadata.custom.pop("working_alias_source", None)
+        raw_curves = {aliases.get(name, name) for name in raw_curves}
+        _finalize_export_curves(well, raw_curves, retain_computed_lithology=True)
+        run = _InterpretationRun(well, result)
+        source = Path(f"{well.name or 'well'}.las")
+        records = (well.get_parameter("_geology_context") or {}).get("formations") or []
+        if records:
+            import pandas as pd
+
+            table = pd.DataFrame(records)
+            table = table.rename(columns={"formation_name": "formation", "top_depth": "top", "bottom_depth": "bottom"})
+            segments = _formation_segments_for_well(source, well, _load_excel_formation_segments(table))
+        environment = nullcontext
+
+    records_out = []
+    with environment():
+        for group in iter_context_groups(
+            run,
+            segments,
+            well_top=float(run.well.top),
+            well_bottom=float(run.well.bottom),
+            minimum_group_thickness=minimum_group_thickness,
+            lithology_mapping=mapping,
+            layout=layout,
+        ):
+            group_well = group["well"]
+            docs = {
+                category: json.loads(json.dumps(_json_safe(payload)))
+                for category, payload in iter_context_group_payloads(
+                    group_well,
+                    run,
+                    source,
+                    raw_curves,
+                    formation_name=group["formation_name"],
+                    formation_depth_info=group["formation_depth_info"],
+                    group_name=group["group_name"],
+                    lithology_name=group["lithology"],
+                    lithology_mapping=mapping,
+                )
+            }
+            if profile == "costa_v1":
+                from petrophys.reporting._costa_context import load_costa_parameters, patch_costa_payload
+
+                parameters = load_costa_parameters()
+                for document in docs.values():
+                    patch_costa_payload(document, parameters)
+            info = next(iter(docs.values()))["analysis_results"]["lithology_group_info"]
+            record = {
+                "formation": group["formation_name"],
+                "group": group["group_name"],
+                "lithology": group["lithology"],
+                "top": info["start_depth"],
+                "bottom": info["end_depth"],
+                "thickness": info["thickness"],
+                "samples": info["data_points"],
+                "file_stem": group["file_stem"],
+                "notes": {
+                    category: list(
+                        document["analysis_results"].get("data_completeness", {}).get("derived_log_computation_notes")
+                        or []
+                    )
+                    for category, document in docs.items()
+                },
+            }
+            if documents:
+                record["documents"] = docs
+            records_out.append(record)
+    return records_out
+
+
+class _InterpretationRun:
+    """A pp.interpret result in the shape the context's group functions read."""
+
+    def __init__(self, well, result):
+        self.well = well
+        self.base_result = result
+        self.zone_results = []
+        self.zones = []
+        self.warnings = list(result.warnings)
+
+
+def _profile_environment(historical_benchmark, dataset_calculations, dataset):
+    """The benchmark gate and dataset calculations a profile's context runs under."""
+    from contextlib import ExitStack
+
+    stack = ExitStack()
+    stack.enter_context(historical_benchmark())
+    if dataset:
+        stack.enter_context(dataset_calculations(dataset))
+    return stack
+
+
 #: The dataset calculations each profile's context runs under.
 _PROFILE_DATASET = {"costa_v1": "costa", "danish_v1": "danish", "geolink_train_v1": "geolink_train"}
 
@@ -605,8 +898,10 @@ __all__ = [
     "ContextProfile",
     "describe_context_profile",
     "export_context_profile",
+    "context_group_record",
     "context_group_statistics",
     "interpret_with_context_profile",
+    "interpretation_group_records",
     "get_context_profile",
     "identify_context_profile",
     "list_context_profiles",

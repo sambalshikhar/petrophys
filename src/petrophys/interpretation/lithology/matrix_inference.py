@@ -78,7 +78,7 @@ CODE_CURVE_RECORD = "lithology_code_curve"
 # falls back to a name pattern (*LITH*/*FACIES*) validated as a code log, so this
 # list does not need to be exhaustive.
 _VENDOR_LITHOLOGY_ALIASES = (
-    "LITHOLOGY_GEOLINK", "LITHOLOGY", "LITHOFACIES", "FACIES",
+    "LITHOLOGY_GEOLINK", "LITHOLOGY", "LITHOFACIES", "FACIES", "LITH",
     "LITH_CODE", "LITHO_CODE", "LITHCODE", "LITHOCODE", "LITHOLOGY_CODE",
     "LITHTYPE", "LITHOTYPE", "LITH_TYPE", "ROCK_TYPE", "ROCKTYPE",
     "LITHCLASS", "LITH_CLASS", "FACIES_CODE", "FACIESCODE", "LITHFAC",

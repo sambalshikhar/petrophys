@@ -202,8 +202,31 @@ stats = context_group_statistics(result, info["start_depth"], info["end_depth"])
 stats["saturation"]["MHI_overall"]   # one dict per category file
 ```
 
+`context_group_record` returns a group's six context documents in full, as
+the package writes them: the per-group notes (saturation routing and its
+reasons, Archie coefficients per lithology, Rw at temperature, Rcl, the SXO
+route, cutoffs per lithology family), curve lists, status and statistics:
+
+```python
+from petrophys.reporting.context_profiles import context_group_record
+
+doc = context_file  # one file of the package, for its group's names and depths
+info = doc["analysis_results"]
+record = context_group_record(
+    result, info["lithology_group_info"]["start_depth"], info["lithology_group_info"]["end_depth"],
+    formation_name=doc["formation_info"]["name"], group_name=info["lithology group"],
+    lithology=info["lithology"], formation_info=doc["formation_info"],
+    lithology_mapping_file="PATH/Litho_Nomenclature_Kingdom.xlsx",  # not for COSTA
+)
+record["saturation"]["analysis_results"]["data_completeness"]["derived_log_computation_notes"]
+```
+
 ELECTROFACIES is the exception: the published packages clustered it without a
-seed, so only its range is reproducible.
+seed, so only its range is reproducible. The order of the curve names inside a
+note may differ from the published files. GeoLink's 15_9-17 and 34_10-23 were
+written by a later version of the package's code than its other wells, so
+their files also carry SO statistics, two bad-hole fields and some wording
+that the profile does not reproduce.
 
 ## Common errors
 

@@ -12,6 +12,7 @@ import numpy as np
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.exceptions import DataQualityWarning
 
+from petrophys.preprocessing.standardization.user_aliases import user_standard_name
 from petrophys.preprocessing.standardization.alias_map import (
     get_aliases,
     get_standard_mnemonic,
@@ -118,6 +119,29 @@ def _curve_standardization_priority(curve: "Curve") -> int:
 _SHALLOWER_ARRAY_DEEP_ALIASES = {"AT60": "AT90", "AO60": "AO90"}
 
 
+def _differential_caliper(mnemonic: str, curve: "Curve") -> bool:
+    """True for a DCAL holding a differential caliper (caliper minus bit size).
+
+    DCAL names the density tool's caliper in some deliveries and the
+    differential caliper in others. A median below 4 in, smaller than any
+    hole, reads as the differential one, which is not a CALI. Not applied by
+    the benchmark profiles.
+    """
+    if base_curve_mnemonic(mnemonic) != "DCAL" or reproducing_benchmark():
+        return False
+    values = np.asarray(curve.data, dtype=float)
+    finite = values[np.isfinite(values) & (values > -900.0)]
+    if finite.size == 0:
+        return False
+    unit = str(getattr(curve, "unit", "") or "").strip().lower()
+    median = float(np.median(finite))
+    if unit == "mm":
+        median /= 25.4
+    elif unit == "cm":
+        median /= 2.54
+    return median < 4.0
+
+
 def add_standard_curve_aliases(
     well: "Well",
     standards: Optional[List[str]] = None,
@@ -143,10 +167,14 @@ def add_standard_curve_aliases(
 
     for standard in requested:
         direct = well.get(standard)
+        user_named = any(
+            user_standard_name(well, name) == standard and name.upper() != standard for name in well.curves
+        )
         if (
             direct is not None
             and direct.valid_count() > 0
             and _curve_standardization_priority(direct) >= 0
+            and not user_named
         ):
             continue
 
@@ -161,7 +189,16 @@ def add_standard_curve_aliases(
             if priority < 0:
                 continue
             base = base_curve_mnemonic(mnemonic)
+            user = user_standard_name(well, mnemonic)
+            if user is not None:
+                if user != standard:
+                    continue
+                # The user's mapping outranks every alias.
+                candidates.append(((priority, 2, 0, curve.valid_count(), 0, -order), mnemonic, curve))
+                continue
             if base not in alias_rank:
+                continue
+            if standard == "CALI" and _differential_caliper(mnemonic, curve):
                 continue
             shallower_array = (
                 prefer_deepest_array
@@ -680,7 +717,11 @@ class CurveStandardizer:
 
         for mnemonic, curve in well._curves.items():
             # Get standard name
-            standard_name = self.get_standard_name(mnemonic)
+            user_named = user_standard_name(well, mnemonic)
+            standard_name = user_named or self.get_standard_name(mnemonic)
+            if standard_name == "CALI" and _differential_caliper(mnemonic, curve):
+                # DCAL holding caliper minus bit size is not a hole diameter.
+                standard_name = mnemonic
             source_priority = _curve_standardization_priority(curve)
             eligible_for_standard_slot = source_priority >= 0
             own_name = mnemonic
@@ -748,6 +789,9 @@ class CurveStandardizer:
             ):
                 existing = new_curves[standard_name]
                 existing_priority = _curve_standardization_priority(existing)
+                if user_named and user_standard_name(well, slot_source[standard_name]) != standard_name:
+                    # The user's mapping outranks a curve that is merely named so.
+                    existing_priority = min(existing_priority, source_priority - 1)
                 wins = source_priority > existing_priority or (
                     source_priority == existing_priority
                     and new_curve.valid_count() > existing.valid_count()

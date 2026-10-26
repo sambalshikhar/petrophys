@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from petrophys.visualization.style import _styled_plot, save_figure
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, replace
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
@@ -70,7 +70,7 @@ ADAPTIVE_LOG_VIEWER_TEMPLATE_NAMES = {"auto", "adaptive"}
 CURVE_ALIAS_CANDIDATES: Dict[str, List[str]] = {
     "DEPT": ["DEPT", "DEPTH", "MD", "TDEP"],
     "DEPTH": ["DEPT", "DEPTH", "MD", "TDEP"],
-    "GR": ["GR", "SGR", "GRC", "GR_CAL", "CGR", "HGR", "RGR"],
+    "GR": ["GR", "SGR", "GRC", "GR_CAL", "CGR", "HGR", "RGR", "GAM", "GRD", "GR_EDTC"],
     "SGR": ["SGR", "GR", "CGR"],
     "CALI": ["CALI", "CAL", "CAL_N", "HCAL", "DCAL", "LCAL", "XCAL"],
     # Method/measurement-specific names must not fall back to a different
@@ -79,7 +79,7 @@ CURVE_ALIAS_CANDIDATES: Dict[str, List[str]] = {
     "DCAL": ["DCAL"],
     "BS": ["BS", "BIT", "BITSIZE", "BIT_SIZE"],
     "DRHO": ["DRHO", "DCOR", "DCOR_N", "ZCOR"],
-    "SP": ["SP"],
+    "SP": ["SP", "SSP", "SPBR"],
     "PEF": ["PEF", "PE", "PEFL", "PEFZ"],
     "ROP": ["ROP", "ROPA"],
     "RDEP": ["RDEP", "RT", "LLD", "ILD", "AT90", "RD", "RESDEEP"],
@@ -102,17 +102,7 @@ CURVE_ALIAS_CANDIDATES: Dict[str, List[str]] = {
     "DTC": ["DTC", "DT", "AC", "DTCO"],
     "DTS": ["DTS", "DTSM", "DTSH"],
     "TENS": ["TENS", "TENSION"],
-    "VCL": [
-        "VCL",
-        "VCLAY",
-        "VSH",
-        "VSHGR",
-        "VSHALE_GR",
-        "VSHALE_GR_LINEAR",
-        "VSHALE_GR_CLAVIER",
-        "VSHALE_GR_STEIBER",
-        "VSHALE_GR_LARIONOV_YOUNG",
-    ],
+    "VCL": ["VCL", "VCLAY", "VSH", "VSHGR", "VSHALE_GR", "VSHALE_GR_LINEAR", "VSHALE_GR_CLAVIER", "VSHALE_GR_STEIBER", "VSHALE_GR_LARIONOV_YOUNG", "VWCL", "VCLGR", "VCL_GR", "VCLND", "VCL_ND", "VSHALE", "VCLAV"],
     "VCLAY": [
         "VCLAY",
         "VCL",
@@ -123,52 +113,42 @@ CURVE_ALIAS_CANDIDATES: Dict[str, List[str]] = {
     ],
     "RCL": ["RCL", "VCL", "VSH", "VSHALE_GR"],
     "PHIN": ["PHIN", "NPHI_HC", "NPHI_SHC", "NPHIC", "NPHI"],
-    "PHID": ["PHID", "DPHI", "PHID_SHC"],
-    "PHIS": ["PHIS", "SPHI", "PHIS_SHC"],
-    "PHIT": ["PHIT", "PHI_T", "PHIT_AVG", "PHIT_GAS_CORR"],
-    "PHIE": ["PHIE", "PHIE_CC", "PHI_E"],
+    "PHID": ["PHID", "DPHI", "PHID_SHC", "DPOR", "DPHZ", "PORD"],
+    "PHIS": ["PHIS", "SPHI", "PHIS_SHC", "SPOR", "PORS"],
+    "PHIT": ["PHIT", "PHI_T", "PHIT_AVG", "PHIT_GAS_CORR", "PIGT", "PHIT_ND", "PHI_TOTAL", "TPOR"],
+    "PHIE": ["PHIE", "PHIE_CC", "PHI_E", "PIGN", "PHIE_ND", "PHIEFF", "PHI_EFF", "EPOR"],
     "PHIE_CC": ["PHIE_CC"],
     "PHIT_AVG": ["PHIT_AVG", "PHIT"],
     "PHIT_GAS_CORR": ["PHIT_GAS_CORR"],
     "PHI_SEC": ["PHI_SEC", "PHIS", "PHID"],
-    "PHIC": ["PHIC", "CPOR", "POR_CORE", "CORE_PHI"],
+    "PHIC": ["PHIC", "CPOR", "POR_CORE", "CORE_PHI", "CORE_POR", "CPOR_AMB"],
     "GDEN": ["GDEN", "GRAIN_DEN", "GRAIN_DENSITY"],
-    "SW": ["SW", "SWA", "SWT", "SW_ARCHIE", "SW_INDONESIAN", "SW_SIMANDOUX"],
+    "SW": ["SW", "SWA", "SWT", "SW_ARCHIE", "SW_INDONESIAN", "SW_SIMANDOUX", "SWE", "SW_E", "SWEFF", "SWU", "SUWI", "SW_AR"],
     "SW_ARCHIE": ["SW_ARCHIE"],
     "SW_INDONESIAN": ["SW_INDONESIAN", "SW_INDONESIA"],
     "SW_SIMANDOUX": ["SW_SIMANDOUX", "SW_SIM"],
-    "SXO": ["SXO", "SWXO", "SWXOA"],
+    "SXO": ["SXO", "SWXO", "SWXOA", "SXOE", "SXOU", "SXOT", "SXO_E"],
     "SWXO": ["SWXO", "SXO", "SWXOA"],
     "SO": ["SO", "SH", "OIL_SAT", "1-SW"],
-    "BVW": ["BVW"],
+    "BVW": ["BVW", "BVWE", "BVWT", "BVW_E"],
     "MHI": ["MHI"],
     "SWIRR_APP": ["SWIRR_APP", "SWIRR", "SWI", "SWIR"],
-    "PERM": [
-        "PERM",
-        "PERM_CC",
-        "PERM_TIMUR",
-        "PERM_COATES",
-        "PERM_MORRIS_BIGGS_MODIFIED",
-        "PERM_TIXIER",
-        "PERM_WYK_EXP",
-        "K",
-        "KLOG",
-    ],
+    "PERM": ["PERM", "PERM_CC", "PERM_TIMUR", "PERM_COATES", "PERM_MORRIS_BIGGS_MODIFIED", "PERM_TIXIER", "PERM_WYK_EXP", "K", "KLOG", "KLOGH", "KINT", "K_TIMUR", "KPERM", "PERM_LOG", "PERMEABILITY"],
     "PERM_CC": ["PERM_CC"],
     "PERM_TIMUR": ["PERM_TIMUR"],
     "PERM_COATES": ["PERM_COATES"],
     "PERM_MORRIS_BIGGS_MODIFIED": ["PERM_MORRIS_BIGGS_MODIFIED"],
     "PERM_TIXIER": ["PERM_TIXIER"],
     "PERM_WYK_EXP": ["PERM_WYK_EXP"],
-    "KH_CORE": ["KH_CORE", "K_CORE", "CPERM", "PERM_CORE"],
+    "KH_CORE": ["KH_CORE", "K_CORE", "CPERM", "PERM_CORE", "CORE_PERM", "KAIR", "KHOR"],
     "KV_CORE": ["KV_CORE"],
     "RQI": ["RQI"],
     "FZI": ["FZI"],
     "PHI_Z": ["PHI_Z", "PHIZ"],
     "R35": ["R35"],
-    "VQUAR": ["VQUAR", "VSAND", "VQTZ", "VQUARTZ"],
+    "VQUAR": ["VQUAR", "VSAND", "VQTZ", "VQUARTZ", "VQUA"],
     "VSAND": ["VSAND", "VQUAR", "VQTZ", "VQUARTZ"],
-    "VCALC": ["VCALC", "VLIM", "VCAL", "VCALCITE"],
+    "VCALC": ["VCALC", "VLIM", "VCAL", "VCALCITE", "VCLC"],
     "VLIM": ["VLIM", "VCALC", "VCAL"],
     "VDOLO": ["VDOLO", "VDOL", "VDOLOMITE"],
     "VDOL": ["VDOL", "VDOLO", "VDOLOMITE"],
@@ -178,16 +158,16 @@ CURVE_ALIAS_CANDIDATES: Dict[str, List[str]] = {
     "LITHOLOGY_GEOLINK": ["LITHOLOGY_GEOLINK", "LITHOLOGY", "LITHO", "ROCK_TYPE"],
     "LITHO": ["LITHO", "LITHOLOGY_GEOLINK", "LITHOLOGY", "ROCK_TYPE"],
     "ROCK_TYPE": ["ROCK_TYPE", "LITHOLOGY_GEOLINK", "LITHO"],
-    "NET_ROCK": ["NET_ROCK"],
-    "NET_RES": ["NET_RES", "NET_RESERVOIR"],
-    "NET_PAY": ["NET_PAY"],
+    "NET_ROCK": ["NET_ROCK", "ROCKFLAG", "ROCK_FLAG", "NETROCK"],
+    "NET_RES": ["NET_RES", "NET_RESERVOIR", "RESFLAG", "RES_FLAG", "NETRES", "NET_RES_FLAG", "RES"],
+    "NET_PAY": ["NET_PAY", "PAYFLAG", "PAY_FLAG", "NETPAY", "PAY", "PAY_F"],
     "RESFLAG": ["RESFLAG", "NET_RES"],
     "SEALFLAG": ["SEALFLAG"],
     "CROSSOVER_FLAG": ["CROSSOVER_FLAG"],
     "BAD_HOLE": ["BAD_HOLE", "BAD_HOLE_FLAG", "BADHOLEFLAG", "WASHOUT_FLAG"],
     "BADHOLEFLAG": ["BADHOLEFLAG", "BAD_HOLE", "BAD_HOLE_FLAG"],
     "INVASION_RATIO": ["INVASION_RATIO", "IR"],
-    "TEMP": ["TEMP", "TMPC", "TEMP_F", "TEMPERATURE"],
+    "TEMP": ["TEMP", "TMPC", "TEMP_F", "TEMPERATURE", "MTEM", "TEMP_LOG"],
     "SAL": ["SAL", "SALINITY"],
     "SALAPP": ["SALAPP", "SAL_APP"],
     "SALMUDAPP": ["SALMUDAPP", "SAL_MUD_APP"],
@@ -1132,15 +1112,60 @@ class FormationTopSpec:
     depth: float
 
 
+#: Porosity curves of other packages and core tables that are often in percent.
+_PERCENT_PRONE_POROSITY = {
+    "DPOR", "DPHI", "DPHZ", "PORD", "SPOR", "SPHI", "PORS", "CORE_POR", "CPOR", "CPOR_AMB",
+}
+
+#: Generic tracks (three curves each) for a raw well's curves that no named track takes.
+_RAW_GENERIC_TRACKS = 4
+
+#: Flag curves; their vendor names are taken only for curves of 0 and 1.
+_FLAG_FAMILIES = {"NET_PAY", "NET_RES", "NET_ROCK"}
+
+#: Interpretation intermediates and flags drawn otherwise (shading, overlays);
+#: generic tracks leave them out, ``curves=`` can still select them.
+_INTERMEDIATE_CURVES = {
+    "VCL_GR", "VCLGR", "VCL_SP", "VCLSP", "VCL_ND", "VCLND", "PHI_SEC", "PHI_Z",
+    "INVASION_RATIO", "RESFLAG", "PRIME_OIL_TARGET", "PRIME_GAS_TARGET", "LITHO", "LITHO_CLASS",
+    *BAD_HOLE_CURVE_NAMES, *CROSSOVER_CURVE_NAMES,
+}
+
+#: Tracks of computed profiles (the temperature gradient, Rw and Rmf at
+#: temperature), drawn only when ``tracks=`` or ``curves=`` asks for them. A
+#: logged temperature curve keeps its track.
+OPTIONAL_TRACKS = ("TEMPERATURE", "RW / RMF")
+
+
+def _is_binary_curve(curve) -> bool:
+    """True when every finite sample of ``curve`` is 0 or 1."""
+    try:
+        values = np.asarray(curve.data, dtype=float)
+    except (TypeError, ValueError):
+        return False
+    finite = values[np.isfinite(values)]
+    return finite.size > 0 and bool(np.isin(finite, (0.0, 1.0)).all())
+
+
 def _resolve_curve_name_for_well(
     well: "Well",
     curve_name: str,
     candidates: Optional[Sequence[str]] = None,
 ) -> Optional[str]:
+    from petrophys.preprocessing.standardization.user_aliases import curve_aliases_of
+
+    # A curve the user's mapping names as this curve comes first.
+    user = [
+        name for name in getattr(well, "curves", [])
+        if curve_aliases_of(well).get(str(name).upper()) == str(curve_name).upper()
+    ]
+    if user:
+        return well.get(user[0]).mnemonic
     search_names = [str(curve_name).upper()]
     search_names.extend(str(candidate).upper() for candidate in (candidates or []))
     search_names.extend(CURVE_ALIAS_CANDIDATES.get(str(curve_name).upper(), []))
     seen = set()
+    flag = str(curve_name).upper() in _FLAG_FAMILIES
     for candidate in search_names:
         key = str(candidate).upper()
         if key in seen:
@@ -1148,12 +1173,28 @@ def _resolve_curve_name_for_well(
         seen.add(key)
         curve = well.get(key)
         if curve is not None:
+            # Another package's flag name (PAY, RES, ...) counts only for a 0/1 curve:
+            # a resistivity called RES is not a reservoir flag.
+            if flag and key != str(curve_name).upper() and not _is_binary_curve(curve):
+                continue
+            if str(curve_name).upper() == "CALI" and key == "DCAL":
+                from petrophys.preprocessing.standardization.curve_standardizer import _differential_caliper
+
+                if _differential_caliper(key, curve):
+                    continue
             return curve.mnemonic
     # Fall back to the library alias map so vendor mnemonics such as GR_EDTC
     # or RHOZ fill their tracks while keeping their own names as labels.
     target = str(curve_name).upper()
     for mnemonic in well.curves:
         if get_standard_mnemonic(mnemonic) == target:
+            if target == "CALI":
+                from petrophys.preprocessing.standardization.curve_standardizer import _differential_caliper
+
+                if _differential_caliper(mnemonic, well.get(mnemonic)):
+                    continue
+            if target in _FLAG_FAMILIES and not _is_binary_curve(well.get(mnemonic)):
+                continue
             return well.get(mnemonic).mnemonic
     return None
 
@@ -1199,7 +1240,25 @@ def _adaptive_curve_range(well: "Well", curve_name: str) -> Tuple[float, float]:
     if math.isclose(float(left), float(right)):
         padding = abs(float(left)) * 0.05 or 1.0
         return float(left - padding), float(right + padding)
-    return float(left), float(right)
+    # Round outward to a tenth of the span's order of magnitude (68.3-170.05 -> 60-180).
+    step = 10.0 ** (math.floor(math.log10(float(right - left))) - 1)
+    return float(math.floor(left / step) * step), float(math.ceil(right / step) * step)
+
+
+def _sp_range(well: "Well", curve_name: str) -> Tuple[float, float]:
+    """SP scale: right edge at the shale baseline, at least 100 mV wide.
+
+    SP readings carry an arbitrary offset (30/6-5 reads 50-110 mV), so a fixed
+    -160 to 40 mV scale can miss the whole curve; only deflections matter.
+    """
+    data = np.asarray(well.get(curve_name).data, dtype=float)
+    finite = data[np.isfinite(data)]
+    if finite.size == 0:
+        return -160.0, 40.0
+    low, high = np.nanpercentile(finite, [2, 98])
+    right = 10.0 * math.ceil(high / 10.0)
+    span = max(100.0, 10.0 * math.ceil((right - low) / 10.0))
+    return right - span, right
 
 
 def _curve_has_finite_values(well: "Well", curve_name: str) -> bool:
@@ -1208,6 +1267,39 @@ def _curve_has_finite_values(well: "Well", curve_name: str) -> bool:
         return False
     data = np.asarray(curve.data, dtype=float)
     return bool(np.any(np.isfinite(data)))
+
+
+def _duplicate_of(well: "Well", curve_name: str, others: Iterable[str]) -> bool:
+    """True when ``curve_name`` holds the same samples as one of ``others`` (a working-alias copy)."""
+    curve = well.get(curve_name)
+    try:
+        data = np.asarray(curve.data, dtype=float)
+    except (AttributeError, TypeError, ValueError):
+        return False
+    if not np.isfinite(data).any():
+        return False
+    for name in others:
+        other = well.get(name)
+        if other is None or other is curve or str(name).upper() == str(curve_name).upper():
+            continue
+        try:
+            values = np.asarray(other.data, dtype=float)
+        except (TypeError, ValueError):
+            continue
+        if values.shape == data.shape and np.array_equal(values, data, equal_nan=True):
+            return True
+    return False
+
+
+def _optional_track(well: "Well", track: LogTrackSpec) -> bool:
+    """True for an optional track of computed profiles (see :data:`OPTIONAL_TRACKS`)."""
+    if track.display_name not in OPTIONAL_TRACKS:
+        return False
+    if track.display_name == "TEMPERATURE":
+        # A logged temperature (MTEM, ...) is shown; the workflow's gradient profile TEMP is optional.
+        resolved = _resolve_curve_name_for_well(well, "TEMP")
+        return well.get_parameter("temperature_profile_source") is not None and str(resolved).upper() == "TEMP"
+    return True
 
 
 def _lithology_code_curve(well: "Well") -> Optional[str]:
@@ -1251,6 +1343,17 @@ def create_adaptive_log_viewer_template(
     )
     used_resolved: set = set()
 
+    def has(curve_name: str) -> bool:
+        resolved = _resolve_curve_name_for_well(well, curve_name)
+        return resolved is not None and _curve_has_finite_values(well, resolved)
+
+    # Shading between curve pairs only when both are logged (no missing-curve warning).
+    # A well with a bad-hole flag shows it as the band across all tracks; the
+    # caliper-bit fill is drawn only without one, so the plot has one signal.
+    flagged = any(well.get(name) is not None for name in BAD_HOLE_CURVE_NAMES)
+    washout = "BS" if has("CALI") and has("BS") and not flagged else None
+    density_neutron = has("RHOB") and has("NPHI")
+
     def add_track(
         display_name: str,
         specs: Sequence[LogCurveSpec],
@@ -1268,12 +1371,19 @@ def create_adaptive_log_viewer_template(
             resolved = _resolve_curve_name_for_well(well, spec.curve_name, spec.candidates)
             if resolved is None or resolved in track_resolved:
                 continue
+            # A curve an earlier track draws is not drawn again under another
+            # family's alias (NPHI as PHIN in the porosity track).
+            if resolved in used_resolved and resolved.upper() != spec.curve_name.upper():
+                continue
             if not _curve_has_finite_values(well, resolved):
                 continue
             track_resolved.add(resolved)
             used_resolved.add(resolved)
             if spec.left is None or spec.right is None:
-                spec_left, spec_right = _adaptive_curve_range(well, resolved)
+                spec_left, spec_right = (
+                    _sp_range(well, resolved) if spec.curve_name.upper() == "SP"
+                    else _adaptive_curve_range(well, resolved)
+                )
                 spec = LogCurveSpec(**{**spec.__dict__, "left": spec_left, "right": spec_right})
             track_specs.append(spec)
         if track_specs:
@@ -1310,9 +1420,14 @@ def create_adaptive_log_viewer_template(
         "GAMMA / HOLE",
         [
             _adaptive_spec("GR", "GR", 0, 150, "#1b7837", fill="left", fill_color="#d9f0d3"),
-            _adaptive_spec("VCL", "VCL", 0, 1, "#8c510a", fill="left", fill_color="#c7a76c"),
-            _adaptive_spec("CALI", "CALI", 6, 16, "#d73027"),
+            # VCL is a line here; clay volume is shaded in the mineral volumes track.
+            _adaptive_spec("VCL", "VCL", 0, 1, "#8c510a"),
+            # Washout: caliper larger than bit size.
+            replace(_adaptive_spec("CALI", "CALI", 6, 16, "#d73027", fill_color="#f4a582", fill_alpha=0.45),
+                    left_crossover=washout),
             _adaptive_spec("BS", "BS", 6, 16, "#000000", line_style="--"),
+            # SP is relative: its scale follows the well's shale baseline (see _sp_range).
+            _adaptive_spec("SP", "SP", color="#4d4d4d", line_style="-."),
         ],
         width=1.35,
     )
@@ -1320,9 +1435,9 @@ def create_adaptive_log_viewer_template(
         "RESISTIVITY",
         [
             _adaptive_spec("RDEP", "RDEP", 0.2, 2000, "#a50f15"),
-            _adaptive_spec("RMED", "RMED", 0.2, 2000, "#08519c"),
-            _adaptive_spec("RSHA", "RSHA", 0.2, 2000, "#238b45"),
-            _adaptive_spec("RXO", "RXO", 0.2, 2000, "#41b6c4"),
+            _adaptive_spec("RMED", "RMED", 0.2, 2000, "#08519c", line_style="--"),
+            _adaptive_spec("RSHA", "RSHA", 0.2, 2000, "#238b45", line_style=":"),
+            _adaptive_spec("RXO", "RXO", 0.2, 2000, "#41b6c4", line_style="-."),
         ],
         width=1.35,
         scale="log",
@@ -1332,14 +1447,27 @@ def create_adaptive_log_viewer_template(
     add_track(
         "DENSITY / NEUTRON",
         [
-            _adaptive_spec("DTC", "DTC", 140, 40, "#762a83"),
-            _adaptive_spec("RHOB", "RHOB", 1.95, 2.95, "#d73027"),
-            _adaptive_spec("NPHI", "NPHI", 0.45, -0.15, "#0571b0"),
+            # Compatible sandstone scales: density left of neutron is crossover
+            # (light hydrocarbon, yellow); neutron left of density is shale separation (grey).
+            replace(_adaptive_spec("RHOB", "RHOB", 1.95, 2.95, "#d73027", fill_color="#bdbdbd", fill_alpha=0.35),
+                    left_crossover="NPHI" if density_neutron else None),
+            replace(_adaptive_spec("NPHI", "NPHI", 0.45, -0.15, "#0571b0", line_style="--",
+                                   fill_color="#ffd92f", fill_alpha=0.55),
+                    left_crossover="RHOB" if density_neutron else None),
             _adaptive_spec("NPHI_HC", "NPHI HC", 0.45, -0.15, "#2166ac", line_style="--"),
             _adaptive_spec("DRHO", "DRHO", -0.25, 0.25, "#4d4d4d", line_style=":"),
             _adaptive_spec("PEF", "PEF", 0, 10, "#b35806"),
+            _adaptive_spec("GDEN", "Grain Den Core", 1.95, 2.95, "#000000", marker="x"),
         ],
         width=1.35,
+    )
+    add_track(
+        "SONIC",
+        [
+            _adaptive_spec("DTC", "DTC", 140, 40, "#762a83"),
+            _adaptive_spec("DTS", "DTS", 240, 40, "#e7298a", line_style="--"),
+        ],
+        width=1.1,
     )
     add_track(
         "POROSITY",
@@ -1352,6 +1480,8 @@ def create_adaptive_log_viewer_template(
             _adaptive_spec("PHIS", "PHIS", 0.45, 0, "#1a9850"),
             _adaptive_spec("PHIN", "PHIN", 0.45, 0, "#0571b0"),
             _adaptive_spec("PHIC", "PHIC", 0.45, 0, "#000000", marker="x"),
+            # Bulk volume water on the porosity scale: PHIE to BVW is hydrocarbon (yellow), BVW to 0 water.
+            _adaptive_spec("BVW", "BVW", 0.45, 0, "#08519c", fill="right", fill_color="#6baed6", fill_alpha=0.6),
         ],
         width=1.35,
     )
@@ -1360,10 +1490,11 @@ def create_adaptive_log_viewer_template(
         [
             _adaptive_spec("SW", "Sw", 1, 0, "#0571b0", fill="right", fill_color="#9ecae1"),
             _adaptive_spec("SXO", "Sxo", 1, 0, "#41b6c4", line_style="--"),
-            _adaptive_spec("BVW", "BVW", 1, 0, "#238b45"),
             _adaptive_spec("MHI", "MHI", 1, 0, "#d73027"),
             _adaptive_spec("SWIRR_APP", "Swirr", 1, 0, "#762a83"),
             _adaptive_spec("SWC", "Sw Core", 1, 0, "#08519c", marker="x"),
+            _adaptive_spec("SW_INPUT", "Sw input", 1, 0, "#4d4d4d", line_style="--"),
+            _adaptive_spec("SOC", "So Core", 0, 1, "#b35806", marker="o"),
         ],
         width=1.3,
     )
@@ -1381,21 +1512,49 @@ def create_adaptive_log_viewer_template(
         left=0.01,
         right=10000,
     )
-    if code_curve is None:
-        add_track(
-            "MINERAL VOLUMES",
-            [
-                _adaptive_spec("VCLAY", "VCLAY", color="#7a6a53", fill_color="#7a6a53", fill_alpha=0.85),
-                _adaptive_spec("VQUAR", "VQUAR", color="#f1d27a", fill_color="#f1d27a", fill_alpha=0.85),
-                _adaptive_spec("VCALC", "VCALC", color="#b8b8b8", fill_color="#b8b8b8", fill_alpha=0.85),
-                _adaptive_spec("VDOLO", "VDOLO", color="#7e8fa6", fill_color="#7e8fa6", fill_alpha=0.85),
-                _adaptive_spec("VANHY", "VANHY", color="#92c5de", fill_color="#92c5de", fill_alpha=0.85),
-            ],
-            width=1.35,
-            cumulative=True,
-            left=0,
-            right=1,
-        )
+    add_track(
+        "ROCK QUALITY",
+        [
+            _adaptive_spec("RQI", "RQI", 0.001, 10, "#7b3294"),
+            _adaptive_spec("FZI", "FZI", 0.01, 1000, "#e66101", line_style="--"),
+        ],
+        width=1.1,
+        scale="log",
+        left=0.001,
+        right=10,
+    )
+    # Mineral volumes the interpretation computed are drawn whatever the
+    # lithology track shows (a vendor lithology log or the computed one).
+    add_track(
+        "MINERAL VOLUMES",
+        [
+            _adaptive_spec("VCLAY", "VCLAY", color="#7a6a53", fill_color="#7a6a53", fill_alpha=0.85),
+            _adaptive_spec("VQUAR", "VQUAR", color="#f1d27a", fill_color="#f1d27a", fill_alpha=0.85),
+            _adaptive_spec("VCALC", "VCALC", color="#b8b8b8", fill_color="#b8b8b8", fill_alpha=0.85),
+            _adaptive_spec("VDOLO", "VDOLO", color="#7e8fa6", fill_color="#7e8fa6", fill_alpha=0.85),
+            _adaptive_spec("VANHY", "VANHY", color="#92c5de", fill_color="#92c5de", fill_alpha=0.85),
+        ],
+        width=1.35,
+        cumulative=True,
+        left=0,
+        right=1,
+    )
+    add_track(
+        "TEMPERATURE",
+        [_adaptive_spec("TEMP", "TEMP", color="#d6604d")],
+        width=0.9,
+    )
+    add_track(
+        "RW / RMF",
+        [
+            _adaptive_spec("RW", "Rw", 0.01, 10, "#2166ac"),
+            _adaptive_spec("RMF", "Rmf", 0.01, 10, "#b2182b", line_style="--"),
+        ],
+        width=0.9,
+        scale="log",
+        left=0.01,
+        right=10,
+    )
     add_track(
         "FLAGS",
         [
@@ -1415,6 +1574,9 @@ def create_adaptive_log_viewer_template(
             upper in {"DEPT", "DEPTH", "MD"}
             or upper in used_resolved
             or upper in AUTO_TEMPLATE_SKIP_CURVES
+            or upper in _INTERMEDIATE_CURVES
+            or upper == str(code_curve or "").upper()
+            or _duplicate_of(well, curve_name, used_resolved | set(generic_names))
         ):
             continue
         generic_names.append(upper)
@@ -1591,7 +1753,7 @@ def load_log_viewer_template(
     return template
 
 
-def _display_well(well: "Well") -> "Well":
+def _display_well(well: "Well", interpreted: bool = False) -> "Well":
     """Return a copy of ``well`` with curves converted to standard units.
 
     Plots must not depend on whether the well has been interpreted yet:
@@ -1626,7 +1788,27 @@ def _display_well(well: "Well") -> "Well":
         if limits is not None and limits[1] <= 1.0 and unit in PERCENT_SATURATION_UNITS:
             curve._data = np.asarray(curve.data, dtype=float) / 100.0
             curve.unit = "v/v"
-    standardize_curves(display, rename_curves=False, convert_units=True)
+    # An interpretation's curves are drawn with the values it used: units are
+    # still converted for the tracks, but no value is screened out again.
+    # Vendor and core porosities (DPOR, SPOR, CORE_POR, ...) are often in
+    # percent under a blank label; they are drawn in v/v as the interpretation
+    # reads them.
+    for mnemonic, curve in display._curves.items():
+        if mnemonic.upper() not in _PERCENT_PRONE_POROSITY:
+            continue
+        values = np.asarray(curve.data, dtype=float)
+        finite = values[np.isfinite(values) & (values > -900.0)]
+        unit = str(curve.unit or "").strip().lower()
+        percent = unit in PERCENT_SATURATION_UNITS or (
+            unit not in {"v/v", "frac", "fraction", "dec", "decimal"} and finite.size and float(np.median(finite)) > 1.0
+        )
+        if percent:
+            curve._data = values / 100.0
+            curve.unit = "v/v"
+    standardize_curves(
+        display, rename_curves=False, convert_units=True,
+        plausible_ranges={} if interpreted else None,
+    )
     display._curves.update(depth_curves)
     return display
 
@@ -1682,12 +1864,17 @@ class LogViewer:
         formation_name: Optional[str] = None,
         lithology_intervals: Optional[Any] = None,
         tracks: Optional[Sequence[str]] = None,
+        interpreted: bool = False,
+        curves: Optional[Sequence[str]] = None,
+        curve_styles: Optional[Mapping[str, Mapping[str, Any]]] = None,
     ):
         if not HAS_MATPLOTLIB:
             raise ImportError("matplotlib is required for visualization")
         #: Plotted copy of the input well, with standard units and canonical
         #: curve aliases (e.g. GR for GR_EDTC); the caller's well is unchanged.
-        self.well = _display_well(well)
+        #: With ``interpreted`` (an interpretation's well) values are not
+        #: screened again, so the plot shows what the interpretation used.
+        self.well = _display_well(well, interpreted=interpreted)
         # The lithology code curve, labelled with the GeoLink codes.
         self._code_curve = _lithology_code_curve(self.well)
         self.formation_import_report = {}
@@ -1710,7 +1897,11 @@ class LogViewer:
         self._adaptive_template = False
         template_key = str(template_defaults or "auto").lower()
         if template_xml_path is None and template_key in ADAPTIVE_LOG_VIEWER_TEMPLATE_NAMES:
-            self.template = create_adaptive_log_viewer_template(self.well)
+            # A raw well shows every logged curve: those no named track takes
+            # go to generic tracks. An interpretation's plot keeps its tracks.
+            self.template = create_adaptive_log_viewer_template(
+                self.well, max_generic_tracks=0 if interpreted else _RAW_GENERIC_TRACKS
+            )
             self._adaptive_template = True
         else:
             self.template = load_log_viewer_template(template_xml_path, template_defaults)
@@ -1729,8 +1920,18 @@ class LogViewer:
                     f"Select unique track names from {list(available)}; requested {requested}."
                 )
             self.template.tracks = [available[name] for name in requested]
+        if curves is not None:
+            self._select_curves(curves)
+        #: Optional tracks left out of this plot; name one in ``tracks=`` to draw it.
+        self.optional_tracks: List[str] = []
+        self._optional_track_specs: List[LogTrackSpec] = []
+        if self._adaptive_template and tracks is None and curves is None:
+            self._optional_track_specs = [track for track in self.template.tracks if _optional_track(self.well, track)]
+            self.optional_tracks = [track.display_name for track in self._optional_track_specs]
+            self.template.tracks = [track for track in self.template.tracks if track not in self._optional_track_specs]
         self.strict = strict
         self.figsize = figsize
+        self._style_warnings = self._apply_curve_styles(curve_styles) if curve_styles else []
         self.lithology_mapping = self._coerce_lithology_mapping(
             lithology_mapping,
             lithology_mapping_df,
@@ -1746,11 +1947,109 @@ class LogViewer:
         if self.lithology_intervals is not None:
             import_messages.extend(self.lithology_intervals.attrs.get("import_report", {}).get("diagnostics", []))
         # Formation and lithology imports can report the same depth-reference note.
-        self.warnings: List[str] = list(dict.fromkeys(import_messages))
+        self.warnings: List[str] = list(dict.fromkeys(import_messages)) + self._style_warnings
         self.curve_lookup: Dict[str, str] = {}
+        for name in self.well.curves:
+            report = self.well.get(name).metadata.custom.get("range_screening") or {}
+            if report and report.get("masked") == report.get("finite") and report.get("finite"):
+                self.warnings.append(
+                    f"{name}: all {report['finite']} values lie outside the plausible "
+                    f"{report['standard_curve']} range {report['low']:g}-{report['high']:g}"
+                    f"{' ' + str(report['unit']) if report.get('unit') else ''}; not drawn."
+                    + (f" {report['hint'].capitalize()}." if report.get("hint") else "")
+                )
+        if not interpreted and self._adaptive_template and curves is None:
+            undrawn = self._curves_without_track()
+            if undrawn:
+                self.warnings.append(
+                    f"Curves not drawn ({len(undrawn)}; the generic tracks hold "
+                    f"{_RAW_GENERIC_TRACKS * 3}; select tracks or a template to show them): "
+                    + ", ".join(undrawn)
+                )
         self._header_axis_by_data_axis: Dict[int, Axes] = {}
         self._header_row_counts: Dict[int, int] = {}
         self._bad_hole_legend = None
+
+    def _select_curves(self, curves: Sequence[str]) -> None:
+        """Keep only ``curves`` in the template, each in its track; others go to generic tracks."""
+        wanted = [str(name).strip().upper() for name in curves]
+        available = {name.upper(): name for name in self.well.curves}
+        unknown = [name for name in wanted if name not in available]
+        if unknown or not wanted:
+            raise ValueError(f"Select curves of the well: {unknown or 'none given'} not found; it has {list(self.well.curves)}.")
+        placed: set = set()
+        kept: List[LogTrackSpec] = []
+        for track in self.template.tracks:
+            if track.depth_track:
+                kept.append(track)
+                continue
+            if track.track_type == "lithology":
+                if self.lithology_intervals is not None or str(self._code_curve or "").upper() in wanted:
+                    kept.append(track)
+                continue
+            specs = []
+            for spec in track.curves:
+                resolved = _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates)
+                if resolved is not None and resolved.upper() in wanted and resolved.upper() not in placed:
+                    placed.add(resolved.upper())
+                    specs.append(spec)
+            if specs:
+                track.curves = specs
+                kept.append(track)
+        leftover = [available[name] for name in wanted if name not in placed and name != str(self._code_curve or "").upper()]
+        colors = ["#000000", "#1b7837", "#d73027", "#0571b0", "#762a83", "#8c510a"]
+        for index in range(0, len(leftover), 3):
+            specs = []
+            for offset, name in enumerate(leftover[index:index + 3]):
+                left, right = _adaptive_curve_range(self.well, name)
+                specs.append(LogCurveSpec(**{**_adaptive_spec(name, name, color=colors[(index + offset) % len(colors)]).__dict__,
+                                             "left": left, "right": right}))
+            kept.append(LogTrackSpec(display_name="OTHER", width=1.15, curves=specs))
+        generic = 0
+        for track in kept:
+            if track.display_name.startswith("OTHER"):
+                generic += 1
+                track.display_name = f"OTHER {generic}"
+        self.template.tracks = kept
+
+    def _apply_curve_styles(self, styles: Mapping[str, Mapping[str, Any]]) -> List[str]:
+        """Apply per-curve style changes; returns a warning for names no track draws."""
+        allowed = {item.name for item in fields(LogCurveSpec)} - {"curve_name", "candidates"}
+        wanted: Dict[str, Dict[str, Any]] = {}
+        for name, style in styles.items():
+            unknown = set(style) - allowed
+            if unknown:
+                raise ValueError(f"curve_styles[{name!r}]: unknown keys {sorted(unknown)}; use {sorted(allowed)}.")
+            wanted[str(name).strip().upper()] = dict(style)
+        matched = set()
+        for track in self.template.tracks:
+            for index, spec in enumerate(track.curves):
+                resolved = _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates)
+                for key in (spec.curve_name.upper(), str(resolved or "").upper()):
+                    if key in wanted:
+                        track.curves[index] = replace(spec, **wanted[key])
+                        matched.add(key)
+                        break
+        missing = sorted(set(wanted) - matched)
+        return [f"curve_styles: no track of this plot draws {', '.join(missing)}"] if missing else []
+
+    def _curves_without_track(self) -> List[str]:
+        """The well's curves with data that no track of the template draws."""
+        drawn = set()
+        for track in [*self.template.tracks, *self._optional_track_specs]:
+            for spec in track.curves:
+                resolved = _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates)
+                if resolved is not None:
+                    drawn.add(resolved.upper())
+        if self._code_curve:
+            drawn.add(str(self._code_curve).upper())
+        skipped = {"DEPT", "DEPTH", "MD", "TDEP", *AUTO_TEMPLATE_SKIP_CURVES, *_INTERMEDIATE_CURVES}
+        return [
+            name for name in self.well.curves
+            if name.upper() not in drawn and name.upper() not in skipped
+            and _curve_has_finite_values(self.well, name)
+            and not _duplicate_of(self.well, name, drawn)
+        ]
 
     @_styled_plot
     def create(
@@ -1769,8 +2068,12 @@ class LogViewer:
 
         width_ratios = [self._track_width_ratio(track) for track in tracks]
         max_label_rows = max((self._track_header_row_count(track) for track in tracks), default=1)
-        header_ratio = min(0.30, max(0.14, 0.075 + max_label_rows * 0.032))
         figsize = self.figsize or (max(sum(width_ratios) * 1.75, 11.0), 14.5)
+        # Header labels need a fixed height in inches (about 0.3 in per curve);
+        # on short figures a share of the height alone would overlap them.
+        header_inches = 0.55 + max_label_rows * 0.30
+        needed_ratio = header_inches / max(float(figsize[1]) - header_inches, 1.0)
+        header_ratio = max(min(0.30, max(0.14, 0.075 + max_label_rows * 0.032)), min(needed_ratio, 0.8))
 
         # Close a figure from a previous create() on this viewer so repeated
         # builds don't leak figures.
@@ -3306,6 +3609,10 @@ class LogViewer:
         mnemonic = str(getattr(curve, "mnemonic", spec.curve_name)).upper()
         if mnemonic in RESISTIVITY_CURVE_NAMES or spec.curve_name.upper() in RESISTIVITY_CURVE_NAMES:
             return mnemonic
+        if mnemonic != spec.curve_name.upper():
+            # A curve drawn under an alias keeps its own name (DPOR, not PHID):
+            # the header must not claim a curve the well does not hold.
+            return porosity_display_label(mnemonic, curve)
         label = spec.display_name or getattr(curve, "mnemonic", spec.curve_name)
         return porosity_display_label(label, curve)
 
@@ -3510,6 +3817,7 @@ class LogViewer:
             ),
             "suppressed_formation_labels": list(self.suppressed_formation_labels),
             "omitted_tracks": list(self.omitted_tracks),
+            "optional_tracks": list(self.optional_tracks),
             "curve_lookup": dict(self.curve_lookup),
         }
 
@@ -3686,8 +3994,15 @@ def create_log_viewer(
     formation_name: Optional[str] = None,
     lithology_intervals: Optional[Any] = None,
     tracks: Optional[Sequence[str]] = None,
+    interpreted: bool = False,
+    curves: Optional[Sequence[str]] = None,
+    curve_styles: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> LogViewer:
-    """Create a template-driven well log viewer and immediately build it."""
+    """Create a template-driven well log viewer and immediately build it.
+
+    ``interpreted`` marks an interpretation's well, whose values are drawn as
+    the interpretation used them (see :class:`LogViewer`).
+    """
     viewer = LogViewer(
         well,
         template_xml_path=template_xml_path,
@@ -3701,6 +4016,9 @@ def create_log_viewer(
         formation_name=formation_name,
         lithology_intervals=lithology_intervals,
         tracks=tracks,
+        interpreted=interpreted,
+        curves=curves,
+        curve_styles=curve_styles,
     )
     viewer.create(depth_range=depth_range, top=top, height=height)
     return viewer
