@@ -12,6 +12,9 @@ from petrophys.evaluation.rock_quality.rock_quality_module import (
     calculate_rqi,
     calculate_phi_z,
     calculate_fzi,
+    calculate_winland_r35,
+    classify_pore_throat,
+    PORE_THROAT_CLASSES,
 )
 
 __all__ = [
@@ -21,4 +24,7 @@ __all__ = [
     "calculate_rqi",
     "calculate_phi_z",
     "calculate_fzi",
+    "calculate_winland_r35",
+    "classify_pore_throat",
+    "PORE_THROAT_CLASSES",
 ]

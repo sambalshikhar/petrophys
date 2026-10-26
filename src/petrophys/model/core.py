@@ -162,6 +162,15 @@ class CoreData:
             so = so.astype(np.float64)
 
         lithology = _get_col(lithology_col)
+        if porosity is None and perm is None and gd is None and sw is None and so is None:
+            import warnings
+
+            warnings.warn(
+                f"CoreData: none of the property columns {[c for c in (porosity_col, perm_col, gd_col, sw_col, so_col) if c]} "
+                f"is in the table ({list(df.columns)}); name them, or use petrophys.io.read_core, "
+                "which finds core columns by name and converts units",
+                UserWarning, stacklevel=3,
+            )
 
         # Store remaining columns as metadata
         known_cols = {depth_col, porosity_col, perm_col, gd_col,

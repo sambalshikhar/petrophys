@@ -185,6 +185,12 @@ The rest of the reference documents what these calls are built from.""",
                                 "read_formations read_lithology_intervals "
                                 "read_lithology_codes",
                             ),
+                            ("Core analysis tables", "read_core"),
+                            (
+                                "Deviation surveys and depth datums",
+                                "read_survey attach_survey depth_reference_elevation "
+                                "minimum_curvature Survey",
+                            ),
                             ("Export", "export_las export_csv export_excel"),
                             ("Reader classes", "LASReader DLISReader"),
                         ],
@@ -299,6 +305,10 @@ The rest of the reference documents what these calls are built from.""",
                             ),
                             ("SP and neutron-density methods", "vcl_from_sp vcl_from_nd"),
                             ("Clay resistivity", "calculate_rcl RclModule"),
+                            (
+                                "Shale distribution (Thomas-Stieber)",
+                                "thomas_stieber ThomasStieberResult laminated_sand_resistivity",
+                            ),
                         ],
                     )
                 ],
@@ -323,7 +333,8 @@ The rest of the reference documents what these calls are built from.""",
                             (
                                 "Density, neutron and sonic porosity",
                                 "density_porosity calculate_phid neutron_porosity "
-                                "standardize_nphi sonic_porosity wyllie_time_average",
+                                "standardize_nphi sonic_porosity wyllie_time_average "
+                                "raymer_hunt_gardner",
                             ),
                             (
                                 "Total and effective porosity",
@@ -363,6 +374,12 @@ The rest of the reference documents what these calls are built from.""",
                                 "Lithology logs from intervals",
                                 "build_lithology_log load_lithology_csv LithologyInterval",
                             ),
+                            (
+                                "Apparent matrix parameters",
+                                "apparent_matrix_density apparent_matrix_slowness "
+                                "apparent_matrix_volumetric_pe apparent_total_porosity "
+                                "electron_density volumetric_photoelectric",
+                            ),
                         ],
                     ),
                     Section(
@@ -397,6 +414,7 @@ The rest of the reference documents what these calls are built from.""",
                                 "Salinity and temperature",
                                 "rw_from_salinity salinity_from_rw correct_rw_temperature",
                             ),
+                            ("Apparent water resistivity", "apparent_water_resistivity sw_from_rwa"),
                         ],
                     ),
                     Section(f"{INTERP}.electrical.rmf", title="Mud filtrate resistivity (Rmf)"),
@@ -446,6 +464,11 @@ The rest of the reference documents what these calls are built from.""",
                                 "Saturation-height models",
                                 "fit_j_function fit_brooks_corey saturation_height_from_logs "
                                 "JFunctionModel BrooksCoreyModel",
+                            ),
+                            (
+                                "Empirical functions from log Sw and a known FWL",
+                                "fit_saturation_height fit_saturation_height_from_well "
+                                "height_above_fwl FittedSaturationHeight",
                             ),
                             (
                                 "Formation pressure and free-water level",
@@ -503,6 +526,12 @@ The rest of the reference documents what these calls are built from.""",
                 ],
             ),
             Section(f"{INTERP}.rock_physics", title="Rock physics"),
+            Section(
+                f"{INTERP}.pore_pressure",
+                title="Pore pressure",
+                description="Overburden and hydrostatic pressure, normal compaction "
+                "trends and Eaton's method.",
+            ),
             Topic(
                 "Specialist data",
                 description="NMR, borehole images, geochemistry and core.",
@@ -571,6 +600,11 @@ The rest of the reference documents what these calls are built from.""",
                                         "Thorium and uranium",
                                         "thorium_clay_index ThoriumClayIndex "
                                         "classify_th_u_environment ThUEnvironment",
+                                    ),
+                                    (
+                                        "Clay typing from Th/K",
+                                        "classify_clay_th_k clay_typing_from_well "
+                                        "ClayTypingResult",
                                     ),
                                     (
                                         "Elemental spectroscopy",
@@ -710,7 +744,7 @@ The rest of the reference documents what these calls are built from.""",
                         title="Zone and formation summaries",
                         groups=[
                             ("Zones", "calculate_zone_summary summarize_zones ZoneSummary"),
-                            ("Curve statistics", "curve_statistics percentile_key"),
+                            ("Curve statistics", "curve_statistics zone_statistics percentile_key"),
                             ("Zone ranking", "best_and_weakest property_direction"),
                             (
                                 "Formations",
@@ -732,6 +766,9 @@ The rest of the reference documents what these calls are built from.""",
             ),
             Section("petrophys.evaluation.volumetrics", title="Volumetrics"),
             Section("petrophys.evaluation.sensitivity", title="Sensitivity"),
+            Section("petrophys.evaluation.uncertainty", title="Monte Carlo uncertainty"),
+            Section("petrophys.evaluation.heterogeneity", title="Permeability heterogeneity"),
+            Section("petrophys.evaluation.zonation", title="Change-point zonation"),
             Section("petrophys.evaluation.diagnostics", title="Diagnostics"),
         ],
     ),
@@ -1007,6 +1044,14 @@ SAME_AS = {
 #: One-line descriptions of constants that have no ``#:`` doc comment.
 CONSTANT_DOCS = {
     "petrophys.datasets.DATA_DIR": "Folder of the bundled sample data.",
+    f"{INTERP}.saturation.height.SATURATION_HEIGHT_MODELS": "Empirical "
+    "saturation-height forms :func:`fit_saturation_height` fits.",
+    f"{INTERP}.electrical.invasion.RESPONSE_TYPES": "Mixing laws of a resistivity "
+    "reading: series (laterolog) or parallel (induction).",
+    f"{INTERP}.pore_pressure.EATON_EXPONENTS": "Default Eaton exponents for sonic "
+    "and resistivity.",
+    "petrophys.evaluation.uncertainty.DISTRIBUTIONS": "Input distributions "
+    ":func:`monte_carlo` draws from.",
     "petrophys.datasets.DAYDREAM_DATA_DIR": "Folder of the optional repository "
     "integration fixtures.",
     "petrophys.preprocessing.standardization.ALIAS_MAP": "Vendor mnemonics "

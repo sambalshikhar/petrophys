@@ -18,6 +18,7 @@ from petrophys.interpretation.porosity.neutron_porosity import (
     standardize_nphi,
 )
 from petrophys.interpretation.porosity.sonic_porosity import (
+    raymer_hunt_gardner,
     sonic_porosity,
     wyllie_time_average,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "standardize_nphi",
     "sonic_porosity",
     "wyllie_time_average",
+    "raymer_hunt_gardner",
     "total_porosity",
     "nd_weighted_porosity",
     "effective_porosity",

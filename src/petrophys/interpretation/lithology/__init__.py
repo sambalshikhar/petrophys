@@ -28,6 +28,14 @@ from petrophys.interpretation.lithology.crossplots import (
     mn_crossplot_data,
     pef_crossplot_data,
 )
+from petrophys.interpretation.lithology.apparent_matrix import (
+    apparent_matrix_density,
+    apparent_matrix_slowness,
+    apparent_matrix_volumetric_pe,
+    apparent_total_porosity,
+    electron_density,
+    volumetric_photoelectric,
+)
 from petrophys.interpretation.lithology.lithology_log import (
     LithologyInterval,
     load_lithology_csv,
@@ -50,4 +58,10 @@ __all__ = [
     "LithologyInterval",
     "load_lithology_csv",
     "build_lithology_log",
+    "apparent_matrix_density",
+    "apparent_matrix_slowness",
+    "apparent_matrix_volumetric_pe",
+    "apparent_total_porosity",
+    "electron_density",
+    "volumetric_photoelectric",
 ]

@@ -226,6 +226,7 @@ Continue with the :doc:`installation guide <installation>`, the
    custom_workflows
    visualization_reporting
    specialist_data
+   analysis_tools
    data_quality
    context
    benchmark_context

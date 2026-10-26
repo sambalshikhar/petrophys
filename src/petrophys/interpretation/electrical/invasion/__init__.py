@@ -13,6 +13,14 @@ from petrophys.interpretation.electrical.invasion.invasion_classification import
     classify_invasion,
     InvasionType,
 )
+from petrophys.interpretation.electrical.invasion.inversion import (
+    InvasionInversionResult,
+    ToolResponse,
+    forward_step_profile,
+    invert_step_profile,
+    invert_well_invasion,
+    read_tool_responses,
+)
 from petrophys.interpretation.electrical.invasion.profile import (
     DEPTH_OF_INVESTIGATION,
     EXPECTED_ORDER,
@@ -24,6 +32,12 @@ from petrophys.interpretation.electrical.invasion.profile import (
 )
 
 __all__ = [
+    "InvasionInversionResult",
+    "ToolResponse",
+    "forward_step_profile",
+    "invert_step_profile",
+    "invert_well_invasion",
+    "read_tool_responses",
     "InvasionModule",
     "calculate_invasion_ratio",
     "classify_invasion",

@@ -70,6 +70,14 @@ def _prepare_table(source, aliases, required, *, columns=None, well_name=None,
     if len(normalized) != len(set(normalized)):
         raise ValueError("Duplicate geology column names after normalizing whitespace/case.")
     lookup = dict(zip(normalized, table.columns))
+    # "MD (ft)", "Top [m]": the name without its bracketed unit also matches,
+    # and the unit becomes the depth unit when none is given.
+    bracket_units = {}
+    for column in table.columns:
+        match = re.match(r"^\s*(.*?)\s*[\(\[]\s*([^\)\]]*)\s*[\)\]]\s*$", str(column))
+        if match and _key(match.group(1)) and _key(match.group(1)) not in lookup:
+            lookup[_key(match.group(1))] = column
+            bracket_units[column] = match.group(2).strip()
     mapping = {}
     for canonical, candidates in {**aliases, **CONTEXT_COLUMNS}.items():
         explicit = (columns or {}).get(canonical)
@@ -82,6 +90,14 @@ def _prepare_table(source, aliases, required, *, columns=None, well_name=None,
             raise ValueError(f"Ambiguous columns for {canonical}: {matches}; pass columns explicitly.")
         if matches:
             mapping[matches[0]] = canonical
+    if depth_unit is None:
+        units = {bracket_units[c] for c, canonical in mapping.items()
+                 if canonical in ("top_depth", "bottom_depth") and c in bracket_units}
+        if len(units) == 1:
+            try:
+                depth_unit = normalize_depth_unit(units.pop(), strict=True)
+            except ValueError:
+                depth_unit = None
     unknown_mappings = set(columns or {}) - set(aliases) - set(CONTEXT_COLUMNS)
     if unknown_mappings:
         raise ValueError(f"Unknown canonical column mappings: {sorted(unknown_mappings)}")
