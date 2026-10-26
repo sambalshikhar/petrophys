@@ -43,6 +43,7 @@ def read(
     depth_reference: Optional[str] = None,
     datum: Optional[str] = None,
     curve_aliases: Optional[Any] = None,
+    survey: Optional[Any] = None,
     **reader_options: Any,
 ) -> "Well":
     """Read a well from LAS, DLIS, CSV, or TSV and optionally attach geology.
@@ -86,6 +87,11 @@ def read(
         "DEEP_RES": "RDEP"}`` or a CSV/Excel table of curve name and standard
         name (see :func:`petrophys.preprocessing.standardization.user_aliases.read_curve_aliases`).
         It is stored on the well, so interpretation and plots use it.
+    survey : path, DataFrame or "vertical", optional
+        Deviation survey (MD, inclination, azimuth; CSV, Excel or LAS) or
+        ``"vertical"``. Adds ``TVD`` below the log depth reference and, when
+        the header gives the reference elevation (EKB/EDF/APD), ``TVDSS``
+        (see :func:`petrophys.io.attach_survey`).
     **reader_options
         Options for the format reader. CSV and TSV files require
         ``depth_unit="m"`` or ``depth_unit="ft"``; other options (e.g.
@@ -165,6 +171,10 @@ def read(
         from petrophys.preprocessing.standardization.user_aliases import attach_curve_aliases
 
         attach_curve_aliases(well, curve_aliases)
+    if survey is not None:
+        from petrophys.io.survey_reader import attach_survey
+
+        attach_survey(well, survey)
     return well
 
 

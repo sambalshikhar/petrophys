@@ -122,7 +122,10 @@ The mapping is stored on the well, so `pp.interpret` and `pp.plot` use it too;
 both also take `curve_aliases=` directly, and `petrophys-context` takes
 `--curve-aliases FILE`. Standard names are the library's (`GR`, `RDEP`,
 `RHOB`, `NPHI`, `DTC`, `CALI`, ...); an unknown one raises an error that lists
-them. To plot only some curves, pass `pp.plot(well, curves=["GR", "RDEP"])`.
+them. To plot only some curves, pass `pp.plot(well, curves=["GR", "RDEP"])`, by
+your names or the standard ones. The visualization masterclass (tutorial 17) and
+the visualization guide show both on the Teapot Dome well, whose `SPR` curve no
+alias table knows.
 
 ## Read the import report
 

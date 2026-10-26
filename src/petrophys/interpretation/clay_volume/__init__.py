@@ -21,6 +21,11 @@ from petrophys.interpretation.clay_volume.sp_method import vcl_from_sp
 from petrophys.interpretation.clay_volume.nd_method import vcl_from_nd
 from petrophys.interpretation.clay_volume.classification import classify_vcl
 from petrophys.interpretation.clay_volume.rcl import calculate_rcl, RclModule
+from petrophys.interpretation.clay_volume.thomas_stieber import (
+    ThomasStieberResult,
+    laminated_sand_resistivity,
+    thomas_stieber,
+)
 
 __all__ = [
     "VclModule",
@@ -36,4 +41,7 @@ __all__ = [
     "classify_vcl",
     "calculate_rcl",
     "RclModule",
+    "ThomasStieberResult",
+    "laminated_sand_resistivity",
+    "thomas_stieber",
 ]

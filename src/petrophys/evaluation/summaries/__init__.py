@@ -19,6 +19,7 @@ from petrophys.evaluation.summaries.averages import (
 )
 from petrophys.evaluation.summaries.statistics import (
     curve_statistics,
+    zone_statistics,
     percentile_key,
 )
 from petrophys.evaluation.summaries.ranking import (
@@ -45,6 +46,7 @@ from petrophys.evaluation.summaries.formation_analysis import (
 __all__ = [
     # Curve statistics
     "curve_statistics",
+    "zone_statistics",
     # Zone ranking
     "HIGHER_IS_BETTER",
     "LOWER_IS_BETTER",

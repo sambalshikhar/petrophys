@@ -1,5 +1,11 @@
 """Core and borehole geochemical interpretation."""
 
+from petrophys.interpretation.geochemistry.clay_typing import (
+    TH_K_CLAY_TYPES,
+    ClayTypingResult,
+    classify_clay_th_k,
+    clay_typing_from_well,
+)
 from petrophys.interpretation.geochemistry.elemental_spectroscopy import (
     ELEMENT_NAMES,
     ElementalSpectroscopyResult,
@@ -26,6 +32,10 @@ from petrophys.interpretation.geochemistry.thorium_uranium import (
 from petrophys.interpretation.geochemistry.xrf import XRFData
 
 __all__ = [
+    "TH_K_CLAY_TYPES",
+    "ClayTypingResult",
+    "classify_clay_th_k",
+    "clay_typing_from_well",
     "DEFAULT_API_COEFFICIENTS",
     "ELEMENT_NAMES",
     "ElementalSpectroscopyResult",

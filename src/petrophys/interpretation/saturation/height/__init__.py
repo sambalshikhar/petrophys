@@ -35,7 +35,20 @@ from petrophys.interpretation.saturation.height.mdt_pretest import (
     read_mdt_pretest, pick_mdt_pressure, formation_pressures_from_mdt,
 )
 
+from petrophys.interpretation.saturation.height.empirical import (
+    SATURATION_HEIGHT_MODELS,
+    FittedSaturationHeight,
+    fit_saturation_height,
+    fit_saturation_height_from_well,
+    height_above_fwl,
+)
+
 __all__ = [
+    "SATURATION_HEIGHT_MODELS",
+    "FittedSaturationHeight",
+    "fit_saturation_height",
+    "fit_saturation_height_from_well",
+    "height_above_fwl",
     "pc_from_height",
     "height_from_pc",
     "convert_pc_lab_to_reservoir",

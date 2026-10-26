@@ -1131,6 +1131,12 @@ _INTERMEDIATE_CURVES = {
     *BAD_HOLE_CURVE_NAMES, *CROSSOVER_CURVE_NAMES,
 }
 
+#: Depth references added as curves (pp.read(..., survey=...)); never drawn as data.
+_DEPTH_CURVES = {"TVD", "TVDSS", "TVDRKB", "TVD_RKB", "TVDMSL", "TVD_MSL", "MD"}
+
+#: Analysis outputs that are bounds or diagnostics of another curve.
+_ANALYSIS_DIAGNOSTICS = {"RT_INV_LOW", "RT_INV_HIGH", "INV_MISFIT"}
+
 #: Tracks of computed profiles (the temperature gradient, Rw and Rmf at
 #: temperature), drawn only when ``tracks=`` or ``curves=`` asks for them. A
 #: logged temperature curve keeps its track.
@@ -1426,6 +1432,12 @@ def create_adaptive_log_viewer_template(
             replace(_adaptive_spec("CALI", "CALI", 6, 16, "#d73027", fill_color="#f4a582", fill_alpha=0.45),
                     left_crossover=washout),
             _adaptive_spec("BS", "BS", 6, 16, "#000000", line_style="--"),
+            # A second caliper arm pair (HD2, C2) beside the first.
+            replace(_adaptive_spec("CAL2", "CAL2", 6, 16, "#f46d43", line_style=":"),
+                    candidates=["HD2_PPC1", "HD2", "C2", "CALI2", "CAL2", "HCAL2", "HRCAL2"]),
+            # Uranium-free gamma ray, beside the total.
+            replace(_adaptive_spec("CGR", "CGR", 0, 150, "#4daf4a", line_style="--"),
+                    candidates=["CGR", "HCGR", "GRKT", "CGR_EDTC"]),
             # SP is relative: its scale follows the well's shale baseline (see _sp_range).
             _adaptive_spec("SP", "SP", color="#4d4d4d", line_style="-."),
         ],
@@ -1438,6 +1450,8 @@ def create_adaptive_log_viewer_template(
             _adaptive_spec("RMED", "RMED", 0.2, 2000, "#08519c", line_style="--"),
             _adaptive_spec("RSHA", "RSHA", 0.2, 2000, "#238b45", line_style=":"),
             _adaptive_spec("RXO", "RXO", 0.2, 2000, "#41b6c4", line_style="-."),
+            # Rt from the step-profile invasion inversion.
+            _adaptive_spec("RT_INV", "Rt inv", 0.2, 2000, "#000000", line_style="--"),
         ],
         width=1.35,
         scale="log",
@@ -1480,6 +1494,13 @@ def create_adaptive_log_viewer_template(
             _adaptive_spec("PHIS", "PHIS", 0.45, 0, "#1a9850"),
             _adaptive_spec("PHIN", "PHIN", 0.45, 0, "#0571b0"),
             _adaptive_spec("PHIC", "PHIC", 0.45, 0, "#000000", marker="x"),
+            # NMR total porosity, free fluid and bound water (CMR, MRIL).
+            replace(_adaptive_spec("NMR_PHIT", "NMR total", 0.45, 0, "#4d4d4d", line_style="-."),
+                    candidates=["TCMR", "MPHI", "MPHS", "CMRP_3MS", "NMR_PHIT", "CMRPHI", "NMRP", "PHINMR"]),
+            replace(_adaptive_spec("NMR_FFI", "NMR free fluid", 0.45, 0, "#1f78b4", line_style=":"),
+                    candidates=["CMFF", "MFFI", "NMR_FFI", "CMR_FFI", "FFI"]),
+            replace(_adaptive_spec("NMR_BVI", "NMR bound", 0.45, 0, "#b15928", line_style=":"),
+                    candidates=["MBVI", "CBVI", "NMR_BVI", "CMR_BVI", "BVI"]),
             # Bulk volume water on the porosity scale: PHIE to BVW is hydrocarbon (yellow), BVW to 0 water.
             _adaptive_spec("BVW", "BVW", 0.45, 0, "#08519c", fill="right", fill_color="#6baed6", fill_alpha=0.6),
         ],
@@ -1506,6 +1527,10 @@ def create_adaptive_log_viewer_template(
             _adaptive_spec("PERM_TIMUR", "Timur", 0.01, 10000, "#d73027"),
             _adaptive_spec("PERM_COATES", "Coates", 0.01, 10000, "#1a9850"),
             _adaptive_spec("KH_CORE", "Kh Core", 0.01, 10000, "#08519c", marker="x"),
+            replace(_adaptive_spec("KSDR", "NMR SDR", 0.01, 10000, "#e7298a", line_style="-."),
+                    candidates=["KSDR", "NMR_KSDR", "KSDR_CMR"]),
+            replace(_adaptive_spec("KTIM", "NMR Timur", 0.01, 10000, "#66a61e", line_style=":"),
+                    candidates=["KTIM", "NMR_KTIM", "K_COATES", "KTIM_CMR"]),
         ],
         width=1.25,
         scale="log",
@@ -1539,6 +1564,29 @@ def create_adaptive_log_viewer_template(
         left=0,
         right=1,
     )
+    add_track(
+        "SPECTRAL GR",
+        [
+            replace(_adaptive_spec("POTA", "K", 0, 5, "#e41a1c"), candidates=["POTA", "HFK", "POTASSIUM", "KC", "K40"]),
+            replace(_adaptive_spec("THOR", "Th", 0, 25, "#377eb8"), candidates=["THOR", "HTHO", "THORIUM", "THC", "TH232"]),
+            replace(_adaptive_spec("URAN", "U", 0, 10, "#4daf4a", line_style="--"),
+                    candidates=["URAN", "HURA", "URANIUM", "UC", "U238"]),
+        ],
+        width=1.15,
+    )
+    pressures = [name for name in ("OVERBURDEN", "PHYD", "PP_EATON") if _curve_has_finite_values(well, name)]
+    if pressures:
+        # One scale for all pressures, so overburden, hydrostatic and pore pressure compare.
+        high = float(np.ceil(np.nanmax([np.nanmax(np.asarray(well.get(n).data, dtype=float)) for n in pressures]) / 100.0) * 100.0)
+        add_track(
+            "PRESSURE",
+            [
+                _adaptive_spec("OVERBURDEN", "Overburden", 0, high, "#000000"),
+                _adaptive_spec("PHYD", "Hydrostatic", 0, high, "#2166ac", line_style="--"),
+                _adaptive_spec("PP_EATON", "Pore pressure", 0, high, "#d73027"),
+            ],
+            width=1.2,
+        )
     add_track(
         "TEMPERATURE",
         [_adaptive_spec("TEMP", "TEMP", color="#d6604d")],
@@ -1575,6 +1623,8 @@ def create_adaptive_log_viewer_template(
             or upper in used_resolved
             or upper in AUTO_TEMPLATE_SKIP_CURVES
             or upper in _INTERMEDIATE_CURVES
+            or upper in _DEPTH_CURVES
+            or upper in _ANALYSIS_DIAGNOSTICS
             or upper == str(code_curve or "").upper()
             or _duplicate_of(well, curve_name, used_resolved | set(generic_names))
         ):
@@ -1810,6 +1860,11 @@ def _display_well(well: "Well", interpreted: bool = False) -> "Well":
         plausible_ranges={} if interpreted else None,
     )
     display._curves.update(depth_curves)
+    # NMR porosities standardize to porosity units (pu); the porosity track is in v/v.
+    for mnemonic, curve in display._curves.items():
+        if str(get_standard_mnemonic(mnemonic)).upper() in {"NMR_PHIT", "NMR_FFI", "NMR_BVI", "NMR_3MS"}                 and str(curve.unit or "").strip().lower() in PERCENT_SATURATION_UNITS:
+            curve._data = np.asarray(curve.data, dtype=float) / 100.0
+            curve.unit = "v/v"
     return display
 
 
@@ -1911,6 +1966,11 @@ class LogViewer:
             self.template.tracks.insert(
                 0, LogTrackSpec(display_name="LITHOLOGY", width=0.9, track_type="lithology")
             )
+        if tracks is not None and curves is not None:
+            raise ValueError(
+                "Pass tracks= or curves=, not both: tracks= keeps whole tracks, curves= keeps single curves "
+                "(each in its track). To add a track's curves, list them in curves=."
+            )
         if tracks is not None:
             requested = [str(name).strip().upper() for name in tracks]
             available = {track.display_name.upper(): track for track in self.template.tracks}
@@ -1958,7 +2018,7 @@ class LogViewer:
                     f"{' ' + str(report['unit']) if report.get('unit') else ''}; not drawn."
                     + (f" {report['hint'].capitalize()}." if report.get("hint") else "")
                 )
-        if not interpreted and self._adaptive_template and curves is None:
+        if not interpreted and self._adaptive_template and curves is None and tracks is None:
             undrawn = self._curves_without_track()
             if undrawn:
                 self.warnings.append(
@@ -1971,32 +2031,74 @@ class LogViewer:
         self._bad_hole_legend = None
 
     def _select_curves(self, curves: Sequence[str]) -> None:
-        """Keep only ``curves`` in the template, each in its track; others go to generic tracks."""
-        wanted = [str(name).strip().upper() for name in curves]
+        """Keep only ``curves`` in the template, each in its track; others go to generic tracks.
+
+        A name is a curve of the well (``GRD``) or a standard name (``GR``),
+        found as the plot finds it: through the user's curve-name mapping and
+        the alias tables.
+        """
+        requested = list(dict.fromkeys(str(name).strip().upper() for name in curves))
+        if not requested:
+            raise ValueError("curves= is empty: name the curves to draw, e.g. curves=['GR', 'RDEP'].")
         available = {name.upper(): name for name in self.well.curves}
-        unknown = [name for name in wanted if name not in available]
-        if unknown or not wanted:
-            raise ValueError(f"Select curves of the well: {unknown or 'none given'} not found; it has {list(self.well.curves)}.")
+        targets: Dict[str, str] = {}
+        unknown = []
+        for name in requested:
+            if name in available:
+                targets[name] = name
+                continue
+            resolved = _resolve_curve_name_for_well(self.well, name)
+            if resolved is None:
+                unknown.append(name)
+            else:
+                targets[name] = resolved.upper()
+        if unknown:
+            raise ValueError(
+                f"No curve {unknown} on the well, by its own name or as a standard name (GR, RDEP, NPHI, ...); "
+                f"it has {list(self.well.curves)}. A name the alias tables do not know can be mapped with "
+                "curve_aliases={'MYNAME': 'GR'}."
+            )
+        target_set = set(targets.values())
+        satisfied: set = set()
         placed: set = set()
         kept: List[LogTrackSpec] = []
+        code = str(self._code_curve or "").upper()
         for track in self.template.tracks:
             if track.depth_track:
                 kept.append(track)
                 continue
             if track.track_type == "lithology":
-                if self.lithology_intervals is not None or str(self._code_curve or "").upper() in wanted:
+                if self.lithology_intervals is not None or code in target_set:
                     kept.append(track)
+                    satisfied.update(n for n, t in targets.items() if t == code)
                 continue
             specs = []
             for spec in track.curves:
                 resolved = _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates)
-                if resolved is not None and resolved.upper() in wanted and resolved.upper() not in placed:
-                    placed.add(resolved.upper())
+                if resolved is None:
+                    continue
+                key = resolved.upper()
+                by_family = spec.curve_name.upper() in targets
+                if (key in target_set or by_family) and key not in placed:
+                    placed.add(key)
                     specs.append(spec)
+                    satisfied.update(n for n, t in targets.items() if t == key)
+                    if by_family:
+                        satisfied.add(spec.curve_name.upper())
+                        placed.add(targets[spec.curve_name.upper()])
             if specs:
-                track.curves = specs
+                # A crossover fill needs its partner curve in the same track.
+                names = {spec.curve_name.upper() for spec in specs}
+                track.curves = [
+                    replace(spec, left_crossover=spec.left_crossover if str(spec.left_crossover or "").upper() in names else None,
+                            right_crossover=spec.right_crossover if str(spec.right_crossover or "").upper() in names else None)
+                    for spec in specs
+                ]
                 kept.append(track)
-        leftover = [available[name] for name in wanted if name not in placed and name != str(self._code_curve or "").upper()]
+        leftover = list(dict.fromkeys(
+            available[targets[name]] for name in requested
+            if name not in satisfied and targets[name] not in placed and targets[name] != code
+        ))
         colors = ["#000000", "#1b7837", "#d73027", "#0571b0", "#762a83", "#8c510a"]
         for index in range(0, len(leftover), 3):
             specs = []
@@ -2014,12 +2116,20 @@ class LogViewer:
 
     def _apply_curve_styles(self, styles: Mapping[str, Mapping[str, Any]]) -> List[str]:
         """Apply per-curve style changes; returns a warning for names no track draws."""
+        from matplotlib.colors import is_color_like
+
         allowed = {item.name for item in fields(LogCurveSpec)} - {"curve_name", "candidates"}
         wanted: Dict[str, Dict[str, Any]] = {}
         for name, style in styles.items():
             unknown = set(style) - allowed
             if unknown:
-                raise ValueError(f"curve_styles[{name!r}]: unknown keys {sorted(unknown)}; use {sorted(allowed)}.")
+                hint = " Scale (linear/log) belongs to the track; use a template for it." if "scale" in unknown else ""
+                raise ValueError(f"curve_styles[{name!r}]: unknown keys {sorted(unknown)}; use {sorted(allowed)}.{hint}")
+            if style.get("fill") not in (None, "left", "right"):
+                raise ValueError(f"curve_styles[{name!r}]: fill must be 'left', 'right' or None, not {style['fill']!r}")
+            for key in ("color", "fill_color"):
+                if style.get(key) is not None and not is_color_like(style[key]):
+                    raise ValueError(f"curve_styles[{name!r}]: {key} {style[key]!r} is not a colour (a name, '#rrggbb' or RGB)")
             wanted[str(name).strip().upper()] = dict(style)
         matched = set()
         for track in self.template.tracks:
@@ -2043,7 +2153,8 @@ class LogViewer:
                     drawn.add(resolved.upper())
         if self._code_curve:
             drawn.add(str(self._code_curve).upper())
-        skipped = {"DEPT", "DEPTH", "MD", "TDEP", *AUTO_TEMPLATE_SKIP_CURVES, *_INTERMEDIATE_CURVES}
+        skipped = {"DEPT", "DEPTH", "MD", "TDEP", *AUTO_TEMPLATE_SKIP_CURVES, *_INTERMEDIATE_CURVES,
+                   *_DEPTH_CURVES, *_ANALYSIS_DIAGNOSTICS}
         return [
             name for name in self.well.curves
             if name.upper() not in drawn and name.upper() not in skipped
@@ -2061,6 +2172,15 @@ class LogViewer:
         """Create and return ``(figure, axes)``."""
         depth = self._depth()
         plot_top, plot_bottom = self._resolve_depth_window(depth, depth_range, top, height)
+        if not plot_bottom > plot_top:
+            raise ValueError(f"The depth window {plot_top:g}-{plot_bottom:g} has no height")
+        logged_top, logged_bottom = finite_min_max(depth)
+        if logged_top is not None and (plot_bottom < logged_top or plot_top > logged_bottom):
+            message = (f"The depth window {plot_top:g}-{plot_bottom:g} {self.well.depth_unit} is outside the "
+                       f"logged interval {logged_top:g}-{logged_bottom:g} {self.well.depth_unit}: nothing to draw")
+            if message not in self.warnings:
+                self.warnings.append(message)
+            warnings.warn(message, UserWarning, stacklevel=3)
         tracks = self.template.tracks
         if self._adaptive_template:
             tracks = self._filter_visible_tracks(tracks, depth, plot_top, plot_bottom)
@@ -2071,7 +2191,7 @@ class LogViewer:
         figsize = self.figsize or (max(sum(width_ratios) * 1.75, 11.0), 14.5)
         # Header labels need a fixed height in inches (about 0.3 in per curve);
         # on short figures a share of the height alone would overlap them.
-        header_inches = 0.55 + max_label_rows * 0.30
+        header_inches = 0.55 + max_label_rows * 0.36
         needed_ratio = header_inches / max(float(figsize[1]) - header_inches, 1.0)
         header_ratio = max(min(0.30, max(0.14, 0.075 + max_label_rows * 0.032)), min(needed_ratio, 0.8))
 

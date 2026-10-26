@@ -121,6 +121,10 @@ def _is_concentration_unit(property_name: str, unit: str) -> bool:
     key = _unit_key(unit)
     if not key:
         return False
+    # Fractions (v/v, frac, dec) are converted by _convert_concentration outside
+    # the benchmark reproduction, so they identify a concentration there too.
+    if not reproducing_benchmark() and key in {"v/v", "frac", "dec", "decimal"}:
+        return True
     if property_name == "POTASSIUM":
         return (
             "%" in key

@@ -145,6 +145,43 @@ class FormationPressureData:
         )
 
 
+def _template_names(frame):
+    """Rename user headers with units in brackets to the template names, when no template name is present.
+
+    ``TVDSS (m)`` -> ``TVDSS_M``, ``Formation pressure (bar)`` -> ``PRES_BAR``,
+    ``Fluid type`` -> ``FLUID``. A bare ``TVD (m)`` becomes ``TVD`` with its
+    unit kept for ``depth_unit``; its datum must still be given.
+    """
+    import re
+
+    template = {"TVDSS", "TVD", "DEPT", "DEPTH", "PRES", "PRESSURE"}
+    upper = {str(c).upper() for c in frame.columns}
+    if upper & template or any(re.match(r"^(TVD\w*|PRES)_(M|FT|BAR|PSI|KPA|MPA)$", c) for c in upper):
+        return frame
+    datums = {"tvdss": "TVDSS", "tvdmsl": "TVD_MSL", "sstvd": "TVDSS", "tvdsubsea": "TVDSS",
+              "tvdrkb": "TVD_RKB", "tvdkb": "TVD_RKB", "tvdrt": "TVD_RT"}
+    pressures = {"pressure", "pres", "formationpressure", "porepressure", "fp", "fpres", "stationpressure",
+                 "stabilisedpressure", "stabilizedpressure", "finalbuilduppressure"}
+    fluids = {"fluid", "fluidtype", "phase", "fluidphase", "zonefluid"}
+    renamed = {}
+    for column in frame.columns:
+        match = re.match(r"^\s*(.*?)\s*[\(\[]\s*([^\)\]]*)\s*[\)\]]\s*$", str(column))
+        name, unit = (match.group(1), match.group(2)) if match else (str(column), "")
+        key = re.sub(r"[^a-z0-9]", "", name.lower())
+        unit = {"m": "M", "ft": "FT", "f": "FT", "bar": "BAR", "bara": "BAR", "psi": "PSI", "psia": "PSI",
+                "kpa": "KPA", "mpa": "MPA"}.get(unit.strip().lower(), "")
+        if key in datums and unit in {"M", "FT"}:
+            renamed[column] = f"{datums[key]}_{unit}"
+        elif key == "tvd" and unit in {"M", "FT"}:
+            renamed[column] = "TVD"
+            frame.attrs["tvd_unit"] = unit.lower()
+        elif key in pressures and unit in {"BAR", "PSI", "KPA", "MPA"}:
+            renamed[column] = f"PRES_{unit}"
+        elif key in fluids:
+            renamed[column] = "FLUID"
+    return frame.rename(columns=renamed) if renamed else frame
+
+
 def read_formation_pressure(
     source, *, depth_column=None, pressure_column=None, fluid_column=None,
     use_column=None, depth_unit=None, pressure_unit=None, depth_reference=None,
@@ -196,6 +233,9 @@ def read_formation_pressure(
     columns = {str(c).upper(): c for c in frame.columns}
     if len(columns) != len(frame.columns):
         raise ValueError("Column names must be unique (case insensitive)")
+    if depth_column is None and pressure_column is None:
+        frame = _template_names(frame)
+        columns = {str(c).upper(): c for c in frame.columns}
 
     def column(explicit, candidates, purpose):
         if explicit is not None:
@@ -215,6 +255,8 @@ def read_formation_pressure(
     fc = column(fluid_column, [], "fluid") if fluid_column is not None else columns.get("FLUID")
     uc = column(use_column, [], "use") if use_column is not None else columns.get("USE_FIT")
     dname, pname = str(dc).upper(), str(pc).upper()
+    if depth_unit is None and frame.attrs.get("tvd_unit") and dname == "TVD":
+        depth_unit = frame.attrs["tvd_unit"]
     if depth_unit is None:
         depth_unit = (las.curves[dc].unit if las is not None else
                       dname.rsplit("_", 1)[-1] if dname in depth_names else None)

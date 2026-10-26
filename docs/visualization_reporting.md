@@ -330,7 +330,7 @@ focus.show()
 | --- | --- |
 | `depth_range=(top, base)`, or `top=` and `height=` | Window in the well's depth unit |
 | `tracks=[...]` | Track display names to keep, in order; also draws the optional TEMPERATURE and RW / RMF tracks |
-| `curves=[...]` | Only these curves, each in its usual track; a curve no track takes gets a generic track |
+| `curves=[...]` | Only these curves, each in its usual track, by the file's names or standard names (`GR`, `RDEP`); a curve no track takes gets a generic track. Not together with `tracks=` |
 | `curve_styles={"GR": {"color": "black", "right": 200}}` | Colour, scale, line, fill or marker of single curves, without an XML template |
 | `curve_aliases=` | Your mnemonics to standard names: a dict, or a CSV/Excel table with `curve` and `standard` columns |
 | `template=` / `template_xml_path=` | Named layout, or an XML file with your own tracks, scales and fills |
@@ -340,6 +340,24 @@ focus.show()
 | `viewer.diagnostics` | Imports, curve choices, omitted empty tracks, optional tracks left out, and labels suppressed to avoid crowding |
 | `viewer.warnings` | Plot-only warnings |
 | `viewer.save(path)`, `.show()`, `.close()` | Output |
+
+### Your curve names, your curves, your styles
+
+The Teapot Dome well 44-MDX-10 uses company mnemonics. Standard names find most of
+them; its spontaneous potential `SPR` is known to no alias table, so a mapping
+places it. The mapping can be a dict or a CSV/Excel table (`curve`, `standard`),
+given to `pp.read` (stored on the well, used by plotting and interpretation alike)
+or to one `pp.plot`.
+
+```{code-cell} python
+teapot = pp.read(pp.sample("teapot_44-mdx-10"))
+print("File curves:", list(teapot.curves))
+own = pp.plot(teapot, curves=["GR", "SP", "RDEP", "RMED", "NPHI", "RHOB"],
+              curve_aliases={"SPR": "SP"}, depth_range=(2400, 3000), figsize=(9, 8),
+              curve_styles={"GR": {"color": "black"}, "SP": {"color": "#984ea3", "line_width": 1.2}})
+print("Drawn:", own.diagnostics["curve_lookup"])
+own.show()
+```
 
 Coincident formation tops are grouped, not discarded. Plotting never computes a missing curve: a well without Sw shows no Sw. {func}`~petrophys.visualization.create_adaptive_log_viewer_template` lists the tracks `auto` would draw before you render.
 

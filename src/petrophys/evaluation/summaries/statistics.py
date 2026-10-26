@@ -111,4 +111,90 @@ def curve_statistics(
     return stats
 
 
-__all__ = ["STATISTICS", "curve_statistics", "percentile_key"]
+def zone_statistics(
+    well: Any,
+    zones: Any,
+    curves: Optional[Iterable[str]] = None,
+    *,
+    percentiles: Iterable[float] = (10, 50, 90),
+    rank: Optional[str] = None,
+    **zone_options: Any,
+):
+    """Statistics of each curve in each zone, as a long table.
+
+    Parameters
+    ----------
+    well : Well
+        Well with the curves.
+    zones : table, path, list or mapping
+        Zones as :func:`petrophys.read_formations` reads them: a CSV/Excel
+        file or DataFrame of formation tops, a list of ``{"name", "top",
+        "bottom"}`` dicts, or ``{name: top}``. Give bottoms for every zone
+        or for none; without bottoms a zone ends at the next zone's top (the
+        last at the well's bottom).
+    curves : iterable of str, optional
+        Curves to summarise; by default every numeric curve with data.
+    percentiles : iterable of float
+        Percentiles added to each row (``p10``, ``p50``, ``p90``).
+    rank : str, optional
+        Keep one level of a hierarchical tops table (``"formation"``).
+    **zone_options
+        Passed to :func:`petrophys.read_formations`, e.g. ``sheet_name``,
+        ``columns={"formation_name": "Surface", "top_depth": "MD"}`` or
+        ``well_name`` for a multi-well table.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per zone and curve: ``zone``, ``top``, ``bottom``,
+        ``thickness``, ``curve``, ``unit``, ``samples`` (in the zone),
+        ``coverage`` (percent with a value) and the :func:`curve_statistics`
+        of the finite samples. A sample at a boundary belongs to the zone
+        below it.
+    """
+    import pandas as pd
+
+    from petrophys.io.geology_reader import read_formations
+
+    table = read_formations(zones, well=well, rank=rank, **zone_options)
+    depth = np.asarray(well.depth, dtype=float)
+    well_bottom = float(np.nanmax(depth))
+    tops = table["top_depth"].astype(float).to_numpy()
+    bottoms = table["bottom_depth"].astype(float).to_numpy() if "bottom_depth" in table else np.full(tops.size, np.nan)
+    order = np.argsort(tops, kind="stable")
+    names = list(curves) if curves is not None else [
+        name for name in well.curves
+        if np.issubdtype(np.asarray(well.get(name).data).dtype, np.number)
+        and np.isfinite(np.asarray(well.get(name).data, dtype=float)).any()
+    ]
+    missing = [name for name in names if well.get(name) is None]
+    if missing:
+        raise ValueError(f"No curve {missing} on the well")
+    rows = []
+    for position, index in enumerate(order):
+        top = tops[index]
+        bottom = bottoms[index]
+        if not np.isfinite(bottom):
+            later = tops[order[position + 1:]]
+            later = later[later > top]
+            bottom = float(later.min()) if later.size else well_bottom
+        last = bottom >= well_bottom
+        in_zone = (depth >= top) & ((depth <= bottom) if last else (depth < bottom))
+        count = int(in_zone.sum())
+        for name in names:
+            curve = well.get(name)
+            values = np.asarray(curve.data, dtype=float)[in_zone]
+            stats = curve_statistics(values, percentiles) if count else None
+            row = {
+                "zone": str(table["formation_name"].iloc[index]), "top": float(top), "bottom": float(bottom),
+                "thickness": float(bottom - top), "curve": name, "unit": str(getattr(curve, "unit", "") or ""),
+                "samples": count,
+                "coverage": round(100.0 * (stats["count"] if stats else 0) / count, 2) if count else 0.0,
+            }
+            if stats:
+                row.update(stats)
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+__all__ = ["STATISTICS", "curve_statistics", "percentile_key", "zone_statistics"]

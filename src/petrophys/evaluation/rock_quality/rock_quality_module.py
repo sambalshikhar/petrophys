@@ -198,3 +198,57 @@ class RockQualityModule:
         well.add_curve("FZI", result.fzi, "microns", "Flow Zone Indicator")
 
         return well
+
+
+#: Pore-throat classes by Winland R35 (microns), after Martin et al. (1997):
+#: upper bound and name.
+PORE_THROAT_CLASSES = (
+    (0.1, "nano"),
+    (0.5, "micro"),
+    (2.0, "meso"),
+    (10.0, "macro"),
+    (np.inf, "mega"),
+)
+
+
+def calculate_winland_r35(
+    perm_k: Union[float, np.ndarray],
+    phi: Union[float, np.ndarray],
+) -> Union[float, np.ndarray]:
+    """Winland R35, the pore-throat radius (microns) at 35 % mercury saturation.
+
+    ``log10(R35) = 0.732 + 0.588 log10(k) - 0.864 log10(phi_percent)``
+    (Winland, published by Kolodzie, 1980), with k in mD and porosity in
+    percent; ``phi`` is given as a fraction. NaN where either input is
+    missing or not positive.
+
+    >>> round(calculate_winland_r35(100.0, 0.20), 2)
+    6.08
+    """
+    perm_arr = np.asarray(perm_k, dtype=float)
+    phi_arr = np.asarray(phi, dtype=float)
+    finite_phi = phi_arr[np.isfinite(phi_arr)]
+    if finite_phi.size and np.median(finite_phi) > 1.0:
+        raise ValueError(
+            "calculate_winland_r35: porosity looks like percent (median "
+            f"{np.median(finite_phi):g}); give it as a fraction (read_core converts core tables)"
+        )
+    result = np.full(np.broadcast_shapes(perm_arr.shape, phi_arr.shape), np.nan, dtype=float)
+    perm_b, phi_b = np.broadcast_arrays(perm_arr, phi_arr)
+    valid = np.isfinite(perm_b) & np.isfinite(phi_b) & (perm_b > 0.0) & (phi_b > 0.0) & (phi_b < 1.0)
+    result[valid] = 10.0 ** (
+        0.732 + 0.588 * np.log10(perm_b[valid]) - 0.864 * np.log10(100.0 * phi_b[valid])
+    )
+    return _maybe_scalar(result, perm_k, phi)
+
+
+def classify_pore_throat(r35: Union[float, np.ndarray]) -> Union[str, np.ndarray]:
+    """Pore-throat class of R35 values: nano, micro, meso, macro or mega ('' where missing)."""
+    values = np.asarray(r35, dtype=float)
+    labels = np.full(values.shape, "", dtype=object)
+    finite = np.isfinite(values)
+    lower = 0.0
+    for upper, name in PORE_THROAT_CLASSES:
+        labels[finite & (values >= lower) & (values < upper)] = name
+        lower = upper
+    return str(labels.item()) if values.ndim == 0 else labels

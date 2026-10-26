@@ -142,7 +142,22 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
   changes a curve's colour, scale, line, fill or marker without an XML
   template; unknown keys raise an error, names no track draws a warning.
 - `pp.plot(..., curves=[...])` plots only the named curves, each in its usual
-  track; a curve no track takes gets a generic track.
+  track; a curve no track takes gets a generic track. Names may be the file's
+  own (`GRD`) or standard names (`GR`, `RDEP`, `NPHI`), found through the
+  curve-name mapping and the alias tables; a crossover fill is kept only when
+  its partner curve is selected too. `tracks=` and `curves=` together are
+  refused with guidance; an empty or unknown selection says what the well has.
+- Plotting checks from emulating users: `curve_styles` rejects an unknown
+  fill or colour before drawing and points `scale` to the track; a depth
+  window outside the logged interval warns, a window of no height is
+  refused; choosing tracks no longer warns about the curves left out.
+- The automatic layout draws NMR porosity, free fluid and bound water
+  (TCMR/CMRP_3MS, CMFF, BVI; converted from porosity units to v/v for the
+  track) and NMR permeability (KSDR, KTIM), a second caliper (HD2, C2),
+  uranium-free gamma ray (CGR), a SPECTRAL GR track (K, Th, U), the invasion
+  inversion's Rt with the resistivities and a PRESSURE track (overburden,
+  hydrostatic and Eaton pore pressure on one scale). TVD/TVDSS and the
+  inversion's bounds and misfit are not drawn as generic curves.
 - Curve-name mappings for mnemonics no alias table knows:
   `pp.read`, `pp.interpret` and `pp.plot` take `curve_aliases=` (a dict, or a
   CSV/Excel table of curve and standard name), stored on the well so reading,
@@ -207,6 +222,82 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
   from 0.01 ohm.m; no SP, SO or NMR rules), BS gets statistics and SO does
   not. Their notes describe the calculations of the profile used, and under
   `"current"` their depths carry the well's depth unit.
+
+### Analysis tools
+
+New functions for analyses `pp.interpret` does not run; see the Analysis
+tools page.
+
+- Th/K clay typing: `classify_clay_th_k` and `clay_typing_from_well` read the
+  thorium/potassium ratio of spectral gamma ray in chart bands (feldspar,
+  glauconite, mica, illite, mixed-layer, kaolinite, heavy-thorium minerals;
+  bands configurable), with a potassium floor and an optional VCL cutoff.
+- Step-profile invasion inversion: `invert_step_profile` solves Rt, Rxo and
+  invasion diameter from three resistivities (or two and a measured Rxo),
+  any mix of laterolog and induction readings, with tool responses J(di)
+  given as `ToolResponse` tables; it reports the range of Rt and di that fits
+  the readings within their noise, and the deepest reading's flushed-zone
+  share. `forward_step_profile` models readings.
+- Empirical saturation-height functions: `fit_saturation_height` and
+  `fit_saturation_height_from_well` fit power-law, Cuddy (FOIL) and
+  Skelt-Harrison functions to log Sw against vertical height above a known
+  FWL; a TVD curve is required unless the well is declared vertical.
+- Monte Carlo uncertainty: `monte_carlo` draws stated input distributions
+  (normal, lognormal, uniform, triangular, with truncation), runs any
+  vectorised calculation over scalars or curves, and reports percentiles and
+  rank-correlation sensitivities; `correlated_depths` applies one error to a
+  whole curve.
+- Permeability heterogeneity: `lorenz_coefficient` and `dykstra_parsons`,
+  thickness-weighted.
+- Change-point zonation: `change_point_zonation` and `zone_well` (exact PELT on
+  one or more curves, minimum zone thickness, penalty or `max_zones`).
+- Thomas-Stieber shale distribution: `thomas_stieber` (laminar, dispersed and
+  structural shale, sand-bed porosity and net-to-gross) and
+  `laminated_sand_resistivity`.
+- Raymer-Hunt-Gardner sonic porosity: `raymer_hunt_gardner` (exact and field
+  forms) and `sonic_porosity(transform="raymer")`; Wyllie stays the default.
+- Public `apparent_water_resistivity` (Rwa) and `sw_from_rwa`; apparent
+  matrix density, slowness and volumetric PE (`apparent_matrix_density`,
+  `apparent_matrix_slowness`, `apparent_matrix_volumetric_pe`,
+  `apparent_total_porosity`); `calculate_winland_r35` and
+  `classify_pore_throat`.
+- `zone_statistics`: statistics and percentiles of any curves over any zones
+  (tops file, table or intervals).
+- Getting outside data in, for the tools that need more than logs:
+  - `read_core` reads core analysis tables (CSV/Excel), finding columns by
+    name (`Depth (m)`, `Por (%)`, `Kh Kl. (mD)`, `KAIR`, ...), converting
+    percent porosity (also when labelled as a fraction), darcy and kg/m3, and
+    core depths to the well's unit; unused numeric columns are reported.
+    `CoreData.from_csv` now warns when none of its columns is found.
+  - `read_survey`, `minimum_curvature` and `attach_survey` (also
+    `pp.read(path, survey=...)`, or `survey="vertical"`) add `TVD` and, with
+    the depth reference's elevation, `TVDSS`; surveys come from CSV, Excel or
+    LAS, with units from headers such as `MD (ft)` and azimuth optional.
+  - `depth_reference_elevation` reads the elevation from EKB/EDF/EGL by LMF,
+    or APD + EPD.
+  - `read_tool_responses` reads digitized J(di) charts (long or wide, inches
+    or cm, fraction or percent); `invert_well_invasion` inverts a well's
+    curves and adds `RT_INV`, `RXO_INV`, `DI_INV` and the Rt range.
+  - `fit_saturation_height_from_well` takes the FWL result of
+    `fit_fwl`/`infer_contacts` directly and uses the matching TVDSS curve.
+  - `eaton_from_well` runs Eaton on a well (air gap from the header: offshore
+    the reference elevation, onshore EKB - EGL), and
+    `calibrate_eaton_exponent` / `PorePressureResult.calibrate` fit the
+    exponent to measured pressures.
+  - `read_uncertainty_table` reads input distributions from Excel or CSV for
+    `monte_carlo`.
+- `read_formation_pressure` and `read_formations` accept headers with units
+  in brackets (`TVDSS (m)`, `Formation pressure (bar)`, `MD (ft)`); the unit
+  becomes the depth or pressure unit. Spectral gamma recognises a potassium
+  curve in v/v or frac under a generic name such as `K`.
+- Checks and messages from emulating users: Winland R35 refuses percent
+  porosity; Eaton refuses an offshore air gap of an onshore header and
+  explains calibration points outside the logged interval; a poor normal
+  compaction trend or saturation-height fit warns; Monte Carlo explains a
+  function that is not vectorised; results print as short summaries.
+- Pore pressure: `overburden_pressure`, `hydrostatic_pressure`,
+  `fit_normal_compaction_trend`, `eaton_pore_pressure` (sonic and
+  resistivity) and `pressure_gradient`, in m/ft and bar/psi/kPa/MPa.
 
 ### Interpretation
 

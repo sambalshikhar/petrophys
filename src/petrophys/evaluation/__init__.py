@@ -7,6 +7,9 @@ Tools for:
 - Net Pay determination and pay summaries
 - Rock Quality (RQI, FZI, phi_z)
 - Sensitivity of net pay to cutoffs, parameters and saturation models
+- Monte Carlo uncertainty propagation
+- Permeability heterogeneity (Lorenz, Dykstra-Parsons)
+- Change-point zonation
 """
 
 from petrophys.evaluation.bvw import calculate_bvw, BvwModule
@@ -35,6 +38,14 @@ from petrophys.evaluation.sensitivity import (
     cutoff_sensitivity,
     parameter_sensitivity,
 )
+from petrophys.evaluation.heterogeneity import (
+    DykstraParsonsResult,
+    LorenzResult,
+    dykstra_parsons,
+    lorenz_coefficient,
+)
+from petrophys.evaluation.uncertainty import MonteCarloResult, monte_carlo, read_uncertainty_table
+from petrophys.evaluation.zonation import Zonation, change_point_zonation, zone_well
 from petrophys.evaluation.flow_units import (
     FlowUnitModule,
     FlowUnitResult,
@@ -71,4 +82,14 @@ __all__ = [
     "calculate_flow_units",
     "assign_flow_units",
     "predict_perm_from_fzi",
+    "DykstraParsonsResult",
+    "LorenzResult",
+    "dykstra_parsons",
+    "lorenz_coefficient",
+    "MonteCarloResult",
+    "monte_carlo",
+    "read_uncertainty_table",
+    "Zonation",
+    "change_point_zonation",
+    "zone_well",
 ]
