@@ -279,6 +279,9 @@ def _reproduces_benchmark(config: Optional[DynamicWorkflowConfig]) -> bool:
 
 def _prepare_batch_config(config: Optional[DynamicWorkflowConfig]) -> DynamicWorkflowConfig:
     prepared = _clone_config(config)
+    if not (_reproduces_benchmark(config) or reproducing_benchmark()):
+        # As petrophys.interpret, which leaves the step to the workflow.
+        return prepared
     skip_steps = list(prepared.skip_steps)
     if not prepared.apply_hc_correction and "hc_correction" not in skip_steps:
         skip_steps.append("hc_correction")
@@ -934,6 +937,13 @@ def extract_zoned_parameters(
     return zones
 
 
+#: Header values petrophys.interpret leaves on the well rather than turning
+#: them into settings.
+_NATIVE_HEADER_FIELDS = (
+    "bht_f", "rmf_at_meas_temp", "rmf_meas_temp_f", "rm", "rm_meas_temp_f", "rw", "rw_meas_temp_f",
+)
+
+
 def run_dynamic_workflow_with_zones(
     well: "Well",
     config: Optional[DynamicWorkflowConfig] = None,
@@ -966,6 +976,12 @@ def run_dynamic_workflow_with_zones(
     zoned_default_overrides, zoned_default_injected, zoned_default_notes = _derive_default_values_from_zones(zones)
 
     base_config = _prepare_batch_config(config)
+    if not (_reproduces_benchmark(config) or reproducing_benchmark()):
+        # As petrophys.interpret: these header values stay on the well, where
+        # each step applies its own unit and reference handling and records
+        # its source as LAS metadata rather than a setting.
+        for native_field in _NATIVE_HEADER_FIELDS:
+            global_overrides.pop(native_field, None)
     # Header-derived parameters override settings left at their defaults; an
     # explicitly configured value wins (e.g. a documented Rw over an
     # unreconciled header RW).
@@ -1005,7 +1021,9 @@ def run_dynamic_workflow_with_zones(
             )
         ]
 
-    if base_config.td_ft is None and well.bottom is not None:
+    if base_config.td_ft is None and well.bottom is not None and historical:
+        # The benchmark packages took the logged bottom as TD; otherwise the
+        # workflow takes the header TD, else the bottom, as petrophys.interpret.
         base_config.td_ft = _depth_to_ft(well.bottom, well.depth_unit)
 
     # Under "current" each zone is re-run from the input curves, sliced

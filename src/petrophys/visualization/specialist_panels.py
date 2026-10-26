@@ -75,7 +75,8 @@ def create_nmr_panel(
         axes[0], well, ("TENS",), depth, "black", "TENS", offset=0.09
     )
     qc_axes.extend(ax for ax in (cdf_axis, tension_axis) if ax is not None)
-    axes[0].set_title("GR / NMR QC", pad=38 if len(qc_axes) > 1 else 6)
+    # CDF and TENS are cable-tension QC (sticking, pull), not NMR quality curves.
+    axes[0].set_title("GR / Tension" if len(qc_axes) > 1 else "GR", pad=38 if len(qc_axes) > 1 else 6)
 
     _plot_first(
         axes[1],
@@ -133,9 +134,14 @@ def create_nmr_panel(
     if swirr is not None:
         axes[4].plot(swirr, depth, color="navy", linewidth=0.7, label=swirr_name)
     axes[4].set_xlim(0, 1)
-    axes[4].set_title("Swirr / T2")
+    axes[4].set_title("Swirr")
     cutoff, cutoff_name = _curve_data(well, ("T2CUTOFF", "T2_CUTOFF", "T2CUT"))
-    if cutoff is not None:
+    shown = cutoff[np.isfinite(cutoff)] if cutoff is not None else np.array([])
+    if shown.size and np.ptp(shown) == 0:
+        # One cutoff for the whole log: state it rather than draw a flat line.
+        axes[4].set_title(f"Swirr (T2 cutoff {shown[0]:g} ms)")
+    elif cutoff is not None:
+        axes[4].set_title("Swirr / T2")
         ax_t2 = axes[4].twiny()
         ax_t2.plot(cutoff, depth, color="red", linewidth=0.6, label=cutoff_name)
         ax_t2.set_xlabel("T2 cutoff [ms]", fontsize=8)

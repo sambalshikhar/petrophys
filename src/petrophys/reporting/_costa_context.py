@@ -815,39 +815,50 @@ def patch_costa_context_notes(context_dir: str | Path, parameters: Optional[dict
         if json_path.name == "curve_name_mapping.json":
             continue
         payload = json.loads(json_path.read_text(encoding="utf-8"))
-        analysis = payload.get("analysis_results")
-        if not isinstance(analysis, dict):
+        if not patch_costa_payload(payload, parameters):
             continue
-        well_parameters = parameters.get(str(analysis.get("well_name") or "").upper())
-        if well_parameters is None:
-            continue
-        statistics = analysis.get("statistics") if isinstance(analysis.get("statistics"), dict) else {}
-        notes = costa_method_notes(well_parameters, statistics, analysis.get("lithology") or analysis.get("lithology group"))
-        analysis.pop("derived_log_computation_notes", None)
-        completeness = analysis.get("data_completeness")
-        if isinstance(completeness, dict):
-            completeness["derived_log_computation_notes"] = notes
-        _rewrite_methodology(payload)
-        if isinstance(analysis.get("input_logs_present"), list):
-            analysis["input_logs_present"] = [
-                curve for curve in analysis["input_logs_present"] if str(curve).upper() not in _DROP_CONTEXT_CURVES
-            ]
-        derived = analysis.get("derived_logs_computed")
-        if isinstance(derived, list):
-            kept = [curve for curve in derived if str(curve).upper() not in _DROP_CONTEXT_CURVES]
-            inputs = {str(curve).upper() for curve in analysis.get("input_logs_present", []) if isinstance(curve, str)}
-            if "SO" not in inputs and isinstance(statistics.get("SO_overall"), dict) and "SO" not in {
-                str(curve).upper() for curve in kept
-            }:
-                kept.append("SO")
-            analysis["derived_logs_computed"] = sorted(kept, key=str)
-        for key in list(statistics):
-            if str(key).split("_overall", 1)[0].upper() in _DROP_CONTEXT_CURVES:
-                statistics.pop(key, None)
-        analysis.pop("costa_method_sources", None)
         json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         count += 1
     return count
+
+
+def patch_costa_payload(payload: dict, parameters: dict[str, CostaWellParameters]) -> bool:
+    """Rewrite one COSTA context document's notes and curve lists as the package did.
+
+    ``payload`` is the JSON document (as read back from its file) and is
+    modified in place. Returns False for a document of no COSTA well.
+    """
+    analysis = payload.get("analysis_results")
+    if not isinstance(analysis, dict):
+        return False
+    well_parameters = parameters.get(str(analysis.get("well_name") or "").upper())
+    if well_parameters is None:
+        return False
+    statistics = analysis.get("statistics") if isinstance(analysis.get("statistics"), dict) else {}
+    notes = costa_method_notes(well_parameters, statistics, analysis.get("lithology") or analysis.get("lithology group"))
+    analysis.pop("derived_log_computation_notes", None)
+    completeness = analysis.get("data_completeness")
+    if isinstance(completeness, dict):
+        completeness["derived_log_computation_notes"] = notes
+    _rewrite_methodology(payload)
+    if isinstance(analysis.get("input_logs_present"), list):
+        analysis["input_logs_present"] = [
+            curve for curve in analysis["input_logs_present"] if str(curve).upper() not in _DROP_CONTEXT_CURVES
+        ]
+    derived = analysis.get("derived_logs_computed")
+    if isinstance(derived, list):
+        kept = [curve for curve in derived if str(curve).upper() not in _DROP_CONTEXT_CURVES]
+        inputs = {str(curve).upper() for curve in analysis.get("input_logs_present", []) if isinstance(curve, str)}
+        if "SO" not in inputs and isinstance(statistics.get("SO_overall"), dict) and "SO" not in {
+            str(curve).upper() for curve in kept
+        }:
+            kept.append("SO")
+        analysis["derived_logs_computed"] = sorted(kept, key=str)
+    for key in list(statistics):
+        if str(key).split("_overall", 1)[0].upper() in _DROP_CONTEXT_CURVES:
+            statistics.pop(key, None)
+    analysis.pop("costa_method_sources", None)
+    return True
 
 
 #: Curves of the preparatory interpretation the COSTA context's interpretation uses:

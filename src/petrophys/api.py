@@ -42,6 +42,7 @@ def read(
     lithology_options: Optional[Mapping[str, Any]] = None,
     depth_reference: Optional[str] = None,
     datum: Optional[str] = None,
+    curve_aliases: Optional[Any] = None,
     **reader_options: Any,
 ) -> "Well":
     """Read a well from LAS, DLIS, CSV, or TSV and optionally attach geology.
@@ -80,6 +81,11 @@ def read(
     datum : str, optional
         Depth datum of the well, e.g. ``"KB"``; geology recorded against a
         different datum is rejected.
+    curve_aliases : mapping, path or DataFrame, optional
+        Your names for standard curves, e.g. ``{"GAMMA_RAY_1": "GR",
+        "DEEP_RES": "RDEP"}`` or a CSV/Excel table of curve name and standard
+        name (see :func:`petrophys.preprocessing.standardization.user_aliases.read_curve_aliases`).
+        It is stored on the well, so interpretation and plots use it.
     **reader_options
         Options for the format reader. CSV and TSV files require
         ``depth_unit="m"`` or ``depth_unit="ft"``; other options (e.g.
@@ -155,6 +161,10 @@ def read(
             context[name + "_import_report"] = table.attrs.get("import_report", {})
     if context:
         well.set_parameter("_geology_context", context)
+    if curve_aliases is not None:
+        from petrophys.preprocessing.standardization.user_aliases import attach_curve_aliases
+
+        attach_curve_aliases(well, curve_aliases)
     return well
 
 
@@ -173,6 +183,9 @@ def plot(
     formation_name: Optional[str] = None,
     figsize: Optional[Tuple[float, float]] = None,
     strict: bool = False,
+    curves: Optional[Sequence[str]] = None,
+    curve_aliases: Optional[Any] = None,
+    curve_styles: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> "LogViewer":
     """Draw a multi-track log plot of a well or an interpretation result.
 
@@ -210,6 +223,21 @@ def plot(
     strict : bool, default False
         If True, curves required by a fixed template must exist; otherwise
         missing tracks are skipped and listed in ``viewer.omitted_tracks``.
+    curves : sequence of str, optional
+        Draw only these curves (the well's own names), each in its track;
+        curves no track takes get generic tracks. Tracks left empty are not
+        drawn.
+    curve_aliases : mapping, path or DataFrame, optional
+        Your names for standard curves (``{"GAMMA_RAY_1": "GR"}`` or a
+        CSV/Excel table), so they fill the right tracks; as for :func:`read`.
+    curve_styles : mapping, optional
+        Style changes per curve, keyed by standard or the well's own name:
+        ``{"GR": {"color": "black", "right": 200}, "RDEP": {"line_width": 1.5}}``.
+        Keys: ``color``, ``left``, ``right``, ``line_width``, ``line_style``,
+        ``alpha``, ``fill`` (``"left"``/``"right"``), ``fill_color``,
+        ``fill_alpha``, ``marker``, ``marker_size``, ``display_name``,
+        ``left_crossover``, ``right_crossover``. XML templates
+        (``template_xml_path``) remain the way to define whole layouts.
 
     Returns
     -------
@@ -223,13 +251,34 @@ def plot(
     >>> viewer = pp.plot(pp.read(pp.sample("30_6-5")), depth_range=(2800, 3000))
     >>> viewer.save("well.png")  # doctest: +SKIP
     """
+    from petrophys.io.lithology_reader import read_lithology_codes
     from petrophys.visualization import create_log_viewer
 
+    # A result plots its interpretation: the tops, lithology intervals and
+    # lithology codebook it was given, and the curve values it used.
+    result = well if hasattr(well, "well") and hasattr(well, "steps_executed") else None
+    if result is not None:
+        config = result.config
+        if formation_tops is None:
+            formation_tops = getattr(config, "formation_tops", None)
+        if lithology_intervals is None:
+            lithology_intervals = getattr(config, "lithology_intervals", None)
+            if lithology_intervals is None:
+                lithology_intervals = getattr(config, "lithology_csv", None)
+        if lithology_mapping is None and getattr(config, "lithology_codes", None) is not None:
+            codes = config.lithology_codes
+            lithology_mapping = dict(codes) if isinstance(codes, Mapping) else read_lithology_codes(codes)
     if depth_range is not None:
         # Depth increases downward whichever way round the window is given.
         depth_range = cast(Tuple[float, float], tuple(sorted(depth_range)))
+    plotted = cast("Well", getattr(well, "well", well))
+    if curve_aliases is not None:
+        from petrophys.preprocessing.standardization.user_aliases import attach_curve_aliases
+
+        plotted = deepcopy(plotted)
+        attach_curve_aliases(plotted, curve_aliases)
     viewer = create_log_viewer(
-        cast("Well", getattr(well, "well", well)),
+        plotted,
         template_xml_path=template_xml_path,
         template_defaults=template,
         depth_range=depth_range,
@@ -242,6 +291,9 @@ def plot(
         formation_name=formation_name,
         lithology_intervals=lithology_intervals,
         tracks=tracks,
+        interpreted=result is not None,
+        curves=curves,
+        curve_styles=curve_styles,
     )
     return cast("LogViewer", viewer)
 
@@ -254,6 +306,7 @@ def interpret(
     depth_unit: Optional[str] = None,
     context_profile: Optional[str] = None,
     tops_file: Optional[PathLike] = None,
+    curve_aliases: Optional[Any] = None,
     **options: Any,
 ) -> "DynamicWorkflowResult":
     """Run the full petrophysical interpretation on one well.
@@ -295,6 +348,10 @@ def interpret(
     tops_file : str or Path, optional
         With ``context_profile="danish"``: the Danish tops workbook, which
         supplies the lithology of wells without a lithology log.
+    curve_aliases : mapping, path or DataFrame, optional
+        Your names for standard curves (``{"GAMMA_RAY_1": "GR"}`` or a
+        CSV/Excel table), as for :func:`read`; added to any mapping the well
+        already carries.
     **options
         Individual :class:`~petrophys.workflow.DynamicWorkflowConfig` settings,
         e.g. ``rw=0.07, rw_meas_temp_f=230`` or ``sw_model="indonesia"``. With ``config``, they
@@ -335,9 +392,10 @@ def interpret(
     if context_profile is not None:
         from petrophys.reporting.context_profiles import interpret_with_context_profile
 
-        if config is not None or options:
+        if config is not None or options or curve_aliases is not None:
             raise TypeError(
-                "context_profile fixes its package's settings; config and other settings are not accepted."
+                "context_profile fixes its package's settings; config, curve_aliases and other settings "
+                "are not accepted."
             )
         if depth_unit is not None or inplace:
             raise TypeError("context_profile reads the well's LAS file; depth_unit and inplace do not apply.")
@@ -384,6 +442,10 @@ def interpret(
             raise ValueError("depth_unit only applies when interpret() reads a file.")
         if not inplace:
             well = deepcopy(well)
+    if curve_aliases is not None:
+        from petrophys.preprocessing.standardization.user_aliases import attach_curve_aliases
+
+        attach_curve_aliases(well, curve_aliases)
 
     profile = str(
         options.get("calculation_profile", getattr(config, "calculation_profile", "current"))
@@ -395,16 +457,9 @@ def interpret(
     # A header TD is kept, converted to feet from its own unit (the "geolink"
     # profile read it from the well header instead).
     historical = profile in _BENCHMARK_PROFILES or reproducing_benchmark()
-    for native_field in (
-        "bht_f",
-        *(("td_ft",) if historical else ()),
-        "rmf_at_meas_temp",
-        "rmf_meas_temp_f",
-        "rm",
-        "rm_meas_temp_f",
-        "rw",
-        "rw_meas_temp_f",
-    ):
+    from petrophys.workflow.zoned_batch import _NATIVE_HEADER_FIELDS
+
+    for native_field in (*_NATIVE_HEADER_FIELDS, *(("td_ft",) if historical else ())):
         metadata_options.pop(native_field, None)
     if config is None:
         settings = {**metadata_options, **options}

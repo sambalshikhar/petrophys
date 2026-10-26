@@ -150,8 +150,11 @@ def create_multiwell_overlay(
     _depth_axis_down(ax)
     ax.grid(True, alpha=0.3)
     ax.set_xlabel(("normalized " if normalize else "") + curve)
-    ax.set_ylabel("Depth")
-    ax.legend(fontsize=7, loc="best")
+    units = {str(getattr(w, "depth_unit", "") or "") for w in wells}
+    ax.set_ylabel(f"Depth [{units.pop()}]" if len(units) == 1 and "" not in units else "Depth")
+    legend = ax.legend(fontsize=7, loc="best")
+    for handle in legend.legend_handles if hasattr(legend, "legend_handles") else legend.legendHandles:
+        handle.set_linewidth(2.0)
     if title:
         ax.set_title(title)
     return fig, ax
@@ -312,10 +315,14 @@ def create_histogram_comparison(
     xlabel: Optional[str] = None,
     alpha: float = 0.5,
     ax: Optional["Axes"] = None,
+    value_range: Optional[Tuple[float, float]] = None,
+    histtype: str = "bar",
 ) -> Tuple["Figure", "Axes"]:
     """Overlay histograms of several datasets (e.g. GR before/after normalization).
 
     ``datasets`` maps a label to a 1-D array; NaNs are dropped.
+    ``value_range`` fixes the bin range (spikes otherwise stretch it), and
+    ``histtype="step"`` draws outlines, which stay readable for several wells.
     """
     _require_mpl()
     if ax is None:
@@ -327,14 +334,20 @@ def create_histogram_comparison(
     for arr in datasets.values():
         a = np.asarray(arr, dtype=float)
         all_finite.append(a[np.isfinite(a)])
-    lo = min((a.min() for a in all_finite if a.size), default=0.0)
-    hi = max((a.max() for a in all_finite if a.size), default=1.0)
+    if value_range is not None:
+        lo, hi = value_range
+    else:
+        lo = min((a.min() for a in all_finite if a.size), default=0.0)
+        hi = max((a.max() for a in all_finite if a.size), default=1.0)
     edges = np.linspace(lo, hi, bins + 1)
 
     for label, arr in datasets.items():
         a = np.asarray(arr, dtype=float)
         a = a[np.isfinite(a)]
-        ax.hist(a, bins=edges, density=density, alpha=alpha, label=label)
+        if histtype == "step":
+            ax.hist(a, bins=edges, density=density, histtype="step", linewidth=1.4, label=label)
+        else:
+            ax.hist(a, bins=edges, density=density, alpha=alpha, histtype=histtype, label=label)
 
     ax.set_xlabel(xlabel or "")
     ax.set_ylabel("density" if density else "count")

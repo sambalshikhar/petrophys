@@ -108,6 +108,22 @@ viewer = pp.plot(
 viewer.show()
 ```
 
+## Curve names no alias table knows
+
+Petrophys recognizes the common mnemonics of the main service companies and
+software packages, but no table holds every company's names. Map yours once:
+
+```python
+pp.read("my_logs.las", curve_aliases={"GAMMA_RAY_1": "GR", "DEEP_RES": "RDEP"})
+pp.read("my_logs.las", curve_aliases="my_curve_names.csv")   # columns: curve, standard
+```
+
+The mapping is stored on the well, so `pp.interpret` and `pp.plot` use it too;
+both also take `curve_aliases=` directly, and `petrophys-context` takes
+`--curve-aliases FILE`. Standard names are the library's (`GR`, `RDEP`,
+`RHOB`, `NPHI`, `DTC`, `CALI`, ...); an unknown one raises an error that lists
+them. To plot only some curves, pass `pp.plot(well, curves=["GR", "RDEP"])`.
+
 ## Read the import report
 
 Every geology reader returns a table plus a report of what it accepted, mapped

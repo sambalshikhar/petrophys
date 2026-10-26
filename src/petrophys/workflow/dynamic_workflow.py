@@ -1935,6 +1935,17 @@ class DynamicWorkflowResult:
             "curve_summaries": _curve_summaries_for_trace(self.well, include_curves),
         }
 
+    def group_records(self, **options: Any) -> List[Dict[str, Any]]:
+        """Each formation and lithology group's record, with its own routing notes, as its context gives it.
+
+        See :func:`petrophys.reporting.context_profiles.interpretation_group_records`
+        for the options (``tops_file`` and ``lithology_mapping_file`` for
+        context-profile results, ``minimum_group_thickness``, ``documents``).
+        """
+        from petrophys.reporting.context_profiles import interpretation_group_records
+
+        return interpretation_group_records(self, **options)
+
     def _trace_settings(self) -> Dict[str, Any]:
         """The run's settings as the trace reports them.
 
@@ -7278,7 +7289,18 @@ class DynamicWorkflow:
             })
         trace.decisions.append(f"Model selected: {result.model}")
         if self._reproducing_benchmark:
-            trace.decisions.append("Canonical Indonesia and Dual Water equations used")
+            # The equations this well's samples were routed to, with their sample counts.
+            names = {
+                "archie": "Archie", "indonesia": "Indonesia", "dual_water": "Dual Water",
+                "simandoux": "Simandoux", "waxman_smits": "Waxman-Smits",
+            }
+            used = [
+                f"{names.get(model, model)} ({count} samples)"
+                for model, count in (result.model_counts or {}).items() if count
+            ]
+            trace.decisions.append(
+                "Equations used: " + ", ".join(used) if used else "No saturation equation was applied"
+            )
         else:
             used = result.model_counts or {}
             if "indonesia" in used:
