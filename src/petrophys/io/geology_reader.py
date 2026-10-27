@@ -338,7 +338,7 @@ def _infer_rank_from_names(table):
     """Add a ``rank`` column from NPD-style names ("Brent Gp.", "Etive Fm.", ...).
 
     Only applied when the table has no rank column and every name carries a
-    group, formation or member suffix, as in NPD and GeoLink picks.
+    group, formation or member suffix, as in NPD picks.
     """
     if "rank" in table or table.empty:
         return

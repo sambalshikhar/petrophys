@@ -175,10 +175,10 @@ not an interval file.
 a lithology-code name (`LITHOLOGY`, `LITHOFACIES`, `FACIES`, `LITH_CODE`,
 `ROCK_TYPE`, ...) whose values pass the code checks: 20 or more finite samples,
 whole numbers from 0 to 99 with at most 50 distinct values, and half or more of
-the samples GeoLink codes. Other curves whose names contain LITH or FACIES are
-not read. Whatever the curve is called, its codes are decoded with the
-GeoLink/Kingdom code table, and a warning says so for a curve other than
-`LITHOLOGY_GEOLINK`. When the curve holds other codes, pass its codebook as
+the samples codes of the built-in lithology code table (Kingdom nomenclature).
+Other curves whose names contain LITH or FACIES are not read. Whatever the
+curve is called, its codes are decoded with that built-in table, and a warning
+says so for a curve other than `LITHOLOGY_GEOLINK`. When the curve holds other codes, pass its codebook as
 the `lithology_codes` setting, most simply a CSV or Excel file of code and
 rock name: `pp.interpret(well, lithology_codes="my_codes.xlsx")`. A mapping
 `{1: "Shale", 2: "Sst"}` or a DataFrame also works. Each code's group then

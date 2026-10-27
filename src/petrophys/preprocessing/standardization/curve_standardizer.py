@@ -588,13 +588,21 @@ def _note_neutron_matrix_reference(curve: "Curve", source_mnemonic: str, standar
     if custom.get("neutron_matrix_reference"):
         return
     custom["neutron_matrix_reference"] = reference
-    note = f"{reference}-referenced neutron porosity ({base_curve_mnemonic(source_mnemonic)})"
+    from petrophys.interpretation.porosity.neutron_porosity import standardize_nphi
+
+    values = np.asarray(curve.data, dtype=float)
+    converted = standardize_nphi(values, reference, "limestone")
+    offset = float(np.nanmedian(converted - values)) if np.isfinite(values).any() else 0.0
+    curve._data = converted
+    custom["neutron_matrix_conversion"] = f"{reference} to limestone scale, {offset:+.2f} v/v"
+    note = (f"{reference}-referenced neutron porosity ({base_curve_mnemonic(source_mnemonic)}), "
+            f"converted to the limestone scale ({offset:+.2f} v/v)")
     description = str(curve.metadata.description or "").strip()
     curve.metadata.description = f"{description}; {note}" if description else note
     warnings.warn(
-        f"{source_mnemonic} is a {note} and is used as NPHI, which interpretation reads on "
-        f"the limestone scale; porosities from it are offset by the difference between the "
-        f"{reference} and limestone scales.",
+        f"{source_mnemonic} is a {reference}-referenced neutron porosity and is used as NPHI, which "
+        f"interpretation reads on the limestone scale: it was converted by the first-order offset "
+        f"{offset:+.2f} v/v (the chart offset varies by about 0.01-0.02 with porosity).",
         DataQualityWarning,
         stacklevel=3,
     )

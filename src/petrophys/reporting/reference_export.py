@@ -1669,7 +1669,7 @@ def _category_analysis_result(
         and workflow_result is not None
         and not _reproduces_benchmark_context(workflow_result)
     ):
-        # Group the GeoLink codes as the "current" calculations do.
+        # Group the lithology codes as the "current" calculations do.
         from petrophys.evaluation.diagnostics.lithology_analysis import CURRENT_GROUND_TRUTH_GROUPS
 
         options["ground_truth_groups"] = CURRENT_GROUND_TRUTH_GROUPS
@@ -4503,7 +4503,7 @@ def _run_lithology_mapping(
     lithology_mapping: Optional[dict[int, dict[str, str]]],
     workflow_result,
 ) -> Optional[dict[int, Optional[dict[str, str]]]]:
-    """GeoLink code names for the calculation profile of a context's workflow.
+    """Lithology code names for the calculation profile of a context's workflow.
 
     A "current" run names code 10 "Porous Limestone" and gives code 26, "Gap",
     no lithology (``None``), as its calculations treat them

@@ -1682,8 +1682,8 @@ def net_pay(*, vcl_cutoff: Optional[float] = None, phie_cutoff: Optional[float] 
     0.60, carbonate 0.30 / 0.045 / 0.70) of each sample's lithology family,
     as :func:`petrophys.interpret` takes them: with a lithology code log
     (``LITHOLOGY_GEOLINK``, or another lithology-code curve as
-    :func:`petrophys.interpret` reads it, decoded with the same GeoLink
-    codes), limestone, chalk, dolomite and marl codes are carbonate and the
+    :func:`petrophys.interpret` reads it, decoded with the same built-in
+    lithology code table), limestone, chalk, dolomite and marl codes are carbonate and the
     other codes clastic; samples without a code take ``lithology``. With
     ``exclude_non_reservoir``, the samples :func:`petrophys.interpret` keeps
     out of net reservoir and net pay leave them here too: evaporite and coal
@@ -1772,8 +1772,8 @@ def _run_net_pay(ctx: _StepContext, *, vcl_cutoff: Optional[float], phie_cutoff:
     )
     if codes is not None and code_curve != "LITHOLOGY_GEOLINK":
         ctx.warn(
-            f"Lithology families from {code_curve}, decoded with the GeoLink/Kingdom "
-            "lithology code table, as LITHOLOGY_GEOLINK codes are."
+            f"Lithology families from {code_curve}, decoded with the built-in "
+            "lithology code table."
         )
     excluded = {}
     if exclude_non_reservoir:

@@ -212,7 +212,7 @@ MINERAL_VOLUME_CURVE_NAMES = {
 }
 
 
-# Maps mineral-volume curves to the lithology whose GeoLink colour + pattern they
+# Maps mineral-volume curves to the lithology whose colour + pattern they
 # should inherit, so the cumulative mineral-composition track is styled identically
 # to the lithology track (quartz -> sandstone dots, calcite -> limestone brick, etc.).
 MINERAL_VOLUME_LITHOLOGY_LABELS: Dict[str, str] = {
@@ -245,8 +245,9 @@ COMPUTED_LITHOLOGY_CODE_LABELS: Dict[int, str] = {
 }
 
 
-#: Rock names for the numeric codes in GeoLink ``LITHOLOGY_GEOLINK`` curves.
-GEOLINK_LITHOLOGY_CODE_LABELS: Dict[int, str] = {
+#: Rock names of the built-in lithology code table (Kingdom nomenclature), used
+#: for any lithology code curve unless a codebook is given.
+LITHOLOGY_CODE_LABELS: Dict[int, str] = {
     1: "Sandstone",
     2: "Silty Sand",
     3: "Cross Bedded Sst",
@@ -422,12 +423,15 @@ def _lookup_lithology_style(label: Any, styles: Mapping[str, Any], default: Any 
     return default
 
 
+#: Former name of :data:`LITHOLOGY_CODE_LABELS`, kept for existing code.
+GEOLINK_LITHOLOGY_CODE_LABELS = LITHOLOGY_CODE_LABELS
+
 #: Environment variable naming a lithology code table (CSV or Excel) that
-#: overrides the built-in GeoLink code labels for every plot in the process.
+#: overrides the built-in lithology code labels for every plot in the process.
 LITHOLOGY_MAPPING_ENV_VAR = "PETROPHYS_LITHOLOGY_MAPPING"
 
 #: Additional lithology code tables to consult, as absolute paths. Empty by
-#: default: the built-in GeoLink labels are used unless a table is supplied
+#: default: the built-in lithology labels are used unless a table is supplied
 #: explicitly (``lithology_mapping``/``lithology_mapping_df`` arguments or
 #: :data:`LITHOLOGY_MAPPING_ENV_VAR`). Files are never discovered implicitly.
 GEOLINK_LITHOLOGY_MAPPING_FILENAMES: Tuple[str, ...] = ()
@@ -510,7 +514,7 @@ def _load_lithology_mapping_tables(
         if not path.exists():
             warnings.warn(
                 f"Lithology code table {str(path)!r} does not exist; "
-                "using the built-in GeoLink lithology labels.",
+                "using the built-in lithology labels.",
                 UserWarning,
                 stacklevel=4,
             )
@@ -520,7 +524,7 @@ def _load_lithology_mapping_tables(
         except (ImportError, OSError, KeyError, ValueError) as exc:
             warnings.warn(
                 f"Could not read lithology code table {str(path)!r} ({exc}); "
-                "using the built-in GeoLink lithology labels.",
+                "using the built-in lithology labels.",
                 UserWarning,
                 stacklevel=4,
             )
@@ -530,7 +534,7 @@ def _load_lithology_mapping_tables(
         warnings.warn(
             f"Lithology code table {str(path)!r} has no recognizable code and "
             "label columns (e.g. 'code' and 'lithology', or 'Abbreviation' and 'Attribute'); "
-            "using the built-in GeoLink lithology labels.",
+            "using the built-in lithology labels.",
             UserWarning,
             stacklevel=4,
         )
@@ -1009,7 +1013,7 @@ COMMON_LITHOLOGY_LEGEND_LABELS: Dict[str, str] = {
 
 BUILTIN_LITHOLOGY_LABEL_KEYS = {
     _lithology_label_key(label)
-    for label in (*GEOLINK_LITHOLOGY_CODE_LABELS.values(), *COMPUTED_LITHOLOGY_CODE_LABELS.values())
+    for label in (*LITHOLOGY_CODE_LABELS.values(), *COMPUTED_LITHOLOGY_CODE_LABELS.values())
 }
 
 
@@ -1309,7 +1313,7 @@ def _optional_track(well: "Well", track: LogTrackSpec) -> bool:
 
 
 def _lithology_code_curve(well: "Well") -> Optional[str]:
-    """The well's lithology code curve, read with the GeoLink codes; None without one.
+    """The well's lithology code curve, read with the built-in lithology codes; None without one.
 
     ``LITHOLOGY_GEOLINK``, or another lithology-code curve as
     :func:`petrophys.interpret` reads it.
@@ -1891,7 +1895,7 @@ class LogViewer:
         PetroPy-script-compatible mapping table. Columns named
         ``Abbreviation`` and ``Attribute`` are recognized. If both label
         columns exist, ``Attribute`` takes precedence over ``Lithology Attribute``.
-        When neither mapping is given, GeoLink codes use the built-in labels,
+        When neither mapping is given, codes use the built-in lithology labels,
         or the CSV/Excel table named by the ``PETROPHYS_LITHOLOGY_MAPPING``
         environment variable when it is set.
     formation_tops : mapping, sequence, DataFrame, or path, optional
@@ -1930,7 +1934,7 @@ class LogViewer:
         #: With ``interpreted`` (an interpretation's well) values are not
         #: screened again, so the plot shows what the interpretation used.
         self.well = _display_well(well, interpreted=interpreted)
-        # The lithology code curve, labelled with the GeoLink codes.
+        # The lithology code curve, labelled with the built-in lithology codes.
         self._code_curve = _lithology_code_curve(self.well)
         self.formation_import_report = {}
         self.suppressed_formation_labels = []
@@ -2765,7 +2769,7 @@ class LogViewer:
         )
 
     def _mineral_lithology_label(self, spec: LogCurveSpec, curve: Any) -> str:
-        """Resolve the lithology label whose GeoLink style a mineral curve inherits."""
+        """Resolve the lithology label whose style a mineral curve inherits."""
         for name in (spec.curve_name, getattr(curve, "mnemonic", None), spec.display_name):
             key = str(name or "").strip().upper()
             if key in MINERAL_VOLUME_LITHOLOGY_LABELS:
@@ -4062,9 +4066,9 @@ class LogViewer:
 
         default_maps: Tuple[Mapping[int, str], ...]
         if use_geolink_defaults:
-            default_maps = (GEOLINK_LITHOLOGY_CODE_LABELS, COMPUTED_LITHOLOGY_CODE_LABELS)
+            default_maps = (LITHOLOGY_CODE_LABELS, COMPUTED_LITHOLOGY_CODE_LABELS)
         else:
-            default_maps = (COMPUTED_LITHOLOGY_CODE_LABELS, GEOLINK_LITHOLOGY_CODE_LABELS)
+            default_maps = (COMPUTED_LITHOLOGY_CODE_LABELS, LITHOLOGY_CODE_LABELS)
 
         for default_map in default_maps:
             if numeric in default_map:

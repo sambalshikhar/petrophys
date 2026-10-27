@@ -226,15 +226,15 @@ With oil-based mud (`mud_type="OBM"`), no SXO or MHI is computed and Rw is not e
 
 | Domain | Mineral solver | Needs |
 |---|---|---|
-| `clastic` (default) | multi-mineral solve ({class}`~petrophys.interpretation.lithology.MultiMineralSolverV1`): each tool equation weighted by its nominal uncertainty, and samples whose mineral total misses the available rock volume by more than 0.05 left unsolved; sandstone matrix | RHOB, NPHI, PEF or DTC, VCL, PHIE |
+| `clastic` (default) | multi-mineral solve ({class}`~petrophys.interpretation.lithology.MultiMineralSolverV1`): each tool equation weighted by its nominal uncertainty, and samples whose mineral total misses the available rock volume by more than 0.05 left unsolved; quartz, calcite, dolomite and anhydrite with PEF (sonic beside it), quartz, calcite and dolomite from RHOB and NPHI without it; PEF set aside when it reads like barite-weighted mud; samples with PEF but no NPHI solved by {class}`~petrophys.interpretation.lithology.MultiMineralSolver` (version 2, porosity solved jointly); sandstone matrix | RHOB, NPHI or PEF, DTC, VCL, PHIE |
 | `carbonate` | calcite and dolomite from bulk density and closure, with clay from VCL at `rho_cl` and pore fluid `rho_fl`; `carbonate_calibration="costa"` applies the COSTA field calibration instead (illite from GR, a 1.19 g/cm3 brine); limestone or dolomite matrix | RHOB, VCL (GR for `costa`), PHIE or PHIT |
 | `auto` | resolved from attached or embedded geology; falls back to clastic with a warning | |
 
 If the data point to a carbonate while the domain is `clastic`, the run keeps the sandstone matrix and warns you to set `lithology_domain="carbonate"`.
 
 The lithology code curve is the curve `lithology_curve` names, else `LITHOLOGY_GEOLINK`, else the first curve under a lithology-code name (`LITHOLOGY`, `LITHOFACIES`, `FACIES`, `LITH_CODE`, `ROCK_TYPE`, ...) whose values pass the code checks in {doc}`input_templates`.
-That one curve gives the vendor lithology, the `"auto"` matrix and the per-depth lithology groups, and its codes are decoded with the GeoLink/Kingdom code table whatever the curve is called.
-`result.warnings` names a curve other than `LITHOLOGY_GEOLINK`; if it holds other codes, pass `lithology_source="computed"` or lithology intervals.
+That one curve gives the vendor lithology, the `"auto"` matrix and the per-depth lithology groups, and its codes are decoded with the built-in lithology code table (Kingdom nomenclature) whatever the curve is called.
+`result.warnings` names a curve other than `LITHOLOGY_GEOLINK`; if it holds other codes, pass its codebook as `lithology_codes`, or `lithology_source="computed"`, or lithology intervals.
 
 The carbonate solve uses bulk density alone, so its calcite-dolomite split depends on the pore-fluid density `rho_fl` (1.0 g/cm3 by default) and on the matrix density behind the porosity.
 On HW-3 the generic defaults put nearly nine samples in ten at the calcite end member, with no dolomite; set `rho_fl` for your brine, and use the field calibration on COSTA wells.

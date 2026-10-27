@@ -902,7 +902,7 @@ The rest of the reference documents what these calls are built from.""",
                 names="create_log_viewer create_adaptive_log_viewer_template "
                 "load_log_viewer_template LogViewer LogViewerTemplate create_triple_combo "
                 "create_log_plot LogPlot DEFAULT_LOG_VIEWER_TEMPLATES "
-                "GEOLINK_LITHOLOGY_CODE_LABELS",
+                "LITHOLOGY_CODE_LABELS",
             ),
             Section(
                 VIZ,

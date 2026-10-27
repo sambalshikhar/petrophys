@@ -360,7 +360,7 @@ def run_formation_analysis(
         Whether to standardize curves before workflow
     rank : str, optional
         Stratigraphic level to analyze when the tops mix levels, e.g.
-        ``"group"`` or ``"formation"``. For NPD/GeoLink picks without a rank
+        ``"group"`` or ``"formation"``. For NPD-style picks without a rank
         column, the level is read from the name suffix (GP./Fm./Mb.).
     **workflow_kwargs
         Additional workflow configuration parameters
