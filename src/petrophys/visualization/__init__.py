@@ -31,6 +31,7 @@ from petrophys.visualization.log_plot import LogPlot, create_log_plot
 from petrophys.visualization.log_viewer import (
     DEFAULT_LOG_VIEWER_TEMPLATES,
     GEOLINK_LITHOLOGY_CODE_LABELS,
+    LITHOLOGY_CODE_LABELS,
     LogViewer,
     LogViewerTemplate,
     create_adaptive_log_viewer_template,
@@ -77,6 +78,7 @@ __all__ = [
     "create_log_plot",
     "DEFAULT_LOG_VIEWER_TEMPLATES",
     "GEOLINK_LITHOLOGY_CODE_LABELS",
+    "LITHOLOGY_CODE_LABELS",
     "LogViewer",
     "LogViewerTemplate",
     "create_adaptive_log_viewer_template",

@@ -43,7 +43,7 @@ _MATRIX_TO_LITHOLOGY = {
     "dolomite": "carbonate",
 }
 
-# Lithology-code -> coarse class, for the GeoLink / Kingdom nomenclature
+# Lithology-code -> coarse class, for the built-in lithology code table (Kingdom nomenclature
 # (Litho_Nomenclature_Kingdom.xlsx). "clastic"/"carbonate" drive the decision;
 # "dolomite" is split out so a dolomite-dominated carbonate maps to that matrix.
 LITHOLOGY_CODE_CLASS: Dict[int, str] = {
@@ -67,7 +67,7 @@ LITHOLOGY_CODE_CLASS: Dict[int, str] = {
     35: "clastic", 36: "clastic",                        # aeolian sst / arkose
 }
 
-#: The GeoLink/Kingdom lithology code curve.
+#: The lithology code curve name of the GeoLink sample wells, read first.
 GEOLINK_LITHOLOGY_CURVE = "LITHOLOGY_GEOLINK"
 
 #: Key of the ``_geology_context`` well parameter under which the dynamic
@@ -253,12 +253,12 @@ def lithology_code_curve(
        (``LITHOLOGY``, ``LITHOFACIES``, ``FACIES``, ``LITH_CODE``, ...) whose
        curve holds lithology codes: 20 or more finite samples, whole numbers
        from 0 to 99 with at most 50 distinct values, half or more of the
-       samples GeoLink codes.
+       samples codes of the built-in table.
 
     No other name pattern is tried, so the workflow's computed ``LITHO`` and
     ``LITHO_CLASS`` and the ``GT_*`` group curves are never found. Whatever
-    the curve is called, its codes are decoded with the GeoLink/Kingdom code
-    table (:data:`LITHOLOGY_CODE_CLASS`).
+    the curve is called, its codes are decoded with the built-in lithology
+    code table (:data:`LITHOLOGY_CODE_CLASS`, Kingdom nomenclature).
 
     Returns
     -------

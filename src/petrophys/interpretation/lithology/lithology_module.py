@@ -60,6 +60,26 @@ class LithologyResult:
     mineral_selection: Optional[dict] = None
 
 
+
+def barite_pef_share(rhob, pef, vcl, phie) -> tuple:
+    """Share of clean porous samples whose PEF contradicts their density, and their count.
+
+    Clean porous: VCL < 0.2 and PHIE > 0.12. Contradiction: apparent matrix
+    density below 2.67 g/cm3 (quartz-like) with apparent matrix U above 10
+    b/cm3 (calcite-like), which no common mineral mixture gives and barite in
+    the mud does. Clay and water end points are those of the version 1 solver.
+    """
+    rhob, pef, vcl, phie = (np.asarray(x, dtype=float) for x in (rhob, pef, vcl, phie))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        available = 1.0 - vcl - phie
+        rhomaa = (rhob - vcl * 2.65 - phie * 1.0) / available
+        umaa = (pef * rhob - vcl * 9.71 - phie * 0.36) / available
+    clean = (vcl < 0.2) & (phie > 0.12) & np.isfinite(rhomaa) & np.isfinite(umaa)
+    count = int(clean.sum())
+    if count == 0:
+        return 0.0, 0
+    return float(np.count_nonzero(clean & (rhomaa < 2.67) & (umaa > 10.0)) / count), count
+
 class LithologyModule:
     """
     Lithology determination from well logs.
@@ -88,6 +108,14 @@ class LithologyModule:
     solver_options : dict, optional
         Further keyword arguments for the solver class, e.g.
         ``{"row_uncertainty": None}`` for the unscaled version 1 solve.
+    screen_barite_pef : bool, optional
+        Set PEF aside for the well when it reads like barite-weighted mud: in
+        most clean porous samples (VCL < 0.2, PHIE > 0.12; at least 30) the
+        apparent matrix density is quartz-like (< 2.67 g/cm3) while the
+        apparent matrix U is calcite-like (> 10 b/cm3), a pairing no common
+        mineral gives. The solve then uses density, neutron (and sonic). Off
+        by default; :func:`petrophys.interpret` turns it on outside the
+        benchmark profiles.
 
     Examples
     --------
@@ -116,6 +144,7 @@ class LithologyModule:
         lithology: str = "auto",
         solver_version: int = 2,
         solver_options: Optional[dict] = None,
+        screen_barite_pef: bool = False,
     ):
         self._custom_minerals = minerals is not None
         if lithology not in {"auto", "clastic", "carbonate"}:
@@ -130,6 +159,9 @@ class LithologyModule:
         self.include_clay = include_clay
         self.solver_version = solver_version
         self.solver_options = dict(solver_options or {})
+        self.screen_barite_pef = bool(screen_barite_pef)
+        #: Notes of the last :meth:`calculate`, e.g. PEF set aside.
+        self.notes: List[str] = []
         solver_class = MultiMineralSolverV1 if solver_version == 1 else MultiMineralSolver
         self.solver = solver_class(minerals=minerals, **self.solver_options)
 
@@ -451,6 +483,16 @@ class LithologyModule:
 
         pef_clean = self._screen_pef(pef) if pef is not None else None
         dtc_clean = self._screen_dtc(dtc) if dtc is not None else None
+        self.notes = []
+        if self.screen_barite_pef and pef_clean is not None and phie is not None:
+            share, count = barite_pef_share(rhob, pef_clean, vcl, phie)
+            if count >= 30 and share >= 0.5:
+                pef_clean = None
+                self.notes.append(
+                    f"PEF set aside: in {share:.0%} of {count} clean porous samples the apparent matrix "
+                    "density is quartz-like (< 2.67 g/cm3) but the apparent matrix U calcite-like "
+                    "(> 10 b/cm3), the signature of barite-weighted mud; minerals solved without PEF"
+                )
         nphi_data = np.asarray(nphi, dtype=float).copy() if nphi is not None else np.full(n_samples, np.nan)
         phie_data = np.asarray(phie, dtype=float).copy() if phie is not None else np.zeros(n_samples)
         gr_data = np.asarray(gr, dtype=float).copy() if gr is not None else np.full(n_samples, np.nan)

@@ -90,8 +90,9 @@ mostly implausible, which usually means a wrong unit label, raises a warning.
 A per-sample lithology code log is read from the curve named by the
 `lithology_curve` setting, else from `LITHOLOGY_GEOLINK`, else from a curve
 under a lithology-code name, such as `LITHOLOGY` or `FACIES`, that holds
-lithology codes. Its codes are decoded with the GeoLink/Kingdom code table
-whatever the curve is called, and a warning names any curve other than
+lithology codes. Its codes are decoded with the built-in lithology code table
+(Kingdom nomenclature) whatever the curve is called, unless you give its
+codebook as `lithology_codes`, and a warning names any curve other than
 `LITHOLOGY_GEOLINK`.
 Templates for every input ship with the package, e.g.
 `pp.sample("formation_tops_template")`; see the

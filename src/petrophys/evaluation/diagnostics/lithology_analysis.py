@@ -84,7 +84,7 @@ GROUND_TRUTH_GROUPS = {
     "CHERT": {29},
 }
 
-#: GeoLink codes the "current" calculation profile names differently (see
+#: Lithology codes the "current" calculation profile names differently from the "geolink" profile (see
 #: ``_CURRENT_GROUND_TRUTH_CODE_TO_GROUP`` in
 #: :mod:`petrophys.workflow.dynamic_workflow`): code 10 is "Porous Limestone"
 #: in the Kingdom lithology codebook ("Calcareous Sandstone" is only its display

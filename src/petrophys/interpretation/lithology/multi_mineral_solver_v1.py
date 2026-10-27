@@ -48,7 +48,9 @@ CLOSURE_TOLERANCE = 0.05
 
 # Nominal one-sigma uncertainty of each equation row, in the row's own unit.
 # The unity (closure) row is weighted most strongly: the 0.05 closure gate is
-# five of its sigmas.
+# five of its sigmas. Sonic follows pore shape and compaction as much as
+# mineralogy: beside PEF it helps the closure, but it does not replace PEF
+# (see ``sonic_without_pef``).
 ROW_UNCERTAINTY: Mapping[str, float] = MappingProxyType({
     "unity": 0.01,  # v/v
     "rhob":  0.02,  # g/cm³
@@ -118,8 +120,9 @@ class MultiMineralSolverV1:
 
         PEF available              -> 4 minerals (quartz, calcite, dolomite,
                                       anhydrite) + PEF row (+ DTC if present)
-        PEF absent, DTC available  -> 4 minerals + DTC row
-        Neither available          -> 3 minerals, RHOB + NPHI only
+        PEF absent                 -> 3 minerals, RHOB + NPHI only; with
+                                      ``sonic_without_pef`` a DTC row makes it
+                                      4 minerals + DTC row
 
     Tool Response Equations (linear mixing)::
 
@@ -154,6 +157,13 @@ class MultiMineralSolverV1:
         Rows are divided by these values before the solve; keys left out keep
         :data:`ROW_UNCERTAINTY` (0.01, 0.02, 0.02, 0.5, 2.0). None solves the
         rows unscaled, the calculation behind the "geolink" calculation profile.
+    sonic_without_pef : bool, optional
+        Let a sonic row stand in for a missing PEF and solve the four-mineral
+        set (the original behaviour, kept by the benchmark profiles). Default
+        False: without PEF the three-mineral set is solved from density and
+        neutron. Against vendor lithology logs (15/9-14, 30/6-5) the sonic
+        stand-in called 84-97 % of no-PEF carbonates quartz; density and
+        neutron alone called 74-89 % of them carbonate.
 
     Examples
     --------
@@ -170,6 +180,7 @@ class MultiMineralSolverV1:
         clay_mineral: str = "clay",
         fluid: str = "water",
         row_uncertainty: Optional[Mapping[str, float]] = ROW_UNCERTAINTY,
+        sonic_without_pef: bool = False,
     ):
         if minerals is None:
             minerals = ["quartz", "calcite", "dolomite", "anhydrite"]
@@ -181,6 +192,7 @@ class MultiMineralSolverV1:
         self.clay_mineral    = clay_mineral
         self.fluid           = fluid
         self.row_uncertainty = _row_uncertainty(row_uncertainty)
+        self.sonic_without_pef = bool(sonic_without_pef)
 
         all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef))
         self.mineral_props = {m: _get_endpoints(m) for m in all_minerals}
@@ -201,6 +213,8 @@ class MultiMineralSolverV1:
         phie = float(np.clip(phie, 0.0, 1.0))
 
         # 4 minerals need at least 4 equations: Unity + RHOB + NPHI + (PEF or DTC).
+        if pef is None and not self.sonic_without_pef:
+            dt = None
         has_discriminator = pef is not None or dt is not None
         active_minerals = self.minerals if has_discriminator else self.minerals_no_pef
 

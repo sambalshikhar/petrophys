@@ -243,7 +243,7 @@ LITHOLOGY_GROUP_TO_MATRIX = {
     "coal": "coal",
 }
 
-# The "current" calculations regroup a few GeoLink codes; the "geolink" profile
+# The "current" calculations regroup a few lithology codes; the "geolink" profile
 # keeps GROUND_TRUTH_CODE_TO_GROUP. Code 10 is "Porous Limestone" in the Kingdom
 # lithology codebook ("Calcareous Sandstone" is only its display pattern) and
 # logs as a carbonate; code 26, "Gap", records no lithology. The potash salts
@@ -342,7 +342,7 @@ def _non_reservoir_samples(well: "Well", lithology: Union[str, np.ndarray]) -> D
       2.03 g/cm3 on the density log (Schlumberger chartbook), an apparent
       density porosity of 0.38 on a 2.65 g/cm3 matrix with 1.0 g/cm3 water,
       and its high resistivity gives a low Sw. The lithology domain alone
-      never excludes samples. On a GeoLink code log the evaporites are the
+      never excludes samples. On a lithology code log the evaporites are the
       halite and anhydrite groups and the potash salts; code 26, "Gap",
       records no lithology and has no group.
     * ``coal``: per-depth lithology groups in
@@ -816,20 +816,20 @@ class DynamicWorkflowConfig:
     #: Mnemonic of the per-sample lithology code curve, e.g. ``"FACIES"``. The
     #: same curve is the vendor lithology that ``lithology_source`` selects,
     #: resolves an ``"auto"`` matrix and gives the per-depth lithology groups,
-    #: and its codes are decoded with the GeoLink/Kingdom code table of
-    #: ``LITHOLOGY_GEOLINK``. None (default) reads ``LITHOLOGY_GEOLINK``. Under
+    #: and its codes are decoded with the built-in lithology code table
+    #: (Kingdom nomenclature). None (default) reads ``LITHOLOGY_GEOLINK``. Under
     #: ``"current"``, with ``lithology_source`` ``"auto"`` or ``"vendor"``, a
     #: well without it is read from the first lithology-code mnemonic
     #: (``LITHOLOGY``, ``LITHOFACIES``, ``FACIES``, ``LITH_CODE``,
     #: ``ROCK_TYPE``, ...) whose curve holds lithology codes: 20 or more finite
     #: whole numbers from 0 to 99, at most 50 distinct, half or more of them
-    #: GeoLink codes. A warning names a curve other than ``LITHOLOGY_GEOLINK``,
+    #: codes of that table. A warning names a curve other than ``LITHOLOGY_GEOLINK``,
     #: and a curve set here that has no finite samples. Unless this is set, the
     #: "geolink" profile takes its per-depth lithology groups from
     #: ``LITHOLOGY_GEOLINK`` alone (see ``calculation_profile``).
     lithology_curve: Optional[str] = None
-    #: The codebook of the lithology code curve, when its codes are not the
-    #: GeoLink/Kingdom codes: a mapping of code to rock name, or a table
+    #: The codebook of the lithology code curve, when its codes are not those of
+    #: the built-in lithology code table: a mapping of code to rock name, or a table
     #: (path or DataFrame) that :func:`petrophys.read_lithology_codes` reads.
     #: Each rock name is read as a lithology group by
     #: :func:`petrophys.interpretation.lithology.labels.lithology_group_for_label`
@@ -1997,7 +1997,7 @@ class DynamicWorkflowResult:
             formations attached with ``petrophys.read(path, formations=...)``.
         rank : str, optional
             Level to summarize when the tops mix levels, e.g. ``"group"`` or
-            ``"formation"``. NPD/GeoLink-style names (``"Brent Gp."``,
+            ``"formation"``. NPD-style names (``"Brent Gp."``,
             ``"Etive Fm."``) carry their rank; other tables need a ``rank``
             column.
 
@@ -2489,8 +2489,8 @@ class DynamicWorkflow:
             self._result.warnings.append(note)
         elif code_curve is not None and code_curve != "LITHOLOGY_GEOLINK":
             note = (
-                f"Lithology codes are read from {code_curve} and decoded with the GeoLink/Kingdom "
-                "lithology code table, as LITHOLOGY_GEOLINK codes are."
+                f"Lithology codes are read from {code_curve} and decoded with the built-in "
+                "lithology code table."
             )
             if code_curve != requested:
                 note += (
@@ -3561,6 +3561,14 @@ class DynamicWorkflow:
                     clay,
                     ("porosity (PHIT/PHIE)", "PHIT", "PHIE"),
                 )
+            elif not self._reproducing_benchmark:
+                missing = self._missing(
+                    well,
+                    ("bulk density (RHOB)", "RHOB"),
+                    ("neutron porosity or photoelectric factor (NPHI/PEF)", "NPHI", "PEF"),
+                    ("clay volume (VCL)", "VCL"),
+                    ("effective porosity (PHIE)", "PHIE"),
+                )
             else:
                 missing = self._missing(
                     well,
@@ -3830,6 +3838,15 @@ class DynamicWorkflow:
                 self._has_curve(well, "RHOB")
                 and self._has_curve(well, *clay)
                 and self._has_curve(well, "PHIT", "PHIE")
+            )
+        if not self._reproducing_benchmark:
+            # Version 1 solves where NPHI is logged (with or without PEF); the
+            # version 2 solve fills samples with PEF but no NPHI.
+            return (
+                self._has_curve(well, "RHOB")
+                and self._has_curve(well, "NPHI", "PEF")
+                and self._has_curve(well, "VCL")
+                and self._has_curve(well, "PHIE")
             )
         return (
             self._has_curve(well, "RHOB")
@@ -4892,6 +4909,46 @@ class DynamicWorkflow:
             codes[i] = LithologyModule.LITHOLOGY_CODES.get(name, LithologyModule.LITHOLOGY_CODES["mixed"])
         return codes
 
+    def _fill_without_nphi(self, well: "Well", result, trace: StepResult):
+        """Solve with version 2 the samples version 1 could not, for want of NPHI, where PEF is logged.
+
+        Version 2 solves porosity jointly, so it needs no NPHI: against vendor
+        lithology logs it matched them where version 1 could not run (25/5-1:
+        90 % of the samples without NPHI). Samples without PEF either stay
+        unsolved: RHOB and sonic alone do not separate the minerals.
+        """
+        from petrophys.interpretation.lithology.lithology_module import LithologyModule
+
+        def log(names):
+            data, _, _ = get_curve_data_depthwise(well, names)
+            return np.asarray(data, dtype=float) if data is not None else np.full(well.n_samples, np.nan)
+
+        pef = LithologyModule._screen_pef(log(["PEF"]))
+        fill = (
+            ~np.asarray(result.solved, dtype=bool)
+            & ~np.isfinite(log(["NPHI", "PHIN"]))
+            & np.isfinite(log(["RHOB"]))
+            & np.isfinite(pef)
+        )
+        if not fill.any():
+            return result
+        module = LithologyModule(lithology="auto", solver_version=2, screen_barite_pef=True)
+        other = module.calculate(well)
+        fill &= np.asarray(other.solved, dtype=bool)
+        if not fill.any():
+            return result
+        for name in ("v_quartz", "v_calcite", "v_dolomite", "v_anhydrite", "lithology_code", "lithology_name",
+                     "qc_flag", "solved"):
+            values = np.array(getattr(result, name), copy=True)
+            values[fill] = np.asarray(getattr(other, name))[fill]
+            setattr(result, name, values)
+        trace.parameters["version2_samples_without_nphi"] = int(fill.sum())
+        trace.decisions.append(
+            f"{int(fill.sum())} samples without NPHI solved by the version 2 solver from RHOB and PEF "
+            "(porosity solved jointly)"
+        )
+        return result
+
     def _step_lithology(self, well: "Well") -> StepResult:
         from petrophys.interpretation.lithology.lithology_module import LithologyModule
 
@@ -4950,11 +5007,27 @@ class DynamicWorkflow:
             solver_version = self.config.mineral_solver_version
             # The "geolink" profile solves the version 1 rows unweighted.
             unweighted = solver_version == 1 and self._reproducing_benchmark
+            # The benchmark profiles keep the original solve: unweighted rows,
+            # sonic standing in for PEF, PEF always used.
             litho_module = LithologyModule(
                 lithology="auto",
                 solver_version=solver_version,
-                solver_options={"row_uncertainty": None} if unweighted else None,
+                solver_options=(
+                    {"row_uncertainty": None, "sonic_without_pef": True} if unweighted
+                    else {"sonic_without_pef": True} if solver_version == 1 and self._reproducing_benchmark
+                    else None
+                ),
+                screen_barite_pef=not self._reproducing_benchmark,
             )
+            # Without NPHI anywhere, outside the benchmarks, version 2 solves the
+            # well from RHOB and PEF (porosity solved jointly).
+            whole_well_v2 = solver_version == 1 and nphi_curve is None and not self._reproducing_benchmark
+            if whole_well_v2:
+                solver_version = 2
+                litho_module = LithologyModule(lithology="auto", solver_version=2, screen_barite_pef=True)
+                trace.decisions.append(
+                    "No NPHI: minerals solved by the version 2 solver from RHOB and PEF (porosity solved jointly)"
+                )
             if solver_version == 1:
                 if nphi_curve is None:
                     raise ValueError(
@@ -4971,6 +5044,11 @@ class DynamicWorkflow:
                 trace.method = "multi_mineral_solver"
             trace.parameters["mineral_solver_version"] = solver_version
             result = litho_module.calculate(well)
+            for note in litho_module.notes:
+                trace.decisions.append(note)
+                self._result.warnings.append(f"lithology: {note}")
+            if solver_version == 1 and not self._reproducing_benchmark:
+                result = self._fill_without_nphi(well, result, trace)
         code_curve_available = self._lithology_code_curve(well) is not None
         input_lithology_available = self._selected_lithology_source == "external" or (
             self._selected_lithology_source == "vendor" and code_curve_available
@@ -5020,7 +5098,7 @@ class DynamicWorkflow:
         trace.parameters["lithology_domain"] = self.config.lithology_domain
         if write_lithology_code:
             trace.decisions.append(
-                "No GeoLink or CSV lithology was available -> inferred LITHO from mineral volumes"
+                "No lithology curve or lithology intervals were available -> inferred LITHO from mineral volumes"
             )
             if self._dataset == "geolink_train":
                 trace.decisions.append(
@@ -5035,7 +5113,12 @@ class DynamicWorkflow:
         if not carbonate or notebook_costa:
             # The clastic solvers read PEF and DTC; the "geolink" profile's
             # COSTA trace also carries this line.
-            trace.decisions.append("PEF screened for plausibility; DTC used when PEF is absent or invalid")
+            trace.decisions.append(
+                "PEF screened for plausibility; DTC used when PEF is absent or invalid"
+                if self._reproducing_benchmark or carbonate
+                else "PEF screened for plausibility; without PEF the minerals are solved from RHOB and NPHI "
+                "(sonic is used beside PEF, not in its place)"
+            )
         if result.reduced_qc_fallback is not None and np.any(result.reduced_qc_fallback):
             trace.decisions.append(
                 "Underdetermined samples used fixed PHIE with a reduced quartz-calcite inversion"
@@ -8101,9 +8184,10 @@ class DynamicWorkflow:
                     # Recorded so reports rebuild the groups this run used.
                     gt_curve.metadata.custom["category_groups"] = dict(mapping)
                 self._lithology_log = _group_array_from_numeric_codes(gt_data, mapping)
+                # The published packages name the source of LITHOLOGY_GEOLINK so.
                 self._lithology_source = (
                     "ground_truth_lithology_geolink"
-                    if code_curve == "LITHOLOGY_GEOLINK"
+                    if code_curve == "LITHOLOGY_GEOLINK" and self._reproducing_benchmark
                     else f"vendor_lithology_log[{code_curve}]"
                 )
                 return self._lithology_log

@@ -141,6 +141,37 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
 - `pp.plot(..., curve_styles={"GR": {"color": "black", "right": 200}})`
   changes a curve's colour, scale, line, fill or marker without an XML
   template; unknown keys raise an error, names no track draws a warning.
+- Mineral solver, checked against synthetic mixtures, core grain density and
+  vendor lithology logs:
+  - Without PEF, the clastic solve (version 1) takes quartz, calcite and
+    dolomite from RHOB and NPHI instead of letting the sonic stand in for PEF.
+    The sonic stand-in called 84-97 % of the vendor-coded carbonates of
+    15/9-14 and 30/6-5 quartz; the new solve calls 74-89 % of them carbonate,
+    with sands and shales unchanged. Beside PEF the sonic row is kept.
+  - PEF is set aside for a well when it reads like barite-weighted mud: in
+    most clean porous samples quartz-like apparent matrix density with
+    calcite-like apparent matrix U. On 30/6-5 the Brent sands now solve as
+    quartz (88 % agreement with the vendor log, from 2-7 %) and the solved
+    grain density is within 0.013 g/cm3 of core (was +0.027). The lithology
+    step says so and the result carries a warning.
+  - A sandstone-referenced neutron (NPSS, CNSS, NPHI_SS) is converted to the
+    limestone scale the interpretation reads (first-order -0.04 v/v), with a
+    warning, instead of only being flagged.
+  - Samples version 1 cannot solve for want of NPHI, where PEF is logged,
+    are solved by version 2 (porosity solved jointly): 25/5-1, whose NPHI
+    covers a short interval, now has mineral volumes over 99 % of the well
+    (from 18 %), agreeing with its vendor log on 90 % of those samples. A
+    well with neither NPHI nor PEF still skips the step, now saying it needs
+    one of them.
+  - The benchmark profiles keep the original solve.
+- Wording: messages, docs and tutorials say "lithology" for the general
+  case and name GeoLink only for the GeoLink data, profile and packages. The
+  built-in lithology code table (Kingdom nomenclature) is
+  `LITHOLOGY_CODE_LABELS` (`GEOLINK_LITHOLOGY_CODE_LABELS` remains as an
+  alias); a run without lithology input records "No lithology curve or
+  lithology intervals were available"; a `LITHOLOGY_GEOLINK` curve is
+  reported as `vendor_lithology_log[LITHOLOGY_GEOLINK]` like any other code
+  curve (benchmark reproduction keeps its packages' wording).
 - `pp.plot(..., curves=[...])` plots only the named curves, each in its usual
   track; a curve no track takes gets a generic track. Names may be the file's
   own (`GRD`) or standard names (`GR`, `RDEP`, `NPHI`), found through the
@@ -375,7 +406,7 @@ wherever the package used the function.
   and igneous rocks. Mixed names stay without a group, as before for
   unrecognized names.
 - `DynamicWorkflowConfig.lithology_codes` takes the codebook of a lithology
-  code curve whose codes are not GeoLink/Kingdom codes: a CSV or Excel
+  code curve whose codes are not those of the built-in lithology code table: a CSV or Excel
   codebook, a DataFrame or a code-to-name mapping. Its rock names give each
   code's lithology group and the lithology domain.
 - `read_lithology_codes` recognizes more codebook headers (rock type, rock
@@ -410,14 +441,14 @@ wherever the package used the function.
   lithology-code name (`LITHOLOGY`, `LITHOFACIES`, `FACIES`, `LITH_CODE`,
   `ROCK_TYPE`, ...) whose values pass the code-log checks: 20 or more finite
   samples, whole numbers from 0 to 99 with at most 50 distinct values, half
-  or more of them GeoLink codes. That one curve gives the vendor lithology,
+  or more of them codes of the built-in table. That one curve gives the vendor lithology,
   an `"auto"` matrix and the per-depth lithology groups behind the net-pay
   cutoffs and exclusions. The run records it on the well, and context
   exports, the diagnostics, the zoned batch runner, `steps.net_pay`,
   `PermeabilityModule`, `core_data_from_well`, `IntervalAnalyzer` and the
   log viewer read the same curve. A curve other than `LITHOLOGY_GEOLINK` is
   named in a warning saying that its codes are decoded with the
-  GeoLink/Kingdom table; the trace gives the lithology source as
+  built-in lithology code table; the trace gives the lithology source as
   `vendor_lithology_log[MNEMONIC]`, and its `input_context` step reports the
   curve as `vendor_curve`. Names that only contain LITH or FACIES, such as
   `LITHO_PATT` in the Daydream 1 logs, are not read as lithology codes, and
@@ -476,7 +507,7 @@ wherever the package used the function.
 - Evaporites take their apparent density-log reading as the density-porosity
   endpoint: halite 2.032, anhydrite 2.977 and gypsum 2.351 g/cm3
   (Schlumberger, 1972). The potash salts have endpoints of their own (the
-  minerals sylvite, carnallite, polyhalite and kainite), which GeoLink codes
+  minerals sylvite, carnallite, polyhalite and kainite), which lithology codes
   27 and 32-34 and the labels "Sylvite" and "Potash" map to.
 - Halite is also recognised from its logs where no lithology code calls a
   sample an evaporite: RHOB 1.95-2.15 g/cm3, GR below 15 API, deep
