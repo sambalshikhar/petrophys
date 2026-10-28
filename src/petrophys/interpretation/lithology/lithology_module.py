@@ -531,6 +531,7 @@ class LithologyModule:
             reduced_solver = MultiMineralSolver(
                 minerals=["quartz", "calcite"],
                 minerals_no_pef=["quartz", "calcite"],
+                **self.solver_options,
             )
             reduced = reduced_solver.solve(
                 vcl=vcl,

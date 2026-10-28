@@ -230,6 +230,34 @@ in for:
 | `RWB` | `rwb` | Bound-water resistivity, ohm.m; Dual Water runs only with it |
 | `PNSH` with `RBSH` | `phi_cl` (`RBSH` also `rho_cl`) | The neutron reading and the density of shale give the clay porosity; PNSH alone is not used |
 
+The other header parameters the workflow reads, each standing in for the
+setting of the same meaning when you leave that setting unset:
+
+| LAS parameter | Setting |
+| --- | --- |
+| `A`, `M`, `N` | `a`, `m`, `n` (Archie) |
+| `SAL`, `SALINITY`, `SALINITY_PPM`, `WATSAL`, `WSAL`, `WATER_SALINITY`, `WATER_SALINITY_PPM` | `salinity_ppm` (units converted, see {doc}`workflows`) |
+| `VSHE`, `VSH_EXP`; `SHALE_EXP`; `RTSH` | `vsh_exp`; `shale_exp`; `rtsh` |
+| `B_COEFF`, `BCOEFF` | `b_coeff` |
+| `MUDTYPE`, `MUD_TYPE`, `MUD`; `MUDWATER` | `mud_type`; `mud_water` |
+| `LITH`, `LITHOLOGY`, `LITHOLOGY_DOMAIN`, `PP_DOMAIN` | `lithology_domain` |
+| `MATRIX`, `MATRIX_TYPE` | `matrix_type` |
+| `RHO_MA`, `RHMA`; `PNMA`; `RHO_FL`, `RBFL` | `rho_ma`; `nphi_ma`; `rho_fl` (kg/m3 and lb/ft3 converted) |
+| `PHI_CL`, `PHICL` | `phi_cl` |
+| `APPLY_HC_CORRECTION`, `HC_CORRECTION`, `HCCORRECTION`; `HC_TYPE` | `apply_hc_correction`; `hc_type` |
+| `GR_METHOD`, `GR_MIN`, `GR_MAX` | `gr_method`, `gr_min`, `gr_max` |
+| `VCL_CUTOFF`, `PHIE_CUTOFF`, `SW_CUTOFF` | net-pay cutoffs |
+
+Any of these with a `_Z1`, `_Z2`, ... suffix, together with `TOP_Z1`/`BOT_Z1`
+(and so on) giving the zone's depths, applies inside that zone only, for
+example `RW_Z1`, `M_Z1` or `SAL_Z2`. A header zone value ranks below the
+settings you pass: with `rw` set, `RW_Z1` is not used, and a warning says so.
+To give zone values yourself, pass them as `zones` (see {doc}`workflows`).
+
+There is no separate settings or zone file: give settings in Python
+(`pp.interpret(well, rw=...)` or a `DynamicWorkflowConfig`), or as LAS header
+parameters as above. `petrophys-context` reads them from the LAS headers.
+
 Header temperatures labelled degC or K are converted; unlabelled ones are read
 as degF. The "geolink" calculation profile ({ref}`calculation profiles
 <calculation-profiles>`) reads CLFL as NaCl salinity in ppm, ignores MFST and
@@ -240,7 +268,8 @@ wells: calcite and dolomite are then solved from bulk density, with clay from
 VCL, so the split depends on the pore-fluid density `rho_fl` (1.0 g/cm3 unless
 you set it for your brine). For the COSTA field wells,
 `carbonate_calibration="costa"` applies the field calibration instead (illite
-from GR, a 1.19 g/cm3 brine). Set `auto` when deliberate domain inference is
+from GR, and a 1.1 g/cm3 brine for porosity and minerals unless you set
+`rho_fl`). Set `auto` when deliberate domain inference is
 wanted. A COSTA well with the field calibration:
 
 ```{code-cell} python
@@ -269,18 +298,20 @@ notes record the equation and the endpoints actually applied. These settings
 are read per well, including when `--lithology-domain` is supplied. Explicit
 Python settings override the LAS values.
 
-The values 20 and 100 API are bounds, not fixed endpoints for every well:
-`GRclean = min(GRmin, 20)` and `GRshale = max(GRmax, 100)`. A lower GR minimum
-or higher GR maximum is retained; only a minimum above 20 or a maximum below
-100 is replaced. For example, selected endpoints of 10.3/71.4 become
-10.3/100, while 10/140 stay 10/140. With the module defaults, finite log
-minimum/maximum values determine whether the endpoints extend beyond 20/100.
-The same bounds apply to explicitly supplied endpoint estimates.
-
-To select the finite GR 5th/95th percentiles instead of the log extrema,
-set `GR_MIN` and `GR_MAX` to `auto` in LAS metadata, or pass
-`gr_min=None, gr_max=None` to `pp.interpret`. The percentiles are calculated
-from the input GR samples on each run, then the same 20/100 bounds apply.
+GR baselines you set (`gr_min`/`gr_max`, `GR_MIN`/`GR_MAX` in the header, or
+per zone `GR_MIN_Z1` with `TOP_Z1`/`BOT_Z1`) are used as given. Left unset,
+`pp.interpret` picks the finite GR 5th/95th percentiles (as does
+`GR_MIN`/`GR_MAX` set to `auto`), and `VclModule`/`calculate_vcl` used on their
+own pick the log minimum/maximum. Those picks are then bounded:
+`GRclean = min(pick, 20)` and `GRshale = max(pick, 100)`. The bound guards a
+nearly flat GR, a section with no real shale or no real clean rock, where the
+picks would stretch the gamma-ray index across noise (the COSTA files read
+9-20 API at P5/P95). It is not a rule of the method: clean rock that is itself
+radioactive, such as the feldspathic and lithic Taranaki sands (Cheal-1 reads
+about 86 API in its Mount Messenger sands), is read as clay under it. A clean
+pick above 30 API that the bound lowers raises a warning; set `gr_min` from a
+known clean sand there, per zone where it changes. The trace records the picks
+and what the bound moved (`gr_bounded`).
 
 ```text
 GR_MIN.API auto : Calculate clean endpoint from GR P5

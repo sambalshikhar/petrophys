@@ -21,6 +21,9 @@ from petrophys._internal.serialization import (
 )
 from petrophys._internal.serialization import depth_mask as _depth_mask
 
+#: Most rows of a workflow table step (e.g. formation_summary) returned.
+_MAX_TABLE_ROWS = 200
+
 if TYPE_CHECKING:
     from petrophys.model.well import Well
 
@@ -327,9 +330,21 @@ def _assumptions(result: Any) -> tuple[List[str], List[str]]:
     items: List[str] = []
     notes: List[str] = []
     rw_text, rw_note = _rw_assumption(result)
+    zone_runs = list(getattr(result, "zone_results", []) or [])
+    if zone_runs:
+        # The trace above is the whole-well run; zones ran with their own settings.
+        rw_text += " (outside the zones)"
+        rw_note = None if rw_note and "LAS header" in rw_note else rw_note
     items.append(rw_text)
     if rw_note:
         notes.append(rw_note)
+    for zone in getattr(result.config, "zones", None) or ():
+        settings = ", ".join(f"{name}={value!r}" for name, value in zone["settings"].items())
+        unit = zone.get("depth_unit") or getattr(result.well, "depth_unit", "")
+        items.append(f"Zone {zone['name']} ({zone['top']:g}-{zone['bottom']:g} {unit}): {settings}, as given")
+    if zone_runs and not getattr(result.config, "zones", None):
+        notes.append("Settings from the LAS header's zones (M_Z1, ... with TOP_Z1/BOT_Z1) were applied "
+                     "inside those zones; say so in the answer.")
 
     rmf = _step(result, "rmf")
     if rmf is not None and "assumed" in (rmf.method or ""):
@@ -653,6 +668,16 @@ def workflow_summary(
     }
     if data["pay_averages"]:
         data["pay_averages"]["basis"] = "averages over net-pay samples in the summary interval"
+    tables = {}
+    for name, artifact in getattr(run, "artifacts", {}).items():
+        # Table steps (e.g. formation_summary) return their table here.
+        if hasattr(artifact, "to_dict"):
+            rows = artifact.head(_MAX_TABLE_ROWS).to_dict(orient="records")
+            tables[name] = {"rows": rows, "n_rows": int(len(artifact))}
+            if len(artifact) > _MAX_TABLE_ROWS:
+                tables[name]["note"] = f"first {_MAX_TABLE_ROWS} rows of {len(artifact)}"
+    if tables:
+        data["tables"] = tables
     return compact_object(data)
 
 

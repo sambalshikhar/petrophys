@@ -90,11 +90,18 @@ def leverett_j(
     ift: float = 30.0,
     theta: float = 30.0,
 ) -> ArrayLike:
-    """Leverett J-function (dimensionless) from Pc, permeability and porosity."""
+    """Leverett J-function (dimensionless) from Pc, permeability and porosity.
+
+    ``theta`` is the contact angle, degrees; the magnitude of
+    ``ift * cos(theta)`` is used, so a non-wetting-phase system such as
+    air-mercury (140 deg) gives a positive J.
+    """
     pc = np.asarray(pc_psi, dtype=float)
     k = np.asarray(perm_md, dtype=float)
     p = np.asarray(phi, dtype=float)
-    st = ift * np.cos(np.radians(theta))
+    # |sigma cos theta|, as convert_pc_lab_to_reservoir: theta above 90 deg
+    # (air-mercury, 140) gives the same positive J as its supplement.
+    st = abs(ift * np.cos(np.radians(theta)))
     out = np.full(np.broadcast_shapes(pc.shape, k.shape, p.shape), np.nan)
     pc_b, k_b, p_b = np.broadcast_arrays(pc, k, p)
     ok = np.isfinite(pc_b) & np.isfinite(k_b) & np.isfinite(p_b) & (k_b > 0) & (p_b > 0) & (abs(st) > 1e-9)
@@ -113,7 +120,9 @@ def pc_from_j(
     jj = np.asarray(j, dtype=float)
     k = np.asarray(perm_md, dtype=float)
     p = np.asarray(phi, dtype=float)
-    st = ift * np.cos(np.radians(theta))
+    # |sigma cos theta|, as convert_pc_lab_to_reservoir: theta above 90 deg
+    # (air-mercury, 140) gives the same positive J as its supplement.
+    st = abs(ift * np.cos(np.radians(theta)))
     out = np.full(np.broadcast_shapes(jj.shape, k.shape, p.shape), np.nan)
     j_b, k_b, p_b = np.broadcast_arrays(jj, k, p)
     ok = np.isfinite(j_b) & np.isfinite(k_b) & np.isfinite(p_b) & (k_b > 0) & (p_b > 0)

@@ -178,10 +178,11 @@ class BatchProcessor:
         well_name = well.name or Path(file_path).stem
 
         if self.workflow_func is None:
-            from petrophys.workflow.dynamic_workflow import DynamicWorkflow
+            from petrophys.workflow.dynamic_workflow import run_dynamic_workflow
 
             config = _dynamic_config_from_batch_config(self.config)
-            wf_result = DynamicWorkflow(config).run(well)
+            # As petrophys.interpret: LAS header settings fill unset ones.
+            wf_result = run_dynamic_workflow(well, config)
 
             return BatchResult(
                 well_name=well_name,

@@ -106,6 +106,8 @@ def fit_j_function(
 ) -> JFunctionModel:
     """Fit Sw = a*J^b (log-linear). ``form='power_swir'`` fits the reduced
     saturation (Sw-Swir)/(1-Swir) so the curve asymptotes to ``swir``."""
+    if form not in ("power", "power_swir"):
+        raise ValueError(f"form must be 'power' or 'power_swir'; got {form!r}")
     j = np.asarray(j, dtype=float)
     sw = np.asarray(sw, dtype=float)
     ok = np.isfinite(j) & np.isfinite(sw) & (j > 0) & (sw > 0) & (sw <= 1.0)

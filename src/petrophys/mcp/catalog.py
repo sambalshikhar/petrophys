@@ -20,7 +20,16 @@ COLLECTIONS: Dict[str, str] = {
         "COSTA carbonate field, depth in ft; each file covers only the KHARAIB-2 "
         "reservoir interval; header RW/RWT and Archie A/M/N given; interpret with "
         "lithology_domain='carbonate' (carbonate_calibration='costa' applies the "
-        "field's GR-illite relation and 1.19 g/cm3 brine to the mineral volumes)"
+        "field's GR-illite relation, and a 1.1 g/cm3 brine to porosity and mineral "
+        "volumes unless rho_fl is set)"
+    ),
+    "taranaki": (
+        "Taranaki Basin, New Zealand: onshore Cheal-1 (vertical) and Tuhua-7 "
+        "(deviated, Tikorangi limestone), depth in m, bundled formation intervals"
+    ),
+    "teapot": (
+        "Teapot Dome, Wyoming: two 1970s Schlumberger LAS deliveries, depth in ft, "
+        "with mud, temperature and bit-size values in the header"
     ),
     "kgs": "Kansas legacy LAS (Morgan No. 1-17), depth in ft",
     "daydream": "Daydream 1 (Australia) processed CMR/NMR summaries, depth in m",
@@ -122,8 +131,13 @@ def sample_catalog() -> Dict[str, Any]:
 
     wells = sample_wells()
     groups: Dict[str, Dict[str, Any]] = {}
+    pressure: List[str] = []
     for name in wells:
         collection = Path(sample(name)).parent.name
+        if collection == "formation_pressure":
+            # Pressure stations and time-indexed pretests, not log suites.
+            pressure.append(name)
+            continue
         group = groups.setdefault(
             collection, {"about": COLLECTIONS.get(collection, ""), "wells": []}
         )
@@ -133,6 +147,11 @@ def sample_catalog() -> Dict[str, Any]:
     tables = [name for name in list_samples() if name not in wells]
     return {
         "collections": groups,
+        "pressure_data": {
+            "about": COLLECTIONS["formation_pressure"]
+            + "; not for interpret_well (read pretests with read_mdt_pretest)",
+            "files": sorted(pressure, key=_natural),
+        },
         "well_notes": {name: note for name, note in WELL_NOTES.items() if name in wells},
         "other_files": tables,
         "hint": (
@@ -348,7 +367,9 @@ def step_kinds(kind: Optional[str] = None) -> Dict[str, Any]:
         info = kinds[kind]
         step = _REGISTRY[kind]
         try:
-            example = step() if kind not in {"formation_water", "mud_filtrate"} else None
+            # The water steps need a source; the header one shows their curves.
+            example = {"formation_water": lambda: step(rw="header"),
+                       "mud_filtrate": lambda: step(rmf="header")}.get(kind, step)()
         except (TypeError, ValueError):
             example = None
         if example is not None:

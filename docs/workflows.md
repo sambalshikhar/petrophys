@@ -182,15 +182,40 @@ server can also read `PETROPHYS_CALCULATION_PROFILE`.
 
 ## Settings, header values and input curves
 
-An explicit setting wins over a LAS header value: `rw` over the header RW, and `rm`, `rmf_salinity_ppm` and `rmf_chlorides_mg_l` over the header RMF and CLFL (a value `pp.interpret` copied from the header, such as CLFL, ranks with the header, below a direct RMF).
+Every setting has a default, and a value you set is used as given. The order is: a setting you set, then a LAS header value, then the default (for the "geolink" profile, its own default).
+This holds for every route: `pp.interpret(well, **settings)`, `pp.interpret(well, config)`, `run_dynamic_workflow`, the batch processor, the zoned runner and `pp.export_context(workflow_config=...)`.
+A setting you pass counts as set even when it equals the default (`rho_cl=2.45` keeps 2.45 against a header `RBSH`), also on a copy made with `dataclasses.replace`.
+Archie `a`, `m`, `n` and the net-pay cutoffs left unset follow each sample's lithology (Archie) or lithology family (cutoffs). A single value, yours or the LAS header's (`M`, `SW_CUTOFF`, ...), holds for every sample. Set one per lithology and each sample takes its own; a lithology you leave out takes the header's value if there is one (`M_Z1` inside its zone), else its default, and `"*"` gives your value for every lithology not listed:
+
+```python
+result = pp.interpret(well, m={"sandstone": 1.8, "carbonate": 2.3},
+                      sw_cutoff={"clastic": 0.5, "carbonate": 0.65})
+```
+
+Archie keys are lithologies of the Archie table (`sandstone`, `limestone`, `dolomite`, `shale`, `silt`, aliases such as `sand`) or a family (`clastic`, `carbonate`) for every lithology in it; cutoff keys are families, a lithology name standing for its family. The trace lists the values each lithology got (`archie_coefficients` in the saturation step, `cutoffs_by_family` in the net-pay step).
+
+Settings can differ by depth: pass `zones`, a list of intervals each with its settings, or a table or CSV/Excel file with `top`, `bottom` and one column per setting (an empty cell sets nothing; `name` and `depth_unit` are optional):
+
+```python
+result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230, zones=[
+    {"name": "overburden", "top": 176, "bottom": 1908, "rw": 0.5, "rw_meas_temp_f": 60},
+    {"name": "Brent", "top": 2841, "bottom": 2958, "m": 1.9},
+])
+```
+
+Each zone's settings are run over the whole well and its depths merged in, so a zone changes what its settings change and nothing else: the picks taken from the data (GR baselines, irreducible water saturation, the core model) stay those of the whole well. `result.zone_results` holds one run per distinct set of zone settings, and `result.warnings` their messages. Zones may not overlap; whole-run settings such as `calculation_profile`, `skip_steps` and the lithology inputs cannot differ by zone; a zone outside the logged depths is noted and not used.
+The full order is: your zone values inside their zone, then your whole-well settings, then LAS header zone values (`RW_Z1`, `M_Z1`, ... with `TOP_Z1`/`BOT_Z1`) inside their zone, then LAS header whole-well values, then the defaults. A header value one of yours overrides is named in the warnings. The same order holds on every route; `DynamicWorkflow(config).run` alone uses the config as given, without the header.
+An explicit setting wins over a LAS header value: `rw` over the header RW, `salinity_ppm` over the header RW, `rw_meas_temp_f` over the header RWT, and `rm`, `rmf_salinity_ppm` and `rmf_chlorides_mg_l` over the header RMF and CLFL (a value `pp.interpret` copied from the header, such as CLFL, ranks with the header, below a direct RMF).
 `phi_cl`, `rmf_meas_temp_f` and `rm_meas_temp_f` are unset (`None`) by default and resolve to 0.15 v/v and 75 degF, so an explicit value, including one equal to the default, is always used.
 Zone-only header parameters (`RW_Z1` with `TOP_Z1`/`BOT_Z1`) apply inside their zone; outside it the whole-well settings and header values are used, and the trace and warnings say so.
 A zone whose `TOP_Z1`/`BOT_Z1` span every depth of the well replaces the header value everywhere, in `pp.interpret` as in the zoned runner, and a warning names both values when they differ.
 Header values are converted from their units: `TD` from its own depth unit (the well's depth unit when it has none), `RHO_MA`/`RHO_FL` from kg/m3 (`KG/M3`, `K/M3`) or lb/ft3, and salinity from ppm, ppk, ppt (g/kg), mg/l, g/l or %; a salinity in a unit not on that list is not used, with a warning.
 Settings outside their physical range are refused: temperatures below absolute zero, `bht_f` below `surface_temp_f`, `rho_ma` outside 1.5-3.5 g/cm3 or not above `rho_fl`, `rho_fl` outside 0-2 g/cm3, `nphi_ma` outside -0.1 to 0.5 and `salinity_ppm` outside 0-400,000 ppm.
-`rw_meas_temp_f` given without `rw` is the measurement temperature of a header RW that has no RWT.
-A measured `TEMP` log with at least half of its samples finite is the temperature source, with the modelled gradient filling its gaps; a sparser log is kept as `TEMP_LOG` and the modelled profile is used.
-With `apply_hc_correction=True`, the porosity step reads the hydrocarbon-corrected `NPHI_HC` and `RHOB_HC`.
+`rw_meas_temp_f` given without `rw` is the measurement temperature of the header RW, replacing its RWT.
+A measured `TEMP` log with at least half of its samples finite is the temperature source, with the modelled gradient filling its gaps; a sparser log is kept as `TEMP_LOG` and the modelled profile is used. With `bht_f` or `surface_temp_f` set, the modelled profile is used and the log is kept as `TEMP_LOG`.
+Set `rho_ma`, `dt_ma` or `nphi_ma` and it holds at every depth, also where a lithology log would give each group its own matrix value.
+The SP-derived Rw uses `sp_max` and `sp_min` as its clean-sand and shale lines when they are set.
+With `apply_hc_correction=True`, the porosity step reads the hydrocarbon-corrected `NPHI_HC` and `RHOB_HC`. The correction scales with the flushed zone's hydrocarbon (1 - SXO) and runs before the saturation step, so it needs an input SXO curve; without one it is skipped with a warning.
 `PHIE_CC` is written by the core-correction step alone, before saturation, so SW, BVW, net pay and RQI read the same porosity; the step runs on core porosity named `PHIC`, `CPOR`, `CPOR-AMB` or `CPOR_AMB`, or on peer-well core (`use_peer_core=True` with `peer_wells`).
 A peer well needs PHIE or PHIT (interpret it first; one without is left out, with a warning), and its formations may be attached with `pp.read(..., formations=...)`.
 When the run fits its own core model, input `PHIE_CC` and `PERM_CC` curves are kept as `PHIE_CC_INPUT` and `PERM_CC_INPUT` and not used; without core data, or with `core_correction` in `skip_steps`, input `PHIE_CC` and `PERM_CC` are used as they stand by every step, and a warning says so.
@@ -227,7 +252,8 @@ With oil-based mud (`mud_type="OBM"`), no SXO or MHI is computed and Rw is not e
 | Domain | Mineral solver | Needs |
 |---|---|---|
 | `clastic` (default) | multi-mineral solve ({class}`~petrophys.interpretation.lithology.MultiMineralSolverV1`): each tool equation weighted by its nominal uncertainty, and samples whose mineral total misses the available rock volume by more than 0.05 left unsolved; quartz, calcite, dolomite and anhydrite with PEF (sonic beside it), quartz, calcite and dolomite from RHOB and NPHI without it; PEF set aside when it reads like barite-weighted mud; samples with PEF but no NPHI solved by {class}`~petrophys.interpretation.lithology.MultiMineralSolver` (version 2, porosity solved jointly); sandstone matrix | RHOB, NPHI or PEF, DTC, VCL, PHIE |
-| `carbonate` | calcite and dolomite from bulk density and closure, with clay from VCL at `rho_cl` and pore fluid `rho_fl`; `carbonate_calibration="costa"` applies the COSTA field calibration instead (illite from GR, a 1.19 g/cm3 brine); limestone or dolomite matrix | RHOB, VCL (GR for `costa`), PHIE or PHIT |
+| `carbonate` | calcite and dolomite from bulk density and closure, with clay from VCL at `rho_cl` and pore fluid `rho_fl`; `carbonate_calibration="costa"` applies the COSTA field calibration instead (illite from GR at 2.52 g/cm3 and a 1.1 g/cm3 brine, unless `rho_cl` or `rho_fl` is set); limestone or dolomite matrix | RHOB, VCL (GR for `costa`), PHIE or PHIT |
+| `evaporite` | the clastic mineral solve (anhydrite among its minerals); an automatic matrix with no family limit, taken from the lithology log or core where they exist, halite endpoints where the logs read like halite; clastic cutoffs, with evaporite, halite and anhydrite samples left out of net reservoir and pay. On a well whose matrix resolves to sandstone it gives the clastic result | as `clastic` |
 | `auto` | resolved from attached or embedded geology; falls back to clastic with a warning | |
 
 If the data point to a carbonate while the domain is `clastic`, the run keeps the sandstone matrix and warns you to set `lithology_domain="carbonate"`.
@@ -236,7 +262,7 @@ The lithology code curve is the curve `lithology_curve` names, else `LITHOLOGY_G
 That one curve gives the vendor lithology, the `"auto"` matrix and the per-depth lithology groups, and its codes are decoded with the built-in lithology code table (Kingdom nomenclature) whatever the curve is called.
 `result.warnings` names a curve other than `LITHOLOGY_GEOLINK`; if it holds other codes, pass its codebook as `lithology_codes`, or `lithology_source="computed"`, or lithology intervals.
 
-The carbonate solve uses bulk density alone, so its calcite-dolomite split depends on the pore-fluid density `rho_fl` (1.0 g/cm3 by default) and on the matrix density behind the porosity.
+The carbonate solve uses bulk density alone, so its calcite-dolomite split depends on the pore-fluid density `rho_fl` (1.0 g/cm3 by default, 1.1 with `carbonate_calibration="costa"`; a value you set is used by porosity and the mineral solve alike) and on the matrix density behind the porosity.
 On HW-3 the generic defaults put nearly nine samples in ten at the calcite end member, with no dolomite; set `rho_fl` for your brine, and use the field calibration on COSTA wells.
 Here the clastic run on 30/6-5 is set against a carbonate run on the COSTA well HW-3:
 

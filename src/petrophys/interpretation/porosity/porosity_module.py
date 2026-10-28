@@ -84,11 +84,12 @@ class PorosityModule:
 
         try:
             props = MatrixProperties.get(matrix)
-            self.rhob_matrix = MatrixProperties.get_log_density(matrix)
-            self.dtc_matrix  = props.slowness
         except KeyError:
-            self.rhob_matrix = 2.65
-            self.dtc_matrix  = 55.5
+            raise ValueError(
+                f"matrix must be one of {sorted(MatrixProperties.names())}; got {matrix!r}"
+            ) from None
+        self.rhob_matrix = MatrixProperties.get_log_density(matrix)
+        self.dtc_matrix  = props.slowness
 
     def calculate(
         self,

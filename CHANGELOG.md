@@ -163,7 +163,140 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
     (from 18 %), agreeing with its vendor log on 90 % of those samples. A
     well with neither NPHI nor PEF still skips the step, now saying it needs
     one of them.
+  - The COSTA notebooks' per-sample SLSQP carbonate solve is replaced by the
+    closed-form `solve_carbonate_minerals(..., "costa")`, which solves the
+    same equations: they agree to 1e-7 v/v wherever the optimizer converged,
+    and the closed form also solves the samples it did not (HW-3: 39 samples
+    instead of 20 under the "geolink" calculation profile). No published
+    package used it; the COSTA package keeps its own solve and rebuilds
+    byte for byte. `costa_carbonate` now holds the COSTA constants.
+  - The COSTA calibration's pore fluid is 1.1 g/cm3, the value Craig
+    Phillips's notebooks use in their calcite-dolomite solve (their FD = 1.19
+    is reset to 1.1 before it runs, as the saved execution order shows), not
+    1.19. At 20 % porosity the difference moved about 13 % of the matrix
+    between calcite and dolomite.
+  - `rho_fl` set by the user now reaches the COSTA calibration's solve,
+    which used 1.1 g/cm3 whatever was set. Left unset, `rho_fl` is the
+    COSTA brine (1.1) when `carbonate_calibration="costa"` is chosen and
+    1.0 otherwise, so porosity and the mineral solve read the same fluid;
+    `result.config.rho_fl` holds the value used. `rho_cl` likewise reaches
+    the COSTA solve (unset: its 2.52 illite).
   - The benchmark profiles keep the original solve.
+- Values you set are used as given (normal runs; the benchmark profiles
+  keep their calculations):
+  - `rho_ma`, `dt_ma` and `nphi_ma` hold at every depth, also where a
+    lithology log sets matrix values per group (they filled only samples
+    outside the groups).
+  - `salinity_ppm` wins over a header RW, and `rw_meas_temp_f` over a
+    header RWT; the Rmf step already ranked explicit settings first.
+  - `bht_f` and `surface_temp_f` win over an input TEMP log (kept as
+    TEMP_LOG); zone runs place the BHT at the well's TD, not each zone's base.
+  - The SP-derived Rw uses `sp_max` and `sp_min` as its clean and shale lines.
+  - The clastic mineral solve uses `rho_fl` and `dt_fl` for its water
+    point; core-matrix inference uses `rho_fl`. Waxman-Smits Qv takes the
+    grain density of `matrix_type` when `rho_ma` is unset (it took 2.65).
+  - `apply_hc_correction=True` without an input SXO skips the step with a
+    warning: it ran before saturation with SXO = 1 and changed nothing.
+  - In zoned and batch runs a setting passed explicitly keeps its value over
+    a LAS header value even when it equals the default.
+  - GR baselines you set (`gr_min`/`gr_max`, header `GR_MIN`/`GR_MAX`, zone
+    `GR_MIN_Z1`) are used as given; the 20/100 bound now applies only to the
+    baselines picked from the log (P5/P95 in the workflow, the log extremes in
+    `VclModule`/`calculate_vcl`), as a guard against a nearly flat GR.
+    `vcl_from_gr` uses the baselines it is given; `bounded_gr_baselines` is
+    the bound. A clean pick above 30 API that the bound lowers warns (clean
+    rock may be radioactive): on Cheal-1 the P5 of 64.8 API became 20, and its
+    Mount Messenger sands, about 86 API, read 62 % clay. The "geolink"
+    profile bounds every baseline, as before.
+  - `NMRData.from_las(t2_cutoff=...)` beats a T2CUTOFF curve in the file.
+  - `calculate_zone_averages(use_arithmetic=...)` is applied; it was ignored.
+  - The reduced quartz-calcite fallback of the version 2 solve keeps the
+    caller's `solver_options`.
+  - `read_dlis` applies `standardize` to a single frame, and reads a frame
+    given `step`, `step_strategy` or `channel_preference` through the merged
+    path, which honours them.
+  - `pp.plot` refuses `depth_range` together with `top`/`height`, and draws a
+    lithology `fill_alpha` set in `curve_styles` as given.
+  - `eaton_from_well` converts a TVD curve in its own unit and, offshore,
+    takes TVDSS from `air_gap`.
+  - `monte_carlo` keeps `low`/`high` on depth-correlated lognormal inputs;
+    `read_uncertainty_table` finds a fixed row's value beside a `mean` column.
+  - `MDTPickingConfig(max_gap_seconds=...)` is used as given (unset: 5 s or
+    five sampling intervals).
+  - `leverett_j`/`pc_from_j` use |IFT cos theta|, so a 140-degree
+    air-mercury angle gives a positive J.
+  - Unknown choices raise instead of falling back: `PorosityModule` and
+    `VclModule` matrix, `sonic_water_saturation` `hc_type`/`lithology`/
+    `kdry_method` (now case-insensitive), `assign_flow_units` method and
+    `fit_j_function` form. `n_units` above the distinct FZI values and a
+    `min_thickness` under two samples warn.
+- The same settings reach the calculation on every route (normal runs):
+  - `run_dynamic_workflow`, `DynamicWorkflow` runs and the batch processor
+    apply the LAS header settings (A/M/N, MATRIX, LITH, SAL, VSHE, ...) as
+    `pp.interpret` does; they used only RW, BHT, RMF and RM.
+  - `pp.interpret(well, config)` lets header values fill the settings the
+    config leaves at their defaults, as keyword settings already did.
+  - Changing `lithology_domain` on an existing config (`interpret(config=...,
+    lithology_domain=...)`, a header LITH in zoned runs, `export_context`)
+    re-resolves a `matrix_type` left unset; it kept the clastic sandstone.
+  - `export_context` keeps the caller's explicit settings when
+    `lithology_domain` or `lithology_file` is given.
+  - A header VSHE no longer switches `sw_model` to `north_sea` in zoned runs,
+    as in `pp.interpret`.
+  - Settings can differ by depth: `zones=` takes a list of intervals with
+    their settings, or a table or CSV/Excel file (`top`, `bottom`, one column
+    per setting, optional `name` and `depth_unit`). Each zone is interpreted
+    with its settings and merged; `result.zone_results` holds the zone runs.
+    Each set of zone settings is run over the whole well and merged over the
+    zone, so a zone changes only what its settings change (the GR baselines,
+    irreducible water saturation and core model stay the whole well's).
+    Overlapping zones (also across depth units), whole-run settings in a zone,
+    repeated columns and invalid values, also against the whole-well
+    settings, are refused before anything runs. Order: your zone values, your
+    whole-well settings, LAS header zone values (`RW_Z1` ...), LAS header
+    whole-well values, defaults; a header value yours override is named in
+    the warnings (a header zone value used to win over a setting you passed).
+    `pp.interpret`, `run_dynamic_workflow` and the batch processor now apply
+    every LAS header zone value (`M_Z1`, `GR_MIN_Z1`, ...), not only Rw, Rmf
+    and the shale point; the zoned runner takes the same path outside the
+    "geolink" profile. The record of the settings you passed survives
+    `dataclasses.replace`.
+  - The workflow trace no longer lists the library's internal config records.
+  - Archie `a`, `m`, `n` and the net-pay cutoffs also take one value per
+    lithology, e.g. `m={"sandstone": 1.8, "carbonate": 2.3}` or
+    `sw_cutoff={"clastic": 0.5}`: each sample takes its lithology's (Archie)
+    or family's (cutoffs) value, and the lithologies left out keep their
+    defaults: the LAS header's value where it gives one (`M`, or `M_Z1`
+    inside its zone), else the lithology default; `"*"` sets the value for
+    every lithology not listed. Saturation routing follows a per-family clay
+    cutoff. Unknown
+    lithologies, two values for one cutoff family and out-of-range values are
+    refused; not available under the "geolink" profile.
+  - The COSTA brine and illite defaults apply only in the carbonate domain;
+    MCP no longer adds the COSTA calibration to a clastic run of a COSTA well.
+  - The porosity trace reports a set `rho_ma`/`dt_ma`/`nphi_ma` and the
+    endpoints actually used.
+- Incomplete features completed:
+  - MCP checks `lithology_codes` paths against the allowed folders like the
+    other file settings (a valid relative path failed; one outside was read).
+  - MCP `run_workflow` returns table steps (`formation_summary`) as `tables`;
+    `workflow_step_kinds` gives requires/produces for `formation_water` and
+    `mud_filtrate`; `list_sample_wells` describes every collection and lists
+    the MDT pressure files apart from the wells.
+  - `RwModule`/`calculate_rw` in "auto" use the header RW (at its RWT) and
+    header RMF; unknown methods raise.
+  - `create_pickett_plot` falls back to RDEP when there is no RT.
+  - `total_porosity` rejects unknown methods.
+  - `StandardWorkflow`: unset cutoffs follow `lithology` (carbonate 0.3/0.045/
+    0.7), failed steps appear in `result.errors`, and an unsupported
+    `saturation_model` is refused with a pointer to `pp.interpret`.
+  - `petrophys-context` given a file says a folder is needed.
+- Docs: the precedence of settings, header values and defaults is stated once
+  for every route (settings reference, workflows guide); the header-parameter
+  table lists every parameter read, with zone suffixes; reader override
+  arguments and `MDTPickingConfig` are documented; lesson 10 shows a header
+  value against a setting and a real zone override. The porosity lesson no
+  longer runs the hydrocarbon correction on a made-up Sxo.
 - Wording: messages, docs and tutorials say "lithology" for the general
   case and name GeoLink only for the GeoLink data, profile and packages. The
   built-in lithology code table (Kingdom nomenclature) is
@@ -348,7 +481,7 @@ wherever the package used the function.
   `"geolink"`, and unset net-pay cutoffs follow each sample's lithology
   family under `"current"` and are VCL < 0.3 and SW < 0.7 under `"geolink"`.
 - LAS header parameters override settings left at their defaults (for
-  example `RHO_FL` over `rho_fl=1.0`); explicitly set values win.
+  example `RHO_FL` over an unset `rho_fl`); explicitly set values win.
 - Without a measurement temperature, a given Rw is taken as the value at the
   median formation temperature and corrected along the temperature profile
   from there; the clean-wet Rwa fallback uses P5. When no Rw source is found,
@@ -655,7 +788,7 @@ wherever the package used the function.
   `carbonate_calibration` chooses the constants: `"generic"`, the default,
   takes clay from VCL at `rho_cl`, effective porosity, the pore fluid
   `rho_fl`, and calcite 2.71 and dolomite 2.87 g/cm3; `"costa"` is the COSTA
-  field calibration (illite from GR, total porosity, a 1.19 g/cm3 brine and
+  field calibration (illite from GR, total porosity, a 1.1 g/cm3 brine and
   a 2.847 g/cm3 dolomite) and the "geolink" profile's default, which there
   keeps the per-sample solve of the COSTA notebooks.
 - Mineral inversion reports non-resolvable and zero-volume failures as

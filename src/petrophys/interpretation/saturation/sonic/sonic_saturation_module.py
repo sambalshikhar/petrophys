@@ -44,7 +44,7 @@ from typing import Optional, Sequence
 import numpy as np
 
 from petrophys.interpretation.saturation.sonic.rock_physics import (
-    MINERAL_ELASTIC, FLUID_ELASTIC,
+    MINERAL_ELASTIC, FLUID_ELASTIC, _GC,
     slowness_to_velocity, vs_from_vp_greenberg_castagna, velocity_to_moduli,
     dry_rock_modulus, gassmann_kfl, sw_from_fluid_modulus,
     fluid_substitution_dtc_swing,
@@ -139,6 +139,9 @@ def sonic_water_saturation(
     Parameters
     ----------
     hc_type : {"gas","oil"}        hydrocarbon end-member for fluid mixing.
+    lithology : {"sandstone","limestone","dolomite","shale"}
+        Greenberg-Castagna Vs relation (without DTS) and the matrix mineral
+        where no mineral volumes are logged.
     kdry_method : {"calibrated","model"}
         ``calibrated`` derives the dry frame from the well's water zone (needs
         ``water_zone_mask`` or ``sw_ref``); falls back to ``model`` if unavailable.
@@ -151,6 +154,17 @@ def sonic_water_saturation(
         This is the honest scope of the method: it returns a number only where the
         sonic can actually resolve the fluid.
     """
+    choices = {
+        "hc_type": (hc_type, sorted(set(FLUID_ELASTIC) - {"brine"})),
+        "lithology": (lithology, sorted(_GC)),
+        "kdry_method": (kdry_method, ["calibrated", "model"]),
+    }
+    for name, (value, allowed) in choices.items():
+        if str(value).strip().lower() not in allowed:
+            raise ValueError(f"{name} must be one of {allowed}; got {value!r}")
+    hc_type = str(hc_type).strip().lower()
+    lithology = str(lithology).strip().lower()
+    kdry_method = str(kdry_method).strip().lower()
     n = well.n_samples
     dt, _, _ = get_curve_data_depthwise(well, ["DTC", "DT"])
     dts, _, _ = get_curve_data_depthwise(well, ["DTS", "DTSM"])

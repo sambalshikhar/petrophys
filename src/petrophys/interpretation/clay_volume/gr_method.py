@@ -5,7 +5,7 @@ This module provides multiple equations for calculating VCL
 from gamma ray logs.
 """
 
-from typing import Union
+from typing import Tuple, Union
 import numpy as np
 
 
@@ -140,6 +140,34 @@ def vcl_clavier(igr: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
     return np.clip(vcl, 0, 1)
 
 
+#: Bounds of automatically picked GR baselines, API: the clean line is at most
+#: GR_CLEAN_BOUND and the shale line at least GR_SHALE_BOUND.
+GR_CLEAN_BOUND = 20.0
+GR_SHALE_BOUND = 100.0
+
+
+def bounded_gr_baselines(gr_min: float, gr_max: float) -> Tuple[float, float]:
+    """Bound GR baselines picked from the log: ``(min(gr_min, 20), max(gr_max, 100))``.
+
+    A guard for automatic picks (log percentiles or extremes), not a rule of
+    the method: where the logged section holds no real shale or no real clean
+    rock, its GR is nearly flat, and picks taken from it would stretch the
+    gamma-ray index across noise and inflate clay volume (the COSTA files,
+    reservoir only, read 9-20 API at P5/P95). Baselines a user sets are used
+    as given. On a well whose clean rock is radioactive (feldspathic or
+    volcanic sands) the bound overstates clay: set ``gr_min`` from a known
+    clean sand there.
+
+    Examples
+    --------
+    >>> bounded_gr_baselines(8.8, 20.5)
+    (8.8, 100.0)
+    >>> bounded_gr_baselines(64.8, 123.8)
+    (20.0, 123.8)
+    """
+    return min(float(gr_min), GR_CLEAN_BOUND), max(float(gr_max), GR_SHALE_BOUND)
+
+
 def vcl_from_gr(
     gr: Union[float, np.ndarray],
     gr_min: float,
@@ -154,9 +182,10 @@ def vcl_from_gr(
     gr : float or np.ndarray
         Gamma ray values (API)
     gr_min : float
-        Clean formation GR estimate (API); applied as min(gr_min, 20).
+        Clean formation GR (API), used as given.
     gr_max : float
-        Shale GR estimate (API); applied as max(gr_max, 100).
+        Shale GR (API), used as given. Baselines picked automatically from
+        the log can be bounded first with :func:`bounded_gr_baselines`.
     method : str, optional
         Method to use:
         - "linear": Linear IGR
@@ -175,11 +204,6 @@ def vcl_from_gr(
     >>> from petrophys.interpretation.clay_volume import vcl_from_gr
     >>> vcl = vcl_from_gr(gr_data, gr_min=20, gr_max=100)
     """
-    # Boundary enforcement rules from design doc:
-    # If calculated GR_max < 100 → force GR_max = 100
-    # If calculated GR_min > 20  → force GR_min = 20
-    gr_max = max(gr_max, 100.0)
-    gr_min = min(gr_min, 20.0)
     if np.ndim(gr):
         # Array-likes (pandas Series, Curve) are computed and returned as arrays.
         gr = np.asarray(gr, dtype=float)

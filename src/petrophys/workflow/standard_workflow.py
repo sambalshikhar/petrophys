@@ -96,14 +96,14 @@ class WorkflowConfig:
     use_peer_core: bool = False
     mud_has_clay_or_kcl: bool = False
 
-    # Cutoffs
-    vcl_cutoff: float = 0.40   # clastic standard (STANDARD_CUTOFFS)
-    phie_cutoff: float = 0.08
-    sw_cutoff: float = 0.60
+    # Cutoffs (None: the standard set of ``lithology``'s family, STANDARD_CUTOFFS)
+    vcl_cutoff: Optional[float] = None
+    phie_cutoff: Optional[float] = None
+    sw_cutoff: Optional[float] = None
 
     # VCL parameters
-    gr_min: float = 20.0
-    gr_max: float = 100.0
+    gr_min: Optional[float] = None  # None: 20 API, or the log minimum where lower
+    gr_max: Optional[float] = None  # None: 100 API, or the log maximum where higher
     gr_method: str = "linear"
 
     # Processing options
@@ -112,6 +112,20 @@ class WorkflowConfig:
     calculate_sw: bool = True
     calculate_perm: bool = True
     calculate_net_pay: bool = True
+
+    def __post_init__(self) -> None:
+        from petrophys.evaluation.net_pay.cutoffs import standard_cutoffs
+
+        # Unset cutoffs follow the lithology family, as petrophys.interpret's do.
+        for name, value in standard_cutoffs(self.lithology).items():
+            if getattr(self, name) is None:
+                setattr(self, name, value)
+        models = ("archie", "simandoux", "indonesia", "north_sea", "nigeria_schlumberger", "dual_water")
+        if str(self.saturation_model).strip().lower() not in models:
+            raise ValueError(
+                f"saturation_model must be one of {list(models)}; got {self.saturation_model!r}. "
+                "Waxman-Smits needs CEC: use petrophys.interpret(..., sw_model='waxman_smits', cec=...)."
+            )
 
 
 @dataclass
@@ -265,7 +279,10 @@ class StandardWorkflow:
             if self.config.calculate_net_pay:
                 result.steps.append(self._calculate_net_pay(well))
 
-            result.success = len(self.errors) == 0 and all(st.success for st in result.steps)
+            for step in result.steps:
+                if not step.success:
+                    self.errors.append(f"{step.step}: {step.message}")
+            result.success = len(self.errors) == 0
             result.errors = self.errors
             result.warnings = self.warnings
 

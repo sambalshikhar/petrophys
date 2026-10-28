@@ -755,7 +755,7 @@ def read_dlis(
     depth_unit: Optional[str] = None,
     include_vector_channels: bool = True,
     merge_frames: Optional[bool] = None,
-    standardize: bool = True,
+    standardize: Optional[bool] = None,
     step: Optional[float] = None,
     step_strategy: str = "finest",
     max_samples: int = 2_000_000,
@@ -781,6 +781,17 @@ def read_dlis(
         Merge scalar channels from all selected frames onto one depth index.
         By default, this is enabled when no frame_name is supplied so DLIS behaves
         like a full well-log input. Set False to read a single frame.
+    include_vector_channels : bool, optional
+        Keep vector channels (spectra, images) on a single-frame read. The
+        merged read keeps scalar channels only.
+    standardize : bool, optional
+        Standardize curve names and units. Default: True for a merged read,
+        False for a single frame (read as stored).
+    step, step_strategy, max_samples, channel_preference
+        Depth step (or how to pick it: ``"finest"``), sample cap, and the
+        preferred source frame per curve of the merged read. A single frame
+        given ``step``, ``channel_preference`` or another ``step_strategy`` is
+        read through the merged path (scalar channels, resampled).
     **kwargs
         Reserved for future use; unsupported arguments raise TypeError.
 
@@ -800,6 +811,14 @@ def read_dlis(
         if logical_file > 0:
             reader.set_active_file(logical_file)
         do_merge = frame_name is None if merge_frames is None else merge_frames
+        resample = step is not None or channel_preference is not None or step_strategy != "finest"
+        if not do_merge and resample:
+            if merge_frames is False:
+                raise ValueError(
+                    "step, step_strategy and channel_preference apply to the merged read; "
+                    "drop them or leave merge_frames unset"
+                )
+            do_merge = True
         if do_merge:
             frame_names = [frame_name] if frame_name else None
             return reader.to_merged_well(
@@ -807,17 +826,22 @@ def read_dlis(
                 channels=channels,
                 depth_unit=depth_unit or "m",
                 step=step,
-                standardize=standardize,
+                standardize=True if standardize is None else standardize,
                 step_strategy=step_strategy,
                 max_samples=max_samples,
                 channel_preference=channel_preference,
             )
-        return reader.to_well(
+        well = reader.to_well(
             frame_name=frame_name,
             channels=channels,
             depth_unit=depth_unit,
             include_vector_channels=include_vector_channels,
         )
+        if standardize:
+            from petrophys.preprocessing.standardization import standardize_curves
+
+            well = standardize_curves(well, rename_curves=True, convert_units=True)
+        return well
 
 
 def read_dlis_merged(

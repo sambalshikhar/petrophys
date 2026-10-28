@@ -390,14 +390,7 @@ def interpret(
     >>> result.raise_for_errors().status
     'interpreted'
     """
-    from petrophys.workflow.dynamic_workflow import (
-        _BENCHMARK_PROFILES,
-        _PROFILE_DEFAULTS,
-        DynamicWorkflowConfig,
-        run_dynamic_workflow,
-    )
-    from petrophys._internal.benchmark import reproducing_benchmark
-    from petrophys.workflow.zoned_batch import _extract_global_parameter_overrides
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, run_dynamic_workflow
 
     if context_profile is not None:
         from petrophys.reporting.context_profiles import interpret_with_context_profile
@@ -426,7 +419,7 @@ def interpret(
             "well's raw LAS file. calculation_profile is 'current' or 'geolink'."
         )
 
-    known = {item.name for item in dataclasses.fields(DynamicWorkflowConfig)}
+    known = {item.name for item in dataclasses.fields(DynamicWorkflowConfig) if not item.name.startswith("_")}
     unknown = sorted(set(options) - known)
     if unknown:
         hints = []
@@ -457,34 +450,7 @@ def interpret(
 
         attach_curve_aliases(well, curve_aliases)
 
-    profile = str(
-        options.get("calculation_profile", getattr(config, "calculation_profile", "current"))
-    ).strip().lower()
-    metadata_options, _ = _extract_global_parameter_overrides(well, calculation_profile=profile)
-    # These values have native LAS routes in DynamicWorkflow. Leaving them on
-    # the well preserves source provenance (for example, ``las.RW`` instead of
-    # ``config.rw``) and lets each step apply its own unit/reference handling.
-    # A header TD is kept, converted to feet from its own unit (the "geolink"
-    # profile read it from the well header instead).
-    historical = profile in _BENCHMARK_PROFILES or reproducing_benchmark()
-    from petrophys.workflow.zoned_batch import _NATIVE_HEADER_FIELDS
+    from petrophys.workflow.dynamic_workflow import _config_with_header_settings
 
-    for native_field in (*_NATIVE_HEADER_FIELDS, *(("td_ft",) if historical else ())):
-        metadata_options.pop(native_field, None)
-    if config is None:
-        settings = {**metadata_options, **options}
-        config = DynamicWorkflowConfig(**settings)
-    else:
-        settings = {
-            name: value
-            for name, value in metadata_options.items()
-            if getattr(config, name, None) is None
-            # Under the "geolink" profile an unset cutoff already holds its
-            # profile default (VCL 0.3, SW 0.7), which a header does not replace.
-            and not (profile in _BENCHMARK_PROFILES and name in _PROFILE_DEFAULTS)
-        }
-        settings.update(options)
-        if "lithology_domain" in settings and "lithology" not in settings:
-            settings["lithology"] = None
-        config = dataclasses.replace(config, **settings) if settings else deepcopy(config)
-    return run_dynamic_workflow(well, config=config)
+    config = _config_with_header_settings(well, config, options)
+    return run_dynamic_workflow(well, config=config, _header_settings=False)

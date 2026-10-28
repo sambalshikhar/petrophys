@@ -1994,7 +1994,7 @@ def interpret(*, name: Optional[str] = None, **settings: Any) -> Step:
 
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
 
-    known = [field.name for field in dataclasses.fields(DynamicWorkflowConfig)]
+    known = [field.name for field in dataclasses.fields(DynamicWorkflowConfig) if not field.name.startswith("_")]
     unknown = [key for key in settings if key not in known]
     if unknown:
         hints = ", ".join(f"{key!r}" + _suggestion(key, known, cutoff=0.5) for key in unknown)

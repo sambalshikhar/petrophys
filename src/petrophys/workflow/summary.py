@@ -57,6 +57,10 @@ def net_thickness(well: "Well", mask: np.ndarray, cells: bool = True) -> Dict[st
     return thickness
 
 
+#: Settings whose unset default (None) a run resolves to this value.
+_RESOLVED_DEFAULTS = {"rho_fl": 1.0, "rho_cl": 2.45}
+
+
 def _differs(value: Any, default: Any) -> bool:
     """Whether a setting differs from its default; a table or array that is set does."""
     try:
@@ -80,9 +84,9 @@ def summarize_result(
     settings = {
         name: getattr(result.config, name)
         for name, spec in defaults.items()
-        if name != "lithology"
+        if name != "lithology" and not name.startswith("_")
         and spec.default is not dataclasses.MISSING
-        and _differs(getattr(result.config, name), spec.default)
+        and _differs(getattr(result.config, name), _RESOLVED_DEFAULTS.get(name, spec.default))
     }
     return json_object({
         "petrophys_version": __version__,

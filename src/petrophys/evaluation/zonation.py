@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence
+import warnings
 
 import numpy as np
 
@@ -186,6 +187,12 @@ def change_point_zonation(
         raise ValueError("depth must increase")
     step = float(np.median(np.diff(dd))) if dd.size > 1 else 1.0
     min_size = max(2, int(round(min_thickness / step)))
+    if int(round(min_thickness / step)) < 2:
+        warnings.warn(
+            f"min_thickness={min_thickness:g} is under two samples ({2 * step:g} at this "
+            f"{step:g} step); zones are at least two samples thick.",
+            UserWarning, stacklevel=2,
+        )
     standardised = raw[use] / np.array([_noise_scale(raw[use][:, i], min_size) for i in range(raw.shape[1])])
     if penalty is None:
         penalty = penalty_factor * 2.0 * standardised.shape[1] * np.log(standardised.shape[0])

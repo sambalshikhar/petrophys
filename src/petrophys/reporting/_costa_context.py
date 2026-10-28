@@ -178,7 +178,13 @@ def _vcl_from_gamma_ray(gr: np.ndarray, method: str) -> tuple[np.ndarray, str]:
 
 
 def _solve_calcite_dolomite(phie: float, rhob: float, vcl: float) -> tuple[float, float, float]:
-    """Quartz (0), calcite and dolomite filling 1 - VCL - PHIE that best match RHOB."""
+    """Quartz (0), calcite and dolomite filling 1 - VCL - PHIE that best match RHOB.
+
+    The COSTA package's own solve, kept for its byte-identical rebuild: the
+    physics is that of :func:`~petrophys.interpretation.lithology.carbonate_minerals.solve_calcite_dolomite`
+    (VCL at 2.52 g/cm3, 2.847 dolomite, the package's fluid), but the
+    optimizer's stopping points are part of the published numbers.
+    """
     from scipy import optimize
 
     if not all(np.isfinite(value) for value in (phie, rhob, vcl)):

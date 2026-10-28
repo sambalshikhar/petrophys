@@ -272,11 +272,14 @@ def read_uncertainty_table(source: Any, *, sheet_name: Any = None) -> Dict[str, 
         dist = str(row[dist_col]).strip().lower()
 
         def value(key):
-            col = column(*aliases[key]) if key in aliases else column(key)
-            if col is None:
-                return None
-            number = pd.to_numeric(pd.Series([row[col]]), errors="coerce").iloc[0]
-            return None if pd.isna(number) else float(number)
+            # The first of the key's columns that holds a number on this row
+            # (a fixed row's "value" beside a "mean" column, say).
+            for name in aliases.get(key, (key,)):
+                if name in columns:
+                    number = pd.to_numeric(pd.Series([row[columns[name]]]), errors="coerce").iloc[0]
+                    if not pd.isna(number):
+                        return float(number)
+            return None
 
         if dist in ("fixed", "constant", "value"):
             fixed = value("mean")
@@ -321,7 +324,11 @@ def _rescale(spec: Dict[str, Any], base: np.ndarray) -> np.ndarray:
             values = np.clip(values, -np.inf if low is None else low, np.inf if high is None else high)
         return values
     if name == "lognormal":
-        return np.asarray(spec["median"], float) * np.power(base, np.asarray(spec["sd"], float))
+        values = np.asarray(spec["median"], float) * np.power(base, np.asarray(spec["sd"], float))
+        low, high = spec.get("low"), spec.get("high")
+        if low is not None or high is not None:
+            values = np.clip(values, -np.inf if low is None else low, np.inf if high is None else high)
+        return values
     if name == "uniform":
         low, high = np.asarray(spec["low"], float), np.asarray(spec["high"], float)
         return low + (high - low) * base

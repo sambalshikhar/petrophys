@@ -72,7 +72,10 @@ class RwModule:
     """
 
     def __init__(self, method: str = "auto"):
-        self.method = method.lower()
+        self.method = str(method).strip().lower()
+        allowed = ("auto", *(item.value for item in RwMethod))
+        if self.method not in allowed:
+            raise ValueError(f"method must be one of {list(allowed)}; got {method!r}")
 
     def _build_clean_water_mask(self, well: "Well") -> Optional[np.ndarray]:
         """Build a pragmatic clean-water candidate mask for Rw estimation."""
@@ -170,8 +173,20 @@ class RwModule:
 
         # Method selection
         method = self.method
+        header_note = {}
+        if method == "auto" and rw_given is None and salinity is None:
+            # "auto" takes the Rw the well's header states before estimating one.
+            header_rw = _header_resistivity(well, "RW", "RWT", temperature)
+            if header_rw is not None:
+                rw_given, header_note = header_rw
+        if rmf is None and method in ("auto", "sp", "rxo_rt"):
+            header_rmf = _header_resistivity(well, "RMF", "RMFT", temperature, scalar=True)
+            if header_rmf is not None:
+                rmf, _ = header_rmf
 
         if method == "given" or (method == "auto" and rw_given is not None):
+            if header_note:
+                return RwResult(rw=rw_given, method="header", temperature=temperature, metadata=header_note)
             return RwResult(
                 rw=rw_given,
                 method="given",
@@ -255,7 +270,48 @@ class RwModule:
                         n_points=int(np.count_nonzero(valid)),
                     )
 
-        raise ValueError("Could not calculate Rw - insufficient data")
+        raise ValueError(
+            "Could not calculate Rw: the header has no RW, and the SP and Rxo/Rt methods need "
+            "an Rmf (pass rmf=, or a header RMF). Pass rw_given= or salinity= otherwise; "
+            "petrophys.interpret estimates Rmf from the mud data."
+        )
+
+
+def _header_resistivity(
+    well: "Well", name: str, temp_name: str, temperature, scalar: bool = False
+) -> Optional[tuple]:
+    """A header resistivity (``RW``/``RMF``) at formation temperature, with its source.
+
+    Its measurement temperature (``RWT``/``RMFT``) moves it to ``temperature``
+    by Arps; without one it is taken as stated. ``scalar`` gives the value at
+    the median formation temperature.
+    """
+    from petrophys.interpretation.temperature.temp_corrections import arps_equation
+    from petrophys.io.survey_reader import _item
+    from petrophys.model.units import temperature_to_fahrenheit
+
+    value, _ = _item(well, name)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(value) or value <= 0:
+        return None
+    temp_value, temp_unit = _item(well, temp_name)
+    try:
+        measured_f = temperature_to_fahrenheit(float(temp_value), temp_unit or "degF")
+    except (TypeError, ValueError):
+        measured_f = None
+    note = {"source": f"header {name}", f"{name.lower()}_header": value}
+    if measured_f is None or temperature is None:
+        note["measurement_temperature"] = "not stated: taken as at formation temperature"
+        return value, note
+    target = np.asarray(temperature, dtype=float)
+    if scalar and target.ndim:
+        target = np.asarray(np.nanmedian(target))
+    converted = np.asarray(arps_equation(value, measured_f, target), dtype=float)
+    note[f"{name.lower()}_measured_temp_f"] = measured_f
+    return (float(converted) if converted.ndim == 0 else converted), note
 
 
 def calculate_rw(

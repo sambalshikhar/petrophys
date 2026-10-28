@@ -425,16 +425,29 @@ def _net_flags_by_family(
     from petrophys.evaluation.net_pay.cutoffs import standard_cutoffs
     from petrophys.evaluation.net_pay.net_pay_module import NetPayModule
 
-    module = NetPayModule(**explicit, lithology=families)
-    result = module.calculate(well, vcl=vcl, phie=phie, sw=sw)
+    from collections.abc import Mapping
 
     family_array = np.broadcast_to(np.asarray(families, dtype=str), (well.n_samples,))
+    # A cutoff given per family applies sample by sample; a family it leaves
+    # out keeps its standard.
+    applied = {
+        key: (
+            np.array([_lithology_value(value, family, family, standard_cutoffs(family)[key])
+                      for family in family_array], dtype=float)
+            if isinstance(value, Mapping) else value
+        )
+        for key, value in explicit.items()
+    }
+    module = NetPayModule(**applied, lithology=families)
+    result = module.calculate(well, vcl=vcl, phie=phie, sw=sw)
+
     names, counts = np.unique(family_array, return_counts=True)
     by_family: Dict[str, Dict[str, Any]] = {}
     for index in np.argsort(-counts, kind="stable"):  # most samples first
-        standard = standard_cutoffs(str(names[index]))
+        family = str(names[index])
+        standard = standard_cutoffs(family)
         item: Dict[str, Any] = {
-            key: float(value if value is not None else standard[key])
+            key: _lithology_value(value, family, family, standard[key])
             for key, value in explicit.items()
         }
         item["samples"] = int(counts[index])
@@ -721,10 +734,13 @@ class DynamicWorkflowConfig:
     # -- Temperature ---------------------------------------------------------
     #: Surface (mean annual) temperature, degF, at depth 0 of the linear
     #: temperature profile (offshore, the sea surface rather than the seabed).
+    #: Set explicitly, it (like ``bht_f``) puts the profile ahead of an input
+    #: TEMP log, which is kept as TEMP_LOG.
     surface_temp_f: float = 68.0
     #: Bottom-hole temperature, degF. Defaults to the LAS header BHT. It is
     #: taken as the static formation temperature at TD, with no correction for
-    #: mud circulation (such as a Horner plot).
+    #: mud circulation (such as a Horner plot). Set, the temperature profile
+    #: follows it rather than an input TEMP log (kept as TEMP_LOG).
     bht_f: Optional[float] = None
     #: Total depth for the BHT, in feet. Defaults to the deepest sample.
     td_ft: Optional[float] = None
@@ -770,7 +786,8 @@ class DynamicWorkflowConfig:
     #: formation temperature (no temperature correction), as recorded in the
     #: trace.
     rw_meas_temp_f: Optional[float] = None
-    #: Formation water salinity, ppm NaCl equivalent (used when Rw is absent).
+    #: Formation water salinity, ppm NaCl equivalent. Rw then follows it across
+    #: the temperature profile, ahead of a header RW; ``rw`` set wins over it.
     salinity_ppm: Optional[float] = None
 
     # -- Matrix properties ---------------------------------------------------
@@ -780,17 +797,26 @@ class DynamicWorkflowConfig:
     #: ``"sandstone"`` in the clastic domain, otherwise ``"auto"`` within
     #: ``lithology_domain``.
     matrix_type: Optional[str] = None
-    #: Matrix density, g/cm3. Defaults to the value for ``matrix_type``.
+    #: Matrix density, g/cm3. Unset: the value for ``matrix_type``, or per
+    #: depth that of each lithology-log group. Set, it holds at every depth.
     rho_ma: Optional[float] = None
-    #: Matrix neutron porosity, v/v. Defaults to the value for ``matrix_type``.
+    #: Matrix neutron porosity, v/v. Unset: the value for ``matrix_type``, or
+    #: per depth that of each lithology-log group. Set, it holds at every depth.
     nphi_ma: Optional[float] = None
-    #: Pore-fluid density, g/cm3.
-    rho_fl: float = 1.0
-    #: Clay density, g/cm3. Used by the carbonate mineral solve and the
-    #: neutron-density hydrocarbon correction only; the clastic porosity
-    #: equations do not read it.
-    rho_cl: float = 2.45
-    #: Matrix sonic slowness, us/ft. Defaults to the value for ``matrix_type``.
+    #: Pore-fluid density, g/cm3, used by the porosity, hydrocarbon-correction
+    #: and mineral steps alike. Default (None): 1.0, or the COSTA
+    #: calibration's 1.1 brine when ``carbonate_calibration="costa"`` is set;
+    #: a value set here is used everywhere, the COSTA solve included.
+    rho_fl: Optional[float] = None
+    #: Clay density, g/cm3, used by the carbonate mineral solve and the
+    #: neutron-density hydrocarbon correction. Default (None): 2.45, or the
+    #: COSTA calibration's 2.52 illite when ``carbonate_calibration="costa"``
+    #: is set. The clastic porosity equations do not read it, and the clastic
+    #: mineral solve keeps its clay endpoint (density, neutron, PEF and sonic
+    #: of one clay point), which a density alone would not move consistently.
+    rho_cl: Optional[float] = None
+    #: Matrix sonic slowness, us/ft. Unset: the value for ``matrix_type``, or
+    #: per depth that of each lithology-log group. Set, it holds at every depth.
     dt_ma: Optional[float] = None
     #: Pore-fluid sonic slowness, us/ft.
     dt_fl: float = 189.0
@@ -799,7 +825,11 @@ class DynamicWorkflowConfig:
     #: Broad interpretation domain: ``"clastic"`` (the default when unset),
     #: ``"carbonate"``, ``"evaporite"`` or ``"auto"``. This selects the
     #: mineral-solving family and cutoff defaults; it is distinct from
-    #: per-depth lithology.
+    #: per-depth lithology. ``"evaporite"`` runs the clastic mineral solve
+    #: (anhydrite among its minerals) with an automatic matrix that no family
+    #: limits, and clastic cutoffs; evaporite samples are left out of net pay.
+    #: A matrix left unset follows the domain, also when the domain is changed
+    #: on a copy of the config.
     lithology_domain: Optional[str] = None
     #: Deprecated alias for ``lithology_domain``, the unambiguous name; the
     #: alias is accepted. It fills ``lithology_domain`` only when that is
@@ -852,7 +882,8 @@ class DynamicWorkflowConfig:
     #: from VCL with density ``rho_cl``, effective porosity, pore fluid
     #: ``rho_fl``, calcite 2.71 and dolomite 2.87 g/cm3. ``"costa"``: the COSTA
     #: field calibration, illite from GR (``-0.0424035 + 0.00562239 * GR``),
-    #: total porosity, a 1.19 g/cm3 brine and a 2.847 g/cm3 dolomite. Default:
+    #: total porosity, a 1.1 g/cm3 brine (unless ``rho_fl`` is set) and a
+    #: 2.847 g/cm3 dolomite. Default:
     #: ``"generic"``; ``"costa"`` under the "geolink" profile. Both read the
     #: porosity step's PHIE or PHIT, computed with the ``matrix_type`` density,
     #: so the calcite-dolomite split largely follows ``matrix_type`` where that
@@ -862,12 +893,16 @@ class DynamicWorkflowConfig:
     raise_on_error: bool = False
 
     # -- Archie parameters (None: lithology-dependent defaults) ---------------
-    #: Tortuosity factor a.
-    a: Optional[float] = None
-    #: Cementation exponent m.
-    m: Optional[float] = None
-    #: Saturation exponent n.
-    n: Optional[float] = None
+    #: Tortuosity factor a. One value for every sample, or one per lithology,
+    #: e.g. ``{"sandstone": 0.81, "carbonate": 1.0}``: a lithology of the
+    #: Archie table, a family (``clastic``, ``carbonate``), or ``"*"`` for
+    #: every other lithology. A lithology not given takes the LAS header's
+    #: value (``A``, or ``A_Z1`` inside its zone), else its default.
+    a: Optional[Any] = None
+    #: Cementation exponent m; one value, or one per lithology as for ``a``.
+    m: Optional[Any] = None
+    #: Saturation exponent n; one value, or one per lithology as for ``a``.
+    n: Optional[Any] = None
 
     # -- Waxman-Smits parameters ---------------------------------------------
     #: Cation exchange capacity, meq/100 g (0 to 150; pure smectite is 80-150).
@@ -905,7 +940,9 @@ class DynamicWorkflowConfig:
     # -- Hydrocarbon correction ----------------------------------------------
     #: Apply the neutron-density hydrocarbon correction (opt-in). It writes the
     #: corrected curves NPHI_HC and RHOB_HC, and the porosity step (so SW and
-    #: net pay) reads them instead of NPHI and RHOB. The "geolink" profile
+    #: net pay) reads them instead of NPHI and RHOB. It runs before the
+    #: saturation step, so it needs an input flushed-zone saturation (SXO);
+    #: without one the step is skipped with a warning. The "geolink" profile
     #: writes them for inspection only.
     apply_hc_correction: bool = False
     #: Hydrocarbon type, ``"oil"`` or ``"gas"``: the fluid of the
@@ -918,21 +955,27 @@ class DynamicWorkflowConfig:
     # -- Net-pay cutoffs (None: lithology-family standards) --------------------
     #: Maximum clay volume for net rock, v/v. Unset, each sample takes the
     #: standard of its lithology family (``STANDARD_CUTOFFS``: 0.40 clastic,
-    #: 0.30 carbonate); the "geolink" profile uses 0.3. Unless
+    #: 0.30 carbonate); the "geolink" profile uses 0.3. Each cutoff takes one
+    #: value, or one per family, e.g. ``{"clastic": 0.35, "carbonate": 0.2}``
+    #: (a lithology name stands for its family; ``"*"`` for the others); a
+    #: family left out takes the LAS header's value, else its standard. Unless
     #: ``sw_routing_vcl_cutoff`` is set, saturation switches to a shaly-sand
     #: model above this clay volume, or above 0.3 when it is unset.
-    vcl_cutoff: Optional[float] = None
+    vcl_cutoff: Optional[Any] = None
     #: Maximum water saturation for net pay, v/v. Unset: 0.60 clastic, 0.70
     #: carbonate; 0.7 under the "geolink" profile.
-    sw_cutoff: Optional[float] = None
+    sw_cutoff: Optional[Any] = None
     #: Minimum effective porosity for net reservoir, v/v. Unset: 0.08 clastic,
     #: 0.045 carbonate.
-    phie_cutoff: Optional[float] = None
+    phie_cutoff: Optional[Any] = None
 
     # -- Gamma-ray clay volume ----------------------------------------------
-    #: Clean-rock gamma-ray endpoint, API; None picks P5 of the log.
+    #: Clean-rock gamma-ray endpoint, API, used as given. None picks P5 of the
+    #: log, lowered to 20 API when higher (a guard against a nearly flat GR,
+    #: reported with a warning; ``gr_min_used`` in the trace).
     gr_min: Optional[float] = None
-    #: Shale gamma-ray endpoint, API; None picks P95 of the log.
+    #: Shale gamma-ray endpoint, API, used as given. None picks P95 of the
+    #: log, raised to 100 API when lower.
     gr_max: Optional[float] = None
     #: Transform: ``"linear"``, ``"larionov_tertiary"``, ``"larionov_older"``,
     #: ``"steiber"`` or ``"clavier"``.
@@ -944,7 +987,8 @@ class DynamicWorkflowConfig:
     #: higher of the two baselines.
     sp_min: Optional[float] = None
     #: Clean-sand SP line (static SP), mV: the line of greatest deflection.
-    #: None picks P5 of the SP log. VCL_SP joins the minimum-of-indicators VCL
+    #: None picks P5 of the SP log. The two lines are also those of the
+    #: SP-derived Rw. VCL_SP joins the minimum-of-indicators VCL
     #: only when both ``sp_min`` and ``sp_max`` are set. Both are constant
     #: lines applied over the whole log, so set them only for an SP without
     #: baseline drift (e.g. a drift-corrected SP): lines picked in one interval
@@ -1038,10 +1082,29 @@ class DynamicWorkflowConfig:
     #: Shale exponent of the Nigeria-Schlumberger model.
     shale_exp: float = 1.6
 
+    # -- Zones ---------------------------------------------------------------
+    #: Settings that differ by depth: a list of zones, each a mapping with
+    #: ``top``, ``bottom`` and the settings for that interval (any setting
+    #: but the whole-run ones, such as ``calculation_profile`` or
+    #: ``skip_steps``), e.g. ``[{"top": 176, "bottom": 1908, "rw": 0.5,
+    #: "rw_meas_temp_f": 60}]``; or a table or CSV/Excel file with those
+    #: columns (an empty cell sets nothing). Depths are in the well's depth
+    #: unit unless a ``depth_unit`` is given; zones may not overlap. Each zone
+    #: is interpreted with its settings over the rest and merged into the
+    #: well. Inside a zone its values win over everything; outside, the
+    #: whole-well settings apply. LAS header zones (``RW_Z1`` with
+    #: ``TOP_Z1``/``BOT_Z1``) rank below the settings you pass. Not available
+    #: under the "geolink" profile.
+    zones: Optional[Any] = None
+
     # -- Step selection ------------------------------------------------------
     #: Workflow steps to skip, e.g. ``["permeability"]``; see
     #: :class:`WorkflowStep` for the names.
     skip_steps: List[str] = field(default_factory=list)
+    #: The settings the caller passed, which rank above LAS header values even
+    #: when they equal the default (kept by ``dataclasses.replace``). Set by
+    #: the library; not a setting.
+    _explicit_settings: Optional[frozenset] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.lithology is not None:
@@ -1056,6 +1119,443 @@ class DynamicWorkflowConfig:
             self.lithology_domain = _DEFAULT_LITHOLOGY_DOMAIN
         _validate_workflow_config(self)
         self.lithology = self.lithology_domain
+
+
+def _explicit(config: Any) -> frozenset:
+    """The settings the caller passed (``_explicit_settings``), empty when unknown."""
+    return getattr(config, "_explicit_settings", None) or frozenset()
+
+
+def _record_explicit_settings(cls):
+    """Record on each config the settings its caller passed (``_explicit_settings``).
+
+    A header value fills only a setting left at its default; one passed
+    explicitly, even with the default's value, is kept. ``dataclasses.replace``
+    passes the record on (it is a field), and ``copy.deepcopy`` keeps it.
+    """
+    import inspect
+
+    init = cls.__init__
+    names = [item.name for item in dataclasses.fields(cls) if item.init and not item.name.startswith("_")]
+
+    def __init__(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        if kwargs.get("_explicit_settings") is None:
+            passed = set(names[:len(args)]) | (set(kwargs) - {"_explicit_settings"})
+            if len(passed) < len(names):
+                self._explicit_settings = frozenset(passed)
+
+    __init__.__doc__ = init.__doc__
+    __init__.__signature__ = inspect.signature(init)
+    cls.__init__ = __init__
+    return cls
+
+
+DynamicWorkflowConfig = _record_explicit_settings(DynamicWorkflowConfig)
+
+
+#: The settings that stand in for each header zone value the workflow reads
+#: step by step (``RW_Z1`` ...): one of them set makes the zone value unused.
+_HEADER_ZONE_SETTINGS = {
+    "RW": ("rw", "salinity_ppm"),
+    "RMF": ("rmf_at_meas_temp", "rmf_salinity_ppm", "rmf_chlorides_mg_l"),
+    "RM": ("rm",),
+    "PNSH": ("phi_cl",),
+    "RBSH": ("phi_cl",),
+}
+#: Settings that also take one value per lithology, ``{lithology: value}``.
+_ARCHIE_FIELDS = ("a", "m", "n")
+_CUTOFF_FIELDS = ("vcl_cutoff", "phie_cutoff", "sw_cutoff")
+_FAMILIES = ("clastic", "carbonate")
+
+
+def _per_lithology_values(config: "DynamicWorkflowConfig", errors: List[str]) -> None:
+    """Check and normalize the ``{lithology: value}`` forms of Archie and cutoff settings.
+
+    Archie keys are lithologies of the Archie table (``sandstone``,
+    ``limestone``, ``dolomite``, ``shale``, aliases such as ``sand``) or a
+    family, ``clastic`` or ``carbonate``, for every lithology in it. Cutoff
+    keys are families, or lithologies standing for their family. ``"*"``
+    stands for every lithology not listed. Each value is checked as the single
+    value would be.
+    """
+    from collections.abc import Mapping
+
+    from petrophys.evaluation.net_pay.cutoffs import cutoff_family
+    from petrophys.model.constants import ArchieParameterDefaults
+
+    known = set(ArchieParameterDefaults.names())
+    for name in (*_ARCHIE_FIELDS, *_CUTOFF_FIELDS):
+        value = getattr(config, name)
+        if not isinstance(value, Mapping):
+            continue
+        if config.calculation_profile in _BENCHMARK_PROFILES:
+            errors.append(f'{name} per lithology is not available under the "geolink" calculation profile')
+            continue
+        normalized: Dict[str, float] = {}
+        sources: Dict[str, str] = {}
+        for raw_key, raw_value in value.items():
+            key = str(raw_key).strip().lower().replace(" ", "_")
+            if key == "*":
+                target = "*"  # every lithology not listed
+            elif name in _ARCHIE_FIELDS:
+                if key in _FAMILIES:
+                    target = key
+                elif key in known:
+                    target = ArchieParameterDefaults.get(key).lithology
+                else:
+                    errors.append(
+                        f"{name}: unknown lithology {raw_key!r}; use clastic, carbonate or one of "
+                        f"{', '.join(sorted(n for n in known if '_' not in n))}"
+                    )
+                    continue
+            else:
+                target = key if key in _FAMILIES else cutoff_family(key)
+                if key not in _FAMILIES and key not in known:
+                    errors.append(f"{name}: unknown lithology {raw_key!r}; use clastic or carbonate")
+                    continue
+            try:
+                single = DynamicWorkflowConfig(**{name: raw_value})
+            except (TypeError, ValueError) as exc:
+                detail = str(exc).replace("Invalid DynamicWorkflowConfig:\n  - ", "")
+                errors.append(f"{name}[{raw_key!r}]: {detail}")
+                continue
+            number = float(getattr(single, name))
+            if target in normalized and normalized[target] != number:
+                errors.append(
+                    f"{name}: {sources[target]!r} and {raw_key!r} both give the {target} value "
+                    f"({normalized[target]:g} and {number:g})"
+                    + (": cutoffs are per family, clastic or carbonate" if name in _CUTOFF_FIELDS else "")
+                )
+                continue
+            normalized[target], sources[target] = number, str(raw_key)
+        if not normalized and not errors:
+            errors.append(f"{name}: give at least one lithology and value")
+        setattr(config, name, normalized)
+
+
+def _lithology_value(value: Any, lithology: str, family: str, default: float) -> float:
+    """A setting for one sample: the single value, else the sample's lithology's, family's or the default."""
+    from collections.abc import Mapping
+
+    if value is None:
+        return float(default)
+    if isinstance(value, Mapping):
+        for key in (lithology, family, "*"):
+            if key in value:
+                return float(value[key])
+        return float(default)
+    return float(value)
+
+
+#: Settings that hold for the whole run and cannot differ by zone.
+_WHOLE_RUN_SETTINGS = frozenset({
+    "zones", "calculation_profile", "raise_on_error", "standardize_input", "rename_input_curves",
+    "reuse_input_resflag", "formation_tops", "peer_wells", "use_peer_core", "lithology",
+    "lithology_intervals", "lithology_csv", "lithology_source", "lithology_codes", "lithology_curve",
+    "skip_steps",
+})
+_ZONE_TOP_NAMES = ("top", "top_depth", "ztop")
+_ZONE_BOTTOM_NAMES = ("bottom", "bottom_depth", "base", "bot")
+
+
+def _zone_rows(zones: Any) -> List[Dict[str, Any]]:
+    """The rows of a ``zones`` value: a list of mappings, a table, or a CSV/Excel path."""
+    from collections.abc import Mapping
+
+    import pandas as pd
+
+    if isinstance(zones, (str, Path)):
+        from petrophys.io.geology_reader import _read_table
+
+        zones = _read_table(Path(zones))
+    if isinstance(zones, pd.DataFrame):
+        labels = [str(column).strip().lower() for column in zones.columns]
+        repeated = sorted({label for label in labels if labels.count(label) > 1})
+        if repeated:
+            raise ValueError(f"the table has more than one {', '.join(repeated)} column")
+        if len(zones.columns) == 1 and ";" in str(zones.columns[0]):
+            raise ValueError("the file has one column with ';' in its header: save it comma-separated")
+        return [dict(row) for _, row in zones.iterrows()]
+    if isinstance(zones, Mapping):
+        raise TypeError("zones takes a list of zones (one mapping each), a table or a CSV/Excel path")
+    return [dict(row) for row in zones]
+
+
+def _zone_value(name: str, value: Any) -> Any:
+    """A zone table cell as its setting expects it (tables read numbers as text)."""
+    if isinstance(value, str):
+        text = value.strip()
+        if name in _BOOL_FIELDS:
+            lowered = text.lower()
+            if lowered in {"true", "yes", "1"}:
+                return True
+            if lowered in {"false", "no", "0"}:
+                return False
+            return text
+        try:
+            number = float(text)
+        except ValueError:
+            return text
+        return int(number) if name == "mineral_solver_version" and number.is_integer() else number
+    if isinstance(value, np.generic):
+        value = value.item()
+    if name == "mineral_solver_version" and isinstance(value, float) and value.is_integer():
+        return int(value)  # a table column with a blank cell reads 2 as 2.0
+    return value
+
+
+def _normalized_zones(config: "DynamicWorkflowConfig", errors: List[str]) -> Optional[tuple]:
+    """``config.zones`` as ``({"top", "bottom", "depth_unit", "name", "settings"}, ...)``.
+
+    Depths stay in their own unit (``depth_unit``, else the well's) until a
+    run converts them; settings are checked as a config would check them.
+    """
+    import difflib
+    from collections.abc import Mapping
+
+    import pandas as pd
+
+    raw = config.zones
+    if raw is None:
+        return None
+    if config.calculation_profile in _BENCHMARK_PROFILES:
+        errors.append('zones is not available under the "geolink" calculation profile')
+        return None
+    try:
+        rows = _zone_rows(raw)
+    except (TypeError, ValueError, OSError) as exc:
+        errors.append(f"zones: {exc}")
+        return None
+    fields = {item.name for item in dataclasses.fields(DynamicWorkflowConfig) if not item.name.startswith("_")}
+    zones = []
+    for number, row in enumerate(rows, start=1):
+        if not isinstance(row, Mapping):
+            errors.append(f"zones[{number}]: each zone is a mapping such as {{'top': ..., 'bottom': ..., 'rw': ...}}")
+            continue
+        if isinstance(row.get("settings"), Mapping):
+            # A zone as this function returns it (a copied config).
+            row = {**{key: value for key, value in row.items() if key != "settings"}, **row["settings"]}
+        names = [str(key).strip().lower() for key in row]
+        repeated = sorted({name for name in names if names.count(name) > 1})
+        if repeated:
+            errors.append(f"zones: zone {number}: {', '.join(repeated)} given more than once")
+            continue
+        cells = {
+            str(key).strip().lower(): value for key, value in row.items()
+            if not (value is None or (not isinstance(value, str) and np.ndim(value) == 0 and pd.isna(value))
+                    or (isinstance(value, str) and not value.strip()))
+        }
+        label = str(cells.pop("name", cells.pop("zone", "")) or "").strip() or str(number)
+        depth_unit = cells.pop("depth_unit", None)
+        if depth_unit is not None:
+            from petrophys.model.units import normalize_depth_unit
+
+            if normalize_depth_unit(str(depth_unit), strict=False) not in {"m", "ft"}:
+                errors.append(f"zones: zone {label}: depth_unit {depth_unit!r} is not m or ft")
+                continue
+        top_key = next((key for key in _ZONE_TOP_NAMES if key in cells), None)
+        bottom_key = next((key for key in _ZONE_BOTTOM_NAMES if key in cells), None)
+        if top_key is None or bottom_key is None:
+            errors.append(f"zones: zone {label} needs a top and a bottom depth")
+            continue
+        try:
+            top, bottom = float(cells.pop(top_key)), float(cells.pop(bottom_key))
+        except (TypeError, ValueError):
+            errors.append(f"zones: zone {label} has a top or bottom that is not a number")
+            continue
+        if not (np.isfinite(top) and np.isfinite(bottom)) or top >= bottom:
+            errors.append(f"zones: zone {label} needs a top above its bottom; got {top:g}-{bottom:g}")
+            continue
+        settings = {}
+        reported = len(errors)
+        for name, value in cells.items():
+            if name in _WHOLE_RUN_SETTINGS:
+                errors.append(f"zones: zone {label}: {name} holds for the whole run and cannot be set per zone")
+            elif name in fields:
+                settings[name] = _zone_value(name, value)
+            else:
+                from petrophys.workflow.zoned_batch import PARAMETER_ALIASES
+
+                hint = PARAMETER_ALIASES.get(name.upper())
+                if hint is None:
+                    close = difflib.get_close_matches(name, sorted(fields), n=1)
+                    hint = close[0] if close else None
+                errors.append(
+                    f"zones: zone {label}: unknown setting {name!r}"
+                    + (f" (did you mean {hint!r}?)" if hint else "")
+                )
+        if not settings:
+            if len(errors) == reported:
+                errors.append(f"zones: zone {label} sets nothing besides its depths")
+            continue
+        try:
+            DynamicWorkflowConfig(**settings)
+        except (TypeError, ValueError) as exc:
+            detail = str(exc).replace("Invalid DynamicWorkflowConfig:\n  - ", "").replace("\n  - ", "; ")
+            errors.append(f"zones: zone {label}: {detail}")
+            continue
+        zones.append({
+            "name": label, "top": top, "bottom": bottom,
+            "depth_unit": None if depth_unit is None else str(depth_unit).strip(),
+            "settings": settings,
+        })
+    units = {zone["depth_unit"] for zone in zones}
+    if len(units) <= 1:
+        ordered = sorted(zones, key=lambda zone: zone["top"])
+        for upper, lower in zip(ordered, ordered[1:]):
+            if lower["top"] < upper["bottom"]:
+                errors.append(
+                    f"zones: zone {upper['name']} ({upper['top']:g}-{upper['bottom']:g}) and "
+                    f"zone {lower['name']} ({lower['top']:g}-{lower['bottom']:g}) overlap"
+                )
+    return tuple(zones)
+
+
+
+def _default_matrix_type(lithology_domain: Any) -> str:
+    """``matrix_type`` left unset: sandstone in the clastic domain, else "auto"."""
+    from petrophys.evaluation.net_pay.cutoffs import cutoff_family
+
+    domain = str(lithology_domain).strip().lower()
+    clastic = domain not in {"auto", "evaporite"} and cutoff_family(domain) != "carbonate"
+    return "sandstone" if clastic else "auto"
+
+
+def _copy_config(
+    config: DynamicWorkflowConfig, *, explicit: Optional[Sequence[str]] = None, **changes: Any
+) -> DynamicWorkflowConfig:
+    """``dataclasses.replace(config, **changes)`` that keeps the record of the
+    caller's settings, adding ``explicit`` (default: every changed setting).
+
+    A new ``lithology_domain`` re-resolves a ``matrix_type`` that was left
+    unset, as a new config would ("geolink": kept).
+    """
+    changes = dict(changes)
+    if "lithology_domain" in changes and "lithology" not in changes:
+        # The copy mirrors its old domain in the deprecated alias otherwise.
+        changes["lithology"] = None
+    if (
+        "lithology_domain" in changes
+        and "matrix_type" not in changes
+        and getattr(config, "_matrix_defaulted", False)
+        and config.calculation_profile not in _BENCHMARK_PROFILES
+        and not reproducing_benchmark()
+    ):
+        changes["matrix_type"] = None
+    copy = dataclasses.replace(config, **changes)
+    if "matrix_type" not in changes and getattr(config, "_matrix_defaulted", False):
+        copy._matrix_defaulted = True
+    added = set(changes) - {"lithology", "matrix_type"} if explicit is None else set(explicit)
+    copy._explicit_settings = _explicit(config) | added
+    return copy
+
+
+def _config_with_header_settings(
+    well: "Well", config: Optional[DynamicWorkflowConfig], options: Optional[Dict[str, Any]] = None
+) -> DynamicWorkflowConfig:
+    """The run config: ``options`` over ``config``, LAS header settings filling
+    the settings left at their defaults.
+
+    Header values with a native LAS route (RW/RWT, BHT, RMF, RM) stay on the
+    well, where each step reads them with its own unit and reference handling.
+    """
+    import copy as _copy
+
+    from petrophys.workflow.zoned_batch import _NATIVE_HEADER_FIELDS, _extract_global_parameter_overrides
+
+    options = dict(options or {})
+    profile = str(
+        options.get("calculation_profile", getattr(config, "calculation_profile", "current"))
+    ).strip().lower()
+    metadata_options, _ = _extract_global_parameter_overrides(well, calculation_profile=profile)
+    # A header TD is kept, converted to feet from its own unit (the "geolink"
+    # profile read it from the well header instead).
+    historical = profile in _BENCHMARK_PROFILES or reproducing_benchmark()
+    native = {name: metadata_options.pop(name) for name in _NATIVE_HEADER_FIELDS if name in metadata_options}
+    if historical:
+        metadata_options.pop("td_ft", None)
+    if config is None:
+        config = DynamicWorkflowConfig(**{**metadata_options, **options})
+        # Header values are not the caller's settings.
+        config._explicit_settings = _explicit(config) - (set(metadata_options) - set(options))
+        if not historical:
+            _note_header_settings(well, config, {**metadata_options, **native})
+        return config
+    settings = {
+        name: value
+        for name, value in metadata_options.items()
+        # A header value fills a setting the config leaves at its default
+        # ("geolink": a setting left unset).
+        if (getattr(config, name, None) is None if historical else _left_at_default(config, name))
+        # Under the "geolink" profile an unset cutoff already holds its
+        # profile default (VCL 0.3, SW 0.7), which a header does not replace.
+        and not (profile in _BENCHMARK_PROFILES and name in _PROFILE_DEFAULTS)
+    }
+    settings.update(options)
+    if historical:
+        if "lithology_domain" in settings and "lithology" not in settings:
+            settings["lithology"] = None
+        explicit = _explicit(config) | set(options)
+        result = dataclasses.replace(config, **settings) if settings else _copy.deepcopy(config)
+        result._explicit_settings = frozenset(explicit)
+        return result
+    result = _copy_config(config, explicit=list(options), **settings)
+    _note_header_settings(well, result, {**metadata_options, **native})
+    return result
+
+
+def _note_header_settings(well: "Well", config: DynamicWorkflowConfig, header: Dict[str, Any]) -> None:
+    """Record on ``config`` the header values a setting overrides, and the header's zones.
+
+    ``_header_notes`` name the whole-well and zone header values the caller's
+    settings override; ``_header_zones`` are the LAS header zones (``M_Z1``
+    with ``TOP_Z1``/``BOT_Z1``, ...) with the settings the run applies inside
+    them. The values the steps read from the header themselves (``RW_Z1``,
+    ``RMF_Z1``, ...) are left to those steps.
+    """
+    from petrophys.workflow.zoned_batch import _NATIVE_HEADER_FIELDS, extract_zoned_parameters
+
+    explicit = _explicit(config)
+    notes = []
+    for name, value in header.items():
+        given = getattr(config, name, None)
+        if name in explicit and isinstance(given, dict) and "*" not in given:
+            # Your values for the lithologies you list; the header's for the rest.
+            setattr(config, name, {**given, "*": float(value)})
+            notes.append(
+                f"The LAS header gives {name}={value!r}: used for the lithologies {name} does not list"
+            )
+        elif name in explicit and value != given:
+            notes.append(
+                f"The LAS header gives {name}={value!r}; not used, {name}={given!r} is set"
+            )
+    zones = []
+    for zone in extract_zoned_parameters(well, calculation_profile=config.calculation_profile):
+        settings = {}
+        for name, value in zone.config_overrides.items():
+            if name in _NATIVE_HEADER_FIELDS or name in _WHOLE_RUN_SETTINGS:
+                continue
+            given = getattr(config, name, None)
+            if name in explicit and isinstance(given, dict):
+                # Inside the zone, the zone's value fills the lithologies yours leave out.
+                listed = {key: item for key, item in given.items() if key != "*"}
+                settings[name] = {**listed, "*": float(value)}
+                continue
+            if name in explicit:
+                notes.append(
+                    f"The LAS header zone Z{zone.index} ({zone.top:g}-{zone.bottom:g} {well.depth_unit}) gives "
+                    f"{name}={value!r}; not used, {name}={getattr(config, name)!r} is set"
+                )
+                continue
+            settings[name] = value
+        if settings:
+            zones.append({
+                "name": f"Z{zone.index} (LAS header)", "top": float(zone.top), "bottom": float(zone.bottom),
+                "depth_unit": None, "settings": settings,
+            })
+    config._header_notes = notes
+    config._header_zones = tuple(zones)
 
 def _attached_formation_tops(records: List[Dict[str, Any]], terminal_depth: float) -> Any:
     """Build validated, non-overlapping FormationTops from attached records.
@@ -1458,7 +1958,8 @@ def _profile_setting(config: DynamicWorkflowConfig, field_name: str) -> Any:
 def _left_at_default(config: DynamicWorkflowConfig, field_name: str) -> bool:
     """True when a setting is unset or still has its default value.
 
-    Under the "geolink" profile a setting of :data:`_PROFILE_DEFAULTS` that
+    A setting the caller passed explicitly (``_explicit_settings``) is never
+    at its default, even with the default's value. Under the "geolink" profile a setting of :data:`_PROFILE_DEFAULTS` that
     holds its "geolink" value (e.g. ``vcl_cutoff=0.3``) also counts as left
     at the default, as the eval package's calculations treat it.
     """
@@ -1467,6 +1968,12 @@ def _left_at_default(config: DynamicWorkflowConfig, field_name: str) -> bool:
     value = getattr(config, field_name, None)
     if value is None:
         return True
+    if (
+        field_name in _explicit(config)
+        and config.calculation_profile not in _BENCHMARK_PROFILES
+        and not reproducing_benchmark()
+    ):
+        return False
     if field_name in _PROFILE_DEFAULTS and config.calculation_profile in _BENCHMARK_PROFILES:
         return value == _PROFILE_DEFAULTS[field_name][1]
     item = DynamicWorkflowConfig.__dataclass_fields__.get(field_name)
@@ -1505,11 +2012,8 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     _normalized_choice(config, "mud_type", _MUD_TYPES, errors)
     _normalized_choice(config, "mud_water", _MUD_WATERS, errors)
     if config.matrix_type is None:
-        from petrophys.evaluation.net_pay.cutoffs import cutoff_family
-
-        domain = str(config.lithology_domain).strip().lower()
-        clastic = domain not in {"auto", "evaporite"} and cutoff_family(domain) != "carbonate"
-        config.matrix_type = "sandstone" if clastic else "auto"
+        config.matrix_type = _default_matrix_type(config.lithology_domain)
+        config._matrix_defaulted = True
     _normalized_choice(config, "matrix_type", ("auto", *MatrixProperties.names()), errors)
     _validate_lithology(config, errors)
     _normalized_choice(config, "lithology_source", _LITHOLOGY_SOURCES, errors)
@@ -1561,8 +2065,8 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
 
     def _number(name: str) -> Optional[float]:
         value = getattr(config, name)
-        if value is None:
-            return None
+        if value is None or isinstance(value, dict):
+            return None  # a per-lithology value is checked by _per_lithology_values
         if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)):
             errors.append(f"{name} must be a number; got {value!r}")
             return None
@@ -1571,6 +2075,7 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
             return None
         return float(value)
 
+    _per_lithology_values(config, errors)
     for name in _FINITE_FIELDS:
         _number(name)
     for name in _POSITIVE_FIELDS:
@@ -1605,6 +2110,7 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
             )
     if config.lithology_csv is not None and config.lithology_intervals is not None:
         errors.append("Supply lithology_csv or lithology_intervals, not both.")
+    config.zones = _normalized_zones(config, errors)
     if config.calculation_profile == "current":
         cec_error = _cec_range_error(config.cec)
         if cec_error:
@@ -1629,7 +2135,8 @@ class StepResult:
     success : bool
         Whether the step completed without error.
     message : str
-        Error message if failed, or summary if successful.
+        Why the step failed; empty when it succeeded (``decisions`` and
+        ``parameters`` describe what it did).
     method : str
         Algorithm/equation used (e.g., "larionov_tertiary", "simandoux").
     input_curves : list
@@ -1640,6 +2147,8 @@ class StepResult:
         All numeric parameters, thresholds, and constants used.
     decisions : list
         Human-readable trace of decisions/logic branches taken.
+    data : dict, optional
+        Extra step output for custom steps; the built-in steps leave it None.
     """
     step: str
     success: bool
@@ -1754,6 +2263,9 @@ class DynamicWorkflowResult:
     #: Trace entries of the context's value-range QC and dependent-curve
     #: recomputation, applied to ``well`` after the workflow.
     post_workflow_steps: List[Dict[str, Any]] = field(default_factory=list)
+    #: One run per entry of ``config.zones`` (in zone order), each merged into
+    #: ``well`` over its depths; empty without zones.
+    zone_results: List["DynamicWorkflowResult"] = field(default_factory=list)
 
     @property
     def has_usable_interpretation(self) -> bool:
@@ -1955,6 +2467,8 @@ class DynamicWorkflowResult:
         """
         settings: Dict[str, Any] = {}
         for name in vars(self.config):
+            if name.startswith("_"):
+                continue  # the library's own records, not settings
             settings[name] = _profile_setting(self.config, name)
             if name == "calculation_profile" and self._benchmark_calculations is not None:
                 settings["benchmark_calculations"] = self._benchmark_calculations
@@ -2254,6 +2768,7 @@ class DynamicWorkflow:
         self._last_phi_cl_info: Optional[Dict[str, Any]] = None
         self._auto_matrix = False
         self._auto_lith = False
+        self._costa_fluid = False
         self._lithology_pending = False
         self._lithology_resolution = None
         self._selected_lithology_source = "auto"
@@ -2650,6 +3165,19 @@ class DynamicWorkflow:
                 "index": zone.index, "top": float(zone.top), "bottom": float(zone.bottom),
                 "value": value, "unit": _parameter_text(well, f"{prefix}_Z{zone.index}__UNIT"),
             })
+        # A setting you passed (whole-well, or a zone's in config.zones) ranks
+        # above the header's zone values for it.
+        explicit = _explicit(self.config)
+        given = [name for name in _HEADER_ZONE_SETTINGS.get(prefix, ()) if name in explicit]
+        if zones and given:
+            for zone in zones:
+                note = (
+                    f"{prefix}_Z{zone['index']} = {zone['value']:g} in the LAS header "
+                    f"({zone['top']:g}-{zone['bottom']:g} {well.depth_unit}) is not used: {given[0]} is set"
+                )
+                if self._result is not None and note not in self._result.warnings:
+                    self._result.warnings.append(note)
+            return []
         return zones
 
     def _zone_mask(self, well: "Well", zone: Dict[str, Any]) -> np.ndarray:
@@ -3116,12 +3644,16 @@ class DynamicWorkflow:
         n_values = np.full(n_samples, np.nan, dtype=float)
         summary: Dict[str, Dict[str, Any]] = {}
 
+        from petrophys.evaluation.net_pay.cutoffs import cutoff_family
+
         for idx, raw_lithology in enumerate(lithology_values):
             lithology_name = _coerce_lithology_group(raw_lithology) or fallback
             coeffs = ArchieParameterDefaults.get(lithology_name)
-            a_values[idx] = float(self.config.a) if self.config.a is not None else float(coeffs.a)
-            m_values[idx] = float(self.config.m) if self.config.m is not None else float(coeffs.m)
-            n_values[idx] = float(self.config.n) if self.config.n is not None else float(coeffs.n)
+            # A value per lithology goes by the sample's lithology, then its family.
+            canonical, family = str(coeffs.lithology), cutoff_family(lithology_name)
+            a_values[idx] = _lithology_value(self.config.a, canonical, family, coeffs.a)
+            m_values[idx] = _lithology_value(self.config.m, canonical, family, coeffs.m)
+            n_values[idx] = _lithology_value(self.config.n, canonical, family, coeffs.n)
 
             key = str(coeffs.lithology or lithology_name).upper()
             item = summary.setdefault(
@@ -3173,13 +3705,62 @@ class DynamicWorkflow:
         Like :meth:`run`, it works on a copy of :attr:`config`.
         """
         requested_config = self.config
-        self.config = dataclasses.replace(requested_config)
+        self.config = _copy_config(requested_config)
         try:
             return self._run_selected_steps(well, steps)
         finally:
             self.config = requested_config
 
+    def _grain_density_setting(self) -> float:
+        """Grain density for Qv from CEC: ``rho_ma``, else the matrix's.
+
+        The "geolink" profile takes 2.65 g/cm3 whatever the matrix.
+        """
+        from petrophys.model.constants import MatrixProperties
+
+        if self.config.rho_ma is not None:
+            return float(self.config.rho_ma)
+        if not self._reproducing_benchmark:
+            try:
+                return float(MatrixProperties.get_density(self.config.matrix_type))
+            except KeyError:
+                pass
+        return 2.65
+
+    def _resolve_fluid_density(self) -> None:
+        """Set an unset ``rho_fl`` and ``rho_cl`` on the run config.
+
+        They are 1.0 and 2.45 g/cm3, or with ``carbonate_calibration="costa"``
+        the calibration's brine and illite, so porosity, the hydrocarbon
+        correction and the mineral solve read the same fluid and clay.
+        """
+        from petrophys.interpretation.lithology.costa_carbonate import (
+            COSTA_FLUID_DENSITY,
+            ILLITE_DENSITY,
+        )
+
+        costa = (
+            self.config.carbonate_calibration == "costa"
+            and str(self.config.lithology_domain).strip().lower() == "carbonate"
+            and self.config.calculation_profile not in _BENCHMARK_PROFILES
+        )
+        self._costa_fluid = costa and self.config.rho_fl is None
+        if self.config.rho_fl is None:
+            self.config.rho_fl = COSTA_FLUID_DENSITY if self._costa_fluid else 1.0
+        if self.config.rho_cl is None:
+            self.config.rho_cl = ILLITE_DENSITY if costa else 2.45
+
+    def _solver_endpoints(self) -> Optional[Dict[str, Dict[str, float]]]:
+        """The run's pore fluid (``rho_fl``, ``dt_fl``) for the clastic mineral solve.
+
+        The benchmark profiles keep the solver's own water endpoint.
+        """
+        if self._reproducing_benchmark:
+            return None
+        return {"water": {"density": float(self.config.rho_fl), "dt": float(self.config.dt_fl)}}
+
     def _run_selected_steps(self, well: "Well", steps: list[WorkflowStep]) -> DynamicWorkflowResult:
+        self._resolve_fluid_density()
         self._result = self._start_result(well)
         self._lithology_log = None
         self._lithology_source = "config"
@@ -3252,21 +3833,166 @@ class DynamicWorkflow:
 
         Notes
         -----
+        The settings are used as given: LAS header parameters are applied by
+        :func:`run_dynamic_workflow` and :func:`petrophys.interpret`, which
+        build the config from them, not here.
+
         Each run works on its own copy of :attr:`config`, so a workflow can be
         reused across wells: values resolved for one well (e.g. an ``"auto"``
         matrix) never carry over to the next, and :attr:`config` itself is
         left unchanged.
         """
-        requested_config = self.config
-        self.config = dataclasses.replace(requested_config)
-        try:
-            return self._run(well)
-        finally:
-            self.config = requested_config
+        notes = list(getattr(self.config, "_header_notes", ()) or ())
+        if self.config.zones or getattr(self.config, "_header_zones", None):
+            result = self._run_zones(well)
+        else:
+            requested_config = self.config
+            self.config = _copy_config(requested_config)
+            try:
+                result = self._run(well)
+            finally:
+                self.config = requested_config
+        result.warnings.extend(note for note in notes if note not in result.warnings)
+        return result
+
+    def _run_zones(self, well: "Well") -> DynamicWorkflowResult:
+        """Run the well, then each distinct set of zone settings, merged over the zones.
+
+        Zones are ``config.zones`` (the caller's) and the LAS header zones
+        that :func:`_config_with_header_settings` found (``_header_zones``);
+        where they overlap, the caller's values win. Each set of zone settings
+        is a full run of the well with those settings over the rest, so a zone
+        changes what its settings change and nothing else: data-derived picks
+        (GR baselines, irreducible water saturation, the core model) stay
+        those of the whole well. Its curves replace the whole-well ones inside
+        the zone.
+        """
+        import copy as _copy
+
+        from petrophys.model.units import normalize_depth_unit
+        from petrophys.workflow.zoned_batch import _convert_depth_between_units
+
+        requested = self.config
+        depth = np.asarray(well.depth, dtype=float)
+        finite = depth[np.isfinite(depth)]
+        step = float(np.nanmedian(np.diff(finite))) if finite.size > 1 else 0.0
+        notes: List[str] = []
+
+        def placed(zone: Dict[str, Any], user: bool) -> Optional[Dict[str, Any]]:
+            unit = zone["depth_unit"] or well.depth_unit
+            if normalize_depth_unit(unit, strict=False) not in {"m", "ft"}:
+                raise ValueError(f"zones: zone {zone['name']}: depth unit {unit!r} is not m or ft")
+            top = _convert_depth_between_units(zone["top"], unit, well.depth_unit)
+            bottom = _convert_depth_between_units(zone["bottom"], unit, well.depth_unit)
+            label = f"Zone {zone['name']} ({top:g}-{bottom:g} {well.depth_unit})"
+            if not finite.size or not ((depth >= top) & (depth <= bottom)).any():
+                notes.append(f"{label} lies outside the logged depths; its settings are not used")
+                return None
+            # Beyond the log by more than 1 % of the zone or five samples.
+            slack = max(5 * step, 0.01 * (bottom - top))
+            if user and (top < finite.min() - slack or bottom > finite.max() + slack):
+                notes.append(
+                    f"{label} extends beyond the logged depths ({finite.min():g}-{finite.max():g}); "
+                    "it applies where the well is logged"
+                )
+            return {**zone, "top": top, "bottom": bottom, "label": label, "user": user}
+
+        user_zones = [z for z in (placed(zone, True) for zone in (requested.zones or ())) if z]
+        header_zones = [z for z in (placed(zone, False) for zone in getattr(requested, "_header_zones", ()) or ()) if z]
+        ordered = sorted(user_zones, key=lambda zone: zone["top"])
+        for upper, lower in zip(ordered, ordered[1:]):
+            if lower["top"] < upper["bottom"]:
+                raise ValueError(f"zones: {upper['label']} and {lower['label']} overlap")
+
+        # Pieces between every zone boundary, each with its settings: the
+        # header zones' (the later zone where they overlap), then yours.
+        edges = sorted({zone[key] for zone in user_zones + header_zones for key in ("top", "bottom")})
+        groups: Dict[tuple, Dict[str, Any]] = {}
+        for top, bottom in zip(edges, edges[1:]):
+            middle = 0.5 * (top + bottom)
+            covering = [zone for zone in header_zones + user_zones if zone["top"] <= middle <= zone["bottom"]]
+            if not covering:
+                continue
+            settings: Dict[str, Any] = {}
+            mine: List[str] = []
+            for zone in covering:
+                settings.update(zone["settings"])
+                if zone["user"]:
+                    mine.extend(zone["settings"])
+            for zone in covering:
+                if not zone["user"]:
+                    overridden = sorted(set(zone["settings"]) & set(mine))
+                    for name in overridden:
+                        note = f"{zone['label']}: its {name} is not used where your zone sets {name}"
+                        if note not in notes:
+                            notes.append(note)
+            key = tuple(sorted((name, repr(value)) for name, value in settings.items()))
+            group = groups.setdefault(key, {"settings": settings, "mine": set(), "pieces": [], "labels": []})
+            group["mine"].update(mine)
+            group["pieces"].append((top, bottom))
+            for zone in covering:
+                if zone["label"] not in group["labels"]:
+                    group["labels"].append(zone["label"])
+
+        # Each zone's settings over the whole-well ones make a valid config
+        # before anything runs; a header zone that does not is left out.
+        runs = []
+        for group in groups.values():
+            try:
+                config = _copy_config(requested, explicit=sorted(group["mine"]), zones=None, **group["settings"])
+            except ValueError as exc:
+                reason = str(exc).replace("Invalid DynamicWorkflowConfig:\n  - ", "").replace("\n  - ", "; ")
+                if group["mine"]:
+                    raise ValueError(f"zones: {', '.join(group['labels'])}: {reason}") from None
+                notes.append(f"{', '.join(group['labels'])}: settings not used ({reason})")
+                continue
+            runs.append((group, config))
+
+        source = _copy.deepcopy(well)
+        before = set(well.curves)
+        result = DynamicWorkflow(_copy_config(requested, explicit=[], zones=None)).run(well)
+        result.config.zones = requested.zones
+        result.warnings.extend(notes)
+        for group, config in runs:
+            zone_well = _copy.deepcopy(source)
+            zone_result = DynamicWorkflow(config).run(zone_well)
+            label = ", ".join(group["labels"])
+            inside = np.zeros(depth.shape, dtype=bool)
+            for top, bottom in group["pieces"]:
+                inside |= (depth >= top) & (depth <= bottom)
+            computed = set(zone_well.curves) - before
+            for name in sorted(computed | (set(well.curves) - before)):
+                curve = zone_well.get(name) if name in computed else None
+                if curve is None:
+                    # Computed by the whole-well run only: nothing for the zone.
+                    target = well.get(name)
+                    data = np.array(target.data, copy=True)
+                    if np.issubdtype(data.dtype, np.floating):
+                        data[inside] = np.nan
+                        well.add_curve(name, data, target.unit, target.metadata.description)
+                    continue
+                values = np.asarray(curve.data)
+                target = well.get(name)
+                if target is None:
+                    data = (np.full(depth.shape, np.nan) if np.issubdtype(values.dtype, np.number)
+                            else np.full(depth.shape, None, dtype=object))
+                else:
+                    data = np.array(target.data, copy=True)
+                    if np.issubdtype(data.dtype, np.integer) and np.issubdtype(values.dtype, np.floating):
+                        data = data.astype(float)
+                data[inside] = values[inside]
+                well.add_curve(name, data, curve.unit, curve.metadata.description)
+            result.warnings.extend(
+                f"{label}: {message}" for message in zone_result.warnings if message not in result.warnings
+            )
+            result.errors.extend(f"{label}: {message}" for message in zone_result.errors)
+            result.zone_results.append(zone_result)
+        return result
 
     def _run(self, well: "Well") -> DynamicWorkflowResult:
         self._auto_matrix = str(self.config.matrix_type).strip().lower() == "auto"
         self._auto_lith = str(self.config.lithology_domain).strip().lower() == "auto"
+        self._resolve_fluid_density()
 
         self._result = self._start_result(well)
         self._lithology_log = None
@@ -3342,7 +4068,8 @@ class DynamicWorkflow:
             elif self._selected_lithology_source == "vendor":
                 res = self._vendor_lithology_resolution(well)
             elif self._selected_lithology_source != "config":
-                res = resolve_from_core_matrix(well, rho_hc=rho_hc, warn=False)
+                fluid = {} if self._historical else {"rho_fluid": self.config.rho_fl}
+                res = resolve_from_core_matrix(well, rho_hc=rho_hc, warn=False, **fluid)
             if res is not None:
                 self._apply_lithology_resolution(res)
             elif self._selected_lithology_source == "config":
@@ -3403,6 +4130,15 @@ class DynamicWorkflow:
             else:
                 self._result.steps_skipped.append(step_name)
                 self._result.specific_steps_skipped[step_name] = self._skip_reason(step_enum, well)
+                if (
+                    step_enum is WorkflowStep.HC_CORRECTION
+                    and self.config.apply_hc_correction
+                    and not self._reproducing_benchmark
+                ):
+                    # Asked for explicitly, so its absence is a warning.
+                    self._result.warnings.append(
+                        f"hc_correction not applied: {self._skip_reason(step_enum, well)}"
+                    )
 
         # Fallback: if auto lithology is still unresolved (no vendor log, solver
         # skipped), apply the default (sandstone/clastic) with a warning.
@@ -3608,7 +4344,13 @@ class DynamicWorkflow:
         elif step is WorkflowStep.HC_CORRECTION:
             if not self.config.apply_hc_correction:
                 return "apply_hc_correction=False (hydrocarbon correction is opt-in)"
-            missing = self._missing(well, ("neutron porosity (NPHI)", "NPHI"), ("bulk density (RHOB)", "RHOB"))
+            missing = self._missing(
+                well, ("neutron porosity (NPHI)", "NPHI"), ("bulk density (RHOB)", "RHOB"),
+                *(() if self._reproducing_benchmark else (
+                    ("a flushed-zone water saturation curve (SXO), as the step runs before saturation",
+                     "SXO", "SWXOA", "SXO-LOG"),
+                )),
+            )
         elif step is WorkflowStep.POROSITY:
             return "Needs a density, neutron or sonic curve, or an input porosity curve"
         elif step is WorkflowStep.POROSITY_REFINEMENT:
@@ -3896,6 +4638,10 @@ class DynamicWorkflow:
             self.config.apply_hc_correction
             and self._has_curve(well, "NPHI")
             and self._has_curve(well, "RHOB")
+            # The correction scales with the flushed zone's hydrocarbon
+            # (1 - SXO); the step runs before saturation, so it needs an input
+            # SXO. Without one the "geolink" profile wrote uncorrected copies.
+            and (self._reproducing_benchmark or self._has_curve(well, "SXO", "SWXOA", "SXO-LOG"))
         )
 
     def _can_porosity(self, well: "Well") -> bool:
@@ -4040,7 +4786,22 @@ class DynamicWorkflow:
             measured_f = self._temperature_curve_f(measured)
             finite = np.isfinite(measured_f) if measured_f.size == temperature.size else np.zeros(0, bool)
             coverage = float(np.mean(finite)) if finite.size else 0.0
-            if coverage >= 0.5:
+            # bht_f is unset (None) by default; surface_temp_f holds 68 F
+            # unless the caller passed it.
+            user_anchor = [
+                name for name, given in (
+                    ("bht_f", self.config.bht_f is not None),
+                    ("surface_temp_f", "surface_temp_f" in _explicit(self.config)),
+                ) if given
+            ]
+            if user_anchor:
+                # Temperatures set explicitly win over the log (often a mud
+                # temperature that reads below the formation).
+                message = (
+                    f"{' and '.join(user_anchor)} set: the temperature profile follows them; the input "
+                    "TEMP curve is kept as TEMP_LOG and not used."
+                )
+            elif coverage >= 0.5:
                 gaps = int(np.count_nonzero(~finite))
                 temperature = np.where(finite, measured_f, temperature)
                 source = "measured_temperature_log"
@@ -4346,7 +5107,7 @@ class DynamicWorkflow:
                 )
                 result = calculate_temperature_profile(
                     well,
-                    bht=self.config.bht_f or _metadata_bht_f(well),
+                    bht=self.config.bht_f if self.config.bht_f is not None else _metadata_bht_f(well),
                     surface_temp=surface_temp_f,
                     bht_unit="F",
                     surface_temp_unit="F",
@@ -4628,7 +5389,20 @@ class DynamicWorkflow:
             # the minimum; otherwise VCL_SP is reported and fills only depths
             # that have no GR or N-D value.
             sp_in_vcl = use_sp and sp_min_source == sp_max_source == "user"
+        # The 20/100 bound guards the P5/P95 picks against a nearly flat GR;
+        # a baseline set by the user, the header or a zone is used as given.
+        bound_gr = [name for name, source in (("gr_min", gr_min_source), ("gr_max", gr_max_source))
+                    if source == "auto"]
+        if self._reproducing_benchmark:
+            from petrophys.model.constants import DefaultParameters
+
+            # The "geolink" profile bounded every baseline, and let the log
+            # extend one equal to 20 or 100 API, as it treated those as unset.
+            bound_gr = ["gr_min", "gr_max"]
+            gr_min = None if gr_min == DefaultParameters.GR_MIN else gr_min
+            gr_max = None if gr_max == DefaultParameters.GR_MAX else gr_max
         vcl_module = VclModule(
+            bound_gr=bound_gr,
             gr_min=gr_min, gr_max=gr_max,
             gr_method=self.config.gr_method,
             use_sp=use_sp, use_nd=use_nd,
@@ -4675,6 +5449,23 @@ class DynamicWorkflow:
             decisions.append(
                 f"Applied GR endpoints: {result.gr_min_used:g} to {result.gr_max_used:g} API"
             )
+        if result.gr_bounded and not self._reproducing_benchmark:
+            moved = []
+            for name, (picked, used) in result.gr_bounded.items():
+                label = "clean" if name == "gr_min" else "shale"
+                moved.append(f"the {label} GR pick {picked:.1f} API was {'lowered' if used < picked else 'raised'} to {used:g}")
+            note = "; ".join(moved)
+            decisions.append(f"GR bound (nearly flat GR guard): {note}")
+            # Clean rock reads about 15-30 API (Crain); a clean pick above 30
+            # suggests radioactive clean rock, which the bound reads as clay.
+            if result.gr_bounded.get("gr_min", (0.0,))[0] > 30.0:
+                picked = result.gr_bounded["gr_min"][0]
+                self._result.warnings.append(
+                    f"vclay: the clean GR pick {picked:.1f} API (P5) was lowered to 20, so GR reads "
+                    "rock at that level as clay. If clean rock here is radioactive (feldspathic or "
+                    "volcanic sands), set gr_min from a known clean sand (per zone with GR_MIN_Z1); "
+                    "a value you set is used as given."
+                )
 
         inputs = []
         if gr_curve is not None:
@@ -4778,6 +5569,9 @@ class DynamicWorkflow:
         trace.parameters = {
             "gr_min": gr_min, "gr_max": gr_max,
             "gr_min_used": result.gr_min_used, "gr_max_used": result.gr_max_used,
+            **({} if self._reproducing_benchmark else {
+                "gr_bounded": {name: list(pair) for name, pair in result.gr_bounded.items()},
+            }),
             "gr_curve": gr_curve_name,
             "gr_method": self.config.gr_method,
             "use_sp": use_sp, "use_nd": use_nd,
@@ -4932,7 +5726,10 @@ class DynamicWorkflow:
         )
         if not fill.any():
             return result
-        module = LithologyModule(lithology="auto", solver_version=2, screen_barite_pef=True)
+        module = LithologyModule(
+            lithology="auto", solver_version=2, screen_barite_pef=True,
+            solver_options={"endpoint_overrides": self._solver_endpoints()},
+        )
         other = module.calculate(well)
         fill &= np.asarray(other.solved, dtype=bool)
         if not fill.any():
@@ -4967,32 +5764,22 @@ class DynamicWorkflow:
             trace.input_curves.append("DTC")
 
         carbonate = self.config.lithology_domain == "carbonate"
-        # The COSTA calibration writes its GR-derived illite as VILL; under the
-        # "geolink" profile it keeps the notebooks' per-sample SLSQP solve.
+        # The COSTA calibration (GR-derived illite, written as VILL) and the
+        # generic one are the same closed-form calcite-dolomite solve.
         costa_carbonate = carbonate and self._carbonate_calibration == "costa"
-        notebook_costa = costa_carbonate and self._reproducing_benchmark
         weighted_rows = None
-        if notebook_costa:
-            from petrophys.interpretation.lithology.costa_carbonate import (
-                ILLITE_GR_INTERCEPT,
-                ILLITE_GR_SLOPE,
-                solve_costa_carbonate,
-            )
-
-            result = solve_costa_carbonate(well)
-            trace.method = "costa_gr_illite_calcite_dolomite"
-            trace.parameters.update({
-                "illite_gr_intercept": ILLITE_GR_INTERCEPT,
-                "illite_gr_slope": ILLITE_GR_SLOPE,
-                "illite_equation": "VOL_ILLITE = -0.0424035 + 0.00562239 * GR",
-            })
-        elif carbonate:
+        if carbonate:
             from petrophys.interpretation.lithology.carbonate_minerals import (
                 solve_carbonate_minerals,
             )
 
             if costa_carbonate:
-                result = solve_carbonate_minerals(well, "costa")
+                # The "geolink" profile keeps the calibration's own brine and illite.
+                result = solve_carbonate_minerals(
+                    well, "costa",
+                    rho_fluid=None if self._reproducing_benchmark else self.config.rho_fl,
+                    rho_clay=None if self._reproducing_benchmark else self.config.rho_cl,
+                )
             else:
                 result = solve_carbonate_minerals(
                     well, "generic", rho_fluid=self.config.rho_fl, rho_clay=self.config.rho_cl
@@ -5015,7 +5802,7 @@ class DynamicWorkflow:
                 solver_options=(
                     {"row_uncertainty": None, "sonic_without_pef": True} if unweighted
                     else {"sonic_without_pef": True} if solver_version == 1 and self._reproducing_benchmark
-                    else None
+                    else {"endpoint_overrides": self._solver_endpoints()}
                 ),
                 screen_barite_pef=not self._reproducing_benchmark,
             )
@@ -5024,7 +5811,10 @@ class DynamicWorkflow:
             whole_well_v2 = solver_version == 1 and nphi_curve is None and not self._reproducing_benchmark
             if whole_well_v2:
                 solver_version = 2
-                litho_module = LithologyModule(lithology="auto", solver_version=2, screen_barite_pef=True)
+                litho_module = LithologyModule(
+                    lithology="auto", solver_version=2, screen_barite_pef=True,
+                    solver_options={"endpoint_overrides": self._solver_endpoints()},
+                )
                 trace.decisions.append(
                     "No NPHI: minerals solved by the version 2 solver from RHOB and PEF (porosity solved jointly)"
                 )
@@ -5110,9 +5900,8 @@ class DynamicWorkflow:
             trace.decisions.append(
                 "Input lithology was available -> mineral volumes computed, LITHO not inferred or overwritten"
             )
-        if not carbonate or notebook_costa:
-            # The clastic solvers read PEF and DTC; the "geolink" profile's
-            # COSTA trace also carries this line.
+        if not carbonate:
+            # The clastic solvers read PEF and DTC.
             trace.decisions.append(
                 "PEF screened for plausibility; DTC used when PEF is absent or invalid"
                 if self._reproducing_benchmark or carbonate
@@ -5133,11 +5922,7 @@ class DynamicWorkflow:
                 "Equation rows weighted by nominal one-sigma tool uncertainty: "
                 + ", ".join(f"{row} {sigma:g} {units[row]}" for row, sigma in weighted_rows.items())
             )
-        if notebook_costa:
-            trace.decisions.append(
-                "Carbonate domain selected the COSTA GR-illite plus calcite/dolomite inversion"
-            )
-        elif carbonate:
+        if carbonate:
             clay = (
                 f"illite {trace.parameters['clay_source']}" if costa_carbonate
                 else f"clay = {trace.parameters['clay_source']} at {trace.parameters['clay_density']:g} g/cm3"
@@ -5791,13 +6576,25 @@ class DynamicWorkflow:
             las_rw, las_rw_temp_f = self._covering_zone_rw(well, las_rw, las_rw_temp_f, decisions)
         if las_rw is None:
             las_rw = self._zoned_constant(well, "RW")
-        if las_rw is not None and las_rw_temp_f is None and not self._historical:
-            if self.config.rw_meas_temp_f is not None:
-                # rw_meas_temp_f without rw is the measurement temperature of the header Rw.
-                las_rw_temp_f = float(self.config.rw_meas_temp_f)
+        if las_rw is not None and self.config.salinity_ppm is not None and not self._historical:
+            # An explicit salinity wins over the header, as rw does.
+            decisions.append(
+                f"salinity_ppm is set: the header Rw {float(las_rw):g} ohm.m is not used"
+            )
+            las_rw = None
+        if las_rw is not None and self.config.rw_meas_temp_f is not None and not self._historical:
+            # rw_meas_temp_f without rw is the measurement temperature of the header Rw.
+            if las_rw_temp_f is None:
                 decisions.append(
-                    f"Header Rw has no RWT: rw_meas_temp_f = {las_rw_temp_f:g} degF is its measurement temperature"
+                    f"Header Rw has no RWT: rw_meas_temp_f = {self.config.rw_meas_temp_f:g} degF "
+                    "is its measurement temperature"
                 )
+            elif float(las_rw_temp_f) != float(self.config.rw_meas_temp_f):
+                decisions.append(
+                    f"rw_meas_temp_f = {self.config.rw_meas_temp_f:g} degF replaces the header RWT "
+                    f"{float(las_rw_temp_f):g} degF as the header Rw's measurement temperature"
+                )
+            las_rw_temp_f = float(self.config.rw_meas_temp_f)
         if las_rw is not None:
             if las_rw_temp_f is not None:
                 salinity_est = float(salinity_from_rw(float(las_rw), las_rw_temp_f))
@@ -5893,6 +6690,14 @@ class DynamicWorkflow:
                                 _, sp_shale = estimate_sp_lines(sp_data)
                         else:
                             _, sp_shale = estimate_sp_lines(sp_data)
+                        if not self._reproducing_benchmark:
+                            # sp_max and sp_min are the clean-sand and shale lines.
+                            if self.config.sp_max is not None:
+                                sp_clean = float(self.config.sp_max)
+                                decisions.append(f"SPclean = sp_max = {sp_clean:g} mV (user)")
+                            if self.config.sp_min is not None:
+                                sp_shale = float(self.config.sp_min)
+                                decisions.append(f"SPshale = sp_min = {sp_shale:g} mV (user)")
 
                         rw_curve = rw_from_sp(sp_clean, sp_shale, rmf_curve, temp_profile)
                         decisions.append(
@@ -6321,7 +7126,20 @@ class DynamicWorkflow:
                     }
                 )
 
+        user_endpoints = []
+        if not benchmark and matrix_mode == "lithology_dependent":
+            # A matrix endpoint set explicitly holds for the whole well, over
+            # the lithology groups' and the halite signature's values.
+            for name, array in (("rho_ma", rho_ma), ("dt_ma", dt_ma), ("nphi_ma", nphi_ma)):
+                value = getattr(self.config, name)
+                if value is not None:
+                    array[:] = float(value)
+                    user_endpoints.append(f"{name} = {float(value):g}")
+                    for endpoint in matrix_endpoints:
+                        endpoint[name] = float(value)
+
         return {
+            "user_endpoints": user_endpoints,
             "rho_ma": rho_ma,
             "dt_ma": dt_ma,
             "nphi_ma": nphi_ma,
@@ -6336,8 +7154,14 @@ class DynamicWorkflow:
             # endpoints, the basis of the clay porosity under "current".
             "shale_mask": shale_mask,
             "reservoir_matrix": fallback_key,
-            "reservoir_rho_ma": density_endpoint(fallback_props),
-            "reservoir_nphi_ma": float(fallback_props.nphi),
+            "reservoir_rho_ma": (
+                fallback_rho_ma if not benchmark and self.config.rho_ma is not None
+                else density_endpoint(fallback_props)
+            ),
+            "reservoir_nphi_ma": (
+                fallback_nphi_ma if not benchmark and self.config.nphi_ma is not None
+                else float(fallback_props.nphi)
+            ),
             "lithology_log": isinstance(lithology, np.ndarray),
             "halite_log_samples": halite_samples,
         }
@@ -6678,6 +7502,11 @@ class DynamicWorkflow:
                 else "Porosity used the configured matrix endpoints; it is computed once and "
                 "is not recomputed if the workflow later infers LITHO"
             )
+        if matrix_info["user_endpoints"]:
+            decisions.append(
+                f"{', '.join(matrix_info['user_endpoints'])} (user) used at every depth, "
+                "in place of the lithology groups' matrix values"
+            )
         if matrix_info["halite_log_samples"]:
             halite = next(
                 item for item in matrix_info["matrix_endpoints"] if item["lithology_group"] == "HALITE (LOG SIGNATURE)"
@@ -6737,6 +7566,10 @@ class DynamicWorkflow:
                 decisions.append("PHID = (rho_ma(depth) - RHOB) / (rho_ma(depth) - rho_fl)")
             else:
                 decisions.append("PHID = (rho_ma - RHOB) / (rho_ma - rho_fl)")
+            if self._costa_fluid:
+                decisions.append(
+                    f"rho_fl not set: the COSTA calibration's {self.config.rho_fl:g} g/cm3 brine"
+                )
         elif existing_phid_curve is not None:
             phid = existing_phid_curve.data
             inputs.append("PHID")
@@ -7018,14 +7851,26 @@ class DynamicWorkflow:
             "uses_computed_lithology": matrix_info["matrix_source"] == "computed_lithology_curve",
             "matrix_groups_used": matrix_info["matrix_groups_used"],
             "matrix_endpoints": matrix_info["matrix_endpoints"],
-            "nphi_ma": matrix_info["fallback_nphi_ma"] if matrix_info["matrix_mode"] == "constant" else None,
+            "nphi_ma": (
+                matrix_info["fallback_nphi_ma"]
+                if matrix_info["matrix_mode"] == "constant" or self.config.nphi_ma is not None and matrix_info["user_endpoints"]
+                else None
+            ),
             "nphi_ma_min": float(np.nanmin(nphi_ma)),
             "nphi_ma_max": float(np.nanmax(nphi_ma)),
-            "rho_ma": matrix_info["fallback_rho_ma"] if matrix_info["matrix_mode"] == "constant" else None,
+            "rho_ma": (
+                matrix_info["fallback_rho_ma"]
+                if matrix_info["matrix_mode"] == "constant" or self.config.rho_ma is not None and matrix_info["user_endpoints"]
+                else None
+            ),
             "rho_ma_min": float(np.nanmin(rho_ma)),
             "rho_ma_max": float(np.nanmax(rho_ma)),
             "rho_fl": self.config.rho_fl,
-            "dt_ma": matrix_info["fallback_dt_ma"] if matrix_info["matrix_mode"] == "constant" else None,
+            "dt_ma": (
+                matrix_info["fallback_dt_ma"]
+                if matrix_info["matrix_mode"] == "constant" or self.config.dt_ma is not None and matrix_info["user_endpoints"]
+                else None
+            ),
             "dt_ma_min": float(np.nanmin(dt_ma)),
             "dt_ma_max": float(np.nanmax(dt_ma)),
             "dt_fl": self.config.dt_fl,
@@ -7267,7 +8112,7 @@ class DynamicWorkflow:
             salinity=self.config.salinity_ppm,
             rmf=self._result.rmf_computed if flushed_zone else None,
             lithology=lithology, cec=cec, b_coeff=self.config.b_coeff,
-            rho_ma=self.config.rho_ma or 2.65, m_star=self.config.m_star,
+            rho_ma=self._grain_density_setting(), m_star=self.config.m_star,
             rwb=self.config.rwb, phi_cl=phi_cl,
             rtsh=self.config.rtsh, vsh_exp=self.config.vsh_exp,
             shale_exp=self.config.shale_exp,
@@ -8244,6 +9089,7 @@ class DynamicWorkflow:
 def run_dynamic_workflow(
     well: "Well",
     config: Optional[DynamicWorkflowConfig] = None,
+    _header_settings: bool = True,
     **kwargs
 ) -> DynamicWorkflowResult:
     """
@@ -8274,14 +9120,18 @@ def run_dynamic_workflow(
     >>> print(f"Steps executed: {[s.step for s in result.steps_executed]}")
     >>> print(f"Steps skipped: {result.steps_skipped}")
     """
-    if config is None:
+    profile = str(
+        kwargs.get("calculation_profile", getattr(config, "calculation_profile", "current"))
+    ).strip().lower()
+    if _header_settings and profile not in _BENCHMARK_PROFILES and not reproducing_benchmark():
+        # As petrophys.interpret: LAS header settings fill the settings left
+        # at their defaults.
+        config = _config_with_header_settings(well, config, kwargs)
+    elif config is None:
         config = DynamicWorkflowConfig(**kwargs)
-    else:
-        if "lithology_domain" in kwargs and "lithology" not in kwargs:
-            # The copied config mirrors its lithology_domain in the deprecated
-            # alias, which would otherwise override the new value.
-            kwargs["lithology"] = None
-        config = dataclasses.replace(config, **kwargs)
+    elif kwargs:
+        # A copy that keeps the record of the caller's settings.
+        config = _copy_config(config, **kwargs)
 
     workflow = DynamicWorkflow(config)
     return workflow.run(well)

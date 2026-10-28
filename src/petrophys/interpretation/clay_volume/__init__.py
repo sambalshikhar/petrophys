@@ -10,6 +10,7 @@ from petrophys.interpretation.clay_volume.vcl_module import (
     calculate_vcl,
 )
 from petrophys.interpretation.clay_volume.gr_method import (
+    bounded_gr_baselines,
     vcl_from_gr,
     vcl_linear,
     vcl_larionov_tertiary,
@@ -30,6 +31,7 @@ from petrophys.interpretation.clay_volume.thomas_stieber import (
 __all__ = [
     "VclModule",
     "calculate_vcl",
+    "bounded_gr_baselines",
     "vcl_from_gr",
     "vcl_linear",
     "vcl_larionov_tertiary",

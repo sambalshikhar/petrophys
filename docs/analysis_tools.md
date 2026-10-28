@@ -85,6 +85,24 @@ print(contacts.status, [(c.kind, round(c.depth, 1)) for c in contacts.contacts],
       stations.depth_unit, stations.depth_reference)
 ```
 
+**When your file is laid out differently.** Each reader finds columns and
+units by name, and every guess can be given instead; a value you give is used
+as is:
+
+| Reader | Arguments that override what it reads |
+| --- | --- |
+| `read_core` | `columns={"depth": "Sample depth", "porosity": "He por", "permeability": "Kair"}`, `depth_unit=`, `porosity_unit="%"`, `permeability_unit="D"`, `sheet_name=` |
+| `attach_survey` / `pp.read(..., survey=...)` | `columns={"md": ..., "inclination": ..., "azimuth": ...}`, `elevation=` (the depth reference above sea level, in place of the header's) |
+| `read_formation_pressure` | `depth_column=`, `pressure_column=`, `fluid_column=`, `use_column=`, `depth_unit=`, `pressure_unit=`, `depth_reference="TVDSS"`, `fluid_map={1: "gas", 2: "oil", 3: "water"}` for coded fluid columns |
+| `read_tool_responses` | `responses={"LLD": "laterolog", "ILD": "induction"}`: the mixing law per tool where the table does not give it (laterolog otherwise) |
+| `read_uncertainty_table` | one row per input with `name`, `distribution` (`normal`, `lognormal`, `uniform`, `triangular` or `fixed`) and its parameters (`mean`/`sd`, `median`/`sd`, `low`/`high`, `low`/`mode`/`high`, or `value`), plus optional `low`/`high` bounds for normal and lognormal inputs |
+
+Pretest picking thresholds sit in
+{class}`~petrophys.interpretation.saturation.height.MDTPickingConfig`, passed
+as `pick_mdt_pressure(..., config=MDTPickingConfig(max_gap_seconds=2.0))`;
+each field left unset keeps its default (a time gap over 5 s or five sampling
+intervals is flagged for review).
+
 Either result goes straight into
 {func}`~petrophys.interpretation.saturation.height.fit_saturation_height_from_well`,
 which picks the well's `TVDSS` curve to match the FWL's datum.

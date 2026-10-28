@@ -212,7 +212,7 @@ def create_pickett_plot(
     well: "Well",
     rw: float,
     phie_curve: str = "PHIE",
-    rt_curve: str = "RT",
+    rt_curve: Optional[str] = None,
     color_curve: Optional[str] = None,
     depth_range: Optional[Tuple[float, float]] = None,
     a: float = 1.0,
@@ -252,12 +252,13 @@ def create_pickett_plot(
         The created plot
     """
     phie_c = well.get(phie_curve)
-    rt_c = well.get(rt_curve)
+    rt_names = [rt_curve] if rt_curve is not None else ["RT", "RDEP"]
+    rt_c = next((well.get(name) for name in rt_names if well.get(name) is not None), None)
 
     if phie_c is None:
         raise ValueError(f"Curve '{phie_curve}' not found")
     if rt_c is None:
-        raise ValueError(f"Curve '{rt_curve}' not found")
+        raise ValueError(f"Curve {' or '.join(repr(name) for name in rt_names)} not found")
 
     phie = phie_c.data
     rt = rt_c.data

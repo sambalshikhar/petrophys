@@ -248,6 +248,11 @@ def export_context(
         raise ValueError("Package exports need the folder of well files as data")
     source = None if data is None and context_profile is not None else Path(data)
     if source is not None and not source.is_dir():
+        if source.is_file():
+            raise ValueError(
+                f"{source} is a file; package exports read a folder of well files. "
+                "Put the well in a folder and pass the folder."
+            )
         raise FileNotFoundError(f"Input well directory not found: {source}")
 
     from petrophys.reporting import reference_export as reference

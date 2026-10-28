@@ -164,6 +164,11 @@ class MultiMineralSolverV1:
         neutron. Against vendor lithology logs (15/9-14, 30/6-5) the sonic
         stand-in called 84-97 % of no-PEF carbonates quartz; density and
         neutron alone called 74-89 % of them carbonate.
+    endpoint_overrides : mapping, optional
+        Endpoint values replacing the table's, keyed by endpoint name and then
+        ``density`` (g/cm³), ``nphi``, ``pef``, ``u`` or ``dt`` (μs/ft): e.g.
+        ``{"water": {"density": 1.1}, "clay": {"density": 2.45}}``. The
+        ``fluid`` and ``clay_mineral`` names address the fluid and clay.
 
     Examples
     --------
@@ -181,6 +186,7 @@ class MultiMineralSolverV1:
         fluid: str = "water",
         row_uncertainty: Optional[Mapping[str, float]] = ROW_UNCERTAINTY,
         sonic_without_pef: bool = False,
+        endpoint_overrides: Optional[Mapping[str, Mapping[str, float]]] = None,
     ):
         if minerals is None:
             minerals = ["quartz", "calcite", "dolomite", "anhydrite"]
@@ -193,11 +199,19 @@ class MultiMineralSolverV1:
         self.fluid           = fluid
         self.row_uncertainty = _row_uncertainty(row_uncertainty)
         self.sonic_without_pef = bool(sonic_without_pef)
+        self.endpoint_overrides = {name: dict(values) for name, values in (endpoint_overrides or {}).items()}
 
         all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef))
         self.mineral_props = {m: _get_endpoints(m) for m in all_minerals}
         self.fluid_props   = _get_endpoints(self.fluid)
         self.clay_props    = _get_endpoints(self.clay_mineral)
+        for name, values in (self.endpoint_overrides or {}).items():
+            if name == self.fluid:
+                self.fluid_props.update(values)
+            if name == self.clay_mineral:
+                self.clay_props.update(values)
+            if name in self.mineral_props:
+                self.mineral_props[name].update(values)
 
     def _solve_sample(
         self,

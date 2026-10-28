@@ -5,7 +5,7 @@ This module provides solvers for determining mineral fractions
 from multiple log measurements using simultaneous equations.
 """
 
-from typing import Optional, Tuple, Dict, Union, Sequence
+from typing import Dict, Mapping, Optional, Sequence, Tuple, Union
 import numpy as np
 from scipy.optimize import nnls
 from petrophys.model.well import Well
@@ -114,6 +114,13 @@ class MultiMineralSolver:
         Clay mineral name for endpoint lookup (default: "clay")
     fluid : str, optional
         Fluid type (default: "water")
+    closure_tolerance : float, optional
+        Largest closure error a solved sample may have (default 0.05).
+    endpoint_overrides : mapping, optional
+        Endpoint values replacing the table's, keyed by endpoint name and then
+        ``density`` (g/cm³), ``nphi``, ``pef``, ``u`` or ``dt`` (μs/ft): e.g.
+        ``{"water": {"density": 1.1}, "clay": {"density": 2.45}}``. The
+        ``fluid`` and ``clay_mineral`` names address the fluid and clay.
 
     Examples
     --------
@@ -130,6 +137,7 @@ class MultiMineralSolver:
         clay_mineral: str = "clay",
         fluid: str = "water",
         closure_tolerance: float = 0.05,
+        endpoint_overrides: Optional[Mapping[str, Mapping[str, float]]] = None,
     ):
         if minerals is None:
             minerals = ["quartz", "calcite", "dolomite", "anhydrite"]
@@ -141,6 +149,7 @@ class MultiMineralSolver:
         self.clay_mineral      = clay_mineral
         self.fluid             = fluid
         self.closure_tolerance = closure_tolerance
+        self.endpoint_overrides = {name: dict(values) for name, values in (endpoint_overrides or {}).items()}
 
         self._load_properties()
 
@@ -150,6 +159,13 @@ class MultiMineralSolver:
         self.mineral_props = {m: _get_endpoints(m) for m in all_minerals}
         self.fluid_props   = _get_endpoints(self.fluid)
         self.clay_props    = _get_endpoints(self.clay_mineral)
+        for name, values in (self.endpoint_overrides or {}).items():
+            if name == self.fluid:
+                self.fluid_props.update(values)
+            if name == self.clay_mineral:
+                self.clay_props.update(values)
+            if name in self.mineral_props:
+                self.mineral_props[name].update(values)
 
     def _solve_sample(
         self,
