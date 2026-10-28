@@ -79,6 +79,8 @@ def total_porosity(
     --------
     >>> phit = total_porosity(nphi_data, phid_data)
     """
+    if method not in ("adaptive", "average", "rms"):
+        raise ValueError(f"method must be 'adaptive', 'average' or 'rms'; got {method!r}")
     if gas_method not in ("rms", "density"):
         raise ValueError(f"gas_method must be 'rms' or 'density'; got {gas_method!r}")
     if np.ndim(nphi) or np.ndim(phi_d):

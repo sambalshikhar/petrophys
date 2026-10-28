@@ -111,6 +111,8 @@ def config_schema() -> List[Dict[str, Any]]:
     choices = _field_choices()
     schema = []
     for item in dataclasses.fields(DynamicWorkflowConfig):
+        if item.name.startswith("_"):
+            continue  # the library's own record, not a setting
         default: Any
         if item.default is not dataclasses.MISSING:
             default = item.default

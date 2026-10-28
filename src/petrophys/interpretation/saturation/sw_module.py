@@ -503,7 +503,13 @@ class SaturationModule:
         if not np.isfinite(vcl_value):
             vcl_value = 0.0
 
-        if vcl_value < self.vcl_cutoff:
+        cutoff = self.vcl_cutoff
+        if isinstance(cutoff, dict):
+            # One cutoff per lithology family ("*" for the others); else 0.3.
+            from petrophys.evaluation.net_pay.cutoffs import cutoff_family
+
+            cutoff = cutoff.get(cutoff_family(lithology), cutoff.get("*", 0.3))
+        if vcl_value < cutoff:
             return SwModel.ARCHIE
 
         lithology = lithology.lower()

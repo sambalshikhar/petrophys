@@ -6,6 +6,7 @@ plateau picker, not pressure-transient extrapolation or a seal-state decoder.
 """
 from dataclasses import dataclass, fields
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -25,6 +26,8 @@ class MDTPickingConfig:
     Plateau tolerance limits both 5th-to-95th percentile pressure spread and
     fitted pressure change over the final tail. The preceding tail must agree.
     Review defaults for acquisition resolution and measurement precision.
+    ``max_gap_seconds`` left as None flags a time gap over 5 s or five
+    sampling intervals, whichever is longer; a value set is used as given.
     """
 
     edge_seconds: float = 15.0
@@ -36,11 +39,13 @@ class MDTPickingConfig:
     repeat_tolerance_bar: float = 0.1
     mud_agreement_bar: float = 2.0
     max_depth_drift_m: float = 0.25
-    max_gap_seconds: float = 5.0
+    max_gap_seconds: Optional[float] = None
 
     def __post_init__(self):
         for f in fields(self):
             v = getattr(self, f.name)
+            if v is None and f.name == "max_gap_seconds":
+                continue
             if not np.isfinite(v) or v <= 0:
                 raise ValueError(f"{f.name} must be finite and positive")
 
@@ -168,7 +173,8 @@ def pick_mdt_pressure(time, pressure, *, depth=None, time_unit="s",
     if np.any(np.diff(t) <= 0):
         raise ValueError("Acquisition time must increase strictly; do not sort or merge pretests")
     dt = float(np.median(np.diff(t)))
-    if np.max(np.diff(t)) > max(cfg.max_gap_seconds, 5*dt):
+    max_gap = max(5.0, 5*dt) if cfg.max_gap_seconds is None else cfg.max_gap_seconds
+    if np.max(np.diff(t)) > max_gap:
         return output(["time_gap_requires_review"])
     if t[-1]-t[0] < 2*cfg.edge_seconds+2*cfg.tail_seconds:
         return output(["trace_too_short_for_baselines_and_recovery"])

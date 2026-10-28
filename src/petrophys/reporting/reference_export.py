@@ -2700,8 +2700,6 @@ def _context_workflow_config(
     lithology_file: Optional[str | Path] = None,
 ) -> "DynamicWorkflowConfig":
     """Build the workflow configuration from LAS and geology inputs."""
-    import dataclasses
-
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
     from petrophys.workflow.zoned_batch import (
         _extract_global_parameter_overrides,
@@ -2719,14 +2717,18 @@ def _context_workflow_config(
             metadata_domain = lithology_domain_from_metadata(well)
             if metadata_domain is not None:
                 options["lithology_domain"] = metadata_domain
+        defaulted = {name for name in ("matrix_type", "lithology_domain") if name not in options}
         options.setdefault("matrix_type", "sandstone")
         options.setdefault("lithology_domain", "clastic")
-        return DynamicWorkflowConfig(**options)
+        config = DynamicWorkflowConfig(**options)
+        # The two defaults filled here are not the caller's settings.
+        config._explicit_settings = config._explicit_settings - defaulted
+        return config
     if not options:
         return config
-    if "lithology_domain" in options and "lithology" not in options:
-        options["lithology"] = None
-    return dataclasses.replace(config, **options)
+    from petrophys.workflow.dynamic_workflow import _copy_config
+
+    return _copy_config(config, **options)
 
 
 def _attach_formations_for_interpretation(well: "Well", segments, config) -> None:
@@ -2787,7 +2789,9 @@ def _read_context_input_well(
     if lithology_domain is not None:
         options.update(lithology_domain=lithology_domain, lithology=None)
     if options:
-        config = dataclasses.replace(config, **options)
+        from petrophys.workflow.dynamic_workflow import _copy_config
+
+        config = _copy_config(config, **options)
     return well, config
 
 
@@ -4216,6 +4220,9 @@ def _vcl_curve_note(step: Any) -> str:
         gr_shale = max(float(gr_max_raw), 100.0)
     except (TypeError, ValueError):
         gr_shale = gr_max_raw
+    if params.get("gr_bounded") is not None:
+        # The endpoints the run used (the bound holds for picked ones only).
+        gr_clean, gr_shale = params.get("gr_min_used", gr_clean), params.get("gr_max_used", gr_shale)
 
     formulas = [
         f"IGR=clip((GR-{_format_numeric(gr_clean, 1)})/({_format_numeric(gr_shale, 1)}-{_format_numeric(gr_clean, 1)}),0,1)",
@@ -7839,7 +7846,10 @@ def _trace_workflow_run_payload(
             "rcl": _trace_safe_value(getattr(run, "rcl_computed", None)),
             "temperature_gradient": _trace_safe_value(getattr(run, "temperature_gradient", None)),
         },
-        "config": _trace_safe_value(vars(getattr(run, "config", object())) if getattr(run, "config", None) is not None else {}),
+        "config": _trace_safe_value(
+            {name: value for name, value in vars(run.config).items() if not name.startswith("_")}
+            if getattr(run, "config", None) is not None else {}
+        ),
         "steps": [
             _trace_step_payload(step, group_well)
             for step in getattr(run, "steps_executed", [])

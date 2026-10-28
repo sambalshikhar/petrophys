@@ -1083,6 +1083,8 @@ class LogCurveSpec:
     marker: Optional[str] = None
     marker_size: float = 0.0
     candidates: List[str] = field(default_factory=list)
+    #: Style keys set through ``curve_styles``: those values are drawn as given.
+    styled: frozenset = frozenset()
 
 
 @dataclass
@@ -2122,7 +2124,7 @@ class LogViewer:
         """Apply per-curve style changes; returns a warning for names no track draws."""
         from matplotlib.colors import is_color_like
 
-        allowed = {item.name for item in fields(LogCurveSpec)} - {"curve_name", "candidates"}
+        allowed = {item.name for item in fields(LogCurveSpec)} - {"curve_name", "candidates", "styled"}
         wanted: Dict[str, Dict[str, Any]] = {}
         for name, style in styles.items():
             unknown = set(style) - allowed
@@ -2141,7 +2143,9 @@ class LogViewer:
                 resolved = _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates)
                 for key in (spec.curve_name.upper(), str(resolved or "").upper()):
                     if key in wanted:
-                        track.curves[index] = replace(spec, **wanted[key])
+                        track.curves[index] = replace(
+                            spec, **wanted[key], styled=spec.styled | frozenset(wanted[key])
+                        )
                         matched.add(key)
                         break
         missing = sorted(set(wanted) - matched)
@@ -2326,6 +2330,8 @@ class LogViewer:
         height: Optional[float],
     ) -> Tuple[float, float]:
         if depth_range is not None:
+            if top is not None or height is not None:
+                raise ValueError("Pass either depth_range or top/height, not both")
             # (top, bottom) in either order; depth always increases downwards.
             first, second = float(depth_range[0]), float(depth_range[1])
             return min(first, second), max(first, second)
@@ -2638,7 +2644,7 @@ class LogViewer:
                 x1,
                 where=np.isfinite(x0) & np.isfinite(x1),
                 color=fill_color,
-                alpha=min(spec.fill_alpha, 0.85),
+                alpha=spec.fill_alpha if "fill_alpha" in spec.styled else min(spec.fill_alpha, 0.85),
                 linewidth=0.0,
                 zorder=1,
             )
@@ -2690,7 +2696,7 @@ class LogViewer:
                 color=fill_color,
                 hatch=hatch,
                 edgecolor="0.30" if hatch else "none",
-                alpha=min(spec.fill_alpha, 0.90),
+                alpha=spec.fill_alpha if "fill_alpha" in spec.styled else min(spec.fill_alpha, 0.90),
                 linewidth=0.0,
                 zorder=1,
             )
@@ -2935,7 +2941,7 @@ class LogViewer:
             pattern = self._lithology_pattern(label)
             hatch = "" if pattern else self._lithology_hatch(label)
             legend_hatch = self._lithology_hatch(label)
-            fill_alpha = spec.fill_alpha if spec.fill_alpha > 0.5 else 0.85
+            fill_alpha = spec.fill_alpha if spec.fill_alpha > 0.5 or "fill_alpha" in spec.styled else 0.85
             # Fill each contiguous bed edge-to-edge (segment bounds reach the sample
             # midpoints) so adjacent beds abut. fill_betweenx(where=mask) instead
             # leaves a one-sample white sliver at every lithology transition, which

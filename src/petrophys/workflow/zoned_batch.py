@@ -34,6 +34,7 @@ from petrophys.workflow.dynamic_workflow import (
     _BENCHMARK_PROFILES,
     DynamicWorkflowConfig,
     DynamicWorkflowResult,
+    _default_matrix_type,
     _left_at_default,
     _rerun_calculations,
     _uses_rerun_calculations,
@@ -438,6 +439,11 @@ def _set_config_value(config: DynamicWorkflowConfig, field_name: str, value: Any
     if field_name in {"lithology", "lithology_domain"}:
         # The deprecated alias is not mirrored; only the domain is set.
         config.lithology_domain = str(value).strip().lower()
+        if getattr(config, "_matrix_defaulted", False) and not (
+            _reproduces_benchmark(config) or reproducing_benchmark()
+        ):
+            # A matrix left unset follows the new domain, as in a new config.
+            config.matrix_type = _default_matrix_type(config.lithology_domain)
         return
     setattr(config, field_name, value)
 
@@ -973,6 +979,22 @@ def run_dynamic_workflow_with_zones(
     global_overrides, global_unmapped = _extract_global_parameter_overrides(
         well, calculation_profile=profile
     )
+    if not (_reproduces_benchmark(config) or reproducing_benchmark()):
+        # As petrophys.interpret: header settings fill the settings left
+        # unset, and the header zones and config.zones are run over the whole
+        # well, your values ranking above the header's.
+        result = run_dynamic_workflow(well, _prepare_batch_config(config))
+        notes = [f"Unmapped global LAS parameters: {', '.join(global_unmapped)}"] if global_unmapped else []
+        notes.extend(
+            f"Zone Z{zone.index} unmapped LAS parameters: {', '.join(zone.unmapped_parameters)}"
+            for zone in zones if zone.unmapped_parameters
+        )
+        for native_field in _NATIVE_HEADER_FIELDS:
+            global_overrides.pop(native_field, None)
+        return ZonedWorkflowRunResult(
+            well=well, base_result=result, zone_results=list(result.zone_results), zones=zones,
+            warnings=notes, global_overrides=global_overrides, global_unmapped=global_unmapped,
+        )
     zoned_default_overrides, zoned_default_injected, zoned_default_notes = _derive_default_values_from_zones(zones)
 
     base_config = _prepare_batch_config(config)
@@ -1002,7 +1024,9 @@ def run_dynamic_workflow_with_zones(
         for field_name, value in zoned_default_overrides.items():
             if field_name not in global_overrides and _left_at_default(base_config, field_name):
                 _set_config_value(base_config, field_name, value)
-    _derive_sw_model(global_overrides, base_config)
+    if historical:
+        # The "geolink" profile took a header VSHE as the north-sea model.
+        _derive_sw_model(global_overrides, base_config)
     if "vsh_exp" not in global_overrides and historical:
         _derive_sw_model(zoned_default_overrides, base_config)
 
@@ -1033,7 +1057,8 @@ def run_dynamic_workflow_with_zones(
         {} if historical
         else {zone.index: well.depth_slice(top=zone.top, bottom=zone.bottom) for zone in zones}
     )
-    base_result = run_dynamic_workflow(well, base_config)
+    # The header settings were applied above, zone by zone.
+    base_result = run_dynamic_workflow(well, base_config, _header_settings=False)
     well_nd_clay = _well_nd_clay_point(base_config, base_result)
     well_code_curve = _well_lithology_code_curve(base_config, well)
     zone_results: List[DynamicWorkflowResult] = []
@@ -1052,8 +1077,18 @@ def run_dynamic_workflow_with_zones(
             warnings.extend(_whole_well_zone_notes(well, zone, base_config))
 
         for field_name, value in zone.config_overrides.items():
+            if not historical and field_name in getattr(base_config, "_explicit_settings", ()):
+                # A setting you passed ranks above the header's zone value.
+                if getattr(base_config, field_name, None) != value:
+                    warnings.append(
+                        f"Zone Z{zone.index} ({zone.top:g}-{zone.bottom:g} {well.depth_unit}): the LAS "
+                        f"header's {field_name}={value!r} is not used: {field_name}="
+                        f"{getattr(base_config, field_name)!r} is set"
+                    )
+                continue
             _set_config_value(interval_config, field_name, value)
-        _derive_sw_model(zone.config_overrides, interval_config)
+        if historical:
+            _derive_sw_model(zone.config_overrides, interval_config)
         if well_nd_clay is not None and interval_config.nd_clay is None:
             interval_config.nd_clay = well_nd_clay
         if (
@@ -1064,10 +1099,15 @@ def run_dynamic_workflow_with_zones(
             interval_config.lithology_curve = well_code_curve
 
         if interval_config.td_ft is None:
-            interval_config.td_ft = _depth_to_ft(zone.bottom, well.depth_unit)
+            # A BHT is read at the well's TD; the "geolink" profile placed it
+            # at each zone's base.
+            td = zone.bottom
+            if not historical:
+                td = well.header.td if well.header.td is not None else well.bottom
+            interval_config.td_ft = _depth_to_ft(td, well.depth_unit)
 
         _apply_interval_metadata(interval_well, zone)
-        zone_result = run_dynamic_workflow(interval_well, interval_config)
+        zone_result = run_dynamic_workflow(interval_well, interval_config, _header_settings=False)
         _merge_curve_into_well(well, interval_well, zone.top, zone.bottom)
         if not historical:
             cleared = _clear_curves_not_computed(well, interval_well, input_curves, zone.top, zone.bottom)

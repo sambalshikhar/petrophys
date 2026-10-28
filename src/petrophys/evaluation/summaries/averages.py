@@ -43,9 +43,11 @@ def calculate_zone_averages(
     curves : list, optional
         List of curve names to average (default: all numeric)
     use_arithmetic : list, optional
-        Curves to use arithmetic mean (default)
+        Curves to average arithmetically (the default for curves in no list);
+        a curve named here is averaged arithmetically even when it is in the
+        default geometric list.
     use_geometric : list, optional
-        Curves to use geometric mean (e.g., PERM)
+        Curves to use geometric mean (default: PERM, K, KLOG, PERMEABILITY)
     use_harmonic : list, optional
         Curves to use harmonic mean
 
@@ -65,6 +67,7 @@ def calculate_zone_averages(
 
     if use_harmonic is None:
         use_harmonic = []
+    arithmetic = {c.upper() for c in (use_arithmetic or [])}
 
     results = {}
 
@@ -80,7 +83,10 @@ def calculate_zone_averages(
             results[curve_name] = np.nan
             continue
 
-        if curve_name.upper() in [c.upper() for c in use_harmonic]:
+        if curve_name.upper() in arithmetic:
+            results[curve_name] = float(np.mean(valid))
+
+        elif curve_name.upper() in [c.upper() for c in use_harmonic]:
             # Harmonic mean
             pos = valid[valid > 0]
             if len(pos) > 0:

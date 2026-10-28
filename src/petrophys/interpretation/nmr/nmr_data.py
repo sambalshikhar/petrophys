@@ -360,7 +360,7 @@ class NMRData:
         ktim_mnemonic: Optional[str] = "KTIM",
         bin_mnemonics: Optional[List[str]] = None,
         t2_centers: Optional[np.ndarray] = None,
-        t2_cutoff: float = T2_CUTOFF_CLASTIC,
+        t2_cutoff: Optional[float] = None,
         null_value: float = -999.25,
         derive_mbvi: bool = True,
     ) -> "NMRData":
@@ -381,7 +381,11 @@ class NMRData:
         bin_mnemonics : list of str, optional
             Ordered T2 bin curve mnemonics (e.g. ``["T2B01",…,"T2B08"]``).
         t2_centers : np.ndarray, optional
-        t2_cutoff : float
+        t2_cutoff : float, optional
+            T2 cutoff, ms. Set, it is used at every depth and a T2CUTOFF curve
+            in the file is kept as an extra curve only. Default: the T2CUTOFF
+            curve where the file has one (its median as the scalar cutoff),
+            else 33 ms (clastic).
         null_value : float
         """
         if not HAS_LASIO:
@@ -479,11 +483,12 @@ class NMRData:
 
         t2c = t2_centers if t2_centers is not None else DEFAULT_T2_CENTERS.copy()
         t2_cutoff_curve = _get_resolved(t2_cutoff_name)
-        cutoff_value = (
-            _finite_median(t2_cutoff_curve, t2_cutoff)
-            if t2_cutoff_curve is not None
-            else float(t2_cutoff)
-        )
+        if t2_cutoff is not None:
+            cutoff_value = float(t2_cutoff)
+        elif t2_cutoff_curve is not None:
+            cutoff_value = _finite_median(t2_cutoff_curve, T2_CUTOFF_CLASTIC)
+        else:
+            cutoff_value = T2_CUTOFF_CLASTIC
 
         stored_permeability: Dict[str, np.ndarray] = {}
         ksdr = _get_resolved(ksdr_name)
@@ -538,7 +543,8 @@ class NMRData:
             mbvi=mbvi,
             bins=bins,
             t2lm_stored=_get_resolved(t2lm_name),
-            t2_cutoff_curve=t2_cutoff_curve,
+            # An explicit cutoff holds at every depth over the file's curve.
+            t2_cutoff_curve=t2_cutoff_curve if t2_cutoff is None else None,
             t2_centers=np.asarray(t2c, dtype=float),
             t2_cutoff=cutoff_value,
             stored_permeability=stored_permeability,

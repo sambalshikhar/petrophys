@@ -328,7 +328,7 @@ focus.show()
 
 | Control or attribute | What it does |
 | --- | --- |
-| `depth_range=(top, base)`, or `top=` and `height=` | Window in the well's depth unit |
+| `depth_range=(top, base)`, or `top=` and `height=` | Window in the well's depth unit (one or the other: both together raise an error) |
 | `tracks=[...]` | Track display names to keep, in order; also draws the optional TEMPERATURE and RW / RMF tracks |
 | `curves=[...]` | Only these curves, each in its usual track, by the file's names or standard names (`GR`, `RDEP`); a curve no track takes gets a generic track. Not together with `tracks=` |
 | `curve_styles={"GR": {"color": "black", "right": 200}}` | Colour, scale, line, fill or marker of single curves, without an XML template |
@@ -340,6 +340,15 @@ focus.show()
 | `viewer.diagnostics` | Imports, curve choices, omitted empty tracks, optional tracks left out, and labels suppressed to avoid crowding |
 | `viewer.warnings` | Plot-only warnings |
 | `viewer.save(path)`, `.show()`, `.close()` | Output |
+
+A style or window you give is drawn as given. For example, 100 m from the
+Brent top, the lithology fill at 30 % opacity, and your own lithology codes:
+
+```python
+pp.plot(result, top=2841, height=100,
+        curve_styles={"LITHOLOGY_GEOLINK": {"fill_alpha": 0.3}})
+pp.plot(result, lithology_mapping={65000: "Sandstone", 30000: "Shale"})
+```
 
 ### Your curve names, your curves, your styles
 

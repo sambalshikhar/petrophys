@@ -118,7 +118,7 @@ Settings = Annotated[
 ]
 
 #: Settings that name files or session objects rather than plain values.
-_PATH_SETTINGS = ("lithology_csv", "lithology_intervals")
+_PATH_SETTINGS = ("lithology_csv", "lithology_intervals", "lithology_codes", "zones")
 
 #: Most values (depths x curves, depth included) curve_values returns.
 _MAX_CURVE_VALUES = 1000
@@ -350,7 +350,8 @@ def create_server(
         ).parent.name.casefold() == "costa"
         if is_costa:
             settings.setdefault("lithology_domain", "carbonate")
-            settings.setdefault("carbonate_calibration", "costa")
+            if str(settings["lithology_domain"]).strip().lower() == "carbonate":
+                settings.setdefault("carbonate_calibration", "costa")
         with _captured_warnings() as messages:
             result = pp.interpret(well, **settings)
         return state.add_interpretation(well_id, result), result, messages
@@ -630,7 +631,8 @@ def create_server(
           carbonate VCL < 0.30, PHIE > 0.045, SW < 0.70. Dataset profiles may
           supply their own screening rules; inspect the resolved parameters
           and pay flags in the workflow trace.
-        - gr_min, gr_max (API): GR clean/shale (default 20/100).
+        - gr_min, gr_max (API): GR clean/shale, used as given. Default: P5/P95 of
+          the GR log, bounded to at most 20 (clean) and at least 100 (shale).
         - apply_hc_correction, hc_type: oil|gas; skip_steps: e.g. ['permeability'].
         Use run_workflow for a recipe with given methods (e.g. a quick look) and
         interpret_wells to compare wells.

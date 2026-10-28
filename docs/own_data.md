@@ -204,7 +204,8 @@ show_error(lambda: pp.interpret(well, rw=0.07, rw_temp_f=230))
 A CSV has no header, so there is no bottom-hole temperature or mud-filtrate
 resistivity. The trace and `result.warnings` say what was assumed or skipped.
 Supply the values with `bht_f` and `rmf_at_meas_temp` (or the mud report's
-filtrate chlorides, `rmf_chlorides_mg_l`), or a well-parameters file.
+filtrate chlorides, `rmf_chlorides_mg_l`), or write the CSV well to LAS with
+those values in its header ({doc}`input_templates` lists the parameters).
 
 ```{code-cell} python
 result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)

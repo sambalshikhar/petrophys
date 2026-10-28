@@ -17,6 +17,7 @@ log10 FZI, or explicit cutoffs) and predicts permeability from each sample's
 unit-mean FZI.
 """
 from dataclasses import dataclass, field
+import warnings
 from typing import TYPE_CHECKING, List, Optional, Sequence, Union
 
 import numpy as np
@@ -52,8 +53,12 @@ class FlowUnitResult:
 def _kmeans_1d(x: np.ndarray, k: int, n_iter: int = 200) -> np.ndarray:
     """Deterministic 1-D k-means; returns cluster centers (sorted ascending)."""
     x = np.asarray(x, dtype=float)
-    if k <= 1 or x.size <= k:
+    if k <= 1 or x.size == 0:
         return np.array([float(np.mean(x))]) if x.size else np.array([0.0])
+    distinct = np.unique(x)
+    if distinct.size <= k:
+        # No more units than distinct values: one per value.
+        return distinct
     centers = np.quantile(x, np.linspace(0.0, 1.0, k + 2)[1:-1])
     for _ in range(n_iter):
         labels = np.argmin(np.abs(x[:, None] - centers[None, :]), axis=1)
@@ -137,6 +142,8 @@ def assign_flow_units(
         FZI boundaries between adjacent units: the sorted cutoffs, or the
         geometric midpoints between the k-means unit centres.
     """
+    if method not in ("kmeans", "cutoffs"):
+        raise ValueError(f"method must be 'kmeans' or 'cutoffs'; got {method!r}")
     fzi = np.asarray(fzi, dtype=float)
     labels = np.zeros(fzi.shape, dtype=int)
     valid = np.isfinite(fzi) & (fzi > 0.0)
@@ -158,11 +165,18 @@ def assign_flow_units(
         ])
         return labels, means, bounds
 
+    requested = n_units
     if n_units is None:
         n_units = _auto_n_units(log_fzi, max_units)
     n_units = int(max(1, n_units))
 
     centers = _kmeans_1d(log_fzi, n_units)
+    if requested is not None and centers.size < n_units:
+        warnings.warn(
+            f"n_units={requested} but the {log_fzi.size} valid FZI samples hold only "
+            f"{centers.size} distinct values: {centers.size} units assigned.",
+            UserWarning, stacklevel=2,
+        )
     n_units = centers.size
     unit_idx = np.argmin(np.abs(log_fzi[:, None] - centers[None, :]), axis=1)
     labels[valid] = unit_idx + 1

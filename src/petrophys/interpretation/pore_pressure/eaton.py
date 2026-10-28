@@ -425,8 +425,19 @@ def eaton_from_well(
         if well.get("TVD") is None:
             raise ValueError("Pore pressure needs TVD: read the well with survey=..., pass tvd_curve, or vertical=True")
         tvd_curve = "TVD"
-    tvd = depth if tvd_curve is None else np.asarray(well.get(tvd_curve).data, dtype=float)
+    tvd = depth
+    if tvd_curve is not None:
+        tvd_log = well.get(tvd_curve)
+        tvd = np.asarray(tvd_log.data, dtype=float)
+        tvd_unit = _depth_unit_from(tvd_log.unit) or unit
+        if tvd_unit != unit:
+            # A TVD curve in its own unit is converted to the well's depth unit.
+            tvd = tvd * 0.3048 if (tvd_unit, unit) == ("ft", "m") else tvd / 0.3048
+            notes.append(f"{tvd_curve} converted from {tvd_unit} to {unit}")
     elevation, source = depth_reference_elevation(well)
+    if air_gap is not None and water_depth > 0:
+        # Offshore the air gap is the depth reference's height above sea level.
+        elevation = float(air_gap)
     if air_gap is None:
         if elevation is None:
             raise ValueError("The header has no depth-reference elevation (EKB/EDF/APD); pass air_gap=")

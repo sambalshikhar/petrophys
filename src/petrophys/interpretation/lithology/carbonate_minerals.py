@@ -50,7 +50,7 @@ DENSITY_TOLERANCE = 0.02
 #: and dolomite from the shared mineral table (Schlumberger Log Interpretation
 #: Charts); the workflow passes its own ``rho_fl`` and ``rho_cl``. ``"costa"``
 #: is the COSTA field calibration of the published notebooks: illite from GR,
-#: total porosity, a 2.847 dolomite and a 1.19 brine.
+#: total porosity, a 2.847 dolomite and a 1.1 brine.
 CARBONATE_CALIBRATIONS: Dict[str, Dict[str, object]] = {
     "generic": {
         "clay_source": "VCL",
@@ -149,7 +149,7 @@ def solve_carbonate_minerals(
         calcite 2.71 and dolomite 2.87 g/cm3. ``"costa"``: the COSTA field
         calibration, illite volume ``-0.0424035 + 0.00562239 * GR`` (not
         clipped), total porosity (PHIT, else PHIE), illite 2.52, calcite
-        2.71, dolomite 2.847 and brine 1.19 g/cm3.
+        2.71, dolomite 2.847 and brine 1.1 g/cm3.
     rho_fluid, rho_clay : float, optional
         Pore-fluid and clay densities, g/cm3, replacing the calibration's.
     density_tolerance : float, optional

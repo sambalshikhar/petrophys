@@ -6,14 +6,14 @@ VCL methods and selects the minimum value.
 """
 
 from typing import Optional, List, Dict, Any, Sequence, Tuple, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import warnings
 import numpy as np
 
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.well import Well
 from petrophys.model.constants import DefaultParameters, MatrixProperties
-from petrophys.interpretation.clay_volume.gr_method import vcl_from_gr
+from petrophys.interpretation.clay_volume.gr_method import bounded_gr_baselines, vcl_from_gr
 from petrophys.interpretation.clay_volume.sp_method import vcl_from_sp, should_use_sp, sp_polarity
 from petrophys.interpretation.clay_volume.nd_method import ND_CLAY_POINT, vcl_from_nd, nd_clean_line
 from petrophys.interpretation.clay_volume.classification import classify_vcl
@@ -47,6 +47,8 @@ class VclResult:
     method_used: Optional[np.ndarray] = None
     gr_min_used: Optional[float] = None
     gr_max_used: Optional[float] = None
+    #: Baselines the 20/100 bound moved, as ``{name: (picked, used)}``.
+    gr_bounded: Dict[str, Tuple[float, float]] = field(default_factory=dict)
 
 
 class VclModule:
@@ -59,13 +61,19 @@ class VclModule:
     Parameters
     ----------
     gr_min : float, optional
-        Clean sand GR value (default: 20 API). Left at the default, the log
-        minimum is used where it is lower than 20 API.
+        Clean sand GR value, used as given. Default (None): the log minimum,
+        lowered to 20 API when it is higher (see ``bound_gr``).
     gr_max : float, optional
-        Shale GR value (default: 100 API). Left at the default, the log
-        maximum is used where it is higher than 100 API, so isolated GR
-        spikes raise the shale baseline for the whole well; pass explicit
-        baselines for a log with spikes.
+        Shale GR value, used as given. Default (None): the log maximum, raised
+        to 100 API when it is lower, so isolated GR spikes raise the shale
+        baseline for the whole well; pass explicit baselines for a log with
+        spikes.
+    bound_gr : sequence of str, optional
+        Baselines (``"gr_min"``, ``"gr_max"``) that take the 20/100 bound of
+        :func:`~petrophys.interpretation.clay_volume.gr_method.bounded_gr_baselines`.
+        Default: those left None, which the module picks from the log. A
+        caller that picks baselines itself (as the workflow takes P5/P95)
+        names them here; ``VclResult.gr_bounded`` reports what the bound moved.
     gr_method : str, optional
         GR method (default: "linear")
     use_sp : bool, optional
@@ -111,8 +119,8 @@ class VclModule:
 
     def __init__(
         self,
-        gr_min: float = DefaultParameters.GR_MIN,
-        gr_max: float = DefaultParameters.GR_MAX,
+        gr_min: Optional[float] = None,
+        gr_max: Optional[float] = None,
         gr_method: str = "linear",
         use_sp: bool = True,
         use_nd: bool = True,
@@ -125,6 +133,7 @@ class VclModule:
         nd_clay: Optional[Tuple[float, float]] = None,
         nd_triangle_only: bool = False,
         gr_curves: Optional[Sequence[str]] = None,
+        bound_gr: Optional[Sequence[str]] = None,
     ):
         self.gr_min = gr_min
         self.gr_max = gr_max
@@ -133,6 +142,15 @@ class VclModule:
         self.use_nd = use_nd
         # Matrix selects the N-D crossplot clean line (sandstone for clastic,
         # limestone for carbonate, dolomite). None -> limestone (back-compat).
+        if matrix is not None:
+            from petrophys.interpretation.clay_volume.nd_method import _ND_CLEAN_LINES, _ND_MATRIX_ALIASES
+
+            key = str(matrix).strip().lower()
+            if _ND_MATRIX_ALIASES.get(key, key) not in _ND_CLEAN_LINES:
+                raise ValueError(
+                    f"matrix must be one of {sorted(_ND_CLEAN_LINES)} (or an alias such as "
+                    f"'quartz', 'calcite'); got {matrix!r}"
+                )
         self.matrix = matrix
         self.sp_max = sp_max
         self.sp_min = sp_min
@@ -147,36 +165,29 @@ class VclModule:
         self.nd_clay = nd_clay
         self.nd_triangle_only = bool(nd_triangle_only)
         self.gr_curves = tuple(gr_curves) if gr_curves is not None else None
+        # Baselines that take the 20/100 bound: by default those picked from
+        # the log (left None); a value passed is used as given.
+        if bound_gr is None:
+            bound_gr = [name for name in ("gr_min", "gr_max") if getattr(self, name) is None]
+        unknown = set(bound_gr) - {"gr_min", "gr_max"}
+        if unknown:
+            raise ValueError(f"bound_gr takes 'gr_min' and 'gr_max'; got {sorted(unknown)}")
+        self.bound_gr = frozenset(bound_gr)
 
     def _resolve_gr_baselines(self, gr_data: np.ndarray) -> tuple[float, float]:
-        """
-        Resolve GR baselines from the well when the module is using defaults.
-
-        Default behavior:
-        - use the log minimum/maximum when they extend beyond 20/100
-        - force GRmin = 20 if the log minimum is higher than 20
-        - force GRmax = 100 if the log maximum is lower than 100
-
-        If the caller supplied non-default GR baselines, respect them.
-        """
+        """GR baselines before the bound: those passed, else the log minimum and maximum."""
         valid_gr = np.asarray(gr_data, dtype=float)
         valid_gr = valid_gr[np.isfinite(valid_gr)]
 
+        gr_min = DefaultParameters.GR_MIN if self.gr_min is None else self.gr_min
+        gr_max = DefaultParameters.GR_MAX if self.gr_max is None else self.gr_max
         if len(valid_gr) == 0:
-            return self.gr_min, self.gr_max
+            return gr_min, gr_max
 
-        actual_min = float(np.nanmin(valid_gr))
-        actual_max = float(np.nanmax(valid_gr))
-
-        if self.gr_min == DefaultParameters.GR_MIN:
-            gr_min = min(actual_min, DefaultParameters.GR_MIN)
-        else:
-            gr_min = self.gr_min
-
-        if self.gr_max == DefaultParameters.GR_MAX:
-            gr_max = max(actual_max, DefaultParameters.GR_MAX)
-        else:
-            gr_max = self.gr_max
+        if self.gr_min is None:
+            gr_min = float(np.nanmin(valid_gr))
+        if self.gr_max is None:
+            gr_max = float(np.nanmax(valid_gr))
 
         return gr_min, gr_max
 
@@ -285,6 +296,7 @@ class VclModule:
         vcl_nd = None
         gr_min_used = None
         gr_max_used = None
+        gr_bounded: Dict[str, Tuple[float, float]] = {}
 
         # GR method (primary). When the default "GR" is requested, fall back to the
         # GR family (computed/spectral) so a well that only carries CGR/SGR is still
@@ -297,10 +309,14 @@ class VclModule:
         gr_data, _, _ = get_curve_data_depthwise(well, gr_candidates)
         if gr_data is not None:
             gr_min, gr_max = self._resolve_gr_baselines(gr_data)
-            gr_min_used = min(float(gr_min), 20.0)
-            gr_max_used = max(float(gr_max), 100.0)
+            bounded_min, bounded_max = bounded_gr_baselines(gr_min, gr_max)
+            gr_min_used = bounded_min if "gr_min" in self.bound_gr else float(gr_min)
+            gr_max_used = bounded_max if "gr_max" in self.bound_gr else float(gr_max)
+            for name, picked, used in (("gr_min", gr_min, gr_min_used), ("gr_max", gr_max, gr_max_used)):
+                if used != float(picked):
+                    gr_bounded[name] = (float(picked), used)
             vcl_gr = vcl_from_gr(
-                gr_data, gr_min, gr_max, self.gr_method
+                gr_data, gr_min_used, gr_max_used, self.gr_method
             )
             vcl_methods.append(vcl_gr)
             method_names.append("GR")
@@ -404,6 +420,7 @@ class VclModule:
             method_used=method_used,
             gr_min_used=gr_min_used,
             gr_max_used=gr_max_used,
+            gr_bounded=gr_bounded,
         )
 
     def add_to_well(
@@ -448,8 +465,8 @@ class VclModule:
 
 def calculate_vcl(
     well: "Well",
-    gr_min: float = DefaultParameters.GR_MIN,
-    gr_max: float = DefaultParameters.GR_MAX,
+    gr_min: Optional[float] = None,
+    gr_max: Optional[float] = None,
     gr_method: str = "linear",
     use_sp: bool = True,
     use_nd: bool = True,
@@ -466,9 +483,9 @@ def calculate_vcl(
     well : Well
         Well object
     gr_min : float, optional
-        Clean sand GR
+        Clean sand GR; default (None) as :class:`VclModule`.
     gr_max : float, optional
-        Shale GR
+        Shale GR; default (None) as :class:`VclModule`.
     gr_method : str, optional
         GR method
     use_sp : bool, optional

@@ -105,8 +105,9 @@ skipped.style.hide(axis="index")
 
 Without `rw`, the workflow uses the first source it finds:
 
-1. an `RW` value in the LAS header;
-2. a formation-water salinity, `salinity_ppm`;
+1. a formation-water salinity you set, `salinity_ppm`;
+2. an `RW` value in the LAS header (at its `RWT`, or at `rw_meas_temp_f` when
+   you set one);
 3. the SP or Rxo/Rt response, given a mud-filtrate resistivity (water-based mud
    only);
 4. the apparent Rw of clean, wet rock, with a warning;
@@ -115,8 +116,8 @@ Without `rw`, the workflow uses the first source it finds:
 
 Always give the temperature Rw was measured at (`rw_meas_temp_f`); otherwise Rw
 is taken at the well's median formation temperature, with a warning.
-The 30/6-5 header gives `RW = 0.7` with no temperature, so this page passes its
-own value.
+The 30/6-5 header gives `RW = 0.07` ohm.m at `RWT = 230` degF; this page
+passes the same values as settings, to show how you give your own.
 :::
 
 The `rw` step of the trace shows which source was used:
