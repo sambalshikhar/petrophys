@@ -7,6 +7,7 @@ import warnings
 import numpy as np
 
 from petrophys._internal.analysis_helpers import (
+    cell_thickness,
     get_curve_data_depthwise,
     resolve_well_depth_range,
     well_depth_array,
@@ -265,6 +266,58 @@ def calculate_weighted_averages(
         results[curve_name] = float(weighted_avg)
 
     return results
+
+
+def calculate_pore_volume_weighted_sw(
+    well: "Well",
+    top_depth: Optional[float] = None,
+    bottom_depth: Optional[float] = None,
+    net_pay_curve: Optional[str] = "NET_PAY",
+) -> float:
+    """
+    Pore-volume-weighted water saturation over net pay.
+
+    Sw_pv = sum(Sw * PHIE * h) / sum(PHIE * h), with h each sample's
+    thickness, so the samples holding the most pore volume count most and
+    ``(1 - Sw_pv) * sum(PHIE * h)`` is the hydrocarbon pore thickness. PHIE
+    takes the core-corrected PHIE_CC sample where it exists, as the pay
+    averages do. Samples without a finite SW and PHIE are left out.
+
+    Parameters
+    ----------
+    well : Well
+        Well with SW and PHIE (or PHIE_CC) curves.
+    top_depth, bottom_depth : float, optional
+        Depth range; the whole well by default.
+    net_pay_curve : str, optional
+        Net pay flag curve; ``None`` averages every sample in the range.
+
+    Returns
+    -------
+    float
+        The weighted Sw, v/v; NaN without SW, porosity or pore volume.
+    """
+    depth = well_depth_array(well)
+    top_depth, bottom_depth = resolve_well_depth_range(well, top_depth, bottom_depth)
+    mask = (depth >= top_depth) & (depth <= bottom_depth)
+    if net_pay_curve:
+        net_pay = well.get(net_pay_curve)
+        if net_pay is None:
+            return np.nan
+        mask &= np.asarray(net_pay.data, dtype=float) > 0.5
+
+    sw, _, _ = get_curve_data_depthwise(well, ["SW"])
+    phie, _, _ = get_curve_data_depthwise(well, ["PHIE_CC", "PHIE"])
+    if sw is None or phie is None:
+        return np.nan
+    sw = np.asarray(sw, dtype=float)
+    phie = np.asarray(phie, dtype=float)
+    valid = mask & np.isfinite(sw) & np.isfinite(phie) & (phie > 0)
+    pore_volume = phie[valid] * cell_thickness(depth)[valid]
+    total = float(np.sum(pore_volume))
+    if total <= 0:
+        return np.nan
+    return float(np.sum(sw[valid] * pore_volume) / total)
 
 
 def calculate_statistics(
