@@ -14,7 +14,7 @@ from petrophys.interpretation.saturation.sw_module import (
 from petrophys.interpretation.saturation.archie import archie
 from petrophys.interpretation.saturation.north_sea import north_sea_shaly_sand
 from petrophys.interpretation.saturation.nigeria_schlumberger import nigeria_schlumberger
-from petrophys.interpretation.saturation.simandoux import simandoux
+from petrophys.interpretation.saturation.simandoux import modified_simandoux, simandoux
 from petrophys.interpretation.saturation.indonesia import indonesia
 from petrophys.interpretation.saturation.dual_water import dual_water
 from petrophys.interpretation.saturation.waxman_smits import waxman_smits
@@ -30,6 +30,7 @@ __all__ = [
     "north_sea_shaly_sand",
     "nigeria_schlumberger",
     "simandoux",
+    "modified_simandoux",
     "indonesia",
     "dual_water",
     "waxman_smits",

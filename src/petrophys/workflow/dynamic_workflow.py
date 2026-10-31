@@ -744,6 +744,12 @@ class DynamicWorkflowConfig:
     bht_f: Optional[float] = None
     #: Total depth for the BHT, in feet. Defaults to the deepest sample.
     td_ft: Optional[float] = None
+    #: Geothermal gradient, degF/100 ft (1 degC/100 m is 0.549 degF/100 ft),
+    #: from ``surface_temp_f`` at depth 0. Defaults to the LAS header TGRAD,
+    #: used only when there is no BHT: a BHT anchors the profile at TD. Set
+    #: explicitly, it is used instead of the header BHT; set it or ``bht_f``,
+    #: not both.
+    gradient_f_per_100ft: Optional[float] = None
 
     # -- Mud properties ------------------------------------------------------
     #: ``"WBM"`` (water-based) or ``"OBM"`` (oil-based) mud. With oil-based mud
@@ -951,6 +957,14 @@ class DynamicWorkflowConfig:
     #: root-mean-square of PHID and PHIN (Gaymard and Poupon, 1968) for gas,
     #: density porosity for oil.
     hc_type: str = "oil"
+    #: Hydrocarbon density in the flushed zone, g/cm3, for the hydrocarbon
+    #: correction and the core matrix-density check of auto lithology. Unset:
+    #: 0.8 for oil and 0.2 for gas in the correction (0.25 for gas in the
+    #: matrix check).
+    rho_hc: Optional[float] = None
+    #: Hydrogen index of the hydrocarbon for the neutron hydrocarbon
+    #: correction. Unset: 1.0 for oil, 0.3 for gas.
+    hc_hydrogen_index: Optional[float] = None
 
     # -- Net-pay cutoffs (None: lithology-family standards) --------------------
     #: Maximum clay volume for net rock, v/v. Unset, each sample takes the
@@ -1062,8 +1076,10 @@ class DynamicWorkflowConfig:
 
     # -- Water saturation ----------------------------------------------------
     #: ``"auto"`` (routed per sample by clay content) or one of
-    #: ``"archie"``, ``"simandoux"``, ``"indonesia"``, ``"dual_water"``,
-    #: ``"waxman_smits"``, ``"north_sea"``, ``"nigeria_schlumberger"``.
+    #: ``"archie"``, ``"simandoux"`` (Sw in the clay term, Bardon-Pied),
+    #: ``"modified_simandoux"`` (sand term over 1 - Vcl), ``"indonesia"``,
+    #: ``"dual_water"``, ``"waxman_smits"``, ``"north_sea"``,
+    #: ``"nigeria_schlumberger"``.
     sw_model: str = "auto"
     #: Clay volume, v/v, from which ``sw_model="auto"`` uses a shaly-sand
     #: equation rather than Archie. None (default) uses ``vcl_cutoff``, or 0.3
@@ -1735,6 +1751,41 @@ _NPHI_MA_RANGE = (-0.1, 0.5)
 #: Most dissolved salt a formation water holds, in ppm (halite saturation is
 #: about 260,000 ppm NaCl; CaCl2 brines reach about 400,000 ppm).
 _MAX_SALINITY_PPM = 400_000.0
+#: NaCl brine saturates near 260,000 ppm; apparent Rw implying more is not water.
+_SATURATED_BRINE_PPM = 260_000.0
+#: Rwa samples are compared at this temperature before the P5 is taken.
+_RWA_REFERENCE_TEMP_F = 75.0
+
+
+#: Usual Archie ranges; a value outside is used, with a warning.
+_ARCHIE_USUAL = {"a": (0.3, 3.0), "m": (1.0, 4.0), "n": (1.0, 5.0)}
+
+
+def _unusual_setting_notes(config: "DynamicWorkflowConfig") -> List[str]:
+    """Warnings for set Archie values outside their usual range ("current" runs)."""
+    from collections.abc import Mapping
+
+    if config.calculation_profile != "current":
+        return []
+    sources = [("", {name: getattr(config, name, None) for name in _ARCHIE_USUAL})]
+    sources += [
+        (f"zone {zone['name']}: ", zone.get("settings") or {}) for zone in (config.zones or ())
+    ]
+    notes = []
+    for prefix, settings in sources:
+        for name, (low, high) in _ARCHIE_USUAL.items():
+            value = settings.get(name)
+            items = value.items() if isinstance(value, Mapping) else [(None, value)]
+            for key, item in items:
+                if isinstance(item, bool) or not isinstance(item, (int, float, np.integer, np.floating)):
+                    continue
+                if not low <= float(item) <= high:
+                    label = name if key is None else f"{name}[{key!r}]"
+                    notes.append(
+                        f"{prefix}{label}={float(item):g} is outside the usual {low:g}-{high:g}; "
+                        "used as given. Check it is not a typo."
+                    )
+    return notes
 
 
 def _physical_range_errors(config: "DynamicWorkflowConfig") -> List[str]:
@@ -1759,6 +1810,21 @@ def _physical_range_errors(config: "DynamicWorkflowConfig") -> List[str]:
                 f"{name} must be a temperature in degF, at or above absolute zero ({_ABSOLUTE_ZERO_F} degF); "
                 f"got {value!r}"
             )
+    for name in ("rw_meas_temp_f", "rmf_meas_temp_f", "rm_meas_temp_f"):
+        value = number(name)
+        if value is not None and _ABSOLUTE_ZERO_F <= value and not 0.0 <= value <= 700.0:
+            errors.append(
+                f"{name} must be the temperature of a water sample, 0-700 degF; got {value!r}"
+                + (" (a degC value? 25 degC is 77 degF)" if value < 0 else "")
+            )
+    gradient = number("gradient_f_per_100ft")
+    if gradient is not None and not 0.0 < gradient <= 10.0:
+        errors.append(
+            "gradient_f_per_100ft must be a geothermal gradient above 0 and at most 10 degF/100 ft "
+            f"(3 degC/100 m is 1.65 degF/100 ft); got {gradient!r}"
+        )
+    if gradient is not None and number("bht_f") is not None and {"bht_f", "gradient_f_per_100ft"} <= _explicit(config):
+        errors.append("set bht_f or gradient_f_per_100ft, not both")
     bht, surface = number("bht_f"), number("surface_temp_f")
     if bht is not None and surface is not None and _ABSOLUTE_ZERO_F <= bht < surface:
         errors.append(
@@ -1780,6 +1846,12 @@ def _physical_range_errors(config: "DynamicWorkflowConfig") -> List[str]:
             f"nphi_ma must be a matrix neutron porosity of {_NPHI_MA_RANGE[0]:g} to {_NPHI_MA_RANGE[1]:g} v/v; "
             f"got {nphi_ma!r}"
         )
+    rho_hc = number("rho_hc")
+    if rho_hc is not None and not 0.0 < rho_hc <= 1.2:
+        errors.append(f"rho_hc must be a hydrocarbon density above 0 and at most 1.2 g/cm3; got {rho_hc!r}")
+    hc_hi = number("hc_hydrogen_index")
+    if hc_hi is not None and not 0.0 <= hc_hi <= 1.2:
+        errors.append(f"hc_hydrogen_index must be between 0 and 1.2; got {hc_hi!r}")
     salinity = number("salinity_ppm")
     if salinity is not None and not 0.0 <= salinity <= _MAX_SALINITY_PPM:
         errors.append(f"salinity_ppm must be between 0 and {_MAX_SALINITY_PPM:,.0f} ppm; got {salinity!r}")
@@ -2111,6 +2183,8 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     if config.lithology_csv is not None and config.lithology_intervals is not None:
         errors.append("Supply lithology_csv or lithology_intervals, not both.")
     config.zones = _normalized_zones(config, errors)
+    if config.calculation_profile != "current" and config.gradient_f_per_100ft is not None:
+        errors.append('gradient_f_per_100ft is not available under the "geolink" calculation profile')
     if config.calculation_profile == "current":
         cec_error = _cec_range_error(config.cec)
         if cec_error:
@@ -3843,6 +3917,7 @@ class DynamicWorkflow:
         left unchanged.
         """
         notes = list(getattr(self.config, "_header_notes", ()) or ())
+        notes += _unusual_setting_notes(self.config)
         if self.config.zones or getattr(self.config, "_header_zones", None):
             result = self._run_zones(well)
         else:
@@ -4054,9 +4129,11 @@ class DynamicWorkflow:
             from petrophys.interpretation.lithology.matrix_inference import (
                 resolve_from_core_matrix,
             )
-            rho_hc = {"oil": 0.8, "gas": 0.25, "condensate": 0.5}.get(
-                str(self.config.hc_type).lower(), 0.8
-            )
+            rho_hc = self.config.rho_hc
+            if rho_hc is None:
+                rho_hc = {"oil": 0.8, "gas": 0.25, "condensate": 0.5}.get(
+                    str(self.config.hc_type).lower(), 0.8
+                )
             res = None
             if self._selected_lithology_source == "external":
                 from petrophys.interpretation.lithology.matrix_inference import _finalize
@@ -4748,18 +4825,36 @@ class DynamicWorkflow:
             td_ft = float(well.bottom)
             td_unit = well.depth_unit
 
+        gradient = self.config.gradient_f_per_100ft
+        if gradient is not None:
+            if "gradient_f_per_100ft" in _explicit(self.config):
+                if bht_f is not None:
+                    self._warn_assumed(
+                        f"The LAS header BHT ({bht_f:.1f} degF) is not used: "
+                        f"gradient_f_per_100ft = {gradient:g} is set"
+                    )
+                bht_f = None
+            elif bht_f is not None:
+                trace.decisions.append(
+                    f"Header TGRAD ({gradient:g} degF/100 ft) not used: the BHT anchors the profile at TD"
+                )
+                gradient = None
+
         trace.parameters = {
             "surface_temp_f": surface_temp_f,
             "bht_f": bht_f,
             "td_ft": td_ft,
             "td_unit": td_unit,
         }
+        if gradient is not None:
+            trace.parameters["gradient_f_per_100ft"] = gradient
 
         try:
             result = calculate_temperature_profile(
                 well,
                 bht=bht_f,
                 surface_temp=surface_temp_f,
+                **({"gradient": gradient} if gradient is not None else {}),
                 bht_unit="F",
                 surface_temp_unit="F",
                 td=td_ft,
@@ -6595,6 +6690,14 @@ class DynamicWorkflow:
                     f"{float(las_rw_temp_f):g} degF as the header Rw's measurement temperature"
                 )
             las_rw_temp_f = float(self.config.rw_meas_temp_f)
+        if las_rw is not None and las_rw_temp_f is None and not self._historical:
+            # Operators quote Rw at formation temperature: FMT, when the header gives it.
+            fmt_f = _parameter_temperature_f(well, "FMT")
+            if fmt_f is not None:
+                las_rw_temp_f = fmt_f
+                decisions.append(
+                    f"Header Rw has no RWT: taken at the header formation temperature FMT, {fmt_f:.1f} degF"
+                )
         if las_rw is not None:
             if las_rw_temp_f is not None:
                 salinity_est = float(salinity_from_rw(float(las_rw), las_rw_temp_f))
@@ -6846,24 +6949,65 @@ class DynamicWorkflow:
                     )
                     temperature_text = "then direct Arps temperature correction"
                     estimate = {}
-                else:
+                elif self._historical:
                     rw_value = float(np.percentile(rwa[valid], 5))
                     rwa_reference_temp = float(np.nanmedian(temp_profile[valid]))
                     salinity_est = float(salinity_from_rw(rw_value, rwa_reference_temp))
                     rw_curve = rw_from_salinity(salinity_est, temp_profile)
                     temperature_text = "then depth-wise temperature correction"
                     estimate = {"salinity_ppm_estimated": salinity_est}
+                else:
+                    # Minimum Rwa (P5) after bringing each sample to one temperature:
+                    # Rw falls with temperature, so raw deep Rwa would pass for salty water.
+                    # Minimum-Rwa method: Asquith and Krygowski (2004), Basic Well Log
+                    # Analysis, 2nd ed.; temperature dependence: Arps (1953), JPT 5(10).
+                    with np.errstate(invalid="ignore"):
+                        salinity = np.asarray(
+                            salinity_from_rw(rwa[valid], temp_profile[valid]), dtype=float
+                        )
+                    plausible = np.isfinite(salinity) & (salinity <= _SATURATED_BRINE_PPM)
+                    rejected = int(salinity.size - np.count_nonzero(plausible))
+                    if np.any(plausible):
+                        rwa_at_reference = np.asarray(
+                            rw_from_salinity(salinity[plausible], _RWA_REFERENCE_TEMP_F), dtype=float
+                        )
+                        salinity_est = float(
+                            salinity_from_rw(np.percentile(rwa_at_reference, 5), _RWA_REFERENCE_TEMP_F)
+                        )
+                    else:
+                        salinity_est = _SATURATED_BRINE_PPM
+                    if rejected:
+                        self._warn_assumed(
+                            f"{rejected} of {salinity.size} clean samples read an apparent Rw "
+                            f"saltier than saturated brine ({_SATURATED_BRINE_PPM:,.0f} ppm) and were "
+                            "left out of the Rw estimate; check the deep resistivity and porosity there."
+                        )
+                    rwa_reference_temp = _RWA_REFERENCE_TEMP_F
+                    rw_value = float(rw_from_salinity(salinity_est, rwa_reference_temp))
+                    rw_curve = rw_from_salinity(salinity_est, temp_profile)
+                    temperature_text = (
+                        f"each sample's Rwa corrected to {_RWA_REFERENCE_TEMP_F:g} degF before the P5, "
+                        "then depth-wise temperature correction"
+                    )
+                    estimate = {
+                        "rwa_temperature_corrected": True,
+                        "salinity_ppm_estimated": salinity_est,
+                        "rwa_implausible_samples": rejected,
+                    }
                 decisions.append(
-                    "Rw from Rwa clean-wet fallback: P5 of "
-                    f"{rt_curve.mnemonic} * {phie_curve.mnemonic}^m / a "
+                    "Rw from Rwa clean-wet fallback: "
+                    + "P5 of "
+                    + f"{rt_curve.mnemonic} * {phie_curve.mnemonic}^m / a "
                     f"where VCL < 0.3 and {phie_curve.mnemonic} > 0.05 (n={int(np.count_nonzero(valid))}), "
                     "using lithology-dependent Archie coefficients, "
                     f"{temperature_text}"
                 )
                 self._warn_assumed(
-                    f"Rw {rw_value:.4g} ohm.m at {rwa_reference_temp:.1f} degF is estimated from the "
-                    "logs (P5 of apparent Rw over clean samples), which assumes some of them are "
-                    "water-bearing. Pass rw and rw_meas_temp_f if Rw is known."
+                    f"Rw {rw_value:.4g} ohm.m at {rwa_reference_temp:.1f} degF "
+                    f"({estimate.get('salinity_ppm_estimated', float('nan')):,.0f} ppm) is estimated "
+                    "from the apparent Rw of clean samples, which assumes some of them are "
+                    "water-bearing, and holds one water for the whole well. Pass rw and "
+                    "rw_meas_temp_f if Rw is known, or zones= where the water changes."
                 )
                 return _finalize_rw(
                     "rwa_clean_wet_p5",
@@ -6979,7 +7123,7 @@ class DynamicWorkflow:
 
     def _step_hc_correction(self, well: "Well") -> StepResult:
         from petrophys.interpretation.porosity.hydrocarbon_correction.hc_correction_module import HcCorrectionModule
-        from petrophys.model.constants import MatrixProperties
+        from petrophys.model.constants import DefaultParameters, MatrixProperties
 
         trace = StepResult(step="hc_correction", success=True, method=f"{self.config.hc_type}_correction")
         decisions = []
@@ -7002,7 +7146,8 @@ class DynamicWorkflow:
         hc_module = HcCorrectionModule(
             hc_type=self.config.hc_type, rho_ma=rho_ma,
             rho_fl=self.config.rho_fl, phi_cl=self._phi_cl_setting,
-            rho_cl=self.config.rho_cl
+            rho_cl=self.config.rho_cl, rho_hc=self.config.rho_hc,
+            hydrogen_index=self.config.hc_hydrogen_index,
         )
         result = hc_module.calculate(well)
         hc_module.add_to_well(well, result)
@@ -7012,6 +7157,19 @@ class DynamicWorkflow:
         trace.parameters = {"hc_type": self.config.hc_type, "rho_ma": rho_ma,
                            "rho_fl": self.config.rho_fl, "phi_cl": self._phi_cl_setting,
                            "rho_cl": self.config.rho_cl}
+        if not self._historical:
+            gas = str(self.config.hc_type).lower() == "gas"
+            trace.parameters["rho_hc"] = (
+                self.config.rho_hc if self.config.rho_hc is not None else (0.2 if gas else 0.8)
+            )
+            trace.parameters["hc_hydrogen_index"] = (
+                self.config.hc_hydrogen_index if self.config.hc_hydrogen_index is not None
+                else (DefaultParameters.GAS_HYDROGEN_INDEX if gas else DefaultParameters.OIL_HYDROGEN_INDEX)
+            )
+        else:
+            for name in ("rho_hc", "hc_hydrogen_index"):
+                if getattr(self.config, name) is not None:
+                    trace.parameters[name] = getattr(self.config, name)
         trace.decisions = decisions
         return trace
 
@@ -7650,6 +7808,10 @@ class DynamicWorkflow:
                 "nan": int(np.count_nonzero(~np.isfinite(np.asarray(phit, dtype=float)))),
             }
             decisions.append("Neutron-only porosity: PHIT = PHIN because PHID was unavailable")
+            self._warn_assumed(
+                "Porosity is from the neutron log alone (no density porosity): it reads high in "
+                "shaly rock and low in gas, so PHIE, Sw and net pay are less reliable. Add RHOB if available."
+            )
         elif phis is not None:
             phit = phis
             phie_basis = phit
@@ -8331,7 +8493,27 @@ class DynamicWorkflow:
             )
         else:
             trace.decisions.append("Sw range: all values are NaN")
+            if not self._historical:
+                trace.success = False
+                trace.message = "Sw is NaN at every depth: " + self._sw_nan_cause(well)
         return trace
+
+    def _sw_nan_cause(self, well: "Well") -> str:
+        """The likely reason a saturation run gave no finite Sw."""
+        def empty(names: List[str]) -> bool:
+            curve = get_curve(well, names)
+            return curve is None or not np.any(np.isfinite(np.asarray(curve.data, dtype=float)))
+
+        if empty(["RW"]):
+            return (
+                "Rw is NaN everywhere, so the Rw inputs give no valid water resistivity "
+                "(check rw, rw_meas_temp_f, salinity_ppm and the temperature settings)."
+            )
+        if empty(["RDEP", "RT"]):
+            return "the deep resistivity has no valid values."
+        if empty(self._phie_names()):
+            return "effective porosity has no valid values."
+        return "check the Rw, resistivity and porosity inputs and the Archie settings."
 
     def _step_permeability(self, well: "Well") -> StepResult:
         from petrophys.interpretation.permeability.perm_module import PermeabilityModule

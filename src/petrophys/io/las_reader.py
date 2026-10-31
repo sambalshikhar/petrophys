@@ -518,6 +518,17 @@ class LASReader:
                                 stacklevel=2,
                             )
                     well._depth_unit = _normalize_depth_unit(index_unit)
+                    section_unit = self._well_section_depth_unit()
+                    if section_unit and (curve.unit or "").strip() and not reproducing_benchmark():
+                        section = normalize_depth_unit(section_unit, strict=False)
+                        if {section, well._depth_unit} == {"m", "ft"}:
+                            warnings.warn(
+                                f"{self.filepath.name}: the index curve {depth_curve!r} is in "
+                                f"{well._depth_unit} but STRT/STOP/STEP are in {section}; "
+                                f"{well._depth_unit} is used. Set well.depth_unit if that is wrong.",
+                                UserWarning,
+                                stacklevel=2,
+                            )
                     # The label as written, which the "geolink" profile writes back.
                     well._source_depth_unit_label = (curve.unit or "").strip()
                     break

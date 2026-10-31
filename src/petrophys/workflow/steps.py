@@ -1105,11 +1105,12 @@ def _run_mud_filtrate(ctx: _StepContext, *, rmf: Any, rmf_temp_f: Optional[float
                f"with Arps' equation: {np.nanmin(values):.3f}-{np.nanmax(values):.3f} ohm.m")
 
 
-_SW_MODELS = ("archie", "simandoux", "indonesia", "dual_water", "waxman_smits", "north_sea",
+_SW_MODELS = ("archie", "simandoux", "modified_simandoux", "indonesia", "dual_water", "waxman_smits", "north_sea",
               "nigeria_schlumberger", "auto")
 _SW_MODEL_OPTIONS = {
     "archie": (),
     "simandoux": ("rcl",),
+    "modified_simandoux": ("rcl",),
     "indonesia": ("rcl",),
     "north_sea": ("rcl", "vsh_exp"),
     "nigeria_schlumberger": ("rcl", "shale_exp"),
@@ -1118,7 +1119,7 @@ _SW_MODEL_OPTIONS = {
     "auto": ("rcl", "rwb", "clay_porosity", "cec", "b_coeff", "m_star", "matrix_density",
              "salinity_ppm", "vcl_cutoff", "lithology"),
 }
-_SHALY_MODELS = {"simandoux", "indonesia", "north_sea", "nigeria_schlumberger", "dual_water",
+_SHALY_MODELS = {"simandoux", "modified_simandoux", "indonesia", "north_sea", "nigeria_schlumberger", "dual_water",
                  "waxman_smits", "auto"}
 
 
@@ -1155,7 +1156,7 @@ def saturation(model: str = "archie", *, a: float = 1.0, m: float = 2.0, n: floa
          - Extra parameters (defaults)
        * - ``"archie"``
          - ``a``, ``m``, ``n``
-       * - ``"simandoux"``, ``"indonesia"``
+       * - ``"simandoux"``, ``"modified_simandoux"``, ``"indonesia"``
          - ``rcl`` (median RT where VCL > 0.9, else 5 ohm.m)
        * - ``"north_sea"``
          - ``rcl``, ``vsh_exp`` (1.6)
@@ -1352,7 +1353,8 @@ def _run_saturation(ctx: _StepContext, *, model: str, a: float, m: float, n: flo
         ctx.decide(f"Routed per sample: {counts}")
     else:
         ctx.decide(f"{result.model} with a={a:g}, m={m:g}, n={n:g}")
-    names = {"indonesia": "Indonesia", "simandoux": "Simandoux", "waxman_smits": "Waxman-Smits"}
+    names = {"indonesia": "Indonesia", "simandoux": "Simandoux",
+             "modified_simandoux": "Modified Simandoux", "waxman_smits": "Waxman-Smits"}
     for route, count in (result.fallback_counts or {}).items():
         model_used = route.split("->", 1)[1]
         ctx.decide(f"{names.get(model_used, model_used)} for {count} shaly carbonate samples: "
