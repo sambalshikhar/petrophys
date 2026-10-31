@@ -484,7 +484,10 @@ wherever the package used the function.
   example `RHO_FL` over an unset `rho_fl`); explicitly set values win.
 - Without a measurement temperature, a given Rw is taken as the value at the
   median formation temperature and corrected along the temperature profile
-  from there; the clean-wet Rwa fallback uses P5. When no Rw source is found,
+  from there. The clean-wet Rwa fallback takes the P5 of the clean samples'
+  apparent Rw at one reference temperature (the minimum-Rwa method), leaving
+  out values saltier than saturated brine (260,000 ppm). When no Rw source is
+  found,
   0.05 ohm.m is used with a warning (`allow_default_rw=True` by default; set
   it to False to skip saturation instead).
 - PHIT and PHIE are always calculated by the run.
@@ -509,6 +512,9 @@ wherever the package used the function.
   accepts only metre or foot labels.
 
 #### Inputs
+
+- A LAS file whose index curve and STRT/STOP/STEP give different depth units
+  (m and ft) gets a warning naming the unit used.
 
 - Input curves are standardized by default: vendor mnemonics get canonical
   aliases, units such as kg/m3 or percent porosity are converted, and
@@ -698,6 +704,15 @@ wherever the package used the function.
   brine density of McCain (1991); the trace shows each step.
 - The mud-sample temperatures MFST and MST stand in for RMFT and RMT as the
   measurement temperatures of Rmf and Rm.
+- A header RW without RWT is taken at the header formation temperature FMT
+  when there is one. The header OBM flag sets `mud_type`, WTSAL the water
+  salinity (not used when the header gives RW) and FLSAL the mud-filtrate
+  salinity; the "geolink" profile reads none of them.
+- `gradient_f_per_100ft` sets a geothermal gradient, defaulting to the header
+  TGRAD (degC/100 m, degC/km or degF/100 ft). A BHT anchors the profile at TD
+  and is used ahead of a header gradient; a gradient you set is used instead
+  of the header BHT. `rw_meas_temp_f`, `rmf_meas_temp_f` and `rm_meas_temp_f`
+  must be 0-700 degF.
 - With `mud_type="OBM"` no SXO or MHI is computed, and Rw is not estimated
   from the SP or from Rxo/Rt: they need a conductive, water-based filtrate,
   and the 200 ohm.m Rmf written for oil-based mud is a placeholder. Rw then
@@ -726,6 +741,22 @@ wherever the package used the function.
   in that order; `rxo_curve="RSHA"` reads RSHA, RXO, RESS.
 
 #### Saturation
+
+- `sw_model="modified_simandoux"` and `modified_simandoux()` add the modified
+  Simandoux equation, 1/Rt = phi^m Sw^n/(a Rw (1 - Vcl)) + Vcl Sw/Rcl, the
+  form many service-company reports use. `simandoux()` is documented as the
+  Bardon-Pied form, without the (1 - Vcl).
+- `rho_hc` and `hc_hydrogen_index` set the hydrocarbon density and hydrogen
+  index of the neutron-density hydrocarbon correction; `rho_hc` also sets the
+  hydrocarbon density of the core matrix-density check of auto lithology.
+  Unset, they keep 0.8 g/cm3 and 1.0 for oil and 0.2 g/cm3 and 0.3 for gas
+  (0.25 g/cm3 for gas in the matrix check). `correct_density_hc`,
+  `correct_neutron_hc` and `HcCorrectionModule` take them as `rho_hc` and
+  `hydrogen_index`.
+- A saturation run whose Sw is NaN at every depth fails, naming the likely
+  cause (no valid Rw, deep resistivity or porosity).
+- Archie a, m or n set outside 0.3-3, 1-4 and 1-5 is used with a warning, and
+  porosity from the neutron log alone (no density) gets a warning.
 
 - The Indonesia equation is the published one of Poupon and Leveaux (1971),
   1/sqrt(Rt) = [Vcl^(1 - Vcl/2)/sqrt(Rcl) + phi^(m/2)/sqrt(a Rw)] Sw^(n/2),
@@ -919,6 +950,10 @@ wherever the package used the function.
 
 #### Context exports
 
+- A context export takes about 40% less time: each curve's statistics are
+  computed once per lithology group rather than once per category file,
+  lithology labels are resolved once per distinct value, and the written
+  files are not read back. The files are byte-for-byte the same.
 - After a context export's value-range QC, PHI_NORM, RQI and FZI are
   recomputed from the porosity (PHIE_CC, then PHIE, then PHIT) and
   permeability (PERM_CC, then PERM) the QC left, and are empty wherever
@@ -937,6 +972,17 @@ wherever the package used the function.
 
 ### Features
 
+- `calculate_pore_volume_weighted_sw` gives the pore-volume-weighted Sw over
+  net pay, sum(Sw PHIE h) / sum(PHIE h), with PHIE_CC preferred. The pay and
+  zone summaries keep their thickness-weighted Sw.
+- `well.curves["GR"]` returns the curve, as `well["GR"]` does; `well.curves`
+  is the list of curve names.
+- `petrophys.reporting` exports `export_context_profile`,
+  `interpret_with_context_profile`, `interpretation_group_records`,
+  `context_group_record` and `context_group_statistics`;
+  `petrophys.preprocessing.quality` the bad-hole flag and masking helpers;
+  `petrophys.preprocessing.standardization` the user curve-name helpers. They
+  are in the API reference.
 - Settings and functions of the interpretation:
   - settings `rmf_chlorides_mg_l`, `carbonate_calibration`,
     `sw_routing_vcl_cutoff`, `nd_clay`, the neutron-density clay point, and

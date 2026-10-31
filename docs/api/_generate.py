@@ -231,6 +231,11 @@ The rest of the reference documents what these calls are built from.""",
                         "get_standard_mnemonic CurveStandardizer",
                     ),
                     (
+                        "Your curve names",
+                        "read_curve_aliases attach_curve_aliases curve_aliases_of "
+                        "standard_curve_names user_standard_name",
+                    ),
+                    (
                         "Units",
                         "standardize_units convert_curve_units standardize_core_saturation",
                     ),
@@ -242,7 +247,10 @@ The rest of the reference documents what these calls are built from.""",
                 groups=[
                     (
                         "Bad hole and washout",
-                        "generate_bad_hole_flags detect_washout WashoutDetection WellboreQC",
+                        "generate_bad_hole_flags generate_washout_flag generate_large_hole_flag "
+                        "generate_low_density_flag generate_pef_exclusion_flag "
+                        "mask_bad_hole_curves apply_quality_flags detect_washout "
+                        "WashoutDetection WellboreQC",
                     ),
                     ("Held readings", "find_held_readings held_reading_mask HeldReadings"),
                     (
@@ -383,6 +391,11 @@ The rest of the reference documents what these calls are built from.""",
                         ],
                     ),
                     Section(
+                        f"{INTERP}.lithology.labels",
+                        title="Lithology labels",
+                        description="Rock names in interval files and their lithology groups.",
+                    ),
+                    Section(
                         f"{INTERP}.lithology.carbonate_minerals",
                         title="Carbonate minerals",
                         description="Calcite and dolomite volumes from bulk density "
@@ -445,7 +458,7 @@ The rest of the reference documents what these calls are built from.""",
                             ),
                             (
                                 "Archie and shaly-sand equations",
-                                "archie simandoux indonesia north_sea_shaly_sand "
+                                "archie simandoux modified_simandoux indonesia north_sea_shaly_sand "
                                 "nigeria_schlumberger dual_water waxman_smits",
                             ),
                             ("Flushed zone", "calculate_sxo"),
@@ -758,7 +771,7 @@ The rest of the reference documents what these calls are built from.""",
                             (
                                 "Averages",
                                 "calculate_zone_averages calculate_pay_averages "
-                                "calculate_weighted_averages",
+                                "calculate_weighted_averages calculate_pore_volume_weighted_sw",
                             ),
                         ],
                     ),
@@ -974,6 +987,13 @@ The rest of the reference documents what these calls are built from.""",
                 "petrophys.reporting",
                 title="Exports and delivery packages",
                 groups=[
+                    (
+                        "Context profiles",
+                        "list_context_profiles describe_context_profile get_context_profile "
+                        "identify_context_profile ContextProfile export_context_profile "
+                        "interpret_with_context_profile interpretation_group_records "
+                        "context_group_record context_group_statistics",
+                    ),
                     (
                         "Example-format exports",
                         "export_example_format_las export_example_format_directory "
