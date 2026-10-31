@@ -314,14 +314,7 @@ def export_context(
             if not path.is_file():
                 continue
             if path.suffix.lower() == ".json":
-                payload = json.loads(path.read_text(encoding="utf-8"))
-                if payload.get("schema") == "petrophys_lithology_group_trace":
-                    payload["context_json_file"] = str(
-                        output
-                        / Path(payload["context_json_file"]).relative_to(staged)
-                    )
-                    path.write_bytes(_encode(json_object(payload), max_bytes))
-                elif path.stat().st_size > max_bytes:
+                if path.stat().st_size > max_bytes:
                     raise ContextSizeError(
                         f"{path.name} exceeds max_bytes={max_bytes}; "
                         "no package was published"

@@ -8,8 +8,14 @@ This umbrella module contains tools for:
 """
 from petrophys.preprocessing.quality.bad_hole import (
     WashoutDetection,
+    apply_quality_flags,
     detect_washout,
     generate_bad_hole_flags,
+    generate_large_hole_flag,
+    generate_low_density_flag,
+    generate_pef_exclusion_flag,
+    generate_washout_flag,
+    mask_bad_hole_curves,
 )
 from petrophys.preprocessing.quality.held_readings import (
     HeldReadings,
@@ -30,6 +36,12 @@ __all__ = [
     "WashoutDetection",
     "detect_washout",
     "generate_bad_hole_flags",
+    "generate_washout_flag",
+    "generate_large_hole_flag",
+    "generate_low_density_flag",
+    "generate_pef_exclusion_flag",
+    "mask_bad_hole_curves",
+    "apply_quality_flags",
     # Held readings
     "HeldReadings",
     "find_held_readings",

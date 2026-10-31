@@ -3,9 +3,14 @@
 from petrophys.reporting.context import ContextSizeError, build_context, export_context
 from petrophys.reporting.context_profiles import (
     ContextProfile,
+    context_group_record,
+    context_group_statistics,
     describe_context_profile,
+    export_context_profile,
     get_context_profile,
     identify_context_profile,
+    interpret_with_context_profile,
+    interpretation_group_records,
     list_context_profiles,
 )
 
@@ -31,6 +36,11 @@ __all__ = [
     "get_context_profile",
     "identify_context_profile",
     "list_context_profiles",
+    "export_context_profile",
+    "interpret_with_context_profile",
+    "interpretation_group_records",
+    "context_group_record",
+    "context_group_statistics",
     "ExampleFormatExportResult",
     "export_example_format_directory",
     "export_example_format_las",
