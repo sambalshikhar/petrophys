@@ -65,9 +65,15 @@ class NumericalStatisticalAnalysis:
         derived_curves: dict[str, DerivedCurve] = {}
         total_logs = max(len(curve_arrays), 1)
         completeness = np.full(n_samples, np.nan, dtype=float)
-        for idx in range(n_samples):
-            available = sum(int(np.isfinite(values[idx])) for values in curve_arrays.values())
-            completeness[idx] = available / total_logs
+        if all(values.shape == (n_samples,) for values in curve_arrays.values()):
+            available = np.zeros(n_samples, dtype=np.int64)
+            for values in curve_arrays.values():
+                available += np.isfinite(values)
+            completeness[:] = available / total_logs
+        else:
+            for idx in range(n_samples):
+                available = sum(int(np.isfinite(values[idx])) for values in curve_arrays.values())
+                completeness[idx] = available / total_logs
         derived_curves["DATA_COMPLETENESS"] = DerivedCurve(
             completeness,
             "",

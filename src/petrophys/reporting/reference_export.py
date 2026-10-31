@@ -5,9 +5,11 @@ Export helpers for writing delivery LAS files and paired JSON summaries.
 from __future__ import annotations
 
 
+from collections import OrderedDict
 import copy
 from dataclasses import dataclass, field
 import functools
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -3080,6 +3082,7 @@ def _model_reason(model: str, vcl_cutoff: Optional[float]) -> str:
         "archie": f"Archie route: samples with VCL < {cutoff_text}",
         "indonesia": f"Indonesia route: shaly clastic samples with VCL >= {cutoff_text}; selected because the required RCL input was available",
         "simandoux": f"Simandoux route: shaly clastic samples with VCL >= {cutoff_text}; selected because saline shaly-sand routing inputs were available",
+        "modified_simandoux": "Modified Simandoux: the sw_model setting",
         "north_sea": "North Sea route: shaly-sand samples with shale-exponent inputs available",
         "dual_water": f"Dual Water route: shaly carbonate samples with VCL >= {cutoff_text}",
         "waxman_smits": "Waxman-Smits route: shaly samples with shale-conductivity inputs available",
@@ -3123,6 +3126,7 @@ def _saturation_equation_text(model: str) -> str:
         "archie": "Archie equation: Sw = [a * Rw / (PHIE^m * Rt)]^(1/n).",
         "indonesia": "Indonesia equation: 1/sqrt(Rt) = VCL^(1 - VCL/2)/sqrt(RCL) + (PHIE^(m/2) * Sw^(n/2))/sqrt(a * Rw).",
         "simandoux": "Simandoux equation: 1/Rt = (PHIE^m / (a * Rw)) * Sw^n + (VCL / RCL) * Sw.",
+        "modified_simandoux": "Modified Simandoux equation: 1/Rt = (PHIE^m / (a * Rw * (1 - VCL))) * Sw^n + (VCL / RCL) * Sw.",
         "north_sea": "North Sea equation: 1/Rt = (PHIE^m / (a * Rw)) * Sw^n + VCL^vsh_exp / Rtsh.",
         "dual_water": "Dual Water equation: phi_bw = VCL * phi_cl; Swb = phi_bw / PHIT; 1/Rwt = Swb/Rwb + (1 - Swb)/Rw; Swt = [(a * Rwt)/(PHIT^m * Rt)]^(1/n); reported Sw = (Swt - Swb)/(1 - Swb).",
         "waxman_smits": "Waxman-Smits equation: Ct = (Sw^n / F*) * (Cw + B * Qv / Sw), iterated with F* = PHIT^(-m*) and Qv = CEC * rho_ma * (1 - PHIT) / PHIT.",
@@ -4037,6 +4041,7 @@ def _model_display_name(model: str) -> str:
         "archie": "Archie",
         "indonesia": "Indonesia",
         "simandoux": "Simandoux",
+        "modified_simandoux": "Modified Simandoux",
         "dual_water": "Dual Water",
         "waxman_smits": "Waxman-Smits",
         "north_sea": "North Sea",
@@ -4060,6 +4065,8 @@ def _sw_equation_text(models: Iterable[str], params: dict[str, Any]) -> str:
         )
     if "simandoux" in model_set:
         parts.append("Simandoux 1/Rt=(PHIE^m/(a*RW))*Sw^n+(VCL/RCL)*Sw")
+    if "modified_simandoux" in model_set:
+        parts.append("Modified Simandoux 1/Rt=(PHIE^m/(a*RW*(1-VCL)))*Sw^n+(VCL/RCL)*Sw")
     if "dual_water" in model_set:
         rwb = params.get("rwb")
         phi_cl = params.get("phi_cl")
@@ -4301,6 +4308,13 @@ def _rmf_curve_note(step: Any) -> str:
     return f"RMF: {method}; {arps}; RMF(T)={rmf_range or 'not recorded'}."
 
 
+def _rwa_rank_text(params: Mapping[str, Any]) -> str:
+    """How the clean-wet Rwa route picked its value: P5 of Rwa, with or without a temperature correction."""
+    if not params.get("rwa_temperature_corrected"):
+        return "P5"
+    return f"P5 of each sample's RWA corrected to {_format_numeric(params.get('rwa_reference_temp_f'), 0)} F"
+
+
 def _dataset_rw_curve_note(step: Any, well: "Well") -> str:
     """The RW note of the Danish and COSTA packages: Rw corrected directly with Arps."""
     params = getattr(step, "parameters", {}) or {}
@@ -4312,10 +4326,10 @@ def _dataset_rw_curve_note(step: Any, well: "Well") -> str:
     if method == "rwa_clean_wet_p5":
         coeff_text = _archie_coefficients_text(params, well).lstrip("; ")
         return (
-            "RW: RWA clean-wet P5; "
+            f"RW: RWA clean-wet {_rwa_rank_text(params)}; "
             "RWA=RDEP*PHIE^m/a, "
             f"mask=VCL<{params.get('vcl_cutoff')} and PHIE>{params.get('phie_cutoff')}; "
-            f"P5 at reference temperature={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
+            f"{'P5' if not params.get('rwa_temperature_corrected') else 'RW'} at reference temperature={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
             f"Tref={_format_numeric(params.get('rwa_reference_temp_f'), 1)} F, "
             f"samples={params.get('rwa_clean_wet_samples')}, "
             + (f"{coeff_text}; " if coeff_text else "")
@@ -4372,10 +4386,10 @@ def _rw_curve_note(step: Any, well: "Well") -> str:
     if method == "rwa_clean_wet_p5":
         coeff_text = _archie_coefficients_text(params, well).lstrip("; ")
         return (
-            "RW: RWA clean-wet P5; "
+            f"RW: RWA clean-wet {_rwa_rank_text(params)}; "
             "RWA=RDEP*PHIE^m/a, "
             f"mask=VCL<{params.get('vcl_cutoff')} and PHIE>{params.get('phie_cutoff')}; "
-            f"P5={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
+            f"{'P5' if not params.get('rwa_temperature_corrected') else 'RW at 75 F'}={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
             f"samples={params.get('rwa_clean_wet_samples')}, "
             f"salinity={_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm; "
             + (f"{coeff_text}; " if coeff_text else "")
@@ -5782,13 +5796,14 @@ def _build_delivery_computation_notes(
             reference_temp = _format_numeric_summary(_step_parameter_values(rw_steps, "rwa_reference_temp_f"), 1, "F")
             archie_text = _archie_coefficients_text(getattr(rw_steps[0], "parameters", {}) or {}).lstrip("; ")
             salinity = _format_numeric_summary(_step_parameter_values(rw_steps, "salinity_ppm_estimated"), 0, "ppm")
+            rank_text = _rwa_rank_text(getattr(rw_steps[0], "parameters", {}) or {})
             notes.append(
                 "RW: RW was derived from apparent Rw because direct RW metadata/configuration, salinity input, RMF+SP, and RMF+Rxo/Rt routes did not produce usable RW. "
-                "Formula used: RWA = RDEP * PHIE^m / a. Mask used: VCL < 0.30 and PHIE > 0.05. Percentile used: P5. "
+                f"Formula used: RWA = RDEP * PHIE^m / a. Mask used: VCL < 0.30 and PHIE > 0.05. Percentile used: {rank_text}. "
                 "The selected RWA value was converted to equivalent salinity and rewritten depth-by-depth as RW(T)."
                 + (f" {archie_text}." if archie_text else "")
                 + (f" Samples used: {n_samples}." if n_samples else "")
-                + (f" P5 RWA reference value: {rw_from_rwa}." if rw_from_rwa else "")
+                + (f" {'P5 RWA' if rank_text == 'P5' else 'RW'} reference value: {rw_from_rwa}." if rw_from_rwa else "")
                 + (f" Reference temperature: {reference_temp}." if reference_temp else "")
                 + (f" Equivalent salinity: {salinity}." if salinity else "")
                 + (f" Final RW(T) range: {rw_values}." if rw_values else "")
@@ -6009,10 +6024,10 @@ def _build_delivery_computation_notes(
             if rw_used:
                 note += f" RW(T) range used in saturation: {rw_used}."
             rcl_used = _format_numeric_summary(_step_parameter_values(saturation_steps, "rcl"), 4, "ohm.m")
-            if any(model in {"north_sea", "indonesia", "simandoux", "nigeria_schlumberger"} for model in models) and rcl_used:
+            if any(model in {"north_sea", "indonesia", "simandoux", "modified_simandoux", "nigeria_schlumberger"} for model in models) and rcl_used:
                 note += f" RCL used in shaly-sand saturation calculations: {rcl_used}."
             rtsh_used = _format_numeric_summary(_step_parameter_values(saturation_steps, "rtsh"), 4, "ohm.m")
-            if any(model in {"north_sea", "indonesia", "simandoux", "nigeria_schlumberger"} for model in models) and rtsh_used:
+            if any(model in {"north_sea", "indonesia", "simandoux", "modified_simandoux", "nigeria_schlumberger"} for model in models) and rtsh_used:
                 note += f" Shale resistivity / RTSH used: {rtsh_used}."
             vsh_exp_used = _format_numeric_summary(_step_parameter_values(saturation_steps, "vsh_exp"), 3)
             if "north_sea" in models and vsh_exp_used:
@@ -6606,13 +6621,18 @@ def _build_lithology_group_segments(
         labels = np.asarray([MISSING_LITHOLOGY_LABEL] * well.n_samples, dtype=object)
     else:
         labels_list = []
+        resolved: dict[str, str] = {}
         for value in lithology_curve.data:
-            if _is_null_like_lithology(value) or _is_sentinel_lithology(value):
-                labels_list.append(MISSING_LITHOLOGY_LABEL)
-            else:
-                labels_list.append(
-                    _normalize_lithology_label(value, lithology_mapping=lithology_mapping) or MISSING_LITHOLOGY_LABEL
-                )
+            key = str(value)
+            if key not in resolved:
+                if _is_null_like_lithology(value) or _is_sentinel_lithology(value):
+                    resolved[key] = MISSING_LITHOLOGY_LABEL
+                else:
+                    resolved[key] = (
+                        _normalize_lithology_label(value, lithology_mapping=lithology_mapping)
+                        or MISSING_LITHOLOGY_LABEL
+                    )
+            labels_list.append(resolved[key])
         labels = np.asarray(labels_list, dtype=object)
 
     group_changes = np.ones(labels.shape[0], dtype=bool)
@@ -6814,8 +6834,12 @@ def _valid_lithology_labels(
     if curve is None:
         return []
     labels: List[str] = []
+    resolved: dict[str, Optional[str]] = {}
     for value in np.asarray(curve.data, dtype=object):
-        label = _normalize_lithology_label(value, lithology_mapping=lithology_mapping)
+        key = str(value)
+        if key not in resolved:
+            resolved[key] = _normalize_lithology_label(value, lithology_mapping=lithology_mapping)
+        label = resolved[key]
         if label is None:
             continue
         labels.append(label)
@@ -6857,19 +6881,25 @@ def _build_reference_lithology_info(
     valid_labels: List[str] = []
     nan_count = 0
     sentinel_count = 0
+    resolved: dict[str, tuple[str, Optional[str]]] = {}
     for value in values:
-        if _is_null_like_lithology(value):
+        key = str(value)
+        if key not in resolved:
+            if _is_null_like_lithology(value):
+                resolved[key] = ("nan", None)
+            elif _is_sentinel_lithology(value):
+                resolved[key] = ("sentinel", None)
+            else:
+                label = _normalize_lithology_label(value, lithology_mapping=lithology_mapping)
+                # None: a code the run's calculation profile reads as no lithology.
+                resolved[key] = ("nan", None) if label is None else ("label", label)
+        kind, label = resolved[key]
+        if kind == "nan":
             nan_count += 1
-            continue
-        if _is_sentinel_lithology(value):
+        elif kind == "sentinel":
             sentinel_count += 1
-            continue
-        label = _normalize_lithology_label(value, lithology_mapping=lithology_mapping)
-        if label is None:
-            # A code the run's calculation profile reads as no lithology.
-            nan_count += 1
-            continue
-        valid_labels.append(label)
+        else:
+            valid_labels.append(label)
 
     valid_count = len(valid_labels)
     unique_lithologies = sorted(_ordered_unique(valid_labels))
@@ -6924,13 +6954,27 @@ def _round_stat(value: float, decimals: int = 4) -> int | float:
     return int(rounded) if float(rounded).is_integer() else rounded
 
 
+#: Curve statistics by array content: the six category files of a group share
+#: their curves, so each curve's statistics are computed once.
+_CURVE_STATISTICS_CACHE: "OrderedDict[tuple, Optional[dict[str, float]]]" = OrderedDict()
+_CURVE_STATISTICS_CACHE_SIZE = 4096
+
+
 def _curve_statistics_payload(data: np.ndarray) -> Optional[dict[str, float]]:
     from petrophys.evaluation.summaries.statistics import STATISTICS, curve_statistics
 
-    stats = curve_statistics(_normalize_numeric_array(data))
-    if stats is None:
-        return None
-    return {name: _round_stat(stats[name]) for name in STATISTICS}
+    values = _normalize_numeric_array(data)
+    key = (values.shape, hashlib.blake2b(np.ascontiguousarray(values).tobytes(), digest_size=16).digest())
+    if key in _CURVE_STATISTICS_CACHE:
+        _CURVE_STATISTICS_CACHE.move_to_end(key)
+        cached = _CURVE_STATISTICS_CACHE[key]
+        return dict(cached) if cached is not None else None
+    stats = curve_statistics(values)
+    payload = None if stats is None else {name: _round_stat(stats[name]) for name in STATISTICS}
+    _CURVE_STATISTICS_CACHE[key] = payload
+    if len(_CURVE_STATISTICS_CACHE) > _CURVE_STATISTICS_CACHE_SIZE:
+        _CURVE_STATISTICS_CACHE.popitem(last=False)
+    return dict(payload) if payload is not None else None
 
 
 def _reference_statistics_curve_key(mnemonic: str, well: "Well") -> Optional[str]:

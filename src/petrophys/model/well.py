@@ -157,6 +157,27 @@ class WellHeader:
         }
 
 
+class CurveNames(list):
+    """The well's curve mnemonics; a name also looks up its curve.
+
+    ``well.curves["GR"]`` returns the curve, as ``well["GR"]`` does; integer
+    indexes and slices work as on a list.
+    """
+
+    def __init__(self, names: List[str], well: "Well"):
+        super().__init__(names)
+        self._well = well
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            return self._well[key]
+        return super().__getitem__(key)
+
+    def __reduce__(self):
+        # Pickle and copy as a plain list, without the well.
+        return (list, (list(self),))
+
+
 class Well:
     """
     Primary container for well log data and metadata.
@@ -247,9 +268,9 @@ class Well:
                 curve.depth_unit = self._depth_unit
 
     @property
-    def curves(self) -> List[str]:
-        """Return list of curve mnemonics."""
-        return list(self._curves.keys())
+    def curves(self) -> "CurveNames":
+        """Return the list of curve mnemonics; ``curves["GR"]`` gives the curve."""
+        return CurveNames(list(self._curves.keys()), self)
 
     @property
     def n_curves(self) -> int:
