@@ -221,11 +221,14 @@ in for:
 
 | LAS parameter | Setting | How it is read |
 | --- | --- | --- |
-| `RW`, `RWT` | `rw`, `rw_meas_temp_f` | Rw in ohm.m at RWT; without RWT, Rw is taken at the well's median formation temperature, with a warning |
+| `RW`, `RWT` | `rw`, `rw_meas_temp_f` | Rw in ohm.m at RWT; without RWT, at the formation temperature `FMT` when the header gives it, else at the well's median formation temperature, with a warning |
 | `RMF`, `RMFT` | `rmf_at_meas_temp`, `rmf_meas_temp_f` | `MFST`, the mud-filtrate sample temperature, stands in for a missing RMFT |
 | `RM`, `RMT` | `rm`, `rm_meas_temp_f` | `MST`, the mud sample temperature, stands in for a missing RMT |
 | `CLFL` | `rmf_chlorides_mg_l` | Mud-filtrate chlorides in mg/l (values in ppm, kppm or % are converted). Without an Rmf, Rmf comes from the NaCl equivalent, Cl x 58.44/35.45, divided by the brine density |
 | `BHT`, `TD` | `bht_f`, `td_ft` | BHT is taken as the static formation temperature at TD, with no correction for mud circulation |
+| `TGRAD` | `gradient_f_per_100ft` | Geothermal gradient (degC/100 m, degC/km or degF/100 ft; without a unit, degC/100 m up to 10, else degC/km), from `surface_temp_f` at depth 0. Used only without a BHT, which anchors the profile at TD |
+| `OBM` | `mud_type` | An oil-based-mud flag: `YES` gives `"OBM"`, `NO` gives `"WBM"` |
+| `FLSAL` | `rmf_salinity_ppm` | Mud-filtrate salinity (units converted) |
 | `CEC` | `cec` | meq/100 g; a value labelled meq/g is multiplied by 100, and a value under 1 gets a warning, as meq/g values look like that |
 | `RWB` | `rwb` | Bound-water resistivity, ohm.m; Dual Water runs only with it |
 | `PNSH` with `RBSH` | `phi_cl` (`RBSH` also `rho_cl`) | The neutron reading and the density of shale give the clay porosity; PNSH alone is not used |
@@ -236,7 +239,7 @@ setting of the same meaning when you leave that setting unset:
 | LAS parameter | Setting |
 | --- | --- |
 | `A`, `M`, `N` | `a`, `m`, `n` (Archie) |
-| `SAL`, `SALINITY`, `SALINITY_PPM`, `WATSAL`, `WSAL`, `WATER_SALINITY`, `WATER_SALINITY_PPM` | `salinity_ppm` (units converted, see {doc}`workflows`) |
+| `SAL`, `SALINITY`, `SALINITY_PPM`, `WATSAL`, `WSAL`, `WATER_SALINITY`, `WATER_SALINITY_PPM`; `WTSAL` | `salinity_ppm` (units converted, see {doc}`workflows`); `WTSAL` is not used when the header gives `RW` |
 | `VSHE`, `VSH_EXP`; `SHALE_EXP`; `RTSH` | `vsh_exp`; `shale_exp`; `rtsh` |
 | `B_COEFF`, `BCOEFF` | `b_coeff` |
 | `MUDTYPE`, `MUD_TYPE`, `MUD`; `MUDWATER` | `mud_type`; `mud_water` |

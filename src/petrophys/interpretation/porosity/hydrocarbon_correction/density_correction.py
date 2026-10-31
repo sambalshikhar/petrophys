@@ -7,6 +7,11 @@ Step 1 - Preliminary density porosity:
 
 Step 2 - Corrected RHOB:
     RHOB_HC = RHOB + phi_D_prelim * (1 - Sxo) * (rho_fl - rho_hc)
+
+References
+----------
+Gaymard, R. and Poupon, A. (1968). Response of neutron and formation
+density logs in hydrocarbon bearing formations. *The Log Analyst* 9(5).
 """
 
 from typing import Optional, Union
@@ -23,6 +28,7 @@ def correct_density_hc(
     vcl: Optional[Union[float, np.ndarray]] = None,
     rho_ma: float = 2.65,
     rho_cl: float = 2.45,
+    rho_hc: Optional[float] = None,
 ) -> Union[float, np.ndarray]:
     """
     Correct bulk density for hydrocarbon effect.
@@ -50,13 +56,17 @@ def correct_density_hc(
         Matrix density (g/cc).
     rho_cl : float
         Clay / shale density (g/cc).
+    rho_hc : float, optional
+        Hydrocarbon density in the flushed zone (g/cc). Default: 0.8 for oil,
+        0.2 for gas.
 
     Returns
     -------
     float or np.ndarray
         Hydrocarbon-corrected bulk density (g/cc).
     """
-    rho_hc = 0.2 if hc_type.lower() == "gas" else 0.8
+    if rho_hc is None:
+        rho_hc = 0.2 if hc_type.lower() == "gas" else 0.8
 
     if vcl is not None:
         numerator = rho_ma - rhob - vcl * (rho_ma - rho_cl)

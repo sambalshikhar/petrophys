@@ -616,13 +616,15 @@ def create_server(
         Key settings (others: interpretation_settings):
         - rw (ohm.m) with rw_meas_temp_f (degF): formation water resistivity and
           its temperature; take both from the user. Without rw the header RW is
-          used (at RWT, else at the median formation temperature): ask the user.
+          used (at RWT, else at the header FMT, else at the median formation
+          temperature): ask the user.
           Or salinity_ppm.
         - bht_f (degF), td_ft (ft): bottom-hole temperature; default header BHT.
+          Or gradient_f_per_100ft (default header TGRAD, used without a BHT).
         - lithology_domain: clastic (default)|carbonate|evaporite|auto (set
           'carbonate' for carbonates); matrix_type: auto|sandstone|limestone|dolomite
           (default sandstone in the clastic domain, auto in the others).
-        - sw_model: auto|archie|simandoux|indonesia|dual_water|waxman_smits;
+        - sw_model: auto|archie|simandoux|modified_simandoux|indonesia|dual_water|waxman_smits;
           a, m, n: Archie parameters (default by lithology). dual_water needs
           rwb (ohm.m), waxman_smits cec (meq/100 g) and b_coeff; ask the user,
           as they are not estimated.
@@ -633,7 +635,9 @@ def create_server(
           and pay flags in the workflow trace.
         - gr_min, gr_max (API): GR clean/shale, used as given. Default: P5/P95 of
           the GR log, bounded to at most 20 (clean) and at least 100 (shale).
-        - apply_hc_correction, hc_type: oil|gas; skip_steps: e.g. ['permeability'].
+        - apply_hc_correction, hc_type: oil|gas; rho_hc (g/cm3), hc_hydrogen_index:
+          the hydrocarbon's density and hydrogen index (unset: oil 0.8/1.0, gas
+          0.2/0.3); skip_steps: e.g. ['permeability'].
         Use run_workflow for a recipe with given methods (e.g. a quick look) and
         interpret_wells to compare wells.
         """

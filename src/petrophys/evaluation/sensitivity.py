@@ -38,11 +38,13 @@ from petrophys.interpretation.saturation import (
     nigeria_schlumberger,
     north_sea_shaly_sand,
     simandoux,
+    modified_simandoux,
 )
 
 RT_CURVES = ("RDEP", "RT")
 
-#: Saturation models :func:`compare_saturation_models` can run. All need only
+#: Saturation models :func:`compare_saturation_models` runs by default (it also
+#: takes "modified_simandoux"). All need only
 #: Rt, PHIE, VCL, Rw and (for the shaly-sand models) a shale resistivity.
 SATURATION_MODELS: Tuple[str, ...] = (
     "archie",
@@ -364,6 +366,8 @@ def _run_saturation_model(model, rt, rw, phie, vcl, rsh, a, m, n, vsh_exp, shale
         return archie(rt, rw, phie, a, m, n)
     if model == "simandoux":
         return simandoux(rt, rw, phie, vcl, rsh, a, m, n)
+    if model == "modified_simandoux":
+        return modified_simandoux(rt, rw, phie, vcl, rsh, a, m, n)
     if model == "indonesia":
         return indonesia(rt, rw, phie, vcl, rsh, a, m, n)
     if model == "north_sea":
@@ -420,7 +424,8 @@ def compare_saturation_models(
     a, m, n : float
         Tortuosity factor, cementation and saturation exponents.
     models : sequence of str
-        Models to run, from :data:`SATURATION_MODELS`.
+        Models to run, from :data:`SATURATION_MODELS`, or
+        ``"modified_simandoux"``.
     rt, phie, vcl, depth : array-like, optional
         Explicit deep resistivity (ohm.m), effective porosity and clay volume
         (fractions) and depths.
@@ -466,10 +471,10 @@ def compare_saturation_models(
     models = [str(model).strip().lower() for model in models]
     if not models:
         raise ValueError("models must name at least one saturation model")
-    unknown = [model for model in models if model not in SATURATION_MODELS]
+    unknown = [model for model in models if model not in (*SATURATION_MODELS, "modified_simandoux")]
     if unknown:
         raise ValueError(
-            f"Unknown saturation model(s) {unknown}; choose from {', '.join(SATURATION_MODELS)}"
+            f"Unknown saturation model(s) {unknown}; choose from {', '.join(SATURATION_MODELS)}, modified_simandoux"
         )
     if any(model != "archie" for model in models):
         if rsh is None or not np.isfinite(float(rsh)) or float(rsh) <= 0:

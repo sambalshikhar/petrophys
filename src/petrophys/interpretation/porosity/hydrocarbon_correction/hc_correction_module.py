@@ -33,13 +33,17 @@ class HcCorrectionModule:
         rho_ma: float = 2.65,
         rho_fl: float = 1.0,
         phi_cl: float = 0.15,
-        rho_cl: float = 2.45
+        rho_cl: float = 2.45,
+        rho_hc: Optional[float] = None,
+        hydrogen_index: Optional[float] = None,
     ):
         self.hc_type = hc_type
         self.rho_ma = rho_ma
         self.rho_fl = rho_fl
         self.phi_cl = phi_cl
         self.rho_cl = rho_cl
+        self.rho_hc = rho_hc
+        self.hydrogen_index = hydrogen_index
 
     def calculate(
         self,
@@ -84,11 +88,11 @@ class HcCorrectionModule:
 
         nphi_hc = correct_neutron_hc(
             nphi, phi, sxo, self.hc_type,
-            vcl=vcl, phi_cl=self.phi_cl
+            vcl=vcl, phi_cl=self.phi_cl, hydrogen_index=self.hydrogen_index
         )
         rhob_hc = correct_density_hc(
             rhob, phi, sxo, self.rho_fl, self.hc_type,
-            vcl=vcl, rho_ma=self.rho_ma, rho_cl=self.rho_cl
+            vcl=vcl, rho_ma=self.rho_ma, rho_cl=self.rho_cl, rho_hc=self.rho_hc
         )
 
         return HcCorrectionResult(nphi_hc=nphi_hc, rhob_hc=rhob_hc)

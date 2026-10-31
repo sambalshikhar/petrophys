@@ -79,8 +79,8 @@ result = pp.interpret(well, rw=0.05, rw_meas_temp_f=75, bht_f=210)
 
 Give Rw (ohm.m) with the temperature it was measured at, `rw_meas_temp_f`
 (degF); the workflow corrects it along the well's temperature profile. Without
-that temperature, a given Rw, or a header RW without RWT, is taken at the
-well's median formation temperature, with a warning.
+that temperature, a given Rw, or a header RW without RWT or FMT, is taken at
+the well's median formation temperature, with a warning.
 
 CSV and TSV logs need their depth unit: `pp.read("logs.csv", depth_unit="m")`.
 Vendor mnemonics (`GR_EDTC`, `RHOZ`, `TNPH`, ...) and units (kg/m3, percent

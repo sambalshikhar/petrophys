@@ -119,6 +119,17 @@ _BENCHMARK_PARAMETER_ALIASES: dict[str, Optional[str]] = {
     "PNSH": "phi_cl",
 }
 
+#: Header parameters only the "current" calculations read (the benchmark
+#: packages were built without them): the temperature gradient TGRAD, an OBM
+#: flag, and the water and mud-filtrate salinities WTSAL and FLSAL. WTSAL
+#: yields to a header RW.
+_CURRENT_PARAMETER_ALIASES: dict[str, str] = {
+    "TGRAD": "gradient_f_per_100ft",
+    "OBM": "mud_type",
+    "WTSAL": "salinity_ppm",
+    "FLSAL": "rmf_salinity_ppm",
+}
+
 #: Header parameters the "current" calculations read from the well itself, not
 #: as settings. PNSH ("Neutron Shale") is the neutron log's reading in shale:
 #: DynamicWorkflow turns it, with RBSH ("Shale Density"), into a clay porosity.
@@ -419,6 +430,21 @@ def _mud_type_from_text(value: Any) -> Optional[str]:
     if text in {"obm", "oil", "oilbased", "oilbase", "oilbasedmud", "oilbasemud"}:
         return "OBM"
     return None
+
+
+def _gradient_to_f_per_100ft(value: float, unit: str) -> Optional[float]:
+    """A header temperature gradient in degF/100 ft, or None for an unknown unit.
+
+    Without a unit, a value of 10 or less is taken as degC/100 m (the usual
+    0.5-10), a larger one as degC/km.
+    """
+    text = "".join((unit or "").lower().split()).replace("deg", "").replace("_", "")
+    if text in {"", "-"}:
+        text = "c/100m" if value <= 10 else "c/km"
+    per_100m_c = {"c/100m": 1.0, "c/km": 0.1, "c/m": 100.0, "f/100ft": 1 / 0.54864}.get(text)
+    if per_100m_c is None:
+        return None
+    return float(value) * per_100m_c * 0.54864
 
 
 def _cec_to_meq_per_100g(value: float, unit: str) -> float:
@@ -753,6 +779,8 @@ def _apply_parameter_alias(
         target = _BENCHMARK_PARAMETER_ALIASES.get(key, target)
     elif key in _READ_FROM_WELL_PARAMETERS:
         return
+    elif not benchmark:
+        target = _CURRENT_PARAMETER_ALIASES.get(key, target)
 
     if key in DIRECT_INTERVAL_METADATA:
         try:
@@ -767,6 +795,14 @@ def _apply_parameter_alias(
         return
 
     if key in _FALLBACK_PARAMETERS and target in overrides:
+        return
+
+    if key == "OBM" and not benchmark:
+        # An oil-based-mud flag: YES/NO, TRUE/FALSE, 1/0.
+        try:
+            overrides[target] = "OBM" if _parse_bool(value) else "WBM"
+        except (TypeError, ValueError):
+            unmapped_parameters.append(base_name)
         return
 
     if target == "mud_type" and not benchmark:
@@ -803,6 +839,18 @@ def _apply_parameter_alias(
         overrides[target] = temperature_to_fahrenheit(numeric_value, unit)
     elif target in {"td_ft"}:
         overrides[target] = _depth_to_ft(numeric_value, unit, benchmark=benchmark)
+    elif target == "gradient_f_per_100ft":
+        gradient = _gradient_to_f_per_100ft(numeric_value, unit)
+        if gradient is None:
+            _warn(
+                f"LAS parameter {base_name} = {value} {unit}: the gradient unit is not recognised "
+                "(degC/100m, degC/km, degF/100ft), so the value is not used.",
+                UserWarning,
+                stacklevel=2,
+            )
+            unmapped_parameters.append(base_name)
+        else:
+            overrides[target] = gradient
     elif target in {"salinity_ppm", "rmf_salinity_ppm"}:
         salinity = _salinity_to_ppm(numeric_value, unit, benchmark=benchmark)
         if salinity is None:
@@ -847,6 +895,13 @@ def _extract_global_parameter_overrides(
             key, value, unit, overrides, {}, unmapped,
             calculation_profile=calculation_profile,
         )
+
+    if not benchmark and "salinity_ppm" in overrides:
+        names = {str(key).upper() for key in getattr(well, "_parameters", {}) if isinstance(key, str)}
+        salinity_keys = {key for key, target in PARAMETER_ALIASES.items() if target == "salinity_ppm"}
+        if "RW" in names and "WTSAL" in names and not names & salinity_keys:
+            # A header RW is the water's resistivity itself; WTSAL is the fallback.
+            del overrides["salinity_ppm"]
 
     return overrides, sorted(set(unmapped))
 

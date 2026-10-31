@@ -10,6 +10,11 @@ Design doc equations:
 
 NeuHyHI is the hydrocarbon hydrogen index: DefaultParameters.OIL_HYDROGEN_INDEX
 (1.0, so oil leaves the neutron unchanged) or GAS_HYDROGEN_INDEX.
+
+References
+----------
+Gaymard, R. and Poupon, A. (1968). Response of neutron and formation
+density logs in hydrocarbon bearing formations. *The Log Analyst* 9(5).
 """
 
 from typing import Union, Optional
@@ -24,7 +29,8 @@ def correct_neutron_hc(
     sxo: Union[float, np.ndarray],
     hc_type: str = "oil",
     vcl: Optional[Union[float, np.ndarray]] = None,
-    phi_cl: float = 0.15
+    phi_cl: float = 0.15,
+    hydrogen_index: Optional[float] = None,
 ) -> Union[float, np.ndarray]:
     """
     Correct neutron porosity for hydrocarbon effect.
@@ -47,17 +53,23 @@ def correct_neutron_hc(
         porosity approach from design doc.
     phi_cl : float
         Clay porosity from NPHI at 100% clay (default: 0.15)
+    hydrogen_index : float, optional
+        Hydrogen index of the hydrocarbon. Default:
+        DefaultParameters.OIL_HYDROGEN_INDEX (1.0) for oil,
+        GAS_HYDROGEN_INDEX (0.3) for gas.
 
     Returns
     -------
     float or np.ndarray
         HC-corrected neutron porosity
     """
-    neu_hy_hi = (
-        DefaultParameters.GAS_HYDROGEN_INDEX
-        if hc_type.lower() == "gas"
-        else DefaultParameters.OIL_HYDROGEN_INDEX
-    )
+    neu_hy_hi = hydrogen_index
+    if neu_hy_hi is None:
+        neu_hy_hi = (
+            DefaultParameters.GAS_HYDROGEN_INDEX
+            if hc_type.lower() == "gas"
+            else DefaultParameters.OIL_HYDROGEN_INDEX
+        )
 
     if vcl is not None:
         # Design doc approach with preliminary porosity

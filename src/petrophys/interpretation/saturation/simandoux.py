@@ -3,6 +3,16 @@ Simandoux equation for water saturation in shaly sands.
 
 This module provides the Simandoux shaly sand model for formations
 with moderate to high clay content and higher salinity (>= 20 kppm).
+
+References
+----------
+Bardon, C. and Pied, B. (1969). Formation water saturation in shaly sands.
+SPWLA 10th Annual Logging Symposium.
+
+Simandoux, P. (1963). Dielectric measurements on porous media: application
+to the measurement of water saturations: study of the behaviour of
+argillaceous formations. *Revue de l'Institut Français du Pétrole* 18,
+Supplementary Issue, 193-215.
 """
 
 from typing import Union
@@ -24,12 +34,20 @@ def simandoux(
     rcl: float,
     a: float = 1.0,
     m: float = 2.0,
-    n: float = 2.0
+    n: float = 2.0,
+    *,
+    modified: bool = False,
 ) -> Union[float, np.ndarray]:
     """
     Calculate water saturation using the Simandoux equation.
 
     1/Rt = (phi^m / (a * Rw)) * Sw^n  +  (Vcl / Rcl) * Sw
+
+    This is the Simandoux equation with Sw in the clay term (Bardon and Pied,
+    1969). ``modified=True`` gives the modified Simandoux equation, whose
+    sand term is divided by (1 - Vcl):
+
+    1/Rt = (phi^m / (a * Rw * (1 - Vcl))) * Sw^n  +  (Vcl / Rcl) * Sw
 
     For n=2 an exact quadratic solution is used.
     For n != 2 the equation is solved numerically via Brent's method.
@@ -52,6 +70,9 @@ def simandoux(
         Cementation exponent (default: 2.0)
     n : float, optional
         Saturation exponent (default: 2.0)
+    modified : bool, optional
+        Divide the sand term by (1 - Vcl), the modified Simandoux equation
+        (default: False). Vcl is capped at 0.99 there.
 
     Returns
     -------
@@ -86,6 +107,8 @@ def simandoux(
     rcl = max(rcl, 1e-10)
 
     A = np.power(phi, m) / (a * rw)   # coefficient on Sw^n
+    if modified:
+        A = A / (1.0 - np.clip(vcl, 0.0, 0.99))
     B = vcl / rcl                      # coefficient on Sw
     C = 1.0 / rt                       # RHS
 
@@ -130,3 +153,29 @@ def simandoux(
     sw = np.where(invalid, np.nan, sw)
     sw = np.clip(sw, 0, 1)
     return float(sw[0]) if scalar else sw
+
+
+def modified_simandoux(
+    rt: Union[float, np.ndarray],
+    rw: float,
+    phi: Union[float, np.ndarray],
+    vcl: Union[float, np.ndarray],
+    rcl: float,
+    a: float = 1.0,
+    m: float = 2.0,
+    n: float = 2.0,
+) -> Union[float, np.ndarray]:
+    """
+    Calculate water saturation using the modified Simandoux equation.
+
+    1/Rt = (phi^m / (a * Rw * (1 - Vcl))) * Sw^n  +  (Vcl / Rcl) * Sw
+
+    The form many service-company reports use. Parameters and returns are
+    those of :func:`simandoux`.
+
+    Examples
+    --------
+    >>> round(modified_simandoux(rt=10.0, rw=0.05, phi=0.2, vcl=0.2, rcl=2.0), 3)
+    0.27
+    """
+    return simandoux(rt, rw, phi, vcl, rcl, a, m, n, modified=True)

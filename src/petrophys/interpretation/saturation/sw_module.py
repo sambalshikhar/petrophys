@@ -30,7 +30,7 @@ from petrophys.model.constants import DefaultParameters
 from petrophys.interpretation.saturation.archie import archie
 from petrophys.interpretation.saturation.north_sea import north_sea_shaly_sand
 from petrophys.interpretation.saturation.nigeria_schlumberger import nigeria_schlumberger
-from petrophys.interpretation.saturation.simandoux import simandoux
+from petrophys.interpretation.saturation.simandoux import modified_simandoux, simandoux
 from petrophys.interpretation.saturation.indonesia import indonesia
 from petrophys.interpretation.saturation.dual_water import dual_water
 from petrophys.interpretation.saturation.waxman_smits import waxman_smits
@@ -55,6 +55,7 @@ class SwModel(Enum):
     NORTH_SEA = "north_sea"
     NIGERIA_SCHLUMBERGER = "nigeria_schlumberger"
     SIMANDOUX = "simandoux"
+    MODIFIED_SIMANDOUX = "modified_simandoux"
     INDONESIA = "indonesia"
     DUAL_WATER = "dual_water"
     WAXMAN_SMITS = "waxman_smits"
@@ -561,6 +562,9 @@ class SaturationModule:
 
         if model == SwModel.SIMANDOUX:
             return simandoux(rt, rw, phie, vcl, rsh, a_value, m_value, n_value)
+
+        elif model == SwModel.MODIFIED_SIMANDOUX:
+            return modified_simandoux(rt, rw, phie, vcl, rsh, a_value, m_value, n_value)
 
         elif model == SwModel.INDONESIA:
             return indonesia(rt, rw, phie, vcl, rsh, a_value, m_value, n_value)
