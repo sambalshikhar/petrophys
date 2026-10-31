@@ -4309,10 +4309,8 @@ def _rmf_curve_note(step: Any) -> str:
 
 
 def _rwa_rank_text(params: Mapping[str, Any]) -> str:
-    """How the clean-wet Rwa route picked its value: P5 of Rwa, with or without a temperature correction."""
-    if not params.get("rwa_temperature_corrected"):
-        return "P5"
-    return f"P5 of each sample's RWA corrected to {_format_numeric(params.get('rwa_reference_temp_f'), 0)} F"
+    """How the clean-wet Rwa route picked its value."""
+    return "P5"
 
 
 def _dataset_rw_curve_note(step: Any, well: "Well") -> str:
@@ -4329,7 +4327,7 @@ def _dataset_rw_curve_note(step: Any, well: "Well") -> str:
             f"RW: RWA clean-wet {_rwa_rank_text(params)}; "
             "RWA=RDEP*PHIE^m/a, "
             f"mask=VCL<{params.get('vcl_cutoff')} and PHIE>{params.get('phie_cutoff')}; "
-            f"{'P5' if not params.get('rwa_temperature_corrected') else 'RW'} at reference temperature={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
+            f"{'RW' if params.get('rwa_temperature_corrected') else 'P5'} at reference temperature={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
             f"Tref={_format_numeric(params.get('rwa_reference_temp_f'), 1)} F, "
             f"samples={params.get('rwa_clean_wet_samples')}, "
             + (f"{coeff_text}; " if coeff_text else "")
@@ -4389,7 +4387,8 @@ def _rw_curve_note(step: Any, well: "Well") -> str:
             f"RW: RWA clean-wet {_rwa_rank_text(params)}; "
             "RWA=RDEP*PHIE^m/a, "
             f"mask=VCL<{params.get('vcl_cutoff')} and PHIE>{params.get('phie_cutoff')}; "
-            f"{'P5' if not params.get('rwa_temperature_corrected') else 'RW at 75 F'}={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
+            + (f"RW at {_format_numeric(params.get('rwa_reference_temp_f'), 0)} F" if params.get("rwa_temperature_corrected") else "P5")
+            + f"={_format_numeric(params.get('rw_from_rwa'), 4)} ohm.m, "
             f"samples={params.get('rwa_clean_wet_samples')}, "
             f"salinity={_format_numeric(params.get('salinity_ppm_estimated'), 0)} ppm; "
             + (f"{coeff_text}; " if coeff_text else "")

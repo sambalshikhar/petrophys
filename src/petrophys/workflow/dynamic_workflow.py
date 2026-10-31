@@ -6986,7 +6986,7 @@ class DynamicWorkflow:
                     rw_value = float(rw_from_salinity(salinity_est, rwa_reference_temp))
                     rw_curve = rw_from_salinity(salinity_est, temp_profile)
                     temperature_text = (
-                        f"each sample's Rwa corrected to {_RWA_REFERENCE_TEMP_F:g} degF before the P5, "
+                        f"each sample taken to {_RWA_REFERENCE_TEMP_F:g} degF, "
                         "then depth-wise temperature correction"
                     )
                     estimate = {
