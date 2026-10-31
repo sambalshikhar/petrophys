@@ -1,5 +1,10 @@
 """
 Moveable Hydrocarbon Index calculation module.
+
+References
+----------
+Asquith, G. and Krygowski, D. (2004). *Basic Well Log Analysis*, 2nd ed.
+AAPG Methods in Exploration 16.
 """
 
 from typing import TYPE_CHECKING, Optional, Union

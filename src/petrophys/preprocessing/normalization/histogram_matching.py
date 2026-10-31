@@ -3,6 +3,14 @@ Histogram matching and equalization for log normalization.
 
 This module provides histogram-based normalization methods
 for matching log distributions between wells.
+
+References
+----------
+Gonzalez, R.C. and Woods, R.E. (2008). *Digital Image Processing*, 3rd ed.
+Pearson Prentice Hall.
+
+Shier, D.E. (2004). Well log normalization: methods and guidelines.
+*Petrophysics* 45(3), 268-280.
 """
 
 from typing import Optional, Tuple

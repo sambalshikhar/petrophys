@@ -3,6 +3,12 @@ Temperature correction for Rw.
 
 This module provides temperature correction utilities
 specifically for formation water resistivity.
+
+References
+----------
+Arps, J.J. (1953). The effect of temperature on the density and electrical
+resistivity of sodium chloride solutions. *Petroleum Transactions, AIME* 198,
+Technical Note 195.
 """
 
 from typing import Optional, Union

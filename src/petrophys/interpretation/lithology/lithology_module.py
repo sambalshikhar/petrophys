@@ -3,6 +3,10 @@ Main lithology determination module.
 
 This module provides the LithologyModule class for comprehensive
 lithology analysis from well logs.
+
+References
+----------
+Schlumberger (1989). *Log Interpretation Principles/Applications*.
 """
 from typing import TYPE_CHECKING, Optional, List
 from dataclasses import dataclass

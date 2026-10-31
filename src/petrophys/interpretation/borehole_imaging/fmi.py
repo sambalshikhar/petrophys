@@ -4,6 +4,12 @@ FMI orientation, equalization, and display helpers.
 This module builds on :class:`petrophys.interpretation.borehole_imaging.BoreholeImageData` for
 Schlumberger FMI-style electrical image logs. It keeps the generic image
 container separate from FMI-specific tool geometry and navigation handling.
+
+References
+----------
+Ekstrom, M.P., Dahan, C.A., Chen, M.-Y., Lloyd, P.M. and Rossi, D.J. (1987).
+Formation imaging with microelectrical scanning arrays. *The Log Analyst*
+28(3), 294-306.
 """
 
 from __future__ import annotations

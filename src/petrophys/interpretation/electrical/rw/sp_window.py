@@ -13,6 +13,17 @@ window function worth having:
   temperature of the samples used. Comparing it with another Rw quoted at a
   different temperature is a classic error, so the result is Arps-shifted to a
   reference temperature you choose.
+
+References
+----------
+Arps, J.J. (1953). The effect of temperature on the density and electrical
+resistivity of sodium chloride solutions. *Petroleum Transactions, AIME* 198,
+Technical Note 195.
+
+Asquith, G. and Krygowski, D. (2004). *Basic Well Log Analysis*, 2nd ed. AAPG
+Methods in Exploration 16.
+
+Schlumberger (1989). *Log Interpretation Principles/Applications*.
 """
 
 from __future__ import annotations

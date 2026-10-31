@@ -4,6 +4,11 @@ Core image color analysis from optical scanning.
 Loads RGB and HSV color measurements extracted from continuous core
 slab photographs and computes brightness/color indices used as
 lithology proxies in digital core workflows.
+
+References
+----------
+Smith, A.R. (1978). Color gamut transform pairs. *Computer Graphics*
+(SIGGRAPH '78) 12(3), 12-19.
 """
 
 from typing import Optional, Union, Dict, Any

@@ -8,6 +8,11 @@ Mnemonic families are based on the Energistics Practical Well Log Standard
 (PWLS) curve catalog and public service-company curve dictionaries.  A name is
 never the only evidence for ambiguous one-letter curves: units and curve
 descriptions are also checked before a candidate is accepted.
+
+References
+----------
+Ellis, D.V. and Singer, J.M. (2007). *Well Logging for Earth Scientists*, 2nd
+ed. Springer.
 """
 
 from __future__ import annotations

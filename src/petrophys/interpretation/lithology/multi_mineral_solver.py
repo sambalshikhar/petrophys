@@ -3,6 +3,14 @@ Multi-mineral solver for lithology determination.
 
 This module provides solvers for determining mineral fractions
 from multiple log measurements using simultaneous equations.
+
+References
+----------
+Doveton, J.H. (1994). *Geologic Log Analysis Using Computer Methods*.
+AAPG Computer Applications in Geology 2.
+
+Lawson, C.L. and Hanson, R.J. (1974). *Solving Least Squares Problems*.
+Prentice-Hall.
 """
 
 from typing import Dict, Mapping, Optional, Sequence, Tuple, Union

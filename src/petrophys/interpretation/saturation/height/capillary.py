@@ -13,6 +13,11 @@ Lab -> reservoir Pc conversion:
     Pc_res = Pc_lab * (sigma_res*cos t_res) / (sigma_lab*cos t_lab)
 Leverett J-function (dimensionless):
     J = 0.21645 * (Pc / (sigma*cos t)) * sqrt(k/phi)
+
+References
+----------
+Leverett, M.C. (1941). Capillary behavior in porous solids. *Transactions
+of the AIME* 142, 152-169.
 """
 
 from __future__ import annotations

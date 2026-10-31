@@ -3,6 +3,13 @@ Crossplot data generation for lithology analysis.
 
 This module provides functions to prepare data for
 lithology crossplots (N-D, M-N, PEF).
+
+References
+----------
+Burke, J.A., Campbell, R.L. and Schmidt, A.W. (1969). The litho-porosity
+cross plot. SPWLA 10th Annual Logging Symposium.
+
+Schlumberger (1989). *Log Interpretation Principles/Applications*.
 """
 
 from typing import Dict, Tuple, Optional

@@ -3,6 +3,18 @@ Waxman-Smits equation for water saturation in shaly clastics with CEC data.
 
 This module implements the Waxman-Smits model which accounts for
 clay conductivity through the cation exchange capacity (CEC).
+
+References
+----------
+Grim, R.E. (1968). *Clay Mineralogy*, 2nd ed. McGraw-Hill.
+
+Waxman, M.H. and Smits, L.J.M. (1968). Electrical conductivities in
+oil-bearing shaly sands. *SPE Journal* 8(2), 107-122.
+
+Waxman, M.H. and Thomas, E.C. (1974). Electrical conductivities in shaly
+sands - I. The relation between hydrocarbon saturation and resistivity
+index; II. The temperature coefficient of electrical conductivity. *SPE
+Journal* 14(2).
 """
 
 from typing import Union

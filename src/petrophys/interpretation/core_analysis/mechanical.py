@@ -4,6 +4,11 @@ Core mechanical properties from high-resolution scanning.
 Loads UCS (Unconfined Compressive Strength), P-wave velocity (Vp),
 and S-wave velocity (Vs) measured on continuous core at centimetre
 resolution, and derives dynamic elastic moduli.
+
+References
+----------
+Mavko, G., Mukerji, T. and Dvorkin, J. (2009). *The Rock Physics Handbook*,
+2nd ed. Cambridge University Press.
 """
 
 from typing import Optional, Union, Dict, List, Any

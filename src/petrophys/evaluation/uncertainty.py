@@ -20,6 +20,14 @@ correlations between inputs are not modelled.
 Percentiles follow statistics: ``p10`` is the value 10 % of outcomes fall
 below. Reserves reporting names the high case P10 (exceeded with 10 %
 probability), which is this ``p90``.
+
+References
+----------
+Metropolis, N. and Ulam, S. (1949). The Monte Carlo method. *Journal of
+the American Statistical Association* 44(247), 335-341.
+
+Spearman, C. (1904). The proof and measurement of association between two
+things. *American Journal of Psychology* 15(1), 72-101.
 """
 
 from __future__ import annotations

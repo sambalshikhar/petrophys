@@ -2,6 +2,11 @@
 Total porosity calculation.
 
 This module provides total porosity from neutron-density combination.
+
+References
+----------
+Gaymard, R. and Poupon, A. (1968). Response of neutron and formation
+density logs in hydrocarbon bearing formations. *The Log Analyst* 9(5).
 """
 
 from typing import Union

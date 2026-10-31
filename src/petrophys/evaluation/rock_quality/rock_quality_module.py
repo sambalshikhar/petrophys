@@ -6,6 +6,21 @@ Equations
 RQI  = 0.0314 * sqrt(k / phi_e)
 phi_z = phi_e / (1 - phi_e)
 FZI  = RQI / phi_z
+
+References
+----------
+Amaefule, J.O., Altunbay, M., Tiab, D., Kersey, D.G. and Keelan, D.K.
+(1993). Enhanced reservoir description: using core and log data to identify
+hydraulic (flow) units and predict permeability in uncored intervals/wells.
+SPE 26436, SPE Annual Technical Conference and Exhibition.
+
+Kolodzie, S. Jr. (1980). Analysis of pore throat size and use of the
+Waxman-Smits equation to determine OOIP in Spindle Field, Colorado.
+SPE 9382, SPE Annual Technical Conference and Exhibition.
+
+Martin, A.J., Solomon, S.T. and Hartmann, D.J. (1997). Characterization of
+petrophysical flow units in carbonate reservoirs. *AAPG Bulletin* 81(5),
+734-759.
 """
 
 from typing import TYPE_CHECKING, Optional, Union

@@ -7,6 +7,32 @@ literature and is deliberately independent of any specific vendor algorithm.
 
 Units: slowness in us/ft, velocity in m/s, density in g/cc, moduli in GPa.
   K [GPa] = density[g/cc] * V[m/s]^2 / 1e6
+
+References
+----------
+Gassmann, F. (1951). Über die Elastizität poröser Medien.
+*Vierteljahrsschrift der Naturforschenden Gesellschaft in Zürich* 96, 1-23.
+
+Greenberg, M.L. and Castagna, J.P. (1992). Shear-wave velocity estimation
+in porous rocks: theoretical formulation, preliminary verification and
+applications. *Geophysical Prospecting* 40, 195-209.
+
+Krief, M., Garat, J., Stellingwerff, J. and Ventre, J. (1990). A
+petrophysical interpretation using the velocities of P and S waves
+(full-waveform sonic). *The Log Analyst* 31(6).
+
+Mavko, G., Mukerji, T. and Dvorkin, J. (2009). *The Rock Physics
+Handbook*, 2nd ed. Cambridge University Press.
+
+Nur, A., Mavko, G., Dvorkin, J. and Galmudi, D. (1998). Critical porosity:
+a key to relating physical properties to porosity in rocks. *The Leading
+Edge* 17(3), 357-362.
+
+Reuss, A. (1929). Berechnung der Fließgrenze von Mischkristallen auf Grund
+der Plastizitätsbedingung für Einkristalle. *Zeitschrift für Angewandte
+Mathematik und Mechanik* 9, 49-58.
+
+Wood, A.B. (1955). *A Textbook of Sound*, 3rd ed.
 """
 
 from __future__ import annotations

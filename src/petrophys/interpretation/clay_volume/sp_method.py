@@ -4,6 +4,13 @@ SP-based clay volume calculation.
 This module provides clay volume calculation from spontaneous potential.
 
 Note: SP should be discarded if clay or KCl is used in the drilling mud.
+
+References
+----------
+Asquith, G. and Krygowski, D. (2004). *Basic Well Log Analysis*, 2nd ed.
+AAPG Methods in Exploration 16.
+
+Schlumberger (1989). *Log Interpretation Principles/Applications*.
 """
 
 from typing import Union

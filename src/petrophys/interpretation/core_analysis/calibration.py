@@ -7,6 +7,18 @@ Provides functions for:
 - Grain density correction for density porosity
 - Archie parameter estimation from core Sw
 - Statistical comparison (R², bias, RMSE)
+
+References
+----------
+Archie, G.E. (1942). The electrical resistivity log as an aid in determining
+some reservoir characteristics. *Transactions of the AIME* 146, 54-62.
+
+Winsauer, W.O., Shearin, H.M., Masson, P.H. and Williams, M. (1952).
+Resistivity of brine-saturated sands in relation to pore geometry. *AAPG
+Bulletin* 36(2), 253-277.
+
+Asquith, G. and Krygowski, D. (2004). *Basic Well Log Analysis*, 2nd ed.
+AAPG Methods in Exploration 16.
 """
 
 from typing import Optional, Tuple, Dict, Union, Iterable

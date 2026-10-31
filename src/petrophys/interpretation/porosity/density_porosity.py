@@ -2,6 +2,14 @@
 Density porosity calculation.
 
 This module provides density-derived porosity from bulk density.
+
+References
+----------
+Tittman, J. and Wahl, J.S. (1965). The physical foundations of formation
+density logging (gamma-gamma). *Geophysics* 30(2), 284-294.
+
+Asquith, G. and Krygowski, D. (2004). *Basic Well Log Analysis*, 2nd ed.
+AAPG Methods in Exploration 16.
 """
 
 from typing import Union

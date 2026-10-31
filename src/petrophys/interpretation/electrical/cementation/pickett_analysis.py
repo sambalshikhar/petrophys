@@ -1,5 +1,13 @@
 """
 Pickett plot analysis for Archie parameter determination.
+
+References
+----------
+Pickett, G.R. (1966). A review of current techniques for determination of
+water saturation from logs. *Journal of Petroleum Technology* 18(11).
+
+Archie, G.E. (1942). The electrical resistivity log as an aid in determining
+some reservoir characteristics. *Transactions of the AIME* 146, 54-62.
 """
 
 from typing import Tuple, Optional

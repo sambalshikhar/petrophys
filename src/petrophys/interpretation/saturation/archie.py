@@ -2,6 +2,15 @@
 Archie equation for water saturation.
 
 This module provides the classic Archie equation for clean formations.
+
+References
+----------
+Archie, G.E. (1942). The electrical resistivity log as an aid in determining
+some reservoir characteristics. *Transactions of the AIME* 146, 54-62.
+
+Winsauer, W.O., Shearin, H.M., Masson, P.H. and Williams, M. (1952).
+Resistivity of brine-saturated sands in relation to pore geometry. *AAPG
+Bulletin* 36(2), 253-277.
 """
 
 from typing import Union

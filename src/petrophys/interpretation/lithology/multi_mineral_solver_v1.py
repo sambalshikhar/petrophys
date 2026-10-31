@@ -22,6 +22,18 @@ Version 2 (:class:`~petrophys.interpretation.lithology.MultiMineralSolver`)
 solves porosity jointly with the minerals (or constrains it with core
 porosity), so the mineral result does not depend on a pre-computed PHIE, and
 reports underdetermined samples instead of gating them.
+
+References
+----------
+Mayer, C. and Sibbit, A. (1980). GLOBAL, a new approach to
+computer-processed log interpretation. SPE 9341.
+
+Quirein, J., Kimminau, S., Lavigne, J., Singer, J. and Wendel, F. (1986).
+A coherent framework for developing and applying multiple formation
+evaluation models. SPWLA 27th Annual Logging Symposium.
+
+Lawson, C.L. and Hanson, R.J. (1974). *Solving Least Squares Problems*.
+Prentice-Hall.
 """
 
 from types import MappingProxyType

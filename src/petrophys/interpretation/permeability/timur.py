@@ -1,5 +1,11 @@
 """
 Timur equation for permeability estimation.
+
+References
+----------
+Timur, A. (1968). An investigation of permeability, porosity, and residual
+water saturation relationships for sandstone reservoirs. *The Log Analyst*
+9(4), 8-17.
 """
 
 from typing import Union

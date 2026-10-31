@@ -1,5 +1,24 @@
 """
 Coates-Denoo and Wyllie-Rose permeability from porosity and irreducible water saturation.
+
+References
+----------
+Coates, G.R. and Denoo, S. (1981). The producibility answer product.
+*The Technical Review* (Schlumberger) 29(2).
+
+Wyllie, M.R.J. and Rose, W.D. (1950). Some theoretical considerations
+related to the quantitative evaluation of the physical characteristics of
+reservoir rock from electrical log data. *Transactions of the AIME* 189.
+
+Tixier, M.P. (1949). Evaluation of permeability from electric-log
+resistivity gradients. *Oil and Gas Journal*.
+
+Morris, R.L. and Biggs, W.P. (1967). Using log-derived values of water
+saturation and porosity. SPWLA 8th Annual Logging Symposium.
+
+Timur, A. (1968). An investigation of permeability, porosity, and residual
+water saturation relationships for sandstone reservoirs. *The Log Analyst*
+9(4), 8-17.
 """
 
 from typing import Optional, Union

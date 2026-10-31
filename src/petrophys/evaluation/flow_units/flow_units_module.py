@@ -15,6 +15,13 @@ mean FZI.
 This module determines the units from the FZI distribution (1-D k-means on
 log10 FZI, or explicit cutoffs) and predicts permeability from each sample's
 unit-mean FZI.
+
+References
+----------
+Amaefule, J.O., Altunbay, M., Tiab, D., Kersey, D.G. and Keelan, D.K.
+(1993). Enhanced reservoir description: using core and log data to identify
+hydraulic (flow) units and predict permeability in uncored intervals/wells.
+SPE 26436, SPE Annual Technical Conference and Exhibition.
 """
 from dataclasses import dataclass, field
 import warnings

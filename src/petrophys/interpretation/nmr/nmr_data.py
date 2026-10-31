@@ -10,6 +10,15 @@ T2 bin centres default to [4, 8, 16, 32, 64, 128, 256, 512] ms with
 a default T2 cutoff of 33 ms (clastic); the bins below the cutoff sum to
 MBVI and those above it to MFFI, and the bin that straddles the cutoff is
 split by log-T2 width.
+
+References
+----------
+Kenyon, W.E., Day, P.I., Straley, C. and Willemsen, J.F. (1988). A
+three-part study of NMR longitudinal relaxation properties of water-saturated
+sandstones. *SPE Formation Evaluation* 3(3), 622-636.
+
+Coates, G.R., Xiao, L. and Prammer, M.G. (1999). *NMR Logging Principles
+and Applications*. Halliburton Energy Services, Houston.
 """
 
 from __future__ import annotations

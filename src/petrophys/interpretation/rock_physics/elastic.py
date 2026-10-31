@@ -1,5 +1,10 @@
 """
 Elastic rock-property calculations from density and sonic logs.
+
+References
+----------
+Mavko, G., Mukerji, T. and Dvorkin, J. (2009). *The Rock Physics Handbook*,
+2nd ed. Cambridge University Press.
 """
 
 from __future__ import annotations

@@ -14,6 +14,15 @@ Default mnemonic families are drawn from the Energistics PWLS curve catalog:
 Description-based matching provides a vendor-neutral fallback for Weatherford
 and other deliveries whose public product literature defines the measurement
 but not a stable LAS mnemonic.
+
+References
+----------
+Hertzog, R., Colson, L., Seeman, B., et al. (1989). Geochemical logging with
+spectrometry tools. *SPE Formation Evaluation* 4(2), 153-162.
+
+Grau, J.A., Schweitzer, J.S., Ellis, D.V. and Hertzog, R.C. (1989). A
+geological model for gamma-ray spectroscopy logging measurements. *Nuclear
+Geophysics* 3(4), 351-359.
 """
 
 from __future__ import annotations
