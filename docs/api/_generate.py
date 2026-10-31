@@ -202,7 +202,7 @@ The rest of the reference documents what these calls are built from.""",
                 title="Datasets",
                 groups=[
                     ("Bundled samples", "sample list_samples"),
-                    ("Repository fixtures", "integration_fixture list_integration_fixtures"),
+                    ("Large fixtures", "integration_fixture list_integration_fixtures data_dir"),
                 ],
             ),
             Section("petrophys.exceptions", title="Exceptions"),

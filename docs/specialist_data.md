@@ -232,7 +232,7 @@ The low R² is typical of a heterogeneous carbonate with one assumed FWL. Better
 
 ## Borehole images
 
-Petrophys orients, equalizes, measures coverage of and draws image logs; it does not pick dips or fractures. This cell needs `petrophys[dlis]` and a Git LFS image file, so it does not run here.
+Petrophys orients, equalizes, measures coverage of and draws image logs; it does not pick dips or fractures. This cell needs `petrophys[dlis]` and a 112 MB image file that `integration_fixture` downloads on first use, so it does not run here.
 
 ```{code-cell} python
 :tags: [skip-execution]
@@ -240,9 +240,10 @@ Petrophys orients, equalizes, measures coverage of and draws image logs; it does
 from petrophys.interpretation.borehole_imaging import (
     azimuthal_coverage, orient_to_azimuth, plot_fmi, read_fmi_dlis,
 )
+from petrophys.datasets import integration_fixture
 from petrophys.visualization import create_fmi_panel
 
-image = read_fmi_dlis("daydream1_fmi_processed_dynamic_image.dlis")
+image = read_fmi_dlis(integration_fixture("daydream1_fmi_processed_dynamic_image.dlis"))
 window = image.filter_by_depth(2900.0, 2910.0)       # cut a window before orienting
 oriented = orient_to_azimuth(window, n_azimuth=180, reference="north")
 print(f"Imaged circumference: {np.nanmean(azimuthal_coverage(oriented)):.0%}")

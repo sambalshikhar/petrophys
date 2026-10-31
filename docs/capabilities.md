@@ -223,7 +223,7 @@ Orient, equalize and display processed FMI (resistivity image) arrays from DLIS 
 
 `read_fmi_dlis(path)` · `create_fmi_panel(image)`
 
-They need `petrophys[dlis]` and a Git LFS file, so they do not run here.
+They need `petrophys[dlis]` and a 112 MB image file that `integration_fixture` downloads on first use, so they do not run here.
 +++
 {doc}`Tutorial 16: borehole images <tutorials/part_b/16_borehole_image_fmi>`
 :::

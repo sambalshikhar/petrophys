@@ -261,14 +261,17 @@ extension: LAS, DLIS, CSV or TSV. `pattern` selects the files (default
 `"*.las"`), and `reader_options` go to the reader.
 
 DLIS uses the same interpretation and category exporters as LAS. For example,
-from a repository checkout, generate all six categories for the deep Daydream-1
-delivery:
+generate all six categories for the deep Daydream-1 delivery.
+{func}`~petrophys.datasets.integration_fixture` downloads the 173 MB file on
+first use and keeps it for later runs:
 
 ```python
 import petrophys as pp
+from petrophys.datasets import integration_fixture
 
+dlis = integration_fixture("daydream1_deep_pex_aps_ppc_ecs.dlis")
 records = pp.export_context(
-    "src/petrophys/datasets/daydream",
+    dlis.parent,
     "outputs/daydream_context",
     layout="category_formation_lithology",
     pattern="daydream1_deep_pex_aps_ppc_ecs.dlis",
@@ -288,10 +291,11 @@ and lithology intervals. Without matched tops, the exporter uses `WHOLE_WELL`;
 without lithology information, it records that absence. DLIS alone does not
 supply missing geological picks or core measurements.
 
-The corresponding command is:
+The corresponding command, given the folder that holds the file
+(`integration_fixture(...).parent`), is:
 
 ```bash
-petrophys-context src/petrophys/datasets/daydream outputs/daydream_context_cli \
+petrophys-context <folder> outputs/daydream_context_cli \
   --layout category_formation_lithology \
   --pattern daydream1_deep_pex_aps_ppc_ecs.dlis --dlis-step 0.1524
 ```
