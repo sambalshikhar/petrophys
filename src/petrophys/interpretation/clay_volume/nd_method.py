@@ -1,5 +1,9 @@
 """
 Neutron-Density clay volume calculation.
+
+References
+----------
+Crain, E.R. (1986). *The Log Analysis Handbook*. PennWell Books, Tulsa.
 """
 from typing import Union, Tuple
 import numpy as np

@@ -28,7 +28,7 @@ class WellboreQC:
     (the rolling standard deviation of dCALI/dDepth, with the depth converted
     to metres whatever the well's depth unit); ``washout_threshold`` is the
     overgauge limit in inches, flagging CALI - BS above it; ``drho_threshold``
-    is the |DRHO| limit in g/cc used where the caliper cannot be evaluated.
+    is the ``|DRHO|`` limit in g/cc used where the caliper cannot be evaluated.
     """
 
     CATEGORY_KEY = "WELLBORE_QUALITY_CONTROL"

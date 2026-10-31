@@ -360,6 +360,13 @@ def attach_survey(
         (:func:`depth_reference_elevation`) when not given. Without one,
         only ``TVD`` is added.
 
+    Returns
+    -------
+    Survey
+        The survey the curves were computed from.
+
+    Notes
+    -----
     ``TVD`` is below the log's depth reference; ``TVDSS`` = TVD - elevation,
     positive below sea level. The survey is converted to the well's depth
     unit. The source and elevation are recorded in the well parameters

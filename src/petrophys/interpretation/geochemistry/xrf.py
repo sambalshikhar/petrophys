@@ -4,6 +4,13 @@ XRF (X-Ray Fluorescence) geochemistry data from core analysis.
 Loads elemental concentration logs measured on core by XRF scanning,
 computes standard elemental ratios, and derives mineral proxy indices
 useful for lithology discrimination and multi-mineral interpretation.
+
+References
+----------
+Rothwell, R.G. and Croudace, I.W. (2015). Twenty years of XRF core scanning
+marine sediments: what do geochemical proxies tell us? In Croudace, I.W. and
+Rothwell, R.G. (eds.), *Micro-XRF Studies of Sediment Cores*. Developments in
+Paleoenvironmental Research 17, Springer, 25-102.
 """
 
 from typing import Optional, Union, Dict, List, Any

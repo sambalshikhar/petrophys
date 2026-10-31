@@ -3,6 +3,15 @@ NMR permeability calibration against core data.
 
 Provides closed-form fitting of SDR and Timur-Coates constants in log space,
 with optional full exponent fitting for Coates via linear regression.
+
+References
+----------
+Kenyon, W.E., Day, P.I., Straley, C. and Willemsen, J.F. (1988). A
+three-part study of NMR longitudinal relaxation properties of water-saturated
+sandstones. *SPE Formation Evaluation* 3(3), 622-636.
+
+Coates, G.R., Xiao, L. and Prammer, M.G. (1999). *NMR Logging Principles
+and Applications*. Halliburton Energy Services, Houston.
 """
 
 from __future__ import annotations

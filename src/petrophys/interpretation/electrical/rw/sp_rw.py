@@ -3,6 +3,13 @@ SP-based Rw calculation.
 
 This module provides formation water resistivity calculation
 from spontaneous potential (SP) log.
+
+References
+----------
+Asquith, G. and Krygowski, D. (2004). *Basic Well Log Analysis*, 2nd ed. AAPG
+Methods in Exploration 16.
+
+Schlumberger (1989). *Log Interpretation Principles/Applications*.
 """
 
 from typing import Tuple, Union

@@ -5,6 +5,15 @@ Clusters depth samples using multiple core measurements
 (mechanical, geochemical, textural) into discrete facies classes,
 following the EpsLog/Stratum Reservoir workflow that combines grain
 size, elemental concentrations, strength, and image color indices.
+
+References
+----------
+Lloyd, S.P. (1982). Least squares quantization in PCM. *IEEE Transactions on
+Information Theory* 28(2), 129-137.
+
+Arthur, D. and Vassilvitskii, S. (2007). k-means++: the advantages of careful
+seeding. *Proceedings of the 18th Annual ACM-SIAM Symposium on Discrete
+Algorithms*, 1027-1035.
 """
 
 from typing import Optional, Union, Dict, List, Any

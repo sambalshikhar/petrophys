@@ -3,6 +3,15 @@ Temperature corrections for resistivity measurements.
 
 This module provides functions for correcting resistivity
 measurements to formation temperature.
+
+References
+----------
+Arps, J.J. (1953). The effect of temperature on the density and electrical
+resistivity of sodium chloride solutions. *Petroleum Transactions, AIME* 198,
+Technical Note 195.
+
+Bateman, R.M. and Konen, C.E. (1977). The log analyst and the programmable
+pocket calculator. *The Log Analyst* 18.
 """
 
 from typing import Union

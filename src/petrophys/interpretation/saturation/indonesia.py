@@ -3,6 +3,11 @@ Indonesia (Poupon-Leveaux) equation for water saturation.
 
 This module provides the Indonesia equation for shaly sands,
 particularly suited for formations with lower salinity.
+
+References
+----------
+Poupon, A. and Leveaux, J. (1971). Evaluation of water saturation in shaly
+formations. SPWLA 12th Annual Logging Symposium.
 """
 
 from typing import Union

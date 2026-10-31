@@ -24,6 +24,11 @@ restates ``matrix_type``; the MID plot takes its porosity from the
 density-neutron crossplot instead. Where PEF is logged, the volumetric
 photoelectric factor U (calcite 13.8, dolomite 9.0 b/cm3) separates the two
 almost independently of porosity; this solve does not use it.
+
+References
+----------
+Clavier, C. and Rust, D.H. (1976). MID plot: a new lithology technique.
+*The Log Analyst* 17(6).
 """
 
 from __future__ import annotations

@@ -4,6 +4,14 @@ Dual Water model for water saturation in shaly formations.
 This module implements the Dual Water model which separates total pore
 water into free water (Rw) and bound water associated with clay
 surfaces (Rwb).
+
+References
+----------
+Clavier, C., Coates, G. and Dumanoir, J. (1984). Theoretical and
+experimental bases for the dual-water model for interpretation of shaly
+sands. *SPE Journal* 24(2), 153-168.
+
+Crain, E.R. *Crain's Petrophysical Handbook*.
 """
 
 from typing import Union

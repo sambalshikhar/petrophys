@@ -4,6 +4,27 @@ Grain size analysis from core laser scanning or image analysis.
 Loads grain size distribution data (P13, P50, P87 percentiles) measured
 on continuous core and provides Wentworth classification, sorting, and
 permeability/pore-throat estimates.
+
+References
+----------
+Wentworth, C.K. (1922). A scale of grade and class terms for clastic
+sediments. *Journal of Geology* 30(5), 377-392.
+
+Krumbein, W.C. (1934). Size frequency distributions of sediments. *Journal of
+Sedimentary Petrology* 4(2), 65-77.
+
+Folk, R.L. and Ward, W.C. (1957). Brazos River bar: a study in the
+significance of grain size parameters. *Journal of Sedimentary Petrology*
+27(1), 3-26.
+
+Kozeny, J. (1927). Über kapillare Leitung des Wassers im Boden.
+*Sitzungsberichte der Akademie der Wissenschaften in Wien* 136(2a).
+
+Carman, P.C. (1937). Fluid flow through granular beds. *Transactions of the
+Institution of Chemical Engineers* 15, 150-166.
+
+Beard, D.C. and Weyl, P.K. (1973). Influence of texture on porosity and
+permeability of unconsolidated sand. *AAPG Bulletin* 57(2), 349-369.
 """
 
 from typing import Optional, Union, Dict, Any

@@ -12,6 +12,11 @@ Rearranging:
 with Sw = NaN where the shale term alone exceeds 1 / sqrt(Rt): the equation
 has no solution there. The benchmark context profiles keep the packages'
 original calculation.
+
+References
+----------
+Norwegian Offshore Directorate (Sodir). Well completion reports, FactPages,
+https://factpages.sodir.no. The equation as used in the published reports.
 """
 
 from typing import Union

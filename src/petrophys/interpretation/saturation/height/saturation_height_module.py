@@ -9,6 +9,14 @@ log column. Two fitted models are provided:
 
 The J-function model is the one applied back to logs, because J folds in each
 depth's permeability and porosity.
+
+References
+----------
+Brooks, R.H. and Corey, A.T. (1964). Hydraulic properties of porous media.
+Hydrology Papers 3, Colorado State University.
+
+Leverett, M.C. (1941). Capillary behavior in porous solids. *Transactions
+of the AIME* 142, 152-169.
 """
 
 from __future__ import annotations

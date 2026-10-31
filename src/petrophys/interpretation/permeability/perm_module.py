@@ -1,5 +1,10 @@
 """
 Main permeability estimation module.
+
+References
+----------
+Buckles, R.S. (1965). Correlating and averaging connate water saturation
+data. *Journal of Canadian Petroleum Technology* 4(1).
 """
 
 from typing import TYPE_CHECKING, Optional, Sequence, Union, List, Dict, Any

@@ -3,6 +3,15 @@ Standalone NMR permeability functions.
 
 Use these when you already have T2lm, FFI, and BVI as plain arrays
 and don't need the full NMRData container.
+
+References
+----------
+Kenyon, W.E., Day, P.I., Straley, C. and Willemsen, J.F. (1988). A
+three-part study of NMR longitudinal relaxation properties of water-saturated
+sandstones. *SPE Formation Evaluation* 3(3), 622-636.
+
+Coates, G.R., Xiao, L. and Prammer, M.G. (1999). *NMR Logging Principles
+and Applications*. Halliburton Energy Services, Houston.
 """
 
 from __future__ import annotations

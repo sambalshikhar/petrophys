@@ -34,6 +34,20 @@ Detectability gate (how the unreliability is made honest, not hidden):
   sonic noise. The gate does not include the error of the dry-frame modulus
   (K_dry): with the default calibrated frame a few percent K_dry error can move
   a reported gas Sw by several tenths, so a reported Sw is not error-free.
+
+References
+----------
+Gassmann, F. (1951). Über die Elastizität poröser Medien.
+*Vierteljahrsschrift der Naturforschenden Gesellschaft in Zürich* 96, 1-23.
+
+Greenberg, M.L. and Castagna, J.P. (1992). Shear-wave velocity estimation
+in porous rocks: theoretical formulation, preliminary verification and
+applications. *Geophysical Prospecting* 40, 195-209.
+
+Mavko, G., Mukerji, T. and Dvorkin, J. (2009). *The Rock Physics
+Handbook*, 2nd ed. Cambridge University Press.
+
+Wood, A.B. (1955). *A Textbook of Sound*, 3rd ed.
 """
 
 from __future__ import annotations

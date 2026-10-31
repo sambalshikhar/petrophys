@@ -8,6 +8,14 @@ Archie in the flushed and the uninvaded zone gives Rxo/Rt = (Rmf/Rw) x
 shallow (resistive invasion), with salt mud higher deep (conductive invasion);
 in hydrocarbon-bearing beds the flushed hydrocarbons lower the shallow reading
 (Asquith and Krygowski, Basic Well Log Analysis, 2nd ed., AAPG 2004, ch. 1).
+
+References
+----------
+Archie, G.E. (1942). The electrical resistivity log as an aid in determining
+some reservoir characteristics. *Transactions of the AIME* 146, 54-62.
+
+Asquith, G. and Krygowski, D. (2004). *Basic Well Log Analysis*, 2nd ed. AAPG
+Methods in Exploration 16.
 """
 
 from __future__ import annotations

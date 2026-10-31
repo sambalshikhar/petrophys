@@ -1,5 +1,10 @@
 """
 Hydrocarbon pore volume and reserves calculations.
+
+References
+----------
+Craft, B.C. and Hawkins, M.F. (1991). *Applied Petroleum Reservoir
+Engineering*, 2nd ed., revised by R.E. Terry. Prentice Hall.
 """
 
 from typing import TYPE_CHECKING, Optional, Dict

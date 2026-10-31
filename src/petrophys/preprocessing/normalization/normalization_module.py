@@ -3,6 +3,11 @@ Main log normalization module.
 
 This module provides the NormalizationModule class for normalizing
 well logs to standard ranges or reference wells.
+
+References
+----------
+Shier, D.E. (2004). Well log normalization: methods and guidelines.
+*Petrophysics* 45(3), 268-280.
 """
 
 from typing import TYPE_CHECKING, Optional, Union, Tuple, List

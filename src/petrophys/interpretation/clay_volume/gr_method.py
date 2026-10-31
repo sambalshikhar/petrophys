@@ -3,6 +3,20 @@ Gamma ray-based clay volume methods.
 
 This module provides multiple equations for calculating VCL
 from gamma ray logs.
+
+References
+----------
+Larionov, V.V. (1969). *Borehole Radiometry*. Nedra, Moscow.
+
+Stieber, S.J. (1970). Pulsed neutron capture log evaluation - Louisiana
+Gulf Coast. SPE Annual Fall Meeting.
+
+Clavier, C., Hoyle, W.R. and Meunier, D. (1971). Quantitative
+interpretation of thermal neutron decay time logs: Part I. Fundamentals and
+techniques. *Journal of Petroleum Technology* 23(6).
+
+Asquith, G. and Krygowski, D. (2004). *Basic Well Log Analysis*, 2nd ed.
+AAPG Methods in Exploration 16.
 """
 
 from typing import Tuple, Union

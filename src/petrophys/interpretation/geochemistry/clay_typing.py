@@ -75,8 +75,9 @@ def classify_clay_th_k(
         two small numbers is noise. 0.5 % keeps shaly rock.
     mask : array-like of bool, optional
         Classify only these samples, e.g. ``vcl > 0.3``.
-    thresholds : sequence of (upper bound, name)
-        Th/K bands, low to high; :data:`TH_K_CLAY_TYPES` by default.
+    thresholds : sequence of (float, str)
+        Th/K bands as (upper bound, band name), low to high;
+        :data:`TH_K_CLAY_TYPES` by default.
 
     Returns
     -------
