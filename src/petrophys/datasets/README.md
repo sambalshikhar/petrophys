@@ -9,7 +9,8 @@ the distribution and each collection's README for sources and terms.
   after both `git clone` and `pip install`.
 - Larger native deliveries and validation LAS files live beside related
   samples in the same collection folder. They use Git LFS and are excluded
-  from wheels and source distributions.
+  from wheels and source distributions; `integration_fixture` downloads them
+  on first use.
 
 ## Bundled samples
 
@@ -58,8 +59,9 @@ from petrophys.datasets import integration_fixture
 path = integration_fixture("daydream1_fmi_processed_dynamic_image.dlis")
 ```
 
-Run `git lfs pull` in a source checkout before using these files. Tests skip
-cleanly when optional fixtures are unavailable. See `daydream/README.md` for
+A source checkout's copy is used when it is complete; otherwise the file is
+downloaded once into `data_dir()` (`PETROPHYS_DATA_DIR`) from `DATA_URL`
+(`PETROPHYS_DATA_URL`) and checked against its SHA-256. See `daydream/README.md` for
 provenance, checksums, and validation commands.
 
 The Costa wells are all retained intentionally: the public multiwell notebooks

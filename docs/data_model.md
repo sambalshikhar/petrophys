@@ -220,9 +220,9 @@ print(cmr, f"{cmr.top:.0f} - {cmr.bottom:.0f} {cmr.depth_unit}")
 print(fill(", ".join(cmr.curves), 88))
 ```
 
-The large native Daydream DLIS files are not installed. They are Git LFS files
-in the source repository; after `git lfs pull`,
-{func}`~petrophys.datasets.integration_fixture` returns their paths.
+The large native Daydream DLIS files are not installed:
+{func}`~petrophys.datasets.integration_fixture` downloads one on first use,
+checks its SHA-256 and returns its path.
 
 ```{code-cell} python
 from petrophys.datasets import list_integration_fixtures

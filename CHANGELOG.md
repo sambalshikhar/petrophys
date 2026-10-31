@@ -977,6 +977,11 @@ wherever the package used the function.
   zone summaries keep their thickness-weighted Sw.
 - `well.curves["GR"]` returns the curve, as `well["GR"]` does; `well.curves`
   is the list of curve names.
+- `petrophys.datasets.integration_fixture` downloads a Daydream 1 DLIS or
+  validation LAS on first use, from `DATA_URL` (`PETROPHYS_DATA_URL`) into
+  `data_dir()` (`PETROPHYS_DATA_DIR`), and checks its SHA-256, so the DLIS and
+  FMI examples run after `pip install` without Git LFS. A complete
+  source-checkout copy is used directly; `download=False` never fetches.
 - `petrophys.reporting` exports `export_context_profile`,
   `interpret_with_context_profile`, `interpretation_group_records`,
   `context_group_record` and `context_group_statistics`;

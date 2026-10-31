@@ -232,15 +232,15 @@ Petrophys interprets marl with the limestone matrix and the carbonate cutoffs, a
 
 ## DLIS files
 
-The Daydream scalar and borehole-image DLIS files live in the repository with Git LFS, not in the installed package. From a checkout:
+The Daydream scalar and borehole-image DLIS files are too large for the installed package. `integration_fixture` downloads each one on first use, checks it against its recorded SHA-256 and keeps it in `petrophys.datasets.data_dir()` (set `PETROPHYS_DATA_DIR` to choose the folder):
 
-```bash
-git lfs install
-git lfs pull
-python -m pip install -e ".[dlis,tutorials]"
+```python
+from petrophys.datasets import integration_fixture
+
+path = integration_fixture("daydream1_fmi_processed_dynamic_image.dlis")
 ```
 
-Tutorial 16 needs the real image DLIS, not the LFS pointer. The inventory and checksums are in `src/petrophys/datasets/daydream/README.md`.
+Reading DLIS needs `pip install "petrophys[dlis]"`. A source checkout with `git lfs pull` uses its own copies instead. The inventory and checksums are in `src/petrophys/datasets/daydream/README.md`.
 
 ## Go deeper
 
