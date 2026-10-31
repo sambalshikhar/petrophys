@@ -16,6 +16,7 @@ from petrophys.evaluation.summaries.averages import (
     calculate_zone_averages,
     calculate_pay_averages,
     calculate_weighted_averages,
+    calculate_pore_volume_weighted_sw,
 )
 from petrophys.evaluation.summaries.statistics import (
     curve_statistics,
@@ -65,6 +66,7 @@ __all__ = [
     "calculate_zone_averages",
     "calculate_pay_averages",
     "calculate_weighted_averages",
+    "calculate_pore_volume_weighted_sw",
     # HCPV
     "HCPVResult",
     "calculate_hcpv",
