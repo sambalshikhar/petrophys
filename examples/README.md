@@ -37,7 +37,7 @@ The other extras are only needed by some notebooks:
 
 | Extra | Needed by | Notes |
 |-------|-----------|-------|
-| `ml` | 12, 13, CS4 | Pretrained imputation models; Python 3.11 or later |
+| `ml` | 12, 13, CS4 | scikit-learn, for electrofacies and curve imputation |
 | `dlis` | 16 | DLIS reader; lesson 16 also needs the Git LFS image data |
 | `mcp` | 20 | MCP server; Python 3.10 or later |
 
@@ -82,7 +82,7 @@ vendor permeability from T2 calculations; tutorial 16 needs real Git LFS data.
 | 10 | [`10_dynamic_workflow_glass_box.ipynb`](part_b_advanced/10_dynamic_workflow_glass_box.ipynb) | Input-aware workflow routing and execution traces |
 | 11 | [`11_formation_and_interval_analysis.ipynb`](part_b_advanced/11_formation_and_interval_analysis.ipynb) | Formation tops, zones, and interval summaries |
 | 12 | [`12_core_calibration_and_digital_core.ipynb`](part_b_advanced/12_core_calibration_and_digital_core.ipynb) | Core calibration, digital facies, XRF, and geomechanics |
-| 13 | [`13_ml_curve_imputation.ipynb`](part_b_advanced/13_ml_curve_imputation.ipynb) | Pretrained curve imputation |
+| 13 | [`13_ml_curve_imputation.ipynb`](part_b_advanced/13_ml_curve_imputation.ipynb) | Curve imputation with `pp.impute` |
 | 14 | [`14_nmr_petrophysics.ipynb`](part_b_advanced/14_nmr_petrophysics.ipynb) | NMR porosity, T2 distributions, and permeability |
 | 15 | [`15_capillary_pressure_saturation_height.ipynb`](part_b_advanced/15_capillary_pressure_saturation_height.ipynb) | Capillary pressure and saturation-height models |
 | 16 | [`16_borehole_image_fmi.ipynb`](part_b_advanced/16_borehole_image_fmi.ipynb) | Borehole-image loading and visualization |
@@ -99,8 +99,7 @@ vendor permeability from T2 calculations; tutorial 16 needs real Git LFS data.
 | [`cs1_full_formation_evaluation_30_6-5.ipynb`](case_studies/cs1_full_formation_evaluation_30_6-5.ipynb) | Full clastic formation evaluation, per-formation summary and completion ranking |
 | [`cs2_carbonate_rock_typing_costa.ipynb`](case_studies/cs2_carbonate_rock_typing_costa.ipynb) | Carbonate core calibration and rock typing over the Kharaib-2 interval |
 | [`cs3_field_screening_costa_17wells.ipynb`](case_studies/cs3_field_screening_costa_17wells.ipynb) | Kharaib-2 screening and ranking across 17 COSTA wells |
-| [`cs4_imperfect_well_recovery_16_7-1.ipynb`](case_studies/cs4_imperfect_well_recovery_16_7-1.ipynb) | Data readiness, QC flags and validated imputation on an incomplete log suite (`ml` extra) |
+| [`cs4_imperfect_well_recovery_16_7-1.ipynb`](case_studies/cs4_imperfect_well_recovery_16_7-1.ipynb) | QC flags and validated imputation on an incomplete log suite (`ml` extra) |
 | [`cs5_saturation_model_sensitivity_30_6-5.ipynb`](case_studies/cs5_saturation_model_sensitivity_30_6-5.ipynb) | Saturation-model selection and parameter sensitivity |
 
-Lessons 12, 13 and CS4 need the `ml` extra (scikit-learn, xgboost and joblib;
-Python 3.11 or later); see [Run and Verify](#run-and-verify).
+Lessons 12, 13 and CS4 need the `ml` extra (scikit-learn); see [Run and Verify](#run-and-verify).

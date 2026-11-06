@@ -193,15 +193,3 @@ Source: Teapot Dome data set released by the Rocky Mountain Oilfield Testing
 Center (RMOTC), U.S. Department of Energy, as non-proprietary data; logs
 acquired by Schlumberger for Fenix & Scisson. The LAS files are the original
 deliveries, renamed. Supplied without warranty.
-
-## Pretrained imputation model
-
-File: `src/petrophys/preprocessing/imputation/pretrained/geolink_curve_imputation.joblib`.
-This is a Petrophys-trained model derived from a 205-well GeoLink collection,
-not a model supplied or endorsed by GEOLINK-S2. `validation.json` records the
-training digest, dependencies, held-out-well metrics, and retained targets.
-
-The model is not relicensed here. Its release requires confirmation of the
-training-data provenance and any applicable derived-data/share-alike obligations
-described under GeoLink above. The training code is covered by the software MIT
-licence; the code licence alone does not establish rights to the model artifact.

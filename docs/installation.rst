@@ -41,9 +41,8 @@ Add an extra in square brackets, for example
    * - ``dlis``
      - DLIS scalar-frame and borehole-image reading through ``dlisio``
    * - ``ml``
-     - Pretrained curve imputation and KNN/RF/XGBoost training utilities.
-       The ML stack requires Python 3.11+; on older Pythons the extra
-       installs nothing.
+     - Curve imputation (``pp.impute``) and K-means electrofacies, through
+       scikit-learn.
    * - ``mcp``
      - MCP server so LLM clients can use Petrophys (Python 3.10+); see
        :doc:`mcp`
@@ -134,12 +133,3 @@ pip first:
 .. code-block:: bash
 
    python -m pip install --upgrade pip
-
-Pretrained-model compatibility
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Imputation packs record the scikit-learn, XGBoost, joblib, NumPy, and pandas
-versions used during training. The loader checks compatibility before applying
-a model and raises ``ModelCompatibilityError`` naming the installed and required
-versions. Install the ``ml`` extra (Python 3.11+) rather than mixing an
-arbitrary dependency stack with a bundled pack.

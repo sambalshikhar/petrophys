@@ -47,7 +47,7 @@ Projects
       :link-type: doc
 
       Assess data readiness on well 16/7-1, flag off-scale resistivity and
-      washouts, validate the ML imputer before trusting a synthetic neutron,
+      washouts, test imputation on the well's own density log,
       and report firm versus uncertain net pay. Needs the ``ml`` extra.
 
    .. grid-item-card:: CS5 | Saturation-model sensitivity

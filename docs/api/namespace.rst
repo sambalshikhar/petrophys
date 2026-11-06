@@ -87,19 +87,14 @@ Data model
 Curve imputation
 ----------------
 
-Requires the ``ml`` extra (Python 3.11+).
+Requires the ``ml`` extra.
 
 .. list-table::
    :widths: 38 62
 
-   * - :func:`pp.impute_missing_curve <petrophys.preprocessing.imputation.impute_missing_curve>`
-     - Fill missing samples of one curve with a pretrained model
-   * - :func:`pp.impute_las_file <petrophys.preprocessing.imputation.impute_las_file>`
-     - Impute curves in a LAS file and write the result
-   * - :class:`pp.PretrainedCurveImputer <petrophys.preprocessing.imputation.PretrainedCurveImputer>`,
-       :class:`pp.CurveImputationResult <petrophys.preprocessing.imputation.CurveImputationResult>`,
-       :class:`pp.ModelCompatibilityError <petrophys.preprocessing.imputation.ModelCompatibilityError>`
-     - The imputer, its result and its dependency-version error
+   * - :func:`pp.impute <petrophys.preprocessing.imputation.impute>`
+     - Reconstruct a curve's missing samples with a model trained on the
+       well and any wells you pass; adds ``<CURVE>_IMPUTED``
 
 Classification and diagnostics
 ------------------------------

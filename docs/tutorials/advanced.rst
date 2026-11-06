@@ -29,8 +29,7 @@ use these package extras where needed:
      - Native DLIS frames and borehole-image channels (lesson 16)
    * - Machine learning
      - ``pip install "petrophys[ml]"``
-     - K-means electrofacies (lesson 12) and pretrained curve-imputation
-       models (lesson 13); requires Python 3.11 or later
+     - K-means electrofacies (lesson 12) and curve imputation (lesson 13)
    * - MCP server
      - ``pip install "petrophys[mcp]"``
      - The Petrophys MCP server for LLM agents (lesson 20); requires Python
@@ -81,8 +80,8 @@ Course outline
        against a second well's core.
    * - 13
      - :doc:`ML curve imputation <part_b/13_ml_curve_imputation>`
-     - Fill gaps in existing curves with pretrained models, score them against
-       withheld data, and record provenance.
+     - Rebuild missing curve samples with ``pp.impute``, from the well itself
+       or from other wells, and score the result against withheld data.
    * - 14
      - :doc:`NMR petrophysics <part_b/14_nmr_petrophysics>`
      - Interpret a processed CMR summary log (no T2 bins): bound and free
