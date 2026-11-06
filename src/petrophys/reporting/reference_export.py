@@ -4486,9 +4486,40 @@ def _rejected_core_model_text(params: Mapping[str, Any]) -> str:
     return "; rejected model " + ", ".join(parts) if parts else ""
 
 
+#: Order of the category targets beyond REFERENCE_DERIVED_LOG_TARGETS in the
+#: published Danish package. Its exporter held them in sets, so the package
+#: carries the iteration order of the run that wrote it; read from that package.
+_DANISH_STATUS_TARGET_ORDER = {
+    "hydrocarbon": ("PRIME_GAS_TARGET", "PRIME_OIL_TARGET", "RWA"),
+    "lithology": (
+        "LITHOLOGY_NAME", "GR_CLAY_INDICATOR", "PEF_CLAY_INDICATOR", "DOLOMITE_INDICATOR",
+        "LITHOLOGY_GROUP", "GT_LITHOLOGY_GROUP_CODE", "NPHI_CLAY_INDICATOR",
+        "COMPOSITE_CLAY_INDICATOR", "LIMESTONE_INDICATOR", "CONSISTENCY_SCORE",
+        "CARBONATE_INDICATOR", "COMPOSITE_CLAY",
+    ),
+    "numerical": (
+        "CONSISTENCY_RATIO", "PP_HYDROSTATIC", "NPHI_GRAD", "YOUNG_MOD", "RDEP_GRAD",
+        "DATA_COMPLETENESS", "RHOB_GRAD", "DTC_GRAD", "S_V", "POISSON_RATIO",
+        "ACOUSTIC_IMPEDANCE", "ELECTROFACIES", "SH_MIN", "BRITTLENESS_INDEX", "GR_GRAD",
+    ),
+    "permeability": ("PERM_QUALITY_INDEX", "KH", "RXO_RDEP_RATIO"),
+    "porosity": ("DS_SEPARATION", "PORO_QUALITY_INDEX"),
+    "saturation": ("PHIT_GAS_CORR", "ND_SEPARATION", "RWA"),
+}
+
+
 def _category_status_targets(category: str, well_stem: Optional[str] = None) -> tuple:
     """The status targets of ``category``."""
-    return tuple(CATEGORY_CONTEXT_SPECS[category]["targets"])
+    targets = tuple(CATEGORY_CONTEXT_SPECS[category]["targets"])
+    order = _DANISH_STATUS_TARGET_ORDER.get(category) if _context_dataset() == "danish" else None
+    if not order:
+        return targets
+    rank = {name: index for index, name in enumerate(order)}
+    base = set(REFERENCE_DERIVED_LOG_TARGETS)
+    shared = [name for name in targets if _canonical_delivery_curve_name(name) in base]
+    extra = [name for name in targets if _canonical_delivery_curve_name(name) not in base]
+    extra.sort(key=lambda name: rank.get(_canonical_delivery_curve_name(name), len(rank)))
+    return (*shared, *extra)
 
 
 def _perm_inputs_label(separator: str = " or ") -> str:
