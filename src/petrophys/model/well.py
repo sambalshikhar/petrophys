@@ -211,6 +211,7 @@ class Well:
         self._curves: Dict[str, Curve] = {}
         self._depth: Optional[np.ndarray] = None
         self._depth_unit: str = "ft"
+        self._source_depth_unit_label: Optional[str] = None
         self.header = WellHeader()
         self.header.well_name = name
 

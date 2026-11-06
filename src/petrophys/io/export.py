@@ -92,6 +92,8 @@ def _export_well_parameters(las, well: "Well", used: Optional[Set[str]] = None,
     parameters = getattr(well, "_parameters", {})
     if not parameters:
         return
+    if renamed is None:
+        renamed = {}
 
     for name, value in parameters.items():
         if not isinstance(name, str):
@@ -366,8 +368,8 @@ def export_las(
     )
 
     renamed: Dict[str, str] = {}
-    parameter_names: Optional[Set[str]] = None if historical else set()
-    _export_well_parameters(las, well, parameter_names, renamed)
+    parameter_names: Set[str] = set()
+    _export_well_parameters(las, well, None if historical else parameter_names, renamed)
     for item in extra_parameters or []:
         mnemonic = str(item["mnemonic"])
         las.params.append(
@@ -613,3 +615,11 @@ def export_excel(
         if curve_info:
             curve_df = pd.DataFrame(curve_info)
             curve_df.to_excel(writer, sheet_name="Curve Info", index=False)
+
+        # LAS metadata and mnemonics are data, including strings starting
+        # with '='. Prevent openpyxl from promoting them to Excel formulas.
+        for worksheet in writer.sheets.values():
+            for row in worksheet.iter_rows():
+                for cell in row:
+                    if cell.data_type == "f":
+                        cell.data_type = "s"

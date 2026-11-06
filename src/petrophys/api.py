@@ -266,7 +266,8 @@ def plot(
 
     # A result plots its interpretation: the tops, lithology intervals and
     # lithology codebook it was given, and the curve values it used.
-    result = well if hasattr(well, "well") and hasattr(well, "steps_executed") else None
+    result = cast("Optional[DynamicWorkflowResult]",
+                  well if hasattr(well, "well") and hasattr(well, "steps_executed") else None)
     if result is not None:
         config = result.config
         if formation_tops is None:
@@ -407,7 +408,8 @@ def interpret(
                 "context_profile interprets a package well from its raw LAS file; pass the file path, "
                 f"not a {type(well).__name__}."
             )
-        return interpret_with_context_profile(well, context_profile, tops_file=tops_file)
+        return cast("DynamicWorkflowResult",
+                    interpret_with_context_profile(well, context_profile, tops_file=tops_file))
     if tops_file is not None:
         raise TypeError("tops_file applies only with context_profile.")
     requested_profile = options.get("calculation_profile", getattr(config, "calculation_profile", None))

@@ -137,37 +137,59 @@ def data_dir() -> Path:
 
 
 def _complete(path: Path) -> bool:
-    """True for a full copy of the fixture (not missing, partial or a Git LFS pointer)."""
-    return path.is_file() and path.stat().st_size == _FIXTURE_CHECKSUMS[path.name][0]
+    """True for a complete, checksum-verified copy of a catalogued fixture."""
+    size, expected = _FIXTURE_CHECKSUMS[path.name]
+    if not path.is_file() or path.stat().st_size != size:
+        return False
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest() == expected
 
 
 def _download_fixture(filename: str, target: Path) -> None:
+    from tempfile import NamedTemporaryFile
     import urllib.request
 
     size, sha256 = _FIXTURE_CHECKSUMS[filename]
     url = f"{os.environ.get('PETROPHYS_DATA_URL', DATA_URL).rstrip('/')}/{filename}"
     target.parent.mkdir(parents=True, exist_ok=True)
-    partial = target.with_name(target.name + ".part")
     print(f"Downloading {filename} ({size / 1e6:.0f} MB) to {target.parent} ...", file=sys.stderr)
     digest = hashlib.sha256()
+    # A separate file for each attempt prevents concurrent downloads from
+    # truncating or deleting one another's in-progress data.
+    with NamedTemporaryFile(dir=target.parent, prefix=f".{target.name}.",
+                            suffix=".part", delete=False) as handle:
+        partial = Path(handle.name)
     try:
+        received = 0
         with urllib.request.urlopen(url, timeout=60) as response, open(partial, "wb") as out:
             while True:
                 chunk = response.read(1 << 20)
                 if not chunk:
                     break
+                received += len(chunk)
+                if received > size:
+                    raise OSError(f"{filename} exceeds its recorded size of {size} bytes")
                 digest.update(chunk)
                 out.write(chunk)
+        if received != size or digest.hexdigest() != sha256:
+            raise OSError(f"{filename} from {url} does not match its recorded size and SHA-256")
+        try:
+            os.replace(partial, target)
+        except PermissionError:
+            # Windows may deny replacement while another caller has just
+            # installed/opened the same fixture. Accept only a verified winner.
+            if not _complete(target):
+                raise
     except OSError as exc:
-        partial.unlink(missing_ok=True)
         raise OSError(
             f"Could not download {filename} from {url}: {exc}. Set PETROPHYS_DATA_URL to "
             "another copy, or run `git lfs pull` in a source checkout."
         ) from exc
-    if partial.stat().st_size != size or digest.hexdigest() != sha256:
+    finally:
         partial.unlink(missing_ok=True)
-        raise OSError(f"{filename} from {url} does not match its recorded size and SHA-256")
-    os.replace(partial, target)
 
 
 def integration_fixture(name: str, download: bool = True) -> Path:

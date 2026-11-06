@@ -1359,7 +1359,7 @@ def _run_saturation(ctx: _StepContext, *, model: str, a: float, m: float, n: flo
         model_used = route.split("->", 1)[1]
         ctx.decide(f"{names.get(model_used, model_used)} for {count} shaly carbonate samples: "
                    "Dual Water needs rwb=, which is not estimated")
-    if "waxman_smits" in (result.model_counts or {}):
+    if "waxman_smits" in (result.model_counts or {}) and cec is not None:
         ctx.decide(f"Waxman-Smits with CEC {cec:g} meq/100 g = {cec / 100.0:g} meq/g; "
                    "SW = 1 - (PHIT/PHIE) * (1 - Swt) on the effective basis")
         if result.waxman_smits_clipped_to_zero:
