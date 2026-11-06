@@ -45,9 +45,9 @@ def net_thickness(well: "Well", mask: np.ndarray, cells: bool = True) -> Dict[st
     well's depth step, as the net-pay trace counts it.
     """
     thickness: Dict[str, Any] = {"depth_unit": well.depth_unit}
-    if well.step is None:
+    if well.step is None or well.depth is None:
         return thickness
-    cell = cell_thickness(well.depth)[mask] if cells else None
+    cell = cell_thickness(well.depth)[mask] if cells else np.empty(0)
     for flag in NET_FLAGS:
         curve = well.get(flag)
         if curve is not None:

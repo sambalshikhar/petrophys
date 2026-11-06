@@ -202,21 +202,21 @@ class UnitConverter:
         ValueError
             If either unit is not a recognized temperature unit.
         """
-        from_unit = temperature_unit(from_unit, strict=True)
-        to_unit = temperature_unit(to_unit, strict=True)
+        source = temperature_unit(from_unit, strict=True)
+        destination = temperature_unit(to_unit, strict=True)
 
         # First convert to Celsius
-        if from_unit == "F":
+        if source == "F":
             celsius = (value - 32) * 5 / 9
-        elif from_unit == "K":
+        elif source == "K":
             celsius = value - 273.15
         else:  # Celsius
             celsius = value
 
         # Then convert to target
-        if to_unit == "F":
+        if destination == "F":
             return celsius * 9 / 5 + 32
-        elif to_unit == "K":
+        elif destination == "K":
             return celsius + 273.15
         else:  # Celsius
             return celsius

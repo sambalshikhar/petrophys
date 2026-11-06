@@ -189,7 +189,7 @@ def _field_groups(cls: type) -> Dict[str, str]:
     return groups
 
 
-def _field_choices() -> Dict[str, Sequence[str]]:
+def _field_choices() -> Dict[str, Sequence[Any]]:
     from petrophys.interpretation.clay_volume.gr_method import GR_VCL_METHODS
     from petrophys.interpretation.permeability.perm_module import PERMEABILITY_METHODS
     from petrophys.interpretation.saturation.sw_module import SwModel

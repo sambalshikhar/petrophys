@@ -20,7 +20,7 @@ Pipeline execution order:
     Module 11: Net Pay
 """
 
-from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 import dataclasses
@@ -525,7 +525,7 @@ def _coerce_lithology_group(value: Any) -> Optional[str]:
     return aliases.get(text, text)
 
 
-def _group_array_from_numeric_codes(data: np.ndarray, mapping: Dict[int, str]) -> np.ndarray:
+def _group_array_from_numeric_codes(data: np.ndarray, mapping: Mapping[int, Optional[str]]) -> np.ndarray:
     groups = np.full(data.shape, None, dtype=object)
     finite = np.isfinite(data)
     if not np.any(finite):

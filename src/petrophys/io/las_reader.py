@@ -635,6 +635,8 @@ class LASReader:
                 f"value {token!r} in data row {row + 1}; correct or remove that row."
             )
         null = self._null_value()
+        if values is None:
+            raise ValueError(f"{self.filepath.name}: the index curve {item.mnemonic!r} has no numeric values")
         missing = ~np.isfinite(values)
         for value in {null, -999.25} - {None}:
             missing |= values == value
@@ -696,7 +698,9 @@ class LASReader:
         for section in (self._las.well, self._las.params):
             for item in section:
                 match = re.fullmatch(r"BS(\d+)", str(item.mnemonic).strip().upper())
-                size = self._parse_float(item.value) if match else None
+                if match is None:
+                    continue
+                size = self._parse_float(item.value)
                 if size is None:
                     continue
                 unit = str(item.unit or "").strip()
@@ -727,7 +731,8 @@ class LASReader:
             return
         top = -np.inf
         intervals = []
-        for size, depth, _ in sorted(bits, key=lambda bit: bit[1]):
+        located_bits = [(size, depth, name) for size, depth, name in bits if depth is not None]
+        for size, depth, _ in sorted(located_bits, key=lambda bit: bit[1]):
             intervals.append((top, depth, round(size, 6)))
             top = depth
         well.header.bit_size_intervals = intervals

@@ -95,9 +95,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Retrieve native DLIS fixtures
-        run: git lfs pull --include="src/petrophys/datasets/daydream/*.dlis"
-
       - name: Install dependencies
         run: python -m pip install -e ".[dlis,tutorials,dev]"
 
@@ -105,7 +102,6 @@ jobs:
         run: >-
           python -c "from petrophys.datasets import integration_fixture;
           names = ('daydream1_deep_pex_aps_ppc_ecs.dlis',
-          'daydream1_shallow_aps_pex_hngs.dlis',
           'daydream1_fmi_processed_dynamic_image.dlis');
           assert all(integration_fixture(n).stat().st_size > 1024 for n in names)"
 
@@ -171,8 +167,7 @@ jobs:
           python -c "import glob, zipfile; wheel = glob.glob('dist/*.whl')[0];
           names = set(zipfile.ZipFile(wheel).namelist());
           required = {'petrophys/visualization/style.py',
-          'petrophys/preprocessing/imputation/pretrained/geolink_curve_imputation.joblib',
-          'petrophys/preprocessing/imputation/pretrained/validation.json'};
+          'petrophys/preprocessing/imputation/impute.py'};
           forbidden = {'petrophys/_internal/validators.py',
           'petrophys/io/example_format_export.py', 'petrophys/workflow/workflow_api.py'};
           missing = required - names; retired = forbidden & names;

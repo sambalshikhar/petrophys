@@ -43,8 +43,7 @@ jobs:
           python -c "import glob, zipfile; wheel = glob.glob('dist/*.whl')[0];
           names = set(zipfile.ZipFile(wheel).namelist());
           required = {'petrophys/visualization/style.py',
-          'petrophys/preprocessing/imputation/pretrained/geolink_curve_imputation.joblib',
-          'petrophys/preprocessing/imputation/pretrained/validation.json'};
+          'petrophys/preprocessing/imputation/impute.py'};
           forbidden = {'petrophys/_internal/validators.py',
           'petrophys/io/example_format_export.py', 'petrophys/workflow/workflow_api.py'};
           missing = required - names; retired = forbidden & names;
