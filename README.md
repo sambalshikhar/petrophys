@@ -39,7 +39,7 @@ Optional extras (add in square brackets, e.g. `pip install "petrophys[dlis,mcp]"
 | Extra | Adds |
 |-------|------|
 | `dlis` | DLIS reading (logs and borehole images) |
-| `ml` | Pretrained curve imputation (Python 3.11+) |
+| `ml` | Curve imputation and K-means electrofacies |
 | `mcp` | MCP server for LLM clients (Python 3.10+) |
 | `all` | Everything above |
 

@@ -79,10 +79,10 @@ Standard names and units, range checks, and bad-hole flags from caliper, bit siz
 :::{grid-item-card} ML gap filling
 ```{glue:figure} cap_ml
 ```
-Pretrained models fill only missing DTC, NPHI or RHOB samples; above, their held-out-well scores.
+A model trained on the fly rebuilds a curve from the other logs: above, the
+density of COSTA well HW-24, removed and reconstructed from the 16 other wells.
 
-`pp.impute_missing_curve(well, "RHOB")` fills the gaps in place. It needs
-`petrophys[ml]`, so it does not run here.
+`pp.impute(well, "RHOB", train_wells=[...])` adds `RHOB_IMPUTED`.
 +++
 {doc}`Tutorial 13: ML curve imputation <tutorials/part_b/13_ml_curve_imputation>`
 :::
@@ -285,6 +285,7 @@ mystnb:
   code_prompt_show: "Show the shared setup"
   code_prompt_hide: "Hide the shared setup"
 ---
+import json
 import warnings
 from textwrap import fill
 
@@ -343,21 +344,17 @@ mystnb:
   code_prompt_show: "Show the code: ML gap filling"
   code_prompt_hide: "Hide the code: ML gap filling"
 ---
-import json
-
-from petrophys.preprocessing.imputation import default_pretrained_model_path
-
-# The validation scores ship as plain JSON beside the model pack.
-scores = json.loads(default_pretrained_model_path().with_name("validation.json").read_text())
-best = {
-    target: max(models.values(), key=lambda m: m["r2"])["r2"]
-    for target, models in ((t, v["models"]) for t, v in scores["targets"].items())
-}
-fig, ax = plt.subplots()
-ax.barh(list(best), list(best.values()), color="#176b87")
-for y, value in enumerate(best.values()):
-    ax.text(value + 0.01, y, f"{value:.2f}", va="center")
-ax.set(xlim=(0, 1), xlabel="Best held-out-well R²", title="Bundled imputation models")
+costa = [name for name in pp.list_samples() if name.startswith("HW-")]
+hw24 = pp.read(pp.sample("HW-24"))
+measured = hw24["RHOB"].data.copy()
+hw24.remove_curve("RHOB")
+pp.impute(hw24, "RHOB", train_wells=[pp.sample(n) for n in costa if n != "HW-24"])
+fig, ax = plt.subplots(figsize=(3.2, 4.5))
+ax.plot(measured, hw24.depth, color="#9aa5b1", lw=2.2, label="Measured")
+ax.plot(hw24["RHOB_IMPUTED"].data, hw24.depth, color="#176b87", lw=1, label="Rebuilt")
+ax.invert_yaxis()
+ax.set(xlabel="RHOB (g/cm3)", ylabel=f"Depth ({hw24.depth_unit})", title="HW-24 density from 16 wells")
+ax.legend(loc="lower left", fontsize=8)
 thumb("cap_ml", fig)
 ```
 

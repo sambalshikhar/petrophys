@@ -54,7 +54,7 @@ What is in the library
 
       Resolve recognized mnemonic aliases, convert supported units, screen
       implausible values, identify washout and bad-hole intervals, normalize
-      curves, and impute only missing samples when a compatible model exists.
+      curves, and impute missing samples with a model trained on your wells.
 
       +++
       :doc:`What Petrophys can do <capabilities>`

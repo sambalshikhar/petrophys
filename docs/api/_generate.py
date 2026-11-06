@@ -219,7 +219,7 @@ The rest of the reference documents what these calls are built from.""",
         key="petrophys.preprocessing.standardization.standardize_curves "
         "petrophys.preprocessing.quality.generate_bad_hole_flags "
         "petrophys.preprocessing.normalization.normalize_log "
-        "petrophys.preprocessing.imputation.impute_missing_curve",
+        "petrophys.preprocessing.imputation.impute",
         items=[
             Section(
                 "petrophys.preprocessing.standardization",
@@ -263,7 +263,7 @@ The rest of the reference documents what these calls are built from.""",
             Section(
                 "petrophys.preprocessing.imputation",
                 title="Curve imputation",
-                note="Needs the ``ml`` extra (Python 3.11 or later).",
+                note="Needs the ``ml`` extra.",
             ),
         ],
     ),

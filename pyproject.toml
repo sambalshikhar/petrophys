@@ -54,13 +54,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dlis = ["dlisio>=0.3.0"]
-# The pretrained imputation models need scikit-learn 1.8, which requires
-# Python 3.11+; on older Pythons these extras install nothing.
-ml = [
-    "scikit-learn>=1.8.0,<1.9.0; python_version >= '3.11'",
-    "joblib>=1.5.0,<1.6.0; python_version >= '3.11'",
-    "xgboost>=3.2.0,<3.3.0; python_version >= '3.11'",
-]
+# Curve imputation (pp.impute) and K-means electrofacies.
+ml = ["scikit-learn>=1.2"]
 dev = [
     "black>=22.0.0",
     "isort>=5.10.0",
@@ -80,13 +75,12 @@ docs = [
     "myst-nb>=1.1.0",
     "sphinx-copybutton>=0.5.2",
     "sphinx-design>=0.5.0",
+    "scikit-learn>=1.2",
 ]
 all = [
     "dlisio>=0.3.0",
     "mcp>=2.2,<3; python_version >= '3.10'",
-    "scikit-learn>=1.8.0,<1.9.0; python_version >= '3.11'",
-    "joblib>=1.5.0,<1.6.0; python_version >= '3.11'",
-    "xgboost>=3.2.0,<3.3.0; python_version >= '3.11'",
+    "scikit-learn>=1.2",
 ]
 
 [project.urls]
@@ -106,8 +100,6 @@ include = ["petrophys*"]
 [tool.setuptools.package-data]
 petrophys = [
     "py.typed",
-    "preprocessing/imputation/pretrained/*.joblib",
-    "preprocessing/imputation/pretrained/*.json",
     "visualization/templates/*.xml",
     "_internal/data/*.csv",
     "datasets/*.csv",

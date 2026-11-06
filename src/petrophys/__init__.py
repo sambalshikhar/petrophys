@@ -58,13 +58,7 @@ from petrophys.workflow import (
     run_dynamic_workflow,
     workflow_step,
 )
-from petrophys.preprocessing.imputation import (
-    CurveImputationResult,
-    ModelCompatibilityError,
-    PretrainedCurveImputer,
-    impute_las_file,
-    impute_missing_curve,
-)
+from petrophys.preprocessing.imputation import impute
 
 __all__ = [
     "read",
@@ -108,9 +102,5 @@ __all__ = [
     "run_comprehensive_analysis",
     "sample",
     "list_samples",
-    "CurveImputationResult",
-    "ModelCompatibilityError",
-    "PretrainedCurveImputer",
-    "impute_las_file",
-    "impute_missing_curve",
+    "impute",
 ]

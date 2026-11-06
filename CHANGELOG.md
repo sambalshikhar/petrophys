@@ -1158,11 +1158,14 @@ wherever the package used the function.
   window at a reference temperature); `classify_th_u_environment`,
   `thorium_clay_index` and `uranium_stripped_gamma_ray` for spectral gamma;
   `label_depths` and `flag_intervals`.
-- The bundled imputation pack predicts DTC, NPHI, and RHOB. Estimators have
-  a held-out-well R2 of at least 0.5. Other measured curves remain usable as
-  companions. Imputation fills existing null samples and records provenance
-  in LAS exports. Incompatible scikit-learn versions raise
-  `ModelCompatibilityError`.
+- `pp.impute(well, curve, train_wells=None, output=None)` reconstructs a
+  curve's missing samples. A gradient-boosted tree model (scikit-learn
+  `HistGradientBoostingRegressor`) is trained on the fly on the other logs
+  wherever the curve is measured, in the well and in `train_wells`, so a
+  curve the well lacks altogether can be rebuilt from offset wells. The
+  result is added as `<CURVE>_IMPUTED`, with the measured values kept, and
+  written to a LAS file with `output=`. A warning counts imputed samples
+  whose inputs lie outside the training range. Needs the `ml` extra.
 - Plotting: `create_heatmap` centres each cell on its coordinate, draws
   unevenly and log-spaced bins such as NMR T2, and accepts cell edges; the
   core plotting helpers (`plot_calibration`, `plot_poro_perm`,
