@@ -89,18 +89,7 @@ independent laboratory measurement or that the table supplies a measured FWL.
 The fitted table is a separate processed product; its parameters and sample
 metadata need not equal the source measurements exactly.
 
-## Verification and selections
-
-Run from a source checkout:
-
-```bash
-python scripts/verify_phillips_data.py --report outputs/phillips-verification.json
-```
-
-This checks file hashes, bin/summary closure, T2 arithmetic, the core/NMR pair,
-all capillary-pressure sample curves, and the retained numerical values in all
-17 existing COSTA LAS files. An optional `--costa-source-dir` pointing to Craig's
-checkout repeats the numerical comparison against the original LAS files.
+## Selections
 
 The existing COSTA well copies are already present in `datasets/costa`; the
 manifest records their exact numerical correspondence, so they are not

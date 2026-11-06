@@ -124,18 +124,9 @@ nominal depth matching only: no independently verified depth correction or
 gap interpolation is applied. The subset has not established permeability
 prediction accuracy.
 
-## Verification and tutorial scope
+## Tutorial scope
 
-From the repository root:
-
-```sh
-python scripts/verify_epslog_data.py --report outputs/epslog-verification.json
-```
-
-Add `--source-dir PATH` to compare all eight LAS files with the original
-Epslog folder. The verifier checks source hashes, sample discovery, reader
-mappings, grain percentiles, dynamic Poisson calculations and nominal core
-matches. Tutorial 12 points to these inputs; the full notebook exercises and
+Tutorial 12 points to these inputs; the full notebook exercises and
 the calibration checks described above are not part of it.
 
 These files add no NMR T2 distributions, capillary-pressure curves, formation
