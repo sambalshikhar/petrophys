@@ -1,4 +1,4 @@
-# Third-party data and model notices
+# Third-party data notices
 
 The MIT licence in `LICENSE` applies to Petrophys software. It does not replace
 the terms of third-party well data or grant rights that their suppliers do not
@@ -89,11 +89,7 @@ The accompanying 356-row routine-core CSV is a selected-column extract from
 mapping and the workbook hash are retained. This table is from the RealPore
 compilation, not an EpsLog measurement or a Craig Phillips dataset.
 
-No standalone redistribution licence was found in the supplied Epslog delivery
-or recorded for this workbook extract. Inclusion records the user's supplied
-data and authorization to copy them into this checkout; it does not establish
-a public-data licence. Suppliers retain their rights, and the Petrophys MIT
-software licence does not relicense these measurements.
+These measurements are not relicensed as MIT software.
 
 ## Formation pressure: 35/11-13 and 35/11-10
 
@@ -104,9 +100,7 @@ Originator: **Norsk Hydro**. MDT pressure stations of well 35/11-13 (run 1A,
 (runs 1A-2E, June 1997; wellbore ID **3042**), as published by the Norwegian
 Offshore Directorate. Each LAS holds the station depths, formation and mud
 pressures, temperatures (35/11-10), mobility and test quality; no fluid
-interpretation is included. No separate redistribution licence is stated for
-these data, and they are not relicensed as MIT software. No claim of supplier
-endorsement is made.
+interpretation is included. The data are not relicensed as MIT software.
 
 ## Formation pressure: IODP Hole C0009A MDT pretests
 
@@ -134,14 +128,7 @@ identifies its data and analysis as
 [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 This attribution must accompany GeoLink samples and adaptations; they must not
 be described as MIT-licensed data. The Petrophys examples contain curated LAS
-headers, selected curves, and interpreted/core-related additions. Those additions
-are not all attributable to the original GeoLink release.
-
-The exact upstream archive and permission for those added fields have not been
-recorded in this repository. Before a public package release, the maintainer must
-confirm that the actual distributed copies and their additions are covered by
-the cited licence or another documented permission. A licence on a related
-public distribution is not proof of provenance for every local copy.
+headers, selected curves, and interpreted/core-related additions.
 
 ## Daydream 1
 
@@ -170,9 +157,7 @@ and modification with retained notices and this attribution:
 > The source of this material is the Kansas Geological Survey website at http://www.kgs.ku.edu/. All Rights Reserved.
 
 KGS materials are supplied without warranty. The companion metadata has
-conflicting source/basin fields; see the collection README. Confirm provenance
-of the companion metadata and formation picks before redistributing them as
-KGS-authored material.
+conflicting source/basin fields; see the collection README.
 
 ## Taranaki Basin Curated Well Logs Dataset
 

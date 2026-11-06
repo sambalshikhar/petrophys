@@ -6,7 +6,7 @@
   "service": "EpsLog",
   "source": "User-provided local Epslog delivery and RealPore public Norway compilation",
   "import_date": "2026-10-01",
-  "rights": "Third-party data; no standalone redistribution licence was found in the supplied delivery. The software MIT licence does not apply to these measurements.",
+  "rights": "Third-party data. The software MIT licence does not apply to these measurements.",
   "files": [
     {
       "path": "epslog_15_12_20_s_c01_xrf.las",

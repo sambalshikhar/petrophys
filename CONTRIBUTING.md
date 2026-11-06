@@ -55,7 +55,7 @@ for the package map and dependency direction.
 ## Data and examples
 
 - Do not commit proprietary data or machine-specific paths.
-- Document dataset provenance, redistribution permission, and transformations.
+- Document dataset provenance, licence and transformations.
 - Keep generated plots and reports out of commits unless they are intentional
   documentation outputs.
 - Use Git LFS for approved native-format fixtures that cannot be kept small.

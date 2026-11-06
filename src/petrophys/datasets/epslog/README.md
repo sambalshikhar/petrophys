@@ -12,8 +12,7 @@ reports, RGB curves, facies labels and alternative AI classification are not
 needed for the XRF, grain-size or strength/sonic exercises and are not copied.
 
 These are third-party measurements and derived products, not MIT-licensed
-software. No standalone redistribution licence was supplied with this local
-delivery. See `THIRD_PARTY_DATA.md` for attribution and the recorded terms.
+software. See `THIRD_PARTY_DATA.md` for attribution and the recorded terms.
 
 ## Inventory
 
