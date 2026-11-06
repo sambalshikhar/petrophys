@@ -64,4 +64,4 @@ def depth_mask(depth: Any, top: Any = None, bottom: Any = None) -> np.ndarray:
         mask &= values >= float(top)
     if bottom is not None:
         mask &= values <= float(bottom)
-    return mask
+    return np.asarray(mask, dtype=bool)
