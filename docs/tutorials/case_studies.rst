@@ -21,7 +21,7 @@ Projects
 
       Interpret discovery well 30/6-5 with ``pp.interpret``, check where the
       pay flag fires, and deliver a per-formation table and a ranked
-      completion plan for the Brent sands.
+      completion plan for the Brent Group sands.
 
    .. grid-item-card:: CS2 | Carbonate rock typing
       :class-card: ph-card-amber
@@ -55,7 +55,7 @@ Projects
       :link: case_studies/cs5_saturation_model_sensitivity_30_6-5
       :link-type: doc
 
-      Compare five saturation models on the Brent sands of 30/6-5, run a
+      Compare five saturation models on the Brent Group sands of 30/6-5, run a
       parameter tornado, and quote an uncertainty band on hydrocarbon pore
       thickness.
 

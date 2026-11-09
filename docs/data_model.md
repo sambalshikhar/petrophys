@@ -88,7 +88,7 @@ import matplotlib.pyplot as plt
 from petrophys.visualization import use_plot_style
 use_plot_style()
 
-brent = well.depth_slice(2841, 2958)          # the Brent reservoir, in metres
+brent = well.depth_slice(2841, 2958)          # the Brent Group, in metres
 fig, axes = plt.subplots(1, 3, figsize=(8, 5), sharey=True)
 colors = ["tab:green", "tab:red", "black"]
 for ax, name, color in zip(axes, ["GR", "RHOB", "RDEP"], colors):
@@ -97,7 +97,7 @@ for ax, name, color in zip(axes, ["GR", "RHOB", "RDEP"], colors):
 axes[2].set_xscale("log")
 axes[0].set_ylabel(f"Depth [{brent.depth_unit}]")
 axes[0].invert_yaxis()
-fig.suptitle("30/6-5, Brent reservoir: three curves plotted from their arrays")
+fig.suptitle("30/6-5, Brent Group: three curves plotted from their arrays")
 plt.show()
 ```
 

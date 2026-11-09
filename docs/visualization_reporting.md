@@ -85,7 +85,7 @@ from petrophys.visualization import DEFAULT_LOG_VIEWER_TEMPLATES, create_triple_
 
 from textwrap import fill
 
-TOP, BOTTOM = 2830, 2970  # the Brent with a margin
+TOP, BOTTOM = 2830, 2970  # the Brent Group with a margin
 print(fill("Named templates: " + ", ".join(DEFAULT_LOG_VIEWER_TEMPLATES), 88))
 for name, size in [("petrophysics", (14, 10.5)), ("comprehensive", (18, 12))]:
     place(name, pp.plot(result, top=TOP, bottom=BOTTOM, template=name, figsize=size).fig)
@@ -249,7 +249,7 @@ fig, ax = create_histogram_comparison(gr_by_well, density=True, xlabel="GR (API)
                                       title="GR by well", figsize=SMALL)
 place("histogram", fig)
 
-# Brent net pay as the cutoffs move; the interpreted curves stay fixed. NetPayModule
+# Brent Group net pay as the cutoffs move; the interpreted curves stay fixed. NetPayModule
 # applies the cutoffs alone, so the samples pp.interpret leaves out of NET_PAY
 # (bad hole, evaporite, coal, halite) count here.
 brent = geo.depth_slice(*BRENT)
@@ -263,7 +263,7 @@ cases = {"VCL cutoff 0.3 / 0.5": ("vcl_cutoff", 0.3, 0.5),
 low = [net_pay(**{key: lo}) for key, lo, hi in cases.values()]
 high = [net_pay(**{key: hi}) for key, lo, hi in cases.values()]
 fig, ax = create_tornado_plot(list(cases), low, high, base=net_pay(),
-                              xlabel="Brent net pay (m)",
+                              xlabel="Brent Group net pay (m)",
                               title="Net pay sensitivity to cutoffs", figsize=SMALL)
 place("tornado", fig)
 
@@ -275,10 +275,10 @@ ntg = np.array([[r.net_pay_thickness / r.gross_thickness for r in row] for row i
 fig, ax = create_heatmap(ntg, x=sw_cuts, y=vcl_cuts, cmap="RdYlGn", invert_yaxis=False,
                          xlabel="Sw cutoff", ylabel="VCL cutoff",
                          colorbar_label="Net-to-gross",
-                         title="Brent net-to-gross", figsize=SMALL)
+                         title="Brent Group net-to-gross", figsize=SMALL)
 place("heatmap", fig)
 print("Standard clastic cutoffs:", base)
-print(f"Brent net pay with them, cutoffs alone: {net_pay():.1f} m")
+print(f"Brent Group net pay with them, cutoffs alone: {net_pay():.1f} m")
 ```
 
 ::::{grid} 1 1 2 2
@@ -343,7 +343,7 @@ focus.show()
 | `viewer.save(path)`, `.show()`, `.close()` | Output |
 
 A style or window you give is drawn as given. For example, 100 m from the
-Brent top, the lithology fill at 30 % opacity, and your own lithology codes:
+Brent Group top, the lithology fill at 30 % opacity, and your own lithology codes:
 
 ```python
 pp.plot(result, top=2841, bottom=2941,

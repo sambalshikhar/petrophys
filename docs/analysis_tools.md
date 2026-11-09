@@ -33,7 +33,7 @@ pd.set_option("display.width", 100)
 pd.set_option("display.max_columns", 12)
 ```
 
-The examples use the interpreted 30/6-5 well (Brent sands at 2841-2958 m),
+The examples use the interpreted 30/6-5 well (Brent Group sands at 2841-2958 m),
 its core plugs and its formation tops.
 
 ```{code-cell} python

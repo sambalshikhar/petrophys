@@ -37,7 +37,7 @@ import numpy as np
 import petrophys as pp
 from petrophys.workflow import Workflow, WorkflowValidationError, steps, workflow_step
 
-wf = Workflow("Brent quick look")
+wf = Workflow("Brent Group quick look")
 wf.add(steps.clay_volume(method="gr", gr_clean=20, gr_shale=110))
 wf.add(steps.porosity(method="density", matrix_density=2.65))
 wf.add(steps.formation_water(rw=0.07, rw_temp_f=230))   # Rw 0.07 ohm.m at 230 degF
@@ -95,9 +95,9 @@ run.to_dataframe()[["Step", "Status", "Method", "Output Curves"]].style.hide(axi
 ```
 
 ```{code-cell} python
-brent = run.summary(top=2841, bottom=2958)   # Brent reservoir window
+brent = run.summary(top=2841, bottom=2958)   # Brent Group window
 print("status:", run.status)
-print("net pay in the Brent:", brent["net_thickness"]["net_pay"], "m")
+print("net pay in the Brent Group:", brent["net_thickness"]["net_pay"], "m")
 print({name: round(stats["mean"], 3) for name, stats in brent["key_results"].items()
        if name in ("VCL", "PHIE", "SW")})
 ```
@@ -141,7 +141,7 @@ print("loaded == wf:", loaded == wf)
 for n in (1.8, 2.0, 2.2):
     trial = wf.run(well, params={"saturation": {"n": n}})
     pay = trial.summary(top=2841, bottom=2958)["net_thickness"]["net_pay"]
-    print(f"n = {n}: Brent net pay {pay} m")
+    print(f"n = {n}: Brent Group net pay {pay} m")
 ```
 
 ## Add your own step
@@ -163,7 +163,7 @@ run = wf.run(well)
 depth = run.well.depth
 brent_rows = (depth >= 2841) & (depth <= 2958)
 hpt = np.nansum(run.well.get("PHIH").data[brent_rows]) * run.well.step
-print(f"Brent hydrocarbon pore thickness: {hpt:.1f} m")
+print(f"Brent Group hydrocarbon pore thickness: {hpt:.1f} m")
 ```
 
 :::{note}

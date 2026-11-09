@@ -150,7 +150,7 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
     with sands and shales unchanged. Beside PEF the sonic row is kept.
   - PEF is set aside for a well when it reads like barite-weighted mud: in
     most clean porous samples quartz-like apparent matrix density with
-    calcite-like apparent matrix U. On 30/6-5 the Brent sands now solve as
+    calcite-like apparent matrix U. On 30/6-5 the Brent Group sands now solve as
     quartz (88 % agreement with the vendor log, from 2-7 %) and the solved
     grain density is within 0.013 g/cm3 of core (was +0.027). The lithology
     step says so and the result carries a warning.

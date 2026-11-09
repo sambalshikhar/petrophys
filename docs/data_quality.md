@@ -113,7 +113,7 @@ print(rw_step.method)
 print(fill(next(text for text in assumed.warnings if "rw_meas_temp_f" in text), 88))
 for name, run in {"Rw at 230 degF": result, "Rw at the median temperature": assumed}.items():
     pay = run.summary(top=2841, bottom=2958)["net_thickness"]["net_pay"]
-    print(f"{name:30s} Brent net pay {pay:.1f} m")
+    print(f"{name:30s} Brent Group net pay {pay:.1f} m")
 ```
 
 ```{code-cell} python
@@ -139,7 +139,7 @@ ax_rw.invert_yaxis()
 ax_sw.legend(loc="lower left", fontsize=8, framealpha=0.9)
 for axis in (ax_rw, ax_sw):
     axis.grid(alpha=0.3)
-fig.suptitle("30/6-5, Brent: the same Rw quoted at two temperatures", fontsize=11)
+fig.suptitle("30/6-5, Brent Group: the same Rw quoted at two temperatures", fontsize=11)
 fig.tight_layout()
 plt.show()
 ```
@@ -160,7 +160,7 @@ groups[columns].style.hide(axis="index").format(precision=2, na_rep="–")
 fig, ax = plt.subplots(figsize=(8, 4.5))
 labels = [f"{name}  {top:.0f}-{bottom:.0f} m" for name, top, bottom in
           zip(groups["Formation"], groups["Top"], groups["Bottom"])]
-colors = ["#087f73" if name == "BAAT GP." else "#b8c0c7" for name in groups["Formation"]]
+colors = ["#087f73" if name == "BRENT GP." else "#b8c0c7" for name in groups["Formation"]]
 bars = ax.barh(labels, groups["Net Pay (m)"], color=colors, height=0.7)
 ax.bar_label(bars, fmt="%.0f m", padding=3, fontsize=8, color="#3b4550")
 ax.invert_yaxis()
@@ -172,7 +172,7 @@ fig.tight_layout()
 plt.show()
 ```
 
-With these tops and lithology attached, nearly all the flagged pay lies in the Brent Group (`BAAT GP.` in these tops), the reservoir. The 1.8 m flagged elsewhere, in the Rogaland and Shetland groups, still needs a geological check.
+With these tops and lithology attached, nearly all the flagged pay lies in the Brent Group, the reservoir. The 1.8 m flagged elsewhere, in the Rogaland and Shetland groups, still needs a geological check.
 Summarize the reservoir window:
 
 ```{code-cell} python
@@ -270,6 +270,6 @@ Cutoffs, flags and what they do not prove.
 :::{grid-item-card} Saturation model sensitivity
 :link: tutorials/case_studies/cs5_saturation_model_sensitivity_30_6-5
 :link-type: doc
-How much the Sw model changes the Brent answer.
+How much the Sw model changes the Brent Group answer.
 :::
 ::::

@@ -82,7 +82,7 @@ Each attached formation or group is one entry under `geology`, for example the B
 
 ```{code-cell} python
 formations = context["geology"]["formations"]
-brent = next(item for item in formations if item["formation_name"] == "BAAT GP.")
+brent = next(item for item in formations if item["formation_name"] == "BRENT GP.")
 print(json.dumps(brent, indent=1))
 ```
 
@@ -331,7 +331,7 @@ Core-corrected porosity (`PHIE_CC`) needs usable paired log and core porosity
 It does not require core permeability. Core permeability (`KH_CORE`, `CPERM`
 or a supported alias) is needed for the separate `PERM_CC` transform. A well
 can therefore export `PHIE_CC` alongside empirical `PERM` without `PERM_CC`.
-Limestone, chalk, dolomite and marl are carbonate and every other rock is clastic; a compound name goes by its last rock word, so SANDY LIMESTONE is carbonate and CALCAREOUS SHALE clastic.
+Limestone, chalk, dolomite and marl are carbonate and every other rock takes the clastic family; a compound name goes by its last rock word, so SANDY LIMESTONE is carbonate and CALCAREOUS SHALE clastic.
 A sample without lithology takes the family of the lithology domain of the run that interpreted it.
 A sample without effective porosity, permeability or clay volume is `NO_QUALITY_DATA`: it gets no grade, not even `NON_RESERVOIR`.
 

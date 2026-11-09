@@ -199,7 +199,7 @@ Settings can differ by depth: pass `zones`, a list of intervals each with its se
 ```python
 result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230, zones=[
     {"name": "overburden", "top": 176, "bottom": 1908, "rw": 0.5, "rw_meas_temp_f": 60},
-    {"name": "Brent", "top": 2841, "bottom": 2958, "m": 1.9},
+    {"name": "Brent Group", "top": 2841, "bottom": 2958, "m": 1.9},
 ])
 ```
 

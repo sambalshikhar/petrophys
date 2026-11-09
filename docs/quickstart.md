@@ -36,7 +36,7 @@ print(f"{well.top:.1f} - {well.bottom:.1f} {well.depth_unit}")
 ## Plot the raw logs
 
 `pp.plot` draws the curves already in the file, so no interpretation is needed.
-The window below covers the Brent reservoir, at 2841–2958 m.
+The window below covers the Brent Group, at 2841–2958 m.
 
 ```{code-cell} python
 viewer = pp.plot(
@@ -133,7 +133,7 @@ print(rw_step.method)
 print(rw_step.decisions)
 ```
 
-## Summarize the Brent reservoir
+## Summarize the Brent Group
 
 The log starts in shallow, poorly consolidated rock that can pass the pay
 cutoffs (the clay, porosity and saturation limits). One Rw also serves the whole
@@ -145,7 +145,7 @@ are evaluating, not the whole well.
 ```{code-cell} python
 print("whole well:", result.summary()["net_thickness"])
 brent = result.summary(top=2841, bottom=2958)
-print("Brent:     ", brent["net_thickness"])
+print("Brent Group:     ", brent["net_thickness"])
 
 stats = pd.DataFrame(brent["key_results"]).T
 stats[["p10", "median", "p90"]].astype(float).round(3).assign(unit=stats["unit"])
@@ -176,9 +176,9 @@ pp.plot(
     top=2841,
     bottom=2958,
     template="petrophysics",
-    tracks=["LITHOLOGY", "GR / VCL", "RESISTIVITY", "POROSITY",
+    tracks=["LITHOLOGY", "GR / VCL / HOLE", "RESISTIVITY", "POROSITY",
             "SATURATION", "PERMEABILITY", "FLAGS"],
-    formation_name="Brent reservoir",
+    formation_name="Brent Group",
     figsize=(12, 10),
 ).show()
 ```

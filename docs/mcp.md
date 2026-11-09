@@ -165,7 +165,7 @@ print(well["well_id"], f"| {well['top']:.0f}-{well['bottom']:.0f} {well['depth_u
       f"| {len(well['curves'])} curves | {len(well['formations'])} formations")
 ```
 
-**Interpret** with the Rw the user supplied, summarizing the Brent window:
+**Interpret** with the Rw the user supplied, summarizing the Brent Group window:
 
 ```{code-cell} python
 run = (await call("interpret_well", well_id="30_6-5",
@@ -195,7 +195,7 @@ bad = await call("interpret_well", well_id="30_6-5",
 print(bad.content[0].text)
 ```
 
-**Summarize** the Brent window:
+**Summarize** the Brent Group window:
 
 ```{code-cell} python
 zones = (await call("summarize_zones", interpretation_id=run["interpretation_id"],

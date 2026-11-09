@@ -178,7 +178,7 @@ interpretation straight after installing:
    result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)  # Rw 0.07 ohm.m at 230 degF
 
    print(result.status)
-   print(result.summary(top=2841, bottom=2958))   # the Brent reservoir
+   print(result.summary(top=2841, bottom=2958))   # the Brent Group
    pp.plot(result, top=2800, bottom=3000).save("30_6-5.png")
 
 Continue with the :doc:`installation guide <installation>`, the

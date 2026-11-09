@@ -97,7 +97,7 @@ density of COSTA well HW-24, removed and reconstructed from the 16 other wells.
 :::{grid-item-card} Clay, porosity and lithology
 ```{glue:figure} cap_nd
 ```
-Neutron-density crossplot of the Brent reservoir, with matrix lines.
+Neutron-density crossplot of the Brent Group, with matrix lines.
 
 `pp.interpret(well)` · `create_nd_crossplot(well)`
 +++
@@ -127,7 +127,7 @@ Check Rw and the Archie exponents against the Statfjord water leg.
 :::{grid-item-card} Water-saturation models
 ```{glue:figure} cap_sw
 ```
-Brent net pay under four saturation models, one setting apart.
+Brent Group net pay under four saturation models, one setting apart.
 
 `pp.interpret(well, sw_model="simandoux")`
 +++
@@ -164,7 +164,7 @@ Group the 30/6-5 core plugs into hydraulic flow units by FZI.
 :::{grid-item-card} Net pay by formation
 ```{glue} cap_formations
 ```
-Net pay, with average porosity and Sw over the pay, per formation (not group) from the Brent down.
+Net pay, with average porosity and Sw over the pay, per formation (not group) from the Brent Group down.
 
 `result.formation_summary()`
 +++
@@ -425,11 +425,11 @@ net_pay = {}
 for model in ["archie", "simandoux", "indonesia", "auto"]:
     run = pp.interpret(well, rw=0.07, rw_meas_temp_f=230, sw_model=model)
     net_pay[model] = run.summary(top=BRENT[0], bottom=BRENT[1])["net_thickness"]["net_pay"]
-print("Brent net pay (m):")
+print("Brent Group net pay (m):")
 for model, pay in net_pay.items():
     print(f"  {model:<11}{pay:6.1f}")
 fig, ax = create_bar_comparison(list(net_pay), list(net_pay.values()), value_labels=True,
-                                ylabel="Brent net pay (m)", title="Net pay by Sw model, 30/6-5",
+                                ylabel="Brent Group net pay (m)", title="Net pay by Sw model, 30/6-5",
                                 figsize=THUMB)
 ax.set_ylim(0, 1.2 * max(net_pay.values()))
 thumb("cap_sw", fig)
@@ -588,7 +588,7 @@ One notebook through the whole library on real wells.
 :::{grid-item-card} Case study: 30/6-5
 :link: tutorials/case_studies/cs1_full_formation_evaluation_30_6-5
 :link-type: doc
-A full formation evaluation of the Brent reservoir.
+A full formation evaluation of the Brent Group.
 :::
 
 :::{grid-item-card} Case study: COSTA field
