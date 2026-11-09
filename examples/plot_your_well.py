@@ -24,8 +24,7 @@ def main(argv=None):
         if args.depth_unit is not None:
             options["depth_unit"] = args.depth_unit
     well = pp.read(path, formations=args.formations, lithology=args.lithology, **options)
-    depth_range = (args.top, args.bottom) if args.top is not None else None
-    viewer = pp.plot(well, depth_range=depth_range)
+    viewer = pp.plot(well, top=args.top, bottom=args.bottom)
     try:
         if args.output:
             viewer.save(args.output, dpi=180)

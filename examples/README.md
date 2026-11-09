@@ -56,7 +56,7 @@ Use `--inplace` instead of `--output-dir` to refresh saved source outputs
 only after successful execution. Failed runs return a nonzero exit status.
 Other specialist notebooks retain their own optional data/dependency requirements.
 
-Tutorial 19 uses `build_context`/`export_context`, schema versions and byte
+Tutorial 19 uses `export_context`, schema versions and byte
 budgets, and reads the ranked formation table directly. Tutorial 14 separates
 vendor permeability from T2 calculations; tutorial 16 needs real Git LFS data.
 
