@@ -45,11 +45,14 @@ WYLLIE_ROSE_PRESETS = {
 def coates_denoo(
     phi: Union[float, np.ndarray],
     swi: Union[float, np.ndarray],
+    a: float = 10000.0,
+    b: float = 4.0,
+    c: float = 2.0,
 ) -> Union[float, np.ndarray]:
     """
     Calculate permeability using the Coates-Denoo equation.
 
-    k = 10000 * phi^4 * ((1 - Swi) / Swi)^2
+    k = a * phi^b * ((1 - Swi) / Swi)^c, with a = 10000, b = 4 and c = 2
 
     Parameters
     ----------
@@ -57,6 +60,8 @@ def coates_denoo(
         Effective porosity (fraction)
     swi : float or np.ndarray
         Irreducible water saturation (fraction)
+    a, b, c : float, optional
+        Coefficient, porosity exponent and saturation exponent
 
     Returns
     -------
@@ -68,7 +73,7 @@ def coates_denoo(
     swi = np.where(swi <= 0, 0.01, swi)
     phi = np.where(phi <= 0, 0.001, phi)
 
-    k = 10000.0 * np.power(phi, 4.0) * np.power((1.0 - swi) / swi, 2.0)
+    k = a * np.power(phi, b) * np.power((1.0 - swi) / swi, c)
     if not reproducing_benchmark():
         # Swi > 1 is not a saturation; squaring (1 - Swi) would give it a growing k.
         k = np.where(swi > 1.0, np.nan, k)

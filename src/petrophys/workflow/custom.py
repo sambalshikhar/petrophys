@@ -15,8 +15,8 @@ a custom workflow (:func:`petrophys.workflow.steps.interpret`).
 Examples
 --------
 >>> import petrophys as pp
->>> from petrophys.workflow import steps
->>> wf = pp.Workflow("Brent quick look")
+>>> from petrophys.workflow import Workflow, steps
+>>> wf = Workflow("Brent quick look")
 >>> _ = wf.add(steps.clay_volume(method="gr", gr_clean=20, gr_shale=110))
 >>> _ = wf.add(steps.porosity(method="density", matrix_density=2.65))
 >>> wf.describe()["Produces"].tolist()
@@ -346,7 +346,7 @@ class Step:
 
     Examples
     --------
-    >>> from petrophys.workflow import steps
+    >>> from petrophys.workflow import Workflow, steps
     >>> step = steps.net_pay(sw_cutoff=0.5, name="pay_tight")
     >>> step.name, step.kind, step.params
     ('pay_tight', 'net_pay', {'sw_cutoff': 0.5})
@@ -438,7 +438,7 @@ class Step:
 
         Examples
         --------
-        >>> from petrophys.workflow import steps
+        >>> from petrophys.workflow import Workflow, steps
         >>> steps.saturation(model="archie", n=2.0).with_params(n=2.2)
         steps.saturation(model='archie', n=2.2)
         """
@@ -780,7 +780,8 @@ def workflow_step(
     --------
     >>> import numpy as np
     >>> import petrophys as pp
-    >>> @pp.workflow_step(requires=["GR"], produces={"VSH_LIN": "v/v"})
+    >>> from petrophys.workflow import workflow_step
+    >>> @workflow_step(requires=["GR"], produces={"VSH_LIN": "v/v"})
     ... def linear_vsh(well, gr_clean=20.0, gr_shale=120.0):
     ...     '''Linear shale volume from gamma ray.'''
     ...     gr = well.get("GR").data
@@ -1012,7 +1013,7 @@ def _not_a_step_message(value: Any) -> str:
                 f"e.g. wf.add({prefix}{label}(...))")
     if callable(value):
         return (f"{getattr(value, '__name__', value)!r} is a plain function; decorate it "
-                "with @petrophys.workflow_step(requires=..., produces=...) and call it")
+                "with @petrophys.workflow.workflow_step(requires=..., produces=...) and call it")
     return f"Expected a workflow Step; got {type(value).__name__}"
 
 
@@ -1047,8 +1048,8 @@ class Workflow:
     Examples
     --------
     >>> import petrophys as pp
-    >>> from petrophys.workflow import steps
-    >>> wf = pp.Workflow("Brent quick look", [
+    >>> from petrophys.workflow import Workflow, steps
+    >>> wf = Workflow("Brent quick look", [
     ...     steps.clay_volume(method="gr", gr_clean=20, gr_shale=110),
     ...     steps.porosity(method="density", matrix_density=2.65),
     ...     steps.formation_water(rw=0.07, rw_temp_f=230),
@@ -1124,8 +1125,8 @@ class Workflow:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> wf = pp.Workflow("demo").add(steps.clay_volume()).add(steps.porosity())
+        >>> from petrophys.workflow import Workflow, steps
+        >>> wf = Workflow("demo").add(steps.clay_volume()).add(steps.porosity())
         >>> [step.name for step in wf]
         ['clay_volume', 'porosity']
         """
@@ -1160,8 +1161,8 @@ class Workflow:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> wf = pp.Workflow("demo", [steps.clay_volume(), steps.porosity()])
+        >>> from petrophys.workflow import Workflow, steps
+        >>> wf = Workflow("demo", [steps.clay_volume(), steps.porosity()])
         >>> _ = wf.insert(steps.temperature(), before="clay_volume")
         >>> [step.name for step in wf]
         ['temperature', 'clay_volume', 'porosity']
@@ -1193,8 +1194,8 @@ class Workflow:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> wf = pp.Workflow("demo", [steps.clay_volume(method="gr")])
+        >>> from petrophys.workflow import Workflow, steps
+        >>> wf = Workflow("demo", [steps.clay_volume(method="gr")])
         >>> wf.replace("clay_volume", steps.clay_volume(method="minimum"))["clay_volume"]
         steps.clay_volume(method='minimum')
         """
@@ -1213,8 +1214,8 @@ class Workflow:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> wf = pp.Workflow("demo", [steps.clay_volume(), steps.porosity()])
+        >>> from petrophys.workflow import Workflow, steps
+        >>> wf = Workflow("demo", [steps.clay_volume(), steps.porosity()])
         >>> [step.name for step in wf.remove("porosity")]
         ['clay_volume']
         """
@@ -1228,8 +1229,8 @@ class Workflow:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> base = pp.Workflow("base", [steps.clay_volume()])
+        >>> from petrophys.workflow import Workflow, steps
+        >>> base = Workflow("base", [steps.clay_volume()])
         >>> variant = base.copy("variant").add(steps.porosity())
         >>> len(base), len(variant)
         (1, 2)
@@ -1274,8 +1275,8 @@ class Workflow:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> wf = pp.Workflow("demo", [steps.formation_water(rw=0.07, rw_temp_f=230)])
+        >>> from petrophys.workflow import Workflow, steps
+        >>> wf = Workflow("demo", [steps.formation_water(rw=0.07, rw_temp_f=230)])
         >>> wf.describe().loc[1, "Parameters"]
         'rw=0.07, rw_temp_f=230'
         """
@@ -1319,8 +1320,8 @@ class Workflow:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> wf = pp.Workflow("demo", [steps.saturation(model="archie")])
+        >>> from petrophys.workflow import Workflow, steps
+        >>> wf = Workflow("demo", [steps.saturation(model="archie")])
         >>> table = wf.check(pp.read(pp.sample("30_6-5")))
         >>> table.loc[~table["Met"], "Requires"].tolist()
         ['PHIE', 'RW']
@@ -1401,8 +1402,8 @@ class Workflow:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> wf = pp.Workflow("demo", [
+        >>> from petrophys.workflow import Workflow, steps
+        >>> wf = Workflow("demo", [
         ...     steps.clay_volume(),
         ...     steps.porosity(),
         ...     steps.formation_water(rw=0.07, rw_temp_f=230),
@@ -1514,8 +1515,8 @@ class Workflow:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> wf = pp.Workflow("vcl", [steps.clay_volume(method="gr")])
+        >>> from petrophys.workflow import Workflow, steps
+        >>> wf = Workflow("vcl", [steps.clay_volume(method="gr")])
         >>> batch = wf.run_many([pp.sample("HW-3"), pp.sample("HW-4")])
         >>> list(batch.results), batch.errors
         (['HW-3', 'HW-4'], {})
@@ -1564,8 +1565,8 @@ class Workflow:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> pp.Workflow("demo", [steps.porosity(method="density")]).to_dict()["steps"]
+        >>> from petrophys.workflow import Workflow, steps
+        >>> Workflow("demo", [steps.porosity(method="density")]).to_dict()["steps"]
         [{'name': 'porosity', 'kind': 'porosity', 'params': {'method': 'density'}}]
         """
         data: Dict[str, Any] = {"schema": WORKFLOW_SCHEMA, "schema_version": WORKFLOW_SCHEMA_VERSION}
@@ -1611,9 +1612,9 @@ class Workflow:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> wf = pp.Workflow("demo", [steps.net_pay(sw_cutoff=0.5)])
-        >>> pp.Workflow.from_dict(wf.to_dict()) == wf
+        >>> from petrophys.workflow import Workflow, steps
+        >>> wf = Workflow("demo", [steps.net_pay(sw_cutoff=0.5)])
+        >>> Workflow.from_dict(wf.to_dict()) == wf
         True
         """
         if not isinstance(data, Mapping):
@@ -1677,11 +1678,11 @@ class Workflow:
         --------
         >>> import tempfile, pathlib
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> wf = pp.Workflow("demo", [steps.clay_volume(method="gr")])
+        >>> from petrophys.workflow import Workflow, steps
+        >>> wf = Workflow("demo", [steps.clay_volume(method="gr")])
         >>> with tempfile.TemporaryDirectory() as folder:
         ...     path = wf.save(pathlib.Path(folder) / "demo.json")
-        ...     pp.Workflow.load(path) == wf
+        ...     Workflow.load(path) == wf
         True
         """
         for step in self._steps:
@@ -1785,7 +1786,7 @@ def _factory_for(kind: Any, label: str) -> Callable[..., Step]:
     if not isinstance(target, _StepFactory):
         raise ValueError(
             f"{label}: {kind!r} is not a workflow step; decorate it with "
-            "@petrophys.workflow_step(requires=..., produces=...)"
+            "@petrophys.workflow.workflow_step(requires=..., produces=...)"
         )
     return target
 
@@ -1963,8 +1964,8 @@ class WorkflowRunResult:
         Examples
         --------
         >>> import petrophys as pp
-        >>> from petrophys.workflow import steps
-        >>> run = pp.Workflow("vcl", [steps.clay_volume()]).run(pp.read(pp.sample("30_6-5")))
+        >>> from petrophys.workflow import Workflow, steps
+        >>> run = Workflow("vcl", [steps.clay_volume()]).run(pp.read(pp.sample("30_6-5")))
         >>> sorted(run.summary(top=2841, bottom=2958)["key_results"])
         ['VCL']
         """

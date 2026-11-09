@@ -1,7 +1,7 @@
 """Built-in steps for custom workflows.
 
 Each function here returns a configured :class:`~petrophys.workflow.Step`
-for :meth:`petrophys.Workflow.add`. The steps wrap the library's tested
+for :meth:`petrophys.workflow.Workflow.add`. The steps wrap the library's tested
 calculations (for example :func:`~petrophys.interpretation.porosity.density_porosity`,
 :class:`~petrophys.evaluation.NetPayModule` or
 :func:`~petrophys.interpretation.geochemistry.interpret_spectral_gamma`); they
@@ -9,7 +9,7 @@ choose no methods on their own. Parameters are validated when the step is
 created: a typo raises an error that names the closest valid option.
 
 Every step states the curves it ``requires`` and the curves it ``produces``,
-so :meth:`petrophys.Workflow.check` can tell, before running, what a well is
+so :meth:`petrophys.workflow.Workflow.check` can tell, before running, what a well is
 missing. Steps read and write standard curve names (``VCL``, ``PHIE``,
 ``SW``, ...); where a step reads a curve that a well might hold under another
 name, a ``*_curve`` parameter selects it.
@@ -1873,8 +1873,8 @@ def spectral_gamma(*, api_coefficients: Optional[Mapping[str, float]] = None,
     Examples
     --------
     >>> import petrophys as pp
-    >>> from petrophys.workflow import steps
-    >>> run = pp.Workflow("sgr", [steps.spectral_gamma()]).run(pp.read(pp.sample("25_5-1")))
+    >>> from petrophys.workflow import Workflow, steps
+    >>> run = Workflow("sgr", [steps.spectral_gamma()]).run(pp.read(pp.sample("25_5-1")))
     >>> run.steps[0].output_curves
     ['THORIUM', 'URANIUM', 'U_TH_RATIO', 'SGR_URANIUM_API']
     """

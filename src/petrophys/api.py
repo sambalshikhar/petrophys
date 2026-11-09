@@ -1,12 +1,12 @@
 """Short entry points for reading, plotting, and interpreting a single well.
 
-These three functions are the recommended front door to Petrophys::
+These functions are the front door to Petrophys::
 
     import petrophys as pp
 
     well = pp.read(pp.sample("30_6-5"))
     result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)   # Rw (ohm.m) at 230 degF
-    pp.plot(result, depth_range=(2800, 3000)).save("interpretation.png")
+    pp.plot(result, top=2800, bottom=3000).save("interpretation.png")
 
 Everything they do is also available through the lower-level modules
 (:mod:`petrophys.io`, :mod:`petrophys.workflow`, :mod:`petrophys.visualization`).
@@ -65,7 +65,7 @@ def read(
         level only.
     lithology : path or DataFrame, optional
         Lithology intervals with ``top,bottom,lithology`` columns (see
-        :func:`petrophys.read_lithology_intervals`). They take precedence over
+        :func:`petrophys.io.read_lithology_intervals`). They take precedence over
         embedded lithology for plotting and interpretation.
     formation_options : mapping, optional
         Extra arguments for :func:`petrophys.read_formations`, e.g.
@@ -74,7 +74,7 @@ def read(
         ``{"rank": "formation"}`` for one stratigraphic level, or
         ``{"sheet_name": 1}`` for an Excel sheet.
     lithology_options : mapping, optional
-        Extra arguments for :func:`petrophys.read_lithology_intervals`, e.g.
+        Extra arguments for :func:`petrophys.io.read_lithology_intervals`, e.g.
         ``{"columns": {"lithology": "ROCK"}}``.
     depth_reference : str, optional
         Depth reference of the well, e.g. ``"MD"``; geology recorded against a
@@ -118,8 +118,7 @@ def read(
     >>> well = pp.read(pp.sample("30_6-5"))
     >>> well = pp.read("my_well.csv", depth_unit="m", formations="tops.csv")  # doctest: +SKIP
     """
-    from petrophys.io import read_csv, read_dlis, read_formations, read_las
-    from petrophys.io import read_lithology_intervals
+    from petrophys.io import read_csv, read_dlis, read_las
     from petrophys.model.units import normalize_depth_unit
 
     path = Path(path)
@@ -151,7 +150,31 @@ def read(
     for key, value in (("depth_reference", depth_reference), ("datum", datum)):
         if value is not None:
             well.set_parameter(key, value)
-    context = {}
+    _attach_geology(well, formations=formations, lithology=lithology,
+                    formation_options=formation_options, lithology_options=lithology_options)
+    if curve_aliases is not None:
+        from petrophys.preprocessing.standardization.user_aliases import attach_curve_aliases
+
+        attach_curve_aliases(well, curve_aliases)
+    if survey is not None:
+        from petrophys.io.survey_reader import attach_survey
+
+        attach_survey(well, survey)
+    return well
+
+
+def _attach_geology(
+    well: "Well",
+    *,
+    formations: Optional[Any] = None,
+    lithology: Optional[Any] = None,
+    formation_options: Optional[Mapping[str, Any]] = None,
+    lithology_options: Optional[Mapping[str, Any]] = None,
+) -> None:
+    """Store formation tops and lithology intervals on ``well`` for plots and interpretation."""
+    from petrophys.io import read_formations, read_lithology_intervals
+
+    context = dict(well.get_parameter("_geology_context") or {})
     for name, source, reader, options in (
         ("formations", formations, read_formations, formation_options),
         ("lithology", lithology, read_lithology_intervals, lithology_options),
@@ -167,33 +190,23 @@ def read(
             context[name + "_import_report"] = table.attrs.get("import_report", {})
     if context:
         well.set_parameter("_geology_context", context)
-    if curve_aliases is not None:
-        from petrophys.preprocessing.standardization.user_aliases import attach_curve_aliases
-
-        attach_curve_aliases(well, curve_aliases)
-    if survey is not None:
-        from petrophys.io.survey_reader import attach_survey
-
-        attach_survey(well, survey)
-    return well
 
 
 def plot(
-    well: Union["Well", "DynamicWorkflowResult"],
+    well: Union["Well", "DynamicWorkflowResult", PathLike],
     *,
-    depth_range: Optional[Tuple[float, float]] = None,
     top: Optional[float] = None,
-    height: Optional[float] = None,
+    bottom: Optional[float] = None,
+    curves: Optional[Sequence[str]] = None,
     tracks: Optional[Sequence[str]] = None,
     template: str = "auto",
     template_xml_path: Optional[PathLike] = None,
-    formation_tops: Optional[Any] = None,
-    lithology_intervals: Optional[Any] = None,
-    lithology_mapping: Optional[Mapping[Any, str]] = None,
+    formations: Optional[Any] = None,
+    lithology: Optional[Any] = None,
+    lithology_codes: Optional[Any] = None,
     formation_name: Optional[str] = None,
     figsize: Optional[Tuple[float, float]] = None,
     strict: bool = False,
-    curves: Optional[Sequence[str]] = None,
     curve_aliases: Optional[Any] = None,
     curve_styles: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> "LogViewer":
@@ -201,14 +214,17 @@ def plot(
 
     Parameters
     ----------
-    well : Well or DynamicWorkflowResult
-        Well to plot. Passing the result of :func:`interpret` plots the
-        interpreted well, including calculated curves.
-    depth_range : (float, float), optional
-        Top and base depth of the plot window, in the well's depth unit, in
-        either order. Defaults to the full logged interval.
-    top, height : float, optional
-        Alternative to ``depth_range``: window top and window height.
+    well : Well, DynamicWorkflowResult, str or Path
+        Well to plot, or a well file to read with :func:`read`. Passing the
+        result of :func:`interpret` plots the interpreted well, including
+        calculated curves.
+    top, bottom : float, optional
+        Top and bottom depth of the plot window, in the well's depth unit.
+        Default to the top and bottom of the logged interval.
+    curves : sequence of str, optional
+        Draw only these curves (the well's own names), each in its track;
+        curves no track takes get generic tracks. Tracks left empty are not
+        drawn.
     tracks : sequence of str, optional
         Track names to show, in order (e.g. ``["GAMMA / HOLE", "RESISTIVITY"]``;
         ``viewer.template.tracks`` lists a template's track names).
@@ -219,13 +235,15 @@ def plot(
         ``"geolink_full"`` are fixed layouts.
     template_xml_path : str or Path, optional
         Custom XML template; overrides ``template``.
-    formation_tops : path, DataFrame, mapping, or sequence, optional
-        Formation tops to annotate. Defaults to formations attached by
+    formations : path, DataFrame, mapping, or sequence, optional
+        Formation tops to annotate, as for :func:`read`. Defaults to the
+        formations attached by :func:`read`.
+    lithology : path or DataFrame, optional
+        Lithology intervals to display instead of embedded lithology, as for
         :func:`read`.
-    lithology_intervals : path or DataFrame, optional
-        Lithology intervals to display instead of embedded lithology.
-    lithology_mapping : mapping, optional
-        Lithology code-to-label mapping for coded lithology curves.
+    lithology_codes : mapping, path or DataFrame, optional
+        Codebook of a lithology code curve: a mapping of code to rock name,
+        or a table that :func:`petrophys.io.read_lithology_codes` reads.
     formation_name : str, optional
         Formation name shown in the plot title.
     figsize : (float, float), optional
@@ -233,10 +251,6 @@ def plot(
     strict : bool, default False
         If True, curves required by a fixed template must exist; otherwise
         missing tracks are skipped and listed in ``viewer.omitted_tracks``.
-    curves : sequence of str, optional
-        Draw only these curves (the well's own names), each in its track;
-        curves no track takes get generic tracks. Tracks left empty are not
-        drawn.
     curve_aliases : mapping, path or DataFrame, optional
         Your names for standard curves (``{"GAMMA_RAY_1": "GR"}`` or a
         CSV/Excel table), so they fill the right tracks; as for :func:`read`.
@@ -258,11 +272,26 @@ def plot(
     Examples
     --------
     >>> import petrophys as pp
-    >>> viewer = pp.plot(pp.read(pp.sample("30_6-5")), depth_range=(2800, 3000))
+    >>> viewer = pp.plot(pp.sample("30_6-5"), top=2800, bottom=3000)
     >>> viewer.save("well.png")  # doctest: +SKIP
     """
     from petrophys.io.lithology_reader import read_lithology_codes
     from petrophys.visualization import create_log_viewer
+
+    if isinstance(well, (str, Path)):
+        well = read(well)
+    depth_range: Optional[Tuple[float, float]] = None
+    if bottom is not None:
+        if top is None:
+            import numpy as np
+
+            depth = np.asarray(cast("Well", getattr(well, "well", well)).depth, dtype=float)
+            top = float(np.nanmin(depth))
+        depth_range, top = (top, bottom), None
+    lithology_mapping = lithology_codes
+    if lithology_mapping is not None and not isinstance(lithology_mapping, Mapping):
+        lithology_mapping = read_lithology_codes(lithology_mapping)
+    formation_tops, lithology_intervals = formations, lithology
 
     # A result plots its interpretation: the tops, lithology intervals and
     # lithology codebook it was given, and the curve values it used.
@@ -294,7 +323,7 @@ def plot(
         template_defaults=template,
         depth_range=depth_range,
         top=top,
-        height=height,
+        height=None,
         strict=strict,
         figsize=figsize,
         lithology_mapping=lithology_mapping,
@@ -313,10 +342,12 @@ def interpret(
     well: Union["Well", PathLike],
     config: Optional["DynamicWorkflowConfig"] = None,
     *,
+    formations: Optional[Any] = None,
+    lithology: Optional[Any] = None,
+    output: Optional[PathLike] = None,
     inplace: bool = False,
     depth_unit: Optional[str] = None,
     context_profile: Optional[str] = None,
-    tops_file: Optional[PathLike] = None,
     curve_aliases: Optional[Any] = None,
     **options: Any,
 ) -> "DynamicWorkflowResult":
@@ -342,6 +373,16 @@ def interpret(
         ``options`` and the :class:`~petrophys.workflow.DynamicWorkflowConfig`
         defaults. Recognized LAS header parameters fill otherwise unspecified
         settings; explicit Python options take precedence.
+    formations : path, DataFrame, mapping, or sequence, optional
+        Formation tops or intervals, as for :func:`read`. They calibrate core
+        permeability per formation and annotate ``result.plot()``.
+    lithology : str, path or DataFrame, optional
+        The lithology to interpret with: lithology intervals (a
+        ``top,bottom,lithology`` table, as for :func:`read`), the name of the
+        well's lithology code curve (e.g. ``"FACIES"``), or a lithology
+        domain (``"clastic"``, ``"carbonate"``, ``"evaporite"``, ``"auto"``).
+    output : str or Path, optional
+        Write the interpreted well to this LAS file.
     inplace : bool, default False
         If False, the well is copied and the caller's well is left unchanged.
         If True, calculated curves are added to ``well`` itself.
@@ -356,9 +397,9 @@ def interpret(
         are that group's context statistics. ``well`` must be the well's raw
         LAS file from the package's delivery; the profile fixes the settings,
         so ``config`` and ``options`` are not accepted.
-    tops_file : str or Path, optional
-        With ``context_profile="danish"``: the Danish tops workbook, which
-        supplies the lithology of wells without a lithology log.
+        With ``context_profile="danish"``, ``formations`` is the Danish tops
+        workbook, which supplies the lithology of wells without a lithology
+        log.
     curve_aliases : mapping, path or DataFrame, optional
         Your names for standard curves (``{"GAMMA_RAY_1": "GR"}`` or a
         CSV/Excel table), as for :func:`read`; added to any mapping the well
@@ -390,10 +431,15 @@ def interpret(
     >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230)
     >>> result.raise_for_errors().status
     'interpreted'
+    >>> result = pp.interpret("well.las", formations="tops.csv", lithology="FACIES",
+    ...                       output="well_interpreted.las")  # doctest: +SKIP
     """
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, run_dynamic_workflow
 
     if context_profile is not None:
+        tops_file = formations
+        if lithology is not None or output is not None:
+            raise TypeError("context_profile fixes its package's inputs; lithology and output do not apply.")
         from petrophys.reporting.context_profiles import interpret_with_context_profile
 
         if config is not None or options or curve_aliases is not None:
@@ -410,8 +456,6 @@ def interpret(
             )
         return cast("DynamicWorkflowResult",
                     interpret_with_context_profile(well, context_profile, tops_file=tops_file))
-    if tops_file is not None:
-        raise TypeError("tops_file applies only with context_profile.")
     requested_profile = options.get("calculation_profile", getattr(config, "calculation_profile", None))
     if str(requested_profile or "").strip().lower().replace("-", "_") in {
         "geolink_train", "geolink_train_v1", "costa", "costa_v1", "danish", "danish_v1", "geolink_v1",
@@ -451,8 +495,32 @@ def interpret(
         from petrophys.preprocessing.standardization.user_aliases import attach_curve_aliases
 
         attach_curve_aliases(well, curve_aliases)
+    if lithology is not None:
+        if _names_curve_or_domain(lithology, well):
+            text = str(lithology).strip()
+            setting = "lithology_curve" if well.has_curve(text.upper()) else "lithology_domain"
+            if setting in options:
+                raise TypeError(f"Pass lithology or {setting}, not both")
+            options[setting] = text.upper() if setting == "lithology_curve" else text
+        else:
+            _attach_geology(well, lithology=lithology)
+    if formations is not None:
+        _attach_geology(well, formations=formations)
 
     from petrophys.workflow.dynamic_workflow import _config_with_header_settings
 
     config = _config_with_header_settings(well, config, options)
-    return run_dynamic_workflow(well, config=config, _header_settings=False)
+    result = run_dynamic_workflow(well, config=config, _header_settings=False)
+    if output is not None:
+        result.to_las(output)
+    return result
+
+
+def _names_curve_or_domain(value: Any, well: "Well") -> bool:
+    """Whether a ``lithology`` value names a curve or a lithology domain rather than intervals."""
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if well.has_curve(text.upper()):
+        return True
+    return not Path(text).suffix and not Path(text).exists()

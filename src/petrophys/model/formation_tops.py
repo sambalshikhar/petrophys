@@ -523,7 +523,7 @@ def label_depths(
     intervals : DataFrame, FormationTops or sequence of Interval
         Interval table, for example from :func:`petrophys.read_formations`
         (``top_depth``, ``bottom_depth``, ``formation_name``) or
-        :func:`petrophys.read_lithology_intervals` (``top``, ``bottom``,
+        :func:`petrophys.io.read_lithology_intervals` (``top``, ``bottom``,
         ``lithology``). Column names are detected; override them with
         ``top``, ``bottom`` and ``label``.
     label : str, optional

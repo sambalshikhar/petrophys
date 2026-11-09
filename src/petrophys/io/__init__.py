@@ -60,7 +60,6 @@ _COMPAT_EXPORTS = {
     "export_example_work_package_directory": ("petrophys.reporting", "export_example_work_package_directory"),
     "export_reference_json_work_package_directory": ("petrophys.reporting", "export_reference_json_work_package_directory"),
     "export_reference_json_work_package_by_formation": ("petrophys.reporting", "export_reference_json_work_package_by_formation"),
-    "export_reference_json_work_package_by_formation_lithology": ("petrophys.reporting", "export_reference_json_work_package_by_formation_lithology"),
     "export_reference_json_work_package_by_category_formation_lithology": (
         "petrophys.reporting",
         "export_reference_json_work_package_by_category_formation_lithology",

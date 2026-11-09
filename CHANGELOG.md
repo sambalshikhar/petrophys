@@ -75,7 +75,7 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
   calculations, then the context's value-range QC and dependent-curve
   recomputation. The statistics of `result.well` over a context group's
   depths are that group's statistics. The Danish profile also takes
-  `tops_file`. `result.steps_executed` records every calculation: the
+  `formations`, its tops workbook. `result.steps_executed` records every calculation: the
   profile's preparation (COSTA's clay volume, carbonate volumes and
   lithology, and permeability under the workflow's step names; the
   preparatory interpretation's RESFLAG, the Danish input preparation and
@@ -215,8 +215,7 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
   - `read_dlis` applies `standardize` to a single frame, and reads a frame
     given `step`, `step_strategy` or `channel_preference` through the merged
     path, which honours them.
-  - `pp.plot` refuses `depth_range` together with `top`/`height`, and draws a
-    lithology `fill_alpha` set in `curve_styles` as given.
+  - `pp.plot` draws a lithology `fill_alpha` set in `curve_styles` as given.
   - `eaton_from_well` converts a TVD curve in its own unit and, offshore,
     takes TVDSS from `air_gap`.
   - `monte_carlo` keeps `low`/`high` on depth-correlated lognormal inputs;
@@ -240,7 +239,7 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
     lithology_domain=...)`, a header LITH in zoned runs, `export_context`)
     re-resolves a `matrix_type` left unset; it kept the clastic sandstone.
   - `export_context` keeps the caller's explicit settings when
-    `lithology_domain` or `lithology_file` is given.
+    `lithology_domain` or `lithology` is given.
   - A header VSHE no longer switches `sw_model` to `north_sea` in zoned runs,
     as in `pp.interpret`.
   - Settings can differ by depth: `zones=` takes a list of intervals with
@@ -265,10 +264,11 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
     and depths changes nothing and names the interval, and a `well` column
     lets one table hold the zones of several wells. `result.zone_summary()`
     gives one row per zone with the columns of `formation_summary`, and
-    `pp.export_context(..., layout="category_formation_lithology",
-    zones=...)` (CLI `--zones`) writes one context group per zone, with
-    `zone_info` and `zone_name`, in place of the formation and lithology
-    groups.
+    `pp.export_context(..., layout="package", zones=...)` (CLI `--zones`)
+    groups each well by its zones in place of its formations, with
+    `zone_info` and `zone_name`. Each formation or zone is split into
+    lithology groups, or is one group with `split_by_lithology=False` (CLI
+    `--no-lithology-split`).
   - The workflow trace no longer lists the library's internal config records.
   - Archie `a`, `m`, `n` and the net-pay cutoffs also take one value per
     lithology, e.g. `m={"sandstone": 1.8, "carbonate": 2.3}` or
@@ -980,6 +980,32 @@ wherever the package used the function.
 
 ### Features
 
+- `import petrophys as pp` holds the names most work needs: `read`,
+  `interpret`, `plot`, `impute`, `export_context`, `read_formations`,
+  `sample`, `list_samples`, `Well` and `DynamicWorkflowConfig`. Everything
+  else is imported from its package (`petrophys.workflow`,
+  `petrophys.model`, `petrophys.reporting`, ...).
+- One name for each input across the front door: `formations=` (formation
+  tops) and `lithology=` (lithology intervals) in `pp.read`, `pp.interpret`,
+  `pp.plot` and `pp.export_context`, `lithology_codes=` (the codebook of a
+  lithology code curve) in the last three, and `top=`/`bottom=` for a depth
+  window. `pp.interpret(..., lithology=)` also takes the name of the well's
+  lithology code curve or a lithology domain.
+- `bad_hole` (`cali`, `drho`, `large_hole` thresholds), `perm_coefficients`
+  (`a`, `b`, `c` of the Timur, Coates-Denoo or Wyllie-Rose equation) and
+  `mineral_endpoints` (`rhob`, `nphi`, `pef`, `u`, `dt` per mineral or
+  water of the clastic mineral solve) take the values you give over the
+  defaults. The trace, the plots and the context notes use them. LAS
+  header parameters give them one value each (`BADHOLE_CALI`,
+  `BADHOLE_DRHO`, `BADHOLE_BS`; `PERM_A`, `PERM_B`, `PERM_C`;
+  `QUARTZ_RHOB`, `WATER_NPHI` and the other `<MINERAL>_<PROPERTY>`), also
+  per header zone (`BADHOLE_CALI_Z1`), below the values you pass.
+- `pp.plot` takes a well file path. `pp.interpret(..., output="well.las")`
+  writes the interpreted well, as `pp.impute(..., output=)` does, and
+  `pp.impute` takes an interpretation result and returns it.
+- `pp.export_context(result)` without an output path returns the context as
+  a dict; `layout="package"` (CLI `--layout package`) writes the context
+  package of a folder of wells.
 - `calculate_pore_volume_weighted_sw` gives the pore-volume-weighted Sw over
   net pay, sum(Sw PHIE h) / sum(PHIE h), with PHIE_CC preferred. The pay and
   zone summaries keep their thickness-weighted Sw.
@@ -1081,7 +1107,7 @@ wherever the package used the function.
 - Unlabeled station-pressure contact inference through `infer_contacts`,
   exposing competing fluid hypotheses and unresolved contacts, alongside the
   labeled FWL fit.
-- Public `build_context` / `export_context` and `petrophys-context` CLI with
+- Public `export_context` and `petrophys-context` CLI with
   schema version 1.0, UTF-8 byte budgets, staged package publication and
   overwrite protection. The CLI always computes its context from input data,
   with the same workflow as direct interpretations. Each JSON file is held to
@@ -1125,7 +1151,8 @@ wherever the package used the function.
   their plausible range (with a unit hint such as "values look 1000x too
   large"), geology that does not overlap the logged interval, and
   unrecognized lithology labels. Warnings escalated to errors (for example
-  `warnings.simplefilter("error", pp.DataQualityWarning)`) stop
+  `warnings.simplefilter("error", DataQualityWarning)`, from
+  `petrophys.exceptions`) stop
   `pp.interpret`.
 - `DynamicWorkflowResult.to_las()` writes the interpreted well with the
   settings used (`PP_*` parameters, including `PP_RW` and its temperature)
@@ -1150,7 +1177,7 @@ wherever the package used the function.
 - External lithology precedence, numeric category metadata, and gap/unknown
   reports; core saturation fraction normalization with provenance
   (`petrophys.model.units.core_saturation_to_fraction`).
-- Custom workflows: `pp.Workflow` and `pp.workflow_step` build reusable
+- Custom workflows: `Workflow` and `workflow_step` (`petrophys.workflow`) build reusable
   interpretation recipes from built-in steps (`petrophys.workflow.steps`,
   including `pp.interpret` as one step) and your own functions. Inputs are
   checked before running; runs keep a full trace and export to LAS/JSON;

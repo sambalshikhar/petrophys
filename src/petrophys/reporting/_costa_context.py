@@ -585,7 +585,7 @@ def interpret_costa_context_las(
     under ``output_dir`` as the package's ``processed_las``. Each result's step
     record is complete: the steps run outside the workflow (see
     :func:`precomputed_step_results`) and the workflow's own.
-    :func:`petrophys.export_context_profile` with ``context_profile="costa"``
+    :func:`petrophys.reporting.context_profiles.export_context_profile` with ``context_profile="costa"``
     delivers the same LAS together with the context package.
 
     Parameters

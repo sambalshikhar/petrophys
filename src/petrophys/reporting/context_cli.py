@@ -48,76 +48,11 @@ def _add_standard_inputs(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def build_package_parser(layout: str) -> argparse.ArgumentParser:
-    """Build the parser shared by the package script entry points."""
-    parser = argparse.ArgumentParser(
-        description="Compute formation/lithology context packages from LAS or DLIS files"
-    )
-    input_dir = _path_from_env("PETROPHYS_DATA_DIR")
-    parser.add_argument(
-        "--input-dir",
-        type=Path,
-        default=input_dir,
-        required=input_dir is None,
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path(os.environ.get("PETROPHYS_OUTPUT_DIR", "outputs/context_package")),
-    )
-    _add_standard_inputs(parser)
-    parser.add_argument("--well", dest="well_names", action="append", default=[])
-    parser.add_argument("--pattern", default="*.las", help="Input glob; use *.dlis for DLIS")
-    parser.add_argument("--depth-unit", choices=("m", "ft"), help="Required for tabular well logs")
-    parser.add_argument(
-        "--curve-aliases", type=Path,
-        help="CSV/Excel table of your curve names and the standard names they stand for (curve,standard)",
-    )
-    parser.add_argument("--recursive", action="store_true")
-    parser.add_argument(
-        "--min-thickness",
-        type=float,
-        default=2.0,
-        help="Minimum lithology-group thickness in the well depth unit",
-    )
-    if layout == "category_formation_lithology":
-        parser.add_argument(
-            "--zones", type=Path,
-            help=(
-                "CSV/Excel table of your zones (zone,top,bottom; a well column for several wells): "
-                "one context group per zone in place of the formation/lithology groups"
-            ),
-        )
-        parser.add_argument(
-            "--profile",
-            dest="context_profile",
-            choices=(
-                "geolink", "geolink_v1", "geolink_train", "geolink_train_v1", "costa", "costa_v1",
-                "danish", "danish_v1",
-            ),
-            help=(
-                "Compute a published context package with its own pipeline from the input "
-                "directory's raw LAS (GeoLink eval, GeoLink training, COSTA or Danish); geolink, "
-                "geolink_train and danish also need --formations (their tops workbook) and "
-                "--lithology-codes (the GeoLink codebook). Omit it to interpret with your "
-                "supplied settings."
-            ),
-        )
-    parser.add_argument("--tops-rank", choices=("group", "formation", "member"))
-    parser.add_argument("--tops-sheet", help="Explicit formation Excel sheet name")
-    parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
-    parser.add_argument(
-        "--max-total-bytes", type=int, default=DEFAULT_MAX_TOTAL_BYTES,
-        help="Cap on the package's total size in bytes (no cap by default)",
-    )
-    return parser
-
-
 def _package_options(args: argparse.Namespace) -> dict:
     options = {
-        "tops_file": args.formations,
-        "lithology_file": args.lithology,
-        "lithology_mapping_file": args.lithology_codes,
+        "formations": args.formations,
+        "lithology": args.lithology,
+        "lithology_codes": args.lithology_codes,
         "pattern": args.pattern,
         "recursive": args.recursive,
         "minimum_group_thickness": args.min_thickness,
@@ -154,25 +89,6 @@ def _reader_options(args: argparse.Namespace) -> dict:
     return options
 
 
-def package_main(layout: str, argv=None) -> int:
-    parser = build_package_parser(layout)
-    args = parser.parse_args(argv)
-    try:
-        results = export_context(
-            args.input_dir,
-            args.output_dir,
-            layout=layout,
-            max_bytes=args.max_bytes,
-            max_total_bytes=args.max_total_bytes,
-            context_profile=getattr(args, "context_profile", None),
-            **_package_options(args),
-        )
-    except (OSError, ValueError, TypeError, RuntimeError) as exc:
-        parser.exit(2, f"petrophys-context: {exc}\n")
-    print(f"Exported {len(results)} contexts to {args.output_dir}")
-    return 0
-
-
 def _single_well_result(args: argparse.Namespace):
     from petrophys.api import interpret, read
     from petrophys.workflow.zoned_batch import lithology_domain_from_metadata
@@ -204,8 +120,16 @@ def main(argv=None) -> int:
     parser.add_argument("output", type=Path, help="Output JSON file or new package directory")
     parser.add_argument(
         "--layout",
-        choices=("well", "formation_lithology", "category_formation_lithology"),
+        choices=("well", "package"),
         default="well",
+        help="well: one JSON summary of one well; package: the context package of a folder of wells",
+    )
+    parser.add_argument(
+        "--zones", type=Path,
+        help=(
+            "CSV/Excel table of your zones (zone,top,bottom; a well column for several wells): "
+            "the zones take the place of the formations (package layout)"
+        ),
     )
     _add_standard_inputs(parser)
     parser.add_argument("--depth-unit", choices=("m", "ft"), help="Required for tabular well logs")
@@ -217,6 +141,10 @@ def main(argv=None) -> int:
     parser.add_argument("--pattern", default="*.las", help="Input glob; use *.dlis for DLIS")
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--min-thickness", type=float, default=2.0)
+    parser.add_argument(
+        "--no-lithology-split", dest="split_by_lithology", action="store_false",
+        help="One group per formation or zone, not split by lithology (package layout)",
+    )
     parser.add_argument(
         "--profile",
         dest="context_profile",
@@ -247,13 +175,17 @@ def main(argv=None) -> int:
     try:
         if args.layout == "well":
             if args.context_profile is not None:
-                parser.error("--profile requires --layout category_formation_lithology")
+                parser.error("--profile requires --layout package")
             if args.input.is_dir():
                 parser.error("layout=well requires one well file")
             if args.well or args.tops_rank or args.tops_sheet:
                 parser.error("--well and tops selection apply to package layouts")
             if args.lithology_codes is not None:
                 parser.error("--lithology-codes applies only to package layouts")
+            if args.zones is not None:
+                parser.error("--zones applies only to the package layout")
+            if not args.split_by_lithology:
+                parser.error("--no-lithology-split applies only to the package layout")
             result = _single_well_result(args)
             exported = export_context(
                 result,
@@ -275,6 +207,7 @@ def main(argv=None) -> int:
                 max_bytes=args.max_bytes,
                 max_total_bytes=args.max_total_bytes,
                 context_profile=args.context_profile,
+                split_by_lithology=args.split_by_lithology,
                 **_package_options(package_args),
             )
     except (OSError, ValueError, TypeError, RuntimeError) as exc:

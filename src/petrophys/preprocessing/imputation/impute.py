@@ -101,11 +101,13 @@ def _well_table(well: "Well", names: Sequence[str]) -> Dict[str, np.ndarray]:
     return table
 
 
-def _as_well(source: Union["Well", PathLike]) -> "Well":
+def _as_well(source: Any) -> "Well":
     from petrophys.model.well import Well
 
     if isinstance(source, Well):
         return source
+    if isinstance(getattr(source, "well", None), Well):  # an interpretation result
+        return source.well
     from petrophys.api import read
 
     return read(source)
@@ -123,12 +125,12 @@ def _store_result(well: "Well", base: str, values: np.ndarray, unit: str,
 
 
 def impute(
-    well: Union["Well", PathLike],
+    well: Any,
     curve: str,
     *,
-    train_wells: Optional[Sequence[Union["Well", PathLike]]] = None,
+    train_wells: Optional[Sequence[Any]] = None,
     output: Optional[PathLike] = None,
-) -> "Well":
+) -> Any:
     """Reconstruct the missing samples of a curve.
 
     A gradient-boosted tree model learns ``curve`` from the other logs
@@ -140,12 +142,13 @@ def impute(
 
     Parameters
     ----------
-    well : Well or path
-        The well, or a LAS, DLIS, CSV or TSV file.
+    well : Well, DynamicWorkflowResult or path
+        The well, an interpretation result (its interpreted well), or a LAS,
+        DLIS, CSV or TSV file.
     curve : str
         The curve to reconstruct, by its mnemonic or standard name
         (``"RHOB"``, ``"DT"``, ``"NPHI"`` ...).
-    train_wells : sequence of Well or path, optional
+    train_wells : sequence of Well, DynamicWorkflowResult or path, optional
         Other wells to learn from, typically from the same field. Needed when
         the well lacks the curve altogether, and useful when its measured
         part is short.
@@ -154,8 +157,9 @@ def impute(
 
     Returns
     -------
-    Well
-        The well with ``<CURVE>_IMPUTED`` added.
+    Well or DynamicWorkflowResult
+        What was passed, with ``<CURVE>_IMPUTED`` added to its well: the
+        result for a result, else the well.
 
     Raises
     ------
@@ -177,7 +181,9 @@ def impute(
     >>> well = pp.impute("16_7-1.las", "RHOB", output="16_7-1_imputed.las")
     >>> well = pp.impute(target, "DT", train_wells=["HW-3.las", "HW-4.las"])
     """
+    given = well
     well = _as_well(well)
+    returned = given if well is not given and hasattr(given, "steps_executed") else None
     target = _standard_name(well, curve)
     target_mnemonic = _find_curve(well, target)
 
@@ -195,8 +201,8 @@ def impute(
     missing = ~np.isfinite(recorded)
     if not np.any(missing):
         warnings.warn(f"{well.name}: {curve} has no missing samples; nothing to impute", stacklevel=2)
-        return _store_result(well, target_mnemonic or str(curve).strip().upper(),
-                             recorded, unit, output)
+        _store_result(well, target_mnemonic or str(curve).strip().upper(), recorded, unit, output)
+        return returned if returned is not None else well
 
     others = [_as_well(source) for source in (train_wells or [])]
     if target_mnemonic is None and not any(_find_curve(other, target) is not None for other in others):
@@ -288,4 +294,5 @@ def impute(
 
     base = target_mnemonic or str(curve).strip().upper()
     values = np.where(missing, imputed / factor, recorded)
-    return _store_result(well, base, values, unit, output)
+    _store_result(well, base, values, unit, output)
+    return returned if returned is not None else well

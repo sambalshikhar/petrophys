@@ -25,7 +25,7 @@ published COSTA context package: per well, the
 BHT, the Rw at 68 degF and the saturation, clay-volume and porosity methods
 used, and, by depth for 15 wells, calcite (`vlim`) and dolomite (`vdol`)
 volumes from an earlier interpretation of these logs, which the package took
-where available. `pp.export_context(None, out, layout="category_formation_lithology",
+where available. `pp.export_context(None, out, layout="package",
 context_profile="costa")` recomputes that package from these files.
 
 For the carbonate interpretation, pass `lithology_domain="carbonate"` in

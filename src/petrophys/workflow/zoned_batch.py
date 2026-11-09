@@ -130,6 +130,25 @@ _CURRENT_PARAMETER_ALIASES: dict[str, str] = {
     "FLSAL": "rmf_salinity_ppm",
 }
 
+#: Header parameters that set one value of a mapping setting, read by the
+#: "current" calculations only: the bad-hole thresholds (BADHOLE_CALI and
+#: BADHOLE_BS in inches, BADHOLE_DRHO in g/cm3), the permeability equation's
+#: PERM_A, PERM_B and PERM_C, and the mineral solve's endpoints
+#: ``<MINERAL>_<PROPERTY>`` such as QUARTZ_RHOB or WATER_NPHI.
+MAPPING_PARAMETER_ALIASES: dict[str, tuple[str, ...]] = {
+    "BADHOLE_CALI": ("bad_hole", "cali"),
+    "BADHOLE_DRHO": ("bad_hole", "drho"),
+    "BADHOLE_BS": ("bad_hole", "large_hole"),
+    "PERM_A": ("perm_coefficients", "a"),
+    "PERM_B": ("perm_coefficients", "b"),
+    "PERM_C": ("perm_coefficients", "c"),
+    **{
+        f"{mineral.upper()}_{key.upper()}": ("mineral_endpoints", mineral, key)
+        for mineral in ("quartz", "calcite", "dolomite", "anhydrite", "clay", "water")
+        for key in ("rhob", "nphi", "pef", "u", "dt")
+    },
+}
+
 #: Header parameters the "current" calculations read from the well itself, not
 #: as settings. PNSH ("Neutron Shale") is the neutron log's reading in shale:
 #: DynamicWorkflow turns it, with RBSH ("Shale Density"), into a clay porosity.
@@ -781,6 +800,20 @@ def _apply_parameter_alias(
         return
     elif not benchmark:
         target = _CURRENT_PARAMETER_ALIASES.get(key, target)
+        path = MAPPING_PARAMETER_ALIASES.get(key)
+        if path is not None:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                unmapped_parameters.append(base_name)
+                return
+            if path[-1] == "rhob":
+                number = _density_to_g_per_cm3(number, unit)
+            node = overrides.setdefault(path[0], {})
+            for part in path[1:-1]:
+                node = node.setdefault(part, {})
+            node[path[-1]] = number
+            return
 
     if key in DIRECT_INTERVAL_METADATA:
         try:

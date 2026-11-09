@@ -993,6 +993,10 @@ class PermeabilityModule:
         given no lithology. Default: the well's lithology code curve,
         ``LITHOLOGY_GEOLINK`` or another lithology-code curve as
         :func:`petrophys.interpret` reads it.
+    coefficients : mapping, optional
+        Any of ``a`` (coefficient), ``b`` (porosity exponent) and ``c`` (Swirr
+        exponent) of the Timur, Coates-Denoo or Wyllie-Rose equation, over
+        the equation's own; ``lith_vcl`` takes none.
     """
 
     def __init__(
@@ -1005,6 +1009,7 @@ class PermeabilityModule:
         core_porosity_curve: Optional[str] = None,
         min_porosity_r_squared: Optional[float] = None,
         lithology_curve: Optional[str] = None,
+        coefficients: Optional[Dict[str, float]] = None,
     ):
         self.method = _normalize_perm_method(method)
         self.fallback_method = _normalize_perm_method(fallback_method)
@@ -1018,6 +1023,8 @@ class PermeabilityModule:
         self.min_porosity_r_squared = min_porosity_r_squared
         #: Lithology code curve read by lith_vcl (None: the well's own).
         self.lithology_curve = lithology_curve
+        #: ``a``, ``b`` and ``c`` of the empirical equation, over its own.
+        self.coefficients = dict(coefficients or {})
 
     def _core_options(self, porosity_curve: Optional[str] = None) -> Dict[str, Any]:
         """Core-model fitting options shared by every core calibration route.
@@ -1073,15 +1080,16 @@ class PermeabilityModule:
         if empirical_method == "timur":
             if swi is None:
                 swi, swi_source, bvw_irr, swi_metadata = _resolve_swirr_details(well, phi=phi)
-            perm = timur(phi, swi)
+            perm = timur(phi, swi, **self.coefficients)
         elif empirical_method == "coates":
             if swi is None:
                 swi, swi_source, bvw_irr, swi_metadata = _resolve_swirr_details(well, phi=phi)
-            perm = coates_denoo(phi, swi)
+            perm = coates_denoo(phi, swi, **self.coefficients)
         elif empirical_method == "wyllie_rose":
             if swi is None:
                 swi, swi_source, bvw_irr, swi_metadata = _resolve_swirr_details(well, phi=phi)
-            perm = wyllie_rose(phi, swi)
+            perm = wyllie_rose(phi, swi, p=self.coefficients.get("a"), q=self.coefficients.get("b"),
+                               r=self.coefficients.get("c"))
         elif empirical_method == "lith_vcl":
             phit, vcl, lith, lith_metadata = _resolve_lith_vcl_inputs(
                 well, phi, lithology=lithology, lithology_curve=self.lithology_curve
@@ -1126,6 +1134,22 @@ class PermeabilityModule:
                 "coefficient": p,
                 "porosity_exponent": q,
                 "swirr_exponent": r,
+            }
+
+        if self.coefficients and empirical_method in {"timur", "coates", "wyllie_rose"}:
+            defaults = {"timur": (0.136, 4.4, 2.0), "coates": (10000.0, 4.0, 2.0),
+                        "wyllie_rose": WYLLIE_ROSE_PRESETS["morris_biggs_oil"]}[empirical_method]
+            a, b, c = (float(self.coefficients.get(key, value)) for key, value in zip("abc", defaults))
+            method_metadata = {
+                "equation": {
+                    "timur": f"{a:g} * (100 * PHIE)^{b:g} / (100 * SWIRR)^{c:g}",
+                    "coates": f"{a:g} * PHIE^{b:g} * ((1 - SWIRR) / SWIRR)^{c:g}",
+                    "wyllie_rose": f"{a:g} * PHIE^{b:g} / SWIRR^{c:g}",
+                }[empirical_method],
+                "coefficient": a,
+                "porosity_exponent": b,
+                "swirr_exponent": c,
+                "coefficients_set": dict(self.coefficients),
             }
 
         if empirical_method == "coates" and swi_source != "user":

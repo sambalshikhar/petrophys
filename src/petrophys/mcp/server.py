@@ -752,7 +752,7 @@ def create_server(
         summary_top: SummaryTop = None,
         summary_bottom: SummaryBottom = None,
     ) -> JsonReply:
-        """Run your own recipe of steps (petrophys.Workflow) on a well.
+        """Run your own recipe of steps (petrophys.workflow.Workflow) on a well.
 
         Use it when the user gives methods and parameters (a quick look, a
         company recipe) instead of letting interpret_well choose. Steps run in
@@ -984,7 +984,8 @@ def create_server(
                     selected = reports.resolve_tracks(tracks, available)
                     if "DEPTH" in available and "DEPTH" not in selected:
                         selected.insert(0, "DEPTH")
-                viewer = pp.plot(well, depth_range=depth_range, tracks=selected,
+                viewer = pp.plot(well, top=depth_range[0] if depth_range else None,
+                                 bottom=depth_range[1] if depth_range else None, tracks=selected,
                                  template=template)
             try:
                 if viewer.fig is None:

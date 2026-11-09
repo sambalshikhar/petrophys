@@ -3,9 +3,9 @@
 Filter Petrophys data-quality warnings like any other warning category::
 
     import warnings
-    import petrophys as pp
+    from petrophys.exceptions import DataQualityWarning
 
-    warnings.simplefilter("error", pp.DataQualityWarning)  # fail fast
+    warnings.simplefilter("error", DataQualityWarning)  # fail fast
 """
 
 __all__ = ["DataQualityWarning"]

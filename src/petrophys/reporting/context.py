@@ -158,20 +158,34 @@ def _write_bytes(path: Path, data: bytes, overwrite: bool) -> None:
 
 #: The export_context options a context profile takes; the package fixes the rest.
 _PROFILE_OPTIONS = {"well_names", "pattern", "recursive", "tops_file", "lithology_mapping_file"}
+#: The names these inputs share with petrophys.read, interpret and plot.
+_INPUT_NAMES = {"formations": "tops_file", "lithology": "lithology_file", "lithology_codes": "lithology_mapping_file"}
 
 
 def export_context(
     data: Any,
-    output_path: Any,
+    output_path: Any = None,
     *,
     layout: str = "well",
     max_bytes: int = DEFAULT_MAX_BYTES,
     max_total_bytes: Optional[int] = DEFAULT_MAX_TOTAL_BYTES,
     overwrite: bool = False,
     context_profile: Optional[str] = None,
+    split_by_lithology: bool = True,
     **options: Any,
 ):
     """Write a well summary or a fully computed context package.
+
+    ``layout="well"`` (the default) summarizes one well or interpretation
+    result in one JSON file at ``output_path``; without ``output_path`` the
+    summary is returned as a dict (``category`` selects one category's
+    document). ``layout="package"`` interprets every well file of the
+    ``data`` folder and writes the context package to the new folder
+    ``output_path``: one folder per category, well and formation (or zone),
+    one JSON file per group. ``formations``, ``lithology`` and
+    ``lithology_codes`` are the formation tops, lithology intervals and
+    lithology codebook, as for :func:`petrophys.read`; a tops or zones table
+    for several wells needs a ``well`` column.
 
     Without ``context_profile``, package layouts read the well files in the
     ``data`` folder, apply optional formation and lithology inputs, interpret
@@ -183,13 +197,18 @@ def export_context(
     file, which records no depth unit, or ``{"step": 0.1524}`` for a DLIS
     sampling step in metres.
 
-    ``zones`` (``category_formation_lithology`` only) is a CSV or Excel file
+    ``zones`` (package layout only) is a CSV or Excel file
     or a table of your own intervals: one row per zone with its name
     (``zone`` or ``name``), ``top`` and ``bottom``, and a ``well`` column
-    when it covers several wells. Each zone becomes one context group in
-    place of the formation and lithology groups, and its documents carry
-    ``zone_info`` and ``zone_name``. Setting columns (``rw``, ``m`` ...)
-    apply inside their zone, as in ``petrophys.interpret(well, zones=...)``.
+    when it covers several wells. The zones take the place of the
+    formations, and their documents carry ``zone_info`` and ``zone_name``.
+    Setting columns (``rw``, ``m`` ...) apply inside their zone, as in
+    ``petrophys.interpret(well, zones=...)``.
+
+    In a package each formation (or zone; the whole well without either) is
+    split into lithology groups, runs of samples with one lithology, or with
+    ``split_by_lithology=False`` is one group; such a group's documents give
+    its ``dominant_lithology``.
 
     ``context_profile`` computes a published package from its delivery's raw
     LAS files with the package's own pipeline and calculations
@@ -203,32 +222,41 @@ def export_context(
     petrophys). A profile fixes the package's settings, so ``workflow_config``
     and the other interpretation options are rejected; only ``well_names``,
     ``pattern``, ``tops_file`` and ``lithology_mapping_file`` apply. Context
-    profiles apply only to the ``category_formation_lithology`` layout, and
-    only the context JSON is written to ``output_path``.
+    profiles apply only to the package layout, and only the context JSON is
+    written to ``output_path``.
     """
+    for name, internal in _INPUT_NAMES.items():
+        if internal in options:
+            raise TypeError(f"export_context() got an unexpected keyword argument {internal!r}")
+        if name in options:
+            options[internal] = options.pop(name)
+    if layout not in {"well", "package"}:
+        raise ValueError("Unknown context layout; choose well or package")
     _validate_limit(max_bytes, "max_bytes")
     if max_total_bytes is not None:
         _validate_limit(max_total_bytes, "max_total_bytes")
-    output = Path(output_path)
+    output = Path(output_path) if output_path is not None else None
     if layout == "well":
         if context_profile is not None:
-            raise ValueError("context_profile applies only to category package exports")
+            raise ValueError("context_profile applies to layout='package'")
+        if not split_by_lithology:
+            raise TypeError("split_by_lithology applies to layout='package'")
+        package_only = sorted(name for name in options if name != "category")
+        if package_only:
+            shown = {internal: name for name, internal in _INPUT_NAMES.items()}
+            raise TypeError(
+                f"{', '.join(shown.get(name, name) for name in package_only)} applies to layout='package'"
+            )
         payload = build_context(data, max_bytes=max_bytes, **options)
+        if output is None:
+            return payload
         _write_bytes(output, _encode(payload, max_bytes), overwrite)
         return output
 
-    layouts = {"formation_lithology", "category_formation_lithology"}
-    if layout not in layouts:
-        raise ValueError(
-            "Unknown context layout; choose well, formation_lithology or "
-            "category_formation_lithology"
-        )
-    if options.get("zones") is not None and layout != "category_formation_lithology":
-        raise ValueError("zones applies to layout='category_formation_lithology'")
-    if context_profile is not None and layout != "category_formation_lithology":
-        raise ValueError(
-            "context_profile requires layout='category_formation_lithology'"
-        )
+    if output is None:
+        raise TypeError("A package export needs output_path, the new folder to write")
+    if context_profile is not None and not split_by_lithology:
+        raise ValueError(f"context_profile {context_profile!r} fixes its package's groups; remove split_by_lithology")
     if context_profile is not None:
         fixed = sorted(
             name
@@ -267,18 +295,13 @@ def export_context(
 
     from petrophys.reporting import reference_export as reference
 
-    exporter = None
-    if context_profile is None:
-        exporter = (
-            reference.export_reference_json_work_package_by_formation_lithology
-            if layout == "formation_lithology"
-            else reference.export_reference_json_work_package_by_category_formation_lithology
-        )
+    exporter = reference.export_reference_json_work_package_by_category_formation_lithology
     output_io.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix=".petrophys-context-", dir=output_io.parent) as directory:
         staged = Path(directory) / "package"
         if context_profile is None:
-            results = exporter(input_dir=source, output_dir=staged, **options)
+            results = exporter(input_dir=source, output_dir=staged,
+                               split_by_lithology=split_by_lithology, **options)
         else:
             from petrophys.reporting.context_profiles import export_context_profile
 

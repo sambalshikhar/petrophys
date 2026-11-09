@@ -866,7 +866,7 @@ class DynamicWorkflowConfig:
     lithology_curve: Optional[str] = None
     #: The codebook of the lithology code curve, when its codes are not those of
     #: the built-in lithology code table: a mapping of code to rock name, or a table
-    #: (path or DataFrame) that :func:`petrophys.read_lithology_codes` reads.
+    #: (path or DataFrame) that :func:`petrophys.io.read_lithology_codes` reads.
     #: Each rock name is read as a lithology group by
     #: :func:`petrophys.interpretation.lithology.labels.lithology_group_for_label`
     #: ("Sst", "shaly sandstone", "LST", "Dolostone", ...); codes whose name
@@ -895,6 +895,15 @@ class DynamicWorkflowConfig:
     #: so the calcite-dolomite split largely follows ``matrix_type`` where that
     #: porosity is density-derived.
     carbonate_calibration: Optional[str] = None
+    #: Endpoints of the clastic mineral solve that replace the built-in table,
+    #: by mineral (``quartz``, ``calcite``, ``dolomite``, ``anhydrite``,
+    #: ``clay``) or pore fluid (``water``), each a mapping of any of
+    #: ``rhob`` (g/cm3), ``nphi`` (v/v), ``pef`` (b/e), ``u`` (b/cm3) and
+    #: ``dt`` (us/ft): e.g. ``{"quartz": {"rhob": 2.65, "nphi": -0.04},
+    #: "water": {"nphi": 1.0}}``. The solve's water takes ``rho_fl`` and
+    #: ``dt_fl`` unless set here; porosity always uses ``rho_fl`` and
+    #: ``dt_fl``. Not available under the "geolink" profile.
+    mineral_endpoints: Optional[Dict[str, Dict[str, float]]] = None
     #: Raise on the first failed step instead of recording it and continuing.
     raise_on_error: bool = False
 
@@ -1028,11 +1037,28 @@ class DynamicWorkflowConfig:
     #: point. The "geolink" profile uses (2.62, 0.38) and ignores this setting.
     nd_clay: Optional[Tuple[float, float]] = None
 
+    # -- Bad hole --------------------------------------------------------------
+    #: Thresholds of the BAD_HOLE flag, any of ``cali`` (washout where
+    #: CALI - BS exceeds it, in; default 1.5), ``drho`` (washout where absolute DRHO
+    #: exceeds it, g/cm3; default 0.15) and ``large_hole`` (bit sizes above
+    #: it, in; default 17.5), e.g. ``{"cali": 2.0}``. Not available under the
+    #: "geolink" profile.
+    bad_hole: Optional[Dict[str, float]] = None
+
     # -- Permeability --------------------------------------------------------
     #: ``"auto"``, ``"timur"``, ``"coates"``, ``"wyllie_rose"`` or ``"lith_vcl"``.
     perm_method: str = "auto"
     #: Empirical method tried when core calibration is unavailable.
     perm_fallback_method: str = "coates"
+    #: Coefficients of the empirical permeability equation, any of ``a`` (the
+    #: coefficient), ``b`` (the porosity exponent) and ``c`` (the Swirr
+    #: exponent): Timur k = a (100 PHIE)^b / (100 Swirr)^c (defaults 0.136,
+    #: 4.4, 2), Coates-Denoo k = a PHIE^b ((1 - Swirr) / Swirr)^c (10000, 4,
+    #: 2), Wyllie-Rose k = a PHIE^b / Swirr^c (62500, 6, 2). They apply to
+    #: the equation the run uses (``perm_method``, or ``perm_fallback_method``
+    #: where no core model is fitted); ``lith_vcl`` takes none. Not available
+    #: under the "geolink" profile.
+    perm_coefficients: Optional[Dict[str, float]] = None
     #: Irreducible water saturation, v/v. Defaults to curves or NMR data.
     swirr: Optional[float] = None
     #: Clay porosity behind the PHIE that picks the SWIRR_APP samples, i.e. the
@@ -1541,12 +1567,28 @@ def _config_with_header_settings(
     native = {name: metadata_options.pop(name) for name in _NATIVE_HEADER_FIELDS if name in metadata_options}
     if historical:
         metadata_options.pop("td_ft", None)
+    # Your values of a mapping setting, then the header's for the keys you leave out.
+    yours = {
+        name: options[name] if name in options
+        else (getattr(config, name, None) if config is not None and name in _explicit(config) else None)
+        for name in _MAPPING_SETTINGS
+    }
+    mapping_notes: List[str] = []
+    for name in _MAPPING_SETTINGS:
+        header_value = metadata_options.pop(name, None)
+        if not header_value:
+            continue
+        options[name] = _merged_mapping(header_value, yours[name])
+        if yours[name] and _merged_mapping(header_value, yours[name]) != _merged_mapping(yours[name], header_value):
+            mapping_notes.append(
+                f"The LAS header gives {name}={header_value!r}; your {name}={yours[name]!r} is used where they differ"
+            )
     if config is None:
         config = DynamicWorkflowConfig(**{**metadata_options, **options})
         # Header values are not the caller's settings.
         config._explicit_settings = _explicit(config) - (set(metadata_options) - set(options))
         if not historical:
-            _note_header_settings(well, config, {**metadata_options, **native})
+            _note_header_settings(well, config, {**metadata_options, **native}, yours, mapping_notes)
         return config
     settings = {
         name: value
@@ -1567,11 +1609,17 @@ def _config_with_header_settings(
         result._explicit_settings = frozenset(explicit)
         return result
     result = _copy_config(config, explicit=list(options), **settings)
-    _note_header_settings(well, result, {**metadata_options, **native})
+    _note_header_settings(well, result, {**metadata_options, **native}, yours, mapping_notes)
     return result
 
 
-def _note_header_settings(well: "Well", config: DynamicWorkflowConfig, header: Dict[str, Any]) -> None:
+def _note_header_settings(
+    well: "Well",
+    config: DynamicWorkflowConfig,
+    header: Dict[str, Any],
+    yours: Optional[Dict[str, Any]] = None,
+    mapping_notes: Optional[List[str]] = None,
+) -> None:
     """Record on ``config`` the header values a setting overrides, and the header's zones.
 
     ``_header_notes`` name the whole-well and zone header values the caller's
@@ -1583,7 +1631,7 @@ def _note_header_settings(well: "Well", config: DynamicWorkflowConfig, header: D
     from petrophys.workflow.zoned_batch import _NATIVE_HEADER_FIELDS, extract_zoned_parameters
 
     explicit = _explicit(config)
-    notes = []
+    notes = list(mapping_notes or [])
     for name, value in header.items():
         given = getattr(config, name, None)
         if name in explicit and isinstance(given, dict) and "*" not in given:
@@ -1601,6 +1649,12 @@ def _note_header_settings(well: "Well", config: DynamicWorkflowConfig, header: D
         settings = {}
         for name, value in zone.config_overrides.items():
             if name in _NATIVE_HEADER_FIELDS or name in _WHOLE_RUN_SETTINGS:
+                continue
+            if name in _MAPPING_SETTINGS:
+                # Inside the zone: the zone's values over the whole-well ones, yours over both.
+                settings[name] = _merged_mapping(
+                    _merged_mapping(getattr(config, name, None), value), (yours or {}).get(name)
+                )
                 continue
             given = getattr(config, name, None)
             if name in explicit and isinstance(given, dict):
@@ -2114,6 +2168,91 @@ def _left_at_default(config: DynamicWorkflowConfig, field_name: str) -> bool:
     return False
 
 
+#: Settings that take a mapping: header values and zone values fill the keys
+#: they give, under the keys you give.
+_MAPPING_SETTINGS = ("bad_hole", "perm_coefficients", "mineral_endpoints")
+
+
+def _merged_mapping(base: Any, over: Any) -> Dict[str, Any]:
+    """``over``'s keys over ``base``'s, a level deeper for mapping values (``mineral_endpoints``)."""
+    from collections.abc import Mapping
+
+    merged: Dict[str, Any] = {key: (dict(value) if isinstance(value, Mapping) else value)
+                              for key, value in dict(base or {}).items()}
+    for key, value in dict(over or {}).items():
+        if isinstance(value, Mapping) and isinstance(merged.get(key), Mapping):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = dict(value) if isinstance(value, Mapping) else value
+    return merged
+
+
+_BAD_HOLE_KEYS = ("cali", "drho", "large_hole")
+_PERM_COEFFICIENT_KEYS = ("a", "b", "c")
+_ENDPOINT_NAMES = ("quartz", "calcite", "dolomite", "anhydrite", "clay", "water")
+_ENDPOINT_KEYS = ("rhob", "nphi", "pef", "u", "dt")
+
+
+def _number_mapping(value: Any, name: str, keys: Sequence[str], errors: List[str], *,
+                    positive: Sequence[str] = ()) -> Optional[Dict[str, float]]:
+    """A mapping of some of ``keys`` to finite numbers (positive for ``positive``), else None with an error."""
+    from collections.abc import Mapping
+
+    if not isinstance(value, Mapping):
+        errors.append(f"{name} takes a mapping of {', '.join(keys)}; got {type(value).__name__}")
+        return None
+    numbers: Dict[str, float] = {}
+    for key, item in value.items():
+        label = str(key).strip().lower()
+        if label not in keys:
+            errors.append(f"{name}: unknown key {key!r}; use {', '.join(keys)}")
+            continue
+        try:
+            number = float(item)
+        except (TypeError, ValueError):
+            errors.append(f"{name}: {label} must be a number; got {item!r}")
+            continue
+        if not np.isfinite(number) or (label in positive and number <= 0):
+            errors.append(f"{name}: {label} must be a {'positive' if label in positive else 'finite'} number; got {item!r}")
+            continue
+        numbers[label] = number
+    return numbers
+
+
+def _validate_parameter_mappings(config: "DynamicWorkflowConfig", errors: List[str]) -> None:
+    """Check ``bad_hole``, ``perm_coefficients`` and ``mineral_endpoints``."""
+    from collections.abc import Mapping
+
+    names = ("bad_hole", "perm_coefficients", "mineral_endpoints")
+    given = [name for name in names if getattr(config, name) is not None]
+    if given and config.calculation_profile in _BENCHMARK_PROFILES:
+        errors.extend(f'{name} is not available under the "geolink" calculation profile' for name in given)
+        return
+    if config.bad_hole is not None:
+        config.bad_hole = _number_mapping(config.bad_hole, "bad_hole", _BAD_HOLE_KEYS, errors,
+                                          positive=_BAD_HOLE_KEYS)
+    if config.perm_coefficients is not None:
+        config.perm_coefficients = _number_mapping(config.perm_coefficients, "perm_coefficients",
+                                                   _PERM_COEFFICIENT_KEYS, errors, positive=("a",))
+    if config.mineral_endpoints is not None:
+        if not isinstance(config.mineral_endpoints, Mapping):
+            errors.append("mineral_endpoints takes a mapping of mineral to endpoints, "
+                          'e.g. {"quartz": {"rhob": 2.65}}')
+            config.mineral_endpoints = None
+            return
+        endpoints: Dict[str, Dict[str, float]] = {}
+        for mineral, values in config.mineral_endpoints.items():
+            label = str(mineral).strip().lower()
+            if label not in _ENDPOINT_NAMES:
+                errors.append(f"mineral_endpoints: unknown mineral {mineral!r}; use {', '.join(_ENDPOINT_NAMES)}")
+                continue
+            numbers = _number_mapping(values, f"mineral_endpoints[{label!r}]", _ENDPOINT_KEYS, errors,
+                                      positive=("rhob", "pef", "u", "dt"))
+            if numbers:
+                endpoints[label] = numbers
+        config.mineral_endpoints = endpoints
+
+
 def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     """Validate and normalize a :class:`DynamicWorkflowConfig` in place.
 
@@ -2233,6 +2372,7 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     if config.lithology_csv is not None and config.lithology_intervals is not None:
         errors.append("Supply lithology_csv or lithology_intervals, not both.")
     config.zones = _normalized_zones(config, errors)
+    _validate_parameter_mappings(config, errors)
     if config.calculation_profile != "current" and config.gradient_f_per_100ft is not None:
         errors.append('gradient_f_per_100ft is not available under the "geolink" calculation profile')
     if config.calculation_profile == "current":
@@ -2439,9 +2579,10 @@ class DynamicWorkflowResult:
         return self
 
     def plot(self, **options):
-        """Plot the interpreted well using the standard log viewer."""
-        from petrophys.visualization import create_log_viewer
-        return create_log_viewer(self.well, **options)
+        """Plot the interpretation: ``petrophys.plot(result, **options)``, with its options."""
+        from petrophys.api import plot
+
+        return plot(self, **options)
 
     def print_trace(self) -> None:
         """Print a comprehensive human-readable trace of all steps."""
@@ -3908,13 +4049,21 @@ class DynamicWorkflow:
             self.config.rho_cl = ILLITE_DENSITY if costa else 2.45
 
     def _solver_endpoints(self) -> Optional[Dict[str, Dict[str, float]]]:
-        """The run's pore fluid (``rho_fl``, ``dt_fl``) for the clastic mineral solve.
+        """The run's pore fluid (``rho_fl``, ``dt_fl``) and ``mineral_endpoints`` for the clastic mineral solve.
 
         The benchmark profiles keep the solver's own water endpoint.
         """
         if self._reproducing_benchmark:
             return None
-        return {"water": {"density": float(self.config.rho_fl), "dt": float(self.config.dt_fl)}}
+        endpoints: Dict[str, Dict[str, float]] = {
+            "water": {"density": float(self.config.rho_fl), "dt": float(self.config.dt_fl)}
+        }
+        for mineral, values in (self.config.mineral_endpoints or {}).items():
+            # The solver's tables name the density endpoint "density".
+            endpoints.setdefault(mineral, {}).update(
+                {("density" if key == "rhob" else key): value for key, value in values.items()}
+            )
+        return endpoints
 
     def _run_selected_steps(self, well: "Well", steps: list[WorkflowStep]) -> DynamicWorkflowResult:
         self._resolve_fluid_density()
@@ -4079,7 +4228,12 @@ class DynamicWorkflow:
             settings: Dict[str, Any] = {}
             mine: List[str] = []
             for zone in covering:
-                settings.update(zone["settings"])
+                for name, value in zone["settings"].items():
+                    # A zone's mapping values fill the keys it gives.
+                    settings[name] = (
+                        _merged_mapping(settings.get(name, getattr(requested, name, None)), value)
+                        if name in _MAPPING_SETTINGS else value
+                    )
                 if zone["user"]:
                     mine.extend(zone["settings"])
             if not settings:
@@ -5087,9 +5241,9 @@ class DynamicWorkflow:
             representative_bit_size = bit_size = bit_size_source = None
             bit_size_unique_values = []
             trace.decisions.append("No BS curve or header bit size found; CALI-BS and large-hole criteria skipped")
-            flags = generate_bad_hole_flags(well, bit_size=None, drho_alone=True)
+            flags = generate_bad_hole_flags(well, bit_size=None, drho_alone=True, **self._bad_hole_thresholds(trace))
         else:
-            flags = generate_bad_hole_flags(well, bit_size=bit_size)
+            flags = generate_bad_hole_flags(well, bit_size=bit_size, **self._bad_hole_thresholds(trace))
         well.add_curve("BAD_HOLE", flags["bad_hole"].astype(float), "", "Bad Hole Flag")
         if self._benchmark:
             # The eval package carried the flag twice, under both mnemonics.
@@ -5104,6 +5258,25 @@ class DynamicWorkflow:
         trace.decisions.append(f"{n_bad} bad-hole samples flagged out of {len(flags['bad_hole'])}")
         return trace
 
+    def _bad_hole_value(self, key: str) -> float:
+        """A bad-hole threshold: the ``bad_hole`` value set, else the default."""
+        from petrophys.model.constants import DefaultParameters
+
+        defaults = {"cali": DefaultParameters.CALI_BS_THRESHOLD, "drho": DefaultParameters.DRHO_THRESHOLD,
+                    "large_hole": DefaultParameters.LARGE_HOLE_BS}
+        return float((self.config.bad_hole or {}).get(key, defaults[key]))
+
+    def _bad_hole_thresholds(self, trace: StepResult) -> Dict[str, float]:
+        """The ``bad_hole`` thresholds set, as :func:`generate_bad_hole_flags` arguments, recorded in ``trace``."""
+        names = {"cali": "cali_threshold", "drho": "drho_threshold", "large_hole": "large_hole_threshold"}
+        given = dict(self.config.bad_hole or {})
+        if given:
+            trace.parameters["bad_hole_thresholds"] = given
+            trace.decisions.append(
+                "Bad-hole thresholds set: " + ", ".join(f"{key}={value:g}" for key, value in given.items())
+            )
+        return {names[key]: float(value) for key, value in given.items()}
+
     def _flag_bad_hole_where_bit_size_known(self, well: "Well", trace: StepResult) -> StepResult:
         """BAD_HOLE under ``"current"``, which assumes no bit size.
 
@@ -5114,8 +5287,8 @@ class DynamicWorkflow:
         reading, so where no bit size is known BAD_HOLE flags DRHO alone. A
         sample with neither test is not assessed and stays 0; the trace says
         how many, and a warning says where a caliper reading has no bit size.
+        The thresholds are those of ``bad_hole`` where it sets them.
         """
-        from petrophys.model.constants import DefaultParameters
         from petrophys.preprocessing.quality.bad_hole.flag_generator import generate_bad_hole_flags
 
         n_samples = well.n_samples
@@ -5143,7 +5316,7 @@ class DynamicWorkflow:
         has_cali = np.zeros(n_samples, dtype=bool) if cali is None else np.isfinite(cali)
         has_drho = np.zeros(n_samples, dtype=bool) if drho is None else np.isfinite(drho)
         caliper_test = has_cali & known
-        flags = generate_bad_hole_flags(well, bit_size=bit_size, drho_alone=True)
+        flags = generate_bad_hole_flags(well, bit_size=bit_size, drho_alone=True, **self._bad_hole_thresholds(trace))
         bad_hole = np.asarray(flags["bad_hole"], dtype=bool)
         assessed = caliper_test | has_drho | np.asarray(flags["large_hole"], dtype=bool)
 
@@ -5171,15 +5344,15 @@ class DynamicWorkflow:
                 "(BS curve or header), so BAD_HOLE is not written"
             )
             return trace
-        drho_test = f"|DRHO| > {DefaultParameters.DRHO_THRESHOLD:g} g/cm3"
+        drho_test = f"|DRHO| > {self._bad_hole_value('drho'):g} g/cm3"
         untested = has_cali & ~known
         if untested.any():
             where = _interval_text(well, untested)
             message = (
                 f"No bit size (BS curve or header) at {int(np.count_nonzero(untested))} samples "
                 "with a caliper reading" + (f" ({where})" if where else "") + ": the caliper "
-                f"washout test (CALI - BS > {DefaultParameters.CALI_BS_THRESHOLD:g} in) and the "
-                f"large-hole test (BS > {DefaultParameters.LARGE_HOLE_BS:g} in) do not run there, "
+                f"washout test (CALI - BS > {self._bad_hole_value('cali'):g} in) and the "
+                f"large-hole test (BS > {self._bad_hole_value('large_hole'):g} in) do not run there, "
                 f"and BAD_HOLE there flags only {drho_test}."
             )
             trace.decisions.append(message)
@@ -8180,6 +8353,7 @@ class DynamicWorkflow:
             fallback_method=self.config.perm_fallback_method,
             use_peer_core=self.config.use_peer_core,
             porosity_curves=["PHIE"] if self._benchmark else None,
+            coefficients=self.config.perm_coefficients,
             **self._core_calibration_options(),
         )
         result = perm_module.calculate_core_correction(
@@ -8688,6 +8862,7 @@ class DynamicWorkflow:
             use_peer_core=self.config.use_peer_core,
             porosity_curves=["PHIE"] if self._benchmark else None,
             lithology_curve=code_curve or "LITHOLOGY_GEOLINK",
+            coefficients=self.config.perm_coefficients,
             **self._core_calibration_options(),
         )
         lithology = None
@@ -8792,6 +8967,10 @@ class DynamicWorkflow:
             "empirical_method_metadata": method_metadata,
             "perm_max_clip_md": result.metadata.get("perm_max_clip_md"),
         }
+        if self.config.perm_coefficients:
+            trace.parameters["perm_coefficients"] = dict(self.config.perm_coefficients)
+            if str(empirical_method).strip().lower() == "lith_vcl":
+                decisions.append("perm_coefficients not used: lith_vcl takes no coefficients")
         if resflag_info is not None:
             trace.parameters["pre_permeability_resflag"] = resflag_info
         if result.metadata.get("core_sections_count"):
@@ -8850,6 +9029,10 @@ class DynamicWorkflow:
             groups = method_metadata.get("lithology_parameter_groups") or []
             if groups:
                 decisions.append("lith_vcl parameter groups used: " + ", ".join(groups))
+        elif method_metadata.get("coefficients_set") and empirical_method in {"coates", "timur", "wyllie_rose"}:
+            # The equation with the coefficients set.
+            name = {"coates": "Coates-Denoo", "timur": "Timur", "wyllie_rose": "Wyllie-Rose"}[empirical_method]
+            decisions.append(f"{name} empirical permeability: k = {method_metadata['equation']}")
         elif empirical_method == "coates":
             decisions.append(
                 "Coates-Denoo empirical permeability: "

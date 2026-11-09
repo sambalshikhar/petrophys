@@ -3307,6 +3307,18 @@ def _flag_intervals(depth: np.ndarray, flag: np.ndarray) -> List[str]:
     return intervals
 
 
+def _bad_hole_threshold_values(params: Optional[Mapping[str, Any]]) -> dict[str, float]:
+    """The ``cali``, ``drho`` and ``large_hole`` thresholds a bad-hole step used: its ``bad_hole`` setting, else the defaults."""
+    from petrophys.model.constants import DefaultParameters
+
+    given = (params or {}).get("bad_hole_thresholds") or {}
+    return {
+        "cali": float(given.get("cali", DefaultParameters.CALI_BS_THRESHOLD)),
+        "drho": float(given.get("drho", DefaultParameters.DRHO_THRESHOLD)),
+        "large_hole": float(given.get("large_hole", DefaultParameters.LARGE_HOLE_BS)),
+    }
+
+
 def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[str, Any]]:
     """The bad-hole flags of a context segment, recomputed as its workflow flags them.
 
@@ -3337,14 +3349,17 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
     if well.get("CALI") is None and well.get("DRHO") is None:
         return None
 
+    thresholds = _bad_hole_threshold_values(
+        getattr(_first_step_result(workflow_result, "bad_hole"), "parameters", None)
+    )
     flags = generate_bad_hole_flags(
         well,
         bit_size=bit_size_for_flags,
-        cali_threshold=DefaultParameters.CALI_BS_THRESHOLD,
-        drho_threshold=DefaultParameters.DRHO_THRESHOLD,
+        cali_threshold=thresholds["cali"],
+        drho_threshold=thresholds["drho"],
         pef_max=DefaultParameters.PEF_MAX,
         pef_min=DefaultParameters.PEF_MIN,
-        large_hole_threshold=DefaultParameters.LARGE_HOLE_BS,
+        large_hole_threshold=thresholds["large_hole"],
         # The GeoLink training package flags |DRHO| alone where no bit size is known.
         drho_alone=current or (bit_size_for_flags is None and _context_dataset() == "geolink_train"),
     )
@@ -3370,9 +3385,9 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
             bs_data is not None and np.unique(np.round(bs_data[np.isfinite(bs_data)], 4)).size > 1
         ),
         "thresholds": {
-            "cali_minus_bs_washout_threshold_in": float(DefaultParameters.CALI_BS_THRESHOLD),
-            "drho_washout_threshold_g_per_cc": float(DefaultParameters.DRHO_THRESHOLD),
-            "large_hole_bit_size_threshold_in": float(DefaultParameters.LARGE_HOLE_BS),
+            "cali_minus_bs_washout_threshold_in": thresholds["cali"],
+            "drho_washout_threshold_g_per_cc": thresholds["drho"],
+            "large_hole_bit_size_threshold_in": thresholds["large_hole"],
             "pef_exclusion_min": float(DefaultParameters.PEF_MIN),
             "pef_exclusion_max": float(DefaultParameters.PEF_MAX),
         },
@@ -3593,13 +3608,12 @@ def _curve_route_reason(curve: str, step: Any, well: "Well") -> str:
             )
 
     if step_name == "bad_hole":
-        from petrophys.model.constants import DefaultParameters
-
+        thresholds = _bad_hole_threshold_values(params)
         return (
             f"caliper/DRHO QC selected because input curves present were {', '.join(_display_curve_list(inputs)) or 'none'}; "
-            f"washout=(CALI-BS)>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in, "
-            f"DRHO threshold={DefaultParameters.DRHO_THRESHOLD:.2f} g/cc, "
-            f"large-hole BS>{DefaultParameters.LARGE_HOLE_BS:.2f} in, "
+            f"washout=(CALI-BS)>{thresholds['cali']:.2f} in, "
+            f"DRHO threshold={thresholds['drho']:.2f} g/cc, "
+            f"large-hole BS>{thresholds['large_hole']:.2f} in, "
             f"bit_size_used={_format_numeric(params.get('bit_size_used'), 2)} in"
         )
 
@@ -4186,6 +4200,11 @@ def _sw_route_reason_text(model: str, params: dict[str, Any]) -> str:
 
 def _permeability_equation_text(method: str, params: dict[str, Any]) -> str:
     method_norm = str(method or "").strip().lower()
+    metadata = params.get("empirical_method_metadata") or {}
+    if metadata.get("coefficients_set") and method_norm in {"timur", "coates", "coates_denoo", "wyllie_rose"}:
+        # The equation with the coefficients the run was given.
+        name = {"timur": "Timur", "wyllie_rose": "Wyllie-Rose"}.get(method_norm, "Coates-Denoo")
+        return f"{name} k={str(metadata['equation']).replace(' ', '')}"
     if method_norm == "timur":
         return "Timur k=0.136*(100*PHIE)^4.4/(100*SWIRR)^2"
     if method_norm in {"coates", "coates_denoo"}:
@@ -4671,8 +4690,6 @@ def _compact_curve_note(
             return f"PHIE: skipped because {reason}. Inputs/status: {inputs}."
 
     if curve == "BAD_HOLE" and step is not None:
-        from petrophys.model.constants import DefaultParameters
-
         bad_curve = well.get("BAD_HOLE")
         bad_count = int(np.nansum(_normalize_numeric_array(bad_curve.data) > 0.5)) if bad_curve is not None else 0
         bad_pct = bad_count / max(int(well.n_samples), 1) * 100.0
@@ -4698,16 +4715,16 @@ def _compact_curve_note(
         if bit_values and len(bit_values) > 1:
             bit_text = "; BS values=" + ", ".join(_format_numeric(value, 2) for value in bit_values) + " in"
         if no_bit_size:
-            drho_alone = f"washout=|DRHO|>{DefaultParameters.DRHO_THRESHOLD:.2f} g/cc alone"
+            drho_alone = f"washout=|DRHO|>{_bad_hole_threshold_values(params)['drho']:.2f} g/cc alone"
             bit_text += (
                 f"; no bit size (BS curve or header) for {no_bit_size} samples, where {drho_alone}"
                 if bit_size is not None
                 else f"; no bit size (BS curve or header), so {drho_alone}"
             )
         return (
-            f"{curve}: washout=(CALI-BS)>{DefaultParameters.CALI_BS_THRESHOLD:.2f} in or "
-            f"|DRHO|>{DefaultParameters.DRHO_THRESHOLD:.2f} g/cc; "
-            f"large_hole=BS>{DefaultParameters.LARGE_HOLE_BS:.2f} in; rule=washout OR large_hole"
+            f"{curve}: washout=(CALI-BS)>{_bad_hole_threshold_values(params)['cali']:.2f} in or "
+            f"|DRHO|>{_bad_hole_threshold_values(params)['drho']:.2f} g/cc; "
+            f"large_hole=BS>{_bad_hole_threshold_values(params)['large_hole']:.2f} in; rule=washout OR large_hole"
             + bit_text
             + f"; flagged={bad_count}/{well.n_samples} ({bad_pct:.0f}%)."
         )
@@ -6141,11 +6158,20 @@ def _build_delivery_computation_notes(
             method_names = _friendly_join(empirical)
             note += f"PERM was calculated with the {method_names} empirical permeability method."
             equations: List[str] = []
-            if "timur" in empirical:
+            set_equations = {
+                str(step.parameters.get("empirical_method")).strip().lower(): (step.parameters.get("empirical_method_metadata") or {})
+                for step in permeability_steps
+                if (step.parameters.get("empirical_method_metadata") or {}).get("coefficients_set")
+            }
+            for method_name, metadata in set_equations.items():
+                label = {"timur": "Timur", "coates": "Coates-Denoo", "wyllie_rose": "Wyllie-Rose"}.get(method_name, method_name)
+                equations.append(f"{label} equation: k = {metadata['equation']}")
+            default_equations = [name for name in empirical if name not in set_equations]
+            if "timur" in default_equations:
                 equations.append("Timur equation: k = 0.136 * (100 * PHIE)^4.4 / (100 * Swirr)^2")
-            if "coates" in empirical:
+            if "coates" in default_equations:
                 equations.append("Coates-Denoo equation: k = 10000 * PHIE^4 * ((1 - Swirr) / Swirr)^2")
-            if "wyllie_rose" in empirical:
+            if "wyllie_rose" in default_equations:
                 equations.append("Wyllie-Rose equation (Morris-Biggs oil): k = 62500 * PHIE^6 / Swirr^2")
             if "lith_vcl" in empirical:
                 equations.append("lith_vcl equation: k = 10 ** min(4.5, slope * PHIT * (1 - VCL * 1.2) + intercept)")
@@ -7389,6 +7415,7 @@ def _build_reference_json_payload(
     include_derived_log_status: bool = False,
     extra_statistics_curves: Optional[dict[str, Any]] = None,
     zone: bool = False,
+    split: bool = True,
 ) -> dict[str, Any]:
     well_name = _reference_well_name(source_file, well)
     context_rules = _context_value_range_rules(workflow_result)
@@ -7514,23 +7541,32 @@ def _build_reference_json_payload(
         data_completeness["derived_log_computation_notes"] = [
             _geolink_train_bad_hole_note(note, qc) for note in computation_notes
         ]
-    return _as_zone_payload(payload) if zone else payload
+    return _reshape_group_payload(payload, zone=zone, split=split) if zone or not split else payload
 
 
-def _as_zone_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """A context document of a user zone: zone keys in place of the formation and lithology-group keys."""
+def _reshape_group_payload(payload: dict[str, Any], *, zone: bool, split: bool) -> dict[str, Any]:
+    """A context document named for its group.
+
+    A user zone takes ``zone_info`` and ``zone_name`` in place of the
+    formation keys. A group that is a whole formation or zone, not split by
+    lithology, has no lithology group: its sample count and median step join
+    the interval's info, and its lithology is the ``dominant_lithology``.
+    """
     results = payload["analysis_results"]
     info = {**payload["formation_info"]}
-    group = results["lithology_group_info"]
-    info.update(data_points=group["data_points"], median_dz=group["median_dz"])
-    renamed: dict[str, Any] = {}
+    if not split:
+        group = results["lithology_group_info"]
+        info.update(data_points=group["data_points"], median_dz=group["median_dz"])
+    reshaped: dict[str, Any] = {}
     for key, value in results.items():
         if key == "formation_name":
-            renamed["zone_name"] = value
+            reshaped["zone_name" if zone else key] = value
+        elif split:
+            reshaped[key] = value
         elif key not in {"lithology group", "lithology_group_info"}:
-            renamed["dominant_lithology" if key == "lithology" else key] = value
+            reshaped["dominant_lithology" if key == "lithology" else key] = value
     rest = {key: value for key, value in payload.items() if key not in {"formation_info", "analysis_results"}}
-    return {"zone_info": info, "analysis_results": renamed, **rest}
+    return {"zone_info" if zone else "formation_info": info, "analysis_results": reshaped, **rest}
 
 
 def _write_reference_analysis_json(
@@ -7562,42 +7598,6 @@ def _write_reference_analysis_json(
     return json_path
 
 
-def _write_reference_analysis_json_to_path(
-    json_path: Path,
-    well: "Well",
-    workflow_result,
-    source_file: Path,
-    original_curves: set[str],
-    formation_name: str = "WHOLE_WELL",
-    formation_depth_info: Optional[dict[str, Any]] = None,
-    lithology_group_name: Optional[str] = None,
-    lithology_name: Optional[str] = None,
-    lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
-    analysis_summary_override: Optional[dict[str, Any]] = None,
-    derived_logs_override: Optional[Sequence[str]] = None,
-    status_targets_override: Optional[Sequence[str]] = None,
-    include_derived_log_status: bool = False,
-    extra_statistics_curves: Optional[dict[str, Any]] = None,
-) -> Path:
-    payload = _build_reference_json_payload(
-        well,
-        workflow_result,
-        source_file,
-        original_curves,
-        formation_name=formation_name,
-        formation_depth_info=formation_depth_info,
-        lithology_group_name=lithology_group_name,
-        lithology_name=lithology_name,
-        lithology_mapping=lithology_mapping,
-        analysis_summary_override=analysis_summary_override,
-        derived_logs_override=derived_logs_override,
-        status_targets_override=status_targets_override,
-        include_derived_log_status=include_derived_log_status,
-        extra_statistics_curves=extra_statistics_curves,
-    )
-    return _write_payload(json_path, payload)
-
-
 def _write_payload(json_path: Path, payload: dict[str, Any]) -> Path:
     """Write one context document as the packages store it."""
     json_path.parent.mkdir(parents=True, exist_ok=True)
@@ -7616,15 +7616,19 @@ def iter_context_groups(
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
     layout: Optional[Sequence[Mapping[str, Any]]] = None,
     fallback_warnings: Optional[list[str]] = None,
+    split_by_lithology: bool = True,
+    zone: bool = False,
 ):
     """Yield the context groups of an interpreted well, as the context package splits it.
 
     Each formation of ``formation_segments`` (``name``, ``display_name``,
     ``top_depth``, ``bottom_depth``; the whole well without any) is split by
-    its lithology into groups thicker than ``minimum_group_thickness``, or
-    ``layout`` gives the groups. Yields dicts with the group's ``well`` (its
-    samples of ``workflow_result.well``), ``formation_name``,
-    ``formation_depth_info``, ``group_name``, ``lithology`` and ``file_stem``.
+    its lithology into groups thicker than ``minimum_group_thickness``, or is
+    one group with ``split_by_lithology=False``; or ``layout`` gives the
+    groups. With ``zone`` the segments are user zones. Yields dicts with the
+    group's ``well`` (its samples of ``workflow_result.well``),
+    ``formation_name``, ``formation_depth_info``, ``group_name``,
+    ``lithology``, ``file_stem``, ``zone`` and ``split``.
     """
     if layout is not None:
         for group in layout:
@@ -7640,7 +7644,8 @@ def iter_context_groups(
                 "group_name": group_name,
                 "lithology": str(group["lithology"]),
                 "file_stem": str(group.get("file_stem") or f"{formation_display_name}_{group_name}"),
-                "zone": bool(group.get("zone", False)),
+                "zone": False,
+                "split": True,
             }
         return
 
@@ -7687,13 +7692,31 @@ def iter_context_groups(
             continue
 
         formation_depth_info = _depth_summary(formation_well)
+        formation_display_name = str(segment.get("display_name") or segment["name"])
+        repeated = formation_name_counts.get(
+            _formation_file_key(formation_display_name, reproducing_benchmark()), 0
+        ) > 1
+        if not split_by_lithology:
+            file_stem = formation_display_name
+            if repeated:
+                file_stem += f"__{formation_depth_info['min_depth']:.1f}_{formation_depth_info['max_depth']:.1f}"
+            yield {
+                "well": formation_well,
+                "formation_name": formation_display_name,
+                "formation_depth_info": formation_depth_info,
+                "group_name": formation_display_name,
+                "lithology": "",
+                "file_stem": file_stem,
+                "zone": zone,
+                "split": False,
+            }
+            continue
         lithology_segments = _build_lithology_group_segments(
             formation_well,
             minimum_group_thickness=minimum_group_thickness,
             lithology_mapping=_run_lithology_mapping(lithology_mapping, workflow_result),
         )
 
-        formation_display_name = str(segment.get("display_name") or segment["name"])
         for lithology_segment in lithology_segments:
             group_well = _well_mask_slice(formation_well, lithology_segment["mask"])
             if group_well.n_samples == 0:
@@ -7709,9 +7732,7 @@ def iter_context_groups(
                 json_lithology_name = "No lithology information available"
 
             file_stem = f"{formation_display_name}_{file_group_name}"
-            if formation_name_counts.get(
-                _formation_file_key(formation_display_name, reproducing_benchmark()), 0
-            ) > 1:
+            if repeated:
                 file_stem = (
                     f"{file_stem}"
                     f"__{formation_depth_info['min_depth']:.1f}_{formation_depth_info['max_depth']:.1f}"
@@ -7723,6 +7744,8 @@ def iter_context_groups(
                 "group_name": json_group_name,
                 "lithology": json_lithology_name,
                 "file_stem": file_stem,
+                "zone": zone,
+                "split": True,
             }
 
 
@@ -7738,10 +7761,13 @@ def iter_context_group_payloads(
     lithology_name: str,
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
     zone: bool = False,
+    split: bool = True,
 ):
     """Yield ``(category, document)`` for the six context files of one group, in the context's order.
 
-    With ``zone`` the group is a user zone, and its documents name it as one.
+    With ``zone`` the group is a user zone, and its documents name it as one;
+    with ``split=False`` it is a whole formation or zone (see
+    :func:`_reshape_group_payload`).
 
     ``group_well`` is the group's samples of ``workflow_result.well`` (the
     interpretation before the context's QC) and is modified as the context
@@ -7790,6 +7816,7 @@ def iter_context_group_payloads(
             include_derived_log_status=False,
             extra_statistics_curves=category_result.derived_curves,
             zone=zone,
+            split=split,
         )
 
 
@@ -8602,283 +8629,6 @@ def export_reference_json_work_package_by_formation(
     return results
 
 
-def export_reference_json_work_package_by_formation_lithology(
-    input_dir: str | Path,
-    output_dir: str | Path,
-    tops_file: Optional[str | Path] = None,
-    pattern: str = "*.las",
-    recursive: bool = False,
-    minimum_group_thickness: float = 2.0,
-    well_names: Optional[Sequence[str]] = None,
-    lithology_mapping_file: Optional[str | Path] = None,
-    tops_options: Optional[dict] = None,
-    workflow_config: Optional["DynamicWorkflowConfig"] = None,
-    lithology_file: Optional[str | Path] = None,
-    lithology_domain: Optional[str] = None,
-    reader_options: Optional[dict[str, Any]] = None,
-) -> List[ExampleFormatExportResult]:
-    """Write reference-format contexts per formation and lithology group.
-
-    Each well is read with its metadata and optional lithology intervals,
-    interpreted as a whole well and written to
-    ``<output_dir>/<well>/<well>.las``. Each formation is
-    then interpreted on its own and split into lithology groups: runs of
-    consecutive samples with the same lithology code, taken from the
-    lithology code curve the interpretation read (``LITHOLOGY_GEOLINK``, or
-    another lithology-code curve under the ``"current"`` profile; see
-    :attr:`~petrophys.workflow.DynamicWorkflowConfig.lithology_curve`), or
-    from the lithology intervals it selected. Every group
-    thicker than ``minimum_group_thickness`` gets a JSON context at
-    ``<output_dir>/<well>/<formation>/<formation>_<group>.json``. Without
-    tops, or when no tops match a well, the whole well is one ``WHOLE_WELL``
-    formation.
-
-    Parameters
-    ----------
-    input_dir : str or Path
-        Folder of well files (LAS or DLIS; tabular logs need reader_options).
-    output_dir : str or Path
-        Folder for the per-well packages; created if needed.
-    tops_file : str or Path, optional
-        Formation tops as CSV or Excel.
-    pattern : str, optional
-        Glob pattern selecting the input files; ``"*.las"`` by default.
-    recursive : bool, default False
-        Search subfolders of ``input_dir`` as well.
-    minimum_group_thickness : float, default 2.0
-        Lithology groups this thick or thinner (in the well depth unit) are
-        skipped.
-    well_names : sequence of str, optional
-        Only export LAS files whose name (without extension) matches one of
-        these well names.
-    lithology_mapping_file : str or Path, optional
-        Excel lithology codebook with columns ``Attribute``, ``Lithology
-        Attribute`` and ``Abbreviation`` (the numeric code), used to name the
-        groups from ``Lithology Attribute``. This is not the
-        :func:`~petrophys.io.read_lithology_codes` format; rows whose code is
-        not a number are skipped.
-    tops_options : dict, optional
-        Options for reading ``tops_file``: ``rank``, ``sheet_name``,
-        ``columns`` or ``sep``.
-    workflow_config : DynamicWorkflowConfig, optional
-        Interpretation settings (default: the workflow defaults). LAS header
-        parameters override them. ``calculation_profile="geolink"`` selects
-        the GeoLink evaluation configuration for context export.
-    lithology_file : str or Path, optional
-        Per-depth lithology intervals for the wells.
-    lithology_domain : str, optional
-        Override the broad domain while retaining per-well LAS settings.
-    reader_options : dict, optional
-        Options passed to petrophys.read, e.g. {"step": 0.1524} for DLIS.
-        Select DLIS files with ``pattern="*.dlis"``. Defaults preserve the reader's
-        native settings; tabular inputs require an explicit depth_unit.
-
-    Returns
-    -------
-    list of ExampleFormatExportResult
-        One result per lithology group written, each pointing at the
-        whole-well LAS file and the group's JSON file, plus one failed result
-        for each well that could not be processed.
-
-    Raises
-    ------
-    ValueError
-        If the tops table has no well column and more than one LAS file is
-        selected, spells one well in several ways, or the lithology codebook
-        lacks its columns or gives one code a fractional value or two names.
-    """
-    from petrophys.workflow.zoned_batch import _finalize_export_curves
-
-    input_path = Path(input_dir)
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    files = sorted(input_path.rglob(pattern) if recursive else input_path.glob(pattern))
-    files = _filter_input_files_by_well_names(files, well_names)
-    tops_by_well = (
-        _load_excel_formation_segments(tops_file, **(tops_options or {}))
-        if tops_file is not None
-        else {}
-    )
-    _validate_single_well_tops_scope(tops_by_well, files)
-    lithology_mapping = (
-        _load_lithology_mapping_workbook(lithology_mapping_file)
-        if lithology_mapping_file
-        else None
-    )
-
-    results: List[ExampleFormatExportResult] = []
-    for file_path in files:
-        try:
-            full_well, well_config = _read_context_input_well(
-                file_path,
-                lithology_file=lithology_file,
-                workflow_config=workflow_config,
-                lithology_domain=lithology_domain,
-                reader_options=reader_options,
-            )
-            formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
-            _attach_formations_for_interpretation(full_well, formation_segments, well_config)
-
-            well_folder = output_path / _sanitize_path_component(file_path.stem)
-            well_folder.mkdir(parents=True, exist_ok=True)
-            whole_well_original_curves = set(full_well.curves)
-            whole_well_result = _run_context_workflow(copy.deepcopy(full_well), well_config)
-            _finalize_export_curves(whole_well_result.well, whole_well_original_curves)
-            whole_well_las_path = well_folder / f"{_sanitize_path_component(file_path.stem)}.las"
-            export_example_format_las(
-                whole_well_result.well,
-                whole_well_las_path,
-                original_curves=whole_well_original_curves,
-            )
-            fallback_warnings: list[str] = []
-            formation_name_counts: dict[str, int] = {}
-
-            well_top = float(full_well.top) if full_well.top is not None else None
-            well_bottom = float(full_well.bottom) if full_well.bottom is not None else None
-            if well_top is None or well_bottom is None:
-                results.append(
-                    ExampleFormatExportResult(
-                        source_file=str(file_path),
-                        output_file="",
-                        success=False,
-                        errors=["Well has no valid depth range for formation slicing."],
-                    )
-                )
-                continue
-
-            if not formation_segments:
-                formation_segments = [
-                    {
-                        "name": "WHOLE_WELL",
-                        "display_name": "WHOLE_WELL",
-                        "top_depth": well_top,
-                        "bottom_depth": None,
-                    }
-                ]
-                fallback_warnings.append(
-                    "No formation tops matched this well in the tops table. Falling back to WHOLE_WELL segmentation."
-                )
-
-            for segment in formation_segments:
-                display_name = _formation_file_key(
-                    str(segment.get("display_name") or segment["name"]), reproducing_benchmark()
-                )
-                formation_name_counts[display_name] = formation_name_counts.get(display_name, 0) + 1
-
-            for segment in formation_segments:
-                raw_top = float(segment["top_depth"])
-                raw_bottom = (
-                    float(segment["bottom_depth"])
-                    if segment["bottom_depth"] is not None
-                    else well_bottom
-                )
-                if raw_bottom <= well_top or raw_top >= well_bottom:
-                    continue
-
-                slice_top = max(raw_top, well_top)
-                slice_bottom = min(raw_bottom, well_bottom)
-                if segment["bottom_depth"] is not None:
-                    slice_bottom = float(np.nextafter(slice_bottom, -np.inf))
-                if slice_bottom <= slice_top:
-                    continue
-
-                formation_input_well = full_well.depth_slice(slice_top, slice_bottom)
-                if formation_input_well.n_samples == 0:
-                    continue
-
-                formation_original_curves = set(formation_input_well.curves)
-                workflow_result = _run_context_workflow(
-                    formation_input_well,
-                    _formation_run_config(well_config, whole_well_result.well, formation_input_well),
-                )
-                warnings = list(fallback_warnings)
-                warnings.extend(workflow_result.warnings)
-                warnings.extend(workflow_result.base_result.warnings)
-                for zone_result in workflow_result.zone_results:
-                    warnings.extend(zone_result.warnings)
-
-                errors = list(workflow_result.base_result.errors)
-                for zone_result in workflow_result.zone_results:
-                    errors.extend(zone_result.errors)
-
-                _finalize_export_curves(
-                    workflow_result.well,
-                    formation_original_curves,
-                    retain_computed_lithology=True,
-                )
-                formation_depth_info = _depth_summary(formation_input_well)
-                lithology_segments = _build_lithology_group_segments(
-                    workflow_result.well,
-                    minimum_group_thickness=minimum_group_thickness,
-                    lithology_mapping=_run_lithology_mapping(lithology_mapping, workflow_result),
-                )
-
-                formation_display_name = str(segment.get("display_name") or segment["name"])
-                formation_folder = well_folder / _sanitize_path_component(formation_display_name)
-                formation_folder.mkdir(parents=True, exist_ok=True)
-
-                for lithology_segment in lithology_segments:
-                    group_well = _well_mask_slice(workflow_result.well, lithology_segment["mask"])
-                    if group_well.n_samples == 0:
-                        continue
-
-                    raw_group_name = str(lithology_segment["group_name"])
-                    raw_lithology_name = str(lithology_segment["lithology"])
-                    json_group_name = raw_group_name
-                    json_lithology_name = raw_lithology_name
-                    file_group_name = raw_group_name
-                    if raw_lithology_name == MISSING_LITHOLOGY_LABEL:
-                        file_group_name = raw_group_name
-                        json_group_name = "No lithology information available"
-                        json_lithology_name = "No lithology information available"
-
-                    file_stem = f"{formation_display_name}_{file_group_name}"
-                    if formation_name_counts.get(
-                        _formation_file_key(formation_display_name, reproducing_benchmark()), 0
-                    ) > 1:
-                        file_stem = (
-                            f"{file_stem}"
-                            f"__{formation_depth_info['min_depth']:.1f}_{formation_depth_info['max_depth']:.1f}"
-                        )
-                    json_path = formation_folder / f"{_sanitize_path_component(file_stem)}.json"
-
-                    json_file = _write_reference_analysis_json_to_path(
-                        json_path,
-                        group_well,
-                        workflow_result,
-                        file_path,
-                        formation_original_curves,
-                        formation_name=formation_display_name,
-                        formation_depth_info=formation_depth_info,
-                        lithology_group_name=json_group_name,
-                        lithology_name=json_lithology_name,
-                        lithology_mapping=lithology_mapping,
-                    )
-
-                    results.append(
-                        ExampleFormatExportResult(
-                            source_file=str(file_path),
-                            output_file=str(whole_well_las_path),
-                            success=not errors,
-                            json_file=str(json_file),
-                            curves_exported=0,
-                            warnings=warnings,
-                            errors=errors,
-                        )
-                    )
-        except Exception as exc:
-            results.append(
-                ExampleFormatExportResult(
-                    source_file=str(file_path),
-                    output_file="",
-                    success=False,
-                    errors=[str(exc)],
-                )
-            )
-
-    return results
-
-
 def _context_zone_table(zones: Any, files: Sequence[Path], workflow_config: Any) -> Optional[list[dict[str, Any]]]:
     """The rows of a context export's ``zones`` table, checked once for every well."""
     if zones is None:
@@ -8909,34 +8659,6 @@ def _context_zone_config(zone_table, file_path: Path, well: "Well", config):
         return config, f"No zone of the zones table is for {file_path.stem}; grouped by formation and lithology."
     base = config if config is not None else DynamicWorkflowConfig()
     return _copy_config(base, explicit=[], zones=rows), None
-
-
-def _zone_group_layout(workflow_result) -> list[dict[str, Any]]:
-    """One context group per zone of the interpretation, named after it.
-
-    A zone holds the samples from its top to just above its bottom, so a
-    sample on the boundary between two zones is counted once, in the lower.
-    """
-    intervals = workflow_result.base_result.zone_intervals
-    counts: dict[str, int] = {}
-    for zone in intervals:
-        counts[zone["name"]] = counts.get(zone["name"], 0) + 1
-    layout = []
-    for zone in intervals:
-        bottom = float(np.nextafter(float(zone["bottom"]), -np.inf))
-        zone_well = workflow_result.well.depth_slice(float(zone["top"]), bottom)
-        if zone_well.n_samples == 0:
-            continue
-        info = _depth_summary(zone_well)
-        stem = zone["name"]
-        if counts[zone["name"]] > 1:
-            stem = f"{stem}__{info['min_depth']:.1f}_{info['max_depth']:.1f}"
-        layout.append({
-            "start_depth": float(zone["top"]), "end_depth": bottom, "formation_name": zone["name"],
-            "formation_depth_info": info, "group_name": zone["name"], "lithology": "",
-            "file_stem": stem, "zone": True,
-        })
-    return layout
 
 
 def _group_layout_for_file(
@@ -8995,6 +8717,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
     processed_las_only: bool = False,
     on_interpreted: Optional[Any] = None,
     zones: Optional[Any] = None,
+    split_by_lithology: bool = True,
 ) -> List[ExampleFormatExportResult]:
     """Generate category contexts from well files and optional geology inputs.
 
@@ -9002,10 +8725,12 @@ def export_reference_json_work_package_by_category_formation_lithology(
     :attr:`~petrophys.workflow.DynamicWorkflowConfig.zones` takes them) gives
     each well its own intervals: one row per zone with a ``name`` (or
     ``zone``), ``top`` and ``bottom``, and a ``well`` column when the table
-    holds several wells. Each zone of a well is then one context group,
-    named after it, in place of the formation and lithology groups; setting
-    columns (``rw``, ``m`` ...) apply inside their zone. A well with no zone
-    in the table is split by formation and lithology as usual.
+    holds several wells. The zones of a well then take the place of its
+    formations; setting columns (``rw``, ``m`` ...) apply inside their zone.
+    A well with no zone in the table is grouped by its formations.
+
+    Each formation or zone is split into lithology groups, or, with
+    ``split_by_lithology=False``, is one group.
 
     Use ``pattern="*.dlis"`` for DLIS. reader_options are passed to petrophys.read
     for both context inputs and optional raw inputs (e.g. DLIS step/channels).
@@ -9203,8 +8928,9 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 json_lithology_name: str,
                 file_stem: str,
                 zone: bool = False,
+                split: bool = True,
             ) -> None:
-                """Write the category files of one formation/lithology group or zone."""
+                """Write the category files of one group."""
                 for category_name, payload in iter_context_group_payloads(
                     group_well,
                     workflow_result,
@@ -9216,6 +8942,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     lithology_name=json_lithology_name,
                     lithology_mapping=lithology_mapping,
                     zone=zone,
+                    split=split,
                 ):
                     json_path = (
                         output_path
@@ -9239,19 +8966,22 @@ def export_reference_json_work_package_by_category_formation_lithology(
                         )
                     )
 
+            zone_segments = [
+                {"name": item["name"], "display_name": item["name"],
+                 "top_depth": item["top"], "bottom_depth": item["bottom"]}
+                for item in (workflow_result.base_result.zone_intervals if zone_table is not None else [])
+            ]
             for group in iter_context_groups(
                 workflow_result,
-                formation_segments,
+                zone_segments or formation_segments,
                 well_top=well_top,
                 well_bottom=well_bottom,
                 minimum_group_thickness=minimum_group_thickness,
                 lithology_mapping=lithology_mapping,
-                layout=(
-                    _zone_group_layout(workflow_result)
-                    if zone_table is not None and workflow_result.base_result.zone_intervals
-                    else _group_layout_for_file(group_layout, file_path)
-                ),
+                layout=None if zone_segments else _group_layout_for_file(group_layout, file_path),
                 fallback_warnings=fallback_warnings,
+                split_by_lithology=split_by_lithology,
+                zone=bool(zone_segments),
             ):
                 export_group(
                     group["well"],
@@ -9260,7 +8990,8 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     group["group_name"],
                     group["lithology"],
                     group["file_stem"],
-                    zone=group.get("zone", False),
+                    zone=group["zone"],
+                    split=group["split"],
                 )
         except Exception as exc:
             results.append(
