@@ -36,8 +36,9 @@ print(f"{well.top:.1f} - {well.bottom:.1f} {well.depth_unit}")
 
 ## Plot the raw logs
 
-`pp.plot` draws the curves already in the file, so no interpretation is needed.
-The window below covers the Brent Group, at 2841–2958 m.
+`pp.plot` plots a well or an interpretation. Here it plots the logs as read,
+before any interpretation, and `tracks=` picks four of the layout's tracks. The
+window, 2800–3000 m, brackets the Brent Group (2841–2958 m).
 
 ```{code-cell} python
 viewer = pp.plot(
