@@ -10,7 +10,7 @@ mystnb:
 (custom-workflows)=
 # Custom workflows
 
-Build your own interpretation recipe from built-in steps and your own functions.
+`pp.interpret` chooses the methods from the data ({doc}`workflows`). When a project needs a fixed recipe, build your own from built-in steps and your own functions.
 Check it against a well, run it on one well or a whole folder, and save it to share.
 
 ```{code-cell} python
@@ -260,32 +260,8 @@ Parameters and defaults are in the API reference: {mod}`petrophys.workflow.steps
 `steps.net_pay` leaves out the same samples as `pp.interpret`.
 {func}`~petrophys.evaluation.net_pay.summarize_pay` and {func}`~petrophys.evaluation.net_pay.calculate_net_pay` recompute the flags from the curves with one cutoff set and no exclusions, so their totals can differ from a run's `NET_PAY`: summarize a run's own flags with `run.summary()` or the `formation_summary` step.
 
-## Go deeper
+## Next
 
-::::{grid} 1 2 2 2
-:gutter: 2
+{doc}`visualization_reporting`: plot the result of any workflow and export it.
 
-:::{grid-item-card} Custom workflows tutorial
-:link: tutorials/part_b/21_custom_workflows
-:link-type: doc
-A clastic and a carbonate workflow, your own steps, and a field run.
-:::
-
-:::{grid-item-card} The prebuilt workflow as a glass box
-:link: tutorials/part_b/10_dynamic_workflow_glass_box
-:link-type: doc
-What `pp.interpret` decides, step by step.
-:::
-
-:::{grid-item-card} Formation and interval analysis
-:link: tutorials/part_b/11_formation_and_interval_analysis
-:link-type: doc
-Summarize pay per formation and keep overburden out.
-:::
-
-:::{grid-item-card} Multi-well field study
-:link: tutorials/part_b/18_multiwell_field_study
-:link-type: doc
-Screen and rank all seventeen COSTA wells.
-:::
-::::
+{doc}`Tutorial 21 <tutorials/part_b/21_custom_workflows>` builds a clastic and a carbonate workflow with your own steps, and {doc}`tutorial 18 <tutorials/part_b/18_multiwell_field_study>` screens and ranks all seventeen COSTA wells.

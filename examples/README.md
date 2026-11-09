@@ -4,8 +4,13 @@ The notebooks in this directory form a progressive tutorial curriculum. They
 use the installable sample wells in `src/petrophys/datasets/`, available through
 `petrophys.sample()` and `petrophys.list_samples()`.
 
-Start with [`quickstart.ipynb`](quickstart.ipynb), then work through the numbered
-notebooks in order.
+New to Petrophys? Read the [Quickstart](https://petrophys.netlify.app/quickstart)
+and [Your own data](https://petrophys.netlify.app/own_data) pages of the
+documentation, https://petrophys.netlify.app, first: they read, plot, interpret
+and export one well, then do the same with your own LAS, CSV and geology tables.
+The curriculum starts at
+[`00_orientation_and_setup.ipynb`](part_a_foundations/00_orientation_and_setup.ipynb);
+work through the numbered notebooks in order.
 
 For one notebook that covers the whole library - loading, QC, every
 interpretation step, the workflow, multi-well work, core calibration,
@@ -13,15 +18,9 @@ sensitivity analysis and a full plotting gallery - open
 [`complete_tour.ipynb`](complete_tour.ipynb). Each section links to the lesson
 that goes deeper.
 
-For your own LAS and optional formations/lithology, continue directly to
-[`own_data.ipynb`](own_data.ipynb). It covers templates, CSV/TSV/Excel,
-column and sheet mapping, well selection, depth metadata, source selection,
-core saturation units, and actionable import errors.
-
-The quickstart now plots before interpreting. Lessons 00, 01, 02, 05, 07,
-10, 11, 17 and CS1 connect the short API to the detailed scientific workflows.
-Geology files remain optional; calculated results require appropriate inputs
-and assumptions. Advanced equation-level APIs remain part of the curriculum.
+Lessons 00, 01, 02, 05, 07, 10, 11, 17 and CS1 connect the short API to the
+detailed scientific workflows. Geology files are optional; calculated results
+require appropriate inputs and assumptions.
 
 ## Run and Verify
 
@@ -45,7 +44,7 @@ Every other notebook runs with `python -m pip install -e ".[tutorials]"`.
 Open a notebook in VS Code/Jupyter, select that environment, and restart/run
 all cells.
 
-From the repository root, verify the thirteen primary user-journey notebooks:
+From the repository root, verify the twelve primary user-journey notebooks:
 
 ```bash
 python scripts/execute_tutorials.py --output-dir tutorial-results --report tutorial-results/report.json

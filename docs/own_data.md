@@ -9,7 +9,8 @@ mystnb:
 
 # Your own data
 
-Read your logs, attach formation and lithology tables, check that their depths
+The quickstart ran a bundled LAS; your own data rarely arrive that way. Read
+your logs, attach formation and lithology tables, check that their depths
 agree, then interpret and export. A CSV cut from the bundled 30/6-5 well stands
 in for your file.
 
@@ -177,6 +178,42 @@ tops.tail(3).style.hide(axis="index").format(precision=1)
 | Some rows outside the logged interval | Counts them in the report |
 | No row overlaps the logs | Warns with {class}`~petrophys.exceptions.DataQualityWarning`, suggesting the other unit if it fits |
 
+## A supplier workbook
+
+Suppliers often deliver one Excel workbook with several sheets and several
+wells, under their own column names. Name the sheet, map the columns (from the
+template's name to the supplier's) and pass the well: rows of other wells are
+filtered out and counted in the report. Here the 30/6-5 Brent Group picks share
+a sheet with the Kharaib-2 pick of the COSTA well HW-3, in feet:
+
+```{code-cell} python
+brent_picks = picks.query("formation_name in ['Ness Fm.', 'Etive Fm.']")
+costa_pick = pd.read_csv(pp.sample("formations_costa")).query("well == 'HW-3'")
+supplier = pd.DataFrame({
+    "Well ID": ["30/6-5"] * len(brent_picks) + ["HW-3"],
+    "Marker": [*brent_picks.formation_name, *costa_pick.formation_name],
+    "Pick ft": [*(brent_picks.top_depth / 0.3048), *costa_pick.top_depth],
+})
+with pd.ExcelWriter(workdir / "supplier_tops.xlsx") as writer:
+    supplier.to_excel(writer, sheet_name="Tops", index=False)
+    pd.DataFrame({"note": ["Picks from the bundled tops files"]}).to_excel(
+        writer, sheet_name="Notes", index=False)
+
+tops = pp.read_formations(
+    workdir / "supplier_tops.xlsx", sheet_name="Tops", well=well,
+    columns={"well": "Well ID", "formation_name": "Marker", "top_depth": "Pick ft"},
+    depth_unit="ft", depth_reference="MD", datum="RKB",
+)
+report = tops.attrs["import_report"]
+print(report["filtered_rows"], "row of another well filtered out")
+tops.style.hide(axis="index").format(precision=1)
+```
+
+Without `sheet_name`, a workbook with several sheets raises an error that
+lists them. Lithology intervals take the same `sheet_name`, `columns` and
+`well` options, also from a delimited text file with `sep=";"`; mapped columns
+keep vendor comment columns out, and the report lists them.
+
 ## Errors you will meet
 
 Petrophys stops with a message that says what to fix. Each line below is a real
@@ -223,6 +260,19 @@ for message in result.warnings:
     print(fill(f"warning: {message}", 88, subsequent_indent="    "))
 ```
 
+The `input_context` step records where the lithology came from. By default
+attached lithology intervals come first, then a recognized lithology log in the
+LAS, then the lithology computed from the logs; `lithology_source="external"`,
+`"vendor"`, `"computed"` or `"config"` selects one, and a source you request
+that is missing fails the run.
+
+```{code-cell} python
+source = next(step for step in result.steps_executed
+              if step.step == "input_context").parameters
+print("lithology source requested / selected:",
+      source["requested_source"], "/", source["selected_source"])
+```
+
 Attached formations organize the answer. Averages are over net-pay samples, so
 a formation without pay shows no averages.
 
@@ -243,36 +293,8 @@ for name in sorted(path.name for path in workdir.iterdir()):
 folder.cleanup()
 ```
 
-## Go deeper
+## Next
 
-::::{grid} 1 2 2 2
-:gutter: 2
+{doc}`capabilities` maps the rest of the library, and {doc}`workflows` takes the interpretation further: the trace, the settings, and the review of an answer before you use it.
 
-:::{grid-item-card} Input templates
-:link: input_templates
-:link-type: doc
-
-Every template, its columns and the rules each reader enforces.
-:::
-
-:::{grid-item-card} Your own data, in depth
-:link: tutorials/own_data
-:link-type: doc
-
-Excel workbooks, vendor column names, multiwell tables and bounded intervals.
-:::
-
-:::{grid-item-card} Loading and inspecting data
-:link: tutorials/part_a/01_loading_and_inspecting_data
-:link-type: doc
-
-Curves, headers and quality checks on a freshly read well.
-:::
-
-:::{grid-item-card} Formation and interval analysis
-:link: tutorials/part_b/11_formation_and_interval_analysis
-:link-type: doc
-
-Ranks, nested groups and per-formation results.
-:::
-::::
+The tutorials go deeper on {doc}`loading and inspecting data <tutorials/part_a/01_loading_and_inspecting_data>` and on {doc}`formation and interval analysis <tutorials/part_b/11_formation_and_interval_analysis>`: ranks, nested groups and per-formation results.

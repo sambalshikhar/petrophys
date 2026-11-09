@@ -29,18 +29,19 @@ Key facts for code generation:
 ## Docs
 
 - [Installation](https://petrophys.netlify.app/installation): pip install, optional extras
-- [What Petrophys can do](https://petrophys.netlify.app/capabilities): gallery of every capability with the call that produces it
 - [Quickstart](https://petrophys.netlify.app/quickstart): read, interpret, inspect the trace, plot, export
 - [Own data](https://petrophys.netlify.app/own_data): CSV/Excel logs, formations, lithology, units and datums
-- [Input templates](https://petrophys.netlify.app/input_templates): formation and lithology file formats
-- [Workflows](https://petrophys.netlify.app/workflows): workflow steps, routing, zoned and batch runs
+- [What Petrophys can do](https://petrophys.netlify.app/capabilities): map of every capability, the call that starts it and the page that covers it
+- [Workflows](https://petrophys.netlify.app/workflows): workflow steps, routing, zoned and batch runs; reviewing an interpretation (checklist, net-pay flags, sample-data limitations)
 - [Custom workflows](https://petrophys.netlify.app/custom_workflows): build, check, save and run your own workflows
-- [Reviewing an interpretation](https://petrophys.netlify.app/data_quality): review checklist, net-pay flags, sample-data limitations
-- [Terms, curves and steps](https://petrophys.netlify.app/glossary): every workflow step and output curve; argument names per interface
-- [Context export](https://petrophys.netlify.app/context): compact JSON summaries of interpreted wells for LLMs
-- [LLM agents (MCP)](https://petrophys.netlify.app/mcp): MCP server setup, tools, resources and prompts
 - [Visualization and reporting](https://petrophys.netlify.app/visualization_reporting): plots, exports, delivery packages
 - [Specialist data](https://petrophys.netlify.app/specialist_data): NMR, spectral gamma, core calibration, saturation-height, borehole images
+- [Analysis tools](https://petrophys.netlify.app/analysis_tools): gap filling, clay typing, heterogeneity, zonation, Monte Carlo, invasion, pore pressure
+- [Context export](https://petrophys.netlify.app/context): compact JSON summaries of interpreted wells for LLMs
+- [LLM agents (MCP)](https://petrophys.netlify.app/mcp): MCP server setup, tools, resources and prompts
+- [Input templates](https://petrophys.netlify.app/input_templates): formation and lithology file formats
+- [Terms and curves](https://petrophys.netlify.app/glossary): terms and every output curve; argument names per interface
+- [Reproducing the benchmark packages](https://petrophys.netlify.app/benchmark_context): dataset context profiles for the GeoLink, COSTA and Danish packages
 
 ## API
 

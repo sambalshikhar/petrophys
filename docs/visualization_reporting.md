@@ -9,6 +9,7 @@ mystnb:
 
 # Visualization and reporting
 
+Whether `pp.interpret` or your own workflow produced it, an interpretation is delivered as plots and files.
 Every plot takes a `Well` or an interpretation result and finds curves by their standard names; tracks without data are left out.
 This page shows each plot type on the bundled wells, then every export format.
 
@@ -423,32 +424,8 @@ with tempfile.TemporaryDirectory() as tmp:
 
 For LLM-ready JSON grouped by formation and lithology, see {doc}`context`.
 
-## Go deeper
+## Next
 
-::::{grid} 1 2 2 2
-:gutter: 3
+{doc}`specialist_data`: NMR, spectral gamma, core, saturation-height and borehole-image data, with their own displays.
 
-:::{grid-item-card} Tutorial 17: visualization masterclass
-:link: tutorials/part_b/17_visualization_masterclass
-:link-type: doc
-Every plot type with the reasoning behind it.
-:::
-
-:::{grid-item-card} Tutorial 18: multi-well study
-:link: tutorials/part_b/18_multiwell_field_study
-:link-type: doc
-Batch runs, normalization and field charts.
-:::
-
-:::{grid-item-card} Tutorial 19: LLM context
-:link: tutorials/part_b/19_llm_context_generation
-:link-type: doc
-Category, formation and lithology JSON packages.
-:::
-
-:::{grid-item-card} Case study: 30/6-5
-:link: tutorials/case_studies/cs1_full_formation_evaluation_30_6-5
-:link-type: doc
-A complete evaluation, from logs to delivery.
-:::
-::::
+{doc}`Tutorial 17 <tutorials/part_b/17_visualization_masterclass>` shows every plot type with the reasoning behind it, and {doc}`tutorial 18 <tutorials/part_b/18_multiwell_field_study>` adds batch runs, normalization and field charts.

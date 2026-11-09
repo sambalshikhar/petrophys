@@ -9,9 +9,10 @@ mystnb:
 
 # Analysis tools
 
-Functions for analyses `pp.interpret` does not run: clay typing, shale
-distribution, matrix and water indicators, heterogeneity, zonation,
-statistics, uncertainty, invasion, saturation height and pore pressure. Each
+Beyond the specialist measurements, Petrophys has functions for analyses
+`pp.interpret` does not run: gap filling, clay typing, shale distribution,
+matrix and water indicators, heterogeneity, zonation, statistics,
+uncertainty, invasion, saturation height and pore pressure. Each
 takes arrays or a `Well` and returns plain results; none changes an
 interpretation unless you add its output to the well.
 
@@ -130,6 +131,39 @@ A survey table needs MD and inclination (azimuth optional, then constant);
 its unit comes from a header such as ``MD (ft)``. Tool responses are the
 pseudo-geometric factors J(di) read off the vendor's charts, in a long
 table (one row per point) or a wide one (one column per tool).
+
+(analysis-gap-filling)=
+## Gap filling with machine learning
+
+{func}`pp.impute <petrophys.preprocessing.imputation.impute>` trains a model on the fly to rebuild a
+missing curve from the other logs (it needs the `ml` extra). Here the density
+log of the COSTA well HW-24 is removed and rebuilt from the 16 other COSTA
+wells; the result is added as `RHOB_IMPUTED`.
+
+```{code-cell} python
+import matplotlib.pyplot as plt
+from petrophys.visualization import use_plot_style
+
+use_plot_style()
+costa_names = [name for name in pp.list_samples() if name.startswith("HW-")]
+hw24 = pp.read(pp.sample("HW-24"))
+measured = hw24["RHOB"].data.copy()
+hw24.remove_curve("RHOB")
+pp.impute(hw24, "RHOB", train_wells=[pp.sample(n) for n in costa_names if n != "HW-24"])
+rebuilt = hw24["RHOB_IMPUTED"].data
+both = np.isfinite(measured) & np.isfinite(rebuilt)
+print(f"Rebuilt against measured RHOB: mean absolute difference "
+      f"{np.mean(np.abs(rebuilt[both] - measured[both])):.3f} g/cm3 over {both.sum()} samples")
+
+fig, ax = plt.subplots(figsize=(3.6, 5))
+ax.plot(measured, hw24.depth, color="#9aa5b1", lw=2.2, label="Measured")
+ax.plot(rebuilt, hw24.depth, color="#176b87", lw=1, label="Rebuilt")
+ax.invert_yaxis()
+ax.set(xlabel="RHOB (g/cm3)", ylabel=f"Depth ({hw24.depth_unit})",
+       title="HW-24 density from 16 wells")
+ax.legend(loc="lower left", fontsize=8)
+plt.show()
+```
 
 ## Matrix and water indicators
 
@@ -321,3 +355,9 @@ ppr = eaton_from_well(well, nct, water_depth=110, density_above_log=1.95, expone
 Offshore the air gap is the depth reference's elevation above sea level;
 onshore it is EKB - EGL, and hydrostatic pressure starts at ground level.
 Calibrate Eaton's exponent to measured pressures before using the result.
+
+## Next
+
+{doc}`context`: hand the interpreted, reviewed well to an LLM as a compact JSON summary.
+
+{doc}`Tutorial 13 <tutorials/part_b/13_ml_curve_imputation>` validates curve imputation in depth, and {doc}`tutorial 15 <tutorials/part_b/15_capillary_pressure_saturation_height>` covers capillary pressure and saturation height.

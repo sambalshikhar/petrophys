@@ -221,7 +221,11 @@ print(fill(", ".join(cmr.curves), 88))
 
 The large native Daydream DLIS files are not installed:
 {func}`~petrophys.datasets.integration_fixture` downloads one on first use,
-checks its SHA-256 and returns its path.
+checks its SHA-256, keeps it in `petrophys.datasets.data_dir()` (set
+`PETROPHYS_DATA_DIR` to choose the folder) and returns its path. A source
+checkout with `git lfs pull` uses its own copies instead. Reading DLIS needs
+`pip install "petrophys[dlis]"`; the inventory and checksums are in
+`src/petrophys/datasets/daydream/README.md`.
 
 ```{code-cell} python
 from petrophys.datasets import list_integration_fixtures

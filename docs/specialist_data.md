@@ -9,7 +9,7 @@ mystnb:
 
 # Specialist data
 
-NMR, spectral gamma, core, saturation-height and borehole-image data each have their own API; their products join the same `Well`.
+Logs are rarely the only measurements in a well. NMR, spectral gamma, core, saturation-height and borehole-image data each have their own API and displays; their products join the same `Well` that you interpret and plot.
 `pp.interpret` does not run spectral gamma or elemental spectroscopy; call those functions yourself.
 
 ```{code-cell} python
@@ -253,21 +253,20 @@ create_fmi_panel(image, depth_range=(4052, 4058), orient=True, equalize="dynamic
 
 {doc}`Tutorial 16 <tutorials/part_b/16_borehole_image_fmi>` runs it on the real Daydream 1 FMI.
 
-## Specialist inputs and remaining tutorial work
+## Core-scanner, NMR and capillary-pressure data
 
 The Epslog collection supplies core-scanner inputs for 15/12-20 S and a
-same-well RealPore core extract. Discover them with `petrophys.list_samples("epslog")`;
-the collection README records curve mappings, units and depth-matching limits.
-These inputs and the Phillips reference tables do not by themselves complete
-the notebook exercises.
+same-well RealPore core extract (`petrophys.list_samples("epslog")`); its README
+records the curve mappings, units and depth-matching limits. What each bundled
+dataset supports, and what it does not contain:
 
-| Data or workflow | Existing API and remaining requirement | Tutorial |
-| --- | --- | --- |
-| XRF concentrations and mineral proxies | `XRFData`, `create_xrf_panel`; Epslog inputs available, same-well wireline comparison pending | 12 |
-| Grain size and Kozeny-Carman | `GrainSizeData`; Epslog P50 and routine-core measurements available, depth/unit verification pending; P13/P87 absent | 12 |
-| Scanner strength and dynamic mechanics | `CoreMechanical`; Epslog Vp/Vs available; static moduli, plug-test validation and same-well wireline logs still missing | 12 |
-| NMR T2 distributions and SDR | `NMRData` with bins; Phillips teaching example available, traceable field distribution and matching core calibration still missing | 14 |
-| Laboratory capillary pressure | `convert_pc_lab_to_reservoir`, `fit_brooks_corey`, `fit_j_function`; COSTA sample curves available, complete fluid/unit and well/depth metadata pending | 15 |
+| Data | API | Bundled data | Not included | Tutorial |
+| --- | --- | --- | --- | --- |
+| XRF concentrations and mineral proxies | `XRFData`, `create_xrf_panel` | Epslog XRF scans | same-well wireline logs | 12 |
+| Grain size and Kozeny-Carman | `GrainSizeData` | Epslog P50 and routine core | P13/P87 percentiles | 12 |
+| Scanner strength and dynamic mechanics | `CoreMechanical` | Epslog Vp/Vs | static moduli, plug tests, same-well wireline logs | 12 |
+| NMR T2 distributions and SDR | `NMRData` with bins | Phillips teaching example | a field T2 distribution with matching core | 14 |
+| Laboratory capillary pressure | `convert_pc_lab_to_reservoir`, `fit_brooks_corey`, `fit_j_function` | COSTA mercury-injection curves | fluid properties and the well and depth of each plug | 15 |
 
 `read_formation_pressure` accepts CSV/LAS station files, DataFrames and LAS objects.
 Fluid labels are optional. For unlabeled stations call `.infer_contacts()` and
@@ -312,32 +311,8 @@ contacts applies to the separate HW-3 example.
 
 Sonic saturation (`petrophys.interpretation.saturation.sonic`) estimates Sw without resistivity, by Gassmann substitution, and says when the fluid effect is undetectable.
 
-## Go deeper
+## Next
 
-::::{grid} 1 2 2 2
-:gutter: 3
+{doc}`analysis_tools`: the analyses `pp.interpret` does not run, from clay typing to pore pressure.
 
-:::{grid-item-card} Tutorial 12: core calibration
-:link: tutorials/part_b/12_core_calibration_and_digital_core
-:link-type: doc
-Core ties, poro-perm, digital facies and spectral gamma.
-:::
-
-:::{grid-item-card} Tutorial 14: NMR
-:link: tutorials/part_b/14_nmr_petrophysics
-:link-type: doc
-The Daydream CMR in depth, with QC of coal and washouts.
-:::
-
-:::{grid-item-card} Tutorial 15: saturation-height
-:link: tutorials/part_b/15_capillary_pressure_saturation_height
-:link-type: doc
-Capillary pressure, J-functions and Sw from height.
-:::
-
-:::{grid-item-card} Tutorial 16: borehole images
-:link: tutorials/part_b/16_borehole_image_fmi
-:link-type: doc
-Orienting and equalizing the Daydream FMI.
-:::
-::::
+The tutorials go deeper on {doc}`core calibration <tutorials/part_b/12_core_calibration_and_digital_core>`, {doc}`NMR <tutorials/part_b/14_nmr_petrophysics>`, {doc}`saturation-height <tutorials/part_b/15_capillary_pressure_saturation_height>` and {doc}`borehole images <tutorials/part_b/16_borehole_image_fmi>`.

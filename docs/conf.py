@@ -146,9 +146,7 @@ _api_spec.loader.exec_module(api_reference)
 API_REFERENCE = api_reference.write_reference(DOCS_DIR)
 
 TUTORIAL_SOURCE_PATHS = {
-    "tutorials/quickstart": "examples/quickstart.ipynb",
     "tutorials/complete_tour": "examples/complete_tour.ipynb",
-    "tutorials/own_data": "examples/own_data.ipynb",
     "tutorials/part_a/": "examples/part_a_foundations/",
     "tutorials/part_b/": "examples/part_b_advanced/",
     "tutorials/case_studies/": "examples/case_studies/",

@@ -9,6 +9,7 @@ mystnb:
 
 # LLM agents (MCP)
 
+A context gives a model the result of an interpretation ({doc}`context`); an MCP server lets the model run the interpretation itself.
 Petrophys ships a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for LLM applications such as Claude Desktop, Claude Code, Cursor and VS Code.
 Through it, a model loads wells, interprets them, reads the trace and plots logs on your machine. It uses the same workflow as the Python API.
 
@@ -234,32 +235,6 @@ Every response is compact JSON that carries the well's depth unit. Data-quality 
 | HTTP clients get 401 | the client must send `Authorization: Bearer <token>`; `petrophys-mcp check --url ... --token ...` confirms the token |
 | Hosted model cannot reach the server | it needs a public HTTPS URL (proxy or tunnel); pass that domain with `--allowed-host` |
 
-## Go deeper
+## Next
 
-::::{grid} 1 2 2 2
-:gutter: 2
-
-:::{grid-item-card} Petrophys for LLM agents
-:link: tutorials/part_b/20_mcp_server
-:link-type: doc
-A full session: load, interpret, explain, summarize, plot, export.
-:::
-
-:::{grid-item-card} Generate LLM context
-:link: tutorials/part_b/19_llm_context_generation
-:link-type: doc
-Give a model computed JSON instead of tool access.
-:::
-
-:::{grid-item-card} The workflow as a glass box
-:link: tutorials/part_b/10_dynamic_workflow_glass_box
-:link-type: doc
-The trace a model reads through `explain_step`.
-:::
-
-:::{grid-item-card} Complete tour
-:link: tutorials/complete_tour
-:link-type: doc
-Every part of the library on real wells.
-:::
-::::
+The guide ends here. The {doc}`tutorials <tutorials/index>` go further: {doc}`tutorial 20 <tutorials/part_b/20_mcp_server>` runs a full MCP session (load, interpret, explain, summarize, plot, export), and the foundations lessons build the interpretation one physical quantity at a time.

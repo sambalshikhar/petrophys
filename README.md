@@ -192,9 +192,9 @@ By default, the context classifies each property with its table in
 category; reservoir quality needs PHIE, PERM and VCL (`NO_QUALITY_DATA`
 otherwise) and uses the limits of each sample's lithology family, clastic or
 carbonate.
-See the [context guide](https://petrophys.netlify.app/context.html) and [interpretation review guide](https://petrophys.netlify.app/data_quality.html).
-For GeoLink, COSTA and Danish benchmark reproduction, see the
-[benchmark context guide](docs/benchmark_context.md), with commands, required
+See the [context guide](https://petrophys.netlify.app/context.html) and [interpretation review guide](https://petrophys.netlify.app/workflows.html#review-interpretation).
+For GeoLink, COSTA and Danish benchmark reproduction, see
+[Reproducing the benchmark packages](docs/benchmark_context.md), with commands, required
 inputs, output layouts and common errors.
 Net-pay output is cutoff screening, not confirmed pay; review warnings and calibration.
 
@@ -298,7 +298,7 @@ cutoffs alone).
 the default, and `"geolink"` provides the GeoLink evaluation configuration.
 Use a dataset `context_profile` to generate benchmark context: it applies
 the collection's preparation, interpretation, calibration and export rules.
-See the [benchmark context guide](docs/benchmark_context.md) for commands and
+See [Reproducing the benchmark packages](docs/benchmark_context.md) for commands and
 required inputs.
 
 For an MCP evaluation harness, `petrophys-mcp serve --calculation-profile geolink`

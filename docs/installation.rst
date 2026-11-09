@@ -133,3 +133,8 @@ pip first:
 .. code-block:: bash
 
    python -m pip install --upgrade pip
+
+Next
+----
+
+:doc:`quickstart`: read, plot, interpret and export a first well.

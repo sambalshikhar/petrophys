@@ -1,9 +1,10 @@
-# Generate benchmark context
+# Reproducing the benchmark packages
 
-Use a dataset profile to generate benchmark context for GeoLink, COSTA or
-Danish wells. Each profile computes JSON from the input LAS with the dataset's
-interpretation parameters, calibration and grouping rules. For context from
-your own wells, follow the {doc}`context` guide.
+The published context packages of the GeoLink, GeoLink training, COSTA and
+Danish collections are computed by dataset context profiles. Each profile
+computes the JSON from the input LAS with the collection's interpretation
+parameters, calibration and grouping rules. For context from your own wells,
+follow the {doc}`context` guide.
 
 ## Choose the inputs
 
@@ -25,6 +26,44 @@ from petrophys.reporting import describe_context_profile, list_context_profiles
 print(list_context_profiles())
 print(describe_context_profile("danish"))
 ```
+
+## What each profile computes
+
+- `geolink_v1` (alias `geolink`) covers the 32 GeoLink eval wells. It reads
+  their raw LAS (the `eval` folder), the NPD formation tops workbook and the
+  GeoLink lithology codebook, and computes the interpreted curves and category
+  context.
+- `geolink_train_v1` (alias `geolink_train`) covers the 191 GeoLink training
+  wells, from their raw LAS with header interpretation parameters (the
+  `LAS_with_petrophys_params` folder), the NPD formation tops workbook and the
+  GeoLink lithology codebook.
+- `costa_v1` (alias `costa`) covers the 17 COSTA wells. Its inputs ship with
+  petrophys: the COSTA LAS files (`petrophys/datasets/costa`), the per-well
+  interpretation parameters and reference calcite and dolomite volumes
+  (`costa_interpretation_parameters.csv` and
+  `costa_reference_carbonate_volumes.csv` in `petrophys/_internal/data`).
+  Before the workflow it computes VCL by each well's gamma-ray method, the
+  calcite and dolomite volumes and a limestone/dolomite code; the workflow
+  takes SW from the source saturation where there is one, and SO = 1 - SW; the
+  context notes are the package's per-curve method notes.
+- `danish_v1` (alias `danish`) covers five Danish wells, from their raw LAS
+  files, the Danish tops workbook and the GeoLink lithology codebook. It first
+  writes the prepared LAS the package interpreted (depth in feet, standard
+  curve names and unit labels, and a lithology code curve from each
+  formation's majority lithology where the well has none), then exports one
+  lithology group per formation of the tops workbook, named by its majority
+  lithology.
+
+Each well is interpreted once from its raw LAS. A preparatory step, recorded
+in the trace, computes the curves the package's settings take from a first
+run: for GeoLink and Danish the reservoir flag that selects the SWIRR_APP
+samples and the bad-hole flag BADHOLEFLAG, for the GeoLink training package
+that reservoir flag, for COSTA its precomputed curves (PERM, VCL, carbonate
+volumes and lithology).
+
+A profile fixes its package's settings: it takes `well_names`, `pattern` (LAS
+only), `formations` and `lithology_codes`, and rejects `workflow_config` and
+the other interpretation options.
 
 ## Generate JSON and interpreted LAS from a checkout
 
@@ -227,6 +266,23 @@ note may differ from the published files. GeoLink's 15_9-17 and 34_10-23 were
 written by a later version of the package's code than its other wells, so
 their files also carry SO statistics, two bad-hole fields and some wording
 that the profile does not reproduce.
+
+## Configure calculations for an evaluation harness
+
+Use `context_profile="geolink"` for the GeoLink benchmark package. If an
+evaluation harness also needs to apply the GeoLink calculation configuration
+to other input wells, pass this configuration to `pp.export_context`:
+
+```python
+workflow_config=pp.DynamicWorkflowConfig(calculation_profile="geolink", reuse_input_resflag=True)
+```
+
+`reuse_input_resflag=True` retains an input `RESFLAG` or `NET_RES` for the
+SWIRR_APP calculation. This is useful when the input LAS already supplies the
+reservoir selection used by the evaluation. Check that the supplied flag
+matches the intended interval and cutoffs. An MCP server takes the same
+configuration with `petrophys-mcp serve --calculation-profile geolink`
+({doc}`mcp`).
 
 ## Common errors
 

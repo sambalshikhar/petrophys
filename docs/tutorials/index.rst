@@ -15,19 +15,11 @@ Daydream 1 DLIS file that is available in source checkouts through Git LFS.
 Choose a path
 -------------
 
+New to Petrophys? The :doc:`../quickstart` and :doc:`../own_data` pages run one
+well, then your own files; the lessons below go deeper.
+
 .. grid:: 1 2 2 2
    :gutter: 2
-
-   .. grid-item-card:: Quickstart
-      :class-card: ph-card-teal
-      :link: quickstart
-      :link-type: doc
-
-      Plot a bundled LAS first, optionally attach geology, then interpret on a
-      copy, read the decision trace, and summarize the reservoir interval.
-
-      +++
-      One complete well in a single lesson
 
    .. grid-item-card:: Complete tour
       :class-card: ph-card-teal
@@ -40,18 +32,6 @@ Choose a path
 
       +++
       One long notebook on four GeoLink wells
-
-   .. grid-item-card:: Your own data
-      :class-card: ph-card-teal
-      :link: own_data
-      :link-type: doc
-
-      Map CSV/TSV/Excel inputs, select wells and sheets, check depth metadata,
-      diagnose optional geology and core saturation units, summarize results
-      per formation, and export LAS and JSON.
-
-      +++
-      Beginner examples followed by advanced import controls
 
    .. grid-item-card:: Foundations
       :class-card: ph-card-amber
@@ -136,9 +116,7 @@ needs the ``mcp`` extra; see :doc:`../installation`.
    :hidden:
    :maxdepth: 2
 
-   Quickstart notebook <quickstart>
    Complete tour <complete_tour>
-   Your own data notebook <own_data>
    Foundations <foundations>
    Advanced workflows <advanced>
    Case studies <case_studies>

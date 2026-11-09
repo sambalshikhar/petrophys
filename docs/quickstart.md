@@ -9,8 +9,9 @@ mystnb:
 
 # Quickstart
 
-Read a bundled well, plot it, interpret it and export the result. Every output
-on this page is produced when the documentation is built.
+With Petrophys installed ({doc}`installation`), run a first well: read a
+bundled well, plot it, interpret it and export the result. Every output on this
+page is produced when the documentation is built.
 
 ```{code-cell} python
 :tags: [remove-cell]
@@ -90,6 +91,8 @@ warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core sat
 | `"no_interpretation"` | Nothing failed, but the inputs supported no interpretation step. |
 | `"failed"` | A step failed; `result.errors` says why and `result.raise_for_errors()` raises. |
 
+To see the original exception while debugging, pass `raise_on_error=True`.
+
 A step that cannot run is skipped with a reason, never filled with invented
 defaults:
 
@@ -139,7 +142,7 @@ The log starts in shallow, poorly consolidated rock that can pass the pay
 cutoffs (the clay, porosity and saturation limits). One Rw also serves the whole
 well, while shallow formation waters are usually fresher than the reservoir's,
 so shallow sections that no lithology code covers can be flagged as marginal
-pay; {doc}`data_quality` explains this limitation. Summarize the interval you
+pay; {ref}`review-pay` explains this limitation. Summarize the interval you
 are evaluating, not the whole well.
 
 ```{code-cell} python
@@ -205,36 +208,8 @@ with tempfile.TemporaryDirectory() as folder:
             print(f"  {name:<11} {value}")
 ```
 
-## Next steps
+## Next
 
-::::{grid} 1 2 2 2
-:gutter: 2
+{doc}`own_data`: read your own CSV logs, attach formation and lithology tables, and check that their depths agree.
 
-:::{grid-item-card} Your own data
-:link: own_data
-:link-type: doc
-
-Read CSV logs, attach formation and lithology tables, and check depths.
-:::
-
-:::{grid-item-card} Interpretation workflows
-:link: workflows
-:link-type: doc
-
-Choose methods, override settings, run zones and batches.
-:::
-
-:::{grid-item-card} Complete tour
-:link: tutorials/complete_tour
-:link-type: doc
-
-Every capability of the library on bundled data, in one notebook.
-:::
-
-:::{grid-item-card} Case study: 30/6-5
-:link: tutorials/case_studies/cs1_full_formation_evaluation_30_6-5
-:link-type: doc
-
-A full formation evaluation of this well, step by step.
-:::
-::::
+The {doc}`complete tour <tutorials/complete_tour>` runs every capability of the library on bundled data in one notebook, and the {doc}`30/6-5 case study <tutorials/case_studies/cs1_full_formation_evaluation_30_6-5>` evaluates this well step by step.

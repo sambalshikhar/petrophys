@@ -22,7 +22,7 @@ grouping rules. It accepts one LAS file or a folder, identifies the collection
 by well name, and retains interpreted LAS and workflow traces in
 `OUTPUT/processed_las`.
 
-See the [benchmark context guide](../docs/benchmark_context.md) for required
+See [Reproducing the benchmark packages](../docs/benchmark_context.md) for required
 inputs, complete commands and subset runs. For context from your own wells,
 see the [general context guide](../docs/context.md).
 

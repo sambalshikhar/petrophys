@@ -5,7 +5,7 @@ Build a conventional formation evaluation from the measurements upward. This
 path keeps every method visible, so you can inspect inputs, assumptions,
 intermediate curves, and failure conditions before using automatic routing.
 
-**Recommended preparation:** complete the :doc:`quickstart`, install the base
+**Recommended preparation:** complete the :doc:`../quickstart`, install the base
 package, and be comfortable reading NumPy arrays and Matplotlib figures.
 
 What you will build
@@ -29,7 +29,7 @@ same in-memory well model so calculated curves can feed later calculations.
 
    .. grid-item-card:: Prefer a complete run?
       :class-card: ph-card-blue
-      :link: quickstart
+      :link: ../quickstart
       :link-type: doc
 
       See the dynamic workflow interpret one bundled well before examining each

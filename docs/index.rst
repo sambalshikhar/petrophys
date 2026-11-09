@@ -33,71 +33,104 @@ warning-producing step is recorded in the result.
    showing lithology, conventional logs, porosity, saturation, permeability,
    mineral volumes, core points, and reservoir flags.
 
-What is in the library
-======================
+From first well to LLM agents
+=============================
 
-.. grid:: 1 2 2 3
+The documentation follows one path. Each step builds on the one before it.
+
+.. grid:: 1 2 2 4
    :gutter: 2
 
-   .. grid-item-card:: Real-world inputs
+   .. grid-item-card:: 1. A first well
       :class-card: ph-card-teal
+      :link: quickstart
+      :link-type: doc
 
-      Read LAS, tabular logs, and optional DLIS data. Work with core
-      measurements, formation intervals, NMR, borehole images, and
-      geochemical channels through domain-specific APIs.
-
-      +++
-      :doc:`Data and depth <data_model>`
-
-   .. grid-item-card:: Preparation and QC
-      :class-card: ph-card-blue
-
-      Resolve recognized mnemonic aliases, convert supported units, screen
-      implausible values, identify washout and bad-hole intervals, normalize
-      curves, and impute missing samples with a model trained on your wells.
+      Install, then read, plot, interpret and export a bundled North Sea well
+      in a few lines.
 
       +++
-      :doc:`What Petrophys can do <capabilities>`
+      Quickstart
 
-   .. grid-item-card:: Formation evaluation
+   .. grid-item-card:: 2. Your own data
+      :class-card: ph-card-teal
+      :link: own_data
+      :link-type: doc
+
+      Read LAS, CSV and Excel logs, attach formation tops and lithology
+      intervals, and check that their depths agree.
+
+      +++
+      Your own data
+
+   .. grid-item-card:: 3. Interpret and review
       :class-card: ph-card-amber
+      :link: workflows
+      :link-type: doc
 
-      Calculate clay volume, matrix and mineral volumes, porosity, electrical
-      properties, saturation, permeability, temperature, and invasion using
-      explicit methods or automatic routing.
-
-      +++
-      :doc:`Interpretation workflows <workflows>`
-
-   .. grid-item-card:: Specialist interpretation
-      :class-card: ph-card-coral
-
-      Analyze processed NMR distributions, borehole-image arrays, spectral
-      gamma and elemental spectroscopy, core measurements, saturation height,
-      sonic saturation, and elastic properties.
+      Clay volume, lithology and minerals, porosity, Rw, saturation,
+      permeability and net pay, with every decision traced and checked.
 
       +++
-      :doc:`Specialist data <specialist_data>`
+      Workflows
 
-   .. grid-item-card:: Reservoir evaluation
-      :class-card: ph-card-green
+   .. grid-item-card:: 4. Your own recipe
+      :class-card: ph-card-amber
+      :link: custom_workflows
+      :link-type: doc
 
-      Derive BVW, moveable-hydrocarbon indicators, RQI and FZI, hydraulic flow
-      units, net rock, net reservoir, net pay, volumetrics, diagnostics, and
-      interval summaries.
+      Fix the methods and parameters, add your own steps, save the recipe and
+      run it on a folder of wells.
 
       +++
-      :doc:`What Petrophys can do <capabilities>`
+      Custom workflows
 
-   .. grid-item-card:: Plots and delivery
+   .. grid-item-card:: 5. Plots and reports
       :class-card: ph-card-blue
+      :link: visualization_reporting
+      :link-type: doc
 
-      Build adaptive log panels, triple combos, crossplots, Pickett plots,
-      specialist displays, and multiwell charts. Export curves and auditable
-      LAS, CSV, Excel, JSON, and report packages.
+      Adaptive log panels, crossplots and multiwell charts; LAS, CSV, Excel,
+      JSON and delivery packages.
 
       +++
-      :doc:`Visualization and reporting <visualization_reporting>`
+      Visualization and reporting
+
+   .. grid-item-card:: 6. Specialist data and analyses
+      :class-card: ph-card-coral
+      :link: specialist_data
+      :link-type: doc
+
+      NMR, spectral gamma, core, saturation height and borehole images, then
+      gap filling, heterogeneity, zonation and uncertainty.
+
+      +++
+      Specialist data, then analysis tools
+
+   .. grid-item-card:: 7. Context for LLMs
+      :class-card: ph-card-green
+      :link: context
+      :link-type: doc
+
+      Compact JSON summaries of interpreted wells, by formation and lithology
+      group, sized for a language model.
+
+      +++
+      Context export
+
+   .. grid-item-card:: 8. LLM agents
+      :class-card: ph-card-green
+      :link: mcp
+      :link-type: doc
+
+      An MCP server that lets a model load, interpret, summarize and plot wells
+      on your machine.
+
+      +++
+      LLM agents (MCP)
+
+:doc:`What Petrophys can do <capabilities>` maps every part of the library to
+its page, and the :doc:`tutorials <tutorials/index>` go deeper.
 
 How data moves through Petrophys
 ================================
@@ -181,9 +214,9 @@ interpretation straight after installing:
    print(result.summary(top=2841, bottom=2958))   # the Brent Group
    pp.plot(result, top=2800, bottom=3000).save("30_6-5.png")
 
-Continue with the :doc:`installation guide <installation>`, the
-:doc:`quickstart <quickstart>`, or the browser-rendered :doc:`tutorials
-<tutorials/index>`.
+Continue with the :doc:`installation guide <installation>` and the
+:doc:`quickstart <quickstart>`, then follow the guide from
+:doc:`your own data <own_data>` to :doc:`LLM agents <mcp>`.
 
 .. raw:: html
 
@@ -200,26 +233,16 @@ Continue with the :doc:`installation guide <installation>`, the
 .. toctree::
    :hidden:
    :maxdepth: 2
-   :caption: Getting Started
+   :caption: Getting started
 
    installation
    quickstart
    own_data
-   input_templates
 
 .. toctree::
    :hidden:
    :maxdepth: 2
-   :caption: Fundamentals
-
-   data_model
-   glossary
-   architecture
-
-.. toctree::
-   :hidden:
-   :maxdepth: 2
-   :caption: User Guide
+   :caption: Guide
 
    capabilities
    workflows
@@ -227,9 +250,7 @@ Continue with the :doc:`installation guide <installation>`, the
    visualization_reporting
    specialist_data
    analysis_tools
-   data_quality
    context
-   benchmark_context
    mcp
 
 .. toctree::
@@ -242,8 +263,11 @@ Continue with the :doc:`installation guide <installation>`, the
 .. toctree::
    :hidden:
    :maxdepth: 2
-   :caption: API Reference
+   :caption: Reference
 
+   data_model
+   input_templates
+   glossary
    api/index
 
 .. toctree::
@@ -251,4 +275,6 @@ Continue with the :doc:`installation guide <installation>`, the
    :maxdepth: 1
    :caption: Project
 
+   architecture
+   benchmark_context
    changelog

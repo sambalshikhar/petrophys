@@ -9,7 +9,7 @@ mystnb:
 
 # Context export
 
-A context is a compact JSON summary of an interpreted well, small enough for an LLM, a report generator or a database.
+An interpreted and reviewed well can be handed to an LLM. A context is a compact JSON summary of an interpreted well, small enough for an LLM, a report generator or a database.
 It holds no depth-by-depth arrays and is built locally, with no LLM or network call. To let an LLM run the interpretation itself, see {doc}`mcp`.
 
 ## Choose a workflow
@@ -19,24 +19,11 @@ It holds no depth-by-depth arrays and is built locally, with no LLM or network c
 | Summarize an interpretation you already ran | `pp.export_context(result)` for a dict, or `pp.export_context(result, "well_context.json")` |
 | Interpret your own well and write one JSON | `petrophys-context "well.las" "well_context.json"` |
 | Generate six category contexts across wells, formations and lithology groups | `pp.export_context(..., layout="package")` or the CLI with that layout |
-| Reproduce the GeoLink, GeoLink training, COSTA or Danish benchmark | Use the collection's `context_profile`; see {doc}`benchmark_context` for complete commands and required inputs |
+| Reproduce the GeoLink, GeoLink training, COSTA or Danish benchmark | The collection's `context_profile`; see {doc}`benchmark_context` |
 
-For a source checkout, install with `python -m pip install -e .` before using
-the public API or installed CLI. For a package installation, use
-`python -m pip install petrophys`; DLIS input additionally needs the `dlis`
-extra. Run commands from the folder containing your files, or pass absolute
-paths. Quote paths containing spaces.
-
-A general category package can be generated with this one-line command:
-
-```bash
-petrophys-context "logs" "outputs/context_run_01" --layout package --formations "formation_intervals.csv" --lithology "lithology_intervals.csv"
-```
-
-The two geology flags are optional. Supply your available formation/lithology
-data using the formats in {doc}`input_templates`. Use a fresh output directory.
-This command interprets the wells with your supplied settings. Select a
-dataset profile explicitly when generating benchmark context. The examples below explain configuration, file layouts and checks.
+Install Petrophys first ({doc}`installation`); DLIS input also needs the `dlis` extra.
+The same exports run from the command line ({ref}`context-cli`). Geology tables are
+optional; their layouts are in {doc}`input_templates`.
 
 ```{code-cell} python
 :tags: [hide-cell]
@@ -47,7 +34,8 @@ import pandas as pd
 pd.set_option("display.max_colwidth", None)  # show table text in full
 
 # 30/6-5 stores core saturation in percent under a "frac" label. Petrophys
-# converts it and warns; see "Reviewing an interpretation". Only that message is hidden.
+# converts it and warns; see "Core saturation units" in the input templates. Only that
+# message is hidden.
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
 ```
 
@@ -162,100 +150,12 @@ PHI_NORM, RQI, FZI and BVW are then recomputed from the porosity, permeability a
 
 In a package each formation is split into lithology groups, as above. With `split_by_lithology=False` each formation is one group, `<formation>_<category>.json`, whose documents give its `dominant_lithology`. `zones=` groups the wells by your own intervals in place of the formations, in the same two ways ({doc}`workflows`).
 
-## Published packages: GeoLink, COSTA and Danish
+## Published packages
 
-For copyable commands covering all three collections, subsets, raw versus
-processed LAS, and retained intermediate files, see {doc}`benchmark_context`.
-
-A dataset context profile computes the benchmark package from the raw LAS
-using the collection's interpretation parameters, calibration and grouping
-rules. Select the profile that matches your dataset.
-
-- `geolink_v1` (alias `geolink`) covers the 32 GeoLink eval wells. It reads
-  their raw LAS (the `eval` folder), the NPD formation tops workbook
-  (`NPD stratigraphic picks north sea.xlsx`) and the GeoLink lithology
-  codebook (`Litho_Nomenclature_Kingdom.xlsx`), and computes the interpreted
-  curves and category context.
-- `geolink_train_v1` (alias `geolink_train`) covers the 191 GeoLink training
-  wells. It reads their raw LAS with header interpretation parameters (the
-  `LAS_with_petrophys_params` folder), the NPD formation tops workbook and the
-  GeoLink lithology codebook. Each well is interpreted once; a preparatory
-  step computes the reservoir flag of the package's first interpretation.
-  The input logs are the logged curves, without the core data the LAS carry
-  and without the bit size, which the package's context did not list.
-- `costa_v1` (alias `costa`) covers the 17 COSTA wells. Its inputs ship with
-  petrophys: the COSTA LAS files (`petrophys/datasets/costa`), the per-well
-  interpretation parameters and reference calcite and dolomite volumes
-  (`costa_interpretation_parameters.csv` and
-  `costa_reference_carbonate_volumes.csv` in `petrophys/_internal/data`). Before the workflow it
-  computes VCL by each well's gamma-ray method, the calcite and dolomite
-  volumes and a limestone/dolomite code; the workflow takes SW from the
-  source saturation where there is one, and SO = 1 - SW; the context notes
-  are the package's per-curve method notes.
-- `danish_v1` (alias `danish`) covers five Danish wells. It reads their raw LAS
-  files, the Danish tops workbook (`Danish_formation_tops_for_context.xlsx`)
-  and the GeoLink lithology codebook. It first writes the prepared LAS the
-  package interpreted (depth in feet, standard curve names and unit labels,
-  and a lithology code curve from each formation's majority lithology where
-  the well has none), then exports one lithology group per formation of the
-  tops workbook, named by its majority lithology.
-
-```python
-import petrophys as pp
-
-pp.export_context(
-    r"PATH/eval",
-    "outputs/geolink_context",
-    layout="package",
-    context_profile="geolink",
-    formations=r"PATH/NPD stratigraphic picks north sea.xlsx",
-    lithology_codes=r"PATH/Litho_Nomenclature_Kingdom.xlsx",
-)
-pp.export_context(
-    None,                              # the COSTA LAS bundled with petrophys
-    "outputs/costa_context",
-    layout="package",
-    context_profile="costa",
-)
-pp.export_context(
-    r"PATH/danish/las",
-    "outputs/danish_context",
-    layout="package",
-    context_profile="danish",
-    formations=r"PATH/Danish_formation_tops_for_context.xlsx",
-    lithology_codes=r"PATH/Litho_Nomenclature_Kingdom.xlsx",
-)
-```
-
-```bash
-petrophys-context PATH/danish/las outputs/danish_context \
-  --layout package --profile danish \
-  --formations PATH/Danish_formation_tops_for_context.xlsx \
-  --lithology-codes PATH/Litho_Nomenclature_Kingdom.xlsx
-```
-
-A profile fixes its package's settings: it takes `well_names`, `pattern`
-(LAS only), `formations` and `lithology_codes`, and rejects
-`workflow_config` and the other interpretation options. `export_context`
-writes the context JSON only. The eval script keeps the LAS too:
-`<output-dir>/processed_las` holds the interpreted LAS and workflow traces the
-context is computed from, so each context statistic is the statistic of that
-LAS over the group's depth window. Each well is interpreted once from its raw
-LAS; a preparatory step, recorded in the trace, computes the curves the
-package's settings take from a first run: for GeoLink and Danish the reservoir
-flag that selects the SWIRR_APP samples and the bad-hole flag BADHOLEFLAG, for
-the GeoLink training package that reservoir flag, for COSTA its precomputed
-curves (PERM, VCL, carbonate volumes and lithology).
-Given one LAS file or a folder, it
-recognizes GeoLink, GeoLink training, COSTA or Danish wells by name (`--dataset` overrides):
-
-```bash
-python scripts/generate_benchmark_context.py --input-dir PATH/HW-31.las --output-dir outputs/HW-31
-```
-
-Use `--well` (or `well_names=[...]`) for a subset, and
-`list_context_profiles()` or `describe_context_profile("geolink")` from
-`petrophys.reporting` to inspect the profiles.
+Published packages (GeoLink, GeoLink training, COSTA and Danish) are computed by
+their dataset context profiles from the raw LAS, with the collection's
+interpretation parameters, calibration and grouping rules; see
+{doc}`benchmark_context` for the inputs, commands and checks.
 
 ## DLIS, CSV and TSV input
 
@@ -335,6 +235,7 @@ Limestone, chalk, dolomite and marl are carbonate and every other rock takes the
 A sample without lithology takes the family of the lithology domain of the run that interpreted it.
 A sample without effective porosity, permeability or clay volume is `NO_QUALITY_DATA`: it gets no grade, not even `NON_RESERVOIR`.
 
+(context-cli)=
 ## From the command line
 
 `petrophys-context` always interprets before exporting. Drop any optional flag whose input you do not have.
@@ -390,21 +291,6 @@ The standardized readers accept CSV, TSV, Excel and DataFrames; {doc}`input_temp
 | Thin groups | groups thinner than `minimum_group_thickness` (default 2.0, in each LAS's own depth unit, which each file gives as `formation_info.depth_unit`) are not written |
 | Carbonate wells | set `lithology_domain` to `carbonate` in LAS metadata, `workflow_config`, or the CLI flag; for COSTA field wells, also `carbonate_calibration="costa"` in `workflow_config` |
 
-## Configure calculations for an evaluation harness
-
-Use `context_profile="geolink"` for the GeoLink benchmark package. If an
-evaluation harness also needs to apply the GeoLink calculation configuration
-to other input wells, pass this configuration to `pp.export_context`:
-
-```python
-workflow_config=pp.DynamicWorkflowConfig(calculation_profile="geolink", reuse_input_resflag=True)
-```
-
-`reuse_input_resflag=True` retains an input `RESFLAG` or `NET_RES` for the
-SWIRR_APP calculation. This is useful when the input LAS already supplies the
-reservoir selection used by the evaluation. Check that the supplied flag
-matches the intended interval and cutoffs.
-
 ## Schema and size contracts
 
 | Contract | Value |
@@ -418,32 +304,8 @@ matches the intended interval and cutoffs.
 | Failed package run | staged and validated first, so no partial folder is left |
 | Package documents | written directly, not wrapped in a `payload` object |
 
-## Go deeper
+## Next
 
-::::{grid} 1 2 2 2
-:gutter: 2
+{doc}`mcp`: let an LLM run the interpretation itself, instead of reading its result.
 
-:::{grid-item-card} Generate LLM context
-:link: tutorials/part_b/19_llm_context_generation
-:link-type: doc
-Single-well context and a full category package for 30/6-5.
-:::
-
-:::{grid-item-card} Formation and interval analysis
-:link: tutorials/part_b/11_formation_and_interval_analysis
-:link-type: doc
-Nested tops, ranks and per-formation summaries.
-:::
-
-:::{grid-item-card} Field screening, 17 COSTA wells
-:link: tutorials/case_studies/cs3_field_screening_costa_17wells
-:link-type: doc
-A carbonate field screened well by well.
-:::
-
-:::{grid-item-card} LLM agents (MCP)
-:link: mcp
-:link-type: doc
-Let an LLM run the interpretation itself.
-:::
-::::
+{doc}`Tutorial 19 <tutorials/part_b/19_llm_context_generation>` builds a single-well context and a full category package for 30/6-5.
