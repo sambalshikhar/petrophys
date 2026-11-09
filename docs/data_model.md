@@ -197,20 +197,18 @@ vendor names and adds the standard names beside them; set
 
 ## Bundled samples
 
-The package installs small public wells, their geology and the input templates.
+The package installs small public datasets: well logs, NMR, formation-pressure
+tests and core measurements, with geology tables and input templates.
+`pp.list_samples(kind)` lists one kind, or one collection such as `"costa"`:
 
 ```{code-cell} python
 from textwrap import fill
 
-names = pp.list_samples()
-templates = [name for name in names if name.endswith("_template")]
-geology = [name for name in names if name not in templates
-           and (name.startswith(("formations_", "lithology_"))
-                or name.endswith("_formation_tops"))]
-wells = [name for name in names if name not in templates + geology]
-for label, group in (("wells", wells), ("geology", geology), ("templates", templates)):
-    line = f"{label} ({len(group)}): {', '.join(group)}"
-    print(fill(line, 88, subsequent_indent="    "))
+from petrophys.datasets import SAMPLE_KINDS
+
+for kind in SAMPLE_KINDS:
+    names = pp.list_samples(kind)
+    print(fill(f"{kind} ({len(names)}): {', '.join(names)}", 88, subsequent_indent="    "))
 ```
 
 The Daydream CMR logs are installed as LAS and hold scalar NMR curves only:

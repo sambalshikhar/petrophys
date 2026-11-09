@@ -1000,6 +1000,10 @@ wherever the package used the function.
   `BADHOLE_DRHO`, `BADHOLE_BS`; `PERM_A`, `PERM_B`, `PERM_C`;
   `QUARTZ_RHOB`, `WATER_NPHI` and the other `<MINERAL>_<PROPERTY>`), also
   per header zone (`BADHOLE_CALI_Z1`), below the values you pass.
+- `pp.list_samples(kind)` lists one kind of bundled data: `"logs"`, `"nmr"`,
+  `"pressure"`, `"core"`, `"geology"` or `"templates"`
+  (`petrophys.datasets.sample_kind` names a sample's kind), as well as one
+  collection such as `"costa"`.
 - `pp.plot` takes a well file path. `pp.interpret(..., output="well.las")`
   writes the interpreted well, as `pp.impute(..., output=)` does, and
   `pp.impute` takes an interpretation result and returns it.

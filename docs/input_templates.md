@@ -38,12 +38,11 @@ readers = {
     "lithology_codes_template": "petrophys.io.read_lithology_codes",
 }
 rows = []
-for name in pp.list_samples():
-    if name.endswith("_template"):
-        columns = list(pd.read_csv(pp.sample(name)).columns)
-        more = f" + {len(columns) - 4} more" if len(columns) > 4 else ""
-        rows.append({"Template": name, "Read with": readers[name],
-                     "Columns": ", ".join(columns[:4]) + more})
+for name in pp.list_samples("templates"):
+    columns = list(pd.read_csv(pp.sample(name)).columns)
+    more = f" + {len(columns) - 4} more" if len(columns) > 4 else ""
+    rows.append({"Template": name, "Read with": readers[name],
+                 "Columns": ", ".join(columns[:4]) + more})
 pd.DataFrame(rows).style.hide(axis="index")
 ```
 

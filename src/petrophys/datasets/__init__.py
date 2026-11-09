@@ -53,6 +53,8 @@ __all__ = [
     "list_integration_fixtures",
     "list_samples",
     "sample",
+    "sample_kind",
+    "SAMPLE_KINDS",
 ]
 
 
@@ -74,21 +76,59 @@ def _fixture_paths(kind: Optional[str] = None) -> List[Path]:
     ]
 
 
+#: The kinds of bundled data, as :func:`list_samples` groups them.
+SAMPLE_KINDS = ("logs", "nmr", "pressure", "core", "geology", "templates")
+_NMR_SAMPLES = {"phillips_nmr_bins", "phillips_cmr_log", "phillips_gulfcoast_nmr"}
+
+
+def sample_kind(name: str) -> str:
+    """The kind of data a bundled sample holds: one of :data:`SAMPLE_KINDS`.
+
+    ``"logs"`` are well logs; ``"nmr"`` NMR logs and tables; ``"pressure"``
+    formation-pressure tests; ``"core"`` core measurements (grain size, XRF,
+    strength, capillary pressure, core porosity and permeability);
+    ``"geology"`` formation tops and lithology tables; ``"templates"`` the
+    input templates.
+    """
+    path = sample(name)
+    stem = path.stem.lower()
+    folder = path.parent.name
+    if stem.endswith("_template"):
+        return "templates"
+    if stem.startswith(("formations_", "lithology_")) or stem.endswith("_formation_tops"):
+        return "geology"
+    if folder == "formation_pressure":
+        return "pressure"
+    if folder == "daydream" or stem in _NMR_SAMPLES:
+        return "nmr"
+    if folder in {"epslog", "phillips"}:
+        return "core"
+    return "logs"
+
+
 def list_samples(kind: Optional[str] = None) -> List[str]:
     """List the names of bundled samples, without extensions.
 
     Parameters
     ----------
     kind : str, optional
-        Restrict results to a dataset folder such as ``"costa"`` or
-        ``"geolink"``. Optional repository fixtures are never included.
+        A kind of data (``"logs"``, ``"nmr"``, ``"pressure"``, ``"core"``,
+        ``"geology"`` or ``"templates"``; see :func:`sample_kind`) or a
+        dataset folder such as ``"costa"`` or ``"geolink"``. Optional
+        repository fixtures are never included.
+
+    Examples
+    --------
+    >>> import petrophys as pp
+    >>> pp.list_samples("logs")[:3]
+    ['1046123714', '15_9-14', '16_7-1']
     """
     fixture_paths = set(_fixture_paths())
     names = []
     for path in _data_files(DATA_DIR, _SAMPLE_EXTS):
         if path in fixture_paths:
             continue
-        if kind is None or path.parent.name == kind:
+        if kind is None or path.parent.name == kind or (kind in SAMPLE_KINDS and sample_kind(path.stem) == kind):
             names.append(path.stem)
     return sorted(names)
 
