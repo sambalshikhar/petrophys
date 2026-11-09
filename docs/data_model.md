@@ -108,7 +108,8 @@ brent.to_dataframe(curves=["GR", "RHOB", "NPHI", "RDEP"]).head().round(3)
 ## Add a curve
 
 `add_curve` puts a calculated array on the well's depth index. The array must
-have one value per depth sample.
+have one value per depth sample: an array of any other length is refused with a
+`ValueError` that gives both lengths, as the second call below shows on purpose.
 
 ```{code-cell} python
 import numpy as np
