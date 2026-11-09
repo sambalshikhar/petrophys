@@ -494,7 +494,7 @@ def clay_volume(method: str = "gr", *, gr_clean: Optional[float] = None,
     picks the clay point in the well's shales; here, give ``sp_clean`` and
     ``sp_shale`` only for a drift-free SP, and the matrix in ``nd_matrix``. Uses
     :func:`~petrophys.interpretation.clay_volume.vcl_linear` and the
-    Larionov, Steiber and Clavier transforms,
+    Larionov, Stieber and Clavier transforms,
     :func:`~petrophys.interpretation.clay_volume.vcl_from_sp` and
     :func:`~petrophys.interpretation.clay_volume.vcl_from_nd`.
 

@@ -81,7 +81,7 @@ class IntervalAnalyzer:
     --------
     >>> from petrophys.evaluation.intervals import IntervalAnalyzer, Formation
     >>> analyzer = IntervalAnalyzer(well)
-    >>> summary = analyzer.analyze(Formation("Brent", 2500, 2700))
+    >>> summary = analyzer.analyze(Formation("Brent Group", 2841, 2958))
     >>> print(summary.zone_summary.net_pay)
     """
 

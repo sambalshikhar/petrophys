@@ -45,7 +45,7 @@ class FormationTops:
     --------
     >>> tops = FormationTops.from_csv("formations.csv")
     >>> tops.validate()
-    >>> fm = tops.get_by_name("Brent")
+    >>> fm = tops.get_by_name("Brent Group")
     >>> at_depth = tops.get_at_depth(2500.0)
     """
 
@@ -534,7 +534,7 @@ def label_depths(
         Top and bottom depth columns of a table.
     overlap : {"error", "thinnest", "thickest"}, default "error"
         What to do where intervals overlap, as in nested tops that list
-        groups and their member formations. ``"thinnest"`` picks the most
+        groups and the formations within them. ``"thinnest"`` picks the most
         detailed interval (the formation), ``"thickest"`` the broadest (the
         group). The default raises so that nesting is never resolved
         silently.
@@ -558,13 +558,13 @@ def label_depths(
     --------
     >>> import pandas as pd
     >>> tops = pd.DataFrame({
-    ...     "formation_name": ["BAAT GP.", "Ness Fm.", "Etive Fm."],
+    ...     "formation_name": ["BRENT GP.", "Ness Fm.", "Etive Fm."],
     ...     "top_depth": [2841.0, 2841.0, 2865.0],
     ...     "bottom_depth": [2958.0, 2865.0, 2958.0]})
     >>> label_depths([2830.0, 2850.0, 2900.0], tops, overlap="thinnest").tolist()
     ['', 'Ness Fm.', 'Etive Fm.']
     >>> label_depths([2850.0], tops, overlap="thickest").tolist()
-    ['BAAT GP.']
+    ['BRENT GP.']
     """
     if overlap not in _OVERLAP_RULES:
         raise ValueError(f"overlap must be one of {', '.join(_OVERLAP_RULES)}; got {overlap!r}")

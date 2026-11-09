@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 #: Short description of each sample collection (folder below petrophys/datasets).
 COLLECTIONS: Dict[str, str] = {
-    "geolink": "North Sea clastic wells, depth in m (GeoLink, CC BY 4.0)",
+    "geolink": "North Sea clastic wells, depth in m (GeoLink, CC BY-SA 4.0)",
     "costa": (
         "COSTA carbonate field, depth in ft; each file covers only the KHARAIB-2 "
         "reservoir interval; header RW/RWT and Archie A/M/N given; interpret with "
@@ -45,11 +45,11 @@ COLLECTIONS: Dict[str, str] = {
 WELL_NOTES: Dict[str, str] = {
     "30_6-5": (
         "flagship: full log suite, core data, bundled formation tops and lithology; "
-        "Brent reservoir (BAAT GP.: Ness, Etive) 2841-2958 m"
+        "Brent Group (Ness and Etive formations) 2841-2958 m"
     ),
     "25_5-1": "spectral gamma (THOR, URAN) and core data",
     "15_9-14": "vendor lithology; mineral-solver example",
-    "16_7-1": "tight zones",
+    "16_7-1": "Zechstein halite section beyond the resistivity tool range; no neutron or PEF",
     "1046123714": "bundled formation tops",
 }
 

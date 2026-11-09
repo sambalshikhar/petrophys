@@ -941,7 +941,7 @@ def create_server(
                 description="Track layout and its track names. auto (from the curves present): "
                 "LITHOLOGY, GAMMA / HOLE, RESISTIVITY, DENSITY / NEUTRON, POROSITY, "
                 "SATURATION, PERMEABILITY, FLAGS. raw: GR / SP / CALI, RESISTIVITY, "
-                "NEUTRON / DENSITY. petrophysics: LITHOLOGY, GR / VCL, RESISTIVITY, "
+                "NEUTRON / DENSITY. petrophysics: LITHOLOGY, GR / VCL / HOLE, RESISTIVITY, "
                 "NEUTRON / DENSITY / SONIC, POROSITY, SATURATION, PERMEABILITY, FLAGS. "
                 "minerals: MINERAL VOLUMES, POROSITY / SW. comprehensive: all."
             ),

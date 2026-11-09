@@ -102,7 +102,7 @@ def vcl_larionov_older(igr: Union[float, np.ndarray]) -> Union[float, np.ndarray
 
 def vcl_steiber(igr: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
     """
-    Steiber equation for clay volume.
+    Stieber equation for clay volume.
 
     VCL = IGR / (3 - 2 * IGR)
 
@@ -205,7 +205,7 @@ def vcl_from_gr(
         - "linear": Linear IGR
         - "larionov_tertiary": Larionov for tertiary rocks
         - "larionov_older": Larionov for older rocks
-        - "steiber": Steiber equation
+        - "steiber": Stieber equation
         - "clavier": Clavier equation
 
     Returns

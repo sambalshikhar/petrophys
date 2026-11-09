@@ -16,7 +16,7 @@ Examples
 --------
 >>> import petrophys as pp
 >>> from petrophys.workflow import Workflow, steps
->>> wf = Workflow("Brent quick look")
+>>> wf = Workflow("Brent Group quick look")
 >>> _ = wf.add(steps.clay_volume(method="gr", gr_clean=20, gr_shale=110))
 >>> _ = wf.add(steps.porosity(method="density", matrix_density=2.65))
 >>> wf.describe()["Produces"].tolist()
@@ -1049,7 +1049,7 @@ class Workflow:
     --------
     >>> import petrophys as pp
     >>> from petrophys.workflow import Workflow, steps
-    >>> wf = Workflow("Brent quick look", [
+    >>> wf = Workflow("Brent Group quick look", [
     ...     steps.clay_volume(method="gr", gr_clean=20, gr_shale=110),
     ...     steps.porosity(method="density", matrix_density=2.65),
     ...     steps.formation_water(rw=0.07, rw_temp_f=230),

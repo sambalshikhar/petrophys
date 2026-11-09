@@ -1,5 +1,6 @@
 """
-Nigeria/Schlumberger equation for water saturation in shaly sands.
+Nigeria-type equation for water saturation in shaly sands, in the form the
+Sodir reports use.
 
 This module implements the square-root conductivity form:
 
@@ -10,7 +11,8 @@ Rearranging:
     Sw^(n/2) = [1 / sqrt(Rt) - Vcl^c / sqrt(Rsh)] * sqrt(a * Rw) / phi^(m/2)
 
 with Sw = NaN where the shale term alone exceeds 1 / sqrt(Rt): the equation
-has no solution there. The benchmark context profiles keep the packages'
+has no solution there. The textbook Nigeria equation applies Sw^(n/2) to the
+shale term as well; this form leaves the shale conductance independent of Sw. The benchmark context profiles keep the packages'
 original calculation.
 
 References

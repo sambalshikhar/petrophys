@@ -215,7 +215,7 @@ def nd_shale_point(
 #     rhob_fl: float = 1.0
 # ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 #     """
-#     Thomas-Steiber analysis for clay volume and distribution.
+#     Thomas-Stieber analysis for clay volume and distribution.
 
 #     Determines clay volume and porosity distribution in
 #     laminated shaly sands.
