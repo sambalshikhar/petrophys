@@ -34,8 +34,8 @@ import petrophys as pp
 readers = {
     "formation_tops_template": "pp.read_formations",
     "formation_intervals_template": "pp.read_formations",
-    "lithology_intervals_template": "pp.read_lithology_intervals",
-    "lithology_codes_template": "pp.read_lithology_codes",
+    "lithology_intervals_template": "petrophys.io.read_lithology_intervals",
+    "lithology_codes_template": "petrophys.io.read_lithology_codes",
 }
 rows = []
 for name in pp.list_samples():
@@ -76,7 +76,8 @@ well = pp.read(
 )
 pp.plot(
     well,
-    depth_range=(2550, 3150),
+    top=2550,
+    bottom=3150,
     tracks=["LITHOLOGY", "GAMMA / HOLE", "RESISTIVITY", "DENSITY / NEUTRON"],
     figsize=(9.5, 10),
 ).show()
@@ -149,8 +150,10 @@ report lists what was ignored:
 ```{code-cell} python
 vendor = pd.DataFrame({"FROM": [1000.0, 1025.0], "TO": [1025.0, 1050.0],
                        "ROCK": ["Shale", "Sandstone"], "Comment": ["cuttings", "core"]})
+from petrophys.io import read_lithology_intervals
+
 columns = {"top": "FROM", "bottom": "TO", "lithology": "ROCK"}
-lithology = pp.read_lithology_intervals(vendor, columns=columns)
+lithology = read_lithology_intervals(vendor, columns=columns)
 print("ignored:", lithology.attrs["import_report"]["ignored_columns"])
 lithology
 ```
@@ -170,10 +173,10 @@ lithology
 A codebook names the codes of a lithology code curve already in the LAS. It is
 not an interval file.
 
-`pp.interpret` reads one code curve per well: the curve named by the
-`lithology_curve` setting, else `LITHOLOGY_GEOLINK`, else the first curve under
-a lithology-code name (`LITHOLOGY`, `LITHOFACIES`, `FACIES`, `LITH_CODE`,
-`ROCK_TYPE`, ...) whose values pass the code checks: 20 or more finite samples,
+`pp.interpret` reads one code curve per well: the curve you name
+(`pp.interpret(well, lithology="FACIES")`, the `lithology_curve` setting),
+else `LITHOLOGY_GEOLINK`, else the first curve under a lithology-code name
+(`LITHOLOGY`, `LITHOFACIES`, `FACIES`, `LITH_CODE`, `ROCK_TYPE`, ...) whose values pass the code checks: 20 or more finite samples,
 whole numbers from 0 to 99 with at most 50 distinct values, and half or more of
 the samples codes of the built-in lithology code table (Kingdom nomenclature).
 Other curves whose names contain LITH or FACIES are not read. Whatever the
@@ -193,13 +196,15 @@ pd.read_csv(pp.sample("lithology_codes_template"))
 ```
 
 ```{code-cell} python
-print(pp.read_lithology_codes(pp.sample("lithology_codes_template")))
+from petrophys.io import read_lithology_codes
+
+print(read_lithology_codes(pp.sample("lithology_codes_template")))
 
 kingdom = pd.DataFrame({"Abbreviation": ["SS", "SH", "LS"],
                         "Attribute": ["Sandstone", "Shale", "Limestone"],
                         "Lithology Attribute": ["Clastic", "Clastic", "Carbonate"]})
-print(pp.read_lithology_codes(kingdom))
-print(pp.read_lithology_codes(kingdom, label_column="Lithology Attribute"))
+print(read_lithology_codes(kingdom))
+print(read_lithology_codes(kingdom, label_column="Lithology Attribute"))
 ```
 
 | Rule | Behaviour |
@@ -208,7 +213,7 @@ print(pp.read_lithology_codes(kingdom, label_column="Lithology Attribute"))
 | `Attribute` and `Lithology Attribute` both present | `Attribute` is used, with a warning if they differ; choose with `label_column` |
 | Duplicate codes, empty labels | Error |
 | Codes | Vendor-specific; the template's assignments are only examples |
-| Use | `pp.plot(well, lithology_mapping=codes)`; `lithology_mapping_file` in `pp.export_context` |
+| Use | `lithology_codes=` in `pp.plot`, `pp.interpret` and `pp.export_context` |
 
 ## LAS metadata and embedded core data
 
@@ -250,6 +255,20 @@ setting of the same meaning when you leave that setting unset:
 | `APPLY_HC_CORRECTION`, `HC_CORRECTION`, `HCCORRECTION`; `HC_TYPE` | `apply_hc_correction`; `hc_type` |
 | `GR_METHOD`, `GR_MIN`, `GR_MAX` | `gr_method`, `gr_min`, `gr_max` |
 | `VCL_CUTOFF`, `PHIE_CUTOFF`, `SW_CUTOFF` | net-pay cutoffs |
+| `BADHOLE_CALI`, `BADHOLE_DRHO`, `BADHOLE_BS` | `bad_hole` `cali` (in), `drho` (g/cm3), `large_hole` (in) |
+| `PERM_A`, `PERM_B`, `PERM_C` | `perm_coefficients` `a`, `b`, `c` |
+| `<MINERAL>_<PROPERTY>`: `QUARTZ`, `CALCITE`, `DOLOMITE`, `ANHYDRITE`, `CLAY`, `WATER` with `RHOB`, `NPHI`, `PEF`, `U`, `DT`, e.g. `QUARTZ_RHOB`, `WATER_NPHI` | `mineral_endpoints` (`RHOB` in kg/m3 or lb/ft3 converted) |
+
+The last three set one value each of a setting that takes a mapping
+({doc}`workflows`): a header value fills the keys you leave out, so with
+`bad_hole={"cali": 2.0}` passed and `BADHOLE_DRHO` in the header, both are
+used. The "geolink" calculation profile does not read them. In the header:
+
+```text
+BADHOLE_CALI.in   2.0  : Caliper washout threshold, CALI - BS
+PERM_A.           0.1  : Permeability equation coefficient
+QUARTZ_RHOB.g/cc  2.65 : Quartz density endpoint
+```
 
 Any of these with a `_Z1`, `_Z2`, ... suffix, together with `TOP_Z1`/`BOT_Z1`
 (and so on) giving the zone's depths, applies inside that zone only, for
@@ -267,16 +286,16 @@ as degF. The "geolink" calculation profile ({ref}`calculation profiles
 MST, and takes PNSH as the clay porosity.
 
 `lithology_domain` defaults to `clastic`. Set it to `carbonate` for carbonate
-wells: calcite and dolomite are then solved from bulk density, with clay from
-VCL, so the split depends on the pore-fluid density `rho_fl` (1.0 g/cm3 unless
-you set it for your brine). For the COSTA field wells,
+wells (`pp.interpret(well, lithology="carbonate")`): calcite and dolomite are
+then solved from bulk density, with clay from VCL, so the split depends on the
+pore-fluid density `rho_fl` (1.0 g/cm3 unless you set it for your brine). For the COSTA field wells,
 `carbonate_calibration="costa"` applies the field calibration instead (illite
 from GR, and a 1.1 g/cm3 brine for porosity and minerals unless you set
 `rho_fl`). Set `auto` when deliberate domain inference is
 wanted. A COSTA well with the field calibration:
 
 ```{code-cell} python
-carbonate = pp.interpret(pp.read(pp.sample("HW-3")), lithology_domain="carbonate",
+carbonate = pp.interpret(pp.read(pp.sample("HW-3")), lithology="carbonate",
                          carbonate_calibration="costa")
 print(carbonate.config.lithology_domain, carbonate.config.carbonate_calibration)
 ```

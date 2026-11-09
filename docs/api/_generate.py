@@ -103,7 +103,7 @@ result. All three are in the top-level namespace as ``pp.read``,
 
    well = pp.read(pp.sample("30_6-5"))
    result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
-   pp.plot(result, depth_range=(2800, 3000))
+   pp.plot(result, top=2800, bottom=3000)
 
 The rest of the reference documents what these calls are built from.""",
         key="petrophys.api.read petrophys.api.interpret petrophys.api.plot",
@@ -1004,7 +1004,6 @@ The rest of the reference documents what these calls are built from.""",
                         "export_example_work_package_directory "
                         "export_reference_json_work_package_directory "
                         "export_reference_json_work_package_by_formation "
-                        "export_reference_json_work_package_by_formation_lithology "
                         "export_reference_json_work_package_by_category_formation_lithology "
                         "write_reference_curve_name_mapping",
                     ),

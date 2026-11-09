@@ -16,9 +16,9 @@ It holds no depth-by-depth arrays and is built locally, with no LLM or network c
 
 | Task | Entry point |
 |---|---|
-| Summarize an interpretation you already ran | `pp.build_context(result)` or `pp.export_context(result, "well_context.json")` |
+| Summarize an interpretation you already ran | `pp.export_context(result)` for a dict, or `pp.export_context(result, "well_context.json")` |
 | Interpret your own well and write one JSON | `petrophys-context "well.las" "well_context.json"` |
-| Generate six category contexts across wells, formations and lithology groups | `pp.export_context(..., layout="category_formation_lithology")` or the CLI with that layout |
+| Generate six category contexts across wells, formations and lithology groups | `pp.export_context(..., layout="package")` or the CLI with that layout |
 | Reproduce the GeoLink, GeoLink training, COSTA or Danish benchmark | Use the collection's `context_profile`; see {doc}`benchmark_context` for complete commands and required inputs |
 
 For a source checkout, install with `python -m pip install -e .` before using
@@ -30,7 +30,7 @@ paths. Quote paths containing spaces.
 A general category package can be generated with this one-line command:
 
 ```bash
-petrophys-context "logs" "outputs/context_run_01" --layout category_formation_lithology --formations "formation_intervals.csv" --lithology "lithology_intervals.csv"
+petrophys-context "logs" "outputs/context_run_01" --layout package --formations "formation_intervals.csv" --lithology "lithology_intervals.csv"
 ```
 
 The two geology flags are optional. Supply your available formation/lithology
@@ -53,7 +53,7 @@ warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core sat
 
 ## One well
 
-{func}`pp.build_context <petrophys.reporting.context.build_context>` turns an interpretation result into a JSON-safe dictionary:
+Without an output path, {func}`pp.export_context <petrophys.reporting.context.export_context>` turns an interpretation result into a JSON-safe dictionary:
 
 ```{code-cell} python
 import json
@@ -63,7 +63,7 @@ import petrophys as pp
 
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
 result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)  # Rw 0.07 ohm.m at 230 degF
-context = pp.build_context(result)
+context = pp.export_context(result)
 
 def size(value):
     return len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
@@ -86,9 +86,9 @@ brent = next(item for item in formations if item["formation_name"] == "BAAT GP."
 print(json.dumps(brent, indent=1))
 ```
 
-Pass a result, not a raw well: `build_context` runs no calculations, so a well alone gives no computed curves or trace.
+Pass a result, not a raw well: a one-well summary runs no calculations, so a well alone gives no computed curves or trace.
 
-{func}`pp.export_context <petrophys.reporting.context.export_context>` writes the same summary to a file:
+Given an output path, `pp.export_context` writes the same summary to a file:
 
 ```{code-cell} python
 import tempfile
@@ -116,15 +116,17 @@ with tempfile.TemporaryDirectory() as folder:
     package = Path(folder, "context")
     records = pp.export_context(
         logs, package,
-        layout="formation_lithology",
-        tops_file=pp.sample("formations_costa"),
+        layout="package",
+        formations=pp.sample("formations_costa"),
         workflow_config=pp.DynamicWorkflowConfig(lithology_domain="carbonate",
                                                  carbonate_calibration="costa"),
     )
-    files = sorted(path for path in package.rglob("*") if path.is_file())
+    files = sorted(path for path in (package / "porosity").rglob("*.json"))
+    print(f"{len(records)} files in", sorted(path.name for path in package.iterdir() if path.is_dir()))
+    print("The porosity files:")
     for path in files:
         name = path.relative_to(package).as_posix()
-        print(f"{name:50s} {path.stat().st_size:>7,d} bytes")
+        print(f"{name:72s} {path.stat().st_size:>7,d} bytes")
     group_file = next(path for path in files if path.parent.name == "KHARAIB-2")
     document = json.loads(group_file.read_text(encoding="utf-8"))
 ```
@@ -156,8 +158,9 @@ PHI_NORM, RQI, FZI and BVW are then recomputed from the porosity, permeability a
 | Layout | Files |
 |---|---|
 | `"well"` (default) | one JSON for one well or result |
-| `"formation_lithology"` | `<well>/<formation>/<formation>_<group>.json`, plus the interpreted LAS |
-| `"category_formation_lithology"` | `<category>/<well>/<formation>/…_<category>.json` for hydrocarbon, lithology, numerical, permeability, porosity and saturation |
+| `"package"` | `<category>/<well>/<formation>/…_<category>.json` for hydrocarbon, lithology, numerical, permeability, porosity and saturation |
+
+In a package each formation is split into lithology groups, as above. With `split_by_lithology=False` each formation is one group, `<formation>_<category>.json`, whose documents give its `dominant_lithology`. `zones=` groups the wells by your own intervals in place of the formations, in the same two ways ({doc}`workflows`).
 
 ## Published packages: GeoLink, COSTA and Danish
 
@@ -203,36 +206,36 @@ import petrophys as pp
 pp.export_context(
     r"PATH/eval",
     "outputs/geolink_context",
-    layout="category_formation_lithology",
+    layout="package",
     context_profile="geolink",
-    tops_file=r"PATH/NPD stratigraphic picks north sea.xlsx",
-    lithology_mapping_file=r"PATH/Litho_Nomenclature_Kingdom.xlsx",
+    formations=r"PATH/NPD stratigraphic picks north sea.xlsx",
+    lithology_codes=r"PATH/Litho_Nomenclature_Kingdom.xlsx",
 )
 pp.export_context(
     None,                              # the COSTA LAS bundled with petrophys
     "outputs/costa_context",
-    layout="category_formation_lithology",
+    layout="package",
     context_profile="costa",
 )
 pp.export_context(
     r"PATH/danish/las",
     "outputs/danish_context",
-    layout="category_formation_lithology",
+    layout="package",
     context_profile="danish",
-    tops_file=r"PATH/Danish_formation_tops_for_context.xlsx",
-    lithology_mapping_file=r"PATH/Litho_Nomenclature_Kingdom.xlsx",
+    formations=r"PATH/Danish_formation_tops_for_context.xlsx",
+    lithology_codes=r"PATH/Litho_Nomenclature_Kingdom.xlsx",
 )
 ```
 
 ```bash
 petrophys-context PATH/danish/las outputs/danish_context \
-  --layout category_formation_lithology --profile danish \
+  --layout package --profile danish \
   --formations PATH/Danish_formation_tops_for_context.xlsx \
   --lithology-codes PATH/Litho_Nomenclature_Kingdom.xlsx
 ```
 
 A profile fixes its package's settings: it takes `well_names`, `pattern`
-(LAS only), `tops_file` and `lithology_mapping_file`, and rejects
+(LAS only), `formations` and `lithology_codes`, and rejects
 `workflow_config` and the other interpretation options. `export_context`
 writes the context JSON only. The eval script keeps the LAS too:
 `<output-dir>/processed_las` holds the interpreted LAS and workflow traces the
@@ -251,12 +254,12 @@ python scripts/generate_benchmark_context.py --input-dir PATH/HW-31.las --output
 ```
 
 Use `--well` (or `well_names=[...]`) for a subset, and
-`pp.list_context_profiles()` or `pp.describe_context_profile("geolink")` to
-inspect the profiles.
+`list_context_profiles()` or `describe_context_profile("geolink")` from
+`petrophys.reporting` to inspect the profiles.
 
 ## DLIS, CSV and TSV input
 
-Package layouts read each file with `pp.read`, which picks the format from the
+The package layout reads each file with `pp.read`, which picks the format from the
 extension: LAS, DLIS, CSV or TSV. `pattern` selects the files (default
 `"*.las"`), and `reader_options` go to the reader.
 
@@ -273,7 +276,7 @@ dlis = integration_fixture("daydream1_deep_pex_aps_ppc_ecs.dlis")
 records = pp.export_context(
     dlis.parent,
     "outputs/daydream_context",
-    layout="category_formation_lithology",
+    layout="package",
     pattern="daydream1_deep_pex_aps_ppc_ecs.dlis",
     reader_options={"step": 0.1524},
 )
@@ -284,9 +287,8 @@ DLIS supports options such as `channels`, `logical_file`, `channel_preference`
 and `step`. The example explicitly merges channels onto a 0.1524 m grid;
 omitting `step` uses the reader's default finest grid, which can be much larger.
 The step is expressed in the target depth unit (metres by default).
-The `formation_lithology` layout also accepts DLIS.
 
-Pass `tops_file` and `lithology_file` just as for LAS to supply real formation
+Pass `formations` and `lithology` just as for LAS to supply real formation
 and lithology intervals. Without matched tops, the exporter uses `WHOLE_WELL`;
 without lithology information, it records that absence. DLIS alone does not
 supply missing geological picks or core measurements.
@@ -296,7 +298,7 @@ The corresponding command, given the folder that holds the file
 
 ```bash
 petrophys-context <folder> outputs/daydream_context_cli \
-  --layout category_formation_lithology \
+  --layout package \
   --pattern daydream1_deep_pex_aps_ppc_ecs.dlis --dlis-step 0.1524
 ```
 
@@ -343,7 +345,7 @@ petrophys-context well.las well_context.json \
 ```
 
 ```bash
-petrophys-context logs outputs/context_run_01 --layout category_formation_lithology \
+petrophys-context logs outputs/context_run_01 --layout package \
     --formations formation_intervals.csv --lithology lithology_intervals.csv \
     --lithology-codes lithology_codes.csv --tops-rank formation
 ```
@@ -379,9 +381,9 @@ The standardized readers accept CSV, TSV, Excel and DataFrames; {doc}`input_temp
 |---|---|
 | Matching | each table row matches a LAS file by the well name in its header, ignoring separators (`30/6-5` matches `30_6-5`) |
 | Tables covering several wells | need a `well` column; without one, the folder may hold only one LAS |
-| Formations (`tops_file`) | canonical templates or NPD/SODIR `Well identifier` / `Surface` / `MD`; `tops_options={"sheet_name": ..., "rank": "formation"}` for workbooks |
+| Formations (`formations`) | canonical templates or NPD/SODIR `Well identifier` / `Surface` / `MD`; `tops_options={"sheet_name": ..., "rank": "formation"}` for workbooks |
 | Depths | must share the well's reference and datum; metres and feet convert, MD-to-TVD does not |
-| Lithology codes (`lithology_mapping_file`) | `code,lithology` or Kingdom `Abbreviation,Attribute`; `Attribute` wins over `Lithology Attribute`, with a warning if they disagree |
+| Lithology codes (`lithology_codes`) | `code,lithology` or Kingdom `Abbreviation,Attribute`; `Attribute` wins over `Lithology Attribute`, with a warning if they disagree |
 | No formations | the logged interval is analyzed as `WHOLE_WELL` |
 | No lithology | embedded evidence or the mineral solver supplies it |
 | No core curves in LAS | core calibration is skipped and recorded in the trace |
@@ -411,7 +413,7 @@ matches the intended interval and cutoffs.
 | Missing numbers | JSON `null`, never NaN |
 | `max_bytes` | 1,000,000 UTF-8 bytes per JSON document |
 | `max_total_bytes` | No limit by default; set it to cap a package's total size, ancillary files included |
-| Too large | raises {class}`pp.ContextSizeError <petrophys.reporting.context.ContextSizeError>`; nothing is truncated |
+| Too large | raises {class}`ContextSizeError <petrophys.reporting.context.ContextSizeError>` (from `petrophys.reporting`); nothing is truncated |
 | Existing package folder | never overwritten |
 | Failed package run | staged and validated first, so no partial folder is left |
 | Package documents | written directly, not wrapped in a `payload` object |

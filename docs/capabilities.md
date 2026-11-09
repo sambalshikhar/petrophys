@@ -372,8 +372,10 @@ thumb("cap_nd", fig)
 
 # 15/9-14 has a chalk section. Its DTE curve is implausible, so Petrophys
 # removes it and raises a DataQualityWarning, printed here.
+from petrophys.exceptions import DataQualityWarning
+
 with warnings.catch_warnings(record=True) as caught:
-    warnings.simplefilter("always", pp.DataQualityWarning)
+    warnings.simplefilter("always", DataQualityWarning)
     chalk = pp.interpret(pp.read(pp.sample("15_9-14")))
 for note in caught:
     print(fill(f"{note.category.__name__}: {note.message}", 88, subsequent_indent="    "))
@@ -559,7 +561,7 @@ table("cap_trace", steps[["Step", "Method"]])
 from mcp import Client
 from petrophys.mcp import create_server
 
-context = pp.build_context(result)
+context = pp.export_context(result)
 async with Client(create_server(roots=["."])) as client:
     tools = [tool.name for tool in (await client.list_tools()).tools]
 table("cap_llm", pd.DataFrame({

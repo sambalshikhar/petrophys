@@ -215,10 +215,16 @@ A zone can also be just a name and its depths, your own segmentation of the well
 ```python
 result = pp.interpret("HW-3.las", zones="zones.xlsx")   # the HW-3 rows apply
 result.zone_summary()                                    # one row per zone: gross, net, pay averages
-pp.export_context("wells/", "context/", layout="category_formation_lithology", zones="zones.xlsx")
+pp.export_context("wells/", "context/", layout="package", zones="zones.xlsx")
 ```
 
-`zone_summary` has the columns of `formation_summary`. In the context export each zone is one group, written to `<category>/<well>/<zone>/`, in place of the formation and lithology groups; its documents carry `zone_info` and `zone_name`, with the dominant lithology and the lithology distribution of the zone. A well with no row in the table is grouped by formation and lithology as usual, with a warning.
+`zone_summary` has the columns of `formation_summary`. In the context export the zones take the place of the formations: each zone is split into lithology groups, or is one group with `split_by_lithology=False`, written to `<category>/<well>/<zone>/`. Its documents carry `zone_info` and `zone_name`, and the lithology distribution of the group. A well with no row in the table is grouped by its formations, with a warning.
+
+| Package groups | `split_by_lithology=True` (default) | `split_by_lithology=False` |
+|---|---|---|
+| `formations=` | formation × lithology | one group per formation |
+| `zones=` | zone × lithology | one group per zone |
+| neither | lithology runs over the whole well | the whole well |
 
 The full order is: your zone values inside their zone, then your whole-well settings, then LAS header zone values (`RW_Z1`, `M_Z1`, ... with `TOP_Z1`/`BOT_Z1`) inside their zone, then LAS header whole-well values, then the defaults. A header value one of yours overrides is named in the warnings. The same order holds on every route; `DynamicWorkflow(config).run` alone uses the config as given, without the header.
 An explicit setting wins over a LAS header value: `rw` over the header RW, `salinity_ppm` over the header RW, `rw_meas_temp_f` over the header RWT, and `rm`, `rmf_salinity_ppm` and `rmf_chlorides_mg_l` over the header RMF and CLFL (a value `pp.interpret` copied from the header, such as CLFL, ranks with the header, below a direct RMF).
@@ -232,6 +238,24 @@ A measured `TEMP` log with at least half of its samples finite is the temperatur
 Set `rho_ma`, `dt_ma` or `nphi_ma` and it holds at every depth, also where a lithology log would give each group its own matrix value.
 The SP-derived Rw uses `sp_max` and `sp_min` as its clean-sand and shale lines when they are set.
 With `apply_hc_correction=True`, the porosity step reads the hydrocarbon-corrected `NPHI_HC` and `RHOB_HC`. The correction scales with the flushed zone's hydrocarbon (1 - SXO) and runs before the saturation step, so it needs an input SXO curve; without one it is skipped with a warning.
+
+Three settings take a mapping, so you give only the values you change and the rest keep their defaults:
+
+```python
+result = pp.interpret("well.las",
+    bad_hole={"cali": 2.0, "drho": 0.20},                  # CALI - BS (in), |DRHO| (g/cm3), large_hole bit size (in)
+    perm_coefficients={"a": 0.1, "b": 4.0, "c": 2.0},      # of the equation perm_method selects
+    mineral_endpoints={"quartz": {"rhob": 2.65, "nphi": -0.04}, "water": {"nphi": 1.0}},
+)
+```
+
+| Setting | Keys | Defaults |
+|---|---|---|
+| `bad_hole` | `cali`, `drho`, `large_hole` | 1.5 in, 0.15 g/cm3, 17.5 in |
+| `perm_coefficients` | `a` coefficient, `b` porosity exponent, `c` Swirr exponent | Timur 0.136, 4.4, 2; Coates-Denoo 10000, 4, 2; Wyllie-Rose 62500, 6, 2 |
+| `mineral_endpoints` | per `quartz`, `calcite`, `dolomite`, `anhydrite`, `clay`, `water`: `rhob`, `nphi`, `pef`, `u`, `dt` | the built-in mineral table; water from `rho_fl` and `dt_fl` |
+
+The bad-hole thresholds also set the `BAD_HOLE` band of `pp.plot` and the bad-hole notes of a context export, the coefficients appear in the permeability trace and notes, and the endpoints apply to the clastic mineral solve. Like any other setting they can differ by zone (`zones=[{"top": ..., "bottom": ..., "bad_hole": {"cali": 2.0}}]`), and the LAS header can give them one value at a time (`BADHOLE_CALI`, `PERM_A`, `QUARTZ_RHOB`, ...; {doc}`input_templates`). Each key follows the same order as any other setting: your zone values, your whole-well values, the header zone values, the header values, the defaults.
 `PHIE_CC` is written by the core-correction step alone, before saturation, so SW, BVW, net pay and RQI read the same porosity; the step runs on core porosity named `PHIC`, `CPOR`, `CPOR-AMB` or `CPOR_AMB`, or on peer-well core (`use_peer_core=True` with `peer_wells`).
 A peer well needs PHIE or PHIT (interpret it first; one without is left out, with a warning), and its formations may be attached with `pp.read(..., formations=...)`.
 When the run fits its own core model, input `PHIE_CC` and `PERM_CC` curves are kept as `PHIE_CC_INPUT` and `PERM_CC_INPUT` and not used; without core data, or with `core_correction` in `skip_steps`, input `PHIE_CC` and `PERM_CC` are used as they stand by every step, and a warning says so.
@@ -284,7 +308,7 @@ Here the clastic run on 30/6-5 is set against a carbonate run on the COSTA well 
 
 ```{code-cell} python
 # Rw comes from the LAS header; COSTA wells take the field's own calibration.
-hw3 = pp.interpret(pp.read(pp.sample("HW-3")), lithology_domain="carbonate",
+hw3 = pp.interpret(pp.read(pp.sample("HW-3")), lithology="carbonate",
                    carbonate_calibration="costa")
 
 def lithology_step(run):

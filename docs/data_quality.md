@@ -66,15 +66,17 @@ Do not tune Rw just to get the pay you expect.
 
 ## Implausible inputs
 
-{class}`pp.DataQualityWarning <petrophys.exceptions.DataQualityWarning>` flags values a curve's unit cannot explain. Catch it to see what was removed:
+{class}`DataQualityWarning <petrophys.exceptions.DataQualityWarning>` flags values a curve's unit cannot explain. Catch it to see what was removed:
 
 ```{code-cell} python
+from petrophys.exceptions import DataQualityWarning
+
 with warnings.catch_warnings(record=True) as caught:
-    warnings.simplefilter("always", pp.DataQualityWarning)
+    warnings.simplefilter("always", DataQualityWarning)
     checked = pp.interpret(pp.read(pp.sample("15_9-14")))
 
 for item in caught:
-    if issubclass(item.category, pp.DataQualityWarning):
+    if issubclass(item.category, DataQualityWarning):
         text = f"{item.category.__name__}: {item.message}"
         print(fill(text, 88, subsequent_indent="    "))
 print("status:", checked.status)

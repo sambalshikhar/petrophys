@@ -20,10 +20,10 @@ deliveries/workbooks must be supplied by you.
 Inspect supported well names and required inputs in Python:
 
 ```python
-import petrophys as pp
+from petrophys.reporting import describe_context_profile, list_context_profiles
 
-print(pp.list_context_profiles())
-print(pp.describe_context_profile("danish"))
+print(list_context_profiles())
+print(describe_context_profile("danish"))
 ```
 
 ## Generate JSON and interpreted LAS from a checkout
@@ -147,7 +147,7 @@ import petrophys as pp
 records = pp.export_context(
     None,  # use the bundled COSTA LAS
     "outputs/costa_benchmark_json_01",
-    layout="category_formation_lithology",
+    layout="package",
     context_profile="costa",
     well_names=["HW-31", "HW-32"],
 )
@@ -155,15 +155,15 @@ print(len(records), "context files")
 ```
 
 For GeoLink, GeoLink training or Danish, replace `None` with the raw LAS directory and provide
-`tops_file` and `lithology_mapping_file` from the input table above.
+`formations` and `lithology_codes` from the input table above.
 `pp.export_context` keeps intermediate files in temporary storage and delivers
 only the JSON package. Use the repository script to retain processed LAS.
 
 The installed CLI also supports profiles:
 
 ```bash
-petrophys-context "PATH/danish/las" "outputs/danish_benchmark_json_01" --layout category_formation_lithology --profile danish --formations "PATH/Danish_formation_tops_for_context.xlsx" --lithology-codes "PATH/Litho_Nomenclature_Kingdom.xlsx"
-petrophys-context "PATH/LAS_with_petrophys_params" "outputs/geolink_train_json_01" --layout category_formation_lithology --profile geolink_train --formations "PATH/NPD stratigraphic picks north sea.xlsx" --lithology-codes "PATH/Litho_Nomenclature_Kingdom.xlsx"
+petrophys-context "PATH/danish/las" "outputs/danish_benchmark_json_01" --layout package --profile danish --formations "PATH/Danish_formation_tops_for_context.xlsx" --lithology-codes "PATH/Litho_Nomenclature_Kingdom.xlsx"
+petrophys-context "PATH/LAS_with_petrophys_params" "outputs/geolink_train_json_01" --layout package --profile geolink_train --formations "PATH/NPD stratigraphic picks north sea.xlsx" --lithology-codes "PATH/Litho_Nomenclature_Kingdom.xlsx"
 ```
 
 ## Interpret one package well as its context does
@@ -180,7 +180,7 @@ result = pp.interpret(pp.sample("HW-10"), context_profile="costa")
 result = pp.interpret("PATH/LAS_with_petrophys_params/15_9-9.las", context_profile="geolink_train")
 result = pp.interpret("PATH/eval/15_9-17.las", context_profile="geolink")
 result = pp.interpret("PATH/danish/las/ida-1.las", context_profile="danish",
-                      tops_file="PATH/Danish_formation_tops_for_context.xlsx")
+                      formations="PATH/Danish_formation_tops_for_context.xlsx")
 ```
 
 The well must belong to the profile's package, and the profile fixes the

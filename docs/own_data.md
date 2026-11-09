@@ -101,7 +101,8 @@ well = pp.read(
 )
 viewer = pp.plot(
     well,
-    depth_range=(2800, 3000),
+    top=2800,
+    bottom=3000,
     tracks=["LITHOLOGY", "GAMMA / HOLE", "RESISTIVITY", "DENSITY / NEUTRON"],
     figsize=(9.5, 10),
 )
@@ -182,6 +183,9 @@ Petrophys stops with a message that says what to fix. Each line below is a real
 error raised by the call next to it.
 
 ```{code-cell} python
+from petrophys.io import read_lithology_intervals
+
+
 def show_error(action):
     try:
         action()
@@ -194,7 +198,7 @@ show_error(lambda: pp.read(workdir / "my_logs.csv", depth_column="MD"))
 show_error(lambda: pp.read_formations(workdir / "formations.csv", well=well,
                                       depth_reference="TVDSS"))
 # Overlapping lithology rows:
-show_error(lambda: pp.read_lithology_intervals(rocks.assign(top=rocks.top - 5)))
+show_error(lambda: read_lithology_intervals(rocks.assign(top=rocks.top - 5)))
 # A misspelt setting:
 show_error(lambda: pp.interpret(well, rw=0.07, rw_temp_f=230))
 ```

@@ -35,9 +35,9 @@ Add steps in the order they run. Each step states the curves it needs and the cu
 ```{code-cell} python
 import numpy as np
 import petrophys as pp
-from petrophys.workflow import steps
+from petrophys.workflow import Workflow, WorkflowValidationError, steps, workflow_step
 
-wf = pp.Workflow("Brent quick look")
+wf = Workflow("Brent quick look")
 wf.add(steps.clay_volume(method="gr", gr_clean=20, gr_shale=110))
 wf.add(steps.porosity(method="density", matrix_density=2.65))
 wf.add(steps.formation_water(rw=0.07, rw_temp_f=230))   # Rw 0.07 ohm.m at 230 degF
@@ -81,7 +81,7 @@ With `strict=False` it runs the other steps and records why each skipped step co
 ```{code-cell} python
 try:
     draft.run(well)
-except pp.workflow.WorkflowValidationError as error:
+except WorkflowValidationError as error:
     show(error)
 ```
 
@@ -107,7 +107,7 @@ print({name: round(stats["mean"], 3) for name, stats in brent["key_results"].ite
 The interpreted well plots like any other well.
 
 ```{code-cell} python
-viewer = pp.plot(run.well, depth_range=(2830, 2970), figsize=(11, 10),
+viewer = pp.plot(run.well, top=2830, bottom=2970, figsize=(11, 10),
                  tracks=["LITHOLOGY", "GAMMA / HOLE", "RESISTIVITY", "POROSITY",
                          "SATURATION", "FLAGS"])
 viewer.show()
@@ -129,7 +129,7 @@ with tempfile.TemporaryDirectory() as folder:
     print(path.name)
     for step in json.loads(path.read_text())["steps"]:
         print(f"  {step['name']}: {step['params']}")
-    loaded = pp.Workflow.load(path)
+    loaded = Workflow.load(path)
 print("loaded == wf:", loaded == wf)
 ```
 
@@ -150,7 +150,7 @@ Decorate a function that takes the well and returns its curves.
 `requires` is checked before running; `produces` gives each curve its unit.
 
 ```{code-cell} python
-@pp.workflow_step(requires=["PHIE", "SW", "NET_PAY"], produces={"PHIH": "v/v"})
+@workflow_step(requires=["PHIE", "SW", "NET_PAY"], produces={"PHIH": "v/v"})
 def hydrocarbon_porosity(well, pay_only=True):
     """Hydrocarbon-filled porosity, PHIE * (1 - SW)."""
     phih = well.get("PHIE").data * (1 - well.get("SW").data)
@@ -176,7 +176,7 @@ Keep steps you share in a module; a step defined in a notebook reloads only in t
 `steps.interpret()` runs the whole prebuilt workflow as one step, so your own steps can follow it.
 
 ```{code-cell} python
-auto_plus = pp.Workflow("pp.interpret + hydrocarbon porosity", [
+auto_plus = Workflow("pp.interpret + hydrocarbon porosity", [
     steps.interpret(rw=0.07, rw_meas_temp_f=230),
     hydrocarbon_porosity(),
     steps.formation_summary(rank="formation"),
@@ -194,7 +194,7 @@ brent[columns].style.hide(axis="index").format(precision=3)
 Each COSTA file covers only the Kharaib-2 carbonate interval; `rw="header"` reads each well's own Rw.
 
 ```{code-cell} python
-carbonate = pp.Workflow("Kharaib-2 screen", [
+carbonate = Workflow("Kharaib-2 screen", [
     steps.temperature(),
     steps.clay_volume(method="gr", gr_clean=10, gr_shale=80),
     steps.porosity(method="neutron_density", matrix="limestone"),
@@ -232,7 +232,7 @@ plt.show()
 |---|---|---|
 | Methods | Chosen per well from the available data | Exactly the steps and parameters you list |
 | Missing inputs | The step is skipped with a reason | Reported before running; `strict=False` skips |
-| Your own calculations | Not supported | Any function with `@pp.workflow_step` |
+| Your own calculations | Not supported | Any function with `@workflow_step` |
 | Reuse | Settings passed on each call | A JSON file, run on one well, a list or a folder |
 | Good for | A first look at an unfamiliar well | Project recipes, field studies, audits |
 

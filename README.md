@@ -55,7 +55,7 @@ result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)   # Rw (ohm.m) at 230 d
 result.raise_for_errors()
 
 result.print_trace()                       # what ran, what was skipped, and why
-pp.plot(result, depth_range=(2800, 3000)).save("interpretation.png")
+pp.plot(result, top=2800, bottom=3000).save("interpretation.png")
 
 result.to_las("interpreted.las")           # curves plus the settings used
 result.to_json("trace.json")               # full machine-readable trace
@@ -129,9 +129,9 @@ result.specific_steps_skipped  # e.g. {"core_correction": "Missing core porosity
 result.to_trace_dict()         # every step's method, inputs, outputs, parameters
 ```
 
-Data problems also raise `petrophys.DataQualityWarning`, for example when a
+Data problems also raise `petrophys.exceptions.DataQualityWarning`, for example when a
 density curve labelled g/cc is really in kg/m3. Turn them into errors with
-`warnings.simplefilter("error", pp.DataQualityWarning)`. Values the workflow
+`warnings.simplefilter("error", DataQualityWarning)`. Values the workflow
 had to assume because the data lacked them, such as the temperature of a given
 Rw, a temperature gradient or Swirr, are listed in `result.warnings` and in
 the `~Other` section of `result.to_las()`.
@@ -158,9 +158,9 @@ check it against a well, run it on one well or a whole field, and share it as
 JSON:
 
 ```python
-from petrophys.workflow import steps
+from petrophys.workflow import Workflow, steps
 
-wf = pp.Workflow("Brent quick look", [
+wf = Workflow("Brent quick look", [
     steps.clay_volume(method="gr", gr_clean=20, gr_shale=110),
     steps.porosity(method="density", matrix_density=2.65),
     steps.formation_water(rw=0.07, rw_temp_f=230),
@@ -169,7 +169,7 @@ wf = pp.Workflow("Brent quick look", [
 ])
 run = wf.run(well)                    # checks inputs first; full trace
 run.summary(top=2841, bottom=2958)
-wf.save("brent_quick_look.json")      # pp.Workflow.load(...) later
+wf.save("brent_quick_look.json")      # Workflow.load(...) later
 ```
 
 `steps.interpret(...)` runs the whole prebuilt workflow as one step, so you
@@ -179,8 +179,8 @@ can add your own steps around it. See the
 ## Context JSON
 
 ```python
-context = pp.build_context(result)
-pp.export_context(result, "well_context.json")
+context = pp.export_context(result)            # the summary as a dict
+pp.export_context(result, "well_context.json")  # or written to a file
 ```
 
 The versioned API enforces byte budgets and preserves existing files by default.
@@ -281,7 +281,7 @@ standard of each sample's lithology family
 SW < 0.60; carbonate (limestone, chalk, dolomite, marl) VCL < 0.30,
 PHIE > 0.045, SW < 0.70. Samples that no lithology log or interval table
 classifies take the clastic standards, or the carbonate ones with
-`lithology_domain="carbonate"`. Evaporites (from the lithology log or
+`lithology="carbonate"` in `pp.interpret`. Evaporites (from the lithology log or
 intervals, or halite recognized from its log response), coal and bad hole are
 left out of net reservoir and net pay. The caliper washout and large-hole
 tests for `BAD_HOLE` run only where a bit size is known (the BS curve, else a
@@ -311,20 +311,21 @@ Dataset profiles are available for GeoLink, COSTA and Danish:
 ```python
 pp.export_context(
     "PATH/eval", "outputs/geolink_context",
-    layout="category_formation_lithology", context_profile="geolink",
-    tops_file="PATH/NPD stratigraphic picks north sea.xlsx",
-    lithology_mapping_file="PATH/Litho_Nomenclature_Kingdom.xlsx",
+    layout="package", context_profile="geolink",
+    formations="PATH/NPD stratigraphic picks north sea.xlsx",
+    lithology_codes="PATH/Litho_Nomenclature_Kingdom.xlsx",
 )
 pp.export_context(
     None, "outputs/costa_context",  # None: the COSTA LAS bundled with petrophys
-    layout="category_formation_lithology", context_profile="costa",
+    layout="package", context_profile="costa",
 )
 ```
 
 The Danish profile takes its raw LAS, its tops workbook and the same codebook.
-Use `pp.list_context_profiles()` and `pp.describe_context_profile("danish")` to
-inspect them. One script reproduces any of the three eval collections from a
-LAS file or folder, keeping the interpreted LAS as well:
+`list_context_profiles()` and `describe_context_profile("danish")` from
+`petrophys.reporting` describe them. One script reproduces any of the three
+eval collections from a LAS file or folder, keeping the interpreted LAS as
+well:
 
 ```bash
 python scripts/generate_benchmark_context.py --input-dir PATH/HW-31.las --output-dir outputs/HW-31

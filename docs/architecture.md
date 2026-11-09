@@ -24,6 +24,11 @@ packages are nouns that hold the individual methods behind them.
 | `pp.interpret` | `petrophys.interpretation` | clay volume, porosity, saturation, permeability, lithology, geochemistry, ... |
 | `pp.plot` | `petrophys.visualization` | log panels, crossplots, specialist displays |
 | `pp.impute` | `petrophys.preprocessing.imputation` | curve imputation |
+| `pp.export_context` | `petrophys.reporting` | context summaries and packages for LLMs |
+
+`import petrophys as pp` holds these five functions, `pp.read_formations`,
+`pp.sample`, `pp.list_samples`, `pp.Well` and `pp.DynamicWorkflowConfig`.
+Everything else is imported from its package.
 
 `pp.interpret(well)` runs the interpretation methods in petrophysical order
 and returns the result with its step trace. Import from the package to run or

@@ -179,7 +179,7 @@ interpretation straight after installing:
 
    print(result.status)
    print(result.summary(top=2841, bottom=2958))   # the Brent reservoir
-   result.plot(top=2800, height=200).save("30_6-5.png")
+   pp.plot(result, top=2800, bottom=3000).save("30_6-5.png")
 
 Continue with the :doc:`installation guide <installation>`, the
 :doc:`quickstart <quickstart>`, or the browser-rendered :doc:`tutorials

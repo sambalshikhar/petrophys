@@ -56,14 +56,18 @@ print("30/6-5 interpreted:", result.status, "|", len(result.steps_executed), "st
 
 ## Where each input goes
 
-The same input has a different name in each interface. File layouts are in
-{doc}`input_templates`.
+Each input has one keyword in `pp.read`, `pp.interpret`, `pp.plot` and
+`pp.export_context`. File layouts are in {doc}`input_templates`.
 
-| Input | Python | `export_context` | Command line |
+| Input | Keyword | Reader | Command line |
 | --- | --- | --- | --- |
-| Formations | `pp.read(..., formations=)` | `tops_file` | `--formations` |
-| Lithology intervals | `pp.read(..., lithology=)` | `lithology_file` | `--lithology` |
-| Lithology codebook | `pp.read_lithology_codes` | `lithology_mapping_file` | `--lithology-codes` |
+| Formations | `formations=` | `pp.read_formations` | `--formations` |
+| Lithology intervals | `lithology=` | `petrophys.io.read_lithology_intervals` | `--lithology` |
+| Lithology codebook | `lithology_codes=` (`pp.plot`, `pp.export_context`, a `pp.interpret` setting) | `petrophys.io.read_lithology_codes` | `--lithology-codes` |
+
+`pp.read` takes formations and lithology intervals only. In `pp.interpret`,
+`lithology=` also takes the name of the lithology code curve (`"FACIES"`) or a
+lithology domain (`"carbonate"`).
 
 Through MCP, `load_well` takes `formations` and `lithology`, and `interpret_well`
 takes the settings; codebooks are not available there.

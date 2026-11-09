@@ -55,7 +55,7 @@ well = pp.read(
 )
 result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
 
-viewer = pp.plot(result, depth_range=(2800, 3000), figsize=(15, 11))
+viewer = pp.plot(result, top=2800, bottom=3000, figsize=(15, 11))
 viewer.show()
 ```
 
@@ -85,13 +85,13 @@ from petrophys.visualization import DEFAULT_LOG_VIEWER_TEMPLATES, create_triple_
 
 from textwrap import fill
 
-WINDOW = (2830, 2970)  # the Brent with a margin
+TOP, BOTTOM = 2830, 2970  # the Brent with a margin
 print(fill("Named templates: " + ", ".join(DEFAULT_LOG_VIEWER_TEMPLATES), 88))
 for name, size in [("petrophysics", (14, 10.5)), ("comprehensive", (18, 12))]:
-    place(name, pp.plot(result, depth_range=WINDOW, template=name, figsize=size).fig)
-triple = create_triple_combo(result.well, depth_range=WINDOW, figsize=(10, 10))
+    place(name, pp.plot(result, top=TOP, bottom=BOTTOM, template=name, figsize=size).fig)
+triple = create_triple_combo(result.well, depth_range=(TOP, BOTTOM), figsize=(10, 10))
 place("triple_combo", triple.fig)
-raw = pp.plot(well, depth_range=WINDOW, figsize=(13, 10))  # no pp.interpret needed
+raw = pp.plot(well, top=TOP, bottom=BOTTOM, figsize=(13, 10))  # no pp.interpret needed
 place("uninterpreted", raw.fig)
 ```
 
@@ -310,13 +310,13 @@ Specialist displays (NMR panel, borehole images, XRF, saturation-height, core pl
 
 ## Controlling the log viewer
 
-`pp.plot` and `result.plot` return a {class}`~petrophys.visualization.LogViewer`. Choose the window and tracks, then read what it did.
+`pp.plot` takes a well, a result or a well file (`pp.plot("well.las")`) and returns a {class}`~petrophys.visualization.LogViewer`. Choose the window and tracks, then read what it did.
 
 ```{code-cell} python
 tracks = [track.display_name for track in viewer.template.tracks]
 print(fill("Track names: " + ", ".join(tracks), 88, subsequent_indent="    "))
 
-focus = pp.plot(result, depth_range=BRENT, figsize=(9, 9.5),
+focus = pp.plot(result, top=BRENT[0], bottom=BRENT[1], figsize=(9, 9.5),
                 tracks=["GAMMA / HOLE", "POROSITY", "SATURATION", "FLAGS"])
 print("Omitted tracks:", focus.omitted_tracks)
 print("Lithology from:", focus.diagnostics["lithology_source"])
@@ -328,13 +328,14 @@ focus.show()
 
 | Control or attribute | What it does |
 | --- | --- |
-| `depth_range=(top, base)`, or `top=` and `height=` | Window in the well's depth unit (one or the other: both together raise an error) |
+| `top=`, `bottom=` | Window in the well's depth unit; each defaults to its end of the logged interval |
 | `tracks=[...]` | Track display names to keep, in order; also draws the optional TEMPERATURE and RW / RMF tracks |
 | `curves=[...]` | Only these curves, each in its usual track, by the file's names or standard names (`GR`, `RDEP`); a curve no track takes gets a generic track. Not together with `tracks=` |
 | `curve_styles={"GR": {"color": "black", "right": 200}}` | Colour, scale, line, fill or marker of single curves, without an XML template |
 | `curve_aliases=` | Your mnemonics to standard names: a dict, or a CSV/Excel table with `curve` and `standard` columns |
 | `template=` / `template_xml_path=` | Named layout, or an XML file with your own tracks, scales and fills |
-| `formation_tops=`, `lithology_intervals=` | Geology for this plot only; geology passed to `pp.read` also feeds the interpretation |
+| `formations=`, `lithology=` | Formation tops and lithology intervals for this plot only, as for `pp.read`; geology passed to `pp.read` also feeds the interpretation |
+| `lithology_codes=` | Codebook of a lithology code curve: a mapping of code to rock name, or a CSV/Excel codebook |
 | `strict=True` | Fail when a fixed template needs a missing curve, instead of skipping the track |
 | `viewer.omitted_tracks` | Tracks left out because their curves are missing |
 | `viewer.diagnostics` | Imports, curve choices, omitted empty tracks, optional tracks left out, and labels suppressed to avoid crowding |
@@ -345,9 +346,9 @@ A style or window you give is drawn as given. For example, 100 m from the
 Brent top, the lithology fill at 30 % opacity, and your own lithology codes:
 
 ```python
-pp.plot(result, top=2841, height=100,
+pp.plot(result, top=2841, bottom=2941,
         curve_styles={"LITHOLOGY_GEOLINK": {"fill_alpha": 0.3}})
-pp.plot(result, lithology_mapping={65000: "Sandstone", 30000: "Shale"})
+pp.plot(result, lithology_codes={65000: "Sandstone", 30000: "Shale"})
 ```
 
 ### Your curve names, your curves, your styles
@@ -362,7 +363,7 @@ or to one `pp.plot`.
 teapot = pp.read(pp.sample("teapot_44-mdx-10"))
 print("File curves:", list(teapot.curves))
 own = pp.plot(teapot, curves=["GR", "SP", "RDEP", "RMED", "NPHI", "RHOB"],
-              curve_aliases={"SPR": "SP"}, depth_range=(2400, 3000), figsize=(9, 8),
+              curve_aliases={"SPR": "SP"}, top=2400, bottom=3000, figsize=(9, 8),
               curve_styles={"GR": {"color": "black"}, "SP": {"color": "#984ea3", "line_width": 1.2}})
 print("Drawn:", own.diagnostics["curve_lookup"])
 own.show()
@@ -413,7 +414,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
 | Export | Call | Contents |
 | --- | --- | --- |
-| Interpreted LAS | `result.to_las(path)` | All curves with units and descriptions; settings as `PP_*` parameters; executed and skipped steps in `~Other` |
+| Interpreted LAS | `result.to_las(path)`, or `pp.interpret(well, output=path)` | All curves with units and descriptions; settings as `PP_*` parameters; executed and skipped steps in `~Other` |
 | Trace | `result.to_json(path)`, `result.to_markdown(path)` | Every step's method, inputs, outputs, parameters and decisions |
 | Tables | `export_csv`, `export_excel` from `petrophys.io` | Chosen curves with depth; missing values left blank |
 | Delivery LAS | `export_example_format_las` | Standardized curve families with calculation provenance |

@@ -41,7 +41,8 @@ The window below covers the Brent reservoir, at 2841–2958 m.
 ```{code-cell} python
 viewer = pp.plot(
     well,
-    depth_range=(2800, 3000),
+    top=2800,
+    bottom=3000,
     tracks=["LITHOLOGY", "GAMMA / HOLE", "RESISTIVITY", "DENSITY / NEUTRON"],
     figsize=(9.5, 10),
 )
@@ -172,7 +173,8 @@ porosity, saturation, permeability and pay-flag tracks.
 ```{code-cell} python
 pp.plot(
     result,
-    depth_range=(2841, 2958),
+    top=2841,
+    bottom=2958,
     template="petrophysics",
     tracks=["LITHOLOGY", "GR / VCL", "RESISTIVITY", "POROSITY",
             "SATURATION", "PERMEABILITY", "FLAGS"],
