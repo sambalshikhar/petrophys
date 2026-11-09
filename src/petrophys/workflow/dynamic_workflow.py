@@ -1109,7 +1109,12 @@ class DynamicWorkflowConfig:
     #: is interpreted with its settings over the rest and merged into the
     #: well. Inside a zone its values win over everything; outside, the
     #: whole-well settings apply. LAS header zones (``RW_Z1`` with
-    #: ``TOP_Z1``/``BOT_Z1``) rank below the settings you pass. Not available
+    #: ``TOP_Z1``/``BOT_Z1``) rank below the settings you pass. A zone may
+    #: also give only a ``name`` (or ``zone``) and its depths: it then
+    #: changes nothing and names the interval for
+    #: :meth:`DynamicWorkflowResult.zone_summary` and context exports. A
+    #: ``well`` column lets one table hold the zones of several wells; a well
+    #: takes the rows with its name and the rows without one. Not available
     #: under the "geolink" profile.
     zones: Optional[Any] = None
 
@@ -1321,7 +1326,7 @@ def _zone_value(name: str, value: Any) -> Any:
     return value
 
 
-def _normalized_zones(config: "DynamicWorkflowConfig", errors: List[str]) -> Optional[tuple]:
+def _normalized_zones(config: "DynamicWorkflowConfig", errors: List[str], raw: Any = None) -> Optional[tuple]:
     """``config.zones`` as ``({"top", "bottom", "depth_unit", "name", "settings"}, ...)``.
 
     Depths stay in their own unit (``depth_unit``, else the well's) until a
@@ -1332,7 +1337,8 @@ def _normalized_zones(config: "DynamicWorkflowConfig", errors: List[str]) -> Opt
 
     import pandas as pd
 
-    raw = config.zones
+    if raw is None:
+        raw = config.zones
     if raw is None:
         return None
     if config.calculation_profile in _BENCHMARK_PROFILES:
@@ -1363,6 +1369,7 @@ def _normalized_zones(config: "DynamicWorkflowConfig", errors: List[str]) -> Opt
                     or (isinstance(value, str) and not value.strip()))
         }
         label = str(cells.pop("name", cells.pop("zone", "")) or "").strip() or str(number)
+        well_name = cells.pop("well", None)
         depth_unit = cells.pop("depth_unit", None)
         if depth_unit is not None:
             from petrophys.model.units import normalize_depth_unit
@@ -1401,24 +1408,29 @@ def _normalized_zones(config: "DynamicWorkflowConfig", errors: List[str]) -> Opt
                     f"zones: zone {label}: unknown setting {name!r}"
                     + (f" (did you mean {hint!r}?)" if hint else "")
                 )
-        if not settings:
-            if len(errors) == reported:
-                errors.append(f"zones: zone {label} sets nothing besides its depths")
+        if len(errors) > reported:
             continue
-        try:
-            DynamicWorkflowConfig(**settings)
-        except (TypeError, ValueError) as exc:
-            detail = str(exc).replace("Invalid DynamicWorkflowConfig:\n  - ", "").replace("\n  - ", "; ")
-            errors.append(f"zones: zone {label}: {detail}")
-            continue
-        zones.append({
+        if settings:
+            try:
+                DynamicWorkflowConfig(**settings)
+            except (TypeError, ValueError) as exc:
+                detail = str(exc).replace("Invalid DynamicWorkflowConfig:\n  - ", "").replace("\n  - ", "; ")
+                errors.append(f"zones: zone {label}: {detail}")
+                continue
+        zone = {
             "name": label, "top": top, "bottom": bottom,
             "depth_unit": None if depth_unit is None else str(depth_unit).strip(),
             "settings": settings,
-        })
-    units = {zone["depth_unit"] for zone in zones}
-    if len(units) <= 1:
-        ordered = sorted(zones, key=lambda zone: zone["top"])
+        }
+        if well_name is not None:
+            zone["well"] = str(well_name).strip()
+        zones.append(zone)
+    # Zones of different wells may share depths.
+    for name in sorted({_well_name_key(zone.get("well")) for zone in zones}):
+        same_well = [zone for zone in zones if _well_name_key(zone.get("well")) == name]
+        if len({zone["depth_unit"] for zone in same_well}) > 1:
+            continue
+        ordered = sorted(same_well, key=lambda zone: zone["top"])
         for upper, lower in zip(ordered, ordered[1:]):
             if lower["top"] < upper["bottom"]:
                 errors.append(
@@ -1426,6 +1438,44 @@ def _normalized_zones(config: "DynamicWorkflowConfig", errors: List[str]) -> Opt
                     f"zone {lower['name']} ({lower['top']:g}-{lower['bottom']:g}) overlap"
                 )
     return tuple(zones)
+
+
+def _well_name_key(value: Any) -> str:
+    """A well name as zone tables match it: without case, spacing or the ``_``/``/`` difference."""
+    import re
+
+    text = str(value or "").strip().upper().replace("\\", "/").replace("_", "/")
+    return re.sub(r"\s+", " ", text)
+
+
+def _zones_for_well(zones: Sequence[Mapping[str, Any]], *names: Any) -> List[Dict[str, Any]]:
+    """The zones that apply to a well named any of ``names``.
+
+    Zones without a ``well`` apply to every well; the others to the well
+    whose name they give.
+    """
+    keys = {_well_name_key(name) for name in names if str(name or "").strip()}
+    return [dict(zone) for zone in zones if not zone.get("well") or _well_name_key(zone["well"]) in keys]
+
+
+def _zone_intervals_for_well(well: "Well", zones: Any) -> List[Dict[str, Any]]:
+    """The ``name``, ``top`` and ``bottom`` (well depth unit) of the zones of a table for ``well``."""
+    from petrophys.workflow.zoned_batch import _convert_depth_between_units
+
+    errors: List[str] = []
+    normalized = _normalized_zones(DynamicWorkflowConfig(), errors, zones) or ()
+    if errors:
+        raise ValueError("; ".join(errors))
+    names = (well.name, getattr(getattr(well, "header", None), "well_name", ""))
+    intervals = []
+    for zone in _zones_for_well(normalized, *names):
+        unit = zone["depth_unit"] or well.depth_unit
+        intervals.append({
+            "name": zone["name"],
+            "top": _convert_depth_between_units(zone["top"], unit, well.depth_unit),
+            "bottom": _convert_depth_between_units(zone["bottom"], unit, well.depth_unit),
+        })
+    return sorted(intervals, key=lambda zone: zone["top"])
 
 
 
@@ -2340,6 +2390,9 @@ class DynamicWorkflowResult:
     #: One run per entry of ``config.zones`` (in zone order), each merged into
     #: ``well`` over its depths; empty without zones.
     zone_results: List["DynamicWorkflowResult"] = field(default_factory=list)
+    #: The zones of ``config.zones`` that apply to this well, in depth order:
+    #: ``name``, ``top`` and ``bottom`` in the well's depth unit.
+    zone_intervals: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def has_usable_interpretation(self) -> bool:
@@ -2608,6 +2661,36 @@ class DynamicWorkflowResult:
         from petrophys.workflow.summary import summarize_formations
 
         return summarize_formations(self, formations, rank=rank)
+
+    def zone_summary(self, zones: Any = None) -> Any:
+        """Gross, net and average properties for each zone.
+
+        Parameters
+        ----------
+        zones : path, DataFrame or sequence of mappings, optional
+            Zones as :attr:`DynamicWorkflowConfig.zones` takes them: one row
+            per zone with its ``name`` (or ``zone``), ``top`` and ``bottom``,
+            in a CSV or Excel file, a table or a list. A ``well`` column
+            selects the rows of this well. Defaults to the zones passed to
+            ``petrophys.interpret(well, zones=...)``.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per zone, with the columns of :meth:`formation_summary`.
+
+        Examples
+        --------
+        >>> import petrophys as pp
+        >>> zones = [{"zone": "Upper", "top": 2841, "bottom": 2900},
+        ...          {"zone": "Lower", "top": 2900, "bottom": 2958}]
+        >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230, zones=zones)
+        >>> list(result.zone_summary()["Zone"])  # doctest: +SKIP
+        ['Upper', 'Lower']
+        """
+        from petrophys.workflow.summary import summarize_zones
+
+        return summarize_zones(self, zones)
 
     def summary(
         self, top: Optional[float] = None, bottom: Optional[float] = None
@@ -3961,7 +4044,8 @@ class DynamicWorkflow:
             bottom = _convert_depth_between_units(zone["bottom"], unit, well.depth_unit)
             label = f"Zone {zone['name']} ({top:g}-{bottom:g} {well.depth_unit})"
             if not finite.size or not ((depth >= top) & (depth <= bottom)).any():
-                notes.append(f"{label} lies outside the logged depths; its settings are not used")
+                notes.append(f"{label} lies outside the logged depths"
+                             + ("; its settings are not used" if zone["settings"] else ""))
                 return None
             # Beyond the log by more than 1 % of the zone or five samples.
             slack = max(5 * step, 0.01 * (bottom - top))
@@ -3972,7 +4056,11 @@ class DynamicWorkflow:
                 )
             return {**zone, "top": top, "bottom": bottom, "label": label, "user": user}
 
-        user_zones = [z for z in (placed(zone, True) for zone in (requested.zones or ())) if z]
+        names = (well.name, getattr(getattr(well, "header", None), "well_name", ""))
+        mine_only = _zones_for_well(requested.zones or (), *names)
+        if requested.zones and not mine_only:
+            notes.append(f"No zone of the zones table is for well {well.name}")
+        user_zones = [z for z in (placed(zone, True) for zone in mine_only) if z]
         header_zones = [z for z in (placed(zone, False) for zone in getattr(requested, "_header_zones", ()) or ()) if z]
         ordered = sorted(user_zones, key=lambda zone: zone["top"])
         for upper, lower in zip(ordered, ordered[1:]):
@@ -3994,6 +4082,8 @@ class DynamicWorkflow:
                 settings.update(zone["settings"])
                 if zone["user"]:
                     mine.extend(zone["settings"])
+            if not settings:
+                continue  # only named zones here: the whole-well run holds
             for zone in covering:
                 if not zone["user"]:
                     overridden = sorted(set(zone["settings"]) & set(mine))
@@ -4027,6 +4117,10 @@ class DynamicWorkflow:
         before = set(well.curves)
         result = DynamicWorkflow(_copy_config(requested, explicit=[], zones=None)).run(well)
         result.config.zones = requested.zones
+        result.zone_intervals = [
+            {"name": zone["name"], "top": zone["top"], "bottom": zone["bottom"]}
+            for zone in sorted(user_zones, key=lambda zone: zone["top"])
+        ]
         result.warnings.extend(notes)
         for group, config in runs:
             zone_well = _copy.deepcopy(source)

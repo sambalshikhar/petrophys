@@ -82,6 +82,13 @@ def build_package_parser(layout: str) -> argparse.ArgumentParser:
     )
     if layout == "category_formation_lithology":
         parser.add_argument(
+            "--zones", type=Path,
+            help=(
+                "CSV/Excel table of your zones (zone,top,bottom; a well column for several wells): "
+                "one context group per zone in place of the formation/lithology groups"
+            ),
+        )
+        parser.add_argument(
             "--profile",
             dest="context_profile",
             choices=(
@@ -126,6 +133,8 @@ def _package_options(args: argparse.Namespace) -> dict:
     }
     if args.lithology_domain is not None:
         options["lithology_domain"] = args.lithology_domain
+    if getattr(args, "zones", None) is not None:
+        options["zones"] = args.zones
     reader_options = _reader_options(args)
     if reader_options:
         options["reader_options"] = reader_options

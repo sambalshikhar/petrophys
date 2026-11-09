@@ -204,6 +204,22 @@ result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230, zones=[
 ```
 
 Each zone's settings are run over the whole well and its depths merged in, so a zone changes what its settings change and nothing else: the picks taken from the data (GR baselines, irreducible water saturation, the core model) stay those of the whole well. `result.zone_results` holds one run per distinct set of zone settings, and `result.warnings` their messages. Zones may not overlap; whole-run settings such as `calculation_profile`, `skip_steps` and the lithology inputs cannot differ by zone; a zone outside the logged depths is noted and not used.
+A zone can also be just a name and its depths, your own segmentation of the well (reservoir zones, flow units, facies). Such a zone changes nothing in the interpretation; it names the interval. One sheet can hold the zones of several wells, with a `well` column:
+
+| well | zone | top | bottom | m |
+|---|---|---|---|---|
+| HW-3 | Upper reservoir | 7600 | 7800 | |
+| HW-3 | Lower reservoir | 7800 | 8020 | 2.1 |
+| HW-4 | Main | 8050 | 8330 | |
+
+```python
+result = pp.interpret("HW-3.las", zones="zones.xlsx")   # the HW-3 rows apply
+result.zone_summary()                                    # one row per zone: gross, net, pay averages
+pp.export_context("wells/", "context/", layout="category_formation_lithology", zones="zones.xlsx")
+```
+
+`zone_summary` has the columns of `formation_summary`. In the context export each zone is one group, written to `<category>/<well>/<zone>/`, in place of the formation and lithology groups; its documents carry `zone_info` and `zone_name`, with the dominant lithology and the lithology distribution of the zone. A well with no row in the table is grouped by formation and lithology as usual, with a warning.
+
 The full order is: your zone values inside their zone, then your whole-well settings, then LAS header zone values (`RW_Z1`, `M_Z1`, ... with `TOP_Z1`/`BOT_Z1`) inside their zone, then LAS header whole-well values, then the defaults. A header value one of yours overrides is named in the warnings. The same order holds on every route; `DynamicWorkflow(config).run` alone uses the config as given, without the header.
 An explicit setting wins over a LAS header value: `rw` over the header RW, `salinity_ppm` over the header RW, `rw_meas_temp_f` over the header RWT, and `rm`, `rmf_salinity_ppm` and `rmf_chlorides_mg_l` over the header RMF and CLFL (a value `pp.interpret` copied from the header, such as CLFL, ranks with the header, below a direct RMF).
 `phi_cl`, `rmf_meas_temp_f` and `rm_meas_temp_f` are unset (`None`) by default and resolve to 0.15 v/v and 75 degF, so an explicit value, including one equal to the default, is always used.

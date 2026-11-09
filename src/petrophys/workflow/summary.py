@@ -164,6 +164,23 @@ def formation_table(well: "Well", formations: Any = None, *, rank: Optional[str]
     return analyze_formations(well, zones).to_dataframe()
 
 
+def summarize_zones(result: "DynamicWorkflowResult", zones: Any = None) -> Any:
+    """Per-zone table of an interpretation; see :meth:`DynamicWorkflowResult.zone_summary`."""
+    from petrophys.evaluation.summaries.formation_analysis import analyze_formations
+    from petrophys.model.intervals import Formation
+    from petrophys.workflow.dynamic_workflow import _zone_intervals_for_well
+
+    well = result.well
+    intervals = result.zone_intervals if zones is None else _zone_intervals_for_well(well, zones)
+    if not intervals:
+        raise ValueError(
+            "No zones apply to this well. Pass zones=<file or table>, or interpret "
+            "with petrophys.interpret(well, zones=...)."
+        )
+    formations = [Formation(zone["name"], zone["top"], zone["bottom"]) for zone in intervals]
+    return analyze_formations(well, formations).to_dataframe().rename(columns={"Formation": "Zone"})
+
+
 def summarize_formations(
     result: "DynamicWorkflowResult",
     formations: Any = None,

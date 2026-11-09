@@ -261,6 +261,14 @@ published GeoLink, COSTA and Danish context packages from their raw logs.
     and the shale point; the zoned runner takes the same path outside the
     "geolink" profile. The record of the settings you passed survives
     `dataclasses.replace`.
+  - Zones can be your own segmentation of the well: a zone with only a name
+    and depths changes nothing and names the interval, and a `well` column
+    lets one table hold the zones of several wells. `result.zone_summary()`
+    gives one row per zone with the columns of `formation_summary`, and
+    `pp.export_context(..., layout="category_formation_lithology",
+    zones=...)` (CLI `--zones`) writes one context group per zone, with
+    `zone_info` and `zone_name`, in place of the formation and lithology
+    groups.
   - The workflow trace no longer lists the library's internal config records.
   - Archie `a`, `m`, `n` and the net-pay cutoffs also take one value per
     lithology, e.g. `m={"sandstone": 1.8, "carbonate": 2.3}` or

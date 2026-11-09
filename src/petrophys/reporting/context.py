@@ -183,6 +183,14 @@ def export_context(
     file, which records no depth unit, or ``{"step": 0.1524}`` for a DLIS
     sampling step in metres.
 
+    ``zones`` (``category_formation_lithology`` only) is a CSV or Excel file
+    or a table of your own intervals: one row per zone with its name
+    (``zone`` or ``name``), ``top`` and ``bottom``, and a ``well`` column
+    when it covers several wells. Each zone becomes one context group in
+    place of the formation and lithology groups, and its documents carry
+    ``zone_info`` and ``zone_name``. Setting columns (``rw``, ``m`` ...)
+    apply inside their zone, as in ``petrophys.interpret(well, zones=...)``.
+
     ``context_profile`` computes a published package from its delivery's raw
     LAS files with the package's own pipeline and calculations
     (:mod:`petrophys.reporting.context_profiles`): ``"geolink"`` (``data``:
@@ -215,6 +223,8 @@ def export_context(
             "Unknown context layout; choose well, formation_lithology or "
             "category_formation_lithology"
         )
+    if options.get("zones") is not None and layout != "category_formation_lithology":
+        raise ValueError("zones applies to layout='category_formation_lithology'")
     if context_profile is not None and layout != "category_formation_lithology":
         raise ValueError(
             "context_profile requires layout='category_formation_lithology'"

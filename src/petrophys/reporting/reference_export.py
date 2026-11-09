@@ -7388,6 +7388,7 @@ def _build_reference_json_payload(
     status_targets_override: Optional[Sequence[str]] = None,
     include_derived_log_status: bool = False,
     extra_statistics_curves: Optional[dict[str, Any]] = None,
+    zone: bool = False,
 ) -> dict[str, Any]:
     well_name = _reference_well_name(source_file, well)
     context_rules = _context_value_range_rules(workflow_result)
@@ -7513,7 +7514,23 @@ def _build_reference_json_payload(
         data_completeness["derived_log_computation_notes"] = [
             _geolink_train_bad_hole_note(note, qc) for note in computation_notes
         ]
-    return payload
+    return _as_zone_payload(payload) if zone else payload
+
+
+def _as_zone_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """A context document of a user zone: zone keys in place of the formation and lithology-group keys."""
+    results = payload["analysis_results"]
+    info = {**payload["formation_info"]}
+    group = results["lithology_group_info"]
+    info.update(data_points=group["data_points"], median_dz=group["median_dz"])
+    renamed: dict[str, Any] = {}
+    for key, value in results.items():
+        if key == "formation_name":
+            renamed["zone_name"] = value
+        elif key not in {"lithology group", "lithology_group_info"}:
+            renamed["dominant_lithology" if key == "lithology" else key] = value
+    rest = {key: value for key, value in payload.items() if key not in {"formation_info", "analysis_results"}}
+    return {"zone_info": info, "analysis_results": renamed, **rest}
 
 
 def _write_reference_analysis_json(
@@ -7623,6 +7640,7 @@ def iter_context_groups(
                 "group_name": group_name,
                 "lithology": str(group["lithology"]),
                 "file_stem": str(group.get("file_stem") or f"{formation_display_name}_{group_name}"),
+                "zone": bool(group.get("zone", False)),
             }
         return
 
@@ -7719,8 +7737,11 @@ def iter_context_group_payloads(
     group_name: str,
     lithology_name: str,
     lithology_mapping: Optional[dict[int, dict[str, str]]] = None,
+    zone: bool = False,
 ):
     """Yield ``(category, document)`` for the six context files of one group, in the context's order.
+
+    With ``zone`` the group is a user zone, and its documents name it as one.
 
     ``group_well`` is the group's samples of ``workflow_result.well`` (the
     interpretation before the context's QC) and is modified as the context
@@ -7768,6 +7789,7 @@ def iter_context_group_payloads(
             status_targets_override=_category_status_targets(category_name, stem),
             include_derived_log_status=False,
             extra_statistics_curves=category_result.derived_curves,
+            zone=zone,
         )
 
 
@@ -8857,6 +8879,66 @@ def export_reference_json_work_package_by_formation_lithology(
     return results
 
 
+def _context_zone_table(zones: Any, files: Sequence[Path], workflow_config: Any) -> Optional[list[dict[str, Any]]]:
+    """The rows of a context export's ``zones`` table, checked once for every well."""
+    if zones is None:
+        return None
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, _normalized_zones
+
+    if getattr(workflow_config, "zones", None):
+        raise ValueError("Pass zones to the export or in workflow_config, not both")
+    profile = getattr(workflow_config, "calculation_profile", "current")
+    errors: list[str] = []
+    rows = _normalized_zones(DynamicWorkflowConfig(calculation_profile=profile), errors, zones) or ()
+    if errors:
+        raise ValueError("; ".join(errors))
+    if len(files) > 1 and any(not row.get("well") for row in rows):
+        raise ValueError(
+            "The zones table has rows without a well; add a well column before running a multiwell export."
+        )
+    return [dict(row) for row in rows]
+
+
+def _context_zone_config(zone_table, file_path: Path, well: "Well", config):
+    """A well's workflow configuration with its zones, and a note when the table has none for it."""
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, _copy_config, _zones_for_well
+
+    names = (file_path.stem, well.name, getattr(getattr(well, "header", None), "well_name", ""))
+    rows = [{key: value for key, value in row.items() if key != "well"} for row in _zones_for_well(zone_table, *names)]
+    if not rows:
+        return config, f"No zone of the zones table is for {file_path.stem}; grouped by formation and lithology."
+    base = config if config is not None else DynamicWorkflowConfig()
+    return _copy_config(base, explicit=[], zones=rows), None
+
+
+def _zone_group_layout(workflow_result) -> list[dict[str, Any]]:
+    """One context group per zone of the interpretation, named after it.
+
+    A zone holds the samples from its top to just above its bottom, so a
+    sample on the boundary between two zones is counted once, in the lower.
+    """
+    intervals = workflow_result.base_result.zone_intervals
+    counts: dict[str, int] = {}
+    for zone in intervals:
+        counts[zone["name"]] = counts.get(zone["name"], 0) + 1
+    layout = []
+    for zone in intervals:
+        bottom = float(np.nextafter(float(zone["bottom"]), -np.inf))
+        zone_well = workflow_result.well.depth_slice(float(zone["top"]), bottom)
+        if zone_well.n_samples == 0:
+            continue
+        info = _depth_summary(zone_well)
+        stem = zone["name"]
+        if counts[zone["name"]] > 1:
+            stem = f"{stem}__{info['min_depth']:.1f}_{info['max_depth']:.1f}"
+        layout.append({
+            "start_depth": float(zone["top"]), "end_depth": bottom, "formation_name": zone["name"],
+            "formation_depth_info": info, "group_name": zone["name"], "lithology": "",
+            "file_stem": stem, "zone": True,
+        })
+    return layout
+
+
 def _group_layout_for_file(
     group_layout: Optional[Mapping[str, Sequence[Mapping[str, Any]]]],
     file_path: Path,
@@ -8912,8 +8994,18 @@ def export_reference_json_work_package_by_category_formation_lithology(
     prepare_input: Optional[Any] = None,
     processed_las_only: bool = False,
     on_interpreted: Optional[Any] = None,
+    zones: Optional[Any] = None,
 ) -> List[ExampleFormatExportResult]:
     """Generate category contexts from well files and optional geology inputs.
+
+    ``zones`` (a CSV or Excel file, a table or a list of mappings, as
+    :attr:`~petrophys.workflow.DynamicWorkflowConfig.zones` takes them) gives
+    each well its own intervals: one row per zone with a ``name`` (or
+    ``zone``), ``top`` and ``bottom``, and a ``well`` column when the table
+    holds several wells. Each zone of a well is then one context group,
+    named after it, in place of the formation and lithology groups; setting
+    columns (``rw``, ``m`` ...) apply inside their zone. A well with no zone
+    in the table is split by formation and lithology as usual.
 
     Use ``pattern="*.dlis"`` for DLIS. reader_options are passed to petrophys.read
     for both context inputs and optional raw inputs (e.g. DLIS step/channels).
@@ -8978,6 +9070,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
         if lithology_mapping_file
         else None
     )
+    zone_table = _context_zone_table(zones, files, workflow_config)
 
     results: List[ExampleFormatExportResult] = []
     for file_path in files:
@@ -9001,6 +9094,10 @@ def export_reference_json_work_package_by_category_formation_lithology(
             formation_segments = _formation_segments_for_well(file_path, full_well, tops_by_well)
             _attach_formations_for_interpretation(full_well, formation_segments, well_config)
             fallback_warnings: list[str] = []
+            if zone_table is not None:
+                well_config, zone_note = _context_zone_config(zone_table, file_path, full_well, well_config)
+                if zone_note:
+                    fallback_warnings.append(zone_note)
             processed_original_curves = set(full_well.curves)
             raw_original_curves = _raw_original_curves_for_file(
                 file_path,
@@ -9105,8 +9202,9 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 json_group_name: str,
                 json_lithology_name: str,
                 file_stem: str,
+                zone: bool = False,
             ) -> None:
-                """Write the category files of one formation/lithology group."""
+                """Write the category files of one formation/lithology group or zone."""
                 for category_name, payload in iter_context_group_payloads(
                     group_well,
                     workflow_result,
@@ -9117,6 +9215,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     group_name=json_group_name,
                     lithology_name=json_lithology_name,
                     lithology_mapping=lithology_mapping,
+                    zone=zone,
                 ):
                     json_path = (
                         output_path
@@ -9147,7 +9246,11 @@ def export_reference_json_work_package_by_category_formation_lithology(
                 well_bottom=well_bottom,
                 minimum_group_thickness=minimum_group_thickness,
                 lithology_mapping=lithology_mapping,
-                layout=_group_layout_for_file(group_layout, file_path),
+                layout=(
+                    _zone_group_layout(workflow_result)
+                    if zone_table is not None and workflow_result.base_result.zone_intervals
+                    else _group_layout_for_file(group_layout, file_path)
+                ),
                 fallback_warnings=fallback_warnings,
             ):
                 export_group(
@@ -9157,6 +9260,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                     group["group_name"],
                     group["lithology"],
                     group["file_stem"],
+                    zone=group.get("zone", False),
                 )
         except Exception as exc:
             results.append(
