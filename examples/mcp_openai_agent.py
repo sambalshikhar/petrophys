@@ -7,7 +7,7 @@ URL: by default the server runs on this machine over stdio.
     pip install "petrophys[mcp]" openai
     export OPENAI_API_KEY=...
     python examples/mcp_openai_agent.py \
-        "Interpret sample well 30/6-5 with Rw 0.07 ohm.m at 230 degF and summarize the Brent"
+        "Interpret sample well 30/6-5 with Rw 0.07 ohm.m at 230 degF and summarize the Brent Group"
 
 Options:
     --root DIR       folder with your LAS/DLIS/CSV files (default: current folder)
