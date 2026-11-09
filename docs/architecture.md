@@ -13,6 +13,23 @@ Petrophys is organized by processing stage at the top level and by physical
 problem inside `interpretation` and `evaluation`. Each feature has one home,
 even when `import petrophys as pp` re-exports it.
 
+## Functions and packages
+
+The top-level functions are verbs that do a whole job in one call; the
+packages are nouns that hold the individual methods behind them.
+
+| Function (verb) | Package (noun) | Contains |
+|---|---|---|
+| `pp.read` | `petrophys.io` | readers for LAS, DLIS, CSV and geology tables |
+| `pp.interpret` | `petrophys.interpretation` | clay volume, porosity, saturation, permeability, lithology, geochemistry, ... |
+| `pp.plot` | `petrophys.visualization` | log panels, crossplots, specialist displays |
+| `pp.impute` | `petrophys.preprocessing.imputation` | curve imputation |
+
+`pp.interpret(well)` runs the interpretation methods in petrophysical order
+and returns the result with its step trace. Import from the package to run or
+combine single methods yourself, for example
+`from petrophys.interpretation.geochemistry import interpret_spectral_gamma`.
+
 ## Package map
 
 Generated from the installed package. Public names come from each package's
