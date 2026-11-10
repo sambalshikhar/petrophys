@@ -88,7 +88,7 @@ def get_context_profile(name: str) -> ContextProfile:
         accepted = {canonical, *(_profile_key(alias) for alias in profile.aliases)}
         if key in accepted:
             return profile
-    choices = ", ".join(sorted(_PROFILES))
+    choices = ", ".join(("geolink", "geolink_train", "costa", "danish"))
     raise ValueError(f"Unknown context profile {name!r}; choose from {choices}")
 
 

@@ -162,6 +162,40 @@ _PROFILE_OPTIONS = {"well_names", "pattern", "recursive", "tops_file", "litholog
 _INPUT_NAMES = {"formations": "tops_file", "lithology": "lithology_file", "lithology_codes": "lithology_mapping_file"}
 
 
+def _config_fields() -> set:
+    import dataclasses
+
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
+
+    return {item.name for item in dataclasses.fields(DynamicWorkflowConfig) if not item.name.startswith("_")}
+
+
+def _settings_into_config(options: dict, exporter: Any) -> dict:
+    """Interpretation settings given as keywords (``rw=0.07``) moved into ``workflow_config``."""
+    import difflib
+    import inspect
+
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, _copy_config
+
+    accepted = set(inspect.signature(exporter).parameters)
+    fields = _config_fields()
+    unknown = sorted(name for name in options if name not in accepted and name not in fields)
+    if unknown:
+        known = sorted((accepted | fields | set(_INPUT_NAMES)) - set(_INPUT_NAMES.values()))
+        hints = []
+        for name in unknown:
+            close = difflib.get_close_matches(name, known, n=1)
+            hints.append(f"{name!r}" + (f" (did you mean {close[0]!r}?)" if close else ""))
+        raise TypeError("export_context() got unknown option(s): " + ", ".join(hints))
+    settings = {name: options.pop(name) for name in list(options) if name not in accepted}
+    if settings:
+        base = options.get("workflow_config")
+        options["workflow_config"] = (
+            DynamicWorkflowConfig(**settings) if base is None else _copy_config(base, **settings)
+        )
+    return options
+
+
 def export_context(
     data: Any,
     output_path: Any = None,
@@ -205,6 +239,10 @@ def export_context(
     Setting columns (``rw``, ``m`` ...) apply inside their zone, as in
     ``petrophys.interpret(well, zones=...)``.
 
+    Interpretation settings for every well of a package are keywords, as for
+    :func:`petrophys.interpret` (``rw=0.07, sw_model="indonesia"``), or a
+    complete ``workflow_config``; keywords override its fields.
+
     In a package each formation (or zone; the whole well without either) is
     split into lithology groups, runs of samples with one lithology, or with
     ``split_by_lithology=False`` is one group; such a group's documents give
@@ -242,6 +280,13 @@ def export_context(
         if not split_by_lithology:
             raise TypeError("split_by_lithology applies to layout='package'")
         package_only = sorted(name for name in options if name != "category")
+        settings = sorted(set(package_only) & _config_fields())
+        if settings:
+            raise TypeError(
+                f"{', '.join(settings)}: a well summary holds an interpretation as it was run; "
+                "interpret with the settings first, e.g. export_context(petrophys.interpret(well, "
+                f"{settings[0]}=...))"
+            )
         if package_only:
             shown = {internal: name for name, internal in _INPUT_NAMES.items()}
             raise TypeError(
@@ -296,6 +341,8 @@ def export_context(
     from petrophys.reporting import reference_export as reference
 
     exporter = reference.export_reference_json_work_package_by_category_formation_lithology
+    if context_profile is None:
+        options = _settings_into_config(options, exporter)
     output_io.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix=".petrophys-context-", dir=output_io.parent) as directory:
         staged = Path(directory) / "package"
@@ -365,4 +412,15 @@ def export_context(
                 if value:
                     setattr(item, field, str(output / Path(value).relative_to(staged)))
         staged.rename(output_io)
+    if options.get("tops_file") is not None or options.get("zones") is not None:
+        # Where the groups differ from the formations or zones given.
+        import warnings
+
+        shown = set()
+        for item in results:
+            for note in getattr(item, "grouping_warnings", ()):
+                key = (Path(item.source_file).stem, note)
+                if key not in shown:
+                    shown.add(key)
+                    warnings.warn(f"{key[0]}: {note}", UserWarning, stacklevel=2)
     return results

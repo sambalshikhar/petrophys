@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
+import warnings
 from pathlib import Path
 
 from petrophys.reporting.context import (
@@ -172,12 +174,22 @@ def main(argv=None) -> int:
         help="Replace a single JSON file; package directories are never overwritten",
     )
     args = parser.parse_args(argv)
+    with warnings.catch_warnings():
+        warnings.showwarning = _show_warning
+        return _run(parser, args)
+
+
+def _show_warning(message, category, filename, lineno, file=None, line=None) -> None:
+    print(f"petrophys-context: warning: {message}", file=sys.stderr)
+
+
+def _run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     try:
         if args.layout == "well":
             if args.context_profile is not None:
                 parser.error("--profile requires --layout package")
             if args.input.is_dir():
-                parser.error("layout=well requires one well file")
+                parser.error(f"{args.input} is a folder; add --layout package to build the context package of its wells")
             if args.well or args.tops_rank or args.tops_sheet:
                 parser.error("--well and tops selection apply to package layouts")
             if args.lithology_codes is not None:

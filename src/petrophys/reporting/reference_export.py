@@ -719,6 +719,10 @@ class ExampleFormatExportResult:
         result is a JSON context only).
     warnings, errors : list of str
         Workflow warnings and errors collected for this file.
+    grouping_warnings : list of str
+        How the well's groups differ from the formations or zones given: a
+        zone outside the logged depths, a well without zones, or the whole
+        well as one formation. Also part of ``warnings``.
     """
     source_file: str
     output_file: str
@@ -727,6 +731,7 @@ class ExampleFormatExportResult:
     curves_exported: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
+    grouping_warnings: List[str] = field(default_factory=list)
 
 
 def _normalize_numeric_array(data: np.ndarray) -> np.ndarray:
@@ -7660,7 +7665,7 @@ def iter_context_groups(
         ]
         if fallback_warnings is not None:
             fallback_warnings.append(
-                "No formation tops matched this well in the tops table. Falling back to WHOLE_WELL segmentation."
+                "No formation tops or zones cover this well; it is one WHOLE_WELL formation."
             )
 
     formation_name_counts: dict[str, int] = {}
@@ -8963,6 +8968,7 @@ def export_reference_json_work_package_by_category_formation_lithology(
                             curves_exported=0,
                             warnings=result_warnings,
                             errors=errors,
+                            grouping_warnings=list(fallback_warnings),
                         )
                     )
 
@@ -8971,6 +8977,16 @@ def export_reference_json_work_package_by_category_formation_lithology(
                  "top_depth": item["top"], "bottom_depth": item["bottom"]}
                 for item in (workflow_result.base_result.zone_intervals if zone_table is not None else [])
             ]
+            if zone_table is not None:
+                from petrophys.workflow.dynamic_workflow import _zone_intervals_for_well
+
+                placed = {item["name"] for item in zone_segments}
+                for item in _zone_intervals_for_well(full_well, getattr(well_config, "zones", None) or []):
+                    if item["name"] not in placed:
+                        fallback_warnings.append(
+                            f"Zone {item['name']} ({item['top']:g}-{item['bottom']:g} {full_well.depth_unit}) "
+                            f"lies outside the logged depths ({well_top:g}-{well_bottom:g}); it is not used."
+                        )
             for group in iter_context_groups(
                 workflow_result,
                 zone_segments or formation_segments,

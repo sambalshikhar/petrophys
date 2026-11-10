@@ -640,6 +640,12 @@ class DLISReader:
                     raise ValueError(
                         "step_strategy must be 'finest', 'median', or 'coarsest'"
                     )
+            if top == bottom:
+                raise ValueError(
+                    f"The DLIS frames hold one depth ({top:g} {depth_unit}): a station record "
+                    "indexed by time, such as a formation-pressure pretest, not a depth log. Read "
+                    "pretests with petrophys.interpretation.saturation.height.read_mdt_pretest."
+                )
             if not np.isfinite(step) or float(step) <= 0:
                 raise ValueError("DLIS merge step must be a positive finite value")
             estimated_samples = int(np.floor((bottom - top) / float(step))) + 1

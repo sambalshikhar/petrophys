@@ -106,8 +106,8 @@ with tempfile.TemporaryDirectory() as folder:
         logs, package,
         layout="package",
         formations=pp.sample("formations_costa"),
-        workflow_config=pp.DynamicWorkflowConfig(lithology_domain="carbonate",
-                                                 carbonate_calibration="costa"),
+        lithology_domain="carbonate",          # settings as for pp.interpret
+        carbonate_calibration="costa",
     )
     files = sorted(path for path in (package / "porosity").rglob("*.json"))
     print(f"{len(records)} files in", sorted(path.name for path in package.iterdir() if path.is_dir()))
@@ -207,8 +207,8 @@ default; `reader_options={"depth_column": "MD"}` names another). They record
 no depth unit, so give it: `pattern="*.csv", reader_options={"depth_unit": "m"}`
 (CLI: `--pattern "*.csv" --depth-unit m`). They record no curve units or
 header parameters either: give the curves in the library's standard units and
-pass values such as `rw`, `rw_meas_temp_f` and `bht_f` in `workflow_config`,
-which LAS files would carry in their headers. The published-package profiles
+pass values such as `rw`, `rw_meas_temp_f` and `bht_f` as settings, which LAS
+files would carry in their headers. The published-package profiles
 read LAS only.
 
 ## Class labels
@@ -289,7 +289,7 @@ The standardized readers accept CSV, TSV, Excel and DataFrames; {doc}`input_temp
 | No lithology | embedded evidence or the mineral solver supplies it |
 | No core curves in LAS | core calibration is skipped and recorded in the trace |
 | Thin groups | groups thinner than `minimum_group_thickness` (default 2.0, in each LAS's own depth unit, which each file gives as `formation_info.depth_unit`) are not written |
-| Carbonate wells | set `lithology_domain` to `carbonate` in LAS metadata, `workflow_config`, or the CLI flag; for COSTA field wells, also `carbonate_calibration="costa"` in `workflow_config` |
+| Carbonate wells | set `lithology_domain` to `carbonate` in LAS metadata, as a setting, or with the CLI flag; for COSTA field wells, also the setting `carbonate_calibration="costa"` |
 
 ## Schema and size contracts
 

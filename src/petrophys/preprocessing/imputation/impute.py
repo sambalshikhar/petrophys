@@ -148,7 +148,7 @@ def impute(
     curve : str
         The curve to reconstruct, by its mnemonic or standard name
         (``"RHOB"``, ``"DT"``, ``"NPHI"`` ...).
-    train_wells : sequence of Well, DynamicWorkflowResult or path, optional
+    train_wells : Well, DynamicWorkflowResult or path, or a sequence of them, optional
         Other wells to learn from, typically from the same field. Needed when
         the well lacks the curve altogether, and useful when its measured
         part is short.
@@ -204,6 +204,8 @@ def impute(
         _store_result(well, target_mnemonic or str(curve).strip().upper(), recorded, unit, output)
         return returned if returned is not None else well
 
+    if isinstance(train_wells, (str, Path)) or hasattr(train_wells, "n_samples") or hasattr(train_wells, "well"):
+        train_wells = [train_wells]  # one well, file or result
     others = [_as_well(source) for source in (train_wells or [])]
     if target_mnemonic is None and not any(_find_curve(other, target) is not None for other in others):
         raise ValueError(

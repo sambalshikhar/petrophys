@@ -124,6 +124,14 @@ def read(
     path = Path(path)
     extension = path.suffix.lower()
     if extension not in _WELL_FORMATS:
+        if not extension and not path.exists():
+            from petrophys.datasets import list_samples
+
+            if path.name.lower() in {name.lower() for name in list_samples()}:
+                raise ValueError(
+                    f"{path.name!r} is a bundled sample, not a file path; read it with "
+                    f"petrophys.read(petrophys.sample({path.name!r}))."
+                )
         supported = ", ".join(sorted(_WELL_FORMATS.values()))
         raise ValueError(
             f"Unsupported well format {extension or path.name!r}; use {supported}."
@@ -139,8 +147,8 @@ def read(
     else:
         if reader_options.get("depth_unit") is None:
             raise ValueError(
-                f"{_WELL_FORMATS[extension]} logs do not record their depth unit; "
-                "pass depth_unit='m' or depth_unit='ft'."
+                f"{_WELL_FORMATS[extension]} logs do not record their depth unit; read the file "
+                "with petrophys.read(path, depth_unit='m') or depth_unit='ft'."
             )
         reader_options["depth_unit"] = normalize_depth_unit(reader_options["depth_unit"])
         if extension == ".tsv":
@@ -221,11 +229,11 @@ def plot(
     top, bottom : float, optional
         Top and bottom depth of the plot window, in the well's depth unit.
         Default to the top and bottom of the logged interval.
-    curves : sequence of str, optional
+    curves : str or sequence of str, optional
         Draw only these curves (the well's own names), each in its track;
         curves no track takes get generic tracks. Tracks left empty are not
         drawn.
-    tracks : sequence of str, optional
+    tracks : str or sequence of str, optional
         Track names to show, in order (e.g. ``["GAMMA / HOLE", "RESISTIVITY"]``;
         ``viewer.template.tracks`` lists a template's track names).
         Defaults to every track the template can fill.
@@ -280,6 +288,15 @@ def plot(
 
     if isinstance(well, (str, Path)):
         well = read(well)
+    # One track or curve may be given by its name alone.
+    tracks = [tracks] if isinstance(tracks, str) else tracks
+    curves = [curves] if isinstance(curves, str) else curves
+    from petrophys.model.well import Well
+
+    if not isinstance(getattr(well, "well", well), Well):
+        raise TypeError(
+            f"plot() takes a Well, an interpretation result or a well file path; got {type(well).__name__}."
+        )
     depth_range: Optional[Tuple[float, float]] = None
     if bottom is not None:
         if top is None:
@@ -340,7 +357,7 @@ def plot(
 
 def interpret(
     well: Union["Well", PathLike],
-    config: Optional["DynamicWorkflowConfig"] = None,
+    config: Union["DynamicWorkflowConfig", Mapping[str, Any], None] = None,
     *,
     formations: Optional[Any] = None,
     lithology: Optional[Any] = None,
@@ -368,8 +385,9 @@ def interpret(
     ----------
     well : Well or str or Path
         Well to interpret, or a well file to read with :func:`read`.
-    config : DynamicWorkflowConfig, optional
-        Complete workflow settings. When omitted, settings come from
+    config : DynamicWorkflowConfig or dict, optional
+        Complete workflow settings, or a dict of settings (the same as
+        keywords). When omitted, settings come from
         ``options`` and the :class:`~petrophys.workflow.DynamicWorkflowConfig`
         defaults. Recognized LAS header parameters fill otherwise unspecified
         settings; explicit Python options take precedence.
@@ -436,6 +454,17 @@ def interpret(
     """
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, run_dynamic_workflow
 
+    if isinstance(config, Mapping):
+        # Settings as a dict: the same as keywords.
+        repeated = sorted(set(config) & set(options))
+        if repeated:
+            raise TypeError(f"{', '.join(repeated)} given in config and as a keyword")
+        options = {**config, **options}
+        config = None
+    elif config is not None and not isinstance(config, DynamicWorkflowConfig):
+        raise TypeError(
+            f"config is a DynamicWorkflowConfig or a dict of settings; got {type(config).__name__}"
+        )
     if context_profile is not None:
         tops_file = formations
         if lithology is not None or output is not None:

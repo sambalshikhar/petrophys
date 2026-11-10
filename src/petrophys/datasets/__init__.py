@@ -115,7 +115,12 @@ def list_samples(kind: Optional[str] = None) -> List[str]:
         A kind of data (``"logs"``, ``"nmr"``, ``"pressure"``, ``"core"``,
         ``"geology"`` or ``"templates"``; see :func:`sample_kind`) or a
         dataset folder such as ``"costa"`` or ``"geolink"``. Optional
-        repository fixtures are never included.
+        repository fixtures are never included. Case does not matter.
+
+    Raises
+    ------
+    ValueError
+        If ``kind`` is neither a kind of data nor a dataset folder.
 
     Examples
     --------
@@ -124,19 +129,27 @@ def list_samples(kind: Optional[str] = None) -> List[str]:
     ['1046123714', '15_9-14', '16_7-1']
     """
     fixture_paths = set(_fixture_paths())
-    names = []
-    for path in _data_files(DATA_DIR, _SAMPLE_EXTS):
-        if path in fixture_paths:
-            continue
-        if kind is None or path.parent.name == kind or (kind in SAMPLE_KINDS and sample_kind(path.stem) == kind):
-            names.append(path.stem)
-    return sorted(names)
+    paths = [path for path in _data_files(DATA_DIR, _SAMPLE_EXTS) if path not in fixture_paths]
+    if kind is None:
+        return sorted(path.stem for path in paths)
+    wanted = str(kind).strip().lower()
+    folders = sorted({path.parent.name for path in paths if path.parent != DATA_DIR})
+    if wanted not in SAMPLE_KINDS and wanted not in {folder.lower() for folder in folders}:
+        raise ValueError(
+            f"Unknown sample kind {kind!r}; use one of {', '.join(SAMPLE_KINDS)} "
+            f"or a dataset folder: {', '.join(folders)}"
+        )
+    return sorted(
+        path.stem for path in paths
+        if path.parent.name.lower() == wanted or (wanted in SAMPLE_KINDS and sample_kind(path.stem) == wanted)
+    )
 
 
 def sample(name: str) -> Path:
     """Return the filesystem path to a bundled sample.
 
-    ``name`` may include its ``.las``, ``.dlis``, ``.csv`` or ``.xlsx`` extension. Pass
+    ``name`` may include its ``.las``, ``.dlis``, ``.csv`` or ``.xlsx`` extension,
+    and a well name may be written with ``/`` (``"30/6-5"``). Pass
     spreadsheet paths to an appropriate table reader such as pandas.read_excel.
     Repository-only
     fixtures are deliberately excluded; use :func:`integration_fixture` for
@@ -149,10 +162,15 @@ def sample(name: str) -> Path:
     for path in _data_files(DATA_DIR, _SAMPLE_EXTS):
         if path in fixture_paths:
             continue
-        if path.stem.lower() == key.lower():
+        if path.stem.lower() in {key.lower(), key.lower().replace("/", "_")}:
             return Path(path)
+    import difflib
+
+    close = difflib.get_close_matches(key.replace("/", "_"), list_samples(), n=3)
     raise FileNotFoundError(
-        f"No bundled sample named {name!r}. Available: {', '.join(list_samples())}"
+        f"No bundled sample named {name!r}"
+        + (f" (did you mean {', '.join(repr(item) for item in close)}?)" if close else "")
+        + ". petrophys.list_samples() lists them."
     )
 
 
