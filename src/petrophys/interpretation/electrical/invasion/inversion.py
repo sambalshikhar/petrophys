@@ -181,8 +181,7 @@ def invert_step_profile(
         misfit is within it are equally valid; their span is reported as
         ``rt_low``-``rt_high`` and ``di_low``-``di_high``.
         When ``noise`` is the standard error of the readings the range is
-        roughly a one-standard-deviation interval (tested: the true Rt fell
-        inside it for about 80 % of noisy synthetic profiles).
+        roughly a one-standard-deviation interval.
 
     Returns
     -------

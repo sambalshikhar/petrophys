@@ -158,7 +158,7 @@ class RwModule:
         temperature : float or np.ndarray, optional
             Formation temperature, degF. Defaults to the TEMP (or TMPC)
             curve, converted from its unit label, then to a profile from the
-            header BHT.
+            header BHT, or without a BHT the default 30 degC/km gradient.
 
         Returns
         -------
@@ -352,7 +352,7 @@ def calculate_rw(
 
     Examples
     --------
-    >>> rw = calculate_rw(salinity=50000, temperature=150)
+    >>> rw = calculate_rw(method="salinity", salinity=50000, temperature=150)
     """
     if method == "salinity" and salinity is not None:
         return rw_from_salinity(salinity, 150.0 if temperature is None else temperature)

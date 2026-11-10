@@ -49,7 +49,11 @@ def read(
     """Read a well from LAS, DLIS, CSV, or TSV and optionally attach geology.
 
     Reading never calculates interpretation curves; use :func:`interpret` for
-    that. Curves keep the names and units found in the file.
+    that. Curves of LAS, CSV and TSV files keep the names and units found in
+    the file. A DLIS file is read as :func:`petrophys.io.read_dlis` reads it:
+    without ``frame_name``, its frames are merged onto one depth index in
+    metres and curve names and units are standardized (``standardize=False``
+    keeps them).
 
     Parameters
     ----------
@@ -230,7 +234,8 @@ def plot(
         Top and bottom depth of the plot window, in the well's depth unit.
         Default to the top and bottom of the logged interval.
     curves : str or sequence of str, optional
-        Draw only these curves (the well's own names), each in its track;
+        Draw only these curves (the well's own names or standard names such
+        as ``"GR"``), each in its track;
         curves no track takes get generic tracks. Tracks left empty are not
         drawn.
     tracks : str or sequence of str, optional
@@ -258,7 +263,9 @@ def plot(
         Figure size in inches.
     strict : bool, default False
         If True, curves required by a fixed template must exist; otherwise
-        missing tracks are skipped and listed in ``viewer.omitted_tracks``.
+        missing curves are skipped and listed in ``viewer.warnings`` (the
+        ``"auto"`` template also lists tracks it left out in
+        ``viewer.omitted_tracks``).
     curve_aliases : mapping, path or DataFrame, optional
         Your names for standard curves (``{"GAMMA_RAY_1": "GR"}`` or a
         CSV/Excel table), so they fill the right tracks; as for :func:`read`.

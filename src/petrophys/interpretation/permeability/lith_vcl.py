@@ -7,32 +7,77 @@ DEFAULT_MAX_PERM_MD = 10000.0
 
 
 def _parameters_for_lithology(lithology: Any) -> tuple[float, float, str]:
-    """Return slope/intercept for the Dunite-style lithology code."""
+    """Return slope, intercept and group for a lithology code or rock name.
+
+    Numeric codes are read with the GeoLink (Kingdom) lithology code table
+    that the sample wells' ``LITHOLOGY_GEOLINK`` curve uses, as the mineral
+    solver's matrix inference reads them: chalk, limestones, marlstone,
+    biogenic ooze and calcareous debris flow take the limestone transform,
+    15 dolomite, 16 calcareous cement the calcareous-sand one, 18 coal, the
+    evaporites (halite, anhydrite, sylvinite, polyhalite, carnallite, kainite)
+    the anhydrite one, and every other code the sandstone one. Rock names are
+    matched by their words. Unknown lithology takes the sandstone transform.
+    """
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    benchmark = reproducing_benchmark()
     try:
         lith_code = float(lithology)
-        if 11.0 <= lith_code <= 15.0:
-            return 20.0, -3.0, "limestone"
-        if lith_code == 17.0:
-            return 18.0, -4.0, "dolomite"
-        if lith_code == 24.0:
-            return 1.0, -2.0, "anhydrite"
-        if lith_code == 20.0:
-            return 1.0, -4.0, "coal"
-        if lith_code == 16.0:
-            return 28.0, -2.0, "calcareous_sand"
-        return 28.0, -2.0, "sandstone"
     except (TypeError, ValueError):
         text = str(lithology or "").strip().lower().replace("-", "_").replace(" ", "_")
+    else:
+        return _benchmark_parameters(lith_code) if benchmark else _code_parameters(lith_code)
 
-    if "lime" in text or text in {"carbonate", "sandy_limestone"}:
+    if "lime" in text or text in {"carbonate", "sandy_limestone"} or (
+        not benchmark and ("chalk" in text or "marl" in text)
+    ):
         return 20.0, -3.0, "limestone"
     if "dolo" in text:
         return 18.0, -4.0, "dolomite"
-    if "anhy" in text:
+    if "anhy" in text or (not benchmark and text in _EVAPORITE_NAMES):
         return 1.0, -2.0, "anhydrite"
     if "coal" in text:
         return 1.0, -4.0, "coal"
     if "calcareous" in text and "sand" in text:
+        return 28.0, -2.0, "calcareous_sand"
+    return 28.0, -2.0, "sandstone"
+
+
+_EVAPORITE_NAMES = {"halite", "salt", "gypsum", "sylvinite", "polyhalite", "carnallite", "kainite", "evaporite"}
+
+
+def _code_parameters(lith_code: float) -> tuple[float, float, str]:
+    """The transform of a GeoLink (Kingdom) lithology code."""
+    from petrophys.interpretation.lithology.matrix_inference import LITHOLOGY_CODE_CLASS
+
+    if not np.isfinite(lith_code) or lith_code != int(lith_code):
+        return 28.0, -2.0, "sandstone"
+    code = int(lith_code)
+    if code == 15:
+        return 18.0, -4.0, "dolomite"
+    if code == 16:
+        return 28.0, -2.0, "calcareous_sand"
+    if code == 18:
+        return 1.0, -4.0, "coal"
+    family = LITHOLOGY_CODE_CLASS.get(code)
+    if family == "carbonate":
+        return 20.0, -3.0, "limestone"
+    if family == "evaporite":
+        return 1.0, -2.0, "anhydrite"
+    return 28.0, -2.0, "sandstone"
+
+
+def _benchmark_parameters(lith_code: float) -> tuple[float, float, str]:
+    """The code groups the benchmark packages were computed with."""
+    if 11.0 <= lith_code <= 15.0:
+        return 20.0, -3.0, "limestone"
+    if lith_code == 17.0:
+        return 18.0, -4.0, "dolomite"
+    if lith_code == 24.0:
+        return 1.0, -2.0, "anhydrite"
+    if lith_code == 20.0:
+        return 1.0, -4.0, "coal"
+    if lith_code == 16.0:
         return 28.0, -2.0, "calcareous_sand"
     return 28.0, -2.0, "sandstone"
 

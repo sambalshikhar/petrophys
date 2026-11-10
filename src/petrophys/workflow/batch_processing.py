@@ -28,7 +28,8 @@ _LEGACY_STEP_FLAGS = {
 
 
 def _dynamic_config_from_batch_config(config: Dict[str, Any]):
-    """Translate legacy batch options into ``DynamicWorkflowConfig`` fields."""
+    """Translate batch options (``WorkflowConfig`` names such as ``saturation_model``
+    and ``calculate_*`` flags) into ``DynamicWorkflowConfig`` fields."""
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
 
     values = dict(config)

@@ -3,7 +3,7 @@ SP-based clay volume calculation.
 
 This module provides clay volume calculation from spontaneous potential.
 
-Note: SP should be discarded if clay or KCl is used in the drilling mud.
+Note: oil-based mud gives no SP, and KCl mud makes it unreliable.
 
 References
 ----------
@@ -57,7 +57,8 @@ def vcl_from_sp(
 
     Examples
     --------
-    >>> vcl_sp = vcl_from_sp(sp_data, sp_max=-80, sp_min=-10)
+    >>> vcl_from_sp(np.array([-73.0, -45.0, -10.0]), sp_max=-80, sp_min=-10)
+    array([0.1, 0.5, 1. ])
     """
     if sp_max == sp_min:
         if reproducing_benchmark():

@@ -59,8 +59,9 @@ def hydrostatic_pressure(
 ) -> np.ndarray:
     """Hydrostatic pore pressure of a water column from sea level (``air_gap`` below the rig floor).
 
-    ``water_density`` is the formation-water density in g/cc (1.03-1.07 for
-    sea water and typical brines).
+    Onshore, with ``air_gap`` the depth reference's height above ground, the
+    column starts at ground level. ``water_density`` is the formation-water
+    density in g/cc (about 1.03 for sea water, more for saline brines).
     """
     z = np.asarray(tvd, dtype=float) - air_gap
     return np.where(z > 0, water_density * _gradient(depth_unit, pressure_unit) * z, 0.0)

@@ -12,10 +12,10 @@ if TYPE_CHECKING:
     from petrophys.model.well import Well
 
 
-# Curves affected by bad hole conditions (shallow measurements)
+# Curves affected by bad hole conditions (pad and shallow measurements)
 SHALLOW_CURVES = ["RHOB", "PEF", "NPHI", "DRHO", "CALI"]
 
-# Deep measurements (less affected by bad hole)
+# Curves less affected by bad hole than the pad tools (not masked by default)
 DEEP_CURVES = ["RDEP", "RMED", "GR", "DTC", "DTS"]
 
 

@@ -224,7 +224,7 @@ result = pp.interpret("PATH/danish/las/ida-1.las", context_profile="danish",
 
 The well must belong to the profile's package, and the profile fixes the
 settings. `result.preparatory_steps` and `result.post_workflow_steps` record
-the steps around the workflow; both appear in `result.to_trace_dict()`.
+the steps around the workflow; both appear as steps in `result.to_trace_dict()`.
 
 Each context group also gets its category analyses, computed within the
 group: indicators, gradients, completeness, electrofacies, and MHI, BVW, RQI,
@@ -238,7 +238,7 @@ from petrophys.reporting.context_profiles import context_group_statistics
 
 info = context_file["analysis_results"]["lithology_group_info"]
 stats = context_group_statistics(result, info["start_depth"], info["end_depth"])
-stats["saturation"]["MHI_overall"]   # one dict per category file
+stats["saturation"]["SW_overall"]    # one dict per category file
 ```
 
 `context_group_record` returns a group's six context documents in full, as

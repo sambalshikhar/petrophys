@@ -65,6 +65,7 @@ def archie(
     --------
     >>> sw = archie(rt=10, rw=0.05, phi=0.20)
     >>> print(f"Sw = {sw:.2f}")
+    Sw = 0.35
     """
     check_resistivity_parameters(rw=rw)
     rt = np.asarray(rt, dtype=float)

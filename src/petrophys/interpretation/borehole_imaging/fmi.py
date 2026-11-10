@@ -209,7 +209,9 @@ def orient_to_azimuth(
     Map FMI pad/flap arrays onto a regular 0-360 degree azimuth grid.
 
     ``reference="north"`` uses ``P1AZ``. ``reference="highside"`` uses ``RB``.
-    Unimaged wedges between pads are left as NaN, preserving real wall coverage.
+    Unimaged wedges between pads are left as NaN. Each pad/flap is placed
+    across ``pad_arc_fraction`` of its 45 degree sector (default 0.70), so
+    the imaged share of the wall follows that setting, not the caliper.
     When ``interpolate_within_pads`` is true, each pad/flap's button values are
     linearly resampled across that pad arc to avoid artificial white gaps caused
     by placing 24 buttons directly onto a finer azimuth grid.

@@ -251,15 +251,15 @@ def export_context(
     ``context_profile`` computes a published package from its delivery's raw
     LAS files with the package's own pipeline and calculations
     (:mod:`petrophys.reporting.context_profiles`): ``"geolink"`` (``data``:
-    the raw ``eval`` folder; also ``tops_file``, the NPD picks workbook, and
-    ``lithology_mapping_file``, the GeoLink lithology codebook),
+    the raw ``eval`` folder; also ``formations``, the NPD picks workbook, and
+    ``lithology_codes``, the GeoLink lithology codebook),
     ``"geolink_train"`` (the ``LAS_with_petrophys_params`` raw LAS; also the
     NPD picks workbook and the GeoLink codebook), ``"danish"``
     (the Danish raw LAS; also its tops workbook and the codebook) or
     ``"costa"`` (the COSTA LAS, or None for the copies bundled with
     petrophys). A profile fixes the package's settings, so ``workflow_config``
     and the other interpretation options are rejected; only ``well_names``,
-    ``pattern``, ``tops_file`` and ``lithology_mapping_file`` apply. Context
+    ``pattern``, ``formations`` and ``lithology_codes`` apply. Context
     profiles apply only to the package layout, and only the context JSON is
     written to ``output_path``.
     """

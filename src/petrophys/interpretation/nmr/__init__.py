@@ -9,13 +9,16 @@ Typical workflow::
 
     from petrophys.interpretation.nmr import NMRData
 
-    nmr = NMRData.from_las(petrophys.sample("daydream1_cmr"),
-                       mphi_mnemonic="TCMR", mffi_mnemonic="CMFF")
+    nmr = NMRData.from_csv(petrophys.sample("phillips_nmr_bins"))  # P1-P8 bins
     t2lm  = nmr.t2_lm()
     k_sdr = nmr.permeability_sdr()       # SDR model
     k_tc  = nmr.permeability_coates()    # Timur-Coates model
-    r_pore = nmr.pore_size()             # modal pore radius (µm)
+    r_pore = nmr.pore_size()             # pore-body radius from T2lm (µm)
     df = nmr.to_dataframe()              # export all results
+
+T2lm, SDR and pore size need T2 bins or a T2LM curve. A scalar CMR summary
+such as ``NMRData.from_cmr_las(petrophys.sample("daydream1_cmr"))`` has
+neither; it supports Timur-Coates from its free and bound fluid volumes.
 
 Default T2 bin centres: [4, 8, 16, 32, 64, 128, 256, 512] ms.
 Default T2 cutoff: 33 ms (clastics).  Use T2_CUTOFF_CARBONATE = 92 ms

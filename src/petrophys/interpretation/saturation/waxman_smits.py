@@ -13,8 +13,8 @@ oil-bearing shaly sands. *SPE Journal* 8(2), 107-122.
 
 Waxman, M.H. and Thomas, E.C. (1974). Electrical conductivities in shaly
 sands - I. The relation between hydrocarbon saturation and resistivity
-index; II. The temperature coefficient of electrical conductivity. *SPE
-Journal* 14(2).
+index; II. The temperature coefficient of electrical conductivity.
+*Journal of Petroleum Technology* 26(2), 213-225.
 """
 
 from typing import Union
@@ -102,7 +102,8 @@ def waxman_smits(
         Sw_{k+1} = [F* * Ct / (Cw + B * Qv / Sw_k)]^(1/n)
 
     starting from the first-order seed Sw_0 = [F* * Ct / (Cw + B*Qv)]^(1/n).
-    Convergence is typically reached in 3-5 iterations.
+    Iteration stops when Sw changes by less than ``tol``, or after
+    ``max_iter`` iterations.
 
     Note: the first-order approximation (setting Sw=1 in the clay term)
     under-estimates the clay conductivity (B*Qv instead of B*Qv/Sw), so it
@@ -138,7 +139,7 @@ def waxman_smits(
     n : float
         Saturation exponent (default: 2.0)
     max_iter : int
-        Maximum iterations (default: 10; typically 3-5 suffice)
+        Maximum iterations (default: 10)
     tol : float
         Convergence tolerance on Sw (default: 1e-6)
 

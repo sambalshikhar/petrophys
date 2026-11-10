@@ -25,7 +25,8 @@ class IntervalSummary:
     interval : Interval
         The analyzed interval
     zone_summary : ZoneSummary
-        Net pay / NTG / pay-averaged properties (from summation module)
+        Net pay / NTG / pay-averaged properties (from
+        :func:`~petrophys.evaluation.summaries.calculate_zone_summary`)
     avg_gr : float
         Mean GR over entire interval
     avg_rhob : float
@@ -62,8 +63,8 @@ class IntervalAnalyzer:
     """
     Compute petrophysical summaries for depth intervals.
 
-    Delegates net-pay math to ``calculate_zone_summary`` from the
-    summation module and adds whole-interval curve averages,
+    Delegates net-pay math to ``calculate_zone_summary`` from
+    :mod:`petrophys.evaluation.summaries` and adds whole-interval curve averages,
     dominant lithology, and data coverage.
 
     Parameters

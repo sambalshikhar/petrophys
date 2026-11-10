@@ -196,7 +196,9 @@ def calculate_weighted_averages(
     net_pay_curve: Optional[str] = "NET_PAY"
 ) -> Dict[str, float]:
     """
-    Calculate porosity-weighted or thickness-weighted averages.
+    Calculate averages weighted by a curve (e.g. porosity-weighted).
+
+    Each sample is weighted by ``weight_curve`` alone, not by its thickness.
 
     Parameters
     ----------

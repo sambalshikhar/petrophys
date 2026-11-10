@@ -144,8 +144,8 @@ def load_formations_csv(
     """Load bounded formations using the shared validated importer.
 
     Top-only inputs require terminal_depth; CSV/Excel/DataFrame options are
-    forwarded to read_formations. Existing simple/NPD/Danish format names remain
-    supported. rank selects one stratigraphic level when explicitly supplied.
+    forwarded to read_formations. The simple/NPD/Danish format names are
+    accepted. rank selects one stratigraphic level when explicitly supplied.
     """
     from petrophys.model.formation_tops import FormationTops
 

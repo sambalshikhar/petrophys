@@ -157,7 +157,8 @@ def pef_crossplot_data(
     if minerals is None:
         minerals = ["quartz", "calcite", "dolomite"]
 
-    # Calculate U (volumetric photoelectric absorption)
+    # U (volumetric photoelectric absorption) as PEF x RHOB, the solvers'
+    # convention; chartbook U uses the electron density instead.
     u = pef * rhob
 
     endpoints = {}

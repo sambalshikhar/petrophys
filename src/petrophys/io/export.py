@@ -178,7 +178,9 @@ def export_las(
         LAS version (1.2 or 2.0, default: 2.0). Another version raises
         ValueError before the file is opened.
     wrap : bool, optional
-        Whether to wrap long lines (default: False)
+        Write the ~A section wrapped (``WRAP. YES``): each depth on its own
+        line and the values after it on lines of at most 80 characters
+        (default: False, one line per depth).
     curves : list of str, optional
         Specific curves to export (default: all)
     extra_parameters : list of dict, optional
@@ -266,7 +268,7 @@ def export_las(
     las.version.WRAP = lasio.HeaderItem(
         mnemonic="WRAP",
         value="YES" if wrap else "NO",
-        descr="ONE LINE PER DEPTH STEP"
+        descr="MULTIPLE LINES PER DEPTH STEP" if wrap else "ONE LINE PER DEPTH STEP"
     )
 
     # Set well header
@@ -477,8 +479,36 @@ def export_las(
     # leaves an existing file as it was.
     buffer = io.StringIO()
     las.write(buffer, version=version, **kwargs)
+    text = buffer.getvalue()
+    if wrap:
+        text = _wrapped_data(text)
     with open(filepath, "w", encoding=encoding) as handle:
-        handle.write(buffer.getvalue())
+        handle.write(text)
+
+
+def _wrapped_data(text: str, width: int = 80) -> str:
+    """``text`` with its ~A rows wrapped as LAS 2.0 requires for ``WRAP. YES``.
+
+    The depth stands alone on its line; the other values follow on lines of
+    at most ``width`` characters.
+    """
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.lstrip().upper().startswith("~A"))
+    wrapped = lines[:start + 1]
+    for row in lines[start + 1:]:
+        values = row.split()
+        if not values:
+            continue
+        wrapped.append(f" {values[0]}")
+        line = ""
+        for value in values[1:]:
+            if line and len(line) + 1 + len(value) > width:
+                wrapped.append(line)
+                line = ""
+            line = f"{line} {value}" if line else f" {value}"
+        if line:
+            wrapped.append(line)
+    return "\n".join(wrapped) + "\n"
 
 
 def export_csv(

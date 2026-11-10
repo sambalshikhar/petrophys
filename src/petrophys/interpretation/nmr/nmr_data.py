@@ -7,9 +7,10 @@ Bulk Volume Irreducible (MBVI), as produced by Halliburton MRIL-Prime
 and similar tools.
 
 T2 bin centres default to [4, 8, 16, 32, 64, 128, 256, 512] ms with
-a default T2 cutoff of 33 ms (clastic); the bins below the cutoff sum to
-MBVI and those above it to MFFI, and the bin that straddles the cutoff is
-split by log-T2 width.
+a default T2 cutoff of 33 ms (clastic). Bound and free fluid computed from
+the bins sum the bins below and above the cutoff, splitting the bin that
+straddles it by log-T2 width; MBVI and MFFI curves loaded from a file are
+used as delivered.
 
 References
 ----------
@@ -150,6 +151,7 @@ class NMRData:
 
     Examples
     --------
+    >>> import petrophys
     >>> nmr = NMRData.from_las(petrophys.sample("daydream1_cmr"),
     ...                        mphi_mnemonic="TCMR", mffi_mnemonic="CMFF")
     >>> k_tc  = nmr.permeability_coates()
@@ -768,8 +770,8 @@ class NMRData:
         Parameters
         ----------
         c : float, optional
-            Empirical constant (default 4.0 — Kenyon 1992).
-            Ignored when ``calibration`` is supplied.
+            Empirical constant in mD/ms² (default 4.0, the value commonly
+            used for sandstones). Ignored when ``calibration`` is supplied.
         calibration : NMRCalibration, optional
             Result of ``calibrate_sdr()``.  When provided, the fitted
             constant overrides ``c``.
@@ -870,8 +872,8 @@ class NMRData:
         Calibrate the SDR constant ``c`` against core permeability.
 
         Finds ``c`` that minimises the mean squared error between
-        log10(k_SDR) and log10(k_core).  Exponents a=4 and b=2 are
-        kept at their physically-derived values.
+        log10(k_SDR) and log10(k_core).  The empirical porosity and T2lm
+        exponents stay at 4 and 2.
 
         Parameters
         ----------
@@ -925,7 +927,7 @@ class NMRData:
         geometry: str = "sphere",
     ) -> np.ndarray:
         """
-        Estimate modal pore body radius from T2lm.
+        Estimate a characteristic pore body radius from T2lm.
 
         .. math::
             r = F \\cdot \\rho_2 \\cdot T2_{lm}

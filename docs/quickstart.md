@@ -73,8 +73,8 @@ for message in result.warnings:
 These warnings are real: this LAS labels its core saturations `SWC` and `SOC`
 as fractions, but they hold percentages. Petrophys divides them by 100 for its
 core calibration and says so each time it reads them, so each message appears
-twice. They are Python warnings, not entries of `result.warnings`, which is
-empty for this run. The rest of this page hides only these warnings; see
+twice. They are Python warnings, not entries of `result.warnings`, which
+holds only the lithology message printed above. The rest of this page hides only these warnings; see
 {ref}`core-saturation-units`.
 :::
 

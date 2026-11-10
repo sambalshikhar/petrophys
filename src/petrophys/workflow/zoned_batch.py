@@ -1046,7 +1046,8 @@ def run_dynamic_workflow_with_zones(
 
     Whole-well header parameters (e.g. ``RW``, ``BHT``, ``RHO_FL``) override
     settings left at their defaults; a value set explicitly in the config wins
-    and the conflict is noted in ``warnings``. Zones from
+    and the conflict is noted in ``base_result.warnings`` (under the
+    "geolink" profile, in ``warnings``). Zones from
     :func:`extract_zoned_parameters` are then re-run with their own settings
     and merged over their depth ranges.
 

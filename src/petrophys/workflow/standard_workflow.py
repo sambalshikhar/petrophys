@@ -59,7 +59,7 @@ class WorkflowConfig:
     rmf_meas_temp_f: float = 75.0
 
     # Formation water
-    rw: Optional[float] = None  # If None, calculate from SP
+    rw: Optional[float] = None  # None: LAS header RW, salinity_ppm, the SP, else 0.05 ohm.m
     salinity_ppm: Optional[float] = None
 
     # Matrix properties
@@ -189,7 +189,7 @@ class WorkflowResult:
 
 class StandardWorkflow:
     """
-    Legacy fixed-configuration petrophysics interpretation workflow.
+    Fixed-configuration petrophysics interpretation workflow.
 
     .. deprecated:: 0.1.0
        Use :class:`petrophys.workflow.DynamicWorkflow`, which checks available

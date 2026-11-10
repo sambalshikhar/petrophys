@@ -55,7 +55,7 @@ class NMRCalibration:
     --------
     >>> cal = nmr.calibrate_sdr(core_depth, core_perm)
     >>> print(cal)
-    NMRCalibration(model=sdr, n=15, c=6.21, R²_log=0.87, RMSE_log=0.31 dec)
+    NMRCalibration(model=sdr, n=15, c=6.21, R²_log=0.870, RMSE_log=0.310 dec)
     >>> k = nmr.permeability_sdr(calibration=cal)
     """
 

@@ -146,6 +146,12 @@ COMPUTED_LITHO_GROUPS = {
 }
 
 
+
+def _whole_codes(values) -> np.ndarray:
+    """Codes rounded to integers; missing samples (NaN) become -1, which no group uses."""
+    values = np.asarray(values, dtype=float)
+    return np.where(np.isfinite(values), np.rint(np.where(np.isfinite(values), values, 0.0)), -1).astype(int)
+
 class LithologyAnalysis:
     """Ground-truth and log-based lithology analysis.
 
@@ -206,13 +212,13 @@ class LithologyAnalysis:
 
         gt_groups = np.full(n_samples, "NO_LITHOLOGY_DATA", dtype=object)
         if gt_codes is not None:
-            rounded = np.rint(gt_codes).astype(int)
+            rounded = _whole_codes(gt_codes)
             for group_name, codes in self.ground_truth_groups.items():
                 gt_groups[np.isin(rounded, list(codes))] = group_name
 
         working_groups = gt_groups.copy()
         if computed_litho is not None:
-            rounded = np.rint(computed_litho).astype(int)
+            rounded = _whole_codes(computed_litho)
             missing = gt_groups == "NO_LITHOLOGY_DATA"
             for code, group_name in COMPUTED_LITHO_GROUPS.items():
                 working_groups[missing & (rounded == code)] = group_name

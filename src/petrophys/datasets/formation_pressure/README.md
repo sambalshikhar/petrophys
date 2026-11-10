@@ -54,7 +54,8 @@ file:
 | `319-C0009A_MDT_078LTP.DLIS` | `c0009a_mdt_078.las` | Unstable mud baseline; returned for review without a candidate |
 
 The DLIS files are the originals, unchanged. Each LAS copy holds six channels
-of the DLIS frame `600T`, values unchanged:
+of the DLIS frame `600T`, with time and depth converted to the units below and
+values written to four decimal places:
 
 | Curve | Unit | Description |
 |---|---|---|

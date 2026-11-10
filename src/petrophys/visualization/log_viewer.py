@@ -423,7 +423,7 @@ def _lookup_lithology_style(label: Any, styles: Mapping[str, Any], default: Any 
     return default
 
 
-#: Former name of :data:`LITHOLOGY_CODE_LABELS`, kept for existing code.
+#: Alias of :data:`LITHOLOGY_CODE_LABELS`.
 GEOLINK_LITHOLOGY_CODE_LABELS = LITHOLOGY_CODE_LABELS
 
 #: Environment variable naming a lithology code table (CSV or Excel) that
@@ -1467,7 +1467,8 @@ def create_adaptive_log_viewer_template(
     add_track(
         "DENSITY / NEUTRON",
         [
-            # Compatible sandstone scales: density left of neutron is crossover
+            # Limestone-compatible scales (NPHI in limestone units, 0 v/v at 2.70 g/cc):
+            # density left of neutron is crossover
             # (light hydrocarbon, yellow); neutron left of density is shale separation (grey).
             replace(_adaptive_spec("RHOB", "RHOB", 1.95, 2.95, "#d73027", fill_color="#bdbdbd", fill_alpha=0.35),
                     left_crossover="NPHI" if density_neutron else None),
@@ -1891,6 +1892,10 @@ class LogViewer:
     strict : bool
         If True, missing curves listed by the template raise ``ValueError``.
         If False, they are skipped and recorded in ``warnings``.
+    interpreted : bool
+        True for an interpretation's well: units are converted for display but
+        values are not screened again, so the plot shows what the
+        interpretation used.
     lithology_mapping : mapping, optional
         Mapping from lithology code to label for lithology tracks.
     lithology_mapping_df : DataFrame, optional
@@ -1931,8 +1936,9 @@ class LogViewer:
     ):
         if not HAS_MATPLOTLIB:
             raise ImportError("matplotlib is required for visualization")
-        #: Plotted copy of the input well, with standard units and canonical
-        #: curve aliases (e.g. GR for GR_EDTC); the caller's well is unchanged.
+        #: Plotted copy of the input well in standard units, with the curve
+        #: names kept (GR_EDTC stays GR_EDTC and fills the GR track through the
+        #: alias tables); the caller's well is unchanged.
         #: With ``interpreted`` (an interpretation's well) values are not
         #: screened again, so the plot shows what the interpretation used.
         self.well = _display_well(well, interpreted=interpreted)

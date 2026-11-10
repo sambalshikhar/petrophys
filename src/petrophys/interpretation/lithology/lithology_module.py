@@ -105,8 +105,8 @@ class LithologyModule:
     solver_version : {1, 2}, optional
         Mineral solver version (default: 2). Version 2 is
         :class:`MultiMineralSolver`, which solves porosity jointly with the
-        minerals. Version 1 is :class:`MultiMineralSolverV1`, the original
-        solver that takes PHIE as a fixed input and leaves samples unsolved
+        minerals. Version 1 is :class:`MultiMineralSolverV1`, the solver
+        that takes PHIE as a fixed input and leaves samples unsolved
         when the closure gate fails; the reduced-mineral selection above
         applies to version 2 only.
     solver_options : dict, optional
@@ -123,6 +123,8 @@ class LithologyModule:
 
     Examples
     --------
+    >>> import petrophys as pp
+    >>> well = pp.read(pp.sample("30_6-5"))
     >>> litho = LithologyModule()
     >>> result = litho.calculate(well)
     >>> well["VQUAR"] = result.v_quartz
@@ -247,7 +249,7 @@ class LithologyModule:
     ) -> str:
         """Classify lithology from the solved mineral volumes (single source of truth).
 
-        The solver returns whole-rock matrix fractions (clay- and porosity-free),
+        The solver returns whole-rock (bulk) volumes of the non-clay minerals,
         so lithology is the dominant grain component, with a clay cut for shale and
         a dominance floor that routes ambiguous mixtures to ``mixed``. Coal and
         halite are not in the solver's mineral set, so they keep an unambiguous
@@ -467,8 +469,9 @@ class LithologyModule:
         phie, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
         dtc, _, _ = get_curve_data_depthwise(well, ["DTC", "DT"])
         gr, _, _ = get_curve_data_depthwise(well, ["GR"])
-        # Core (lab) porosity, if present, pins the matrix density and lets the
-        # solver resolve quartz/calcite even without PEF.
+        # Core or core-corrected porosity (PHIE_CC and PHIT_CC first, then
+        # CPOR, CPOR_CC, PHIC), if present, pins the matrix density and lets
+        # the solver resolve quartz/calcite even without PEF.
         core_phi, _, _ = get_curve_data_depthwise(
             well, ["PHIE_CC", "PHIT_CC", "CPOR", "CPOR_CC", "PHIC"]
         )
@@ -702,7 +705,9 @@ def calculate_lithology(
 
     Examples
     --------
+    >>> import petrophys as pp
     >>> from petrophys.interpretation.lithology import calculate_lithology
+    >>> well = pp.read(pp.sample("30_6-5"))
     >>> result = calculate_lithology(well)
     """
     module = LithologyModule(**kwargs)

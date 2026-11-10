@@ -1,8 +1,7 @@
 # Project Scripts
 
 This directory contains maintainer utilities: benchmark context generation,
-tutorial execution and output checks, MCP evaluation and imputation-model
-training. Context from your own wells comes from the
+tutorial execution and output checks, and MCP evaluation. Context from your own wells comes from the
 `petrophys-context` command. Run them from the repository root. Tutorials belong in `examples/`.
 
 ## MCP live evaluation
@@ -16,8 +15,8 @@ tokens, and can target the in-process server, stdio, or a running HTTP server
 
 ## Eval context benchmark
 
-`generate_benchmark_context.py` generates category context for GeoLink, COSTA
-and Danish using each dataset's interpretation parameters, calibration and
+`generate_benchmark_context.py` generates category context for GeoLink, GeoLink
+training, COSTA and Danish using each dataset's interpretation parameters, calibration and
 grouping rules. It accepts one LAS file or a folder, identifies the collection
 by well name, and retains interpreted LAS and workflow traces in
 `OUTPUT/processed_las`.

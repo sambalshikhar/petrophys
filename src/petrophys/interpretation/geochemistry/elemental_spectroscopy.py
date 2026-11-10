@@ -154,6 +154,9 @@ class OxideClosureResult:
     closure: np.ndarray
 
 
+#: Display labels of the fraction ratios, whose names hold three elements.
+_RATIO_LABELS = {"Ca_Ca_Mg": "Ca/(Ca+Mg)", "Al_Al_Si": "Al/(Al+Si)"}
+
 def _description(curve: Any) -> str:
     metadata = getattr(curve, "metadata", None)
     return str(getattr(metadata, "description", "") or "").strip()
@@ -816,7 +819,7 @@ def interpret_elemental_spectroscopy(
                 output_name,
                 values,
                 "ratio",
-                f"Elemental spectroscopy ratio {ratio_name.replace('_', '/')}",
+                f"Elemental spectroscopy ratio {_RATIO_LABELS.get(ratio_name, ratio_name.replace('_', '/'))}",
             )
         for proxy_name, values in elemental.mineral_proxies().items():
             if not np.any(np.isfinite(values)):

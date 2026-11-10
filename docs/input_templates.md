@@ -327,7 +327,7 @@ own pick the log minimum/maximum. Those picks are then bounded:
 `GRclean = min(pick, 20)` and `GRshale = max(pick, 100)`. The bound guards a
 nearly flat GR, a section with no real shale or no real clean rock, where the
 picks would stretch the gamma-ray index across noise (the COSTA files read
-9-20 API at P5/P95). It is not a rule of the method: clean rock that is itself
+5-14 API at P5 and 20-70 API at P95). It is not a rule of the method: clean rock that is itself
 radioactive, such as the feldspathic and lithic Taranaki sands (Cheal-1 reads
 about 86 API in its Mount Messenger sands), is read as clay under it. A clean
 pick above 30 API that the bound lowers raises a warning; set `gr_min` from a
@@ -408,7 +408,7 @@ from them. Common sources map as follows:
 | [Geocap well tops](https://geocap.atlassian.net/wiki/spaces/ug/pages/22479309/Well%2BTops) | Well, marker name and measured depth | Select the well; map the marker and depth columns |
 | [RockWorks lithology](https://help.rockware.com/rockworks17/WebHelp/data_bh_lith.htm) | Top, base and a keyword linked to a dictionary | Lithology intervals plus a codebook |
 | [Energistics WITSML lithology](https://energistics.org/sites/default/files/2023-03/WITSML_Lithology_Object_Usage_Guide_1.1Revisions%20Version%202.pdf) | XML intervals with ranks and percentage mixtures | Not read directly; export categorical intervals |
-| [NOD factpage for 30/6-5](https://factpages.sodir.no/en/wellbore/PageView/Exploration/By/ByCompletionDate/118) | mMD RKB tops with coincident group and formation picks | Keep the hierarchy in a `rank` column |
+| [Sodir factpage for 30/6-5](https://factpages.sodir.no/en/wellbore/PageView/Exploration/By/ByCompletionDate/118) | mMD RKB tops with coincident group and formation picks | Keep the hierarchy in a `rank` column |
 
 ## Go deeper
 

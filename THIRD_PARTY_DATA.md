@@ -40,7 +40,7 @@ commit `b2bf2df1e6a6b24c9187e3a982b975790a49108b`.
 Retained values and null masks match his source files exactly; column selection,
 renaming and header adaptations are documented in the dataset READMEs and
 `datasets/phillips/source_manifest.json`. His repository MIT notice is retained
-alongside the new source copies. Preserve the underlying COSTA attribution too.
+alongside the source copies. Preserve the underlying COSTA attribution too.
 
 ## Craig Phillips reference data
 
@@ -58,8 +58,8 @@ Six data files are copied without content changes from E. Craig Phillips
 - The COSTA workflow repository above: `Costa_core_data.xlsx` and
   `Thomeer_results_final.xlsx`; underlying COSTA attribution remains applicable.
 
-Each source repository publishes an MIT notice. Copies of the original 2020 and
-2022 notices are included as `LICENSE-Craig-2020.txt` and
+Each source repository publishes an MIT notice. Copies of the original notices
+(copyright 2021 and 2022) are included as `LICENSE-Craig-2020.txt` and
 `LICENSE-Craig-2022.txt`, including in Python distributions. Exact source commits,
 paths, hashes and modifications are in `source_manifest.json`.
 Petrophys does not claim authorship of these data or supplier endorsement.
@@ -142,9 +142,9 @@ specifies `license_id: cc-by`, Creative Commons Attribution, and links to
 <http://www.opendefinition.org/licenses/cc-by>. The record does not specify a
 version number; no version is inferred here.
 
-Scalar LAS fixtures are curated selections with converted units and aligned
-depth grids. Native DLIS files retain the acquisition/processed delivery arrays.
-File hashes and curve-selection details are in the collection README. Vendor
+The LAS files are Schlumberger LAS exports and the DLIS files native
+deliveries, under normalized filenames. Original filenames, file hashes and
+curve details are in the collection README. Vendor
 mnemonics identify supplied measurements and products, not Petrophys algorithms.
 
 ## Kansas Geological Survey

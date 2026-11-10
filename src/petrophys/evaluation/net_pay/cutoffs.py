@@ -1,7 +1,7 @@
 """
 Cutoff definitions for net pay determination.
 
-``STANDARD_CUTOFFS`` is the curriculum-wide single source of truth for net-pay
+``STANDARD_CUTOFFS`` is the library-wide single source of truth for net-pay
 cutoffs, keyed by lithology family. Values live in
 :class:`petrophys.model.constants.DefaultParameters`.
 """
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from petrophys.model.constants import DefaultParameters
 
-#: Curriculum-standard net-pay cutoffs by lithology family. Pass a set into a
+#: Standard net-pay cutoffs by lithology family. Pass a set into a
 #: workflow config (``**STANDARD_CUTOFFS["clastic"]``) or leave the config
 #: cutoffs unset to have them resolved from each sample's lithology family
 #: automatically (:func:`cutoff_family`). The "geolink" calculation profile
@@ -80,12 +80,12 @@ class Cutoffs:
 
     @property
     def vcl(self) -> float:
-        """Backward-compatible alias for :attr:`active_vcl`."""
+        """Alias for :attr:`active_vcl`."""
         return self.active_vcl
 
     @property
     def sw(self) -> float:
-        """Backward-compatible alias for :attr:`active_sw`."""
+        """Alias for :attr:`active_sw`."""
         return self.active_sw
 
 

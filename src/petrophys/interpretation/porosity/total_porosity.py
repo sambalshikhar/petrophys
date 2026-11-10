@@ -62,7 +62,10 @@ def total_porosity(
       negative phiN counts as 0 there, so squaring cannot turn it into
       porosity. ``gas_method="density"`` takes PHIT = phiD instead, which
       overstates porosity in gas.
-    - Else: PHIT = 0.6*phiD + 0.4*phiN (density-weighted shale-free average)
+    - Else: PHIT = 0.6*phiD + 0.4*phiN (density-weighted average)
+
+    Where only one of the two has a value, the adaptive method takes it. The
+    adaptive result is limited to 0-0.5; "average" and "rms" are not limited.
 
     Parameters
     ----------
@@ -82,7 +85,8 @@ def total_porosity(
 
     Examples
     --------
-    >>> phit = total_porosity(nphi_data, phid_data)
+    >>> float(total_porosity(0.25, 0.20))
+    0.22
     """
     if method not in ("adaptive", "average", "rms"):
         raise ValueError(f"method must be 'adaptive', 'average' or 'rms'; got {method!r}")

@@ -67,6 +67,8 @@ class PorosityModule:
 
     Examples
     --------
+    >>> import petrophys as pp
+    >>> well = pp.read(pp.sample("30_6-5"))
     >>> poro = PorosityModule(matrix="sandstone")
     >>> result = poro.calculate(well)
     >>> well["PHIE"] = result.phie

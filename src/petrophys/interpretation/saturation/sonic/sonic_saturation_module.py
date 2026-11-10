@@ -11,9 +11,11 @@ Method (clean-room, public-domain rock physics):
   4. Gassmann inverse -> in-situ fluid modulus K_fl.
   5. Sw from Wood mixing of brine and hydrocarbon moduli.
 
-Applicability / limitations (validated, not marketing):
-  * The math is exact -- on noise-free synthetic data with a known frame it
-    recovers Sw to ~+/-0.02 when a measured shear log (DTS) is present.
+Applicability / limitations:
+  * The inversion is exact: noise-free synthetic data with a measured shear
+    log (DTS) and the dry frame that generated them return the input Sw. A
+    frame calibrated from the water zone is a linear K_dry/K_min trend in
+    porosity and carries its own error away from the calibrated porosities.
   * The fluid effect on Vp is small (~2-3 %, ~2-3 us/ft) at typical porosity, so
     in REAL rock the dry-frame (K_dry) uncertainty and sonic noise easily swamp
     the saturation signal -- K_dry is the make-or-break input.
@@ -24,7 +26,7 @@ Applicability / limitations (validated, not marketing):
   * Without DTS, Vs is estimated from Vp (Greenberg-Castagna), which absorbs the
     fluid signal and makes the result only indicative (flagged: vs_estimated).
 
-Detectability gate (how the unreliability is made honest, not hidden):
+Detectability gate:
   Rather than always returning a number, the method computes the brine->HC
   compressional-slowness swing per sample (the total fluid signal available) and
   reports Sw ONLY where that swing exceeds ``detect_factor`` x the sonic noise.

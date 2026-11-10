@@ -276,7 +276,7 @@ sequences and intersects adjacent lines. It returns model scores, assignments,
 suspect flags and conditional sensitivity intervals. A single gradient, weak
 separation, competing models or ambiguous fluid identities do not yield a definite
 FWL. Density bounds and pressure error are configurable interpretation assumptions.
-Do not use an old fluid-dependent selection mask as measurement QC.
+Do not use a selection mask drawn from known fluid intervals as measurement QC.
 
 The bundled station files carry measurements only, without fluid labels. In
 Tutorial 15, 35/11-13 uses the 21 tests with `QC` 0, including the shallow gas
@@ -298,9 +298,9 @@ supplies verified TVD values, `formation_pressures_from_mdt` builds station
 data for `.infer_contacts()`.
 
 For already interpreted fluid labels, `.fit_fwl()`, `fit_pressure_fwl` and
-`create_formation_pressure_plot` remain available. Images and report contacts
+`create_formation_pressure_plot` are available. Images and report contacts
 are not interpretation inputs. Units, a positive-down TVD datum, a consistent
-pressure reference and reservoir selection remain necessary for either mode.
+pressure reference and reservoir selection are necessary for either mode.
 
 Pressure alone does not determine a saturation-height function. Capillary-pressure
 or rock-property calibration and fluid properties are still required.

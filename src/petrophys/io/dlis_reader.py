@@ -782,7 +782,9 @@ def read_dlis(
     logical_file : int, optional
         Index of logical file to read (default: 0)
     depth_unit : str, optional
-        Target depth unit. DLIS ``0.1 in`` depth is converted to metres by default.
+        Target depth unit. By default a merged read is in metres, and a
+        single-frame read converts DLIS ``0.1 in`` depth to metres and keeps
+        other depth units.
     merge_frames : bool, optional
         Merge scalar channels from all selected frames onto one depth index.
         By default, this is enabled when no frame_name is supplied so DLIS behaves
@@ -799,7 +801,7 @@ def read_dlis(
         given ``step``, ``channel_preference`` or another ``step_strategy`` is
         read through the merged path (scalar channels, resampled).
     **kwargs
-        Reserved for future use; unsupported arguments raise TypeError.
+        Other keywords are not accepted and raise TypeError.
 
     Returns
     -------

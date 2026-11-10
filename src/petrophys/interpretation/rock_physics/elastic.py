@@ -58,10 +58,11 @@ def calculate_elastic_properties(
     properties.
 
     DTC outside 20-300 us/ft and DTS outside 20-600 us/ft are treated as
-    invalid (NaN velocity).  Where Vp/Vs < sqrt(2) the velocities are not
-    those of an isotropic elastic solid (Poisson's ratio would be negative),
-    so Poisson's ratio, the bulk modulus and Young's modulus are NaN there;
-    the shear modulus, from Vs alone, is kept. Inside
+    invalid (NaN velocity).  Where Vp/Vs < sqrt(2) Poisson's ratio would be
+    negative, which logged rocks practically never show (it points to a bad
+    DTC or DTS pick), so Poisson's ratio, the bulk modulus and Young's modulus
+    are NaN there; the shear modulus, from Vs alone, is kept. Where Vp <= Vs
+    every Vs-dependent property is NaN. Inside
     ``historical_benchmark()`` Poisson's ratio is clipped to [0, 0.49] and the
     moduli at 0 instead, as the benchmark packages were computed.
     """

@@ -187,7 +187,7 @@ class TemperatureProfile:
     >>> profile = TemperatureProfile(gradient=1.5, surface_temp=68)
     >>> temp_at_depth = profile.get_temperature(5000)
     >>> print(f"Temperature at 5000 ft: {temp_at_depth:.1f} °F")
-    143.0
+    Temperature at 5000 ft: 143.0 °F
 
     >>> # From BHT
     >>> profile = TemperatureProfile.from_bht(bht=200, td=10000)
@@ -246,12 +246,15 @@ class TemperatureProfile:
         td : float
             Total depth
         surface_temp : float, optional
-            Surface temperature
+            Surface temperature, in ``surface_temp_unit``
         bht_unit : str, optional
             BHT unit: "F", "C", "K" or a label such as "degC"; unknown labels
             raise ``ValueError``
         depth_unit : str, optional
             Depth unit
+        surface_temp_unit : str, optional
+            Unit of ``surface_temp``. Default: degF for the default 68,
+            otherwise ``bht_unit``.
 
         Returns
         -------

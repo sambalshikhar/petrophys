@@ -113,8 +113,9 @@ def sp_rw_in_window(
     ----------
     well : Well
         Well with an ``SP`` curve (mV). Clean water-bearing candidates are
-        chosen from VCL/PHIE when present, otherwise from low deep
-        resistivity; the shale line from high VCL or high GR.
+        the samples with VCL <= 0.35 and PHIE >= 0.10 where those curves
+        exist, and among them the lowest 35 % of deep resistivity; the
+        shale line from high VCL or high GR.
     rmf : float
         Mud-filtrate resistivity (ohm.m) measured at ``rmf_temp_f``.
     rmf_temp_f : float

@@ -216,7 +216,8 @@ def vcl_from_gr(
     Examples
     --------
     >>> from petrophys.interpretation.clay_volume import vcl_from_gr
-    >>> vcl = vcl_from_gr(gr_data, gr_min=20, gr_max=100)
+    >>> vcl_from_gr(np.array([20.0, 60.0, 100.0]), gr_min=20, gr_max=100)
+    array([0. , 0.5, 1. ])
     """
     if np.ndim(gr):
         # Array-likes (pandas Series, Curve) are computed and returned as arrays.

@@ -195,7 +195,7 @@ class Well:
     >>> from petrophys import Well
     >>> well = Well.from_las("example.las")
     >>> print(well.curves)
-    ['DEPTH', 'GR', 'RHOB', 'NPHI', 'RT']
+    ['GR', 'RHOB', 'NPHI', 'RT']
 
     >>> # Access curves
     >>> gr = well["GR"]
@@ -686,7 +686,7 @@ class Well:
         filepath : str or Path
             Path to LAS file
         **kwargs
-            Additional arguments passed to lasio
+            Options of :func:`petrophys.io.read_las` (``encoding``)
 
         Returns
         -------

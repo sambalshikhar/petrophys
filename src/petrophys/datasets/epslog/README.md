@@ -113,7 +113,8 @@ source workbook SHA-256, sheet and zero-based column mapping.
 the verification example interprets it as percent and divides by 100 for the
 Kozeny-Carman API. `kh_klinkenberg_reported` and `kv_klinkenberg_reported` retain
 the original values because the selected workbook headers do not state their
-units. Confirm the underlying SPWLA units before quantitative calibration.
+units. Establish the units from the source SPWLA file before quantitative
+calibration.
 `grain_density_gcc` comes from the explicitly labelled grain-density column.
 
 There are 354 distinct depths among 356 records; repeated depths are preserved.

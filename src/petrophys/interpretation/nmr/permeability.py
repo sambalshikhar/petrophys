@@ -40,7 +40,8 @@ def sdr_permeability(
     t2lm_ms : float or np.ndarray
         Logarithmic mean T2 (ms).
     c : float
-        Empirical constant (default 4.0 — Kenyon 1992).
+        Empirical constant in mD/ms² (default 4.0, the value commonly used
+        for sandstones).
 
     Returns
     -------

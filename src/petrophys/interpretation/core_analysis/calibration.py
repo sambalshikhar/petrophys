@@ -63,7 +63,7 @@ class PorosityCorrection:
     method: str = "core_linear"
 
     def predict(self, porosity: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        """Predict core-equivalent porosity from a log porosity curve."""
+        """Predict core-equivalent porosity from a log porosity curve, clipped to 0-0.5."""
         corrected = self.A * np.asarray(porosity, dtype=float) + self.B
         return np.clip(corrected, 0.0, 0.5)
 
@@ -708,7 +708,7 @@ def apply_poro_perm_transform(
     Returns
     -------
     np.ndarray
-        Predicted permeability array.
+        Predicted permeability array (mD), clipped to 0.001-100,000 mD.
     """
     phie = well.get(porosity_curve)
     if phie is None:
@@ -832,6 +832,8 @@ def estimate_archie_m(
     -------
     dict
         Keys: ``m_mean``, ``m_median``, ``m_std``, ``n_points``, ``m_values``.
+        Plug values of m outside 0.5-5 are dropped as outliers before these
+        statistics, and ``n_points`` counts the values kept.
     """
     if core.porosity is None or core.sw is None:
         raise ValueError("CoreData needs both porosity and Sw for Archie m estimation")

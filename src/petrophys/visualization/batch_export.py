@@ -44,7 +44,11 @@ def export_interpretation_plots(
     standardize: bool = True,
 ) -> List[BatchVisualizationResult]:
     """
-    Export one interpretation plot PNG per LAS file.
+    Export one PNG per LAS file, drawn with the ``interpretation`` template.
+
+    The files are plotted as read; no interpretation is run, so template
+    curves a file does not hold are left out and listed in each result's
+    ``warnings``.
 
     Parameters
     ----------

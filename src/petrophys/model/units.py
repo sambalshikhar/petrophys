@@ -590,6 +590,8 @@ def core_saturation_to_fraction(
 
     data = np.array(values, dtype=float, copy=True)
     data[data <= -900.0] = np.nan
+    # The benchmark packages' messages call every core quantity a saturation.
+    noun = "saturation" if historical else quantity
     factor = 0.01 if label in PERCENT_SATURATION_UNITS else 1.0
     reason = "declared_percent" if factor == 0.01 else "fraction"
     messages = []
@@ -619,12 +621,12 @@ def core_saturation_to_fraction(
                 and np.median(positive) >= 2.0):
             factor, reason = 0.01, "inferred_percent"
             messages.append(
-                f"{mnemonic}: inferred percent core saturation despite "
+                f"{mnemonic}: inferred percent core {noun} despite "
                 f"unit {original_unit!r}; divided by 100 to v/v. Verify source units."
             )
         elif above_one:
             messages.append(
-                f"{mnemonic}: ambiguous core saturation scale; not rescaled. "
+                f"{mnemonic}: ambiguous core {noun} scale; not rescaled. "
                 "Values outside 0-1 are masked. Confirm source units and use "
                 "standardize_core_saturation(source_unit='%' or 'v/v') on the original curve."
             )
@@ -635,7 +637,7 @@ def core_saturation_to_fraction(
     data[invalid] = np.nan
     if invalid_count:
         messages.append(
-            f"{mnemonic}: masked {invalid_count} invalid core saturation "
+            f"{mnemonic}: masked {invalid_count} invalid core {noun} "
             "sample(s) outside 0-1 after normalization."
         )
     return data, {

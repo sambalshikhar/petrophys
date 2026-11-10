@@ -45,7 +45,8 @@ class Survey:
     tvd: np.ndarray
     north: np.ndarray
     east: np.ndarray
-    #: Dogleg severity, degrees per 30 m (100 ft for a survey in ft).
+    #: Dogleg severity: degrees per 30 m, or per 100 ft for a survey in feet
+    #: (:func:`attach_survey` rescales it when it converts the unit).
     dogleg: np.ndarray
     depth_unit: str = ""
     report: Dict[str, Any] = field(default_factory=dict)
@@ -82,12 +83,20 @@ def _depth_unit_from(text: str) -> Optional[str]:
     return None
 
 
-def minimum_curvature(md: Any, inclination: Any, azimuth: Any) -> Dict[str, np.ndarray]:
+def _course_length(unit: Any) -> float:
+    """The length dogleg severity is quoted over: 100 ft for feet, else 30 m."""
+    return 100.0 if str(unit or "").strip().lower() in {"ft", "feet", "f"} else 30.0
+
+
+def minimum_curvature(md: Any, inclination: Any, azimuth: Any,
+                      course_length: float = 30.0) -> Dict[str, np.ndarray]:
     """True vertical depth and horizontal offsets by the minimum-curvature method.
 
-    Angles in degrees; TVD, north and east in the unit of ``md``, from the
-    first station, which is taken as vertical below the reference if it is
-    not at MD 0 (a tie-in at the surface is added).
+    Angles in degrees; TVD, north and east in the unit of ``md``. When the
+    first station is below MD 0, the hole above it is taken as straight at
+    its inclination; north and east start at zero at the first station.
+    Dogleg severity is in degrees per ``course_length`` units of ``md``
+    (30 for metres; :func:`read_survey` uses 100 for a survey in feet).
 
     Examples
     --------
@@ -115,7 +124,7 @@ def minimum_curvature(md: Any, inclination: Any, azimuth: Any) -> Dict[str, np.n
         tvd[i] = tvd[i - 1] + half * (np.cos(inc[i - 1]) + np.cos(inc[i]))
         north[i] = north[i - 1] + half * (np.sin(inc[i - 1]) * np.cos(azi[i - 1]) + np.sin(inc[i]) * np.cos(azi[i]))
         east[i] = east[i - 1] + half * (np.sin(inc[i - 1]) * np.sin(azi[i - 1]) + np.sin(inc[i]) * np.sin(azi[i]))
-        dogleg[i] = np.degrees(beta) / dmd * 30.0 if dmd > 0 else 0.0
+        dogleg[i] = np.degrees(beta) / dmd * course_length if dmd > 0 else 0.0
     return {"tvd": tvd, "north": north, "east": east, "dogleg": dogleg}
 
 
@@ -254,7 +263,7 @@ def read_survey(
         report["warnings"].append(
             f"First station at MD {md[0]:g}: the hole above is taken as straight at its inclination"
         )
-    trajectory = minimum_curvature(md, inc, azi)
+    trajectory = minimum_curvature(md, inc, azi, course_length=_course_length(unit))
     report.update({"columns": {role: str(found[role]) for role in found if found[role] != "__azimuth"},
                    "stations": int(md.size),
                    "max_inclination": float(np.max(inc)), "max_dogleg": float(np.max(trajectory["dogleg"]))})
@@ -304,8 +313,9 @@ def depth_reference_elevation(well: Any) -> Tuple[Optional[float], Dict[str, Any
     From the LAS header: ``APD`` (depth reference above the permanent
     datum) plus ``EPD`` (permanent datum above sea level, 0 when ``PDAT`` is
     MSL); otherwise the elevation named by ``LMF`` (``EKB``, ``EDF`` or
-    ``EGL``), else ``EKB``. Units in the header are converted. Returns the
-    elevation (None when the header has none) and a note of its source.
+    ``EGL``), else a nonzero ``EKB`` or ``EDF``. Units in the header are
+    converted. Returns the elevation (None when the header has none) and a
+    note of its source.
     """
     depth_unit = str(getattr(well, "depth_unit", "") or "")
 
@@ -389,7 +399,8 @@ def attach_survey(
             trajectory = Survey(
                 md=trajectory.md * factor, inclination=trajectory.inclination, azimuth=trajectory.azimuth,
                 tvd=trajectory.tvd * factor, north=trajectory.north * factor, east=trajectory.east * factor,
-                dogleg=trajectory.dogleg, depth_unit=unit, report=trajectory.report,
+                dogleg=trajectory.dogleg / factor * _course_length(unit) / _course_length(trajectory.depth_unit),
+                depth_unit=unit, report=trajectory.report,
             )
         tvd = trajectory.tvd_at(depth)
         beyond = depth > trajectory.md[-1] + 1e-6

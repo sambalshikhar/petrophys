@@ -114,6 +114,9 @@ def rw_from_sp(
     Solving for Rw:
     Rw = Rmf / 10^(-SSP/K)
 
+    Rmf and Rw stand directly for the equivalent resistivities Rmfe and Rwe
+    of the textbook relation; no Rweq-to-Rw chart conversion is applied.
+
     Parameters
     ----------
     sp : float or np.ndarray

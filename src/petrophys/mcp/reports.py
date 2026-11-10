@@ -487,7 +487,8 @@ def spectral_gamma_report(
 
 def _environment_by_interval(well: "Well", depth: np.ndarray, environment: Any,
                              usable: np.ndarray, max_intervals: int) -> List[Dict[str, Any]]:
-    """Th/U class shares per attached formation, else per equal-thickness depth bin."""
+    """Th/U class shares per attached formation, else per interval of one dominant class
+    (:func:`_class_intervals`)."""
     from petrophys.interpretation.geochemistry import TH_U_ENVIRONMENTS
 
     zones: List[Tuple[str, float, float]] = []

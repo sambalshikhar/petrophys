@@ -47,12 +47,14 @@ def dual_water(
     interpretation of shaly sands", SPE Journal 24(2): the two waters are
     mixed in the proportions of the water actually in the pores, Swb/Swt
     bound and 1 - Swb/Swt free, so the conductivity equation is solved for
-    Swt (a quadratic for n = 2, iterated otherwise) and the bound water is
+    Swt (a quadratic for n = 2, solved by bisection otherwise) and the bound water is
     removed to give Swe. The benchmark packages used the wet-zone (Ro) form
     of Crain's Petrophysical Handbook, which mixes the waters in the
     proportions Swb and 1 - Swb of water-filled rock; the two agree in wet
-    rock (Swt = 1) and the wet-zone form reads higher in hydrocarbon-bearing
-    rock, where the bound water is a larger share of the pore water.
+    rock (Swt = 1). In hydrocarbon-bearing rock, where the bound water is a
+    larger share of the pore water, the wet-zone form reads higher when the
+    bound water is the more conductive (Rwb < Rw) and lower when it is the
+    less conductive (Rwb > Rw, as with saline formation water).
 
     Equations
     ---------
@@ -152,11 +154,25 @@ def dual_water(
         # n = 2: Cw Swt^2 + B Swt - K = 0, the positive root.
         swt = (-b + np.sqrt(b * b + 4.0 * cw * k)) / (2.0 * cw)
         if float(n) != 2.0:
-            # Fixed-point iteration on the apparent water conductivity
-            # Cw + (Swb/Swt) (Cwb - Cw), from the n = 2 root; Swt below Swb
-            # leaves Swe = 0 either way.
-            for _ in range(100):
-                swt = np.power(k / (cw + b / np.maximum(swt, swb_safe)), 1.0 / n)
+            # Other n: solve Cw Swt^n + B Swt^(n-1) = K by bisection on
+            # [Swb, 1]. There Cw Swt + B = Cw (Swt - Swb) + Swb Cwb > 0, so the
+            # left side rises with Swt and the root is unique; a root below
+            # Swb gives Swe = 0 and one above 1 gives Swe = 1 after clipping.
+            k_b, b_b, cw_b, swb_b = np.broadcast_arrays(k, b, cw, swb_safe)
+
+            def excess(s):
+                return cw_b * s ** n + b_b * s ** (n - 1.0) - k_b
+
+            low, high = swb_b.astype(float).copy(), np.ones_like(swb_b, dtype=float)
+            below, above = excess(low) >= 0.0, excess(high) <= 0.0
+            for _ in range(60):
+                middle = 0.5 * (low + high)
+                rising = excess(middle) < 0.0
+                low = np.where(rising, middle, low)
+                high = np.where(rising, high, middle)
+            swt = np.where(below, swb_b, np.where(above, 1.0, 0.5 * (low + high)))
+            solvable = np.isfinite(k_b) & np.isfinite(b_b) & np.isfinite(cw_b) & np.isfinite(swb_b)
+            swt = np.where(solvable, swt, np.nan)
 
     # Convert to effective Sw
     swe = (swt - swb_safe) / (1.0 - swb_safe)

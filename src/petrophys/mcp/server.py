@@ -453,7 +453,7 @@ def create_server(
             Field(
                 description="Attach the sample's bundled formation tops and lithology "
                 "intervals (30_6-5: tops and lithology; COSTA HW-*: the KHARAIB-2 interval; "
-                "1046123714: tops)."
+                "cheal-1, tuhua-7: formation intervals; 1046123714: tops)."
             ),
         ] = True,
     ) -> JsonReply:
@@ -763,8 +763,9 @@ def create_server(
         - formation_water: rw (ohm.m) with rw_temp_f (degF), or rw='header' -> RW
         - saturation: model archie|simandoux|indonesia|..., a, m, n -> SW
         - net_pay: vcl_cutoff, phie_cutoff, sw_cutoff (v/v) -> NET_PAY
-        - also temperature, permeability, mud_filtrate, bvw, mhi, rock_quality,
-          spectral_gamma, interpret (any interpret_well setting).
+        - also standardize, temperature, permeability, mud_filtrate, bvw, mhi,
+          rock_quality, spectral_gamma, formation_summary, interpret (any
+          interpret_well setting).
         workflow_step_kinds lists every parameter. Returns interpretation_id
         (usable with summarize_zones, plot_well, explain_step, export_results),
         each step's status, net_thickness, pay_averages and key_results for the
@@ -909,7 +910,8 @@ def create_server(
 
         Returns where spectral data exist, statistics of K, Th, U, the share of
         samples per Th/U class (< 2 marine reducing, 2-7 marine, > 7 continental
-        oxidising), the class per formation (else depth bins), uranium-rich beds,
+        oxidising), the class per formation (else per interval of one dominant
+        class), uranium-rich beds,
         a thorium clay index and Th/K, U/K when potassium exists. Sample 25_5-1
         has THOR and URAN.
         """
@@ -939,8 +941,9 @@ def create_server(
             PlotTemplate,
             Field(
                 description="Track layout and its track names. auto (from the curves present): "
-                "LITHOLOGY, GAMMA / HOLE, RESISTIVITY, DENSITY / NEUTRON, POROSITY, "
-                "SATURATION, PERMEABILITY, FLAGS. raw: GR / SP / CALI, RESISTIVITY, "
+                "LITHOLOGY, GAMMA / HOLE, RESISTIVITY, DENSITY / NEUTRON, SONIC, POROSITY, "
+                "SATURATION, PERMEABILITY, ROCK QUALITY, MINERAL VOLUMES, FLAGS. "
+                "raw: GR / SP / CALI, RESISTIVITY, "
                 "NEUTRON / DENSITY. petrophysics: LITHOLOGY, GR / VCL / HOLE, RESISTIVITY, "
                 "NEUTRON / DENSITY / SONIC, POROSITY, SATURATION, PERMEABILITY, FLAGS. "
                 "minerals: MINERAL VOLUMES, POROSITY / SW. comprehensive: all."

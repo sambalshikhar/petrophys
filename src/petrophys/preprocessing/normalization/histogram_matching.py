@@ -110,7 +110,8 @@ def histogram_equalization(
     n_bins : int, optional
         Number of bins (default: 256)
     clip_limit : float, optional
-        Clip limit for contrast limiting (CLAHE-style)
+        Clip limit for contrast limiting, as in CLAHE but over the whole
+        curve (one histogram, not adaptive tiles)
 
     Returns
     -------
@@ -137,7 +138,7 @@ def histogram_equalization(
     # Compute histogram
     hist, bins = np.histogram(valid_data, bins=n_bins, range=(data_min, data_max))
 
-    # Apply clip limit if specified (CLAHE)
+    # Apply clip limit if specified (contrast limiting, one global histogram)
     if clip_limit is not None:
         clip_value = clip_limit * len(valid_data) / n_bins
         excess = np.sum(np.maximum(hist - clip_value, 0))

@@ -22,7 +22,8 @@ def classify_sw(
     sw : float or np.ndarray
         Water saturation, a fraction, or percent with ``percent=True``
     percent : bool, default False
-        The values are percent. Fractions above 2 raise a
+        The values are percent. Without it, values above 2 are still read
+        as fractions and raise a
         :class:`~petrophys.exceptions.DataQualityWarning`.
 
     Returns

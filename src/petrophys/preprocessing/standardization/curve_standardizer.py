@@ -510,6 +510,9 @@ def _convert_to_standard_unit(
     under a percent label whose values are fractions is used as fractions,
     with a warning. Returns False when the curve stays out of the standard slot.
     """
+    if standard_name == "DEPTH" and not historical:
+        # A depth curve (MD, DEPT) stays in its own unit, as the depth index does.
+        return True
     kind = get_standard_mnemonic(standard_name)
     factor = _standard_conversion_factor(source_unit, standard_unit, standard_name)
     if factor is not None:
@@ -877,6 +880,9 @@ class CurveStandardizer:
 
         if rename:
             standard_name = self.get_standard_name(curve.mnemonic)
+            if standard_name == "CALI" and _differential_caliper(curve.mnemonic, curve):
+                # DCAL holding caliper minus bit size is not a hole diameter.
+                standard_name = curve.mnemonic
             new_curve.mnemonic = standard_name
         else:
             standard_name = curve.mnemonic

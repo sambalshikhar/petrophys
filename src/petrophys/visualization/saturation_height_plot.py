@@ -1,7 +1,8 @@
 """Saturation-height diagnostic plot.
 
 Two panels:
-  (left)  the fitted Sw = a·J^b function over the core (J, Sw) data;
+  (left)  the fitted J-function (Sw = a·J^b, or Sw = Swirr + (1 - Swirr)·a·J^b)
+          over the (J, Sw) data;
   (right) Sw vs height above the free-water level for a few (k, phi) rock classes.
 """
 

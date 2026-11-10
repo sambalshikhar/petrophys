@@ -136,9 +136,11 @@ def impute(
     A gradient-boosted tree model learns ``curve`` from the other logs
     (gamma ray, density, neutron, sonic, resistivity and so on) wherever it
     was measured, in this well and in ``train_wells``, and predicts it where
-    it is missing. The result is added as ``<CURVE>_IMPUTED``: the measured
-    values where the curve has them and the predictions in its gaps. The
-    original curve is left as it is.
+    it is missing. The result is added as ``<CURVE>_IMPUTED``, named after
+    the well's own mnemonic for the curve (``ZDEN_IMPUTED`` for a ``ZDEN``
+    density asked for as ``"RHOB"``): the measured values where the curve
+    has them and the predictions in its gaps. The original curve is left as
+    it is.
 
     Parameters
     ----------
@@ -172,7 +174,8 @@ def impute(
     -----
     Tree models reproduce the relations seen in training and do not
     extrapolate: where the input logs fall outside the range they had in the
-    training data, a warning gives the number of such samples. Depth is not
+    training data (the 1st to 99th percentile, widened by a tenth of that
+    span on each side), a warning gives the number of such samples. Depth is not
     used as an input. Imputation needs scikit-learn (``pip install
     "petrophys[ml]"``).
 

@@ -4,7 +4,8 @@
 more curves shifts, with the PELT algorithm (Killick et al., 2012): the
 segmentation minimising the within-zone sum of squares plus a penalty per
 boundary, solved exactly. Several curves are standardised by their
-sample-to-sample noise and segmented together. ``min_thickness`` keeps
+variability below the zone scale (the robust spread about a running median
+over ``min_thickness``) and segmented together. ``min_thickness`` keeps
 zones above the vertical resolution of the tools; the penalty sets how big
 a shift must be to start a zone (by default a BIC-type penalty scaled by
 the curve noise, so a larger ``penalty_factor`` gives fewer zones).

@@ -41,7 +41,7 @@ class HCPVResult:
     hcpv_m3: float        # Hydrocarbon pore volume in cubic meters
 
     # For oil
-    ooip_bbl: float       # Original Oil In Place (barrels)
+    ooip_bbl: float       # Original Oil In Place (stock tank barrels, as ooip_stb)
     ooip_stb: float       # Original Oil In Place (stock tank barrels)
 
     # For gas
@@ -76,7 +76,8 @@ def calculate_hcpv(
     bg : float
         Gas formation volume factor (rcf/scf)
     ngi : float
-        Net-to-gross improvement factor
+        Net-to-gross ratio applied to the hydrocarbon pore volume (1 when
+        ``net_pay_ft`` is already a net thickness)
 
     Returns
     -------

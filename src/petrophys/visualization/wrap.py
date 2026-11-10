@@ -1,8 +1,9 @@
 """Industrial-style curve wrapping for log-scale well-log tracks.
 
 When a curve exceeds a track's display window, petrophysics software (Techlog,
-Interactive Petrophysics, Geolog, Petrel) does not clip it — it *wraps* the curve
-back in from the opposite edge. Each wrap equals one window width in log10, and
+Interactive Petrophysics, Geolog, Petrel) can show it on a backup scale instead
+of clipping it: the curve *wraps* back in from the opposite edge. This helper
+draws that display; the template log viewer clips off-scale values at the track edge. Each wrap equals one window width in log10, and
 the wrapped ("backup") segments are drawn dimmed/dashed so they read differently
 from the primary pass. This keeps a trace always visible and lets off-scale highs
 (e.g. deep resistivity in tight carbonate/evaporite) be read by counting wraps.

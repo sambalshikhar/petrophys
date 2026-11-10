@@ -47,7 +47,7 @@ class CoreMechanical:
     vs : np.ndarray, optional
         S-wave velocity (m/s).
     poisson : np.ndarray, optional
-        Dynamic Poisson's ratio (dimensionless, measured directly).
+        Dynamic Poisson's ratio (dimensionless), as delivered.
     extra_scales : dict, optional
         Additional UCS arrays at other averaging scales,
         e.g. {"5cm": array, "30cm": array}.
@@ -284,10 +284,10 @@ class CoreMechanical:
 
     def computed_poisson(self) -> np.ndarray:
         """
-        Compute Poisson's ratio from Vp and Vs (overrides measured value).
+        Compute Poisson's ratio from Vp and Vs.
 
-        Use when the LAS file does not contain a measured Poisson's ratio
-        or when you want to verify it.
+        Use when the LAS file does not contain a Poisson's ratio or when
+        you want to check it; the loaded ``poisson`` array is left unchanged.
         """
         return self.dynamic_moduli()["poisson_ratio"]
 

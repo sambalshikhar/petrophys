@@ -37,7 +37,7 @@ The other extras are only needed by some notebooks:
 | Extra | Needed by | Notes |
 |-------|-----------|-------|
 | `ml` | 12, 13, CS4 | scikit-learn, for electrofacies and curve imputation |
-| `dlis` | 16 | DLIS reader; lesson 16 also needs the Git LFS image data |
+| `dlis` | 16 | DLIS reader; lesson 16 downloads its 112 MB image file on first use (a Git LFS checkout uses its own copy) |
 | `mcp` | 20 | MCP server; Python 3.10 or later |
 
 Every other notebook runs with `python -m pip install -e ".[tutorials]"`.
@@ -57,7 +57,7 @@ Other specialist notebooks retain their own optional data/dependency requirement
 
 Tutorial 19 uses `export_context`, schema versions and byte
 budgets, and reads the ranked formation table directly. Tutorial 14 separates
-vendor permeability from T2 calculations; tutorial 16 needs real Git LFS data.
+vendor permeability from T2 calculations; tutorial 16 reads the real Daydream 1 FMI image.
 
 ## Foundations
 

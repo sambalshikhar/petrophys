@@ -28,7 +28,8 @@ def neutron_porosity(
     Returns
     -------
     float or np.ndarray
-        Processed neutron porosity
+        Processed neutron porosity, ``nphi - nphi_matrix + correction``,
+        limited to 0-0.6
     """
     phin = nphi - nphi_matrix + correction
     return np.clip(phin, 0, 0.6)

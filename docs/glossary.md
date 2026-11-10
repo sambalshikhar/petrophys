@@ -63,12 +63,12 @@ Formations, lithology intervals and lithology codebooks go in as `formations=`,
 only. In `pp.interpret`, `lithology=` also takes the name of the lithology code
 curve (`"FACIES"`) or a lithology domain (`"carbonate"`). Through MCP,
 `load_well` takes `formations` and `lithology`, and `interpret_well` takes the
-settings; codebooks are not available there.
+settings, a codebook among them as the `lithology_codes` setting.
 
 :::{warning}
-In `pp.read`, `lithology=` attaches lithology intervals. In `pp.interpret`,
-`lithology=` is the deprecated name of `lithology_domain`; use
-`lithology_domain` there.
+In `pp.read`, `lithology=` attaches lithology intervals only. As a
+`DynamicWorkflowConfig` setting, `lithology` is an alias of
+`lithology_domain`; use `lithology_domain` there.
 :::
 
 ## Curves the workflow adds

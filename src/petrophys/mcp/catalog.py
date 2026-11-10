@@ -18,7 +18,8 @@ COLLECTIONS: Dict[str, str] = {
     "geolink": "North Sea clastic wells, depth in m (GeoLink, CC BY-SA 4.0)",
     "costa": (
         "COSTA carbonate field, depth in ft; each file covers only the KHARAIB-2 "
-        "reservoir interval; header RW/RWT and Archie A/M/N given; interpret with "
+        "reservoir interval; header RW/RWT and Archie A given (M/N in 13 of the 17 "
+        "wells); interpret with "
         "lithology_domain='carbonate' (carbonate_calibration='costa' applies the "
         "field's GR-illite relation, and a 1.1 g/cm3 brine to porosity and mineral "
         "volumes unless rho_fl is set)"
@@ -28,7 +29,7 @@ COLLECTIONS: Dict[str, str] = {
         "(deviated, Tikorangi limestone), depth in m, bundled formation intervals"
     ),
     "teapot": (
-        "Teapot Dome, Wyoming: two 1970s Schlumberger LAS deliveries, depth in ft, "
+        "Teapot Dome, Wyoming: two 1970s Schlumberger logs digitized to LAS, depth in ft, "
         "with mud, temperature and bit-size values in the header"
     ),
     "kgs": "Kansas legacy LAS (Morgan No. 1-17), depth in ft",
@@ -190,6 +191,10 @@ _RUNTIME_DEFAULTS = {
     "phie_cutoff": "0.08 clastic, 0.045 carbonate samples",
     "bht_f": "header BHT (converted to degF)",
     "td_ft": "header TD, else deepest sample",
+    "lithology_domain": "LAS header value, else clastic",
+    "matrix_type": "LAS header value, else sandstone in the clastic domain, auto in the others",
+    "gr_min": "P5 of the GR log, lowered to 20 API when higher",
+    "gr_max": "P95 of the GR log, raised to 100 API when lower",
     "rw": "header RW (at RWT, else at the header FMT, else the median formation temperature)",
     "gradient_f_per_100ft": "header TGRAD, used only without a BHT",
     "a": "by lithology", "m": "by lithology", "n": "by lithology",

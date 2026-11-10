@@ -13,6 +13,7 @@ recursive-include src/petrophys/_internal/data *.csv
 recursive-include src/petrophys/datasets *.las *.csv *.md *.txt
 recursive-include src/petrophys/datasets/phillips *.xlsx *.json
 recursive-include src/petrophys/datasets/epslog *.json
+recursive-include src/petrophys/datasets/formation_pressure *.DLIS
 exclude src/petrophys/datasets/daydream/daydream1_deep_curated_scalar_logs.las
 exclude src/petrophys/datasets/daydream/daydream1_shallow_aps_pex_hngs.las
 

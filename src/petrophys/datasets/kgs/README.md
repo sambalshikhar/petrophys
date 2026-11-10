@@ -4,7 +4,7 @@ Source and redistribution terms are recorded in `THIRD_PARTY_DATA.md` in the
 distribution, including the KGS attribution and companion-data provenance caveat.
 
 This folder contains the Morgan No. 1-17 public well package used to exercise
-legacy LAS metadata, generic formation tops, and input-aware interpretation.
+irregular LAS metadata, generic formation tops, and input-aware interpretation.
 
 | File | Contents |
 |---|---|
@@ -17,7 +17,7 @@ in Rawlins County, Kansas. Its accompanying metadata labels the basin as the
 Illinois Basin and the source as EDX/ISGS, which conflicts with the LAS header.
 Those source fields are not used as interpretation constraints.
 
-Several legacy curve headers have blank or incorrect units. In particular,
+Several curve headers have blank or incorrect units. In particular,
 `CNLS` is described as compensated-neutron limestone porosity and `RHOC` as
 density correction. The standardization layer resolves those mnemonics before
 the dynamic workflow runs.

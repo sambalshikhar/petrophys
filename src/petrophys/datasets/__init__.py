@@ -1,9 +1,9 @@
 """Repository datasets for examples, validation, and integration testing.
 
 Use :func:`sample` and :func:`list_samples` for small datasets that ship with
-the package. Larger native-format fixtures (the Daydream 1 log and image DLIS
-deliveries, 173 MB and 112 MB) are too large for the package: :func:`integration_fixture`
-returns a source checkout's copy, or downloads the file once into a local
+the package. Larger fixtures (the Daydream 1 log and image DLIS deliveries,
+173 MB and 112 MB, and a 30 MB Daydream 1 LAS) are too large for the package:
+:func:`integration_fixture` returns a source checkout's copy, or downloads the file once into a local
 data folder and checks its SHA-256.
 
 Examples
@@ -12,7 +12,8 @@ Examples
 >>> from petrophys.io import read_las
 >>> well = read_las(petrophys.sample("HW-3"))
 >>> well = read_las(petrophys.sample("30_6-5"))
->>> petrophys.list_samples("costa")
+>>> len(petrophys.list_samples("costa"))
+17
 """
 
 import hashlib

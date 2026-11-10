@@ -239,15 +239,17 @@ class CoreImageData:
 
     def brightness_index(self) -> np.ndarray:
         """
-        Brightness index normalized to [0, 1].
+        Brightness index scaled to [0, 1].
 
         Uses grey_level if available, otherwise derives from RGB mean,
-        or falls back to the HSV value channel.
+        or falls back to the HSV value channel. Grey level and RGB are
+        divided by their maximum in the data, so 1 is the brightest sample
+        loaded, not absolute white.
 
         Returns
         -------
         np.ndarray
-            0 = black (organic-rich), 1 = white (clean carbonate/evaporite).
+            Low = dark (organic-rich), high = light (clean carbonate/evaporite).
         """
         if self.grey_level is not None:
             raw = self.grey_level
@@ -272,7 +274,7 @@ class CoreImageData:
 
     def color_index(self) -> np.ndarray:
         """
-        Color index based on hue and saturation.
+        Color index: the HSV saturation, or (max - min) / max of RGB.
 
         Highlights color-rich intervals (iron staining, chlorite, etc.)
         against grey/white intervals. Returns 0 for grey, 1 for maximum color.

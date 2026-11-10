@@ -53,7 +53,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RESMED",
     ],
     # Shallow Resistivity (RSHA)
-    # AT30 removed (it is the medium array-induction spacing -> RMED).
+    # AT30 is not here: it is the medium array-induction spacing (RMED).
     "RSHA": [
         "LLS",
         "RLLS",

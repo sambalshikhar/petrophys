@@ -687,7 +687,7 @@ class DefaultParameters:
     PHIE_CUTOFF_CARBONATE = 0.045
     SW_CUTOFF_CLASTIC = 0.60
     SW_CUTOFF_CARBONATE = 0.70
-    SW_CUTOFF = 0.60  # legacy alias (clastic value)
+    SW_CUTOFF = 0.60  # alias of SW_CUTOFF_CLASTIC
 
     # OBM default
     RXO_OBM_DEFAULT = 200.0  # ohm.m

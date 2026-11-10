@@ -7,7 +7,7 @@ You have interpreted a first well and read your own files. The guide continues f
 | Area | What you get | Start with | Covered in |
 | --- | --- | --- | --- |
 | Prepare the data | LAS, DLIS and CSV reading; standard names and units; range QC; bad-hole flags; normalization; ML gap filling | `pp.read`, `pp.impute` | {doc}`own_data`, {doc}`data_model`, {ref}`review-inputs`, {ref}`analysis-gap-filling` |
-| Interpret the rock | Temperature, clay volume, porosity, lithology and minerals, Rw, seven Sw models, permeability, rock physics | `pp.interpret` | {doc}`workflows` |
+| Interpret the rock | Temperature, clay volume, porosity, lithology and minerals, Rw, eight Sw models, permeability, rock physics | `pp.interpret` | {doc}`workflows` |
 | Review the answer | Warnings, the step-by-step trace, the cutoffs used, net pay per formation | `result.print_trace()`, `result.formation_summary` | {ref}`review-interpretation` |
 | Your own recipe | Built-in and custom steps, checked before they run, saved as JSON and run on many wells | `Workflow`, `@workflow_step` | {doc}`custom_workflows` |
 | Plots and delivery | Log viewer templates, crossplots, multi-well charts; LAS, JSON, CSV and Excel exports | `pp.plot` | {doc}`visualization_reporting` |

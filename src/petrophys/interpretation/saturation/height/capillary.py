@@ -126,7 +126,7 @@ def pc_from_j(
     k = np.asarray(perm_md, dtype=float)
     p = np.asarray(phi, dtype=float)
     # |sigma cos theta|, as convert_pc_lab_to_reservoir: theta above 90 deg
-    # (air-mercury, 140) gives the same positive J as its supplement.
+    # (air-mercury, 140) gives the same positive Pc as its supplement.
     st = abs(ift * np.cos(np.radians(theta)))
     out = np.full(np.broadcast_shapes(jj.shape, k.shape, p.shape), np.nan)
     j_b, k_b, p_b = np.broadcast_arrays(jj, k, p)

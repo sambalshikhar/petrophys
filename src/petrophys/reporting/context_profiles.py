@@ -216,11 +216,14 @@ def export_context_profile(
         )
 
     missing = [
-        name for name, value in (("tops_file", tops_file), ("lithology_mapping_file", lithology_mapping_file))
+        name for name, value in (
+            ("formations (its tops workbook; --formations)", tops_file),
+            ("lithology_codes (the lithology codebook; --lithology-codes)", lithology_mapping_file),
+        )
         if value is None
     ]
     if missing:
-        raise ValueError(f"Context profile {profile.name} requires {', '.join(missing)}")
+        raise ValueError(f"Context profile {profile.name.removesuffix('_v1')} requires {' and '.join(missing)}")
     if input_dir is None:
         raise ValueError(f"Context profile {profile.name} requires the folder of its raw LAS files")
     if profile.name == "geolink_train_v1":
@@ -292,10 +295,11 @@ def interpret_with_context_profile(
     DynamicWorkflowResult
         The interpreted well (``result.well``) after the context's value-range
         QC and dependent-curve recomputation. ``result.steps_executed`` holds
-        every calculation: the profile's preparation (for COSTA under the
-        workflow's step names: core curves, clay volume, carbonate volumes and
-        lithology, permeability, crossover flag; otherwise ``preparation_*``
-        steps), the workflow's steps, then ``context_value_range_qc`` and
+        every calculation: the profile's preparation (``preparation_*``
+        steps; COSTA's clay volume, carbonate volumes and lithology,
+        permeability and any core curves it adds are under the workflow's step
+        names), the workflow's steps, then ``context_export_finalization``
+        (where it changed curves), ``context_value_range_qc`` and
         ``context_dependent_curve_recompute``. ``result.context_profile``
         names the profile; ``result.preparatory_steps`` and
         ``result.post_workflow_steps`` keep the package's own trace entries.
@@ -404,11 +408,14 @@ def _preparation_step_results(profile_name: str, path: Path, result, raw_curves)
     """The profile's preparatory calculations as workflow step records.
 
     COSTA's precomputed curves (core curve mapping, clay volume, carbonate
-    volumes and lithology, permeability, crossover flag) are recorded under
-    the workflow's step names with the package's methods and parameters.
-    Every other entry of the preparatory step (input standardization, the
-    Danish input preparation, the curves taken from the preparatory
-    interpretation, such as RESFLAG and BADHOLEFLAG) becomes a
+    volumes and lithology, permeability, crossover flag) that the input LAS
+    lacks and no workflow step lists as an output are recorded under the
+    workflow's step names with the package's methods and parameters; the
+    crossover flag, which the net-pay step lists, stays a
+    ``preparation_crossover_flag`` step. Every other entry of the
+    preparatory step (input standardization, the Danish input preparation,
+    the curves taken from the preparatory interpretation, such as RESFLAG
+    and BADHOLEFLAG) becomes a
     ``preparation_*`` step; ``calculation_steps`` in its parameters lists the
     preparatory interpretation's own steps.
     """
@@ -721,11 +728,11 @@ def interpretation_group_records(
             from petrophys.reporting._danish_context import danish_group_layout, read_danish_tops
 
             if tops_file is None:
-                raise ValueError("The Danish profile's groups come from its tops workbook: pass tops_file")
+                raise ValueError("The Danish profile's groups come from its tops workbook: pass formations (--formations)")
             layout = danish_group_layout(source, read_danish_tops(tops_file).get(source.stem.lower(), []))
         else:
             if tops_file is None:
-                raise ValueError(f"The {profile} profile's groups come from its tops workbook: pass tops_file")
+                raise ValueError(f"The {profile} profile's groups come from its tops workbook: pass formations (--formations)")
             segments = _formation_segments_for_well(source, run.well, _load_excel_formation_segments(tops_file))
         dataset = _PROFILE_DATASET.get(profile)
         environment = lambda: _profile_environment(historical_benchmark, _dataset_calculations, dataset)  # noqa: E731

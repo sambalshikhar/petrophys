@@ -143,7 +143,7 @@ def create_mn_plot(
     figsize: Tuple[float, float] = (8, 8),
 ):
     """M-N crossplot (porosity-independent lithology), with the quartz/calcite/
-    dolomite triangle and the secondary-porosity / gas / shale directions."""
+    dolomite triangle (fresh mud: fluid 1.0 g/cc, 189 us/ft, neutron 1.0)."""
     nphi, _ = _xy(well, ["NPHI", "PHIN"], depth_range, "v/v")
     rhob, _ = _xy(well, ["RHOB"], depth_range, "g/cm3")
     dt, _ = _xy(well, ["DTC", "DT"], depth_range, "us/ft")

@@ -9,10 +9,11 @@ from typing import Dict, Optional, NamedTuple
 from petrophys.model.constants import MatrixProperties, MineralProperties
 
 
-# Mineral properties for multi-mineral analysis. "u" is PEF x density, the
-# convention of the solvers' log term (PEF x RHOB); chartbook U values use the
-# electron density instead (fresh water 0.398), as the RHOmaa-Umaa transform
-# in lithology_module does.
+# Mineral properties for multi-mineral analysis. "u" is about PEF x density,
+# the convention of the solvers' log term (PEF x RHOB); the dolomite (9.0) and
+# anhydrite (14.9) entries are the chartbook U values, which use the electron
+# density instead (fresh water 0.398), as the RHOmaa-Umaa transform in
+# lithology_module does.
 MINERAL_PROPERTIES: Dict[str, Dict[str, float]] = {
     "quartz": {
         "density": 2.65,  # g/cm³
@@ -92,7 +93,7 @@ MINERAL_PROPERTIES: Dict[str, Dict[str, float]] = {
         "u": 0.02,
     },
     "clay": {
-        "density": 2.65,   # g/cm³  — generic dry clay (illite/chlorite PEF; kaolinite reads ~1.8)
+        "density": 2.65,   # g/cm³  — generic dry clay (PEF near illite's 3.45; kaolinite reads ~1.8, chlorite ~6.3)
         "slowness": 80.0,  # μs/ft
         "nphi": 0.35,      # v/v    — high due to clay-bound water
         "pef": 3.7,        # b/e

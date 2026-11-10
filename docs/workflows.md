@@ -419,7 +419,7 @@ for record in partial.steps_executed:
     print(f"{record.step:14s} {record.method:28s} {outputs}")
 ```
 
-The older {class}`~petrophys.workflow.standard_workflow.StandardWorkflow` is deprecated and listed under Legacy in the {doc}`API reference <api/index>`.
+{class}`~petrophys.workflow.standard_workflow.StandardWorkflow` is deprecated: it raises a `DeprecationWarning`; use `pp.interpret` or `DynamicWorkflow`.
 
 (review-interpretation)=
 ## Review an interpretation
@@ -565,7 +565,7 @@ fig.tight_layout()
 plt.show()
 ```
 
-With these tops and lithology attached, nearly all the flagged pay lies in the Brent Group, the reservoir. The 1.8 m flagged elsewhere, in the Rogaland and Shetland groups, still needs a geological check.
+With these tops and lithology attached, nearly all the flagged pay lies in the Brent Group, the reservoir. The 0.15 m flagged in the Shetland Group still needs a geological check.
 Summarize the reservoir window:
 
 ```{code-cell} python
@@ -615,7 +615,6 @@ Petrophys interprets marl with the limestone matrix and the carbonate cutoffs, a
 | Sample | Limitation | What Petrophys does |
 |---|---|---|
 | 30/6-5 SWC, SOC | labelled frac, stored in percent | `standardize_curves` (and so `interpret`) converts them to v/v with the warnings shown above; the raw-well plots convert for display only; the bundled LAS is unchanged. Give an explicit unit for ambiguous low values |
-| 30/6-5 header RW | `RW 0.7` ohm.m with no temperature, ten times the 0.07 used here (likely a slipped decimal) | always pass `rw` and `rw_meas_temp_f` |
 | 15/9-14 DTE | values fit no sonic unit; meaning unknown | not treated as shear slowness; range QC removes them. Do not rescale |
 | Daydream CMR | scalar NMR curves only: no T2 bins or T2LM; `CMRP_3MS` is labelled V/V but holds porosity units | T2LM cannot be computed; vendor KSDR and KCMR are read, not recomputed |
 | 30/6-5 tops | groups and formations nest | use `rank="formation"` or `"group"` in `formation_summary`; core permeability is calibrated per group and per formation |

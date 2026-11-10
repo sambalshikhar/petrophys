@@ -231,8 +231,8 @@ def create_pickett_plot(
         Formation water resistivity
     phie_curve : str
         Name of porosity curve
-    rt_curve : str
-        Name of resistivity curve
+    rt_curve : str, optional
+        Name of resistivity curve (default: RT, else RDEP)
     color_curve : str, optional
         Name of curve for color coding
     depth_range : tuple, optional

@@ -46,8 +46,9 @@ def _get_endpoints(name: str) -> Dict[str, float]:
         "pef":     p["pef"],
         # Derive the U endpoint with the same rule as the measured log term
         # (U = PEF·ρ, see _u) so the solver's U row is internally consistent.
-        # The hardcoded literature "u" values differ from PEF·ρ by up to ~0.1
-        # and otherwise inject a small spurious-mineral bias on pure lithologies.
+        # The table's "u" values differ from PEF·ρ (by about 0.1 for dolomite,
+        # 0.65 for halite at its log density) and would otherwise inject a
+        # spurious-mineral bias on pure lithologies.
         "u":       _u(p["pef"], density),
         "dt":      p["slowness"],
     }
@@ -75,8 +76,8 @@ class MultiMineralSolver:
     Multi-mineral solver for complex lithology, version 2.
 
     This class solves for mineral fractions using multiple
-    log measurements simultaneously. Version 1, the original solver that takes
-    PHIE as a fixed input and gates samples on closure, is
+    log measurements simultaneously. Version 1, the solver that takes PHIE as
+    a fixed input and gates samples on closure, is
     :class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`.
 
     Vcl (from VclModule) must be pre-computed before calling this solver and is
@@ -84,19 +85,22 @@ class MultiMineralSolver:
     (a pre-computed PHIE depends on the assumed matrix, which would bias the
     result); it is solved as an extra unknown alongside the minerals, so the
     mineral solution is independent of any matrix guess. The ``phie`` argument is
-    accepted for backward compatibility but is not used in the solve; the solved
-    porosity is returned in ``result["phie"]``.
+    accepted but not used in the solve; the solved porosity is returned in
+    ``result["phie"]``.
 
     The active mineral set and equations are determined per depth from the
     equations available at that sample. Unity and RHOB are always used; NPHI,
     PEF, and DTC are optional discriminator rows. The full mineral set is used
-    when enough independent rows are available, otherwise the solver falls
-    back to the reduced mineral set.
+    when there are as many rows as minerals plus porosity, otherwise the
+    solver falls back to the reduced mineral set: with the default four
+    minerals and porosity unknown, the full set needs NPHI, PEF and DTC all
+    present, and RHOB with two of them solves quartz, calcite and dolomite.
+    A fixed (core) porosity needs one row fewer.
 
     PEF is preferred over DTC for mineral discrimination because U = PEF × ρ
     has a much wider spread across carbonates (quartz: 4.77, dolomite: 8.90,
-    calcite: 13.82 b/cm³) and is the only tool that reliably separates
-    anhydrite from dolomite.
+    calcite: 13.82 b/cm³) and separates anhydrite (14.9) from dolomite far
+    more clearly than density, neutron or sonic.
 
     Tool Response Equations (linear mixing), with porosity φ as an unknown:
         Unity:   V1 + ... + Vn + φ          = 1    - Vcl
@@ -112,12 +116,13 @@ class MultiMineralSolver:
     Parameters
     ----------
     minerals : list, optional
-        List of mineral types to solve for when PEF is available.
+        Full mineral set, solved where a sample has enough rows for it.
         Default includes anhydrite as the 4th mineral:
         ["quartz", "calcite", "dolomite", "anhydrite"]
     minerals_no_pef : list, optional
-        Mineral list used when PEF is absent (default: first three
-        from minerals, i.e. ["quartz", "calcite", "dolomite"])
+        Reduced mineral set, solved where a sample has too few rows for the
+        full set (default: first three from minerals, i.e.
+        ["quartz", "calcite", "dolomite"])
     clay_mineral : str, optional
         Clay mineral name for endpoint lookup (default: "clay")
     fluid : str, optional
@@ -133,7 +138,7 @@ class MultiMineralSolver:
     Examples
     --------
     >>> solver = MultiMineralSolver()
-    >>> result = solver.solve(rhob, nphi=None, vcl=vcl, phie=phie, pef=pef, dt=dt)
+    >>> result = solver.solve(rhob, nphi, vcl=vcl, pef=pef, dt=dt)  # doctest: +SKIP
     """
 
     version = 2
@@ -210,11 +215,12 @@ class MultiMineralSolver:
         Returns
         -------
         tuple
-            (active_minerals, fractions, residual, poor_fit) where
+            (active_minerals, fractions, residual, poor_fit, porosity) where
             active_minerals is the list of mineral names used,
             fractions are the solved (normalized) volumes,
-            residual is the NNLS least-squares residual, and
-            poor_fit is True when closure error exceeds closure_tolerance.
+            residual is the NNLS least-squares residual,
+            poor_fit is True when closure error exceeds closure_tolerance, and
+            porosity is the solved (or fixed) porosity.
         """
         vcl  = float(np.clip(vcl,  0.0, 1.0))
         # Porosity handling:
@@ -384,8 +390,8 @@ class MultiMineralSolver:
         vcl : float or np.ndarray
             Pre-computed clay volume (0-1)
         phie : float or np.ndarray, optional
-            Accepted for backward compatibility. The solver derives porosity
-            jointly with mineral volumes and does not require this input.
+            Accepted and not used. The solver derives porosity jointly with
+            mineral volumes (or takes it from ``core_phi``).
         pef : float or np.ndarray, optional
             Photoelectric factor (b/e); omit if curve absent
         dt : float or np.ndarray, optional

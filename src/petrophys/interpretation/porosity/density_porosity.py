@@ -38,14 +38,14 @@ def density_porosity(
     Returns
     -------
     float or np.ndarray
-        Density porosity (v/v). Missing/nonfinite inputs and zero
-        matrix-fluid density contrast return NaN.
+        Density porosity (v/v), limited to 0-0.5. Missing/nonfinite inputs
+        and zero matrix-fluid density contrast return NaN.
 
     Examples
     --------
     >>> phid = density_porosity(2.35, rhob_matrix=2.65)
     >>> print(f"PHID = {phid:.3f}")
-    0.182
+    PHID = 0.182
     """
     rhob_arr = np.asarray(rhob, dtype=float)
     rhob_matrix_arr = np.asarray(rhob_matrix, dtype=float)

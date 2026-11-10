@@ -307,15 +307,24 @@ def _normalize_depth_unit(unit: str) -> str:
     return normalized
 
 
+def _wrapped(path: Path) -> bool:
+    """Whether the ~Version section of ``path`` declares wrapped data (``WRAP. YES``)."""
+    with open(path, "rb") as stream:
+        head = stream.read(8192).decode("latin-1")
+    return re.search(r"(?im)^\s*WRAP\s*\.\s*YES\b", head) is not None
+
+
 def _read_lasio(path: Path, encoding: Optional[str]):
     """Parse ``path`` with lasio, preferring UTF-8, with readable errors."""
+    # Only lasio's "normal" engine reads wrapped data (WRAP. YES).
+    options = {"engine": "normal"} if _wrapped(path) else {}
     try:
         if encoding is not None:
-            return lasio.read(str(path), encoding=encoding)
+            return lasio.read(str(path), encoding=encoding, **options)
         try:
-            return lasio.read(str(path), encoding="utf-8", encoding_errors="strict")
+            return lasio.read(str(path), encoding="utf-8", encoding_errors="strict", **options)
         except UnicodeDecodeError:
-            return lasio.read(str(path))
+            return lasio.read(str(path), **options)
     except (KeyError, IndexError, ValueError, lasio.exceptions.LASHeaderError,
             lasio.exceptions.LASDataError) as exc:
         detail = str(exc).strip("'\"") or type(exc).__name__
@@ -961,7 +970,7 @@ def read_las(
         Text encoding of the file (e.g. ``"latin-1"``). By default UTF-8 is
         tried first, then lasio's encoding detection.
     **kwargs
-        Reserved for future use; unsupported arguments raise TypeError.
+        Other keywords are not accepted and raise TypeError.
 
     Returns
     -------

@@ -68,6 +68,7 @@ def calculate_temperature_gradient(
     ...     temp2=200, depth2=10000
     ... )
     >>> print(f"Gradient: {gradient:.2f} °F/100ft")
+    Gradient: 1.32 °F/100ft
     """
     # Convert to Fahrenheit and feet
     if temperature_unit(temp_unit, strict=True) != "F":

@@ -10,7 +10,8 @@ and exports the results, and writes compact JSON context for LLM agents. Two
 calculation profiles are available: `"current"`, the maintained
 interpretation and the default, and `"geolink"`, the calculations of the
 GeoLink eval context benchmark package. Context profiles regenerate the
-published GeoLink, COSTA and Danish context packages from their raw logs.
+published GeoLink, GeoLink training, COSTA and Danish context packages from
+their raw logs.
 
 ### Calculation profiles
 
@@ -1245,8 +1246,8 @@ wherever the package used the function.
   formation (attach tops and use `result.formation_summary()`), or give the
   shallow interval its own Rw (a zoned header parameter such as `RW_Z1`
   between `TOP_Z1` and `BOT_Z1`, which
-  `petrophys.workflow.run_dynamic_workflow_with_zones` applies). A
-  depth-varying Rw is future work.
+  `petrophys.workflow.run_dynamic_workflow_with_zones` applies).
+  Petrophys does not model an Rw that varies continuously with depth.
 - Clay porosity and the neutron-density clay point are each one value per
   well, picked over the whole log, so they do not follow shale compaction
   with depth; set `phi_cl` or `nd_clay` from the interval you evaluate.

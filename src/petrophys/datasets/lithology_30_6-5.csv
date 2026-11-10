@@ -2,9 +2,9 @@ top,bottom,lithology
 181.0,726.0,shale
 726.0,879.0,sandstone
 879.0,1908.0,shale
-1908.0,2023.0,sandstone
+1908.0,2023.0,shale
 2023.0,2203.0,shale
-2203.0,2408.0,chalk
+2203.0,2408.0,marl
 2408.0,2452.0,marl
 2452.0,2841.0,shale
 2841.0,2958.0,sandstone

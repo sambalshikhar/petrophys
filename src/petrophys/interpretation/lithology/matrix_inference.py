@@ -1,8 +1,7 @@
 """Resolve a well's lithology / matrix when it isn't specified (``"auto"``).
 
-Reliable sources, in priority order (single-curve PEF/N-D heuristics are not
-used: on real data a single bad PEF curve gives confidently wrong answers, while
-the two sources below agree with vendor ground truth):
+Sources, in priority order (single-curve PEF/N-D heuristics are not used: a
+single bad PEF curve gives confidently wrong answers):
 
   0. Vendor lithology log  -- a per-sample lithology-code curve in the LAS
        (e.g. LITHOLOGY_GEOLINK; see :func:`lithology_code_curve`), decoded via
@@ -14,7 +13,7 @@ the two sources below agree with vendor ground truth):
        the samples agree. Knowing the true porosity pins the matrix and breaks
        the quartz/calcite degeneracy WITHOUT PEF. Also a raw-input source, read
        up front.
-  2. Multi-mineral solver  -- the VQUAR/VCALC/VDOLO/VANHY mineral volumes the
+  2. Multi-mineral solver  -- the VQUAR/VCALC/VDOLO mineral volumes the
        LITHOLOGY step computes. Reliable WITH PEF; without PEF it cannot separate
        quartz from calcite, so it is the last data-driven resort. Available only
        after that step, so it feeds the later steps (saturation, net pay).
@@ -43,8 +42,8 @@ _MATRIX_TO_LITHOLOGY = {
     "dolomite": "carbonate",
 }
 
-# Lithology-code -> coarse class, for the built-in lithology code table (Kingdom nomenclature
-# (Litho_Nomenclature_Kingdom.xlsx). "clastic"/"carbonate" drive the decision;
+# Lithology-code -> coarse class, for the built-in lithology code table (Kingdom nomenclature,
+# Litho_Nomenclature_Kingdom.xlsx). "clastic"/"carbonate" drive the decision;
 # "dolomite" is split out so a dolomite-dominated carbonate maps to that matrix.
 LITHOLOGY_CODE_CLASS: Dict[int, str] = {
     1: "clastic", 2: "clastic", 3: "clastic", 4: "clastic", 5: "clastic",
@@ -120,7 +119,7 @@ class LithologyResolution:
 
     lithology: str               # "clastic" | "carbonate"
     matrix: str                  # "sandstone" | "limestone" | "dolomite"
-    method: str                  # "vendor_log" | "multi_mineral_solver" | "default"
+    method: str                  # "vendor_log" | "core_grain_density" | "core_matrix_density" | "multi_mineral_solver" | "default"
     n: int = 0                   # samples backing the decision
     confidence: float = 0.0      # share of (clastic+carbonate) samples for winner
     votes: Dict[str, int] = field(default_factory=dict)
@@ -449,7 +448,7 @@ def resolve_from_core_matrix(
 
 
 def resolve_from_minerals(well, warn: bool = True) -> Optional[LithologyResolution]:
-    """Tier 1: classify from solver mineral volumes (VQUAR/VCALC/VDOLO), if present."""
+    """Tier 2: classify from solver mineral volumes (VQUAR/VCALC/VDOLO), if present."""
     vq, _, _ = get_curve_data_depthwise(well, ["VQUAR", "VQTZ", "VSAND"])
     from petrophys._internal.benchmark import reproducing_benchmark
 

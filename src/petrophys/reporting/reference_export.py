@@ -415,15 +415,9 @@ PRIMARY_LOGS_FOR_COMPLETENESS = [
     "LITHOLOGY_GEOLINK",
 ]
 
-# Ordered, not sets: these feed ``_derived_status_target_list``, so iteration
-# order reaches ``derived_log_computation_notes`` verbatim. Set literals made
-# that order depend on PYTHONHASHSEED, which changed every note block between
-# runs. Curves already in REFERENCE_DERIVED_LOG_TARGETS keep their position
-# from that list; the trailing entries here are the ones whose order is only
-# defined by this tuple, so keep them where they are.
 # Value-range rules applied to the context statistics (lower RMF bound 0.01;
 # no SP, SO or NMR rules). The Danish and COSTA packages were written with the
-# later rules of _DATASET_CONTEXT_VALUE_RANGE_RULES.
+# rules of _DATASET_CONTEXT_VALUE_RANGE_RULES.
 _CONTEXT_VALUE_RANGE_RULES = {
     "RMF": ValueRangeRule(0.01, 10.0, "nan", ('RMF',)),
     "TEMP": ValueRangeRule(-5.0, 400.0, "nan", ('TEMP', 'TMPC')),
@@ -476,7 +470,11 @@ _CONTEXT_VALUE_RANGE_RULES = {
 
 # Target order reaches the benchmark's computed/missing summaries and compact
 # notes. Keep the published order explicit so JSON is reproducible across
-# Python hash seeds.
+# Python hash seeds. The targets are tuples, not sets: they feed
+# ``_derived_status_target_list``, so their order reaches
+# ``derived_log_computation_notes`` verbatim. Curves already in
+# REFERENCE_DERIVED_LOG_TARGETS keep their position from that list; the
+# trailing entries of each tuple are ordered only by the tuple.
 CATEGORY_CONTEXT_SPECS = {
     "hydrocarbon": {
         "analyzer": HydrocarbonAnalysis,

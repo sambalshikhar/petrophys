@@ -35,11 +35,11 @@ any user-owned path directly to `read_las()` or `read_dlis()`.
 | `geolink/16_7-1.las` | A well with a Zechstein evaporite (halite) section whose resistivity exceeds the tool range, and no neutron or PEF; the imperfect-well and curve-wrapping example. |
 | `geolink/15_9-14.las` | Mineral-solver tutorial well with vendor lithology. |
 | `geolink/25_5-1.las` | Core-bearing North Sea example with PHIC, permeability, saturation, and grain-density curves. |
-| `kgs/1046123714.las` | Morgan No. 1-17 legacy LAS example with generic CSV formation tops. |
+| `kgs/1046123714.las` | Morgan No. 1-17, a LAS example with blank and incorrect curve units, and generic CSV formation tops. |
 | `taranaki/` | Cheal-1 and Tuhua-7, onshore Taranaki Basin (New Zealand), with formation intervals; CDLA-Sharing-1.0. See `taranaki/README.md`. |
 | `teapot/` | Two 1970s Teapot Dome (Wyoming) wells as delivered, logged in feet, with casing near 500 ft. See `teapot/README.md`. |
 | `daydream/daydream1_cmr.las` | Daydream 1 processed CMR summary, 3755-4145 m. |
-| `daydream/daydream1_cmr_shallow.las` | Daydream 1 processed CMR summary, 2860-3050 m. |
+| `daydream/daydream1_cmr_shallow.las` | Daydream 1 processed CMR summary, 2839.5-3050 m. |
 | `phillips/` | Six small NMR, paired core and COSTA capillary-pressure reference datasets from Craig Phillips. See `phillips/README.md` for provenance, units and limitations; CSV and Excel paths are available through `sample()`. |
 | `epslog/` | 15/12-20 S cores C01/C02: XRF, image/laser grain-size estimates, scanner strength and ultrasonic velocities, plus a same-well RealPore core-table extract. See `epslog/README.md` for loading mappings and unresolved calibration inputs; discover with `list_samples("epslog")`. |
 | `formations_30_6-5.csv` | Formation tops for 30/6-5, from the NPD stratigraphic picks. The Brent Group (Ness and Etive formations, 2841-2958 m) is `BRENT GP.` as Sodir lists it; the picks file labels it `BAAT GP.`. The Statfjord Group keeps the picks' label `Statfjord Fm.`. |

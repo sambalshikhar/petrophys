@@ -112,7 +112,9 @@ def rw_from_salinity(
     """
     Calculate Rw from salinity using empirical relationship.
 
-    Uses the Arps formula variation for NaCl solutions.
+    Rw at 75 degF from the Bateman and Konen (1977) fit to the Schlumberger
+    Gen-9 NaCl chart, ``Rw75 = 0.0123 + 3647.5 / ppm**0.955``, moved to
+    ``temperature`` by Arps (1953).
 
     Parameters
     ----------

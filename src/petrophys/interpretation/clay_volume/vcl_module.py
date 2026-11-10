@@ -103,8 +103,9 @@ class VclModule:
         Leave VCL_ND undefined (NaN) where NPHI exceeds both the clean line's
         40 p.u. end point and the clay point (default: False). Such samples,
         e.g. undercompacted mudstones at NPHI 0.45-0.55, lie outside the
-        triangle the three-point formula interpolates in and read as clean
-        rock there; the minimum then takes the other indicators.
+        triangle the three-point formula interpolates in, where it reads too
+        little clay (down to clean rock towards the 40 p.u. end point); the
+        minimum then takes the other indicators.
     gr_curves : sequence of str, optional
         Gamma-ray mnemonics read depth by depth, in order. Default: the
         ``curves`` mapping's GR curve, or for ``"GR"`` the GR family (GR,
@@ -112,6 +113,8 @@ class VclModule:
 
     Examples
     --------
+    >>> import petrophys as pp
+    >>> well = pp.read(pp.sample("30_6-5"))
     >>> vcl_calc = VclModule(gr_min=15, gr_max=120)
     >>> result = vcl_calc.calculate(well)
     >>> well["VCLAY"] = result.vcl
@@ -141,7 +144,7 @@ class VclModule:
         self.use_sp = use_sp
         self.use_nd = use_nd
         # Matrix selects the N-D crossplot clean line (sandstone for clastic,
-        # limestone for carbonate, dolomite). None -> limestone (back-compat).
+        # limestone for carbonate, dolomite). None -> limestone (the default).
         if matrix is not None:
             from petrophys.interpretation.clay_volume.nd_method import _ND_CLEAN_LINES, _ND_MATRIX_ALIASES
 
@@ -203,11 +206,12 @@ class VclModule:
     def _combine_nd_primary(self, n_samples, vcl_gr, vcl_sp, vcl_nd, nphi_data, rhob_data):
         """Neutron-density-primary clay combination.
 
-        The neutron-density crossplot responds to clay *mineralogy* and is the
-        most reliable single clay indicator in water/oil-bearing clastics: GR
+        The neutron-density crossplot responds to clay *mineralogy* and is often
+        the most reliable single clay indicator in water/oil-bearing clastics: GR
         under-reads non-radioactive (kaolinite-type) clay and over-reads
-        feldspathic/micaceous sands, while SP is suppressed by fresh mud and
-        thin beds. A plain minimum of the methods can therefore fall below the
+        feldspathic/micaceous sands, while SP is suppressed where mud filtrate
+        and formation water have similar resistivity, in thin beds and by
+        hydrocarbons. A plain minimum of the methods can therefore fall below the
         true clay content wherever GR or SP happens to read low.
 
         Rule:
@@ -502,7 +506,9 @@ def calculate_vcl(
 
     Examples
     --------
+    >>> import petrophys as pp
     >>> from petrophys.interpretation.clay_volume import calculate_vcl
+    >>> well = pp.read(pp.sample("30_6-5"))
     >>> result = calculate_vcl(well, gr_min=15, gr_max=110)
     >>> well["VCL"] = result.vcl
     """

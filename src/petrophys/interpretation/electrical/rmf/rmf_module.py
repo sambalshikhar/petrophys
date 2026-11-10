@@ -78,7 +78,8 @@ class RmfModule:
 
     Notes
     -----
-    For OBM (oil-based mud), Rmf is not applicable. Use Rxo = 200 ohm.m default.
+    With oil-based mud the filtrate does not conduct and Rmf does not apply;
+    this class has no oil-based-mud case.
 
     Examples
     --------
@@ -162,8 +163,8 @@ class RmfModule:
         """
         Calculate Rmf from well header and temperature curve.
 
-        The header Rmf/Rm is taken as measured at ``well.header.rm_temp``,
-        else at the RMFT header parameter (mud filtrate measurement
+        The header Rmf/Rm is taken as measured at ``well.header.rm_temp``
+        (degF), else at the RMFT header parameter (mud filtrate measurement
         temperature), else at MFST (mud filtrate sample temperature), each
         converted from its unit label, else at 75 degF. Pass the measurement
         temperature to :meth:`calculate` when it differs.

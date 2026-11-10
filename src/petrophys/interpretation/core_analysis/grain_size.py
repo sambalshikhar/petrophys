@@ -315,8 +315,9 @@ class GrainSizeData:
         Returns
         -------
         np.ndarray
-            Estimated permeability (mD). Theoretical upper bound —
-            real permeability is lower due to cementation and packing.
+            Estimated permeability (mD) for a clean pack of equal spheres;
+            cementation, clay and poor sorting usually make real rock less
+            permeable.
 
         Notes
         -----
@@ -335,12 +336,13 @@ class GrainSizeData:
 
     def pore_throat_radius(self) -> np.ndarray:
         """
-        Estimate modal pore throat radius from median grain size.
+        Estimate pore throat radius from median grain size.
 
-        Uses the empirical approximation r_pt ≈ d₅₀ / 10, which holds
-        for well-sorted, uncemented sands (Beard & Weyl 1973).
-        For cemented or poorly sorted material the actual r_pt will be
-        significantly smaller.
+        Uses the rule of thumb r_pt ≈ d₅₀ / 10, one fifth of the grain
+        radius, which lies between the throat radii of rhombohedral
+        (0.155 R) and cubic (0.414 R) packings of equal spheres. It suits
+        well-sorted, uncemented sands only; for cemented or poorly sorted
+        material the actual r_pt will be significantly smaller.
 
         Returns
         -------

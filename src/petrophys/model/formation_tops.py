@@ -43,10 +43,14 @@ class FormationTops:
 
     Examples
     --------
-    >>> tops = FormationTops.from_csv("formations.csv")
+    >>> import petrophys as pp
+    >>> tops = FormationTops.from_csv(pp.sample("formations_30_6-5"))
     >>> tops.validate()
-    >>> fm = tops.get_by_name("Brent Group")
-    >>> at_depth = tops.get_at_depth(2500.0)
+    []
+    >>> tops.get_by_name("BRENT GP.").top_depth
+    2841.0
+    >>> [fm.name for fm in tops.get_at_depth(2850.0)]
+    ['BRENT GP.', 'Ness Fm.']
     """
 
     def __init__(self, intervals: Optional[List[Interval]] = None):

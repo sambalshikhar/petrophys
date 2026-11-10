@@ -1,8 +1,8 @@
 """
 Multi-mineral solver, version 1.
 
-Version 1 is the original solver, used by the dynamic workflow's clastic
-mineral step. VCL and PHIE are taken as fixed inputs
+Version 1 is the solver of the dynamic workflow's clastic mineral step by
+default. VCL and PHIE are taken as fixed inputs
 and moved to the right-hand side of the tool-response equations, the mineral
 volumes are solved by non-negative least squares, and an absolute closure gate
 rejects samples whose solved mineral total misses the available rock volume
@@ -45,8 +45,8 @@ from scipy.optimize import nnls
 from petrophys.interpretation.lithology.matrix_properties import get_log_density, get_mineral_properties
 
 
-# Tool-response endpoints frozen with version 1, so its results cannot drift
-# when the shared mineral table changes. Other minerals use the table.
+# Tool-response endpoints of version 1, held apart from the shared mineral
+# table so its results do not follow that table. Other minerals use the table.
 _V1_ENDPOINTS: Dict[str, Dict[str, float]] = {
     "quartz":    {"density": 2.65, "nphi": -0.02, "pef": 1.8,  "u": 4.8,  "dt": 55.5},
     "calcite":   {"density": 2.71, "nphi": 0.0,   "pef": 5.1,  "u": 13.8, "dt": 47.6},
@@ -154,11 +154,11 @@ class MultiMineralSolverV1:
     Parameters
     ----------
     minerals : list, optional
-        Minerals solved when PEF or DTC is available
-        (default: ["quartz", "calcite", "dolomite", "anhydrite"]).
+        Minerals solved when PEF is available, or DTC with
+        ``sonic_without_pef`` (default: ["quartz", "calcite", "dolomite",
+        "anhydrite"]).
     minerals_no_pef : list, optional
-        Minerals solved when neither PEF nor DTC is available
-        (default: the first three of ``minerals``).
+        Minerals solved otherwise (default: the first three of ``minerals``).
     clay_mineral : str, optional
         Clay endpoint name (default: "clay").
     fluid : str, optional
@@ -171,11 +171,10 @@ class MultiMineralSolverV1:
         rows unscaled, the calculation behind the "geolink" calculation profile.
     sonic_without_pef : bool, optional
         Let a sonic row stand in for a missing PEF and solve the four-mineral
-        set (the original behaviour, kept by the benchmark profiles). Default
-        False: without PEF the three-mineral set is solved from density and
-        neutron. Against vendor lithology logs (15/9-14, 30/6-5) the sonic
-        stand-in called 84-97 % of no-PEF carbonates quartz; density and
-        neutron alone called 74-89 % of them carbonate.
+        set (the calculation of the benchmark profiles). Default False:
+        without PEF the three-mineral set is solved from density and neutron.
+        Sonic follows pore shape and compaction as much as mineralogy, so it
+        does not replace PEF in separating quartz from carbonate.
     endpoint_overrides : mapping, optional
         Endpoint values replacing the table's, keyed by endpoint name and then
         ``density`` (g/cm³), ``nphi``, ``pef``, ``u`` or ``dt`` (μs/ft): e.g.
@@ -185,7 +184,7 @@ class MultiMineralSolverV1:
     Examples
     --------
     >>> solver = MultiMineralSolverV1()
-    >>> result = solver.solve(rhob, nphi, vcl, phie, pef=pef, dt=dt)
+    >>> result = solver.solve(rhob, nphi, vcl, phie, pef=pef, dt=dt)  # doctest: +SKIP
     """
 
     version = 1

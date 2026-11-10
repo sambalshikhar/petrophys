@@ -125,7 +125,7 @@ e.g. `hc_type='gass' is not valid; use one of: oil, gas (did you mean 'gas'?)`.
 result.status                  # "interpreted", "no_interpretation" or "failed"
 result.summary(top=2841, bottom=2958)   # compact JSON-ready overview of a depth window
 result.warnings                # data problems and assumed values
-result.specific_steps_skipped  # e.g. {"core_correction": "Missing core porosity (PHIC/CPOR), ..."}
+result.specific_steps_skipped  # e.g. {"core_correction": "Missing core porosity (PHIC/CPOR/CPOR-AMB) or ..."}
 result.to_trace_dict()         # every step's method, inputs, outputs, parameters
 ```
 
@@ -149,7 +149,7 @@ above its oil zones, which start at 2984 m. Attach formation tops and read
 or give such a section its own Rw in a zoned run (header zones such as
 `TOP_Z1`, `BOT_Z1`, `RW_Z1`; see the
 [workflows guide](https://petrophys.netlify.app/workflows.html)). A
-formation-water salinity that varies with depth is not available yet.
+formation-water salinity that varies with depth is not available.
 
 ## Custom workflows
 
@@ -343,7 +343,7 @@ from petrophys.evaluation import calculate_rock_quality
 
 vcl = vcl_from_gr(np.array([35.0, 80.0, 120.0]), gr_min=30.0, gr_max=130.0)
 sw = archie(rt=20.0, rw=0.05, phi=0.22)
-sw_shaly = dual_water(phi_t=0.2, rt=10.0, rw=0.05, rwb=0.02, vcl=0.3, phi_cl=0.15)
+sw_shaly = dual_water(phi_t=0.2, rt=5.0, rw=0.05, rwb=0.02, vcl=0.3, phi_cl=0.15)
 quality = calculate_rock_quality(perm_k=100.0, phi_e=0.2)   # {"RQI", "phi_z", "FZI"}
 ```
 

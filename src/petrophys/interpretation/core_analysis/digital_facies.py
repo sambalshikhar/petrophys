@@ -2,9 +2,9 @@
 Multi-parameter core facies classification.
 
 Clusters depth samples using multiple core measurements
-(mechanical, geochemical, textural) into discrete facies classes,
-following the EpsLog/Stratum Reservoir workflow that combines grain
-size, elemental concentrations, strength, and image color indices.
+(mechanical, geochemical, textural) into discrete facies classes, for
+core-scanner data that combine grain size, elemental concentrations,
+strength, and image color indices.
 
 References
 ----------
@@ -97,7 +97,9 @@ class FaciesResult:
         Returns
         -------
         pd.DataFrame
-            Multi-index columns (feature, percentile) × facies rows.
+            One row per facies (index ``facies``) with ``count``,
+            ``proportion_pct`` and ``<feature>_P13``, ``_P50``, ``_P87``
+            columns.
         """
         if not HAS_PANDAS:
             raise ImportError("pandas is required")
@@ -147,8 +149,7 @@ class DigitalCoreFacies:
     K-means facies classifier for multi-parameter core data.
 
     Combines mechanical, geochemical, and textural measurements into
-    discrete facies classes using weighted feature scaling, following
-    the workflow used in EpsLog/Stratum Reservoir digital core analysis.
+    discrete facies classes using standardized, weighted features.
 
     Parameters
     ----------

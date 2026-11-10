@@ -5,6 +5,5 @@ Data attribution: GEOLINK-S2. The public
 lists CC BY-SA 4.0 for data and analysis. Petrophys uses curated LAS files,
 including interpreted and core-related additions.
 
-See `THIRD_PARTY_DATA.md` in the distribution for attribution, modifications, and
-the outstanding provenance check for the exact source copies and added fields.
+See `THIRD_PARTY_DATA.md` in the distribution for attribution and modifications.
 The software MIT licence does not replace data terms.

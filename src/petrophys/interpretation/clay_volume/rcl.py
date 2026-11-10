@@ -1,8 +1,8 @@
 """
 Clay Resistivity (Rcl) calculation module.
 
-Computes clay resistivity from deep resistivity readings in
-zones where clay volume exceeds 0.9 (nearly pure clay).
+Computes clay resistivity from deep resistivity readings in shale
+samples, or in zones where clay volume exceeds 0.9 (nearly pure clay).
 """
 
 from typing import TYPE_CHECKING, Union, Optional
@@ -26,7 +26,8 @@ def calculate_rcl(
     Calculate clay resistivity from high-VCL zones.
 
     Uses shale samples when an explicit shale mask is available. Otherwise it
-    falls back to zones where VCL > threshold (nearly pure clay).
+    falls back to zones where VCL > threshold (nearly pure clay). With neither
+    a mask nor VCL, every finite RDEP sample is used.
 
     Parameters
     ----------
@@ -95,7 +96,8 @@ class RclModule:
         well : Well
             Well object with RDEP and VCL curves
         vcl : np.ndarray, optional
-            Clay volume array (uses well VCL if not provided)
+            Clay volume array (uses well VCL if not provided; with no VCL
+            curve either, the statistic of the whole RDEP log)
         shale_mask : np.ndarray, optional
             Boolean shale-sample mask
 

@@ -124,7 +124,7 @@ def correct_resistivity_temperature(
     elif method.lower() != "arp2":
         raise ValueError(f"Unknown resistivity temperature correction {method!r}: use 'arps' or 'arp2'")
     else:
-        # Alternative Arp formula (slightly different constant)
+        # Arps form with rounded constants: 7 for degF, 21 for degC
         scale, (from_temp, to_temp) = _arps_scale(temp_unit, from_temp, to_temp)
         k = 7.0 if scale == "F" else 21.0
         return resistivity * (from_temp + k) / (to_temp + k)
@@ -168,7 +168,8 @@ def estimate_nacl_resistivity(
     """
     Estimate NaCl solution resistivity from salinity and temperature.
 
-    Uses empirical relationship for NaCl solutions.
+    Rw at 75 degF from the Bateman and Konen (1977) fit to the Schlumberger
+    Gen-9 NaCl chart, moved to ``temperature`` by Arps (1953).
 
     Parameters
     ----------
@@ -188,14 +189,10 @@ def estimate_nacl_resistivity(
     if temperature_unit(temp_unit, strict=True) != "F":
         temperature = UnitConverter.temperature(temperature, temp_unit, "F")
 
-    # Empirical formula (Schlumberger Gen-9)
-    # Rw = (400000 / salinity_ppm) / (temperature + 6.77)
-    # This is a simplified approximation
-
     if salinity_ppm <= 0:
         return np.inf
 
-    # More accurate formula based on Arps
+    # Bateman-Konen fit to the Gen-9 chart at 75 degF
     rw_at_75f = (0.0123 + 3647.5 / salinity_ppm ** 0.955)
 
     # Correct to formation temperature

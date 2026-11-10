@@ -2,22 +2,26 @@
 Dynamic petrophysics workflow.
 
 This module provides a DynamicWorkflow class that automatically detects
-available input curves and runs the appropriate modules in the correct
-order. It supports both granular (single-module) and full pipeline
-execution modes.
+available input curves and runs the appropriate steps in the correct
+order. It supports both a full run (:meth:`DynamicWorkflow.run`) and
+selected steps (:meth:`DynamicWorkflow.run_selected_steps`).
 
-Pipeline execution order:
-    Module 1: QC & Pre-Processing
-    Module 2: Spectral Gamma and Elemental Spectroscopy
-    Module 3: Volume of Clay, Clay Resistivity, Rmf, and HC preparation
-    Module 4: Provisional Porosity
-    Module 5: Lithology Determination
-    Module 6: Porosity Refinement and Core Correction
-    Module 7: Formation Water Resistivity
-    Module 8: Water Saturation
-    Module 9: Permeability
-    Module 10: Rock Quality (RQI, FZI)
-    Module 11: Net Pay
+Pipeline order (:meth:`DynamicWorkflow.get_pipeline`):
+    1. QC: curve standardization, temperature profile, bad-hole flag
+    2. Clay volume and clay resistivity
+    3. Mud-filtrate resistivity and the opt-in hydrocarbon correction
+    4. Porosity
+    5. Lithology (mineral solve)
+    6. Core porosity correction
+    7. Formation water resistivity and invasion
+    8. Water saturation
+    9. Permeability
+    10. Rock quality (RQI, FZI), bulk volume water, moveable hydrocarbon index
+    11. Net pay
+
+The spectral gamma, elemental spectroscopy and porosity refinement steps
+are not run by :meth:`DynamicWorkflow.run`;
+:meth:`DynamicWorkflow.run_selected_steps` runs them when asked.
 """
 
 from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
@@ -742,7 +746,8 @@ class DynamicWorkflowConfig:
     #: mud circulation (such as a Horner plot). Set, the temperature profile
     #: follows it rather than an input TEMP log (kept as TEMP_LOG).
     bht_f: Optional[float] = None
-    #: Total depth for the BHT, in feet. Defaults to the deepest sample.
+    #: Total depth for the BHT, in feet. Defaults to the LAS header TD, else
+    #: the deepest sample.
     td_ft: Optional[float] = None
     #: Geothermal gradient, degF/100 ft (1 degC/100 m is 0.549 degF/100 ft),
     #: from ``surface_temp_f`` at depth 0. Defaults to the LAS header TGRAD,
@@ -760,8 +765,11 @@ class DynamicWorkflowConfig:
     #: The mud contains clay or KCl, which disables SP-based Rw estimation.
     mud_has_clay_or_kcl: bool = False
     #: Mud-filtrate resistivity Rmf at ``rmf_meas_temp_f``, ohm.m. Rmf comes
-    #: from the first of: this setting, the LAS header RMF, ``rmf_salinity_ppm``,
-    #: ``rmf_chlorides_mg_l``, then ``rm`` (or the header RM).
+    #: from the first of: this setting; ``rmf_salinity_ppm``,
+    #: ``rmf_chlorides_mg_l`` or ``rm`` set by you; the LAS header RMF; then
+    #: the header's filtrate salinity (FLSAL), chlorides (CLFL) or RM. The
+    #: "geolink" profile takes the header RMF before ``rmf_salinity_ppm``,
+    #: ``rmf_chlorides_mg_l`` and ``rm``.
     rmf_at_meas_temp: Optional[float] = None
     #: Temperature at which ``rmf_at_meas_temp`` was measured, degF. Unset
     #: (None), the LAS header RMFT is used, or else MFST (mud filtrate sample
@@ -790,7 +798,8 @@ class DynamicWorkflowConfig:
     rw: Optional[float] = None
     #: Temperature of ``rw``, degF. When omitted, Rw is taken at the median
     #: formation temperature (no temperature correction), as recorded in the
-    #: trace.
+    #: trace. Set without ``rw`` under ``"current"``, it is the measurement
+    #: temperature of the LAS header RW, in place of the header RWT.
     rw_meas_temp_f: Optional[float] = None
     #: Formation water salinity, ppm NaCl equivalent. Rw then follows it across
     #: the temperature profile, ahead of a header RW; ``rw`` set wins over it.
@@ -835,12 +844,15 @@ class DynamicWorkflowConfig:
     #: (anhydrite among its minerals) with an automatic matrix that no family
     #: limits, and clastic cutoffs; evaporite samples are left out of net pay.
     #: A matrix left unset follows the domain, also when the domain is changed
-    #: on a copy of the config.
+    #: on a copy of the config. A rock name (``"dolomite"``, ``"chalk"``,
+    #: ``"anhydrite"`` ...) sets its family as the domain and, when
+    #: ``matrix_type`` is unset, the rock as the matrix where it has matrix
+    #: properties.
     lithology_domain: Optional[str] = None
-    #: Deprecated alias for ``lithology_domain``, the unambiguous name; the
-    #: alias is accepted. It fills ``lithology_domain`` only when that is
-    #: unset, and a value that
-    #: differs from a set ``lithology_domain`` is an error.
+    #: Alias for ``lithology_domain``, the unambiguous name. It fills
+    #: ``lithology_domain`` only when that is unset; when both are set,
+    #: ``lithology_domain`` is used (:func:`petrophys.interpret` refuses
+    #: both together).
     lithology: Optional[str] = None
     #: Lithology intervals CSV (``top,bottom,lithology``).
     lithology_csv: Optional[str] = None
@@ -874,8 +886,8 @@ class DynamicWorkflowConfig:
     #: used by the benchmark profiles.
     lithology_codes: Optional[Any] = None
     #: Mineral solver for the clastic mineral step. ``1`` (default) is
-    #: :class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`, the
-    #: original solver: VCL and PHIE are fixed inputs, each equation row is
+    #: :class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`:
+    #: VCL and PHIE are fixed inputs, each equation row is
     #: weighted by its nominal tool uncertainty (unweighted under the "geolink"
     #: profile), and samples that fail the 0.05 closure gate are left
     #: unsolved. ``2`` is
@@ -941,8 +953,8 @@ class DynamicWorkflowConfig:
     #: Indonesia), and ``sw_model="dual_water"`` stops with an error. Rwb is not
     #: estimated (the "geolink" profile takes 0.3 Rw).
     rwb: Optional[float] = None
-    #: Clay (shale) porosity, v/v. A value other than the default (0.15) is used
-    #: as it stands, 0.15 included. Unset (None), it is derived from the
+    #: Clay (shale) porosity, v/v. A value set is used as it stands, 0.15
+    #: included. Unset (None), it is derived from the
     #: well's shale samples where they support it, and 0.15 is the last
     #: resort. Under ``"current"`` a LAS
     #: header shale point, PNSH (the neutron log's reading in shale) with RBSH
@@ -995,7 +1007,8 @@ class DynamicWorkflowConfig:
     # -- Gamma-ray clay volume ----------------------------------------------
     #: Clean-rock gamma-ray endpoint, API, used as given. None picks P5 of the
     #: log, lowered to 20 API when higher (a guard against a nearly flat GR,
-    #: reported with a warning; ``gr_min_used`` in the trace).
+    #: reported in the trace as ``gr_min_used``, with a warning when the pick
+    #: is above 30 API).
     gr_min: Optional[float] = None
     #: Shale gamma-ray endpoint, API, used as given. None picks P95 of the
     #: log, raised to 100 API when lower.
@@ -1155,7 +1168,7 @@ class DynamicWorkflowConfig:
 
     def __post_init__(self) -> None:
         if self.lithology is not None:
-            # The deprecated alias fills an unset domain and is not mirrored
+            # The ``lithology`` alias fills an unset domain and is not mirrored
             # back, so dataclasses.replace(config, lithology_domain=...) works.
             alias = str(self.lithology).strip()
             if self.lithology_domain is None:
@@ -1525,7 +1538,7 @@ def _copy_config(
     """
     changes = dict(changes)
     if "lithology_domain" in changes and "lithology" not in changes:
-        # The copy mirrors its old domain in the deprecated alias otherwise.
+        # The copy mirrors its old domain in the ``lithology`` alias otherwise.
         changes["lithology"] = None
     if (
         "lithology_domain" in changes
@@ -1706,7 +1719,7 @@ _DOMAIN_MATRICES = {"clastic": ("sandstone",), "carbonate": ("limestone", "dolom
 _MUD_TYPES = ("WBM", "OBM")
 _MUD_WATERS = ("fresh", "salt")
 _LITHOLOGY_FAMILIES = ("auto", "clastic", "carbonate", "evaporite")
-#: ``lithology_domain`` when neither it nor the deprecated alias is set.
+#: ``lithology_domain`` when neither it nor its ``lithology`` alias is set.
 _DEFAULT_LITHOLOGY_DOMAIN = "clastic"
 #: Logged vendor density and sonic porosities, in order of preference, that
 #: PHID and PHIS take where their values are in :data:`_POROSITY_RANGE`.
@@ -1999,6 +2012,21 @@ def _normalized_choice(
         errors.append(_choice_error(name, value, choices))
 
 
+_CARBONATE_WORDS = ("lime", "chalk", "dolo", "calcite", "marl", "ooze", "carbonate", "calcareous_debris")
+#: Rock names that are also matrix types (:class:`~petrophys.model.constants.MatrixProperties`).
+_MATRIX_ROCKS = ("sandstone", "limestone", "dolomite", "calcite", "anhydrite", "gypsum", "halite")
+_EVAPORITE_WORDS = ("anhydrite", "gypsum", "halite", "salt", "sylvi", "carnallite", "kainite", "potash", "evaporite")
+
+
+def _rock_family(name: str) -> str:
+    """The lithology domain of a rock name: carbonate, evaporite or clastic."""
+    if any(word in name for word in _EVAPORITE_WORDS):
+        return "evaporite"
+    if any(word in name for word in _CARBONATE_WORDS):
+        return "carbonate"
+    return "clastic"
+
+
 def _validate_lithology(config: "DynamicWorkflowConfig", errors: List[str]) -> None:
     """Accept a cutoff family or any lithology with tabulated Archie coefficients."""
     from petrophys.model.constants import ArchieParameterDefaults
@@ -2011,7 +2039,17 @@ def _validate_lithology(config: "DynamicWorkflowConfig", errors: List[str]) -> N
     if key in _LITHOLOGY_FAMILIES:
         config.lithology_domain = key
         return
-    if ArchieParameterDefaults.normalize(value) in ArchieParameterDefaults.names():
+    name = ArchieParameterDefaults.normalize(value)
+    if name in ArchieParameterDefaults.names():
+        if config.calculation_profile not in _BENCHMARK_PROFILES:
+            # A rock name: its family is the domain, and the rock the matrix
+            # when matrix_type is unset, so the mineral solve, matrix, Archie
+            # coefficients and cutoffs agree.
+            config.lithology_domain = _rock_family(name)
+            if getattr(config, "_matrix_defaulted", False):
+                config.matrix_type = (
+                    name if name in _MATRIX_ROCKS else _default_matrix_type(config.lithology_domain)
+                )
         return
     import difflib
 
@@ -2527,8 +2565,9 @@ class DynamicWorkflowResult:
     #: Trace entries of the context's value-range QC and dependent-curve
     #: recomputation, applied to ``well`` after the workflow.
     post_workflow_steps: List[Dict[str, Any]] = field(default_factory=list)
-    #: One run per entry of ``config.zones`` (in zone order), each merged into
-    #: ``well`` over its depths; empty without zones.
+    #: One run per distinct set of zone settings (``config.zones`` and LAS
+    #: header zones), each merged into ``well`` over its depths; empty when
+    #: no zone sets anything (a zone that only names an interval adds no run).
     zone_results: List["DynamicWorkflowResult"] = field(default_factory=list)
     #: The zones of ``config.zones`` that apply to this well, in depth order:
     #: ``name``, ``top`` and ``bottom`` in the well's depth unit.
@@ -3049,7 +3088,7 @@ class DynamicWorkflow:
     --------
     >>> config = DynamicWorkflowConfig(
     ...     bht_f=220, td_ft=8500, rw=0.05,
-    ...     lithology='clastic', salinity_ppm=25000
+    ...     lithology_domain='clastic', salinity_ppm=25000
     ... )
     >>> workflow = DynamicWorkflow(config)
     >>> result = workflow.run(well)
@@ -3788,7 +3827,7 @@ class DynamicWorkflow:
             applied.append(f"matrix_type={matrix}")
         if self._auto_lith:
             self.config.lithology_domain = res.lithology
-            self.config.lithology = res.lithology  # deprecated alias mirrors the domain
+            self.config.lithology = res.lithology  # the lithology alias mirrors the domain
             if self._result is not None:
                 self._result.lithology_domain = res.lithology
             applied.append(f"lithology={res.lithology}")
@@ -4168,11 +4207,12 @@ class DynamicWorkflow:
         Zones are ``config.zones`` (the caller's) and the LAS header zones
         that :func:`_config_with_header_settings` found (``_header_zones``);
         where they overlap, the caller's values win. Each set of zone settings
-        is a full run of the well with those settings over the rest, so a zone
-        changes what its settings change and nothing else: data-derived picks
-        (GR baselines, irreducible water saturation, the core model) stay
-        those of the whole well. Its curves replace the whole-well ones inside
-        the zone.
+        is a full run of the well with those settings over the rest, so
+        data-derived picks (GR baselines, irreducible water saturation, the
+        core model) are taken over the whole well, not over the zone's samples
+        alone; a pick that depends on a zone setting (Swirr from SW, for
+        instance) follows that setting. Its curves replace the whole-well ones
+        inside the zone.
         """
         import copy as _copy
 
@@ -5176,7 +5216,12 @@ class DynamicWorkflow:
         if result.reference_depth is not None:
             trace.parameters["reference_depth_ft"] = result.reference_depth
 
-        if result.source == "fallback_geothermal_gradient":
+        if source == "measured_temperature_log":
+            if result.source == "fallback_geothermal_gradient":
+                trace.decisions.append(
+                    "No BHT temperature anchor found: the 30 C/km gradient fills only the TEMP log's gaps"
+                )
+        elif result.source == "fallback_geothermal_gradient":
             trace.decisions.append("No BHT temperature anchor found -> using fallback 30 C/km geothermal gradient")
             self._warn_assumed(
                 "No bottom-hole temperature (bht_f or header BHT): temperatures follow an assumed "
@@ -9575,7 +9620,7 @@ def run_dynamic_workflow(
 
     Examples
     --------
-    >>> result = run_dynamic_workflow(well, rw=0.05, lithology='clastic')
+    >>> result = run_dynamic_workflow(well, rw=0.05, lithology_domain='clastic')
     >>> print(f"Steps executed: {[s.step for s in result.steps_executed]}")
     >>> print(f"Steps skipped: {result.steps_skipped}")
     """

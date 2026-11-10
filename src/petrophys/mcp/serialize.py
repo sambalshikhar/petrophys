@@ -195,8 +195,8 @@ def header_notes(well: "Well") -> List[str]:
         given = ", ".join(f"{name.lower()}={value:g}" for name, value in archie.items()
                           if value is not None)
         notes.append(
-            f"Header gives Archie parameters ({given}); interpret_well does not read them. "
-            "Pass them as settings to use them."
+            f"Header gives Archie parameters ({given}); interpret_well uses them unless "
+            "a, m or n is given in settings."
         )
     return notes
 
@@ -400,9 +400,12 @@ def _assumptions(result: Any) -> tuple[List[str], List[str]]:
     if vclay is not None:
         parameters = vclay.parameters or {}
         text = f"Clay volume: {vclay.method}"
-        if parameters.get("gr_min") is not None:
-            text += (f", GR clean {parameters.get('gr_min'):g} / shale "
-                     f"{parameters.get('gr_max'):g} API")
+        clean = parameters.get("gr_min_used", parameters.get("gr_min"))
+        shale = parameters.get("gr_max_used", parameters.get("gr_max"))
+        if clean is not None and shale is not None:
+            text += f", GR clean {clean:g} / shale {shale:g} API"
+            if parameters.get("gr_bounded"):
+                text += " (picks bounded to 20/100 API)"
         items.append(text)
 
     saturation = _step(result, "saturation")

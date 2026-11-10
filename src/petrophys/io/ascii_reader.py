@@ -149,9 +149,15 @@ def read_csv(
     df.columns = [c.strip().upper() for c in df.columns]
     depth_column = depth_column.strip().upper()
     if depth_column not in df.columns:
+        hint = ""
+        if len(df.columns) == 1 and any(sep in str(df.columns[0]) for sep in (";", "\t", "|", " ")):
+            hint = (
+                f" The header was read as the single column {str(df.columns[0])!r}; "
+                "pass the separator the file uses (e.g. sep=';')."
+            )
         raise ValueError(
             f"Depth column {depth_column!r} not found. Available columns: "
-            f"{list(df.columns)}. Set depth_column explicitly."
+            f"{list(df.columns)}. Set depth_column explicitly.{hint}"
         )
 
     candidate_well_column = _resolve_well_column(df, well_column)
@@ -319,7 +325,8 @@ def read_ascii(
     depth_column : str, optional
         Name of depth column (default: "DEPTH")
     depth_unit : {"m", "ft"}
-        Unit of the depth column. Required: CSV files do not record it.
+        Unit of the depth column. Required unless the units line
+        (``units_line``) gives it; the units line takes precedence.
     well_name : str, optional
         Name for the well
     delimiter : str, optional

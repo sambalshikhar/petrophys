@@ -252,8 +252,8 @@ class XRFData:
         Returns
         -------
         dict
-            Ratio name → array. Only ratios where both elements are present
-            are included. All others are arrays of NaN.
+            Ratio name → array. Every ratio is returned; it is all NaN
+            when either element is absent.
 
         Notes
         -----
@@ -269,6 +269,8 @@ class XRFData:
         Mg_Ca       Dolomite vs calcite — high = dolomite
         Mg_Al       Chlorite proxy
         S_Fe        Pyrite indicator — FeS₂ has S/Fe ≈ 1.15 by weight
+        Rb_K        Rb substitutes for K in illite, micas and K-feldspar
+        Mn_Fe       Mn enrichment relative to Fe (carbonates, redox)
         Ca_Ca_Mg    Calcite fraction in carbonate (Ca/(Ca+Mg))
         Al_Al_Si    Clay fraction (Al/(Al+Si))
         =========== =========================================================

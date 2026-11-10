@@ -109,19 +109,19 @@ def create_multiwell_overlay(
     """Overlay one curve versus depth from several wells on a shared depth axis.
 
     Ideal for cross-well QC and normalization "before/after" displays. When
-    ``normalize`` is True each well's curve is robustly min-max scaled to 0-1 so
-    distributions become directly comparable.
+    ``normalize`` is True each well's curve is scaled so its 5th and 95th
+    percentiles map to 0 and 1, making distributions directly comparable.
 
     Parameters
     ----------
     wells : sequence of Well
-        Wells to overlay. Each must contain ``curve``.
+        Wells to overlay. Wells without ``curve`` are skipped.
     curve : str
         Curve mnemonic to plot (resolved via ``well.get``).
     depth_range : tuple of float, optional
         Depth window (in each well's depth units).
     normalize : bool
-        Robustly min-max scale each curve to 0-1 before plotting.
+        Scale each curve so its 5th-95th percentiles span 0-1 before plotting.
     labels : sequence of str, optional
         Legend labels (defaults to each ``well.name``).
     """
