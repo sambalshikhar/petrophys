@@ -17,6 +17,7 @@ from petrophys.workflow.dynamic_workflow import (
     WorkflowStep,
     run_dynamic_workflow,
 )
+from petrophys.workflow.multi_well import MultiWellResult, WellList
 from petrophys.workflow.quick_look import (
     QuickLook,
     quick_look_analysis,
@@ -61,6 +62,9 @@ __all__ = [
     "DynamicWorkflow",
     "DynamicWorkflowConfig",
     "DynamicWorkflowResult",
+    # Several wells in one call
+    "MultiWellResult",
+    "WellList",
     "StepResult",
     "WorkflowStep",
     "run_dynamic_workflow",

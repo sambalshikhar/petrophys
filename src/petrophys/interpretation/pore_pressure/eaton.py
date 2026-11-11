@@ -13,8 +13,9 @@ DTn, Rn the normal-trend values at that depth. The inputs that set the
 answer are yours to state: the overburden density profile (water depth, air
 gap and the density above the logged interval), the hydrostatic water
 density, and the NCT, fitted on clean shale in a normally pressured section
-(:func:`fit_normal_compaction_trend`) or given directly. Read the result in
-shales only; Eaton's exponents are regional and should be calibrated to
+(:func:`fit_normal_compaction_trend`) or given directly. The method reads
+shale: :func:`eaton_from_well` takes the shale samples as ``shale=`` and
+leaves the pressure blank elsewhere. Eaton's exponents are regional and should be calibrated to
 measured pressures (RFT/MDT, kicks, mud weights).
 
 Depths are true vertical depth below the rig floor (TVD RKB) in m or ft;
@@ -241,7 +242,10 @@ def eaton_pore_pressure(
     numpy.ndarray
         Pore pressure in the unit of the inputs: hydrostatic on the trend,
         rising towards the overburden as the log departs from it in the
-        under-compacted direction; NaN where an input is missing.
+        under-compacted direction; NaN where an input is missing and where
+        the formula falls below zero (a log far faster or more resistive
+        than the shale trend, as in sands and carbonates), with a warning
+        giving the count.
 
     Examples
     --------
@@ -250,9 +254,26 @@ def eaton_pore_pressure(
     >>> float(eaton_pore_pressure(500.0, 300.0, 100.0, 100.0, kind="sonic"))
     300.0
     """
+    pp, negative = _eaton(overburden, hydrostatic, observed, normal, kind=kind, exponent=exponent)
+    if negative:
+        import warnings
+
+        warnings.warn(
+            f"{negative} sample(s) gave a pore pressure below zero and were left blank: the log is far "
+            "faster or more resistive than the shale trend there. Eaton's method applies to shale; "
+            "evaluate it on shale samples only",
+            UserWarning, stacklevel=2,
+        )
+    return pp
+
+
+def _eaton(overburden, hydrostatic, observed, normal, *, kind, exponent=None):
+    """Eaton pore pressure and the number of samples blanked for falling below zero."""
     if kind not in EATON_EXPONENTS:
         raise ValueError("kind must be 'sonic' or 'resistivity'")
     x = EATON_EXPONENTS[kind] if exponent is None else float(exponent)
+    if not np.isfinite(x) or x <= 0:
+        raise ValueError(f"The Eaton exponent must be positive (got {x:g})")
     s = np.asarray(overburden, dtype=float)
     ph = np.asarray(hydrostatic, dtype=float)
     obs = np.asarray(observed, dtype=float)
@@ -260,7 +281,9 @@ def eaton_pore_pressure(
     with np.errstate(divide="ignore", invalid="ignore"):
         ratio = nrm / obs if kind == "sonic" else obs / nrm
         pp = np.where(np.isfinite(ratio) & (ratio > 0), s - (s - ph) * np.power(ratio, x), np.nan)
-    return pp
+        negative = np.isfinite(pp) & (pp < 0)
+    pp = np.where(negative, np.nan, pp)
+    return pp, int(np.sum(negative))
 
 
 def pressure_gradient(
@@ -291,8 +314,17 @@ def calibrate_eaton_exponent(
     All arrays are at the measurement depths. Solves
     ``ln((S - Pp)/(S - Ph)) = x ln(ratio)`` by least squares (ratio
     ``DTn/DT`` or ``R/Rn``). Use pressures that represent the shale, e.g.
-    formation-tester points in sands interbedded with it. Returns the
-    exponent and the RMS pressure misfit with it.
+    formation-tester points in sands interbedded with it, and for
+    ``observed`` the shale's log value at each measurement depth (the
+    adjacent shale interpolated across the sand), not the sand's own
+    reading; :meth:`PorePressureResult.calibrate` does this when the result
+    has a shale mask. Returns the exponent and the RMS pressure misfit with
+    it.
+
+    Raises ``ValueError`` when the best fit is not a positive exponent: the
+    pressures then do not rise where the shale departs from the trend in the
+    under-compacted direction, so the NCT, the shale values or the choice of
+    measurements need another look.
     """
     if kind not in EATON_EXPONENTS:
         raise ValueError("kind must be 'sonic' or 'resistivity'")
@@ -311,8 +343,20 @@ def calibrate_eaton_exponent(
             f"{int(np.sum(np.isfinite(x) & (np.abs(x) <= 1e-6)))} sit on the trend"
         )
     exponent = float(np.sum(x[use] * y[use]) / np.sum(x[use] ** 2))
-    fitted = eaton_pore_pressure(s[use], ph[use], obs[use], nrm[use], kind=kind, exponent=exponent)
-    return exponent, float(np.sqrt(np.mean((fitted - pm[use]) ** 2)))
+    if not exponent > 0:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            excess = float(np.nanmedian(pm[use] / ph[use]))
+        under = int(np.sum(x[use] < 0))
+        raise ValueError(
+            f"The measurements fit an Eaton exponent of {exponent:.3g}, not a positive one ({int(use.sum())} usable "
+            f"points, median measured/hydrostatic {excess:.3f}, log on the under-compacted side of the trend at "
+            f"{under}). Eaton needs pressure to rise where the shale departs from the trend towards "
+            f"under-compaction. Check the normal compaction trend and use the shale's log value at each "
+            "measurement depth, not the reservoir's; normally pressured points do not constrain the exponent, "
+            "keep the default then"
+        )
+    fitted, _ = _eaton(s[use], ph[use], obs[use], nrm[use], kind=kind, exponent=exponent)
+    return exponent, float(np.sqrt(np.nanmean((fitted - pm[use]) ** 2)))
 
 
 @dataclass
@@ -336,16 +380,27 @@ class PorePressureResult:
     #: TVD below sea level, when the depth-reference elevation is known.
     tvdss: Optional[np.ndarray] = None
     notes: list = field(default_factory=list)
+    #: Samples Eaton was evaluated on (the ``shale`` mask), or None when every sample was.
+    shale: Optional[np.ndarray] = None
 
     def __repr__(self) -> str:
         valid = np.isfinite(self.pore_pressure_emw)
         span = (f"{np.nanmin(self.tvd[valid]):g}-{np.nanmax(self.tvd[valid]):g}" if valid.any() else "none")
         return (f"PorePressureResult({self.kind}, exponent {self.exponent:g}, TVD {span} {self.depth_unit}, "
                 f"EMW p50 {np.nanmedian(self.pore_pressure_emw) if valid.any() else float('nan'):.2f} g/cc, "
-                f"air gap {self.air_gap:g}, water depth {self.water_depth:g})")
+                f"air gap {self.air_gap:g}, water depth {self.water_depth:g}"
+                f"{'' if self.shale is None else f', {int(np.sum(self.shale))} shale samples'})")
 
     def at(self, tvd: Any, *, datum: str = "TVD") -> Dict[str, np.ndarray]:
-        """Overburden, hydrostatic, observed, normal and pore pressure at ``tvd`` on ``datum`` (TVD or TVDSS)."""
+        """Overburden, hydrostatic, observed, normal and pore pressure at ``tvd`` on ``datum`` (TVD or TVDSS).
+
+        With a shale mask, ``pore_pressure`` is blank between shales and two
+        more entries carry the shale trend across them: ``shale_observed``,
+        the shale log value interpolated between the nearest shale samples
+        above and below, and ``shale_pore_pressure``, Eaton from it with this
+        result's exponent. These are the values to compare with a pressure
+        measured in a sand between shales.
+        """
         base = self.tvd if datum.upper() == "TVD" else self.tvdss
         if base is None:
             raise ValueError("No TVDSS: the depth-reference elevation is unknown")
@@ -358,17 +413,44 @@ class PorePressureResult:
                              ("pore_pressure", self.pore_pressure)):
             out[name] = np.interp(z, base[ok][order], np.asarray(values, dtype=float)[ok][order],
                                   left=np.nan, right=np.nan)
+        if self.shale is not None:
+            observed = np.asarray(self.observed, dtype=float)
+            use = ok & np.asarray(self.shale, dtype=bool) & np.isfinite(observed)
+            if use.sum() >= 1:
+                sort = np.argsort(base[use])
+                out["shale_observed"] = np.interp(z, base[use][sort], observed[use][sort], left=np.nan, right=np.nan)
+            else:
+                out["shale_observed"] = np.full(z.shape, np.nan)
+            out["shale_pore_pressure"], _ = _eaton(
+                out["overburden"], out["hydrostatic"], out["shale_observed"], out["normal"],
+                kind=self.kind, exponent=self.exponent,
+            )
         return out
 
     def calibrate(self, tvd: Any, pressure: Any, *, datum: str = "TVD") -> Tuple[float, float]:
         """Fit the Eaton exponent to measured pressures (same unit) at ``tvd`` on ``datum``.
 
-        Returns the exponent and RMS misfit, as :func:`calibrate_eaton_exponent`;
-        rerun :func:`eaton_from_well` with ``exponent=`` to apply it.
+        With a shale mask the fit uses the shale log value across each
+        measurement depth (``shale_observed`` from :meth:`at`); without one it
+        uses the log at the measurement depth itself, usually the reservoir,
+        and warns. Returns the exponent and RMS misfit, as
+        :func:`calibrate_eaton_exponent`; rerun :func:`eaton_from_well` with
+        ``exponent=`` to apply it.
         """
         values = self.at(tvd, datum=datum)
+        if self.shale is None:
+            import warnings
+
+            warnings.warn(
+                "Calibrating on the log value at the measurement depths, which are usually reservoir rather "
+                "than shale; pass shale= to eaton_from_well to calibrate against the shale trend",
+                UserWarning, stacklevel=2,
+            )
+            observed = values["observed"]
+        else:
+            observed = values["shale_observed"]
         return calibrate_eaton_exponent(
-            pressure, values["overburden"], values["hydrostatic"], values["observed"], values["normal"],
+            pressure, values["overburden"], values["hydrostatic"], observed, values["normal"],
             kind=self.kind,
         )
 
@@ -387,6 +469,7 @@ def eaton_from_well(
     water_density: float = 1.03,
     seawater_density: float = 1.03,
     exponent: Optional[float] = None,
+    shale: Optional[Any] = None,
     pressure_unit: str = "bar",
     add_curves: bool = False,
 ) -> PorePressureResult:
@@ -414,6 +497,12 @@ def eaton_from_well(
     density_above_log, water_density, seawater_density, exponent
         As for :func:`overburden_pressure`, :func:`hydrostatic_pressure` and
         :func:`eaton_pore_pressure`.
+    shale : array-like of bool, optional
+        Shale samples, one per depth sample (e.g. ``well["VCL"].data > 0.6``).
+        Eaton's method is a shale method: pore pressure is computed on these
+        samples and left blank elsewhere, and :meth:`PorePressureResult.calibrate`
+        interpolates the shale log across the measurement depths. Without it
+        every sample is evaluated and the result is to be read in shales only.
     add_curves : bool
         Add ``OVERBURDEN``, ``PHYD``, ``PP_EATON`` and ``PP_EATON_EMW``.
     """
@@ -481,13 +570,32 @@ def eaton_from_well(
                               pressure_unit=pressure_unit)
     normal = nct.normal(tvd)
     x = EATON_EXPONENTS[nct.kind] if exponent is None else float(exponent)
-    pp = eaton_pore_pressure(s, ph, observed, normal, kind=nct.kind, exponent=x)
+    shale_mask = None
+    evaluated = observed
+    if shale is None:
+        notes.append("No shale mask: Eaton evaluated on every sample; read it in shales only (pass shale=)")
+    else:
+        shale_mask = np.asarray(shale, dtype=bool).reshape(-1)
+        if shale_mask.shape != depth.shape:
+            raise ValueError(f"shale has {shale_mask.size} values; the well has {depth.size} depth samples")
+        evaluated = np.where(shale_mask, observed, np.nan)
+        notes.append(f"Eaton evaluated on {int(shale_mask.sum())} shale samples of {depth.size}; blank elsewhere")
+    pp, negative = _eaton(s, ph, evaluated, normal, kind=nct.kind, exponent=x)
+    if negative:
+        import warnings
+
+        message = (f"{negative} sample(s) gave a pore pressure below zero and were left blank: the log is far "
+                   f"{'faster' if nct.kind == 'sonic' else 'more resistive'} than the shale trend there")
+        notes.append(message)
+        warnings.warn(message + ("" if shale_mask is not None else
+                                 "; Eaton applies to shale, pass shale= to evaluate shale samples only"),
+                      UserWarning, stacklevel=2)
     emw = pressure_gradient(pp, tvd, air_gap=air_gap, depth_unit=unit, pressure_unit=pressure_unit)
     result = PorePressureResult(
         tvd=tvd, overburden=s, hydrostatic=ph, observed=observed, normal=normal, pore_pressure=pp,
         pore_pressure_emw=emw, kind=nct.kind, exponent=x, air_gap=float(air_gap), water_depth=float(water_depth),
         depth_unit=unit, pressure_unit=pressure_unit,
-        tvdss=None if elevation is None else tvd - elevation, notes=notes,
+        tvdss=None if elevation is None else tvd - elevation, notes=notes, shale=shale_mask,
     )
     if add_curves:
         well.add_curve("OVERBURDEN", s, pressure_unit, "Overburden (vertical stress)")

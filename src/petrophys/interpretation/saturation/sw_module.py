@@ -240,7 +240,8 @@ class SaturationModule:
             Cation exchange capacity (for Waxman-Smits, meq/g)
         b_coeff : float, optional
             Equivalent counter-ion conductance B (for Waxman-Smits),
-            (S/m)/(meq/cm3)
+            (S/m)/(meq/cm3); default: the Waxman and Smits (1968) relation
+            in Rw
         rho_ma : float, optional
             Matrix density (for Waxman-Smits, default: 2.65)
         m_star : float, optional

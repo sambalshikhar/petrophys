@@ -61,13 +61,13 @@ class VclModule:
     Parameters
     ----------
     gr_min : float, optional
-        Clean sand GR value, used as given. Default (None): the log minimum,
-        lowered to 20 API when it is higher (see ``bound_gr``).
+        Clean sand GR value, used as given. Default (None): the 5th
+        percentile of the log, lowered to 20 API when it is higher (see
+        ``bound_gr``), as ``pp.interpret`` picks it.
     gr_max : float, optional
-        Shale GR value, used as given. Default (None): the log maximum, raised
-        to 100 API when it is lower, so isolated GR spikes raise the shale
-        baseline for the whole well; pass explicit baselines for a log with
-        spikes.
+        Shale GR value, used as given. Default (None): the 95th percentile of
+        the log, raised to 100 API when it is lower, so isolated GR spikes do
+        not set the shale baseline.
     bound_gr : sequence of str, optional
         Baselines (``"gr_min"``, ``"gr_max"``) that take the 20/100 bound of
         :func:`~petrophys.interpretation.clay_volume.gr_method.bounded_gr_baselines`.
@@ -91,9 +91,10 @@ class VclModule:
         the SP is reversed and the two picks are swapped, with a
         ``UserWarning``.
     sp_fallback_only : bool, optional
-        Keep VCL_SP out of the minimum (default: False). It is still computed
-        and returned, and fills only depths where neither GR nor N-D gives a
-        value. Use it when the SP baselines are picked over a drifting log.
+        Keep VCL_SP out of the minimum (default: True, as in ``pp.interpret``).
+        It is still computed and returned, and fills only depths where neither
+        GR nor N-D gives a value: SP baselines picked over a drifting log read
+        too little clay in shales. False takes SP into the minimum.
     nd_clay : tuple of float, optional
         N-D clay point ``(RHOB, NPHI)``, e.g. from
         :func:`~petrophys.interpretation.clay_volume.nd_method.nd_shale_point`.
@@ -101,7 +102,8 @@ class VclModule:
         point (2.62 g/cm3, 0.38).
     nd_triangle_only : bool, optional
         Leave VCL_ND undefined (NaN) where NPHI exceeds both the clean line's
-        40 p.u. end point and the clay point (default: False). Such samples,
+        40 p.u. end point and the clay point (default: True, as in
+        ``pp.interpret``). Such samples,
         e.g. undercompacted mudstones at NPHI 0.45-0.55, lie outside the
         triangle the three-point formula interpolates in, where it reads too
         little clay (down to clean rock towards the 40 p.u. end point); the
@@ -132,9 +134,9 @@ class VclModule:
         matrix: Optional[str] = None,
         combine: str = "min",
         rho_fl: float = DefaultParameters.FLUID_DENSITY,
-        sp_fallback_only: bool = False,
+        sp_fallback_only: bool = True,
         nd_clay: Optional[Tuple[float, float]] = None,
-        nd_triangle_only: bool = False,
+        nd_triangle_only: bool = True,
         gr_curves: Optional[Sequence[str]] = None,
         bound_gr: Optional[Sequence[str]] = None,
     ):
@@ -178,7 +180,7 @@ class VclModule:
         self.bound_gr = frozenset(bound_gr)
 
     def _resolve_gr_baselines(self, gr_data: np.ndarray) -> tuple[float, float]:
-        """GR baselines before the bound: those passed, else the log minimum and maximum."""
+        """GR baselines before the bound: those passed, else the log's 5th and 95th percentiles."""
         valid_gr = np.asarray(gr_data, dtype=float)
         valid_gr = valid_gr[np.isfinite(valid_gr)]
 
@@ -188,9 +190,9 @@ class VclModule:
             return gr_min, gr_max
 
         if self.gr_min is None:
-            gr_min = float(np.nanmin(valid_gr))
+            gr_min = float(np.percentile(valid_gr, 5))
         if self.gr_max is None:
-            gr_max = float(np.nanmax(valid_gr))
+            gr_max = float(np.percentile(valid_gr, 95))
 
         return gr_min, gr_max
 

@@ -68,7 +68,7 @@ print(well.curves)
 | Option of `pp.read` | Applies to | What it does |
 | --- | --- | --- |
 | `depth_unit` | CSV, TSV (required) | `"m"` or `"ft"` |
-| `depth_column` | CSV, TSV | Depth column name; default `"DEPTH"` |
+| `depth_column` | CSV, TSV | Depth column name; default `"DEPTH"`. Headers written `NAME (unit)` or `NAME [unit]`, as {func}`~petrophys.io.export_csv` writes them, give the curve `NAME` in that unit; a depth header's unit must agree with `depth_unit` |
 | `well_name` | CSV, TSV | Name of the well |
 | `null_values`, `skiprows`, `sep`, other `pandas.read_csv` options | CSV, TSV | Passed to {func}`petrophys.io.read_csv` |
 | `encoding` | LAS | Text encoding of the file |
@@ -174,6 +174,8 @@ tops.tail(3).style.hide(axis="index").format(precision=1)
 | Table in feet, well in metres (or the reverse) | Converts, and records `depth_conversion` in the report |
 | No `depth_unit` given | Assumes the well's unit and notes it in the report |
 | No `depth_reference` or `datum` given | Assumes they match the well and notes the assumption in the report |
+| A `depth_ref` column | Read by its values: a datum (KB, RKB, DF, RT, GL, MSL, SL, LAT) as `datum`, a reference (MD, TVD, TVDSS) as `depth_reference`, `MD RKB` as both |
+| A datum the well does not declare | Compared with the datum of the LAS `LMF` (log measured from) item; without one, assumed to match and noted in the report. An MD reference the well does not declare is assumed to match too; TVD or TVDSS raises `ValueError` |
 | Different reference (MD, TVD, TVDSS) or datum | Raises `ValueError`: a survey or datum transformation is needed |
 | Some rows outside the logged interval | Counts them in the report |
 | No row overlaps the logs | Warns with {class}`~petrophys.exceptions.DataQualityWarning`, suggesting the other unit if it fits |

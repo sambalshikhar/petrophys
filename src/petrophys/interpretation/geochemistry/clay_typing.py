@@ -27,6 +27,9 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+#: Label of samples left untyped (too little potassium, masked out, or missing data).
+UNCLASSIFIED = "unclassified"
+
 #: Th/K (ppm/%) upper bounds of each band, and the band names, low to high.
 TH_K_CLAY_TYPES: Tuple[Tuple[float, str], ...] = (
     (0.6, "feldspar"),
@@ -44,6 +47,7 @@ class ClayTypingResult:
     """Th/K clay typing of a well or of arrays."""
 
     th_k_ratio: np.ndarray
+    #: Band name per sample, ``"unclassified"`` where the sample was not typed.
     clay_type: np.ndarray
     #: Share of the classified samples in each band.
     fractions: Dict[str, float] = field(default_factory=dict)
@@ -82,7 +86,9 @@ def classify_clay_th_k(
     Returns
     -------
     ClayTypingResult
-        Ratio, band name per sample ('' when unclassified) and band shares.
+        Ratio, band name per sample (``"unclassified"`` where too little
+        potassium, outside ``mask`` or missing data) and band shares of the
+        classified samples.
 
     Examples
     --------
@@ -96,12 +102,14 @@ def classify_clay_th_k(
     bounds = [float(upper) for upper, _ in thresholds]
     if any(b2 <= b1 for b1, b2 in zip(bounds, bounds[1:])):
         raise ValueError("thresholds must have increasing upper bounds")
+    if any(name == UNCLASSIFIED for _, name in thresholds):
+        raise ValueError(f"{UNCLASSIFIED!r} labels untyped samples; give the band another name")
     with np.errstate(divide="ignore", invalid="ignore"):
         ratio = np.where(np.isfinite(th) & np.isfinite(k) & (k > 0), th / k, np.nan)
     usable = np.isfinite(ratio) & (k >= min_potassium) & (th >= 0)
     if mask is not None:
         usable &= np.asarray(mask, dtype=bool)
-    labels = np.full(ratio.shape, "", dtype=object)
+    labels = np.full(ratio.shape, UNCLASSIFIED, dtype=object)
     lower = -np.inf
     for upper, name in thresholds:
         labels[usable & (ratio >= lower) & (ratio < upper)] = name
@@ -166,4 +174,4 @@ def clay_typing_from_well(
     return result
 
 
-__all__ = ["TH_K_CLAY_TYPES", "ClayTypingResult", "classify_clay_th_k", "clay_typing_from_well"]
+__all__ = ["TH_K_CLAY_TYPES", "UNCLASSIFIED", "ClayTypingResult", "classify_clay_th_k", "clay_typing_from_well"]

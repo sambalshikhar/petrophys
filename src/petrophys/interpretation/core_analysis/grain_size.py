@@ -251,7 +251,9 @@ class GrainSizeData:
         1.00–2.00 poorly sorted, 2.00–4.00 very poorly sorted, > 4.00
         extremely poorly sorted.
 
-        Requires d13 and d87. Returns NaN where either is missing.
+        Requires d13 and d87. Returns NaN where either is missing, with a
+        warning when neither is loaded: other percentiles (P10/P90, P20/P80)
+        do not substitute in these formulas.
 
         Returns
         -------
@@ -259,6 +261,7 @@ class GrainSizeData:
             Sorting in phi units.
         """
         if self.d13 is None or self.d87 is None:
+            self._warn_missing_percentiles("sorting_coefficient")
             return np.full(self.n_samples, np.nan)
         phi13 = np.array([um_to_phi(d) for d in self.d13])
         phi87 = np.array([um_to_phi(d) for d in self.d87])
@@ -270,10 +273,12 @@ class GrainSizeData:
         """
         Grain size skewness from percentiles.
 
-        Requires d13, d50, and d87.
+        ``(phi13 + phi87 - 2 phi50) / (phi13 - phi87)``. Requires d13, d50
+        and d87; returns NaN, with a warning, when d13 or d87 is not loaded.
         Positive = fine-skewed (more fines), negative = coarse-skewed.
         """
         if self.d13 is None or self.d87 is None:
+            self._warn_missing_percentiles("skewness")
             return np.full(self.n_samples, np.nan)
         phi13 = np.array([um_to_phi(d) for d in self.d13])
         phi50 = self.phi_scale()
@@ -287,6 +292,17 @@ class GrainSizeData:
                 (phi87 + phi13 - 2 * phi50) / spread,
                 np.nan,
             )
+
+    def _warn_missing_percentiles(self, method: str) -> None:
+        import warnings
+
+        missing = [name for name, values in (("d13", self.d13), ("d87", self.d87)) if values is None]
+        warnings.warn(
+            f"GrainSizeData.{method} needs the 13th and 87th percentile diameters; {' and '.join(missing)} "
+            "not loaded, so the result is all NaN. Load them with d13_mnemonic/d87_mnemonic (from_las) or "
+            "d13_col/d87_col (from_dataframe); other percentiles such as P20/P80 do not substitute",
+            UserWarning, stacklevel=3,
+        )
 
     # ---- Permeability & pore throat estimates ----
 
@@ -317,7 +333,8 @@ class GrainSizeData:
         np.ndarray
             Estimated permeability (mD) for a clean pack of equal spheres;
             cementation, clay and poor sorting usually make real rock less
-            permeable.
+            permeable. NaN where porosity is outside (0, 1) or d50 is missing;
+            a warning says which when no sample gives a value.
 
         Notes
         -----
@@ -331,6 +348,25 @@ class GrainSizeData:
                 (phi > 0) & (phi < 1) & (d > 0),
                 5.63 * d ** 2 * phi ** 3 / (1 - phi) ** 2,
                 np.nan,
+            )
+        if k.size and not np.isfinite(k).any():
+            import warnings
+
+            finite_phi = phi[np.isfinite(phi)]
+            reasons = []
+            if finite_phi.size == 0:
+                reasons.append("porosity has no finite value")
+            elif np.median(finite_phi) > 1.0:
+                reasons.append(f"porosity is not a fraction (median {np.median(finite_phi):.3g}; "
+                               "percent? divide by 100)")
+            elif not ((finite_phi > 0) & (finite_phi < 1)).any():
+                reasons.append("no porosity lies between 0 and 1")
+            if not (np.asarray(d) > 0).any():
+                reasons.append("d50 has no positive value")
+            warnings.warn(
+                "kozeny_carman_perm gives no finite permeability: "
+                + ("; ".join(reasons) or "porosity and d50 are never both valid at the same sample"),
+                UserWarning, stacklevel=2,
             )
         return k
 

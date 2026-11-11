@@ -3,7 +3,7 @@
   <track display_name="DEPTH" width="0.55" tick_spacing="50" number_spacing="250" line_spacing="100"/>
   <track display_name="GR / SP / CALI" width="1.30" major_lines="5">
     <curve display_name="GR" curve_name="GR" color="#1b7837" left="0" right="150" fill="left" fill_color="#d9f0d3"/>
-    <curve display_name="SP" curve_name="SP" color="#2166ac" left="-100" right="200"/>
+    <curve display_name="SP" curve_name="SP" color="#2166ac"/>
     <curve display_name="CALI" curve_name="CALI" color="#d73027" left="6" right="16"/>
     <curve display_name="BS" curve_name="BS" color="#000000" left="6" right="16" line_style="--"/>
   </track>

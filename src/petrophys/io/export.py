@@ -517,10 +517,15 @@ def export_csv(
     curves: Optional[List[str]] = None,
     include_depth: bool = True,
     null_value: str = "",
+    units: bool = True,
     **kwargs
 ):
     """
     Export Well to CSV file.
+
+    With ``units``, each column header carries its curve's unit,
+    ``GR (gAPI)``, and the depth column the well's depth unit, ``DEPTH (m)``;
+    :func:`~petrophys.io.read_csv` reads them back as names and units.
 
     Parameters
     ----------
@@ -534,6 +539,9 @@ def export_csv(
         Whether to include depth column (default: True)
     null_value : str, optional
         String to use for null values (default: empty)
+    units : bool, optional
+        Write headers as ``NAME (unit)`` for curves with a unit (default:
+        True); False writes the bare curve names
     **kwargs
         Additional arguments passed to DataFrame.to_csv
 
@@ -556,6 +564,22 @@ def export_csv(
     # Handle null values
     if null_value != "":
         df = df.fillna(null_value)
+
+    if units:
+        # to_dataframe names the depth index DEPTH and a curve named DEPTH DEPTH_CURVE.
+        def header(column):
+            if include_depth and column == "DEPTH":
+                unit = well.depth_unit
+            else:
+                curve = well.get("DEPTH" if column == "DEPTH_CURVE" else column)
+                unit = getattr(curve, "unit", "")
+            unit = str(unit or "").strip()
+            if not unit:
+                return column
+            # A unit with parentheses of its own goes in square brackets.
+            return f"{column} [{unit}]" if "(" in unit or ")" in unit else f"{column} ({unit})"
+
+        df.columns = [header(column) for column in df.columns]
 
     df.to_csv(filepath, index=False, **kwargs)
 

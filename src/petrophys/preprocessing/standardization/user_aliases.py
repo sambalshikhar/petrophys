@@ -42,7 +42,8 @@ def read_curve_aliases(source: Any) -> Dict[str, str]:
     ``alias`` (case, spaces and punctuation ignored); a table of two other
     columns is read as curve, then standard. Standard names must be ones the
     library knows (``GR``, ``RDEP``, ``RHOB``, ``NPHI``, ``DTC``, ``CALI``,
-    ...); a curve may map to one only.
+    ...); a known alias stands for its standard name (``RT`` for ``RDEP``).
+    A curve may map to one only.
     """
     import pandas as pd
 
@@ -63,12 +64,18 @@ def read_curve_aliases(source: Any) -> Dict[str, str]:
                 f"(standard, maps_to, alias), or two columns; found {', '.join(map(str, table.columns))}."
             )
         pairs = [(row[curve], row[standard]) for _, row in table.iterrows()]
+    from petrophys.preprocessing.standardization.alias_map import ALIAS_MAP, get_standard_mnemonic
+
     known = standard_curve_names()
     mapping: Dict[str, str] = {}
     for curve_name, standard_name in pairs:
         if curve_name is None or standard_name is None or not str(curve_name).strip() or not str(standard_name).strip():
             raise ValueError("Curve-name mapping rows need both a curve name and a standard name")
         key, value = str(curve_name).strip().upper(), str(standard_name).strip().upper()
+        # A name that is itself an alias (RT, ILD, ZDEN...) stands for its standard curve.
+        standard_value = get_standard_mnemonic(value)
+        if standard_value in ALIAS_MAP:
+            value = standard_value
         if value not in known:
             raise ValueError(
                 f"Curve-name mapping: {curve_name!r} maps to {standard_name!r}, which is no standard curve name. "

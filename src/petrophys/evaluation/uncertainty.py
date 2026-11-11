@@ -49,9 +49,15 @@ class MonteCarloResult:
     percentiles: Dict[str, np.ndarray]
     mean: np.ndarray
     std: np.ndarray
-    #: Spearman rank correlation of each uncertain scalar input with a scalar
+    #: Spearman rank correlation of each input in ``inputs`` with a scalar
     #: output: which inputs drive the spread (empty for array outputs).
     sensitivity: Dict[str, float] = field(default_factory=dict)
+    #: Per-realisation draws, shape (n,): the value of each uncertain scalar
+    #: input, and for each curve input in ``correlated_depths`` its one
+    #: standard draw (the z of a normal, the factor of a lognormal, the
+    #: fraction 0-1 across a uniform range), which ranks the realisations as
+    #: the shift does. Curve inputs drawn independently at each depth are
+    #: left out.
     inputs: Dict[str, np.ndarray] = field(default_factory=dict)
     n: int = 0
     seed: Optional[int] = None
@@ -207,6 +213,7 @@ def monte_carlo(
                 unit = dict(spec)
                 base = _draw({**unit, **_unit_spec(unit)}, (n, 1), rng)
                 values = _rescale(unit, base)
+                drawn[name] = base[:, 0]
             else:
                 values = _draw(spec, (n, depth_size), rng)
         else:

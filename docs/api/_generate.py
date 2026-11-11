@@ -813,9 +813,10 @@ The rest of the reference documents what these calls are built from.""",
                         description="The input-aware workflow behind ``pp.interpret``: "
                         "settings, steps, results and traces.",
                         names="DynamicWorkflowConfig DynamicWorkflowResult run_dynamic_workflow "
-                        "DynamicWorkflow StepResult WorkflowStep",
+                        "DynamicWorkflow StepResult WorkflowStep MultiWellResult WellList",
                         groups=[
                             ("Settings and results", "DynamicWorkflowConfig DynamicWorkflowResult StepResult"),
+                            ("Several wells", "MultiWellResult WellList"),
                             ("Running the workflow", "run_dynamic_workflow DynamicWorkflow WorkflowStep"),
                         ],
                     ),
@@ -943,6 +944,14 @@ The rest of the reference documents what these calls are built from.""",
                 slug="visualization-reservoir",
                 description="Flow-unit crossplots and zone flags on logs.",
                 names="create_flow_unit_plot plot_zone_flags add_zone_shading",
+            ),
+            Section(
+                VIZ,
+                title="Several wells",
+                slug="visualization-several-wells",
+                description="pp.plot on several wells: a log plot per well, or "
+                "chosen curves of every well in one figure.",
+                names="MultiWellPlot WellComparisonPlot compare_wells",
             ),
             Section(
                 VIZ,

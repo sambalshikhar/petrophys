@@ -54,6 +54,7 @@ from typing import (
     Set,
     Tuple,
     Union,
+    cast,
 )
 
 import numpy as np
@@ -987,7 +988,7 @@ def _as_well(value: Any) -> Well:
     if isinstance(value, (str, Path)):
         from petrophys.api import read
 
-        return read(value)
+        return cast(Well, read(value))
     raise TypeError(f"Expected a petrophys Well or a well file path; got {type(value).__name__}")
 
 
@@ -2005,7 +2006,8 @@ class WorkflowRunResult:
             Formation tops or intervals; defaults to the formations attached
             with ``petrophys.read(path, formations=...)``.
         rank : str, optional
-            Level to summarize when the tops mix levels, e.g. ``"formation"``.
+            Level to summarize when the tops mix levels, e.g. ``"group"``;
+            tops that mix levels default to ``"formation"``.
 
         Returns
         -------
@@ -2345,7 +2347,7 @@ class WorkflowBatchResult:
         pandas.DataFrame
             Columns ``Well`` (and ``Formation``), ``Status``, ``Steps Run``,
             ``Skipped Steps``, ``Depth Unit``, ``Top``, ``Bottom``,
-            ``Gross``, ``Net Pay``, ``NTG``, ``Avg PHIE``, ``Avg Sw``,
+            ``Gross``, ``Net Pay``, ``Pay/Gross``, ``Avg PHIE``, ``Avg Sw``,
             ``Avg VCL``, ``Avg Perm (mD)`` and ``Error``. Wells that did not
             run have status ``"error"``.
         """
@@ -2353,7 +2355,7 @@ class WorkflowBatchResult:
 
         from petrophys.evaluation.summaries.zone_summary import calculate_zone_summary
 
-        metrics = ["Depth Unit", "Top", "Bottom", "Gross", "Net Pay", "NTG",
+        metrics = ["Depth Unit", "Top", "Bottom", "Gross", "Net Pay", "Pay/Gross",
                    "Avg PHIE", "Avg Sw", "Avg VCL", "Avg Perm (mD)"]
         rows: List[Dict[str, Any]] = []
         for name in self._order:
@@ -2396,7 +2398,7 @@ class WorkflowBatchResult:
                     "Bottom": record["Bottom"],
                     "Gross": record[f"Gross ({unit})"],
                     "Net Pay": record[f"Net Pay ({unit})"],
-                    "NTG": record["NTG"],
+                    "Pay/Gross": record["Pay/Gross"],
                     "Avg PHIE": record["Avg PHIE"],
                     "Avg Sw": record["Avg Sw"],
                     "Avg VCL": record["Avg VCL"],
@@ -2413,12 +2415,12 @@ class WorkflowBatchResult:
 
 
 def _zone_metrics(zone: Any, well: Any) -> Dict[str, Any]:
-    # Without a NET_PAY flag net pay is unknown, not zero; NTG needs a gross interval.
+    # Without a NET_PAY flag net pay is unknown, not zero; pay/gross needs a gross interval.
     has_pay = well.get("NET_PAY") is not None
     return {
         "Gross": zone.gross_thickness,
         "Net Pay": zone.net_pay if has_pay else np.nan,
-        "NTG": zone.ntg if has_pay and zone.gross_thickness > 0 else np.nan,
+        "Pay/Gross": zone.ntg if has_pay and zone.gross_thickness > 0 else np.nan,
         "Avg PHIE": zone.avg_phie,
         "Avg Sw": zone.avg_sw,
         "Avg VCL": zone.avg_vcl,

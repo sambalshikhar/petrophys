@@ -92,7 +92,7 @@ pp.plot(
 | Excel workbooks | Several worksheets need `sheet_name` |
 | Several wells in one table | Add a `well` column and select with `well_name` or `well` |
 | Other column names | Common aliases match case-insensitively; map the rest with `columns={"top_depth": "Pick MD"}` |
-| Depth metadata | Optional `depth_unit`, `depth_reference` and `datum` columns or arguments; see {doc}`own_data` |
+| Depth metadata | Optional `depth_unit`, `depth_reference` and `datum` columns or arguments, or a `depth_ref` column read by its values (KB as `datum`, TVDSS as `depth_reference`); see {doc}`own_data` |
 
 ## Formations
 
@@ -226,10 +226,10 @@ in for:
 | LAS parameter | Setting | How it is read |
 | --- | --- | --- |
 | `RW`, `RWT` | `rw`, `rw_meas_temp_f` | Rw in ohm.m at RWT; without RWT, at the formation temperature `FMT` when the header gives it, else at the well's median formation temperature, with a warning |
-| `RMF`, `RMFT` | `rmf_at_meas_temp`, `rmf_meas_temp_f` | `MFST`, the mud-filtrate sample temperature, stands in for a missing RMFT |
-| `RM`, `RMT` | `rm`, `rm_meas_temp_f` | `MST`, the mud sample temperature, stands in for a missing RMT |
+| `RMF`, `RMFT` | `rmf_at_meas_temp`, `rmf_meas_temp_f` | `RMFS` and `MFST`, the Schlumberger mud-filtrate sample resistivity and temperature, stand in for a missing RMF and RMFT |
+| `RM`, `RMT` | `rm`, `rm_meas_temp_f` | `RMS` and `MST`, the mud sample resistivity and temperature, stand in for a missing RM and RMT |
 | `CLFL` | `rmf_chlorides_mg_l` | Mud-filtrate chlorides in mg/l (values in ppm, kppm or % are converted). Without an Rmf, Rmf comes from the NaCl equivalent, Cl x 58.44/35.45, divided by the brine density |
-| `BHT`, `TD` | `bht_f`, `td_ft` | BHT is taken as the static formation temperature at TD, with no correction for mud circulation |
+| `BHT`, `TD` | `bht_f`, `td_ft` | BHT is taken as the static formation temperature at TD, with no correction for mud circulation. `MRT` (maximum recorded temperature) or `BHTEMP` stands in for a missing BHT, and the logger or driller depth (`TDL`, `DL`, `TDD`, `DD`) for a missing TD |
 | `TGRAD` | `gradient_f_per_100ft` | Geothermal gradient (degC/100 m, degC/km or degF/100 ft; without a unit, degC/100 m up to 10, else degC/km), from `surface_temp_f` at depth 0. Used only without a BHT, which anchors the profile at TD |
 | `OBM` | `mud_type` | An oil-based-mud flag: `YES` gives `"OBM"`, `NO` gives `"WBM"` |
 | `FLSAL` | `rmf_salinity_ppm` | Mud-filtrate salinity (units converted) |
@@ -243,7 +243,7 @@ setting of the same meaning when you leave that setting unset:
 | LAS parameter | Setting |
 | --- | --- |
 | `A`, `M`, `N` | `a`, `m`, `n` (Archie) |
-| `SAL`, `SALINITY`, `SALINITY_PPM`, `WATSAL`, `WSAL`, `WATER_SALINITY`, `WATER_SALINITY_PPM`; `WTSAL` | `salinity_ppm` (units converted, see {doc}`workflows`); `WTSAL` is not used when the header gives `RW` |
+| `SAL`, `SALW`, `SALINITY`, `SALINITY_PPM`, `WATSAL`, `WSAL`, `WATER_SALINITY`, `WATER_SALINITY_PPM`; `WTSAL` | `salinity_ppm` (units converted, see {doc}`workflows`); `WTSAL` is not used when the header gives `RW` |
 | `VSHE`, `VSH_EXP`; `SHALE_EXP`; `RTSH` | `vsh_exp`; `shale_exp`; `rtsh` |
 | `B_COEFF`, `BCOEFF` | `b_coeff` |
 | `MUDTYPE`, `MUD_TYPE`, `MUD`; `MUDWATER` | `mud_type`; `mud_water` |

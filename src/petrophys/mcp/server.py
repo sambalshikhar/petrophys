@@ -280,8 +280,22 @@ def create_server(
             options.update(catalog.sample_geology(resolved))
         summary = load_file(Path(sample(resolved)), f"sample:{resolved}", well_id or resolved,
                             **options)
-        if resolved != name:
-            summary["note"] = f"{name!r} is the bundled sample {resolved!r}."
+        notes = [f"{name!r} is the bundled sample {resolved!r}."] if resolved != name else []
+        if options:
+            summary["attached_files"] = {option: path.stem for option, path in options.items()}
+            attached = ", ".join(f"{path.stem} ({option})" for option, path in options.items())
+            roles = {"formations": "formations: per-formation core calibration and tables",
+                     "lithology": "lithology: per-sample lithology families and cutoffs"}
+            notes.append(
+                f"Attached the bundled files {attached}; interpret_well uses them ("
+                + "; ".join(roles[option] for option in options if option in roles)
+                + "). In Python the same is "
+                f"petrophys.read(petrophys.sample({resolved!r}), "
+                + ", ".join(f"{option}=petrophys.sample({path.stem!r})" for option, path in options.items())
+                + "); load with with_geology=false for the log alone."
+            )
+        if notes:
+            summary["note"] = " ".join(notes)
         return summary
 
     def ensure_well(well_id: str) -> Tuple[str, Optional[str]]:

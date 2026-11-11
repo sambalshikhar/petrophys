@@ -227,6 +227,13 @@ def clean_curve_values(
     if match is None:
         return arr.copy(), None
     canonical, rule = match
+    if canonical == "DCAL" and rules is None and not reproducing_benchmark():
+        # DCAL names an absolute (density-tool) caliper in some deliveries: a
+        # median above 4 in, larger than any differential reading, takes the
+        # CALI range instead of the differential one.
+        finite = arr[np.isfinite(arr) & (arr > -900.0)]
+        if finite.size and float(np.median(finite)) > 4.0 and "CALI" in VALUE_RANGE_RULES:
+            canonical, rule = "CALI", VALUE_RANGE_RULES["CALI"]
     bounds, curve_unit = _rule_bounds(canonical, rule, unit)
     cleaned, stats = _qc_curve_data(arr, rule, bounds)
     low, high = bounds

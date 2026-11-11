@@ -19,6 +19,40 @@ except ImportError:
     HAS_MATPLOTLIB = False
 
 
+from petrophys.preprocessing.standardization.alias_map import get_standard_mnemonic
+
+#: Scales a curve takes when no xlim is given: limestone-compatible density and
+#: neutron (RHOB 1.95-2.95 g/cc against NPHI 0.45 to -0.15 v/v), as on log prints.
+_DEFAULT_SCALES: Dict[str, Tuple[float, float]] = {
+    "RHOB": (1.95, 2.95),
+    "NPHI": (0.45, -0.15),
+}
+
+
+def _fit_x_to_window(ax: "Axes", top: float, bottom: float) -> None:
+    """Scale the x axis to the curves drawn between ``top`` and ``bottom``."""
+    low, high = sorted((float(top), float(bottom)))
+    values = []
+    for line in ax.lines:
+        x = np.asarray(line.get_xdata(), dtype=float)
+        y = np.asarray(line.get_ydata(), dtype=float)
+        if x.shape != y.shape:
+            continue
+        keep = np.isfinite(x) & np.isfinite(y) & (y >= low) & (y <= high)
+        if ax.get_xscale() == "log":
+            keep &= x > 0
+        values.append(x[keep])
+    values = np.concatenate(values) if values else np.array([])
+    if values.size == 0:
+        return
+    lo, hi = float(values.min()), float(values.max())
+    if ax.get_xscale() == "log":
+        ax.set_xlim(lo / 1.25, hi * 1.25)
+    else:
+        pad = 0.05 * (hi - lo) or 0.05 * abs(hi) or 1.0
+        ax.set_xlim(lo - pad, hi + pad)
+
+
 class LogPlot:
     """
     Log plot creator for well data visualization.
@@ -39,6 +73,25 @@ class LogPlot:
         self.figsize = figsize
         self.fig: Optional[Figure] = None
         self.axes: List[Axes] = []
+        # Curves are drawn in standard units (percent porosity as v/v), as
+        # petrophys.plot draws them; the caller's well is unchanged.
+        from petrophys.visualization.log_viewer import _display_well
+
+        self._shown = _display_well(well, interpreted=True)
+        self._fixed_xlim: set = set()
+        self._twins: Dict[Tuple[int, str], Axes] = {}
+
+    def _curve(self, curve_name: str):
+        """The curve named, or found by its standard name as petrophys.plot finds it (RDEP finds RT)."""
+        from petrophys.visualization.log_viewer import _resolve_curve_name_for_well
+
+        resolved = _resolve_curve_name_for_well(self._shown, curve_name)
+        if resolved is None:
+            raise ValueError(
+                f"Curve '{curve_name}' not found by its own name or as a standard name; "
+                f"the well has {list(self._shown.curves)}"
+            )
+        return self._shown.get(resolved)
 
     @_styled_plot
     def create_figure(self, n_tracks: int = 3) -> Tuple[Figure, List[Axes]]:
@@ -61,6 +114,8 @@ class LogPlot:
             sharey=True
         )
         self._track_units = {}
+        self._fixed_xlim = set()
+        self._twins = {}
 
         if n_tracks == 1:
             self.axes = [self.axes]
@@ -111,43 +166,64 @@ class LogPlot:
         if self.fig is None:
             raise RuntimeError("Call create_figure() first")
 
-        curve = self.well.get(curve_name)
-        if curve is None:
-            raise ValueError(f"Curve '{curve_name}' not found")
-
-        depth = self.well.depth
+        curve = self._curve(curve_name)
+        depth = self._shown.depth
         data = curve.data
+        if label is None:
+            label = curve_name if curve.mnemonic.upper() == curve_name.upper() else f"{curve.mnemonic} ({curve_name})"
 
-        ax = self.axes[track]
-        ax.plot(data, depth, color=color, linewidth=linewidth,
-                linestyle=linestyle, label=label or curve_name)
-
-        if log_scale:
-            ax.set_xscale('log')
-
-        if xlim:
-            ax.set_xlim(xlim)
-
-        # On a multi-curve track the legend names the curves; keep the axis
-        # label from silently becoming whichever curve was added last. Track
-        # the units seen per track: one curve -> "NAME [unit]"; several curves
-        # sharing a unit -> "[unit]"; genuinely mixed units -> blank.
-        # Fraction-porosity spellings count as the same unit.
+        # Track the units seen per track. A curve whose unit differs from the
+        # track's first curve (NPHI in v/v beside RHOB in g/cc) gets its own
+        # scale on a second axis, labelled at the top, as log headers show it.
         equiv = {"v/v", "m3/m3", "frac", "fraction", "dec", "decimal"}
         unit = (curve.unit or "").strip()
         canonical = "v/v" if unit.lower() in equiv else unit
         if not hasattr(self, "_track_units"):
             self._track_units = {}
-        info = self._track_units.setdefault(track, {"n": 0, "units": set()})
-        info["n"] += 1
-        info["units"].add(canonical)
-        if info["n"] == 1:
-            ax.set_xlabel(f"{curve_name} [{unit}]")
-        elif len(info["units"]) == 1:
-            ax.set_xlabel(f"[{next(iter(info['units']))}]")
+        info = self._track_units.setdefault(track, {"units": [], "names": {}})
+        base = self.axes[track]
+        if not info["units"] or canonical == info["units"][0]:
+            ax = base
         else:
-            ax.set_xlabel("")
-        ax.legend(loc='upper right', fontsize=8)
+            ax = self._twins.get((track, canonical))
+            if ax is None:
+                ax = base.twiny()
+                ax.grid(False)
+                self._twins[(track, canonical)] = ax
+        if canonical not in info["units"]:
+            info["units"].append(canonical)
+        info["names"].setdefault(canonical, []).append(curve.mnemonic)
+
+        ax.plot(data, depth, color=color, linewidth=linewidth,
+                linestyle=linestyle, label=label)
+
+        if log_scale:
+            ax.set_xscale('log')
+
+        if xlim is None:
+            xlim = _DEFAULT_SCALES.get(str(get_standard_mnemonic(curve.mnemonic)).upper())
+        if xlim:
+            ax.set_xlim(xlim)
+            self._fixed_xlim.add(id(ax))
+
+        # One curve on an axis -> "NAME [unit]"; several curves of one unit -> "[unit]".
+        names = info["names"][canonical]
+        text = f"{names[0]} [{unit}]" if len(names) == 1 else f"[{unit}]"
+        if ax is base:
+            ax.set_xlabel(text)
+        else:
+            ax.set_xlabel(text, color=color)
+            ax.tick_params(axis="x", colors=color)
+        # One legend per track, listing the curves of all its scales.
+        twins = [twin for (index, _), twin in self._twins.items() if index == track]
+        handles, labels = [], []
+        for each in [base, *twins]:
+            found_handles, found_labels = each.get_legend_handles_labels()
+            handles += found_handles
+            labels += found_labels
+            if each.get_legend() is not None:
+                each.get_legend().remove()
+        (twins[-1] if twins else base).legend(handles, labels, loc='upper right', fontsize=8)
 
     def add_fill(
         self,
@@ -179,11 +255,8 @@ class LogPlot:
         if self.fig is None:
             raise RuntimeError("Call create_figure() first")
 
-        curve = self.well.get(curve_name)
-        if curve is None:
-            raise ValueError(f"Curve '{curve_name}' not found")
-
-        depth = self.well.depth
+        curve = self._curve(curve_name)
+        depth = self._shown.depth
         data = curve.data
 
         ax = self.axes[track]
@@ -222,6 +295,9 @@ class LogPlot:
 
         for ax in self.axes:
             ax.set_ylim(bottom, top)
+        for ax in [*self.axes, *getattr(self, "_twins", {}).values()]:
+            if id(ax) not in getattr(self, "_fixed_xlim", set()):
+                _fit_x_to_window(ax, top, bottom)
 
     @_styled_plot
     def add_title(self, title: str) -> None:
@@ -230,7 +306,9 @@ class LogPlot:
             raise RuntimeError("Call create_figure() first")
 
         well_name = self.well.name or "Unknown Well"
-        self.fig.suptitle(f"{title}\n{well_name}", fontsize=12)
+        # The well name is added once: a title that already names the well keeps it.
+        text = title if well_name in str(title) else f"{title}\n{well_name}"
+        self.fig.suptitle(text, fontsize=12)
 
     @_styled_plot
     def show(self) -> None:

@@ -46,6 +46,10 @@ class CalibrationResult:
     core_values: np.ndarray
     log_values: np.ndarray
 
+    def __repr__(self) -> str:
+        return (f"CalibrationResult({self.property_name}: n={self.n_points}, R^2={self.r_squared:.3f}, "
+                f"bias={self.bias:.4f}, RMSE={self.rmse:.4f}, log = {self.slope:.3f}*core + {self.intercept:.4f})")
+
 
 @dataclass
 class PorosityCorrection:
@@ -62,9 +66,23 @@ class PorosityCorrection:
     input_curve: str = "PHIE"
     method: str = "core_linear"
 
+    #: Log porosity at or below which the fit has no core pairs (its ``min_porosity``).
+    min_log_porosity: float = 0.01
+
     def predict(self, porosity: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        """Predict core-equivalent porosity from a log porosity curve, clipped to 0-0.5."""
-        corrected = self.A * np.asarray(porosity, dtype=float) + self.B
+        """Predict core-equivalent porosity from a log porosity curve, clipped to 0-0.5.
+
+        Log porosity at or below ``min_log_porosity`` (shale, tight rock) lies
+        outside the fitted range and keeps its log value: the line's intercept
+        would otherwise give every zero-porosity shale the porosity B.
+        """
+        from petrophys._internal.benchmark import reproducing_benchmark
+
+        log_porosity = np.asarray(porosity, dtype=float)
+        corrected = self.A * log_porosity + self.B
+        if not reproducing_benchmark():
+            with np.errstate(invalid="ignore"):
+                corrected = np.where(log_porosity <= self.min_log_porosity, log_porosity, corrected)
         return np.clip(corrected, 0.0, 0.5)
 
     def __repr__(self) -> str:
@@ -86,9 +104,17 @@ class PoroPermTransform:
     n_points: int
     rmse: float = np.nan
     method: str = "core_fit"
+    #: Porosity range of the pairs the transform was fitted on; outside it the
+    #: transform extrapolates.
+    porosity_min: float = np.nan
+    porosity_max: float = np.nan
 
     def predict(self, porosity: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        """Predict permeability from porosity using the fitted transform."""
+        """Predict permeability from porosity using the fitted transform.
+
+        Porosity outside ``porosity_min``-``porosity_max`` extrapolates the
+        exponential line, which can reach unphysical values.
+        """
         return 10.0 ** (self.A * np.asarray(porosity) + self.B)
 
     def __repr__(self) -> str:
@@ -403,6 +429,7 @@ def fit_porosity_correction(
         A=A,
         B=B,
         r_squared=float(r2),
+        min_log_porosity=float(min_porosity),
         n_points=int(np.count_nonzero(valid)),
         rmse=rmse,
         input_curve=log_curve,
@@ -590,6 +617,7 @@ def fit_poro_perm_transform(
 
     return PoroPermTransform(
         A=A, B=B, r_squared=r2, n_points=int(np.sum(valid)), rmse=rmse,
+        porosity_min=float(np.min(phi)), porosity_max=float(np.max(phi)),
     )
 
 
@@ -635,6 +663,8 @@ def fit_log_poro_perm_transform(
         n_points=int(np.count_nonzero(valid)),
         rmse=rmse,
         method=f"log_fit:{porosity_curve}",
+        porosity_min=float(np.min(phi)),
+        porosity_max=float(np.max(phi)),
     )
 
 
@@ -682,6 +712,8 @@ def fit_log_poro_perm_transform_from_correction(
         n_points=int(np.count_nonzero(valid)),
         rmse=rmse,
         method=f"log_fit:{porosity_curve}+{correction.method}",
+        porosity_min=float(np.min(phi)),
+        porosity_max=float(np.max(phi)),
     )
 
 
@@ -689,7 +721,7 @@ def apply_poro_perm_transform(
     well,
     transform: PoroPermTransform,
     porosity_curve: str = "PHIE",
-    output_curve: str = "PERM_CORE",
+    output_curve: str = "PERM_CC",
 ) -> np.ndarray:
     """
     Apply a core-derived poro-perm transform to a well.
@@ -703,7 +735,10 @@ def apply_poro_perm_transform(
     porosity_curve : str
         Name of the porosity curve to use as input.
     output_curve : str
-        Name for the output permeability curve added to the well.
+        Name for the output permeability curve added to the well: the
+        core-calibrated permeability ``PERM_CC``, as the workflow names it
+        (``PERM_CORECAL`` is its alias). Not a core-plug name (``PERM_CORE``,
+        ``KH_CORE``...), which core readers and plots take for measured plugs.
 
     Returns
     -------

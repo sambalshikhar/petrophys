@@ -35,12 +35,13 @@ def histogram_matching(
     reference : np.ndarray
         Reference data to match
     n_bins : int, optional
-        Number of bins for histogram (default: 256)
+        Not used: samples are mapped by their rank, not through bins.
 
     Returns
     -------
     np.ndarray
-        Transformed source data
+        Transformed source data: each valid sample replaced by the reference
+        quantile at its empirical-CDF position; NaN samples stay NaN.
 
     Examples
     --------
@@ -61,37 +62,18 @@ def histogram_matching(
     if len(source_valid) == 0 or len(ref_valid) == 0:
         return source.copy()
 
-    # Get value range
-    all_values = np.concatenate([source_valid, ref_valid])
-    value_min = np.min(all_values)
-    value_max = np.max(all_values)
-    if value_min == value_max:
+    if np.min(source_valid) == np.max(source_valid):
         return source.copy()
 
-    # Compute histograms
-    source_hist, bins = np.histogram(
-        source_valid, bins=n_bins, range=(value_min, value_max)
-    )
-    ref_hist, _ = np.histogram(
-        ref_valid, bins=n_bins, range=(value_min, value_max)
-    )
-
-    # Compute CDFs
-    source_cdf = np.cumsum(source_hist).astype(float)
-    source_cdf /= source_cdf[-1]
-
-    ref_cdf = np.cumsum(ref_hist).astype(float)
-    ref_cdf /= ref_cdf[-1]
-
-    # Build lookup table
-    lookup = np.interp(source_cdf, ref_cdf, bins[:-1])
-
-    # Apply transformation
+    # Quantile mapping: each sample takes the reference value at its own
+    # empirical-CDF position (tied values share the mid-rank), so the result
+    # follows the reference distribution without binning steps.
+    ordered = np.sort(source_valid)
+    left = np.searchsorted(ordered, source_valid, side="left")
+    right = np.searchsorted(ordered, source_valid, side="right")
+    quantiles = (left + right) / (2.0 * ordered.size)
     result = source.copy()
-    bin_indices = np.digitize(source_valid, bins[:-1]) - 1
-    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
-    result[source_valid_mask] = lookup[bin_indices]
-
+    result[source_valid_mask] = np.quantile(ref_valid, quantiles)
     return result
 
 

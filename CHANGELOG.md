@@ -246,7 +246,8 @@ their raw logs.
   - Settings can differ by depth: `zones=` takes a list of intervals with
     their settings, or a table or CSV/Excel file (`top`, `bottom`, one column
     per setting, optional `name` and `depth_unit`). Each zone is interpreted
-    with its settings and merged; `result.zone_results` holds the zone runs.
+    with its settings and merged; `result.zone_results` holds the zone runs,
+    each with the `zone_names` it computed.
     Each set of zone settings is run over the whole well and merged over the
     zone, so a zone changes only what its settings change (the GR baselines,
     irreducible water saturation and core model stay the whole well's).
@@ -335,7 +336,8 @@ their raw logs.
   `pp.read`, `pp.interpret` and `pp.plot` take `curve_aliases=` (a dict, or a
   CSV/Excel table of curve and standard name), stored on the well so reading,
   interpretation and plotting all use it; a mapped curve outranks other
-  candidates. `petrophys-context` takes `--curve-aliases FILE`.
+  candidates; a mapping to a known alias (`RT`) stands for its standard
+  curve (`RDEP`). `petrophys-context` takes `--curve-aliases FILE`.
 - `create_histogram_comparison` takes `value_range` and `histtype="step"`;
   the multi-well overlay labels its depth unit and draws legible legend
   lines. The NMR panel titles its first track "GR / Tension" (CDF and TENS
@@ -447,7 +449,8 @@ tools page.
     the depth reference's elevation, `TVDSS`; surveys come from CSV, Excel or
     LAS, with units from headers such as `MD (ft)` and azimuth optional.
   - `depth_reference_elevation` reads the elevation from EKB/EDF/EGL by LMF,
-    or APD + EPD.
+    or APD + EPD; `pp.read(path, survey=..., elevation=...)` sets it in place
+    of the header's.
   - `read_tool_responses` reads digitized J(di) charts (long or wide, inches
     or cm, fraction or percent); `invert_well_invasion` inverts a well's
     curves and adds `RT_INV`, `RXO_INV`, `DI_INV` and the Rt range.
@@ -556,7 +559,10 @@ wherever the package used the function.
 - `DynamicWorkflowConfig.lithology_codes` takes the codebook of a lithology
   code curve whose codes are not those of the built-in lithology code table: a CSV or Excel
   codebook, a DataFrame or a code-to-name mapping. Its rock names give each
-  code's lithology group and the lithology domain.
+  code's lithology group, the lithology domain and the lith_vcl permeability
+  transform; a code curve under another lithology mnemonic (FACIES,
+  LITHOLOGY, ...) is found by the codebook's codes, and a codebook that no
+  curve holds is named in the warnings.
 - `read_lithology_codes` recognizes more codebook headers (rock type, rock
   name, facies, lith code, id, label, ...) and reads a table of two other
   columns as code, then rock name.
@@ -1161,13 +1167,157 @@ wherever the package used the function.
   `pp.interpret`.
 - `DynamicWorkflowResult.to_las()` writes the interpreted well with the
   settings used (`PP_*` parameters, including `PP_RW` and its temperature)
-  and step reasons; traces record the package version.
+  and step reasons, without the clay-volume alias copies (VCLAY, VCLGR,
+  VCLSP, VCLND); traces record the package version.
+- Several wells in one call: `pp.read` and `pp.interpret` take a folder, a
+  file pattern or a list of wells or files. A multi-well tops table is read
+  once; each well is interpreted with the same settings, checked once before
+  any well runs. The `MultiWellResult` gives `summary()` and
+  `formation_summary()` as one table with a `Well` column, `to_las(folder)`
+  and `save_plots(folder)` a file per well, each well's result by name, and
+  the wells that failed in `failed`. `pp.plot` on several wells draws each
+  well's log plot, one figure at a time (`.save(folder)` writes a file per
+  well); with `curves=` it draws one figure with a track per curve and every
+  well's curve in it.
+- Batch use: outside an interactive session `LogViewer.save` closes the
+  figure after saving, so plotting many wells keeps memory flat; a later
+  `save` or `show` redraws the same depth window. `petrophys.read` on a
+  folder says how to read its files.
+- A curve whose samples are mostly outside the plausible range (usually a
+  wrong unit label) is left out whole, not used for its in-range rest; a
+  bad-hole flag that removes net pay is named in the warnings with its
+  thresholds; Rmf and Rw alone make no interpretation (`status` is
+  `"no_interpretation"`); `summary()["net_thickness"]` always has
+  `net_rock`, `net_res` and `net_pay` (None when not computed).
+- Readers: CSV and ASCII tables treat -9999 as null and take a single
+  `null_values` value; `NMRData.from_csv`/`from_dataframe` match columns
+  without regard to case and take `porosity_unit` (v/v porosity is converted
+  to pu, with a warning when inferred); a DLIS read names requested channels
+  it does not find and warns when a merged grid would take more than 0.5 GB;
+  AIT-H/M (AHT90, AHO90, AHF90, ...), HRLA/HALS (HLLD, HDRS, HLLS), CNC and
+  CALX are curve aliases. LAS header synonyms stand in for a missing
+  standard name: the Schlumberger mud-sample names RMS, RMFS, RMCS and their
+  temperatures MST, MFST, MCST for RM, RMF, RMC and RMT, RMFT, RMCT; MRT
+  and BHTEMP for BHT; TDL, DL, TDD and DD for TD; SALW for SAL.
+- Interpretation results checked against plots of real wells:
+  - The standalone `calculate_vcl` / `VclModule` pick the GR baselines at
+    the 5th and 95th percentiles, keep SP as a fallback and leave VCL_ND out
+    above the N-D triangle, as `pp.interpret` does.
+  - Dual Water gives Swe = 1 where bound water fills the pore space (shale)
+    and NaN where the total water saturation falls below the bound-water
+    saturation (inputs that disagree); Waxman-Smits takes B from the
+    Waxman and Smits (1968) relation in Rw when `b_coeff` is not given.
+  - The mineral solvers keep anhydrite only where RHOB exceeds 2.85 g/cm3
+    with NPHI below 0.12; other samples are solved without it, so chalk
+    and limestone carry no anhydrite.
+  - The core porosity correction leaves log porosity at or below its fitted
+    range (shale) as it is; core-calibrated permeability (PERM_CC) comes
+    from the effective part of the corrected porosity and is not
+    extrapolated outside the porosity range of the core pairs.
+  - A zone run's whole-well tallies (bad-hole pay) are not repeated under
+    the zone's label.
+  - Shale takes the grain endpoints of its solids for total porosity (clay
+    -bound water is porosity, as phi_cl counts it), not the wet-shale bulk
+    density; a sample labelled coal whose density reads 2.0 g/cm3 or more
+    takes the fallback matrix, not coal's 1.35 g/cm3.
+  - Net reservoir and net pay leave out layers thinner than the density
+    log resolves (about 0.46 m) between two halite readings, and coal read
+    from the logs (RHOB below 1.8 g/cm3, NPHI above 0.35 where logged, and
+    the samples within 0.23 m of it) where no lithology group calls it coal.
+  - Coates and the other Swirr-based permeabilities take Swirr from the
+    Buckles bulk volume of water: BVWirr / PHIE at each depth, with BVWirr
+    the median PHIE x SW of the hydrocarbon-bearing reservoir.
+  - The temperature trace names the total depth `td` with its `td_unit`;
+    Rcl is printed rounded.
+- Evaluation checked against the logs it summarises:
+  - Per-formation and per-zone tables average porosity and permeability
+    each from one curve over the whole table (the core-corrected one where
+    the run produced it, else the plain one), never filling one model's
+    gaps with another's; `df.attrs["curves"]` names them. Tables give
+    `N/G (reservoir)` (net reservoir / gross) and `Pay/Gross` (net pay /
+    gross); permeability averages are geometric for PERM_CC too.
+  - `run_formation_analysis` attaches the tops before interpreting, so it
+    matches `pp.interpret`; `monte_carlo` reports `correlated_depths`
+    inputs in `sensitivity`; `run_comprehensive_analysis` keeps curves the
+    well already has (BAD_HOLE, CROSSOVER_FLAG) and lists them; QuickLook
+    uses its `vcl_cutoff`, `rt_cutoff` and `min_thickness` (in the well's
+    depth unit) and averages per-sample Sw over pore volume; FZI is NaN
+    below 0.01 effective porosity.
+  - Diagnostics: two of three clay indicators make a high clay class; the
+    carbonate check without PEF or RHOB is "undetermined"; water-bearing
+    and undetermined hydrocarbon labels replace a default "marginal"; BVW
+    without effective porosity has its own class; trend classes scale by
+    each curve's P10-P90 range; geometric and harmonic means are 0 with a
+    zero value and NaN with a negative one. The benchmark profiles keep
+    their classes.
+  - The MCP well-loading reply names the files it attached.
+- Specialist data: `eaton_from_well` takes a `shale=` mask (Eaton is a
+  shale method), leaves samples that would read below zero blank and notes
+  them, and calibrates its exponent against the shale-trend value at each
+  pressure depth, refusing an exponent that is not positive;
+  `CoreData.from_dataframe`/`from_csv` take `porosity_unit=` and
+  `saturation_unit=` and convert percent values with a warning;
+  `kozeny_carman_perm`, `sorting_coefficient` and `skewness` say why they
+  give no result; `create_pressure_contact_plot` frames the fitted stations
+  (`zoom="fit"`, or `"all"`); the MDT pretest plot wraps its review flags
+  and shades the mud baselines it tested; clay typing labels samples it
+  cannot type "unclassified".
+- Reading and units: a tops table's `depth_ref` column is read by its
+  values (KB, RKB, DF, GL, MSL ... as the datum; MD, TVD, TVDSS as the depth
+  reference) and its datum is checked against the LAS log datum (LMF);
+  percent porosity curves of other packages (DPOR, DPHI, DPHZ, SPOR, ...)
+  are converted to v/v in standardization; `export_csv` writes headers as
+  `NAME (unit)` and the CSV/ASCII readers and `pp.read` take a curve's unit
+  (and the depth unit) from such headers; a range-screening warning names
+  the source channel and frame of a merged DLIS curve.
+- Reading and QC: a time-indexed DLIS frame (a pressure pretest) is not
+  merged into a depth log, and a file of such frames is refused with a
+  pointer to `read_mdt_pretest`; an absolute caliper named DCAL takes the
+  caliper range in value-range QC; `histogram_matching` maps each sample
+  by its rank to the reference quantiles.
+- Plots checked track by track on real wells:
+  - Fixed templates leave out tracks with no drawable curve and list them
+    in `omitted_tracks`; a curve mostly off its track's scale is named in
+    `viewer.warnings`; DTE is drawn in the sonic track; BVW shares the
+    porosity scale in every template; the "raw" template and the triple
+    combo take the well's own SP range; `geolink_full` is another name for
+    the `comprehensive` layout.
+  - The lithology legend has an entry for every colour and pattern drawn;
+    a formation top at the bottom of the window is not labelled below the
+    plot; `curve_styles` `display_name` applies to resistivity and alias
+    curves.
+  - `create_multiwell_overlay`, `plot_core_on_logs` and `create_log_plot`
+    find curves by standard name, convert units and depths, and draw
+    permeability on a log axis; the tornado chart shows both bars when they
+    fall on one side of the base; the Buckles colour bar spans the 1st to
+    99th percentile of permeability; zone flags and the net-pay summary use
+    the log viewer's flag colours.
+- Plots: after `save` in a script the figure is released from pyplot but
+  kept in `.fig`, so edits survive later saves; the multi-well comparison
+  converts curves to standard units, reverses neutron and sonic and warns
+  when units still differ.
+- Core and electrical analysis: `apply_poro_perm_transform` writes
+  the core-calibrated `PERM_CC` (a core-plug name such as `PERM_CORE` would be
+  read back as plugs), and `PERM_CORECAL` is an alias of `PERM_CC`; `plot_core_on_logs` overlays plugs on any PHI*, PERM*, SW* or SO*
+  curve and `plot_poro_perm` draws the transform over the plugs' porosity
+  range; `find_core_depth_shift` warns on a weak tie (r < 0.5);
+  `pickett_analysis` returns Rw and warns when m lies outside 1.3-3; it
+  fits by reduced major axis (errors in both porosity and resistivity),
+  with `method="ols"` available and m fitted through log(a x Rw) when `rw=`
+  is given, and `PickettPlot.add_trend_line` draws the same line.
+- Context export of a user's well clips permeability to the 0.0001 mD QC
+  floor instead of leaving tight rock out of the statistics; its
+  methodology text names the porosity order it uses. `petrophys-context`
+  takes `--setting NAME=VALUE` (repeatable) for interpretation settings.
+  A custom `WorkflowRunResult` can be pickled.
 - Every skipped step records a specific reason, and `print_trace()` shows it.
 - `formations_costa.csv` labels the logged interval of each Costa well as
   its single formation, KHARAIB-2, so formation summaries and context
   packages name the reservoir.
 - `DynamicWorkflowResult.formation_summary()` tabulates gross, net and
-  average properties per formation.
+  average properties per formation. Tops that mix levels give formations
+  unless `rank=` says otherwise, tops at or below the logged bottom are left
+  out, and NPD informal units ("Intra Balder Fm. Sst.") rank as members.
 - NPD/GeoLink-style tops without a rank column get their stratigraphic rank
   from the name suffix (GP./Fm./Mb.), so mixed group/formation picks can be
   analyzed one level at a time with `run_formation_analysis(..., rank=...)`;
@@ -1204,8 +1354,14 @@ wherever the package used the function.
   wherever the curve is measured, in the well and in `train_wells`, so a
   curve the well lacks altogether can be rebuilt from offset wells. The
   result is added as `<CURVE>_IMPUTED`, with the measured values kept, and
-  written to a LAS file with `output=`. A warning counts imputed samples
-  whose inputs lie outside the training range. Needs the `ml` extra.
+  written to a LAS file with `output=`. A training well without one of the
+  input logs still teaches the others (its missing log is a gap the trees
+  route), and held readings of the curve (runs of 10 or more identical
+  samples, such as a zero-filled curve) are not learned from. A warning
+  counts imputed samples whose inputs lie outside the training range. Needs
+  the `ml` extra. `pp.plot` draws `<CURVE>_IMPUTED` in the track of the
+  curve it rebuilds, on its scale, dashed where it fills that curve's gaps.
+  Curves of one unit in a generic track share one scale.
 - Plotting: `create_heatmap` centres each cell on its coordinate, draws
   unevenly and log-spaced bins such as NMR T2, and accepts cell edges; the
   core plotting helpers (`plot_calibration`, `plot_poro_perm`,

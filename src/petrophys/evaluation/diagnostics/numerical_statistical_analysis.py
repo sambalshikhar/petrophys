@@ -97,10 +97,16 @@ class NumericalStatisticalAnalysis:
 
         trend_labels = np.full(n_samples, "STABLE_ZONE", dtype=object)
         if gradient_curves:
-            stack = np.vstack(list(gradient_curves.values()))
-            if not reproducing_benchmark():
-                # The |0.1| threshold is per metre; a feet well's gradients are per foot.
-                stack = stack / self._metres_per_depth_unit(well)
+            if reproducing_benchmark():
+                stack = np.vstack(list(gradient_curves.values()))
+            else:
+                # Each gradient in units of its curve's own P10-P90 spread per metre
+                # (resistivity on log10), so GR in API and RHOB in g/cc are judged
+                # alike; a feet well's gradients are per foot.
+                stack = np.vstack([
+                    self._relative_gradient(well, name[: -len("_GRAD")])
+                    for name in gradient_curves
+                ]) / self._metres_per_depth_unit(well)
             significant = np.sum(np.isfinite(stack) & (np.abs(stack) > 0.1), axis=0)
             trend_labels[significant >= 1] = "MODERATE_TREND_ZONE"
             trend_labels[significant >= 3] = "STRONG_TREND_ZONE"
@@ -345,7 +351,8 @@ class NumericalStatisticalAnalysis:
                         "STRONG_TREND_ZONE when >= 3 gradients exceed |0.1|; "
                         "MODERATE when 1-2; STABLE when none."
                         if benchmark else
-                        "STRONG_TREND_ZONE when >= 3 gradients exceed |0.1| per metre; "
+                        "A gradient is significant above |0.1| of its curve's P10-P90 range per metre "
+                        "(RDEP on log10). STRONG_TREND_ZONE when >= 3 gradients are significant; "
                         "MODERATE when 1-2; STABLE when none."
                     ),
                 ),
@@ -489,6 +496,23 @@ class NumericalStatisticalAnalysis:
         increments = 0.5 * (rho[1:] + rho[:-1]) * np.diff(z) * 9.81
         sv[order[covered]] = (above + np.concatenate([[0.0], np.cumsum(increments)])) / 1e6
         return sv
+
+    @classmethod
+    def _relative_gradient(cls, well: "Well", name: str) -> np.ndarray:
+        """Gradient of a curve divided by its P10-P90 range (RDEP on log10), per depth unit."""
+        aliases = {"RDEP": ["RDEP", "RT"], "DTC": ["DTC", "DT"]}.get(name, [name])
+        data, _ = get_curve_data(well, aliases)
+        values = np.asarray(data, dtype=float)
+        if name == "RDEP":
+            with np.errstate(divide="ignore", invalid="ignore"):
+                values = np.where(values > 0, np.log10(values), np.nan)
+        finite = values[np.isfinite(values)]
+        if finite.size < 2:
+            return np.full(well.n_samples, np.nan)
+        spread = float(np.percentile(finite, 90) - np.percentile(finite, 10))
+        if not spread > 0:
+            return np.full(well.n_samples, np.nan)
+        return cls._gradient(values, well.depth) / spread
 
     @staticmethod
     def _gradient(values: np.ndarray, depth: np.ndarray) -> np.ndarray:

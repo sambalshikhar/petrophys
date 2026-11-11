@@ -266,6 +266,11 @@ _CURRENT_GROUND_TRUTH_CODE_TO_GROUP = {
 
 _CURRENT_LITHOLOGY_GROUP_TO_MATRIX = {
     **LITHOLOGY_GROUP_TO_MATRIX,
+    # Total porosity counts the clay-bound water, so shale takes the grain
+    # endpoints of its solids, as phi_cl does: the wet-shale bulk density
+    # (2.58 g/cm3) as a matrix would count that water as rock.
+    "shale": "sandstone",
+    "calcareous_shale": "limestone",
     "gypsum": "gypsum",
     "sylvinite": "sylvite",
     "polyhalite": "polyhalite",
@@ -321,6 +326,34 @@ def _halite_log_signature(well: "Well") -> np.ndarray:
     return halite
 
 
+def _coal_log_signature(well: "Well") -> np.ndarray:
+    """Samples whose logs read like coal.
+
+    Coal logs a bulk density of 1.2-1.8 g/cm3 and a high apparent neutron
+    porosity (Schlumberger, *Log Interpretation Charts*, 1989). A sample
+    reads like coal with RHOB below 1.8 g/cm3 and, where NPHI is logged, NPHI
+    above 0.35; no porous rock has so low a bulk density. Samples within half
+    the density log's vertical resolution (0.23 m) of such a reading are
+    included: the tool averages them with the seam.
+    """
+    def data(*names: str) -> np.ndarray:
+        values, _, _ = get_curve_data_depthwise(well, list(names))
+        if values is None:
+            return np.full(well.n_samples, np.nan)
+        return np.asarray(values, dtype=float)
+
+    rhob, nphi = data("RHOB"), data("NPHI")
+    with np.errstate(invalid="ignore"):
+        coal = (rhob < 1.8) & ~(nphi <= 0.35)
+    depth = np.asarray(well.depth, dtype=float) if well.depth is not None else None
+    if depth is None or depth.shape != coal.shape:
+        return coal
+    # Within half the density log's vertical resolution of a seam the reading
+    # mixes coal with the bed beside it (shoulder effect).
+    half = 0.5 * DENSITY_VERTICAL_RESOLUTION_M / (0.3048 if str(well.depth_unit).lower() in {"ft", "feet"} else 1.0)
+    return _within(coal, depth, half)
+
+
 def _group_mask(lithology: Union[str, np.ndarray], groups: frozenset, n_samples: int) -> np.ndarray:
     """Samples whose per-depth lithology group is one of ``groups``."""
     if not isinstance(lithology, np.ndarray) or lithology.shape != (n_samples,):
@@ -328,11 +361,57 @@ def _group_mask(lithology: Union[str, np.ndarray], groups: frozenset, n_samples:
     return np.array([_coerce_lithology_group(group) in groups for group in lithology], dtype=bool)
 
 
+#: Vertical resolution of a standard density log, about 18 in (0.46 m): a
+#: layer thinner than that between two salt readings is not resolved.
+DENSITY_VERTICAL_RESOLUTION_M = 0.46
+
+
+def _fill_thin_gaps(flag: np.ndarray, depth: np.ndarray, width: float) -> np.ndarray:
+    """``flag`` with runs of unflagged samples thinner than ``width`` (depth
+    units) filled where flagged samples bound them on both sides."""
+    filled = np.array(flag, dtype=bool, copy=True)
+    index = np.flatnonzero(filled)
+    if index.size < 2:
+        return filled
+    steps = np.abs(np.diff(depth[np.isfinite(depth)]))
+    step = float(np.median(steps[steps > 0])) if np.any(steps > 0) else 0.0
+    for start, stop in zip(index[:-1], index[1:]):
+        # The gap is the unflagged samples' own thickness, one step each.
+        if stop - start > 1 and (stop - start - 1) * step <= width + 1e-9:
+            filled[start + 1:stop] = True
+    return filled
+
+
+def _within(flag: np.ndarray, depth: np.ndarray, distance: float) -> np.ndarray:
+    """Samples within ``distance`` (depth units) of a flagged sample."""
+    near = np.array(flag, dtype=bool, copy=True)
+    flagged = depth[np.asarray(flag, dtype=bool) & np.isfinite(depth)]
+    if flagged.size == 0:
+        return near
+    flagged = np.sort(flagged)
+    position = np.searchsorted(flagged, depth)
+    below = np.abs(depth - flagged[np.clip(position, 0, flagged.size - 1)])
+    above = np.abs(depth - flagged[np.clip(position - 1, 0, flagged.size - 1)])
+    with np.errstate(invalid="ignore"):
+        near |= np.minimum(below, above) <= distance
+    return near
+
+
 def _log_halite(well: "Well", lithology: Union[str, np.ndarray]) -> np.ndarray:
     """Halite read from the logs (:func:`_halite_log_signature`) where no
-    lithology group already calls the sample an evaporite."""
+    lithology group already calls the sample an evaporite.
+
+    A layer thinner than the density log resolves (about 0.46 m) between two
+    salt readings is taken as salt: such 1-3 sample "porous" readings inside
+    salt are interbeds or log transitions, not reservoir.
+    """
     evaporite = _group_mask(lithology, EVAPORITE_LITHOLOGY_GROUPS, well.n_samples)
-    return _halite_log_signature(well) & ~evaporite
+    halite = _halite_log_signature(well)
+    depth = np.asarray(well.depth, dtype=float) if well.depth is not None else None
+    if depth is not None and depth.shape == halite.shape and not reproducing_benchmark():
+        width = DENSITY_VERTICAL_RESOLUTION_M / (0.3048 if str(well.depth_unit).lower() in {"ft", "feet"} else 1.0)
+        halite = _fill_thin_gaps(halite, depth, width)
+    return halite & ~evaporite
 
 
 def _non_reservoir_samples(well: "Well", lithology: Union[str, np.ndarray]) -> Dict[str, np.ndarray]:
@@ -355,6 +434,9 @@ def _non_reservoir_samples(well: "Well", lithology: Union[str, np.ndarray]) -> D
       evaporite but whose logs read like halite
       (:func:`_halite_log_signature`), such as salt below the end of a
       lithology log.
+    * ``coal_log_signature``: samples no lithology group calls coal whose
+      logs read like coal (:func:`_coal_log_signature`), such as a coal seam
+      inside an interval a lithology log calls sandstone.
     * ``bad_hole``: samples with ``BAD_HOLE`` = 1 (washout or large hole).
       There the density pad loses contact with the borehole wall, so bulk
       density and neutron porosity, and the PHIE and Sw built on them, are
@@ -364,11 +446,15 @@ def _non_reservoir_samples(well: "Well", lithology: Union[str, np.ndarray]) -> D
     """
     n_samples = well.n_samples
     excluded: Dict[str, np.ndarray] = {}
-    for kind, mask in (
+    coal_group = _group_mask(lithology, NON_RESERVOIR_LITHOLOGY_GROUPS, n_samples)
+    kinds = [
         ("evaporite", _group_mask(lithology, EVAPORITE_LITHOLOGY_GROUPS, n_samples)),
-        ("coal", _group_mask(lithology, NON_RESERVOIR_LITHOLOGY_GROUPS, n_samples)),
+        ("coal", coal_group),
         ("halite_log_signature", _log_halite(well, lithology)),
-    ):
+    ]
+    if not reproducing_benchmark():
+        kinds.append(("coal_log_signature", _coal_log_signature(well) & ~coal_group))
+    for kind, mask in kinds:
         if mask.any():
             excluded[kind] = mask
     bad_hole = well.get("BAD_HOLE")
@@ -578,6 +664,10 @@ def _net_pay_detail_decisions(
             "Halite on the logs where no lithology group calls the rock an evaporite (RHOB "
             "1.95-2.15 g/cm3, GR < 15 API, RT > 500 ohm.m or, without RT, CALI < BS - 0.5 in; "
             "NPHI <= 0.05 and PEF 4.0-5.5 where logged)"
+        ),
+        "coal_log_signature": (
+            "Coal on the logs where no lithology group calls the rock coal (RHOB < 1.8 g/cm3, "
+            "NPHI > 0.35 where logged)"
         ),
         "bad_hole": "Bad hole (BAD_HOLE = 1): density, neutron, PHIE and SW are unreliable",
     }
@@ -2535,6 +2625,28 @@ def _account_step_curves(
         trace.output_curves = [*(trace.output_curves or []), *unlisted]
 
 
+#: Warnings that count over the whole well, left out of a zone run's messages.
+_WHOLE_WELL_TALLIES = ("Bad hole removed",)
+
+#: Clay-volume aliases the workflow writes next to their standard names.
+_CLAY_ALIASES = {"VCLAY": "VCL", "VCLGR": "VCL_GR", "VCLSP": "VCL_SP", "VCLND": "VCL_ND"}
+
+
+def _curves_without_aliases(well: Well) -> List[str]:
+    """Curve names of ``well`` less the clay-volume aliases that copy a standard curve."""
+    names = []
+    for name in well.curves:
+        standard = well.get(_CLAY_ALIASES.get(name, "")) if name in _CLAY_ALIASES else None
+        alias = well.get(name)
+        if (
+            standard is not None and alias is not None
+            and np.array_equal(np.asarray(standard.data), np.asarray(alias.data), equal_nan=True)
+        ):
+            continue
+        names.append(name)
+    return names
+
+
 @dataclass
 class DynamicWorkflowResult:
     """Results from dynamic workflow execution."""
@@ -2569,6 +2681,8 @@ class DynamicWorkflowResult:
     #: header zones), each merged into ``well`` over its depths; empty when
     #: no zone sets anything (a zone that only names an interval adds no run).
     zone_results: List["DynamicWorkflowResult"] = field(default_factory=list)
+    #: For a run in ``zone_results``: the names of the zones it computed.
+    zone_names: List[str] = field(default_factory=list)
     #: The zones of ``config.zones`` that apply to this well, in depth order:
     #: ``name``, ``top`` and ``bottom`` in the well's depth unit.
     zone_intervals: List[Dict[str, Any]] = field(default_factory=list)
@@ -2580,6 +2694,8 @@ class DynamicWorkflowResult:
             WorkflowStep.NORMALIZATION.value,
             WorkflowStep.BAD_HOLE.value,
             WorkflowStep.TEMPERATURE.value,
+            WorkflowStep.RMF.value,
+            WorkflowStep.RW.value,
             "input_context",
         }
         return any(
@@ -2817,17 +2933,19 @@ class DynamicWorkflowResult:
             :func:`petrophys.read_formations` accepts). Defaults to the
             formations attached with ``petrophys.read(path, formations=...)``.
         rank : str, optional
-            Level to summarize when the tops mix levels, e.g. ``"group"`` or
-            ``"formation"``. NPD-style names (``"Brent Gp."``,
-            ``"Etive Fm."``) carry their rank; other tables need a ``rank``
-            column.
+            Level to summarize when the tops mix levels, e.g. ``"group"``;
+            tops that mix levels default to ``"formation"``. NPD-style names
+            (``"Brent Gp."``, ``"Etive Fm."``) carry their rank; other tables
+            need a ``rank`` column to mix levels. Tops at or below the logged
+            bottom are left out.
 
         Returns
         -------
         pandas.DataFrame
             One row per formation: top, bottom, gross, net rock, net
             reservoir and net pay thickness (in the well's depth unit),
-            net-to-gross (net pay / gross), and PHIE, Sw, VCL and
+            net reservoir / gross ("N/G (reservoir)") and net pay / gross
+            ("Pay/Gross"), and PHIE, Sw, VCL and
             permeability averaged over the net-pay samples only (geometric
             mean for permeability; NaN where a formation has no pay).
 
@@ -2836,7 +2954,7 @@ class DynamicWorkflowResult:
         >>> import petrophys as pp
         >>> well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
         >>> result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
-        >>> table = result.formation_summary(rank="formation")  # doctest: +SKIP
+        >>> table = result.formation_summary()  # doctest: +SKIP
         """
         from petrophys.workflow.summary import summarize_formations
 
@@ -2970,6 +3088,11 @@ class DynamicWorkflowResult:
         skipped steps and, under the ``"current"`` calculation profile, the
         run's warnings. Use :meth:`to_json` for the complete trace.
 
+        The clay-volume aliases the workflow keeps for other readers
+        (``VCLAY``, ``VCLGR``, ``VCLSP``, ``VCLND``, copies of ``VCL``,
+        ``VCL_GR``, ``VCL_SP``, ``VCL_ND``) are left out unless ``curves``
+        names them.
+
         Parameters
         ----------
         path : str or Path
@@ -2994,6 +3117,8 @@ class DynamicWorkflowResult:
             lines.extend(f"Warning: {warning}" for warning in self.warnings)
         output = Path(path)
         output.parent.mkdir(parents=True, exist_ok=True)
+        if options.get("curves") is None:
+            options["curves"] = _curves_without_aliases(self.well)
         export_las(
             self.well,
             output,
@@ -3038,7 +3163,7 @@ class DynamicWorkflowResult:
             "## Computed Values",
             f"- Rw: `{json.dumps(computed['rw'])}`",
             f"- Rmf: `{json.dumps(computed['rmf'])}`",
-            f"- Rcl: `{json.dumps(computed['rcl'])}`",
+            f"- Rcl: `{format(computed['rcl'], '.4g') if isinstance(computed['rcl'], (int, float)) else json.dumps(computed['rcl'])}`",
             f"- Temperature gradient: `{json.dumps(computed['temperature_gradient'])}`",
         ])
 
@@ -3277,12 +3402,17 @@ class DynamicWorkflow:
         if self._code_curve_well is not well:
             from petrophys.interpretation.lithology.matrix_inference import lithology_code_curve
 
+            user_groups = self._user_code_groups()
             found = lithology_code_curve(
                 well,
                 explicit=self.config.lithology_curve,
                 allow_aliases=(
                     not self._reproducing_benchmark
                     and self.config.lithology_source in {"auto", "vendor"}
+                ),
+                known_codes=(
+                    None if user_groups is None
+                    else {code for code in user_groups if isinstance(code, int)}
                 ),
             )
             self._code_curve = found[0] if found else None
@@ -3331,6 +3461,11 @@ class DynamicWorkflow:
                 f"lithology_curve={requested!r}: the well has no such curve with finite samples; {instead}."
             )
         user_groups = self._user_code_groups()
+        if code_curve is None and user_groups is not None:
+            self._result.warnings.append(
+                "lithology_codes is not used: no lithology code curve of the well holds its codes; "
+                "name the curve with lithology_curve=."
+            )
         if code_curve is not None and user_groups is not None:
             unmapped = sorted(
                 f"{code} ({self._user_code_labels[code]})" for code, group in user_groups.items() if group is None
@@ -4345,10 +4480,14 @@ class DynamicWorkflow:
                         data = data.astype(float)
                 data[inside] = values[inside]
                 well.add_curve(name, data, curve.unit, curve.metadata.description)
+            # A zone run interprets the whole well; its whole-well tallies (bad-hole
+            # pay removed) do not describe the zone, so they are not repeated.
             result.warnings.extend(
-                f"{label}: {message}" for message in zone_result.warnings if message not in result.warnings
+                f"{label}: {message}" for message in zone_result.warnings
+                if message not in result.warnings and not message.startswith(_WHOLE_WELL_TALLIES)
             )
             result.errors.extend(f"{label}: {message}" for message in zone_result.errors)
+            zone_result.zone_names = list(group["labels"])
             result.zone_results.append(zone_result)
         return result
 
@@ -5131,7 +5270,8 @@ class DynamicWorkflow:
         trace.parameters = {
             "surface_temp_f": surface_temp_f,
             "bht_f": bht_f,
-            "td_ft": td_ft,
+            # The TD may be in metres; "td" names it without a unit suffix.
+            ("td_ft" if self._reproducing_benchmark else "td"): td_ft,
             "td_unit": td_unit,
         }
         if gradient is not None:
@@ -6064,6 +6204,11 @@ class DynamicWorkflow:
             trace.decisions.append(
                 f"Rcl = {self._result.rcl_computed:.2f} ohm.m (default because no shale lithology or VCL > 0.9 samples were available)"
             )
+        if self.config.rtsh is not None and not self._reproducing_benchmark:
+            trace.parameters["overridden_by"] = {"rtsh": self.config.rtsh}
+            trace.decisions.append(
+                f"Saturation uses rtsh = {self.config.rtsh:g} ohm.m as set, not this Rcl"
+            )
         return trace
 
     @staticmethod
@@ -6137,7 +6282,7 @@ class DynamicWorkflow:
             lithology="auto", solver_version=2, screen_barite_pef=True,
             solver_options={"endpoint_overrides": self._solver_endpoints()},
         )
-        other = module.calculate(well)
+        other = module.calculate(well, samples=fill)
         fill &= np.asarray(other.solved, dtype=bool)
         if not fill.any():
             return result
@@ -7572,6 +7717,29 @@ class DynamicWorkflow:
                 )
 
         halite_samples = 0
+        if not benchmark and isinstance(lithology, np.ndarray):
+            # Coal endpoints (1.35 g/cm3) only where the density reads coal: a
+            # sample labelled coal at RHOB 2.0 g/cm3 or more is coaly shale or
+            # an interbed, read on the fallback matrix.
+            rhob_values, _, _ = get_curve_data_depthwise(well, ["RHOB"])
+            if rhob_values is not None:
+                coal_label = np.asarray(
+                    [_coerce_lithology_group(item) == "coal" for item in lithology], dtype=bool
+                )
+                with np.errstate(invalid="ignore"):
+                    not_coal = coal_label & (np.asarray(rhob_values, dtype=float) >= 2.0)
+                if np.any(not_coal):
+                    rho_ma[not_coal] = fallback_rho_ma
+                    dt_ma[not_coal] = fallback_dt_ma
+                    nphi_ma[not_coal] = fallback_nphi_ma
+                    matrix_endpoints.append({
+                        "lithology_group": "COAL (RHOB >= 2.0 g/cm3)",
+                        "matrix_key": self.config.matrix_type,
+                        "rho_ma": float(fallback_rho_ma),
+                        "dt_ma": float(fallback_dt_ma),
+                        "nphi_ma": float(fallback_nphi_ma),
+                        "samples": int(np.count_nonzero(not_coal)),
+                    })
         if not benchmark:
             # Halite on the logs where no lithology group calls the sample an
             # evaporite takes the halite endpoints, so its density porosity
@@ -8768,13 +8936,18 @@ class DynamicWorkflow:
                     "Dual Water phi_cl fallback used because "
                     + str(phi_cl_info["phi_cl_fallback_reason"])
                 )
+        rcl_text = f"Rcl = {self._result.rcl_computed}"
+        if not self._reproducing_benchmark and isinstance(self._result.rcl_computed, (int, float)):
+            rcl_text = f"Rcl = {self._result.rcl_computed:.3f} ohm.m"
+        if self.config.rtsh is not None and not self._reproducing_benchmark:
+            rcl_text = f"Rsh = {self.config.rtsh:g} ohm.m (rtsh as set)"
         if trace.parameters["rw_min"] is not None and trace.parameters["rw_max"] is not None:
             trace.decisions.append(
-                f"Rw range = {trace.parameters['rw_min']:.4f} to {trace.parameters['rw_max']:.4f}, Rcl = {self._result.rcl_computed}"
+                f"Rw range = {trace.parameters['rw_min']:.4f} to {trace.parameters['rw_max']:.4f}, {rcl_text}"
             )
         else:
             trace.decisions.append(
-                f"Rw unavailable for SW; Rcl = {self._result.rcl_computed}"
+                f"Rw unavailable for SW; {rcl_text}"
             )
         if so_valid is not None and np.any(so_valid):
             trace.decisions.append("SO = 1 - SW where SW is finite")
@@ -8911,7 +9084,15 @@ class DynamicWorkflow:
             **self._core_calibration_options(),
         )
         lithology = None
-        if code_curve is None and not self._has_curve(well, "LITHO_CLASS", "LITHO"):
+        if code_curve is not None and self._user_code_groups() is not None:
+            # The user's codebook names the rocks, so lith_vcl reads names, not table codes.
+            codes = np.asarray(well.get(code_curve).data, dtype=float)
+            lithology = np.full(codes.shape, "", dtype=object)
+            finite = np.isfinite(codes)
+            lithology[finite] = [
+                self._user_code_labels.get(int(code), "") for code in np.round(codes[finite]).astype(int)
+            ]
+        elif code_curve is None and not self._has_curve(well, "LITHO_CLASS", "LITHO"):
             lithology = self._build_lithology_log(well)
 
         result = perm_module.calculate(
@@ -8978,7 +9159,7 @@ class DynamicWorkflow:
             if method_input_curves
             else [result.metadata.get("porosity_curve", "PHIE")]
         )
-        if empirical_method != "lith_vcl" and result.swi_source in {"hc_mask_p5", "default_0.20"}:
+        if empirical_method != "lith_vcl" and result.swi_source in {"hc_mask_p5", "default_0.20", "buckles_bvw_irr"}:
             if self._historical or get_curve(well, ["SW"]) is not None:
                 input_curves.append("SW")
             elif result.swi_source == "default_0.20":
@@ -9058,6 +9239,12 @@ class DynamicWorkflow:
                 )
             else:
                 decisions.append(f"Swirr = {float(result.swi_used):.3f} ({result.swi_source})")
+        elif isinstance(result.swi_used, np.ndarray) and result.swi_source == "buckles_bvw_irr":
+            rt_curve = swirr_metadata.get("rt_curve", "RDEP")
+            decisions.append(
+                f"SWIRR_APP = BVWirr / PHIE (Buckles), BVWirr = median(PHIE x SW where resflag and "
+                f"{rt_curve} > 5) = {float(result.bvw_irr):.4f} (n={swirr_metadata.get('hc_mask_samples')})"
+            )
         elif isinstance(result.swi_used, np.ndarray):
             decisions.append(f"Swirr resolved as curve ({result.swi_source})")
         elif result.swi_source == "not_required" and empirical_method == "lith_vcl":
@@ -9463,6 +9650,14 @@ class DynamicWorkflow:
             trace.decisions.extend(
                 _net_pay_detail_decisions(details["cutoff_source"], details["cutoffs_by_family"], excluded)
             )
+            bad_hole = excluded.get("bad_hole")
+            if bad_hole and bad_hole["net_pay_removed"] > 0 and not self._reproducing_benchmark:
+                self._result.warnings.append(
+                    f"Bad hole removed {bad_hole['net_pay_removed']:g} {unit} of net pay "
+                    f"(BAD_HOLE at {bad_hole['samples']} of {well.n_samples} samples). Check the "
+                    "flag against the caliper and DRHO; bad_hole={'drho': ..., 'cali': ...} sets "
+                    "its thresholds and skip_steps=['bad_hole'] keeps the pay."
+                )
         trace.decisions.append(f"SEALFLAG: VCL >= 0.8 -> {n_seal} samples ({n_seal*step_len:.1f} {unit})")
         if well.get("CROSSOVER_FLAG") is not None:
             n_crossover = int(np.nansum(np.asarray(well.get("CROSSOVER_FLAG").data, dtype=float) > 0.5))

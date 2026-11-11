@@ -209,6 +209,31 @@ with tempfile.TemporaryDirectory() as folder:
             print(f"  {name:<11} {value}")
 ```
 
+## Several wells
+
+`pp.read` and `pp.interpret` take a folder, a file pattern (`"logs/*.las"`) or a list of files as well as one file.
+A multi-well tops table is read once and each well keeps its own picks; every well is interpreted with the same settings, its own header values filling the rest.
+One table covers all the wells, and `to_las(folder)` and `save_plots(folder)` write a file per well.
+A well that fails is named in `results.failed`; the others are interpreted.
+
+```{code-cell} python
+wells = pp.read([pp.sample(name) for name in ["HW-3", "HW-4", "HW-5"]],
+                formations=pp.sample("formations_costa"))
+results = pp.interpret(wells, lithology_domain="carbonate")
+results.summary().style.hide(axis="index").format(precision=3)
+```
+
+```{code-cell} python
+results.formation_summary().iloc[:, :8].style.hide(axis="index").format(precision=2)
+```
+
+`pp.plot` on several wells draws each well's own log plot, one after another; `.save(folder)` writes a file per well.
+With `curves=`, it draws one figure instead: a track per curve, with every well's curve in it.
+
+```{code-cell} python
+pp.plot(results, curves=["GR", "RDEP", "PHIE", "SW"], figsize=(10, 8)).show()
+```
+
 ## Next
 
 {doc}`own_data`: read your own CSV logs, attach formation and lithology tables, and check that their depths agree.

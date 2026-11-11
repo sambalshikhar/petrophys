@@ -140,6 +140,17 @@ missing curve from the other logs (it needs the `ml` extra). Here the density
 log of the COSTA well HW-24 is removed and rebuilt from the 16 other COSTA
 wells; the result is added as `RHOB_IMPUTED`.
 
+On the 223 GeoLink North Sea wells, with 80 % of the wells as `train_wells` and
+each curve removed from the 36 others and rebuilt, R² over the rebuilt samples
+is 0.79 for RHOB (mean absolute error 0.081 g/cm3), 0.75 for DTC (10.5 us/ft)
+and 0.63 for NPHI (0.050 v/v; two wells whose NPHI is zero-filled are not
+scored). Scores vary from well to well, so check a rebuild against measured
+data in your own wells before using it.
+
+`pp.plot` draws an imputed curve in the track of the curve it rebuilds, on the
+same scale: dashed where it fills the gaps, the measured curve solid where it
+was logged.
+
 ```{code-cell} python
 import matplotlib.pyplot as plt
 from petrophys.visualization import use_plot_style
@@ -340,21 +351,27 @@ bounds.
 **Eaton pore pressure** needs the overburden (water depth, air gap and the
 density above the logged interval), the hydrostatic water density and a
 normal compaction trend fitted on clean shale in a normally pressured
-section.
+section. It is a shale method: give the shale samples as ``shale=`` and the
+pressure is computed there, blank elsewhere, and calibration compares each
+measured pressure with the shale trend across that depth.
 
 ```python
 from petrophys.interpretation.pore_pressure import eaton_from_well, fit_normal_compaction_trend
 
 well = pp.read("my_well.las", survey="survey.csv")
 nct = fit_normal_compaction_trend(tvd, dtc, kind="sonic", mask=shale & normally_pressured, mudline=135)
-ppr = eaton_from_well(well, nct, water_depth=110, density_above_log=1.95)  # air gap from the header
+shale = well["VCL"].data > 0.6
+ppr = eaton_from_well(well, nct, water_depth=110, density_above_log=1.95, shale=shale)  # air gap from the header
 exponent, misfit = ppr.calibrate(mdt_tvdss, mdt_bar, datum="TVDSS")      # fit Eaton's exponent
-ppr = eaton_from_well(well, nct, water_depth=110, density_above_log=1.95, exponent=exponent, add_curves=True)
+ppr = eaton_from_well(well, nct, water_depth=110, density_above_log=1.95, shale=shale, exponent=exponent,
+                      add_curves=True)
 ```
 
 Offshore the air gap is the depth reference's elevation above sea level;
 onshore it is EKB - EGL, and hydrostatic pressure starts at ground level.
-Calibrate Eaton's exponent to measured pressures before using the result.
+Calibrate Eaton's exponent to measured pressures before using the result;
+calibration stops with an explanation when the measurements fit no positive
+exponent, as with normally pressured points against a poor trend.
 
 ## Next
 

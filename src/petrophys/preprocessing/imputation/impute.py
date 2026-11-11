@@ -92,6 +92,16 @@ def _standard_values(well: "Well", mnemonic: str, standard: str) -> Tuple[np.nda
     return data, factor
 
 
+def _learnable(values: np.ndarray) -> np.ndarray:
+    """``values`` without held readings (runs of 10 or more identical samples, such
+    as a zero-filled or padded curve), which teach a model nothing about the rock."""
+    from petrophys.preprocessing.quality.held_readings import held_reading_mask
+
+    learnable = np.array(values, dtype=float, copy=True)
+    learnable[held_reading_mask(learnable)] = np.nan
+    return learnable
+
+
 def _well_table(well: "Well", names: Sequence[str]) -> Dict[str, np.ndarray]:
     table = {}
     for standard in names:
@@ -172,6 +182,9 @@ def impute(
 
     Notes
     -----
+    The model does not learn from held readings of the curve (runs of 10 or
+    more identical samples, such as a zero-filled or padded curve), and a
+    training well without one of the input logs still teaches the others.
     Tree models reproduce the relations seen in training and do not
     extrapolate: where the input logs fall outside the range they had in the
     training data (the 1st to 99th percentile, widened by a tenth of that
@@ -221,16 +234,20 @@ def impute(
         raise ImportError('pp.impute needs scikit-learn: pip install "petrophys[ml]"') from exc
 
     own = _well_table(well, [name for name in FEATURE_CURVES if name != target])
-    # Inputs: logs present where the curve is missing and in every training source.
+    # Inputs: logs present where the curve is missing. A training well without
+    # one of them still teaches the others: its missing log is NaN, which the
+    # trees route like any gap, so one well short of a log does not take that
+    # log away from every well.
     features = [name for name, values in own.items() if np.any(np.isfinite(values[missing]))]
-    tables = [(own, measured)] if np.any(~missing) else []
+    tables = [(own, _learnable(measured))] if np.any(~missing) else []
     for other in others:
         mnemonic = _find_curve(other, target)
         if mnemonic is None:
             continue
         table = _well_table(other, features)
-        features = [name for name in features if name in table]
-        tables.append((table, _standard_values(other, mnemonic, target)[0]))
+        blank = np.full(other.n_samples, np.nan)
+        tables.append(({name: table.get(name, blank) for name in features},
+                       _learnable(_standard_values(other, mnemonic, target)[0])))
     if np.any(missing) and not features:
         raise ValueError(
             f"{well.name}: no input log is present both where {curve} is missing and in the "

@@ -140,7 +140,7 @@ for key, value in excerpt.items():
 ```
 
 Depths are in the well's own unit, feet for HW-3: `formation_info` and `analysis_results.lithology_group_info` name it in `depth_unit`, and the bad-hole intervals in `analysis_results.BADHOLE_QC_CHECK` and the note on KH carry it too.
-The statistics are taken after the export's value-range QC, which sets values outside each curve's plausible range to null in every group.
+The statistics are taken after the export's value-range QC, which sets values outside each curve's plausible range to null in every group; saturations are clipped to 0-1 and permeability to 0.0001-20000 mD, so tight rock stays in the statistics at the 0.0001 mD floor (the benchmark profiles keep their packages' rule, which nulls permeability outside that range).
 PHI_NORM, RQI, FZI and BVW are then recomputed from the porosity, permeability and saturation that remain, and PHI_Z is set to the recomputed PHI_NORM: each is null wherever the QC removed one of its inputs, so no value computed from a removed sample reaches the statistics.
 
 | Layout | Files |
@@ -256,6 +256,7 @@ petrophys-context logs outputs/context_run_01 --layout package \
 | `--well WELL` | export only these wells (repeatable) |
 | `--recursive`, `--pattern` | search nested folders; choose which files to read |
 | `--min-thickness` | override the grouping threshold |
+| `--setting NAME=VALUE` | an interpretation setting of `petrophys.interpret`, e.g. `--setting rw=0.07 --setting rw_meas_temp_f=230` (repeatable; the value is read as JSON, else as text); not with `--profile` |
 | `--profile` | compute the published `geolink`, `geolink_train`, `costa` or `danish` package from its raw LAS (geolink, geolink_train and danish also need `--formations` and `--lithology-codes`); omit it to interpret with your supplied settings |
 | `--tops-rank`, `--tops-sheet` | pick the formation level (`group`, `formation`, `member`) and the Excel sheet |
 | `--lithology-domain` | broad mineral-solving domain: `clastic`, `carbonate`, `evaporite` or `auto` |

@@ -98,8 +98,11 @@ def dual_water(
     -------
     float or np.ndarray
         Effective water saturation Swe (fraction, clipped 0-1): a float for
-        scalar inputs, else an array. NaN where Rt or an Rw or Rwb array is
-        at or below zero.
+        scalar inputs, else an array. 1 where bound water fills the whole
+        pore space (Vcl x phi_cl >= phi_t, a shale without effective
+        porosity). NaN where the total water saturation falls below the
+        bound-water saturation (the inputs disagree: check phi_cl, Rwb and
+        the porosity), and where Rt or an Rw or Rwb array is at or below zero.
 
     Raises
     ------
@@ -176,6 +179,14 @@ def dual_water(
 
     # Convert to effective Sw
     swe = (swt - swb_safe) / (1.0 - swb_safe)
+    # Where bound water fills the whole pore space (shale, Vcl*phi_cl >= phi_t)
+    # there is no effective porosity to hold hydrocarbon: water-bearing.
+    # Elsewhere a total water saturation below the bound-water saturation
+    # would put more hydrocarbon than effective pore space in the rock: the
+    # inputs disagree (phi_cl, Rwb or the porosity), so Swe is undefined.
+    with np.errstate(invalid="ignore"):
+        swe = np.where(swt < swb_safe, np.nan, swe)
+    swe = np.where(swb >= 1.0, 1.0, swe)
     swe = np.where(invalid, np.nan, swe)
 
     return _result(swe)

@@ -40,11 +40,12 @@ def curve_results(well: "Well", names: Iterable[str], mask: np.ndarray) -> Dict[
 def net_thickness(well: "Well", mask: np.ndarray, cells: bool = True) -> Dict[str, Any]:
     """Thickness flagged by each net flag over ``mask``, rounded to 0.01 depth units.
 
-    Each flagged sample counts with its midpoint cell from the actual depths,
+    ``net_rock``, ``net_res`` and ``net_pay`` are always present; a flag the
+    run did not compute is None. Each flagged sample counts with its midpoint cell from the actual depths,
     or, with ``cells=False`` (the "geolink" calculation profile), with the
     well's depth step, as the net-pay trace counts it.
     """
-    thickness: Dict[str, Any] = {"depth_unit": well.depth_unit}
+    thickness: Dict[str, Any] = {"depth_unit": well.depth_unit, **{flag.lower(): None for flag in NET_FLAGS}}
     if well.step is None or well.depth is None:
         return thickness
     cell = cell_thickness(well.depth)[mask] if cells else np.empty(0)
@@ -125,13 +126,19 @@ def formation_table(well: "Well", formations: Any = None, *, rank: Optional[str]
         accepts). Defaults to the formations attached by
         ``petrophys.read(path, formations=...)``.
     rank : str, optional
-        Level to summarize when the tops mix levels, e.g. ``"formation"``.
+        Level to summarize when the tops mix levels, e.g. ``"group"``. Tops
+        that mix levels default to ``"formation"``; a rank is not needed when
+        the tops carry none and never coincide. Tops at or below the logged
+        bottom are left out.
 
     Returns
     -------
     pandas.DataFrame
         One row per formation, as returned by
-        :meth:`DynamicWorkflowResult.formation_summary`.
+        :meth:`DynamicWorkflowResult.formation_summary`: ``N/G (reservoir)``
+        is net reservoir / gross and ``Pay/Gross`` net pay / gross; each pay
+        average comes from one curve, named in ``DataFrame.attrs["curves"]``
+        (PHIE_CC and PERM_CC where the interpretation produced or used them).
 
     Raises
     ------
@@ -157,6 +164,26 @@ def formation_table(well: "Well", formations: Any = None, *, rank: Optional[str]
         table = read_formations(formations, well=well)
     if "bottom_depth" in table and table["bottom_depth"].isna().all():
         table = table.drop(columns="bottom_depth")
+    if "bottom_depth" not in table and well.bottom is not None:
+        # Picks at or below the logged bottom (formations the log did not reach) hold no samples.
+        inside = table.loc[table["top_depth"] < well.bottom]
+        if inside.empty:
+            raise ValueError(
+                f"No formation top lies above the logged bottom {well.bottom:g} {well.depth_unit}; "
+                "check the depth unit of the formation tops."
+            )
+        inside.attrs = table.attrs
+        table = inside
+    ranks = (
+        {str(value).strip().lower() for value in table["rank"].dropna() if str(value).strip()}
+        if "rank" in table else set()
+    )
+    if rank is None and len(ranks) > 1 and "formation" in ranks:
+        # Hierarchical picks (group, formation, member): formations are the usual level.
+        rank = "formation"
+    elif rank is not None and not ranks and not table["top_depth"].duplicated().any():
+        # Flat picks with no rank: every pick is at the one level there is.
+        rank = None
     tops = FormationTops.from_dataframe(
         table, name_col="formation_name", terminal_depth=well.bottom, rank=rank
     )

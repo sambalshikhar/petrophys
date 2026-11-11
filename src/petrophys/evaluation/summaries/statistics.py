@@ -9,6 +9,8 @@ from typing import Any, Dict, Iterable, Optional
 
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 # The statistics the reference context reports per curve, in its order.
 STATISTICS = (
     "minimum",
@@ -49,10 +51,15 @@ def curve_statistics(
 
     The statistics the reference context reports for a curve over a lithology
     group, unrounded: minimum, maximum, arithmetic mean, geometric and harmonic
-    means over the positive samples (0 when there are none), the third-power
-    average (cube root of the mean cube), median, mode of the values rounded to
-    4 decimals and the population standard deviation; with the variance, the
-    sample count and any requested percentiles.
+    means, the third-power average (cube root of the mean cube), median, mode
+    of the values rounded to 4 decimals and the population standard deviation;
+    with the variance, the sample count and any requested percentiles.
+
+    The geometric and harmonic means are over all finite samples, as defined
+    for non-negative values: a zero sample makes both 0 (its logarithm and
+    reciprocal are unbounded), and a negative sample leaves them undefined
+    (NaN). So geometric mean <= arithmetic mean always holds. The benchmark
+    reproduction takes both over the positive samples only (0 without any).
 
     Parameters
     ----------
@@ -84,12 +91,20 @@ def curve_statistics(
     unique, counts = np.unique(rounded, return_counts=True)
     mode_value = float(unique[int(np.argmax(counts))]) if unique.size else float(finite[0])
 
-    if positive.size:
-        geometric_mean = float(np.exp(np.nanmean(np.log(positive))))
-        harmonic_mean = float(positive.size / np.sum(1.0 / positive))
+    if reproducing_benchmark():
+        if positive.size:
+            geometric_mean = float(np.exp(np.nanmean(np.log(positive))))
+            harmonic_mean = float(positive.size / np.sum(1.0 / positive))
+        else:
+            geometric_mean = 0.0
+            harmonic_mean = 0.0
+    elif np.any(finite < 0):
+        geometric_mean = harmonic_mean = float("nan")
+    elif positive.size < finite.size:
+        geometric_mean = harmonic_mean = 0.0
     else:
-        geometric_mean = 0.0
-        harmonic_mean = 0.0
+        geometric_mean = float(np.exp(np.mean(np.log(finite))))
+        harmonic_mean = float(finite.size / np.sum(1.0 / finite))
 
     stats: Dict[str, float] = {
         "count": int(finite.size),

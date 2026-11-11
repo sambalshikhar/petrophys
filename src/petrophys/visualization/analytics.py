@@ -112,20 +112,29 @@ def create_multiwell_overlay(
     ``normalize`` is True each well's curve is scaled so its 5th and 95th
     percentiles map to 0 and 1, making distributions directly comparable.
 
+    Every well is drawn in the depth unit of the first well (feet and metres
+    are converted with 0.3048 m/ft), and each curve in its standard unit
+    (percent porosity as v/v, kg/m3 density as g/cc), as :func:`petrophys.plot`
+    draws it, so the wells share one depth axis and one value axis.
+
     Parameters
     ----------
     wells : sequence of Well
         Wells to overlay. Wells without ``curve`` are skipped.
     curve : str
-        Curve mnemonic to plot (resolved via ``well.get``).
+        Curve to plot: a curve of the well or a standard name (``RDEP`` finds
+        ``RT`` or ``ILD``), found as :func:`petrophys.plot` finds it.
     depth_range : tuple of float, optional
-        Depth window (in each well's depth units).
+        Depth window, in the depth unit of the first well.
     normalize : bool
         Scale each curve so its 5th-95th percentiles span 0-1 before plotting.
     labels : sequence of str, optional
         Legend labels (defaults to each ``well.name``).
     """
     _require_mpl()
+    from petrophys.model.units import normalize_depth_unit
+    from petrophys.visualization.log_viewer import _display_well, _resolve_curve_name_for_well
+
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
@@ -134,27 +143,50 @@ def create_multiwell_overlay(
     labels = list(labels) if labels is not None else [getattr(w, "name", f"well {i}") for i, w in enumerate(wells)]
     cmap = plt.get_cmap("tab20") if len(wells) > 10 else plt.get_cmap("tab10")
 
+    def depth_unit(well: Any) -> str:
+        return normalize_depth_unit(getattr(well, "depth_unit", None), strict=False, default="")
+
+    plot_unit = depth_unit(wells[0]) if len(wells) else ""
+    value_units = []
+    plotted = 0
     for i, well in enumerate(wells):
-        if not well.has_curve(curve):
+        resolved = _resolve_curve_name_for_well(well, curve)
+        if resolved is None:
             continue
-        depth = np.asarray(well.depth, dtype=float)
-        data = np.asarray(well.get(curve).data, dtype=float)
+        shown = _display_well(well)
+        found = shown.get(resolved)
+        if found is None:
+            continue
+        depth = np.asarray(shown.depth, dtype=float)
+        unit = depth_unit(well)
+        if (unit, plot_unit) == ("ft", "m"):
+            depth = depth * 0.3048
+        elif (unit, plot_unit) == ("m", "ft"):
+            depth = depth / 0.3048
+        data = np.asarray(found.data, dtype=float)
         if depth_range is not None:
-            lo, hi = depth_range
+            lo, hi = sorted(depth_range)
             sel = (depth >= lo) & (depth <= hi)
             depth, data = depth[sel], data[sel]
         if normalize:
             data = _minmax_normalize(data)
-        ax.plot(data, depth, lw=0.6, color=cmap(i % cmap.N), label=labels[i])
+        value_units.append(str(found.unit or "").strip())
+        name = labels[i] if resolved.upper() == str(curve).upper() else f"{labels[i]} ({resolved})"
+        ax.plot(data, depth, lw=0.6, color=cmap(i % cmap.N), label=name)
+        plotted += 1
 
     _depth_axis_down(ax)
     ax.grid(True, alpha=0.3)
-    ax.set_xlabel(("normalized " if normalize else "") + curve)
-    units = {str(getattr(w, "depth_unit", "") or "") for w in wells}
-    ax.set_ylabel(f"Depth [{units.pop()}]" if len(units) == 1 and "" not in units else "Depth")
-    legend = ax.legend(fontsize=7, loc="best")
-    for handle in legend.legend_handles if hasattr(legend, "legend_handles") else legend.legendHandles:
-        handle.set_linewidth(2.0)
+    shared_unit = value_units[0] if value_units and len(set(value_units)) == 1 else ""
+    if normalize:
+        ax.set_xlabel(f"normalized {curve}")
+    else:
+        ax.set_xlabel(f"{curve} [{shared_unit}]" if shared_unit else curve)
+    ax.set_ylabel(f"Depth [{plot_unit}]" if plot_unit else "Depth")
+    if plotted:
+        legend = ax.legend(fontsize=7, loc="best")
+        for handle in legend.legend_handles if hasattr(legend, "legend_handles") else legend.legendHandles:
+            handle.set_linewidth(2.0)
     if title:
         ax.set_title(title)
     return fig, ax
@@ -289,12 +321,23 @@ def create_tornado_plot(
     ypos = np.arange(len(labels))
     for row, i in enumerate(order):
         lo, hi = low[i], high[i]
-        ax.barh(row, lo - base, left=base, color=low_color, alpha=0.85,
+        if (lo - base) * (hi - base) > 0:
+            # Both settings move the outcome the same way: the bars sit side
+            # by side, so neither hides the other.
+            low_y, high_y, height = row + 0.2, row - 0.2, 0.4
+        else:
+            low_y, high_y, height = row, row, 0.8
+        ax.barh(low_y, lo - base, height=height, left=base, color=low_color, alpha=0.85,
                 label="low" if row == 0 else None)
-        ax.barh(row, hi - base, left=base, color=high_color, alpha=0.85,
+        ax.barh(high_y, hi - base, height=height, left=base, color=high_color, alpha=0.85,
                 label="high" if row == 0 else None)
 
-    ax.axvline(base, color="k", lw=1.2, ls="--")
+    values = np.concatenate([low, high, [base]])
+    values = values[np.isfinite(values)]
+    if values.size:
+        pad = 0.06 * (values.max() - values.min()) or 0.05 * abs(base) or 1.0
+        ax.set_xlim(values.min() - pad, values.max() + pad)
+    ax.axvline(base, color="k", lw=1.2, ls="--", zorder=3, label=f"base {base:.3g}")
     ax.set_yticks(ypos)
     ax.set_yticklabels([labels[i] for i in order])
     ax.set_xlabel(xlabel)

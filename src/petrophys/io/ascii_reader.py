@@ -5,8 +5,9 @@ This module provides functionality to read ASCII-formatted well log
 data files including CSV, tab-delimited, and space-delimited formats.
 """
 
-from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any
+from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any, Tuple
 from pathlib import Path
+import re
 import warnings
 import numpy as np
 import pandas as pd
@@ -24,19 +25,6 @@ def _require_depth_unit(depth_unit: Optional[str], source: str) -> str:
             f"{source} does not record its depth unit; pass depth_unit='m' or depth_unit='ft'."
         )
     return normalize_depth_unit(depth_unit)
-
-
-def _check_case_duplicates(columns: Any, source: str) -> None:
-    """Raise ValueError when two columns become the same (upper-case) curve name."""
-    seen: Dict[str, Any] = {}
-    for column in columns:
-        key = str(column).strip().upper()
-        if key in seen:
-            raise ValueError(
-                f"{source}: columns {seen[key]!r} and {column!r} both become curve {key!r}; "
-                "rename one of them."
-            )
-        seen[key] = column
 
 
 def _warn_on_coerced_values(df: pd.DataFrame, skip: List[str], source: str) -> None:
@@ -60,13 +48,93 @@ def _warn_on_coerced_values(df: pd.DataFrame, skip: List[str], source: str) -> N
             stacklevel=3,
         )
 
+#: A column header with its unit: "GR (gAPI)" or "DEPTH [m]".
+_UNIT_HEADER = re.compile(r"^\s*(.*?\S)\s*(?:\(\s*([^()]*?)\s*\)|\[\s*([^\[\]]*?)\s*\])\s*$")
+
+
+def _split_unit_header(column: Any) -> Tuple[str, Optional[str]]:
+    """The curve name (upper case) and unit of a column header.
+
+    ``"GR (gAPI)"`` and ``"GR [gAPI]"`` give ``("GR", "gAPI")``; a header
+    without a bracketed unit gives its name and None.
+    """
+    text = str(column)
+    match = _UNIT_HEADER.match(text)
+    if match is None:
+        return text.strip().upper(), None
+    unit = match.group(2) if match.group(2) is not None else match.group(3)
+    return match.group(1).strip().upper(), unit.strip()
+
+
+def _header_names_and_units(columns: Any, source: str) -> Tuple[List[str], Dict[str, str]]:
+    """Curve names of ``columns`` with their header units removed, and the units by name.
+
+    Raises ValueError when two columns become the same curve name.
+    """
+    names, units, seen = [], {}, {}
+    for column in columns:
+        name, unit = _split_unit_header(column)
+        if name in seen:
+            raise ValueError(
+                f"{source}: columns {seen[name]!r} and {column!r} both become curve {name!r}; "
+                "rename one of them."
+            )
+        seen[name] = column
+        names.append(name)
+        if unit:
+            units[name] = unit
+    return names, units
+
+
+def _depth_unit_from_header(
+    header_unit: Optional[str], depth_unit: Optional[str], depth_column: str, source: str
+) -> Optional[str]:
+    """The depth unit from ``depth_unit=`` and the depth column header ("DEPTH (m)").
+
+    A header unit stands in for a missing ``depth_unit``; when both are
+    given they must agree.
+    """
+    if not header_unit:
+        return depth_unit
+    try:
+        declared = normalize_depth_unit(header_unit)
+    except ValueError:
+        return depth_unit  # not a length unit, e.g. "DEPTH (MD)"
+    if depth_unit is None or not str(depth_unit).strip():
+        return declared
+    if normalize_depth_unit(depth_unit, strict=False) != declared:
+        raise ValueError(
+            f"{source}: the {depth_column} header gives depth unit {header_unit!r}, "
+            f"which differs from depth_unit={depth_unit!r}; pass the unit the depths are in."
+        )
+    return depth_unit
+
+
+def _set_header_units(well: "Well", units: Dict[str, str]) -> None:
+    """Give each curve of ``well`` its unit from the column header."""
+    for mnemonic in well.curves:
+        if units.get(mnemonic):
+            well[mnemonic].unit = units[mnemonic]
+
+
+def _na_values(null_values: Any = None) -> List[str]:
+    """The null values a table is read with: the usual ones and ``null_values`` (a value or list)."""
+    values = ["-999", "-999.25", "-999.0", "-9999", "-9999.0", "-9999.25",
+              "null", "NULL", "NaN", "nan", ""]
+    if null_values is not None:
+        if isinstance(null_values, (str, bytes, int, float)):
+            null_values = [null_values]
+        values.extend(str(value) for value in null_values)
+    return values
+
+
 def read_csv(
     filepath: Union[str, Path],
     depth_column: str = "DEPTH",
     depth_unit: Optional[str] = None,
     well_name: str = "",
     skiprows: int = 0,
-    null_values: Optional[List[str]] = None,
+    null_values: Any = None,
     well_column: Optional[str] = None,
     **kwargs
 ) -> "Well":
@@ -78,15 +146,18 @@ def read_csv(
     filepath : str or Path
         Path to CSV file
     depth_column : str, optional
-        Name of depth column (default: "DEPTH")
+        Name of depth column (default: "DEPTH"); a header with a unit,
+        ``DEPTH (m)`` or ``DEPTH [m]``, is found by its name
     depth_unit : {"m", "ft"}
-        Unit of the depth column. Required: CSV files do not record it.
+        Unit of the depth column. Required unless the depth column header
+        gives it (``DEPTH (m)``); when both are given they must agree.
     well_name : str, optional
         Name for the well
     skiprows : int, optional
         Number of rows to skip at start
-    null_values : list of str, optional
-        Additional strings to recognize as null
+    null_values : scalar or list, optional
+        Further null values (e.g. ``-99999``) besides -999, -999.25, -9999,
+        -9999.25, "null" and "NaN"
     well_column : str, optional
         Column identifying the well (default: the first of WELL, WELLNAME,
         WELL_NAME, UWI and API present). It is read as text, so identifiers
@@ -99,13 +170,16 @@ def read_csv(
     Returns
     -------
     Well
-        Well object with loaded data
+        Well object with loaded data. A column header ``NAME (unit)`` or
+        ``NAME [unit]``, as :func:`~petrophys.io.export_csv` writes, gives
+        curve ``NAME`` with that unit.
 
     Raises
     ------
     ValueError
-        If the depth column is missing or has no numeric value, or two
-        columns differ only in case.
+        If the depth column is missing or has no numeric value, two
+        columns become the same curve name (they differ only in case or
+        unit), or the depth header's unit differs from ``depth_unit``.
 
     Examples
     --------
@@ -119,9 +193,7 @@ def read_csv(
         raise FileNotFoundError(f"CSV file not found: {filepath}")
 
     # Default null values
-    na_values = ["-999", "-999.25", "-999.0", "null", "NULL", "NaN", "nan", ""]
-    if null_values:
-        na_values.extend(null_values)
+    na_values = _na_values(null_values)
 
     # Read the well identifier column as text, so a numeric UWI keeps its
     # leading zeros.
@@ -131,9 +203,9 @@ def read_csv(
     }
     raw_columns = pd.read_csv(filepath, skiprows=skiprows, nrows=0, **header_options).columns
     source = f"CSV file {filepath.name!r}"
-    _check_case_duplicates(raw_columns, source)
-    raw_by_upper = {str(column).strip().upper(): column for column in raw_columns}
-    resolved = _resolve_well_column(pd.DataFrame(columns=list(raw_by_upper)), well_column)
+    raw_names, _ = _header_names_and_units(raw_columns, source)
+    raw_by_upper = dict(zip(raw_names, raw_columns))
+    resolved = _resolve_well_column(pd.DataFrame(columns=raw_names), well_column)
     if resolved is not None and not isinstance(kwargs.get("dtype"), (str, type)):
         kwargs["dtype"] = {**(kwargs.get("dtype") or {}), raw_by_upper[resolved]: str}
 
@@ -145,9 +217,9 @@ def read_csv(
         **kwargs
     )
 
-    # Clean column names
-    df.columns = [c.strip().upper() for c in df.columns]
-    depth_column = depth_column.strip().upper()
+    # Clean column names; "GR (gAPI)" and "GR [gAPI]" give curve GR in gAPI.
+    df.columns, units = _header_names_and_units(df.columns, source)
+    depth_column = _split_unit_header(depth_column)[0]
     if depth_column not in df.columns:
         hint = ""
         if len(df.columns) == 1 and any(sep in str(df.columns[0]) for sep in (";", "\t", "|", " ")):
@@ -179,12 +251,14 @@ def read_csv(
     )
     if candidate_well_column is not None and candidate_well_column != depth_column:
         df = df.drop(columns=[candidate_well_column])
+    depth_unit = _depth_unit_from_header(units.get(depth_column), depth_unit, depth_column, source)
     well = Well.from_dataframe(
         df,
         depth_column=depth_column.upper(),
         depth_unit=_require_depth_unit(depth_unit, f"CSV file {filepath.name!r}"),
         name=well_name
     )
+    _set_header_units(well, units)
     if candidate_well_column in ("UWI", "API") and len(identifiers) == 1:
         setattr(well.header, candidate_well_column.lower(), identifiers[0])
 
@@ -221,7 +295,7 @@ def read_csv_wells(
     depth_unit: Optional[str] = None,
     well_column: Optional[str] = None,
     skiprows: int = 0,
-    null_values: Optional[List[str]] = None,
+    null_values: Any = None,
     chunksize: int = 100_000,
     **kwargs,
 ) -> Dict[str, "Well"]:
@@ -234,9 +308,7 @@ def read_csv_wells(
     if chunksize <= 0:
         raise ValueError("chunksize must be positive")
 
-    na_values = ["-999", "-999.25", "-999.0", "null", "NULL", "NaN", "nan", ""]
-    if null_values:
-        na_values.extend(null_values)
+    na_values = _na_values(null_values)
 
     # Read the identifier column as text in every chunk, so a numeric UWI is
     # not parsed as int in one chunk and float in another ("1001" vs
@@ -246,9 +318,12 @@ def read_csv_wells(
         if key not in {"nrows", "dtype", "converters", "usecols"}
     }
     raw_columns = pd.read_csv(path, skiprows=skiprows, nrows=0, **header_options).columns
-    _check_case_duplicates(raw_columns, f"CSV file {path.name!r}")
-    raw_by_upper = {str(column).strip().upper(): column for column in raw_columns}
-    resolved = _resolve_well_column(pd.DataFrame(columns=list(raw_by_upper)), well_column)
+    source = f"CSV file {path.name!r}"
+    raw_names, units = _header_names_and_units(raw_columns, source)
+    raw_by_upper = dict(zip(raw_names, raw_columns))
+    resolved = _resolve_well_column(pd.DataFrame(columns=raw_names), well_column)
+    depth_column = _split_unit_header(depth_column)[0]
+    depth_unit = _depth_unit_from_header(units.get(depth_column), depth_unit, depth_column, source)
     if resolved is not None and not isinstance(kwargs.get("dtype"), (str, type)):
         kwargs["dtype"] = {**(kwargs.get("dtype") or {}), raw_by_upper[resolved]: str}
 
@@ -262,7 +337,7 @@ def read_csv_wells(
         chunksize=chunksize,
         **kwargs,
     ):
-        chunk.columns = [str(column).strip().upper() for column in chunk.columns]
+        chunk.columns = [_split_unit_header(column)[0] for column in chunk.columns]
         if identifier_column is None:
             identifier_column = _resolve_well_column(chunk, well_column)
             if identifier_column is None:
@@ -296,6 +371,7 @@ def read_csv_wells(
             depth_unit=_require_depth_unit(depth_unit, f"CSV file {Path(filepath).name!r}"),
             name=name,
         )
+        _set_header_units(wells[name], units)
     return wells
 
 
@@ -307,7 +383,7 @@ def read_ascii(
     delimiter: Optional[str] = None,
     header_line: int = 0,
     skiprows: int = 0,
-    null_values: Optional[List[str]] = None,
+    null_values: Any = None,
     column_names: Optional[List[str]] = None,
     units_line: Optional[int] = None,
     **kwargs
@@ -326,7 +402,9 @@ def read_ascii(
         Name of depth column (default: "DEPTH")
     depth_unit : {"m", "ft"}
         Unit of the depth column. Required unless the units line
-        (``units_line``) gives it; the units line takes precedence.
+        (``units_line``) or the depth column header (``DEPTH (m)``,
+        ``DEPTH [m]``) gives it; the units line takes precedence, and a
+        header unit must agree with ``depth_unit``.
     well_name : str, optional
         Name for the well
     delimiter : str, optional
@@ -336,12 +414,15 @@ def read_ascii(
         Line number containing column headers (0-indexed)
     skiprows : int, optional
         Number of rows to skip before header
-    null_values : list of str, optional
-        Strings to recognize as null values
+    null_values : scalar or list, optional
+        Further null values (e.g. ``-99999``) besides -999, -999.25, -9999,
+        -9999.25, "null" and "NaN"
     column_names : list of str, optional
         Column names if not in file
     units_line : int, optional
-        Line number containing units
+        Line number containing units. A header ``NAME (unit)`` or
+        ``NAME [unit]`` gives curve ``NAME`` with that unit; a unit on the
+        units line takes precedence.
     **kwargs
         Additional arguments passed to pd.read_csv (e.g. ``decimal=","``
         or ``thousands=","``)
@@ -364,9 +445,7 @@ def read_ascii(
         raise FileNotFoundError(f"ASCII file not found: {filepath}")
 
     # Default null values
-    na_values = ["-999", "-999.25", "-999.0", "null", "NULL", "NaN", "nan", ""]
-    if null_values:
-        na_values.extend(null_values)
+    na_values = _na_values(null_values)
 
     # Probe only the lines needed for delimiter/header/unit detection. Pandas
     # performs the single full-file read below.
@@ -429,10 +508,11 @@ def read_ascii(
         )
 
     # Clean column names
-    _check_case_duplicates(df.columns, f"ASCII file {filepath.name!r}")
-    df.columns = [str(c).strip().upper() for c in df.columns]
+    source = f"ASCII file {Path(filepath).name!r}"
+    # "GR (gAPI)" and "GR [gAPI]" give curve GR in gAPI.
+    df.columns, header_units = _header_names_and_units(df.columns, source)
 
-    # Get units if available
+    # Get units if available; a units line takes precedence over header units.
     units = {}
     if units_line is not None and units_line < len(lines):
         unit_parts = lines[units_line].strip().split(delimiter if delimiter != r'\s+' else None)
@@ -446,10 +526,12 @@ def read_ascii(
                 stacklevel=2,
             )
 
-    depth_col = depth_column.upper()
+    depth_col = _split_unit_header(depth_column)[0]
     requested_name = well_name
-    source = f"ASCII file {Path(filepath).name!r}"
     file_depth_unit = units.get(depth_col)
+    if not file_depth_unit:
+        depth_unit = _depth_unit_from_header(header_units.get(depth_col), depth_unit, depth_col, source)
+    units = {**header_units, **{name: unit for name, unit in units.items() if unit}}
     if file_depth_unit and depth_unit is not None and str(depth_unit).strip():
         file_unit = normalize_depth_unit(file_depth_unit, strict=False)
         if file_unit != normalize_depth_unit(depth_unit, strict=False):

@@ -176,8 +176,12 @@ def _default(warn) -> LithologyResolution:
     return LithologyResolution("clastic", "sandstone", "default", 0, 0.0, {})
 
 
-def _validate_lithology_codes(well, name) -> Optional[np.ndarray]:
-    """Return integer lithology codes if ``name`` looks like a decodable code log."""
+def _validate_lithology_codes(well, name, known_codes=None) -> Optional[np.ndarray]:
+    """Return integer lithology codes if ``name`` looks like a decodable code log.
+
+    ``known_codes`` (the codes of a user codebook) replaces the built-in code
+    table and its 0-99 range.
+    """
     curve = well.get(name)
     if curve is None or getattr(curve, "data", None) is None:
         return None
@@ -190,10 +194,11 @@ def _validate_lithology_codes(well, name) -> Optional[np.ndarray]:
         return None
     codes = np.round(finite).astype(int)
     distinct = np.unique(codes)
-    if distinct.size > 50 or distinct.min() < 0 or distinct.max() > 99:
+    table = LITHOLOGY_CODE_CLASS if known_codes is None else known_codes
+    if distinct.size > 50 or (known_codes is None and (distinct.min() < 0 or distinct.max() > 99)):
         return None
     # at least half the samples must decode to a known lithology class
-    known = np.count_nonzero([int(c) in LITHOLOGY_CODE_CLASS for c in codes])
+    known = np.count_nonzero([int(c) in table for c in codes])
     if known < 0.5 * codes.size:
         return None
     return codes
@@ -240,7 +245,7 @@ def _finite_curve(well, name: str):
 
 
 def lithology_code_curve(
-    well, explicit: Optional[str] = None, allow_aliases: bool = True,
+    well, explicit: Optional[str] = None, allow_aliases: bool = True, known_codes=None,
 ) -> Optional[Tuple[str, Any]]:
     """Find the per-sample lithology code curve of a well.
 
@@ -252,12 +257,14 @@ def lithology_code_curve(
        (``LITHOLOGY``, ``LITHOFACIES``, ``FACIES``, ``LITH_CODE``, ...) whose
        curve holds lithology codes: 20 or more finite samples, whole numbers
        from 0 to 99 with at most 50 distinct values, half or more of the
-       samples codes of the built-in table.
+       samples codes of the built-in table, or of ``known_codes`` (the codes
+       of a user codebook) when given, then without the 0-99 range.
 
     No other name pattern is tried, so the workflow's computed ``LITHO`` and
     ``LITHO_CLASS`` and the ``GT_*`` group curves are never found. Whatever
     the curve is called, its codes are decoded with the built-in lithology
-    code table (:data:`LITHOLOGY_CODE_CLASS`, Kingdom nomenclature).
+    code table (:data:`LITHOLOGY_CODE_CLASS`, Kingdom nomenclature) unless the
+    caller decodes them with its own codebook.
 
     Returns
     -------
@@ -278,7 +285,7 @@ def lithology_code_curve(
             if alias == GEOLINK_LITHOLOGY_CURVE:
                 continue
             curve = well.get(alias)
-            if curve is not None and _validate_lithology_codes(well, alias) is not None:
+            if curve is not None and _validate_lithology_codes(well, alias, known_codes) is not None:
                 return alias, curve
     return None
 

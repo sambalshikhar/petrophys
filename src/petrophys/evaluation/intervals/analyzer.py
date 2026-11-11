@@ -25,7 +25,7 @@ class IntervalSummary:
     interval : Interval
         The analyzed interval
     zone_summary : ZoneSummary
-        Net pay / NTG / pay-averaged properties (from
+        Net pay, pay/gross and pay-averaged properties (from
         :func:`~petrophys.evaluation.summaries.calculate_zone_summary`)
     avg_gr : float
         Mean GR over entire interval
@@ -116,7 +116,7 @@ class IntervalAnalyzer:
         well = self.well
         depth = well.depth
 
-        # Zone summary (net pay, NTG, pay-averaged properties)
+        # Zone summary (net pay, pay/gross, pay-averaged properties)
         zs = calculate_zone_summary(
             well,
             top_depth=interval.top_depth,
@@ -216,7 +216,8 @@ class IntervalAnalyzer:
                 "Net Rock": zs.net_rock,
                 "Net Reservoir": zs.net_reservoir,
                 "Net Pay": zs.net_pay,
-                "NTG": zs.ntg,
+                "N/G (reservoir)": zs.reservoir_ntg,
+                "Pay/Gross": zs.ntg,
                 "Avg PHIE": zs.avg_phie,
                 "Avg Sw": zs.avg_sw,
                 "Avg VCL": zs.avg_vcl,
@@ -258,7 +259,7 @@ class IntervalAnalyzer:
 
         header = (
             f"{'Name':<25s} {'Top':>8s} {'Bot':>8s} "
-            f"{'Gross':>7s} {'NtPay':>7s} {'NTG':>6s} "
+            f"{'Gross':>7s} {'NtPay':>7s} {'Pay/G':>6s} "
             f"{'PHIE':>6s} {'Sw':>6s} {'VCL':>6s} {'Perm':>8s}"
         )
         print(header)

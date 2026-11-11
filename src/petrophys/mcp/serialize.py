@@ -360,7 +360,7 @@ def _assumptions(result: Any) -> tuple[List[str], List[str]]:
     if temperature is not None:
         parameters = temperature.parameters or {}
         bht = parameters.get("bht_f")
-        td = parameters.get("td_ft")
+        td = parameters.get("td", parameters.get("td_ft"))
         unit = parameters.get("td_unit", "ft")
         text = f"Formation temperature: {temperature.method}"
         if isinstance(bht, (int, float)):

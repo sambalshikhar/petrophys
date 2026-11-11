@@ -200,9 +200,9 @@ def read_survey(
     report: Dict[str, Any] = {"warnings": []}
     unit_hint = None
     if isinstance(source, (str, Path)) and Path(source).suffix.lower() == ".las":
-        import lasio
+        from petrophys.io.las_reader import _read_lasio
 
-        las = lasio.read(str(source))
+        las = _read_lasio(Path(source), None)
         table = las.df().reset_index()
         unit_hint = _depth_unit_from(las.curves[0].unit)
     elif isinstance(source, pd.DataFrame):

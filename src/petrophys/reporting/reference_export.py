@@ -467,6 +467,17 @@ _CONTEXT_VALUE_RANGE_RULES = {
     "CONSISTENCY_RATIO": ValueRangeRule(0.0, 1.0, "nan", ('CONSISTENCY_RATIO',)),
 }
 
+# Outside benchmark reproduction, permeability is clipped to 1e-4-2e4 mD:
+# the interpretation writes tight rock down to ~1e-13 mD, and setting those
+# samples to NaN would leave only the better rock in a group's statistics.
+_CURRENT_CONTEXT_VALUE_RANGE_RULES = {
+    mnemonic: (
+        ValueRangeRule(rule.low, rule.high, "clip", rule.aliases)
+        if mnemonic in ("PERM", "PERM_CC") else rule
+    )
+    for mnemonic, rule in _CONTEXT_VALUE_RANGE_RULES.items()
+}
+
 
 # Target order reaches the benchmark's computed/missing summaries and compact
 # notes. Keep the published order explicit so JSON is reproducible across
@@ -5218,7 +5229,7 @@ def _build_concise_delivery_computation_notes(
         notes.append(f"Missing derived logs ({len(missing)}): {', '.join(missing)}.")
     qc_report = well.get_parameter(VALUE_RANGE_QC_PARAMETER) if hasattr(well, "get_parameter") else None
     if qc_report is not None:
-        notes.append(value_range_qc_note(qc_report))
+        notes.append(_value_range_note(qc_report))
 
     step_results, skipped_steps = _step_lookup(workflow_result)
     benchmark = _reproduces_benchmark_context(workflow_result)
@@ -7023,7 +7034,11 @@ def _curve_statistics_payload(data: np.ndarray) -> Optional[dict[str, float]]:
     from petrophys.evaluation.summaries.statistics import STATISTICS, curve_statistics
 
     values = _normalize_numeric_array(data)
-    key = (values.shape, hashlib.blake2b(np.ascontiguousarray(values).tobytes(), digest_size=16).digest())
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    # The statistics differ under benchmark reproduction, so the mode is part of the key.
+    key = (reproducing_benchmark(), values.shape,
+           hashlib.blake2b(np.ascontiguousarray(values).tobytes(), digest_size=16).digest())
     if key in _CURVE_STATISTICS_CACHE:
         _CURVE_STATISTICS_CACHE.move_to_end(key)
         cached = _CURVE_STATISTICS_CACHE[key]
@@ -7100,7 +7115,28 @@ def _context_value_range_rules(workflow_result) -> dict[str, ValueRangeRule]:
     """Value-range rules for a context of ``workflow_result``'s run."""
     if _context_dataset() is not None and _reproduces_benchmark_context(workflow_result):
         return _DATASET_CONTEXT_VALUE_RANGE_RULES
-    return _CONTEXT_VALUE_RANGE_RULES
+    if reproducing_benchmark() or _reproduces_benchmark_context(workflow_result):
+        return _CONTEXT_VALUE_RANGE_RULES
+    return _CURRENT_CONTEXT_VALUE_RANGE_RULES
+
+
+def _value_range_note(report) -> str:
+    """:func:`value_range_qc_note`, naming the clipped permeability where its rule clips it."""
+    note = value_range_qc_note(report)
+    clipped = [
+        canonical for canonical in ("PERM", "PERM_CC")
+        if any(item.get("canonical_curve") == canonical and item.get("action") == "clip"
+               for item in report or [])
+    ]
+    if clipped:
+        rule = _CURRENT_CONTEXT_VALUE_RANGE_RULES[clipped[0]]
+        note = note.replace(
+            "SW/SWA and SXO/SWXO/SWXOA were clipped to 0-1.",
+            f"SW/SWA and SXO/SWXO/SWXOA were clipped to 0-1 and {'/'.join(clipped)} to "
+            f"{rule.low:g}-{rule.high:g} mD.",
+            1,
+        )
+    return note
 
 
 def _apply_value_range_qc_to_extra_curves(
@@ -8100,7 +8136,7 @@ def _write_lithology_group_trace_json(
         "value_range_qc": {
             "parameter": VALUE_RANGE_QC_PARAMETER,
             "report": _trace_safe_value(value_qc_report),
-            "note": value_range_qc_note(value_qc_report) if value_qc_report else "",
+            "note": _value_range_note(value_qc_report) if value_qc_report else "",
         },
         "workflow_runs": _trace_workflow_runs_for_group(workflow_result, well, depth_info),
         "category_analysis": _trace_safe_value(category_result.to_dict()),

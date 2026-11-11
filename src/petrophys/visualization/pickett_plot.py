@@ -144,10 +144,16 @@ class PickettPlot:
         phie: np.ndarray,
         rt: np.ndarray,
         color: str = "red",
-        label: Optional[str] = None
+        label: Optional[str] = None,
+        method: str = "rma",
     ) -> Tuple[float, float]:
         """
         Add a trend line and calculate m (slope).
+
+        The line is the fit of
+        :func:`petrophys.interpretation.electrical.pickett_analysis` on the
+        same samples (finite, Rt > 0, PHIE > 0.01): by default the reduced
+        major axis of log Rt and log PHIE.
 
         Parameters
         ----------
@@ -159,26 +165,30 @@ class PickettPlot:
             Line color
         label : str, optional
             Line label
+        method : {"rma", "ols"}, default "rma"
+            Reduced major axis or least squares of log Rt on log PHIE.
 
         Returns
         -------
         tuple
             (slope m, intercept)
         """
+        from petrophys.interpretation.electrical.cementation.pickett_analysis import (
+            fit_pickett_line,
+            pickett_samples,
+        )
+
         if self.ax is None:
             raise RuntimeError("Call create() first")
 
-        # Remove invalid values
-        mask = ~np.isnan(phie) & ~np.isnan(rt) & (phie > 0) & (rt > 0)
+        phie = np.asarray(phie, dtype=float)
+        rt = np.asarray(rt, dtype=float)
+        mask = pickett_samples(rt, phie)
         if int(np.count_nonzero(mask)) < 2:
-            raise ValueError("add_trend_line needs >= 2 valid (phie, rt) points")
-        log_phie = np.log10(phie[mask])
-        log_rt = np.log10(rt[mask])
-
-        # Linear regression in log space
-        coeffs = np.polyfit(log_phie, log_rt, 1)
-        m_calc = -coeffs[0]  # Negative because of Archie equation
-        intercept = coeffs[1]
+            raise ValueError("add_trend_line needs >= 2 valid (phie > 0.01, rt > 0) points")
+        fit = fit_pickett_line(np.log10(phie[mask]), np.log10(rt[mask]), method=method)
+        m_calc = fit["m"]
+        intercept = fit["intercept"]
 
         # Plot trend line
         phie_range = np.logspace(-2, 0, 100)

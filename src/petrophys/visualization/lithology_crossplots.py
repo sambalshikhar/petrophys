@@ -95,7 +95,12 @@ def _scatter(ax, x, y, c, clabel, fig, cmap="viridis", norm=None):
         # Points without a colour value are drawn grey, not dropped.
         cmap = plt.get_cmap(cmap).with_extremes(bad="0.6")
         sc = ax.scatter(x, y, c=c, s=6, alpha=0.6, cmap=cmap, norm=norm, plotnonfinite=True)
-        cb = fig.colorbar(sc, ax=ax, pad=0.02)
+        extend = "neither"
+        if norm is not None and norm.vmin is not None and norm.vmax is not None:
+            finite = c[np.isfinite(c)]
+            below, above = bool(np.any(finite < norm.vmin)), bool(np.any(finite > norm.vmax))
+            extend = {(True, True): "both", (True, False): "min", (False, True): "max"}.get((below, above), "neither")
+        cb = fig.colorbar(sc, ax=ax, pad=0.02, extend=extend)
         cb.set_label(clabel, fontsize=8)
     else:
         ax.scatter(x, y, s=6, alpha=0.6, color="0.3")
@@ -236,8 +241,13 @@ def create_buckles_plot(
     if c is not None and color_curve.upper().startswith("PERM"):
         positive = c[np.isfinite(c) & (c > 0)]
         if positive.size:
-            # Permeability spans decades; colour it on a log scale.
-            norm = LogNorm(vmin=float(positive.min()), vmax=float(positive.max()))
+            # Permeability spans decades; colour it on a log scale between its
+            # 1st and 99th percentiles (at least 0.001 mD), so a few near-zero
+            # floor values do not crowd the real range into one colour.
+            low, high = np.percentile(positive, [1, 99])
+            low = max(float(low), 1e-3)
+            high = max(float(high), low * 10.0)
+            norm = LogNorm(vmin=low, vmax=high, clip=False)
             c = np.where(c > 0, c, np.nan)
 
     fig, ax = plt.subplots(figsize=figsize)

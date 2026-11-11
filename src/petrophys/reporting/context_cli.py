@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import difflib
+import json
 import os
 import sys
 import warnings
 from pathlib import Path
+from typing import Any
 
 from petrophys.reporting.context import (
     DEFAULT_MAX_BYTES,
@@ -50,6 +53,57 @@ def _add_standard_inputs(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _setting_value(text: str) -> Any:
+    """A --setting value: JSON (numbers, true/false, null, lists, objects), else a string."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        pass
+    lowered = text.strip().lower()
+    if lowered in {"true", "false"}:
+        return lowered == "true"
+    if lowered == "none":
+        return None
+    return text
+
+
+def _interpretation_settings(items) -> dict:
+    """The ``--setting NAME=VALUE`` items as interpretation settings."""
+    import dataclasses
+
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
+
+    settings: dict = {}
+    for item in items or []:
+        name, sep, value = item.partition("=")
+        name = name.strip()
+        if not sep or not name:
+            raise ValueError(f"--setting takes NAME=VALUE, e.g. --setting rw=0.07; got {item!r}")
+        if name in settings:
+            raise ValueError(f"--setting {name} given more than once")
+        settings[name] = _setting_value(value.strip())
+    known = {item.name for item in dataclasses.fields(DynamicWorkflowConfig) if not item.name.startswith("_")}
+    unknown = sorted(set(settings) - known)
+    if unknown:
+        hints = []
+        for name in unknown:
+            close = difflib.get_close_matches(name, sorted(known), n=1)
+            hints.append(f"{name!r}" + (f" (did you mean {close[0]!r}?)" if close else ""))
+        raise ValueError(
+            "Unknown interpretation setting(s): " + ", ".join(hints)
+            + ". See petrophys.DynamicWorkflowConfig for the available settings."
+        )
+    return settings
+
+
+def _merge_settings(settings: dict, extra: dict, flags: dict) -> dict:
+    """``settings`` with the --setting values; a value also given by its own flag is rejected."""
+    for name in extra:
+        if name in settings and name in flags:
+            raise ValueError(f"{name} is given by {flags[name]} and by --setting; give it once")
+    return {**settings, **extra}
+
+
 def _package_options(args: argparse.Namespace) -> dict:
     options = {
         "formations": args.formations,
@@ -75,7 +129,8 @@ def _package_options(args: argparse.Namespace) -> dict:
     reader_options = _reader_options(args)
     if reader_options:
         options["reader_options"] = reader_options
-    return options
+    settings = _interpretation_settings(getattr(args, "setting", None))
+    return _merge_settings(options, settings, {"lithology_domain": "--lithology-domain"})
 
 
 def _reader_options(args: argparse.Namespace) -> dict:
@@ -102,17 +157,21 @@ def _single_well_result(args: argparse.Namespace):
         lithology=args.lithology,
         **reader_options,
     )
-    settings = {}
+    settings: dict[str, Any] = {}
+    flags: dict[str, str] = {}
     metadata_domain = lithology_domain_from_metadata(well)
     if metadata_domain is not None:
         settings.setdefault("lithology_domain", metadata_domain)
     if args.lithology_domain is not None:
         settings["lithology_domain"] = args.lithology_domain
+        flags["lithology_domain"] = "--lithology-domain"
     if args.lithology is not None:
         settings.update(
             lithology_intervals=args.lithology,
             lithology_source="external",
         )
+        flags.update(lithology_intervals="--lithology", lithology_source="--lithology")
+    settings = _merge_settings(settings, _interpretation_settings(args.setting), flags)
     return interpret(well, **settings).raise_for_errors()
 
 
@@ -161,6 +220,16 @@ def main(argv=None) -> int:
             "supplied settings."
         ),
     )
+    parser.add_argument(
+        "--setting",
+        action="append",
+        metavar="NAME=VALUE",
+        help=(
+            "Interpretation setting, as for petrophys.interpret (see DynamicWorkflowConfig); "
+            "repeat for several, e.g. --setting rw=0.07 --setting rw_meas_temp_f=230. VALUE is "
+            "read as JSON (numbers, true/false, null, lists, objects), else as text. Not with --profile."
+        ),
+    )
     parser.add_argument("--tops-rank", choices=("group", "formation", "member"))
     parser.add_argument("--tops-sheet", help="Explicit formation Excel sheet name")
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
@@ -184,6 +253,8 @@ def _show_warning(message, category, filename, lineno, file=None, line=None) -> 
 
 
 def _run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.setting and args.context_profile is not None:
+        parser.error("--setting does not apply with --profile: a context profile fixes its settings")
     try:
         if args.layout == "well":
             if args.context_profile is not None:

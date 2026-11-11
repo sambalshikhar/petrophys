@@ -17,6 +17,7 @@ from petrophys.interpretation.lithology.multi_mineral_solver import (
     MultiMineralSolver,
 )
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+from petrophys._internal.benchmark import reproducing_benchmark
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -204,6 +205,50 @@ class LithologyModule:
                 **self.solver_options,
             ), selection
         return self.solver, selection
+
+    def _without_unsupported_anhydrite(self, solver, result, sample_option, **logs):
+        """Re-solve without anhydrite the samples whose logs do not show it.
+
+        The solver can take anhydrite as a high-density sink (5-20 % of it in
+        a North Sea chalk). Anhydrite reads about 2.96 g/cm3 and near-zero
+        neutron porosity, so only samples with RHOB above 2.85 g/cm3 and NPHI
+        below 0.12 (or no NPHI) keep it; the others are solved with the other
+        minerals, each sample on its own. Not under benchmark reproduction,
+        nor for a custom mineral set.
+        """
+        if (
+            reproducing_benchmark() or self._custom_minerals
+            or not isinstance(solver, (MultiMineralSolver, MultiMineralSolverV1))
+            or "anhydrite" not in solver.minerals
+        ):
+            return result
+        rhob = np.asarray(logs["rhob"], dtype=float)
+        nphi = logs["nphi"]
+        nphi = np.full(rhob.shape, np.nan) if nphi is None else np.asarray(nphi, dtype=float)
+        with np.errstate(invalid="ignore"):
+            evidence = (rhob > 2.85) & (~np.isfinite(nphi) | (nphi < 0.12))
+        others = ~evidence
+        if "samples" in sample_option:
+            others &= np.asarray(sample_option["samples"], dtype=bool)
+        if not others.any():
+            return result
+        without = type(solver)(
+            minerals=[name for name in solver.minerals if name != "anhydrite"],
+            minerals_no_pef=[name for name in solver.minerals_no_pef if name != "anhydrite"],
+            **self.solver_options,
+        )
+        other = without.solve(samples=others, **logs)
+        merged = dict(result)
+        for key, values in other.items():
+            if key in merged:
+                target = np.array(merged[key], copy=True)
+                target[others] = np.asarray(values)[others]
+                merged[key] = target
+        anhydrite = np.array(merged["anhydrite"], dtype=float, copy=True)
+        solved = np.asarray(other.get("solved", ~np.asarray(other["qc_flag"], dtype=bool)), dtype=bool)
+        anhydrite[others] = np.where(solved[others], 0.0, np.nan)
+        merged["anhydrite"] = anhydrite
+        return merged
 
     @staticmethod
     def _screen_pef(pef: Optional[np.ndarray]) -> Optional[np.ndarray]:
@@ -441,7 +486,8 @@ class LithologyModule:
     def calculate(
         self,
         well: "Well",
-        vcl: Optional[np.ndarray] = None
+        vcl: Optional[np.ndarray] = None,
+        samples: Optional[np.ndarray] = None,
     ) -> LithologyResult:
         """
         Calculate lithology fractions.
@@ -453,6 +499,9 @@ class LithologyModule:
             for a reduced or full mineral solve.
         vcl : np.ndarray, optional
             Clay volume (uses VCL curve if not provided)
+        samples : np.ndarray of bool, optional
+            Samples to solve with the version 2 solver; the others are left
+            unsolved. Solved samples are as a full solve gives them.
 
         Returns
         -------
@@ -507,6 +556,10 @@ class LithologyModule:
         # Solve for minerals. The solver already removes clay and porosity
         # internally, so raw curves are passed here.
         solver, mineral_selection = self._select_solver(well)
+        sample_option = (
+            {} if samples is None or not isinstance(solver, (MultiMineralSolver, MultiMineralSolverV1))
+            else {"samples": samples}
+        )
         result = solver.solve(
             vcl=vcl,
             rhob=rhob,
@@ -515,6 +568,11 @@ class LithologyModule:
             phie=phie_data,
             dt=dtc_clean,
             core_phi=core_phi,
+            **sample_option,
+        )
+        result = self._without_unsupported_anhydrite(
+            solver, result, sample_option, vcl=vcl, rhob=rhob, nphi=nphi, pef=pef_clean,
+            phie=phie_data, dt=dtc_clean, core_phi=core_phi,
         )
 
         # A density-neutron suite cannot independently resolve quartz, calcite,
@@ -545,6 +603,7 @@ class LithologyModule:
                 rhob=rhob,
                 nphi=nphi,
                 core_phi=phie_data,
+                **sample_option,
             )
             reduced_solved = np.asarray(reduced["solved"], dtype=bool)
             reduced_qc_fallback = underdetermined & reduced_solved

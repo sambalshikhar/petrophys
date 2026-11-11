@@ -576,7 +576,8 @@ def _class_intervals(depth: np.ndarray, environment: Any, rated: np.ndarray,
 
 #: Columns of the per-formation table, in order (the depth unit is filled in).
 ZONE_COLUMNS = ("Formation", "Rank", "Top", "Bottom", "Gross ({u})", "Net Reservoir ({u})",
-                "Net Pay ({u})", "NTG", "Avg PHIE", "Avg Sw", "Avg VCL", "Avg Perm (mD)")
+                "Net Pay ({u})", "N/G (reservoir)", "Pay/Gross", "Avg PHIE", "Avg Sw", "Avg VCL",
+                "Avg Perm (mD)")
 
 
 def zone_table(
@@ -635,7 +636,8 @@ def zone_table(
         "depth_unit": unit,
         "zones": rows,
         "averages_basis": "Avg PHIE/Sw/VCL are means over net-pay samples (null where a zone "
-                          "has no pay); Avg Perm is a geometric mean; NTG is net pay / gross",
+                          "has no pay); Avg Perm is a geometric mean; N/G (reservoir) is net reservoir / gross "
+                          "and Pay/Gross net pay / gross",
     }
     # Rows chosen by name can still nest (a group and a formation inside it).
     spans = sorted(zip(frame["Top"], frame["Bottom"])) if "Top" in frame and rows else []

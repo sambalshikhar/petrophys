@@ -52,7 +52,8 @@ def plot_zone_flags(
     flag_curves : list
         List of flag curve names to plot
     colors : dict, optional
-        Dictionary mapping curve names to colors
+        Dictionary mapping curve names to colors. Flags the log plot knows
+        (NET_ROCK, NET_RES, NET_PAY, SEALFLAG) default to its colours.
     depth_range : tuple, optional
         (top, bottom) depth range
     figsize : tuple
@@ -66,10 +67,14 @@ def plot_zone_flags(
     if not HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for visualization")
 
-    if colors is None:
-        default_colors = ['green', 'yellow', 'orange', 'red', 'blue', 'purple']
-        colors = {name: default_colors[i % len(default_colors)]
-                 for i, name in enumerate(flag_curves)}
+    from petrophys.visualization.log_viewer import FLAG_COLORS
+
+    default_colors = ['#8c510a', '#762a83', '#d73027', '#4d4d4d', '#2166ac', '#e7298a']
+    defaults = {
+        name: FLAG_COLORS.get(str(name).upper(), default_colors[i % len(default_colors)])
+        for i, name in enumerate(flag_curves)
+    }
+    colors = {**defaults, **(colors or {})}
 
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -102,17 +107,20 @@ def plot_zone_flags(
                 cell_depth, x_left, x_left + width,
                 where=cell_mask,
                 color=colors.get(curve_name, 'gray'),
-                alpha=0.7,
-                label=curve_name
+                alpha=0.85,
+                linewidth=0.0,
             )
+        if i:
+            ax.axvline(x_left, color="0.75", linewidth=0.6)
 
     ax.set_xlim(0, 1)
     ax.set_ylim(bottom, top)
-    ax.set_xticks([])
+    # Each column is named above it, so no legend covers the flags.
+    ax.set_xticks([(i + 0.5) * width for i in range(n_flags)])
+    ax.set_xticklabels(flag_curves, rotation=90 if n_flags > 3 else 0, fontsize=8)
+    ax.xaxis.tick_top()
+    ax.tick_params(axis="x", length=0)
     ax.set_ylabel(_depth_label(well))
-    handles, _ = ax.get_legend_handles_labels()
-    if handles:
-        ax.legend(loc='upper right', fontsize=8)
 
     well_name = well.name or "Unknown Well"
     ax.set_title(f"Zone Flags - {well_name}")
@@ -219,10 +227,12 @@ def create_net_pay_summary_plot(
     # Track 2: Flags
     ax2 = axes[1]
 
+    from petrophys.visualization.log_viewer import FLAG_COLORS
+
     flag_config = [
-        ("NET_ROCK", "orange", 0.0, 0.33),
-        ("NET_RES", "yellow", 0.33, 0.66),
-        ("NET_PAY", "green", 0.66, 1.0),
+        ("NET_ROCK", FLAG_COLORS["NET_ROCK"], 0.0, 0.33),
+        ("NET_RES", FLAG_COLORS["NET_RES"], 0.33, 0.66),
+        ("NET_PAY", FLAG_COLORS["NET_PAY"], 0.66, 1.0),
     ]
 
     for curve_name, color, x_left, x_right in flag_config:
@@ -234,18 +244,15 @@ def create_net_pay_summary_plot(
                 cell_depth, x_left, x_right,
                 where=cell_mask,
                 color=color,
-                alpha=0.7,
-                label=curve_name
+                alpha=0.85,
+                linewidth=0.0,
             )
 
     ax2.set_xlim(0, 1)
     ax2.set_xticks([0.165, 0.5, 0.83])
     ax2.set_xticklabels(['Clean Rock', 'Res', 'Pay'])
     ax2.set_xlabel("Net Flags")
-    handles, _ = ax2.get_legend_handles_labels()
-    if handles:
-        ax2.legend(loc='upper right', fontsize=8)
-    ax2.grid(True, alpha=0.3)
+    ax2.grid(True, axis="y", alpha=0.3)
 
     # Common settings
     for ax in axes:

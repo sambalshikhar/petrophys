@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING, Optional, Dict, Any, List
 from dataclasses import dataclass, field
 import numpy as np
 
-from petrophys._internal.analysis_helpers import resolve_well_depth_range, well_depth_array
+from petrophys._internal.analysis_helpers import (
+    cell_thickness,
+    resolve_well_depth_range,
+    well_depth_array,
+)
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -50,16 +54,21 @@ class QuickLookResult:
     avg_rhob: float = np.nan
     avg_nphi: float = np.nan
 
-    # Estimated properties
+    # Estimated properties: estimated_vcl and estimated_porosity are means of
+    # the per-sample estimates; estimated_sw is the pore-volume-weighted mean
+    # of the per-sample Archie Sw.
     estimated_vcl: float = np.nan
     estimated_porosity: float = np.nan
     estimated_sw: float = np.nan
 
-    # Zones of interest
+    # Zones of interest; their top, bottom and thickness are in depth_unit
     potential_pay_zones: List[Dict] = field(default_factory=list)
 
     # Recommendations
     recommendations: List[str] = field(default_factory=list)
+
+    #: Depth unit of the well (and of the pay zones)
+    depth_unit: str = ""
 
 
 class QuickLook:
@@ -77,6 +86,14 @@ class QuickLook:
     rw : float, default 0.05
         Formation water resistivity (ohm.m, at formation temperature) of the
         Archie Sw estimate (a = 1, m = n = 2). It is not read from the well.
+    vcl_cutoff : float, default 0.4
+        Potential pay is cleaner than this linear GR clay volume, v/v: GR
+        below ``gr_clean + vcl_cutoff * (gr_shale - gr_clean)`` (60 API with
+        the default endpoints).
+    rt_cutoff : float, default 10.0
+        Potential pay reads a deep resistivity above this, ohm.m.
+    min_thickness : float, default 2.0
+        Thinnest potential pay zone reported, in the well's depth unit.
     """
 
     def __init__(
@@ -86,12 +103,18 @@ class QuickLook:
         rho_matrix: float = 2.65,
         rho_fluid: float = 1.0,
         rw: float = 0.05,
+        vcl_cutoff: float = 0.4,
+        rt_cutoff: float = 10.0,
+        min_thickness: float = 2.0,
     ):
         self.gr_clean = gr_clean
         self.gr_shale = gr_shale
         self.rho_matrix = rho_matrix
         self.rho_fluid = rho_fluid
         self.rw = rw
+        self.vcl_cutoff = vcl_cutoff
+        self.rt_cutoff = rt_cutoff
+        self.min_thickness = min_thickness
 
     def analyze(
         self,
@@ -122,7 +145,8 @@ class QuickLook:
         result = QuickLookResult(
             well_name=well.name or "Unknown",
             top_depth=top_depth,
-            bottom_depth=bottom_depth
+            bottom_depth=bottom_depth,
+            depth_unit=getattr(well, "depth_unit", "") or "",
         )
 
         mask = (depth >= top_depth) & (depth <= bottom_depth)
@@ -138,31 +162,36 @@ class QuickLook:
         result.has_neutron = nphi_curve is not None
         result.has_sonic = _first_curve(well, ["DT"], "DTC") is not None
 
-        # Calculate quick averages
+        # Quick averages; the estimates are made per sample, then averaged
         if gr_curve is not None:
-            gr = gr_curve.data[mask]
+            gr = np.asarray(gr_curve.data[mask], dtype=float)
             result.avg_gr = _nanmean_or_nan(gr)
-            result.estimated_vcl = self._quick_vcl(result.avg_gr)
+            result.estimated_vcl = _nanmean_or_nan(self._quick_vcl(gr))
 
+        rt = None
         if rt_curve is not None:
-            result.avg_rt = _nanmean_or_nan(rt_curve.data[mask])
+            rt = np.asarray(rt_curve.data[mask], dtype=float)
+            result.avg_rt = _nanmean_or_nan(rt)
 
+        phi = None
         if rhob_curve is not None:
-            rhob = rhob_curve.data[mask]
+            rhob = np.asarray(rhob_curve.data[mask], dtype=float)
             result.avg_rhob = _nanmean_or_nan(rhob)
-            result.estimated_porosity = self._quick_porosity(result.avg_rhob)
+            phi = self._quick_porosity(rhob)
+            result.estimated_porosity = _nanmean_or_nan(phi)
 
         if nphi_curve is not None:
             nphi = nphi_curve.data[mask]
             result.avg_nphi = _nanmean_or_nan(nphi)
 
-        # Estimate Sw if we have enough data
-        if result.has_resistivity and result.estimated_porosity > 0:
-            result.estimated_sw = self._quick_sw(
-                result.avg_rt,
-                result.estimated_porosity,
-                rw=self.rw,
-            )
+        # Sw: Archie per sample, averaged with pore-volume (PHI * h) weights,
+        # so the samples that hold the most pore volume count most.
+        if rt is not None and phi is not None:
+            sw = self._quick_sw(rt, phi, rw=self.rw)
+            weight = phi * cell_thickness(depth)[mask]
+            valid = np.isfinite(sw) & np.isfinite(weight) & (weight > 0)
+            if np.any(valid):
+                result.estimated_sw = float(np.sum(sw[valid] * weight[valid]) / np.sum(weight[valid]))
 
         # Find potential pay zones
         result.potential_pay_zones = self._find_pay_zones(well, mask)
@@ -172,75 +201,79 @@ class QuickLook:
 
         return result
 
-    def _quick_vcl(self, gr: float) -> float:
-        """Quick VCL estimate from GR (NaN when the GR endpoints are equal)."""
+    def _quick_vcl(self, gr):
+        """Linear GR clay volume within 0 and 1 (NaN when the GR endpoints are equal)."""
+        gr = np.asarray(gr, dtype=float)
         if self.gr_shale == self.gr_clean:
-            return np.nan
-        igr = (gr - self.gr_clean) / (self.gr_shale - self.gr_clean)
-        igr = np.clip(igr, 0, 1)
-        return float(igr)
+            igr = np.full(gr.shape, np.nan)
+        else:
+            igr = np.clip((gr - self.gr_clean) / (self.gr_shale - self.gr_clean), 0, 1)
+        return igr if igr.ndim else float(igr)
 
-    def _quick_porosity(self, rhob: float) -> float:
-        """Quick porosity estimate from density."""
-        phi = (self.rho_matrix - rhob) / (self.rho_matrix - self.rho_fluid)
+    def _quick_porosity(self, rhob):
+        """Density porosity within 0 and 0.45."""
+        phi = (self.rho_matrix - np.asarray(rhob, dtype=float)) / (self.rho_matrix - self.rho_fluid)
         phi = np.clip(phi, 0, 0.45)
-        return float(phi)
+        return phi if phi.ndim else float(phi)
 
     def _quick_sw(
         self,
-        rt: float,
-        porosity: float,
+        rt,
+        porosity,
         rw: float = 0.05,
         a: float = 1.0,
         m: float = 2.0,
         n: float = 2.0
-    ) -> float:
-        """Quick Sw estimate using Archie; NaN for a non-positive Rt."""
-        if not rt > 0:
-            return np.nan
-        if porosity <= 0:
-            return 1.0
-
-        sw_n = a * rw / (porosity ** m * rt)
-        sw = sw_n ** (1.0 / n)
-        sw = np.clip(sw, 0, 1)
-        return float(sw)
+    ):
+        """Archie Sw within 0 and 1; NaN where Rt is not positive, 1 at zero porosity."""
+        rt = np.asarray(rt, dtype=float)
+        porosity = np.asarray(porosity, dtype=float)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            sw = np.clip((a * rw / (porosity ** m * rt)) ** (1.0 / n), 0, 1)
+            sw = np.where(porosity <= 0, 1.0, sw)
+            sw = np.where(rt > 0, sw, np.nan)
+        return sw if sw.ndim else float(sw)
 
     def _find_pay_zones(
         self,
         well: "Well",
         mask: np.ndarray
     ) -> List[Dict]:
-        """Find potential pay zones based on log response."""
+        """Potential pay: GR clay volume below ``vcl_cutoff`` and Rt above ``rt_cutoff``.
+
+        Contiguous runs at least ``min_thickness`` thick (in the well's
+        depth unit) are reported.
+        """
         zones = []
         depth = well_depth_array(well)
+        depth_unit = getattr(well, "depth_unit", "") or ""
 
-        # Look for low GR, high resistivity intervals
         gr = _first_curve(well, ["GR"], "GR")
         rt = _first_curve(well, ["RT", "LLD", "ILD", "RDEP"], "RDEP")
 
         if gr is None or rt is None:
             return zones
 
-        gr_data = gr.data.copy()
-        rt_data = rt.data.copy()
+        gr_data = np.asarray(gr.data, dtype=float).copy()
+        rt_data = np.asarray(rt.data, dtype=float).copy()
 
-        # Simple thresholds
-        low_gr = gr_data < 60
-        high_rt = rt_data > 10
+        with np.errstate(invalid="ignore"):
+            clean = self._quick_vcl(gr_data) < self.vcl_cutoff
+            high_rt = rt_data > self.rt_cutoff
 
         # Find contiguous zones
-        pay_flag = low_gr & high_rt & mask
+        pay_flag = clean & high_rt & mask
         in_zone = False
         zone_start = 0
 
         def _append_zone(start: int, stop: int) -> None:
             thickness = abs(depth[stop - 1] - depth[start])
-            if thickness >= 2.0:
+            if thickness >= self.min_thickness:
                 zones.append({
                     "top": float(min(depth[start], depth[stop - 1])),
                     "bottom": float(max(depth[start], depth[stop - 1])),
                     "thickness": float(thickness),
+                    "depth_unit": depth_unit,
                     "avg_gr": _nanmean_or_nan(gr_data[start:stop]),
                     "avg_rt": _nanmean_or_nan(rt_data[start:stop]),
                 })
@@ -311,7 +344,9 @@ def quick_look_analysis(
     bottom_depth : float, optional
         Bottom depth
     **kwargs
-        Additional parameters for QuickLook
+        Parameters of :class:`QuickLook`: ``gr_clean``, ``gr_shale``,
+        ``rho_matrix``, ``rho_fluid``, ``rw``, ``vcl_cutoff``, ``rt_cutoff``
+        and ``min_thickness`` (in the well's depth unit)
 
     Returns
     -------

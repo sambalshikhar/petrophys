@@ -283,6 +283,7 @@ class MultiMineralSolverV1:
         pef:  Optional[Union[float, np.ndarray]] = None,
         dt:   Optional[Union[float, np.ndarray]] = None,
         core_phi: Optional[Union[float, np.ndarray]] = None,
+        samples: Optional[np.ndarray] = None,
     ) -> Dict[str, np.ndarray]:
         """
         Solve for mineral fractions.
@@ -298,6 +299,9 @@ class MultiMineralSolverV1:
         core_phi : optional
             Accepted for interface compatibility with version 2 and ignored;
             version 1 always uses ``phie``.
+        samples : np.ndarray of bool, optional
+            Samples to solve; the others are left unsolved. Each sample is
+            solved on its own, so the solved ones are as a full solve gives them.
 
         Returns
         -------
@@ -323,8 +327,9 @@ class MultiMineralSolverV1:
         result["phie"]    = phie.copy()
         result["qc_flag"] = np.zeros(n, dtype=bool)
 
+        selected = None if samples is None else np.broadcast_to(np.asarray(samples, dtype=bool), (n,))
         for i in range(n):
-            if any(np.isnan([rhob[i], nphi[i], vcl[i], phie[i]])):
+            if (selected is not None and not selected[i]) or any(np.isnan([rhob[i], nphi[i], vcl[i], phie[i]])):
                 for mineral in all_minerals:
                     result[mineral][i] = np.nan
                 result["qc_flag"][i] = True

@@ -17,7 +17,11 @@ from pathlib import Path
 import numpy as np
 import csv
 
-from petrophys.evaluation.summaries.zone_summary import ZoneSummary, calculate_zone_summary
+from petrophys.evaluation.summaries.zone_summary import (
+    ZoneSummary,
+    calculate_zone_summary,
+    pay_average_curves,
+)
 from petrophys.model.intervals import Formation, IntervalKind
 from petrophys._internal.statistics import finite_min_max
 from petrophys._internal.analysis_helpers import cell_thickness
@@ -52,6 +56,9 @@ class FormationAnalysisResult:
     #: Workflow result the summaries were computed from, when produced by
     #: :func:`run_formation_analysis` (inspect its trace for provenance).
     workflow_result: Optional[Any] = None
+    #: Curve each pay average is taken from, e.g. ``{"Avg PHIE": "PHIE_CC"}``
+    #: (see :func:`~petrophys.evaluation.summaries.zone_summary.pay_average_curves`).
+    curves: Dict[str, Optional[str]] = field(default_factory=dict)
 
     @property
     def total_gross(self) -> float:
@@ -66,7 +73,13 @@ class FormationAnalysisResult:
         return sum(s.zone_summary.net_pay for s in self.summaries)
 
     def to_dataframe(self):
-        """Convert results to a pandas DataFrame."""
+        """Convert results to a pandas DataFrame.
+
+        ``N/G (reservoir)`` is net reservoir / gross and ``Pay/Gross`` is net
+        pay / gross. ``Avg PHIE``, ``Avg Sw``, ``Avg VCL`` and ``Avg Perm
+        (mD)`` (geometric) are over the net-pay samples; ``DataFrame.attrs
+        ["curves"]`` names the curve each average is taken from.
+        """
         import pandas as pd
 
         rows = []
@@ -80,7 +93,8 @@ class FormationAnalysisResult:
                 f"Net Rock ({self.depth_unit})": zs.net_rock,
                 f"Net Reservoir ({self.depth_unit})": zs.net_reservoir,
                 f"Net Pay ({self.depth_unit})": zs.net_pay,
-                "NTG": zs.ntg,
+                "N/G (reservoir)": zs.reservoir_ntg,
+                "Pay/Gross": zs.ntg,
                 "Avg PHIE": zs.avg_phie,
                 "Avg Sw": zs.avg_sw,
                 "Avg VCL": zs.avg_vcl,
@@ -97,7 +111,9 @@ class FormationAnalysisResult:
                 "Data Coverage %": s.data_coverage_pct,
             })
 
-        return pd.DataFrame(rows)
+        frame = pd.DataFrame(rows)
+        frame.attrs["curves"] = dict(self.curves)
+        return frame
 
     def to_csv(self, filepath: Union[str, Path]) -> None:
         """Export results to CSV."""
@@ -111,7 +127,7 @@ class FormationAnalysisResult:
         print(f"{'=' * 90}")
 
         header = (f"{'Formation':<25s} {'Top':>8s} {'Bot':>8s} "
-                  f"{'Gross':>7s} {'NtPay':>7s} {'NTG':>6s} "
+                  f"{'Gross':>7s} {'NtPay':>7s} {'Pay/G':>6s} "
                   f"{'PHIE':>6s} {'Sw':>6s} {'VCL':>6s} {'Perm':>8s}")
         print(header)
         print("-" * 90)
@@ -264,6 +280,7 @@ def analyze_formations(
 
     summaries = []
     union_mask = np.zeros(depth.shape, dtype=bool)
+    curves = pay_average_curves(well)
     for fm in valid_formations:
         # Zone summary (net pay, NTG, averages over pay)
         zs = calculate_zone_summary(
@@ -275,6 +292,8 @@ def analyze_formations(
             net_reservoir_curve=net_reservoir_curve,
             net_rock_curve=net_rock_curve,
             include_bottom=fm.bottom_depth == well_bottom,
+            phie_curve=curves["PHIE"],
+            perm_curve=curves["PERM"],
         )
 
         # Formation-wide curve averages (over entire formation, not just pay)
@@ -320,6 +339,12 @@ def analyze_formations(
         depth_unit=depth_unit,
         union_gross=float(np.sum(thickness[union_mask])),
         union_net_pay=float(np.sum(thickness[pay_mask])),
+        curves={
+            "Avg PHIE": curves["PHIE"],
+            "Avg Sw": "SW" if well.get("SW") is not None else None,
+            "Avg VCL": "VCL" if well.get("VCL") is not None else None,
+            "Avg Perm (mD)": curves["PERM"],
+        },
     )
 
 
@@ -338,10 +363,12 @@ def run_formation_analysis(
     End-to-end formation analysis: load LAS, run workflow, analyze by formation.
 
     This is a convenience function that combines:
+
     1. Loading the LAS file
     2. Standardizing curves
-    3. Running the dynamic workflow
-    4. Loading formation definitions from CSV
+    3. Loading formation definitions from CSV and attaching them to the
+       well, as ``petrophys.read(path, formations=...)`` does
+    4. Running the dynamic workflow, which sees the formations
     5. Computing per-formation summaries
 
     Parameters
@@ -390,6 +417,7 @@ def run_formation_analysis(
     >>> result.print_report()
     >>> result.to_csv("output.csv")
     """
+    from petrophys.api import _attach_geology
     from petrophys.io import read_las
     from petrophys.preprocessing.standardization import standardize_curves
     from petrophys.workflow import run_dynamic_workflow
@@ -401,11 +429,7 @@ def run_formation_analysis(
     if standardize:
         well = standardize_curves(well, rename_curves=True, convert_units=True)
 
-    # 3. Run dynamic workflow; never summarize a failed interpretation.
-    wf_result = run_dynamic_workflow(well, config=workflow_config, **workflow_kwargs)
-    wf_result.raise_for_errors()
-
-    # 4. Load formations
+    # 3. Load formations and attach them before the workflow runs.
     formations = load_formations_csv(
         formations_csv_path,
         well_name=well_name,
@@ -420,6 +444,14 @@ def run_formation_analysis(
             f"No formations found in {formations_csv_path}"
             + (f" for well '{well_name}'" if well_name else "")
         )
+    _attach_geology(
+        well, formations=formations_csv_path,
+        formation_options={"well_name": well_name} if well_name else None,
+    )
+
+    # 4. Run dynamic workflow; never summarize a failed interpretation.
+    wf_result = run_dynamic_workflow(well, config=workflow_config, **workflow_kwargs)
+    wf_result.raise_for_errors()
 
     # 5. Analyze by formation
     result = analyze_formations(well, formations)

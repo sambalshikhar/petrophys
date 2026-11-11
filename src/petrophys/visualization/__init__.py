@@ -52,6 +52,11 @@ from petrophys.visualization.core import (
     plot_core_on_logs,
     plot_poro_perm,
 )
+from petrophys.visualization.multi_well_plot import (
+    MultiWellPlot,
+    WellComparisonPlot,
+    compare_wells,
+)
 from petrophys.visualization.analytics import (
     create_multiwell_overlay,
     create_bar_comparison,
@@ -99,6 +104,10 @@ __all__ = [
     "create_fmi_panel",
     "create_nmr_panel",
     "has_nmr_curves",
+    # Several wells
+    "MultiWellPlot",
+    "WellComparisonPlot",
+    "compare_wells",
     # Analytics charts
     "create_multiwell_overlay",
     "create_bar_comparison",

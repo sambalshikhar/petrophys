@@ -11,6 +11,8 @@ Plotting functions for core-to-log calibration:
 from petrophys.visualization.style import _styled_plot
 
 from typing import Optional, Tuple, List
+import re
+
 import numpy as np
 
 try:
@@ -103,7 +105,9 @@ def plot_calibration(
             label=f"Fit: y={result.slope:.2f}x+{result.intercept:.3f}",
         )
 
-    ax.set_xlabel(f"Core {result.property_name}")
+    # "Porosity (PHIE)" names the log curve; the core axis is the measured property.
+    core_property = re.sub(r"\s*\([^)]*\)$", "", result.property_name)
+    ax.set_xlabel(f"Core {core_property}")
     ax.set_ylabel(f"Log {result.property_name}")
     ax.set_title(
         title
@@ -176,7 +180,10 @@ def plot_poro_perm(
     )
 
     if transform is not None:
-        phi_range = np.linspace(0.001, 0.40, 200)
+        # The fit is drawn over the plugs' porosity range, where it is supported.
+        phi_valid = core.porosity[valid]
+        low, high = (float(np.min(phi_valid)), float(np.max(phi_valid))) if phi_valid.size else (0.001, 0.40)
+        phi_range = np.linspace(max(low, 0.001), max(high, low + 0.01), 200)
         k_pred = transform.predict(phi_range)
         ax.plot(
             phi_range,
@@ -184,7 +191,7 @@ def plot_poro_perm(
             "r-",
             linewidth=2,
             label=(
-                f"Fit: log10(K) = {transform.A:.1f}*phi + ({transform.B:.1f})\n"
+                f"Fit: log10(K) = {transform.A:.1f}*phi {'-' if transform.B < 0 else '+'} {abs(transform.B):.1f}\n"
                 f"R^2 = {transform.r_squared:.3f}"
             ),
         )
@@ -204,6 +211,24 @@ def plot_poro_perm(
     return fig, ax
 
 
+def _core_family(curve_name: str):
+    """Core measurement to overlay on a log curve named by its family (PHI*, PERM*/K*, SW*, SO*)."""
+    name = curve_name.upper()
+    if name.startswith("PHI"):
+        return "porosity", "Core PHI"
+    if name.startswith(("PERM", "KH", "KLOG", "K_")):
+        return "permeability", "Core K"
+    if name.startswith("SW"):
+        return "sw", "Core Sw"
+    if name.startswith("SO"):
+        return "so", "Core So"
+    return None
+
+
+#: Unit of each core measurement, drawn on the axis when the log curve is absent.
+_CORE_UNITS = {"porosity": "v/v", "permeability": "mD", "sw": "v/v", "so": "v/v"}
+
+
 @_styled_plot
 def plot_core_on_logs(
     well,
@@ -214,6 +239,12 @@ def plot_core_on_logs(
 ) -> Tuple["Figure", List["Axes"]]:
     """
     Plot core data points overlaid on log curves.
+
+    Curves are found as :func:`petrophys.plot` finds them (a standard name
+    such as ``RDEP`` draws ``RT`` or ``ILD``) and drawn in standard units.
+    Permeability curves (``PERM*``, ``K*``) are drawn on a log scale. A curve
+    the well does not hold is reported with a ``UserWarning``; its track still
+    shows the matching core points.
 
     Parameters
     ----------
@@ -236,6 +267,13 @@ def plot_core_on_logs(
     """
     if not HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required")
+    import warnings
+
+    from petrophys.visualization.log_viewer import (
+        _display_well,
+        _resolve_curve_name_for_well,
+        DEFAULT_CURVE_DISPLAY_UNITS,
+    )
 
     if curves is None:
         curves = ["GR", "PHIE", "PERM", "SW"]
@@ -260,41 +298,41 @@ def plot_core_on_logs(
     if n == 1:
         axes = [axes]
 
-    depth = well.depth
+    # Units converted as the log plot converts them; values are not screened.
+    shown = _display_well(well, interpreted=True)
+    depth = np.asarray(shown.depth, dtype=float)
     if depth_range is None:
         if core.top is None or core.bottom is None:
             raise ValueError("core has no finite top/bottom depth; pass depth_range explicitly")
         depth_range = (core.top - 50, core.bottom + 50)
     d_mask = (depth >= depth_range[0]) & (depth <= depth_range[1])
+    missing = []
 
     for i, curve_name in enumerate(curves):
         ax = axes[i]
-        curve = well.get(curve_name)
+        resolved = _resolve_curve_name_for_well(shown, curve_name)
+        curve = shown.get(resolved) if resolved is not None else None
+        match = core_map.get(curve_name.upper()) or _core_family(curve_name)
+        is_perm = match is not None and match[0] == "permeability"
+        if is_perm:
+            ax.set_xscale("log")
 
         if curve is not None:
-            is_perm = "PERM" in curve_name.upper()
+            values = np.asarray(curve.data, dtype=float)[d_mask]
             if is_perm:
-                ax.semilogx(
-                    curve.data[d_mask],
-                    depth[d_mask],
-                    "b",
-                    linewidth=0.8,
-                    label=curve_name,
-                )
-            else:
-                ax.plot(
-                    curve.data[d_mask],
-                    depth[d_mask],
-                    "b",
-                    linewidth=0.8,
-                    label=curve_name,
-                )
+                values = np.where(values > 0, values, np.nan)
+            label = curve_name if resolved.upper() == curve_name.upper() else f"{resolved} ({curve_name})"
+            ax.plot(values, depth[d_mask], "b", linewidth=0.8, label=label)
+        else:
+            missing.append(curve_name)
 
-        if curve_name.upper() in core_map:
-            attr, label = core_map[curve_name.upper()]
+        if match is not None:
+            attr, label = match
             core_vals = getattr(core, attr, None)
             if core_vals is not None:
                 c_mask = (core.depth >= depth_range[0]) & (core.depth <= depth_range[1])
+                if is_perm:
+                    c_mask &= np.asarray(core_vals, dtype=float) > 0
                 ax.scatter(
                     core_vals[c_mask],
                     core.depth[c_mask],
@@ -306,11 +344,31 @@ def plot_core_on_logs(
                     linewidths=0.5,
                 )
 
-        ax.set_xlabel(f"{curve_name} [{curve.unit if curve else ''}]")
+        unit = str(getattr(curve, "unit", "") or "").strip() if curve is not None else ""
+        if not unit:
+            unit = (
+                DEFAULT_CURVE_DISPLAY_UNITS.get(curve_name.upper())
+                or (_CORE_UNITS.get(match[0]) if match is not None else "")
+                or ""
+            )
+        name = resolved if curve is not None else curve_name
+        xlabel = f"{name} [{unit}]" if unit else name
+        if curve is None:
+            xlabel += " (no log curve)"
+        ax.set_xlabel(xlabel)
         if i == 0:
             ax.set_ylabel(f"Depth [{well.depth_unit}]" if well.depth_unit else "Depth")
-        ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
+        if ax.get_legend_handles_labels()[0]:
+            ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3, which="both" if is_perm else "major")
+
+    if missing:
+        warnings.warn(
+            f"plot_core_on_logs: the well has no {', '.join(missing)} curve "
+            f"(by its own name or an alias); those tracks show core points only.",
+            UserWarning,
+            stacklevel=3,
+        )
 
     for ax in axes:
         ax.set_ylim(depth_range[1], depth_range[0])

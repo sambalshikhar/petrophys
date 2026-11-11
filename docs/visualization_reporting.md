@@ -311,7 +311,8 @@ Specialist displays (NMR panel, borehole images, XRF, saturation-height, core pl
 
 ## Controlling the log viewer
 
-`pp.plot` takes a well, a result or a well file (`pp.plot("well.las")`) and returns a {class}`~petrophys.visualization.LogViewer`. Choose the window and tracks, then read what it did.
+`pp.plot` takes a well, a result or a well file (`pp.plot("well.las")`) and returns a {class}`~petrophys.visualization.LogViewer`, a matplotlib figure shown inline in a notebook and saved by `.save(path)` as PNG, PDF, SVG or any other matplotlib format. Choose the window and tracks, then read what it did.
+Several wells give a {class}`~petrophys.visualization.MultiWellPlot` (each well's own plot, one at a time; `.save(folder)` writes a file per well), or with `curves=` a {class}`~petrophys.visualization.WellComparisonPlot` (one figure, a track per curve with every well in it).
 
 ```{code-cell} python
 tracks = [track.display_name for track in viewer.template.tracks]
@@ -340,7 +341,7 @@ focus.show()
 | `strict=True` | Fail when a fixed template needs a missing curve, instead of skipping the track |
 | `viewer.omitted_tracks` | Tracks left out because their curves are missing |
 | `viewer.diagnostics` | Imports, curve choices, omitted empty tracks, optional tracks left out, and labels suppressed to avoid crowding |
-| `viewer.warnings` | Plot-only warnings |
+| `viewer.warnings` | Plot-only warnings, such as a curve whose values run off its track scale |
 | `viewer.save(path)`, `.show()`, `.close()` | Output |
 
 A style or window you give is drawn as given. For example, 100 m from the

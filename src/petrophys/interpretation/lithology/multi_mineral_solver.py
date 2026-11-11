@@ -377,6 +377,7 @@ class MultiMineralSolver:
         pef:  Optional[Union[float, np.ndarray]] = None,
         dt:   Optional[Union[float, np.ndarray]] = None,
         core_phi: Optional[Union[float, np.ndarray]] = None,
+        samples: Optional[np.ndarray] = None,
     ) -> Dict[str, np.ndarray]:
         """
         Solve for mineral fractions.
@@ -399,6 +400,10 @@ class MultiMineralSolver:
         core_phi : float or np.ndarray, optional
             Independently constrained porosity (fraction). Finite samples fix
             porosity; missing samples leave it as an unknown.
+        samples : np.ndarray of bool, optional
+            Samples to solve; the others are left unsolved, as samples
+            without RHOB are. Each sample is solved on its own, so the
+            solved ones are as a full solve gives them.
 
         Returns
         -------
@@ -457,8 +462,11 @@ class MultiMineralSolver:
         result["solved"]   = np.zeros(n, dtype=bool)
         result["underdetermined"] = np.zeros(n, dtype=bool)
 
+        selected = None if samples is None else np.broadcast_to(np.asarray(samples, dtype=bool), (n,))
         for i in range(n):
-            if not np.all(np.isfinite([rhob[i], vcl[i]])) or rhob[i] <= 0.0:
+            if (selected is not None and not selected[i]) or (
+                not np.all(np.isfinite([rhob[i], vcl[i]])) or rhob[i] <= 0.0
+            ):
                 for mineral in all_minerals:
                     result[mineral][i] = np.nan
                 result["residual"][i] = np.nan

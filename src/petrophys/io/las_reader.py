@@ -331,6 +331,27 @@ def _read_lasio(path: Path, encoding: Optional[str]):
         raise ValueError(f"{path.name} is not a readable LAS file: {detail}") from exc
 
 
+#: Header mnemonics read as a standard one when the file lacks the standard
+#: name: the Schlumberger mud-sample names (RMS, RMFS, RMCS, and their
+#: temperatures MST, MFST, MCST), the maximum recorded temperature MRT for
+#: BHT, the logger and driller depths for TD, and SALW for the water salinity SAL.
+HEADER_SYNONYMS: Dict[str, str] = {
+    "RMS": "RM",
+    "RMFS": "RMF",
+    "RMCS": "RMC",
+    "MST": "RMT",
+    "MFST": "RMFT",
+    "MCST": "RMCT",
+    "MRT": "BHT",
+    "BHTEMP": "BHT",
+    "TDL": "TD",
+    "DL": "TD",
+    "TDD": "TD",
+    "DD": "TD",
+    "SALW": "SAL",
+}
+
+
 class LASReader:
     """
     Reader for LAS (Log ASCII Standard) files.
@@ -827,6 +848,9 @@ class LASReader:
             if descr:
                 well.set_parameter(f"{mnemonic}__DESCR", descr)
 
+        if not historical:
+            self._add_header_synonyms(well)
+
         # Promote single-valued zoned metadata into the header when the base
         # header is blank, so existing code can benefit without knowing about
         # the zoned LAS convention.
@@ -866,6 +890,31 @@ class LASReader:
             field_name = self._get_constant_zoned_text("FLD")
             if field_name:
                 well.header.field = field_name
+
+    def _add_header_synonyms(self, well: "Well") -> None:
+        """Give a header value found under a synonym (:data:`HEADER_SYNONYMS`) its standard name.
+
+        Only when the file has no value under the standard name; the copy's
+        description names the synonym it came from.
+        """
+        for synonym, standard in HEADER_SYNONYMS.items():
+            if self._parse_float(self.get_header_value(standard)) is not None:
+                continue
+            if well.get_parameter(standard) is not None:
+                continue
+            value = self._parse_float(self.get_header_value(synonym))
+            if value is None:
+                continue
+            unit = self.get_header_unit(synonym).strip()
+            well.set_parameter(standard, value)
+            if unit:
+                well.set_parameter(f"{standard}__UNIT", unit)
+            well.set_parameter(f"{standard}__DESCR", f"from header {synonym}")
+            header_field = {"BHT": "bht", "RM": "rm", "RMF": "rmf", "RMC": "rmc", "TD": "td"}.get(standard)
+            if header_field and getattr(well.header, header_field, None) is None:
+                setattr(well.header, header_field, value)
+                if standard == "BHT" and unit:
+                    well.header.bht_unit = unit
 
     def _well_section_depth_unit(self) -> str:
         """Return the single non-blank unit of ~W STRT/STOP/STEP, or ''."""

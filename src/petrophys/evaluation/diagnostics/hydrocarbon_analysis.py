@@ -21,6 +21,7 @@ from petrophys.evaluation.diagnostics._tables import (
 )
 from petrophys.evaluation.diagnostics.bands import Bands
 from petrophys.evaluation.net_pay.net_pay_module import NetPayModule
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.class_tables import CLASS_TABLES
 from typing import TYPE_CHECKING
 
@@ -179,6 +180,15 @@ class HydrocarbonAnalysis:
             graded = phie is not None and perm is not None and quality_clay_source is not None
 
         integrated_labels = np.full(n_samples, "MARGINAL", dtype=object)
+        if not (benchmark or reproducing_benchmark()):
+            # MARGINAL is for samples with a hydrocarbon indication short of pay;
+            # a water-bearing sample is WATER_BEARING, one without SW UNDETERMINED.
+            sw_classes = (
+                CLASS_TABLES["SW"].classify(sw) if sw is not None
+                else np.full(n_samples, "", dtype=object)
+            )
+            integrated_labels[sw_classes == "WATER_BEARING"] = "WATER_BEARING"
+            integrated_labels[~np.isin(sw_classes, CLASS_TABLES["SW"].labels)] = "UNDETERMINED"
         gas_show = np.char.find(geophysical_labels.astype(str), "GAS") >= 0
         integrated_labels[gas_show] = "GAS_SHOW"
         integrated_labels[reservoir_labels == "NON_RESERVOIR"] = "NON_RESERVOIR"
@@ -304,7 +314,12 @@ class HydrocarbonAnalysis:
                         "POTENTIAL_PAY: pay-flag positive but not prime oil. "
                         "GAS_SHOW: any gas indication short of PRIME_GAS_TARGET. "
                         "NON_RESERVOIR: explicitly poor reservoir quality. "
-                        "MARGINAL: all other combinations."
+                        + (
+                            "MARGINAL: all other combinations."
+                            if (benchmark or reproducing_benchmark()) else
+                            "WATER_BEARING: SW class WATER_BEARING; UNDETERMINED: no SW; "
+                            "MARGINAL: a hydrocarbon SW class short of the labels above."
+                        )
                     ),
                 ),
             },

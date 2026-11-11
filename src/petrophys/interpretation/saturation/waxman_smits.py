@@ -17,7 +17,7 @@ index; II. The temperature coefficient of electrical conductivity.
 *Journal of Petroleum Technology* 26(2), 213-225.
 """
 
-from typing import Union
+from typing import Optional, Union
 import numpy as np
 
 from petrophys._internal.benchmark import reproducing_benchmark
@@ -79,7 +79,7 @@ def waxman_smits(
     rw: Union[float, np.ndarray],
     cec: float,
     rho_ma: float,
-    b_coeff: float,
+    b_coeff: Optional[float] = None,
     m_star: float = 2.0,
     n: float = 2.0,
     max_iter: int = 10,
@@ -128,12 +128,13 @@ def waxman_smits(
         meq/100g lab-reporting convention; divide a meq/100g value by 100.
     rho_ma : float
         Matrix density (g/cc)
-    b_coeff : float
+    b_coeff : float, optional
         Equivalent conductance of clay counter-ions B, (S/m)/(meq/cm3), i.e.
-        with Rw in ohm.m and Qv in meq/cm3 of pore volume. At 25 degC,
-        B = 4.6 * [1 - 0.6 * exp(-0.77 / Rw)] (Waxman and Smits, 1968), about
-        1.8 in fresh water rising to 4.6 in brine; it increases with
-        temperature (Waxman and Thomas, 1974).
+        with Rw in ohm.m and Qv in meq/cm3 of pore volume. Default (None):
+        B = 4.6 * [1 - 0.6 * exp(-0.77 / Rw)] (Waxman and Smits, 1968), the
+        25 degC relation, about 1.8 in fresh water rising to 4.6 in brine; B
+        increases with temperature (Waxman and Thomas, 1974), so pass a
+        measured or temperature-corrected value when you have one.
     m_star : float
         Intrinsic cementation exponent from SCAL (default: 2.0)
     n : float
@@ -175,6 +176,10 @@ def waxman_smits(
     rw_array = np.where(rw_array <= 0, 1e-10, rw_array)
     cw = 1.0 / rw_array
 
+    if b_coeff is None:
+        b_values = 4.6 * (1.0 - 0.6 * np.exp(-0.77 / rw_array))
+    else:
+        b_values = np.full(phi_safe.shape, float(b_coeff))
     f_star = phi_safe ** (-m_star)
     qv     = cec * rho_ma * (1.0 - phi_safe) / phi_safe
     ct     = 1.0 / rt_safe
@@ -182,7 +187,7 @@ def waxman_smits(
     sw = np.array([
         _waxman_smits_scalar(
             phi_safe[i], ct[i], float(cw[i]), qv[i], f_star[i],
-            b_coeff, n, max_iter, tol
+            float(b_values[i]), n, max_iter, tol
         )
         for i in range(len(phi_t))
     ])

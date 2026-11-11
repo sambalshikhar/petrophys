@@ -11,11 +11,20 @@ def create_formation_pressure_plot(data, result=None, *, hydrocarbon="oil",
 
     If no result is provided, call data.fit_fwl(hydrocarbon). All finite
     excluded stations remain visible for QC. No report contacts are used.
+    ``result`` is the fluid-labelled fit of ``data.fit_fwl``; the unlabelled
+    inference of ``data.infer_contacts()`` is drawn by
+    :func:`create_pressure_contact_plot`.
     """
     import matplotlib.pyplot as plt
 
     if result is None:
         result = data.fit_fwl(hydrocarbon)
+    if not hasattr(result, "hydrocarbon_fluid"):
+        raise TypeError(
+            f"create_formation_pressure_plot draws a fluid-labelled fit (data.fit_fwl(...)), "
+            f"not a {type(result).__name__}: the stations need fluid labels for it. "
+            "Plot an infer_contacts() result with create_pressure_contact_plot(data, result)."
+        )
     if (result.depth_unit, result.pressure_unit, result.depth_reference) != (
             data.depth_unit, data.pressure_unit, data.depth_reference):
         raise ValueError("Fit and stations must use the same units and TVD datum")
@@ -47,11 +56,17 @@ def create_formation_pressure_plot(data, result=None, *, hydrocarbon="oil",
 
 @_styled_plot
 def create_pressure_contact_plot(data, result=None, *, figsize=(7, 8),
-                                 title="Pressure contact interpretation"):
+                                 title="Pressure contact interpretation", zoom="fit"):
     """Plot unlabeled inference, including unresolved contacts and suspect points.
 
     Returns a Figure. Call ``data.infer_contacts(**settings)`` first to control
     assumptions. Ambiguous intersections are explicitly marked as candidates.
+
+    ``zoom="fit"`` frames the stations assigned to a gradient and the
+    contact intervals, with a margin of a quarter of their depth span (at
+    least 10 m or 30 ft); excluded stations inside that window stay visible
+    and the number outside it is noted on the plot. ``zoom="all"`` frames
+    every station. Without fitted stations both show everything.
     """
     import matplotlib.pyplot as plt
 
@@ -83,7 +98,28 @@ def create_pressure_contact_plot(data, result=None, *, figsize=(7, 8),
         ax.axhline(contact.depth, color="black", linestyle="--",
                    label=f"{prefix}{contact.kind}: {contact.depth:.2f} {data.depth_unit}")
         ax.axhspan(*contact.depth_interval, color="0.5", alpha=0.10)
-    ax.invert_yaxis()
+    if zoom not in ("fit", "all"):
+        raise ValueError("zoom must be 'fit' or 'all'")
+    depth = np.asarray(p.depth, dtype=float)
+    pressure = np.asarray(p.pressure, dtype=float)
+    finite = np.isfinite(depth) & np.isfinite(pressure)
+    fitted = finite & (np.asarray(result.station_branch) >= 0)
+    if zoom == "fit" and fitted.any():
+        ends = list(depth[fitted])
+        for contact in result.contacts:
+            ends.extend(v for v in (contact.depth, *contact.depth_interval) if np.isfinite(v))
+        margin = max(0.25*(max(ends)-min(ends)), 10.0 if data.depth_unit == "m" else 30.0)
+        top, base = min(ends)-margin, max(ends)+margin
+        shown = finite & (depth >= top) & (depth <= base)
+        hidden = int(np.sum(finite & ~shown))
+        if hidden:
+            pad = max(0.05*np.ptp(pressure[shown]), 0.5)
+            ax.set_ylim(base, top)
+            ax.set_xlim(pressure[shown].min()-pad, pressure[shown].max()+pad)
+            ax.text(0.02, 0.02, f"{hidden} station(s) outside the fitted interval not shown (zoom='all')",
+                    transform=ax.transAxes, fontsize=8, color="0.3", va="bottom")
+    if not ax.yaxis_inverted():
+        ax.invert_yaxis()
     ax.set(xlabel=f"Formation pressure ({data.pressure_unit})",
            ylabel=f"{data.depth_reference}, positive down ({data.depth_unit})",
            title=f"{title}\nStatus: {result.status}")

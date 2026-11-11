@@ -206,7 +206,7 @@ carbonate = Workflow("Kharaib-2 screen", [
 names = ["HW-3", "HW-4", "HW-6", "HW-24", "HW-25", "HW-29"]
 batch = carbonate.run_many([pp.sample(name) for name in names])
 field = batch.summary_table()
-columns = ["Well", "Status", "Gross", "Net Pay", "NTG", "Avg PHIE", "Avg Sw"]
+columns = ["Well", "Status", "Gross", "Net Pay", "Pay/Gross", "Avg PHIE", "Avg Sw"]
 field[columns].style.hide(axis="index").format(precision=2)
 ```
 

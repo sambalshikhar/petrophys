@@ -239,7 +239,8 @@ def find_core_depth_shift(
     Warns
     -----
     UserWarning
-        If the best shift lies at the edge of the scanned window.
+        If the best shift lies at the edge of the scanned window, or its
+        correlation is below 0.5.
 
     See Also
     --------
@@ -341,6 +342,14 @@ def find_core_depth_shift(
         warnings.warn(
             f"The best core depth shift ({result.shift:+.2f}) lies at the edge of the "
             "scanned window; widen max_shift before trusting it.",
+            UserWarning,
+            stacklevel=2,
+        )
+    elif scan_shifts.size > 1 and result.correlation < 0.5:
+        warnings.warn(
+            f"The best core depth shift ({result.shift:+.2f}) correlates weakly with "
+            f"{log_curve} (r = {result.correlation:.2f}); it may be a local peak. Widen "
+            "max_shift, or check the core depth reference, before applying it.",
             UserWarning,
             stacklevel=2,
         )

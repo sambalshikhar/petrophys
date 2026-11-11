@@ -876,21 +876,25 @@ def _header_temperature_f(well: Well, name: str) -> Optional[float]:
     return temperature_to_fahrenheit(value, well.get_parameter(f"{name}__UNIT"))
 
 
-def _header_requirement(resistivity: str, temperature: str, what: str) -> _Requirement:
-    def predicate(well: Well, settings: Mapping[str, Any]) -> Optional[str]:
-        if _header_value(well, resistivity) is None:
-            return None
-        explicit = settings.get("rw_temp_f", settings.get("rmf_temp_f"))
-        if explicit is None and _header_temperature_f(well, temperature) is None:
-            return None
-        return f"LAS header ({resistivity})"
+def _header_present(resistivity: str, temperature: str, well: Well,
+                    settings: Mapping[str, Any]) -> Optional[str]:
+    if _header_value(well, resistivity) is None:
+        return None
+    explicit = settings.get("rw_temp_f", settings.get("rmf_temp_f"))
+    if explicit is None and _header_temperature_f(well, temperature) is None:
+        return None
+    return f"LAS header ({resistivity})"
 
+
+def _header_requirement(resistivity: str, temperature: str, what: str) -> _Requirement:
+    # Requirement predicates are module-level functions so that steps, workflows
+    # and run results can be pickled.
     return _Requirement(
         label=f"header {resistivity} and {temperature}",
         what=what,
         hint=f"the LAS file needs {resistivity} and {temperature} parameters, or pass the "
              "values explicitly",
-        predicate=predicate,
+        predicate=functools.partial(_header_present, resistivity, temperature),
     )
 
 
@@ -1826,18 +1830,19 @@ def _run_net_pay(ctx: _StepContext, *, vcl_cutoff: Optional[float], phie_cutoff:
 _SPECTRAL_ELEMENTS = ("POTASSIUM", "THORIUM", "URANIUM")
 
 
+def _spectral_gamma_present(well: Well, settings: Mapping[str, Any]) -> Optional[str]:
+    from petrophys.interpretation.geochemistry import interpret_spectral_gamma
+
+    result = interpret_spectral_gamma(well, add_curves=False)
+    return f"well ({', '.join(result.input_curves)})" if result.sources else None
+
+
 def _spectral_gamma_requirement() -> _Requirement:
-    def predicate(well: Well, settings: Mapping[str, Any]) -> Optional[str]:
-        from petrophys.interpretation.geochemistry import interpret_spectral_gamma
-
-        result = interpret_spectral_gamma(well, add_curves=False)
-        return f"well ({', '.join(result.input_curves)})" if result.sources else None
-
     return _Requirement(
         label="spectral gamma curves",
         what="processed K, Th, U, SGR or CGR",
         hint="the well needs processed potassium, thorium, uranium or spectral GR curves",
-        predicate=predicate,
+        predicate=_spectral_gamma_present,
     )
 
 
@@ -2054,18 +2059,19 @@ def _run_interpret(ctx: _StepContext, **settings: Any) -> None:
                            + ("; ".join(result.errors) or "no step could run"))
 
 
-def _formations_requirement() -> _Requirement:
-    def predicate(well: Well, settings: Mapping[str, Any]) -> Optional[str]:
-        if settings.get("formations") is not None:
-            return "parameter formations"
-        records = (well.get_parameter("_geology_context") or {}).get("formations")
-        return "attached formation tops" if records else None
+def _formations_present(well: Well, settings: Mapping[str, Any]) -> Optional[str]:
+    if settings.get("formations") is not None:
+        return "parameter formations"
+    records = (well.get_parameter("_geology_context") or {}).get("formations")
+    return "attached formation tops" if records else None
 
+
+def _formations_requirement() -> _Requirement:
     return _Requirement(
         label="formation tops",
         hint="read the well with petrophys.read(path, formations=...), pass "
              "run_many(..., formations=...), or give formations= to the step",
-        predicate=predicate,
+        predicate=_formations_present,
     )
 
 

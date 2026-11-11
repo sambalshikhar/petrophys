@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys._internal.analysis_helpers import (
     CategoryAnalysisResult,
     DerivedCurve,
@@ -81,10 +82,22 @@ class PorosityAnalysis:
         rqi, rqi_source = get_curve_data(well, ["RQI"])
         fzi, fzi_source = get_curve_data(well, ["FZI"])
         phie, phie_source = get_curve_data(well, ["PHIE_CC", "PHIE", "PHIT"])
-        porosity_basis_text = (
-            f"{format_curve_source(phit_source)}; fallback priority PHID={format_curve_source(phid_source)}, "
-            f"PHIS={format_curve_source(phis_source)}, PHIN={format_curve_source(phin_source)}"
-        )
+        if benchmark or reproducing_benchmark():
+            porosity_basis_text = (
+                f"{format_curve_source(phit_source)}; fallback priority PHID={format_curve_source(phid_source)}, "
+                f"PHIS={format_curve_source(phis_source)}, PHIN={format_curve_source(phin_source)}"
+            )
+            porosity_methodology = (
+                f"Uses {porosity_basis_text}. Priority is PHIE_CC, PHIT, PHID, PHIS, then PHIN/NPHI."
+            )
+        else:
+            used = [format_curve_source(source)
+                    for source in (phit_source, phid_source, phis_source, phin_source) if source]
+            porosity_methodology = (
+                "Each sample takes the first finite porosity of PHIE_CC, PHIT, PHID, PHIS, then "
+                "PHIN/NPHI (PHIE is not in this order); curves with data here: "
+                f"{', '.join(used) if used else 'none'}."
+            )
         phie_source_text = format_curve_source(phie_source)
         perm_source_text = format_curve_source(perm_source)
         vsh_source_text = format_curve_source(vsh_source)
@@ -255,9 +268,7 @@ class PorosityAnalysis:
                     well,
                     total_labels,
                     description="Porosity quality from the best available porosity measurement.",
-                    methodology=(
-                        f"Uses {porosity_basis_text}. Priority is PHIE_CC, PHIT, PHID, PHIS, then PHIN/NPHI."
-                    ),
+                    methodology=porosity_methodology,
                     calculation_thresholds=texts["total"],
                 ),
                 "pore_system_architecture_classification": build_section(

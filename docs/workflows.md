@@ -202,7 +202,7 @@ result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230, zones=[
 ])
 ```
 
-Each zone's settings are run over the whole well and its depths merged in, so a zone changes what its settings change and nothing else: the picks taken from the data (GR baselines, irreducible water saturation, the core model) stay those of the whole well. `result.zone_results` holds one run per distinct set of zone settings, and `result.warnings` their messages. Zones may not overlap; whole-run settings such as `calculation_profile`, `skip_steps` and the lithology inputs cannot differ by zone; a zone outside the logged depths is noted and not used.
+Each zone's settings are run over the whole well and its depths merged in, so a zone changes what its settings change and nothing else: the picks taken from the data (GR baselines, irreducible water saturation, the core model) stay those of the whole well. `result.zone_results` holds one run per distinct set of zone settings (its `zone_names` name the zones it computed), and `result.warnings` their messages. Zones may not overlap; whole-run settings such as `calculation_profile`, `skip_steps` and the lithology inputs cannot differ by zone; a zone outside the logged depths is noted and not used.
 A zone can also be just a name and its depths, your own segmentation of the well (reservoir zones, flow units, facies). Such a zone changes nothing in the interpretation; it names the interval. One sheet can hold the zones of several wells, with a `well` column:
 
 | well | zone | top | bottom | m |
@@ -369,6 +369,7 @@ Where the solved volumes miss RHOB by more than 0.02 g/cm3 (an apparent matrix d
 (workflows-batch)=
 ## Zoned and batch runs
 
+`pp.interpret("logs/", formations="tops.xlsx")` interprets every well of a folder (or a pattern, or a list of wells) with the same settings and returns one result for them all: `summary()` and `formation_summary()` give one table across the wells, `to_las(folder)` and `save_plots(folder)` a file per well ({doc}`quickstart`).
 {func}`~petrophys.workflow.process_las_directory_with_workflow` interprets every LAS file in a folder and writes the interpreted LAS plus a JSON trace per well.
 Each file runs through {func}`~petrophys.workflow.run_dynamic_workflow_with_zones`, where LAS header values fill settings you leave unset. Header zones such as `TOP_Z1`, `BOT_Z1`, `RW_Z1` re-run their depth range with their own settings, from the input curves rather than the whole-well run's results; a curve the zone run did not compute (for example `PHIE_CC` where the zone holds too few core plugs) is NaN in the zone after the merge, and a warning names it.
 
@@ -617,7 +618,7 @@ Petrophys interprets marl with the limestone matrix and the carbonate cutoffs, a
 | 30/6-5 SWC, SOC | labelled frac, stored in percent | `standardize_curves` (and so `interpret`) converts them to v/v with the warnings shown above; the raw-well plots convert for display only; the bundled LAS is unchanged. Give an explicit unit for ambiguous low values |
 | 15/9-14 DTE | values fit no sonic unit; meaning unknown | not treated as shear slowness; range QC removes them. Do not rescale |
 | Daydream CMR | scalar NMR curves only: no T2 bins or T2LM; `CMRP_3MS` is labelled V/V but holds porosity units | T2LM cannot be computed; vendor KSDR and KCMR are read, not recomputed |
-| 30/6-5 tops | groups and formations nest | use `rank="formation"` or `"group"` in `formation_summary`; core permeability is calibrated per group and per formation |
+| 30/6-5 tops | groups and formations nest | `formation_summary` reports formations; pass `rank="group"` for groups; core permeability is calibrated per group and per formation |
 | COSTA HW-* | each LAS covers only the Kharaib-2 interval | `formations_costa` labels it `KHARAIB-2`; not for whole-well or multi-formation studies |
 
 ## Next

@@ -32,7 +32,7 @@ from petrophys.preprocessing.standardization.unit_converter import (
     standardize_units,
     get_conversion_factor,
 )
-from petrophys.model.units import UnitConverter, temperature_unit
+from petrophys.model.units import PERCENT_SATURATION_UNITS, UnitConverter, temperature_unit
 
 if TYPE_CHECKING:
     from petrophys.model.curve import Curve
@@ -244,6 +244,45 @@ def _maybe_convert_percent_porosity(data: np.ndarray, standard_name: str) -> np.
     return data
 
 
+#: Vendor density and sonic porosities, often delivered in percent under a
+#: blank label. They keep their own names and are read in v/v. Core
+#: porosities are converted by :func:`~petrophys.interpretation.core_analysis.core_data_from_well`.
+PERCENT_PRONE_POROSITY_CURVES = {"DPOR", "DPHI", "DPHZ", "PORD", "SPOR", "SPHI", "PORS"}
+
+#: Unit labels of a fraction (lower case).
+_FRACTION_UNITS = {"v/v", "frac", "fraction", "dec", "decimal", "m3/m3", "ft3/ft3"}
+
+
+def _convert_percent_prone_porosity(curve: "Curve") -> None:
+    """Convert a percent-prone porosity curve in percent to v/v, in place.
+
+    The curve is in percent when its unit is a percent label and its values
+    are not fractions (see :func:`_percent_label_holds_fractions`), or when
+    its unit is not a fraction label and the median of its valid samples is
+    above 1. Either way the unit becomes ``v/v``; a conversion is recorded in
+    ``curve.metadata.custom["percent_porosity_conversion"]``.
+    """
+    values = np.asarray(curve.data, dtype=float)
+    finite = values[np.isfinite(values) & (values > -900.0)]
+    if finite.size == 0:
+        return
+    unit = str(curve.unit or "").strip().lower()
+    median = float(np.median(finite))
+    if unit in PERCENT_SATURATION_UNITS:
+        if float(np.percentile(finite, 95)) <= 1.0 and median < 1.0:
+            curve.unit = "v/v"
+            return
+    elif unit in _FRACTION_UNITS or median <= 1.0:
+        return
+    data = values.copy()
+    data[np.isfinite(data) & (data <= -900.0)] = np.nan
+    curve._data = data / 100.0
+    curve.metadata.custom["percent_porosity_conversion"] = {
+        "source_unit": curve.unit or "", "median_percent": median,
+    }
+    curve.unit = "v/v"
+
+
 #: Share of a curve's samples that must be implausible before a
 #: DataQualityWarning is raised; smaller shares are routine spike removal.
 RANGE_SCREENING_WARNING_FRACTION = 0.5
@@ -266,13 +305,24 @@ def _unit_scale_hint(values: np.ndarray, low: float, high: float) -> str:
 
 
 def _range_screening_message(mnemonic: str, report: Dict[str, Any]) -> str:
-    """Warning text for a curve whose range screening removed most samples."""
+    """Warning text for a curve whose range screening removed most samples.
+
+    The report's ``source_channel`` and ``source_frame``, when given, name
+    the channel and DLIS frame screened under ``mnemonic``.
+    """
+    source = report.get("source_channel")
+    parts = [f"channel {source}"] if source and str(source).upper() != str(mnemonic).upper() else []
+    if report.get("source_frame"):
+        parts.append(f"frame {report['source_frame']}")
+    label = f"{mnemonic} ({', '.join(parts)})" if parts else mnemonic
     message = (
-        f"{mnemonic}: {report['masked']} of {report['finite']} samples are outside the "
+        f"{label}: {report['masked']} of {report['finite']} samples are outside the "
         f"plausible {report['standard_curve']} range {report['low']:g} to {report['high']:g} "
         f"{report['unit'] or ''}".rstrip()
         + " and were removed"
     )
+    if report.get("whole_curve") and report["finite"] > report["masked"]:
+        message += f"; the other {report['finite'] - report['masked']} samples are left out too"
     if report["hint"]:
         message += f"; {report['hint']}, check the unit label {report['source_unit']!r}"
     return message + "."
@@ -320,15 +370,22 @@ def _screen_standard_curve_values(
     standard_name: str,
     source_unit: Optional[str] = None,
     plausible_ranges: Optional[Dict[str, tuple]] = None,
+    source_mnemonic: Optional[str] = None,
 ) -> "Curve":
     """Mask physically implausible standardized curve values.
 
     Masked samples are recorded in ``curve.metadata.custom["range_screening"]``.
     When most samples are implausible, which usually means a wrong unit
-    label, a :class:`~petrophys.exceptions.DataQualityWarning` is raised.
+    label, a :class:`~petrophys.exceptions.DataQualityWarning` is raised and
+    the whole curve is masked, so its in-range rest is not interpreted.
     ``plausible_ranges`` replaces :data:`CURVE_PLAUSIBLE_RANGES`.
+    ``source_mnemonic`` names the curve the standard curve comes from, for
+    the warning when the curve metadata gives no ``original_channel``.
     """
     name = standard_name.upper()
+    historical = reproducing_benchmark()
+    if name in PERCENT_PRONE_POROSITY_CURVES and not historical:
+        _convert_percent_prone_porosity(curve)
     ranges = CURVE_PLAUSIBLE_RANGES if plausible_ranges is None else plausible_ranges
     limits = ranges.get(name)
     if limits is None:
@@ -336,7 +393,11 @@ def _screen_standard_curve_values(
 
     data = np.asarray(curve.data, dtype=float).copy()
     data[np.isfinite(data) & (data <= -900.0)] = np.nan
-    data = _maybe_convert_percent_porosity(data, name)
+    fractions = _maybe_convert_percent_porosity(data, name)
+    if fractions is not data and not historical:
+        # Percent values under a blank or other label, read as v/v.
+        curve.unit = "v/v"
+    data = fractions
     if name == "DTC" and not reproducing_benchmark():
         _check_sonic_scale(curve, data, source_unit if source_unit is not None else curve.unit)
 
@@ -364,12 +425,24 @@ def _screen_standard_curve_values(
             "fraction": masked / total,
             "hint": hint,
         }
+        # A mostly implausible curve has a wrong unit label or is another
+        # measurement; its in-range rest is not trusted either.
+        whole_curve = mostly_invalid and not historical
+        report["whole_curve"] = whole_curve
+        if not historical:
+            # The channel (and DLIS frame) screened under the standard name.
+            custom = curve.metadata.custom
+            source = custom.get("original_channel") or source_mnemonic
+            if source:
+                report["source_channel"] = str(source)
+            if custom.get("frame"):
+                report["source_frame"] = str(custom["frame"])
         curve.metadata.custom["range_screening"] = report
-        if masked / total >= RANGE_SCREENING_WARNING_FRACTION:
+        if mostly_invalid:
             warnings.warn(
                 _range_screening_message(curve.mnemonic, report), DataQualityWarning, stacklevel=4
             )
-        data[invalid] = np.nan
+        data[finite if whole_curve else invalid] = np.nan
         curve._data = data
     elif not np.array_equal(curve.data, data):
         curve._data = data
@@ -787,7 +860,9 @@ class CurveStandardizer:
                     new_curve.mnemonic = own_name
 
             _note_neutron_matrix_reference(new_curve, mnemonic, standard_name)
-            _screen_standard_curve_values(new_curve, standard_name, curve.unit, self.plausible_ranges)
+            _screen_standard_curve_values(
+                new_curve, standard_name, curve.unit, self.plausible_ranges, source_mnemonic=mnemonic
+            )
 
             # Handle duplicate standard names: the incoming curve takes the
             # standard name only with a higher source priority (DLIS channel
@@ -901,7 +976,9 @@ class CurveStandardizer:
                 # Unconvertible resistivity unit: the curve keeps its own name.
                 new_curve.mnemonic = _unconverted_name(curve.mnemonic, standard_name)
 
-        _screen_standard_curve_values(new_curve, standard_name, curve.unit, self.plausible_ranges)
+        _screen_standard_curve_values(
+            new_curve, standard_name, curve.unit, self.plausible_ranges, source_mnemonic=curve.mnemonic
+        )
 
         return new_curve
 

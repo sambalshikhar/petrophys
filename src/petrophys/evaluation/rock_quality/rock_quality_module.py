@@ -7,6 +7,10 @@ RQI  = 0.0314 * sqrt(k / phi_e)
 phi_z = phi_e / (1 - phi_e)
 FZI  = RQI / phi_z
 
+FZI is NaN where effective porosity is below ``MIN_FZI_POROSITY`` (0.01):
+as porosity goes to zero phi_z does too and FZI grows without bound, so
+shale and tight streaks would otherwise form spurious flow units.
+
 References
 ----------
 Amaefule, J.O., Altunbay, M., Tiab, D., Kersey, D.G. and Keelan, D.K.
@@ -28,6 +32,10 @@ from dataclasses import dataclass
 import numpy as np
 
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+from petrophys._internal.benchmark import reproducing_benchmark
+
+#: Effective porosity (v/v) below which FZI is not defined (NaN).
+MIN_FZI_POROSITY = 0.01
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -122,13 +130,16 @@ def calculate_fzi(
     Returns
     -------
     float or np.ndarray
-        Flow Zone Indicator
+        Flow Zone Indicator (microns); NaN where the effective porosity is
+        below :data:`MIN_FZI_POROSITY` (phi_z below 0.01 / 0.99).
     """
     rqi_arr = np.asarray(rqi, dtype=float)
     phi_z_arr = np.asarray(phi_z, dtype=float)
     result = np.full(np.broadcast_shapes(rqi_arr.shape, phi_z_arr.shape), np.nan, dtype=float)
     rqi_b, phi_z_b = np.broadcast_arrays(rqi_arr, phi_z_arr)
     valid = np.isfinite(rqi_b) & np.isfinite(phi_z_b) & (rqi_b >= 0.0) & (phi_z_b > 0.0)
+    if not reproducing_benchmark():
+        valid &= phi_z_b >= MIN_FZI_POROSITY / (1.0 - MIN_FZI_POROSITY)
     result[valid] = rqi_b[valid] / phi_z_b[valid]
     return _maybe_scalar(result, rqi, phi_z)
 

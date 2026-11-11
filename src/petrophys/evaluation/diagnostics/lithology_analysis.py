@@ -254,6 +254,9 @@ class LithologyAnalysis:
             mismatch &= ~(dolomite_indicator > 0.5)
         carbonate_labels[mismatch] = "CARBONATE_LOG_MISMATCH"
         carbonate_labels[(~gt_carbonate) & valid_carbonate & (carbonate_indicator > 0.5)] = "NON_CARBONATE_CARBONATE_SIGNATURE"
+        if not (benchmark or reproducing_benchmark()):
+            # Without PEF and RHOB the carbonate indicators cannot be read.
+            carbonate_labels[~valid_carbonate] = "CARBONATE_UNDETERMINED"
 
         gr_clay = np.full(n_samples, np.nan, dtype=float)
         nphi_clay = np.full(n_samples, np.nan, dtype=float)
@@ -277,9 +280,15 @@ class LithologyAnalysis:
 
         clay_labels = np.full(n_samples, "NO_CLAY_DATA", dtype=object)
         valid_clay = np.isfinite(composite_clay)
+        if benchmark or reproducing_benchmark():
+            moderate_edge, high_edge = 0.33, 0.67
+        else:
+            # One third and two thirds of the available indicators: 2 of 3
+            # indicators (mean 0.667) is HIGH, 1 of 3 (0.333) is MODERATE.
+            moderate_edge, high_edge = 1.0 / 3.0 - 1e-9, 2.0 / 3.0 - 1e-9
         clay_labels[valid_clay] = "LOW_CLAY_INDICATION"
-        clay_labels[valid_clay & (composite_clay >= 0.33)] = "MODERATE_CLAY_INDICATION"
-        clay_labels[valid_clay & (composite_clay >= 0.67)] = "HIGH_CLAY_INDICATION"
+        clay_labels[valid_clay & (composite_clay >= moderate_edge)] = "MODERATE_CLAY_INDICATION"
+        clay_labels[valid_clay & (composite_clay >= high_edge)] = "HIGH_CLAY_INDICATION"
 
         quality_table = CLASS_TABLES["RESERVOIR_QUALITY"]
         if benchmark:
@@ -426,6 +435,8 @@ class LithologyAnalysis:
                         "LIMESTONE_INDICATOR: PEF > 4.5 and RHOB > 2.7; "
                         "DOLOMITE_INDICATOR: PEF 2.8-3.2 and RHOB 2.8-2.9; "
                         "CARBONATE_INDICATOR: PEF > 2.8 and RHOB > 2.6."
+                        + ("" if (benchmark or reproducing_benchmark()) else
+                           " CARBONATE_UNDETERMINED where PEF or RHOB is missing.")
                     ),
                 ),
                 "clay_content_indicators": build_section(
@@ -435,6 +446,9 @@ class LithologyAnalysis:
                     methodology="COMPOSITE_CLAY = mean(available indicators: GR>100 API, NPHI>0.30 v/v, PEF<2.5).",
                     calculation_thresholds=(
                         "HIGH_CLAY_INDICATION >= 0.67; MODERATE 0.33-0.67; LOW < 0.33."
+                        if (benchmark or reproducing_benchmark()) else
+                        "HIGH_CLAY_INDICATION when at least two thirds of the available indicators "
+                        "are met (2 of 3, 2 of 2, 1 of 1); MODERATE when at least one third; LOW otherwise."
                     ),
                 ),
                 "lithology_petrophysics_relationships": build_section(

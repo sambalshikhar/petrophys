@@ -34,7 +34,7 @@ _WELL_FORMATS = {".las": "LAS", ".dlis": "DLIS", ".csv": "CSV", ".tsv": "TSV"}
 
 
 def read(
-    path: PathLike,
+    path: Union[PathLike, Sequence[PathLike]],
     *,
     formations: Optional[Any] = None,
     lithology: Optional[Any] = None,
@@ -44,9 +44,16 @@ def read(
     datum: Optional[str] = None,
     curve_aliases: Optional[Any] = None,
     survey: Optional[Any] = None,
+    elevation: Optional[float] = None,
     **reader_options: Any,
-) -> "Well":
+) -> Any:
     """Read a well from LAS, DLIS, CSV, or TSV and optionally attach geology.
+
+    A folder, a file pattern (``"logs/*.las"``) or a list of files reads every
+    well into a :class:`~petrophys.workflow.multi_well.WellList`, which
+    :func:`interpret` takes as it is. A multi-well formations or lithology
+    table is read once and each well keeps its own rows; a file that cannot be
+    read is named in ``wells.failed`` and in a warning.
 
     Reading never calculates interpretation curves; use :func:`interpret` for
     that. Curves of LAS, CSV and TSV files keep the names and units found in
@@ -57,9 +64,11 @@ def read(
 
     Parameters
     ----------
-    path : str or Path
+    path : str, Path or list
         Well file. The format is chosen from the extension (``.las``,
-        ``.dlis``, ``.csv`` or ``.tsv``).
+        ``.dlis``, ``.csv`` or ``.tsv``). A folder (its LAS and DLIS files,
+        and its CSV and TSV files when ``depth_unit`` is given), a file
+        pattern or a list of files reads several wells.
     formations : path, DataFrame, mapping, or sequence, optional
         Formation tops or intervals (see :func:`petrophys.read_formations`).
         They annotate plots and calibrate core permeability per formation in
@@ -96,6 +105,9 @@ def read(
         ``"vertical"``. Adds ``TVD`` below the log depth reference and, when
         the header gives the reference elevation (EKB/EDF/APD), ``TVDSS``
         (see :func:`petrophys.io.attach_survey`).
+    elevation : float, optional
+        Elevation of the log's depth reference above sea level, in the well's
+        depth unit, for ``TVDSS`` in place of the header's; needs ``survey``.
     **reader_options
         Options for the format reader. CSV and TSV files require
         ``depth_unit="m"`` or ``depth_unit="ft"``; other options (e.g.
@@ -104,9 +116,9 @@ def read(
 
     Returns
     -------
-    Well
+    Well or WellList
         The well, with any attached geology stored for :func:`plot` and
-        :func:`interpret`.
+        :func:`interpret`; several wells for a folder, pattern or list.
 
     Raises
     ------
@@ -121,11 +133,23 @@ def read(
     >>> import petrophys as pp
     >>> well = pp.read(pp.sample("30_6-5"))
     >>> well = pp.read("my_well.csv", depth_unit="m", formations="tops.csv")  # doctest: +SKIP
+    >>> wells = pp.read("logs/", formations="tops.xlsx")                      # doctest: +SKIP
     """
     from petrophys.io import read_csv, read_dlis, read_las
     from petrophys.model.units import normalize_depth_unit
 
-    path = Path(path)
+    if elevation is not None and survey is None:
+        raise ValueError("elevation sets the TVDSS datum of a survey; pass survey= (a file or 'vertical') with it.")
+    files = _well_files(path, reader_options.get("depth_unit"))
+    if files is not None:
+        if survey is not None and not (isinstance(survey, str) and survey.strip().lower() == "vertical"):
+            raise ValueError("A survey belongs to one well; read the wells one by one to attach their surveys.")
+        return _read_many(
+            files, formations=formations, lithology=lithology, formation_options=formation_options,
+            lithology_options=lithology_options, depth_reference=depth_reference, datum=datum,
+            curve_aliases=curve_aliases, survey=survey, elevation=elevation, **reader_options,
+        )
+    path = Path(cast(PathLike, path))
     extension = path.suffix.lower()
     if extension not in _WELL_FORMATS:
         if not extension and not path.exists():
@@ -150,10 +174,14 @@ def read(
         well = read_dlis(path, **reader_options)
     else:
         if reader_options.get("depth_unit") is None:
-            raise ValueError(
-                f"{_WELL_FORMATS[extension]} logs do not record their depth unit; read the file "
-                "with petrophys.read(path, depth_unit='m') or depth_unit='ft'."
-            )
+            header_unit = _csv_depth_header_unit(path, extension, reader_options)
+            if header_unit is None:
+                raise ValueError(
+                    f"{_WELL_FORMATS[extension]} logs do not record their depth unit; read the file "
+                    "with petrophys.read(path, depth_unit='m') or depth_unit='ft', or give the depth "
+                    "column header its unit, e.g. 'DEPTH (m)'."
+                )
+            reader_options["depth_unit"] = header_unit
         reader_options["depth_unit"] = normalize_depth_unit(reader_options["depth_unit"])
         if extension == ".tsv":
             reader_options.setdefault("sep", "\t")
@@ -171,8 +199,112 @@ def read(
     if survey is not None:
         from petrophys.io.survey_reader import attach_survey
 
-        attach_survey(well, survey)
+        attach_survey(well, survey, elevation=elevation)
     return well
+
+
+def _csv_depth_header_unit(path: Path, extension: str, options: Mapping[str, Any]) -> Optional[str]:
+    """The depth unit a CSV/TSV depth column header states (``DEPTH (m)``), or None."""
+    import pandas as pd
+
+    from petrophys.io.ascii_reader import _split_unit_header
+    from petrophys.model.units import normalize_depth_unit
+
+    sep = options.get("sep", "	" if extension == ".tsv" else ",")
+    try:
+        columns = pd.read_csv(path, sep=sep, nrows=0, skiprows=options.get("skiprows", 0)).columns
+    except (ValueError, OSError, UnicodeDecodeError):
+        return None
+    wanted = str(options.get("depth_column", "DEPTH")).strip().upper()
+    for column in columns:
+        name, unit = _split_unit_header(column)
+        if name == wanted and unit:
+            try:
+                return normalize_depth_unit(unit)
+            except ValueError:
+                return None
+    return None
+
+
+def _plot_items(source: Any) -> Optional[list]:
+    """The wells or results to plot when ``source`` holds several, else None."""
+    results = getattr(source, "results", None)
+    if isinstance(results, list) and hasattr(source, "failed"):
+        return list(results)  # a MultiWellResult
+    files = list(source) if isinstance(source, (list, tuple)) else _well_files(source)
+    if files is None:
+        return None
+    items: list = files
+    if not items:
+        raise ValueError("No wells to plot: the list is empty.")
+    return [read(item) if isinstance(item, (str, Path)) else item for item in items]
+
+
+def _well_files(source: Any, depth_unit: Optional[str] = None) -> Optional[list]:
+    """The well files ``source`` names when it names several (a folder, pattern or list), else None."""
+    if isinstance(source, (list, tuple)):
+        return list(source)
+    if not isinstance(source, (str, Path)):
+        return None
+    path = Path(source)
+    if path.is_dir():
+        suffixes = {".las", ".dlis"} | ({".csv", ".tsv"} if depth_unit is not None else set())
+        files = sorted(item for item in path.iterdir() if item.is_file() and item.suffix.lower() in suffixes)
+        if not files:
+            raise ValueError(
+                f"No well files in {path}: it holds no " + ", ".join(sorted(suffixes))
+                + " file" + ("" if depth_unit is not None else " (CSV and TSV files are read with depth_unit=)")
+            )
+        return files
+    text = str(source)
+    if any(character in text for character in "*?[") and not path.exists():
+        import glob
+
+        files = sorted(Path(item) for item in glob.glob(text) if Path(item).is_file())
+        if not files:
+            raise ValueError(f"No file matches {text!r}")
+        return files
+    return None
+
+
+def _shared_table(source: Any, options: Optional[Mapping[str, Any]]) -> Tuple[Any, Optional[Mapping[str, Any]]]:
+    """A geology table file read once for several wells, and the options left for each well."""
+    if not isinstance(source, (str, Path)) or Path(source).suffix.lower() not in {
+        ".csv", ".tsv", ".txt", ".xlsx", ".xls", ".xlsm",
+    }:
+        return source, options
+    from petrophys.io.geology_reader import _read_table
+
+    options = dict(options or {})
+    table_options = {key: options.pop(key) for key in ("sheet_name", "sep", "encoding") if key in options}
+    return _read_table(Path(source), **table_options), (options or None)
+
+
+def _read_many(files: list, **options: Any) -> Any:
+    """Read each of ``files`` with :func:`read`; files that fail are named in ``failed``."""
+    import warnings
+
+    from petrophys.workflow.multi_well import WellList
+
+    options["formations"], options["formation_options"] = _shared_table(
+        options.get("formations"), options.get("formation_options"))
+    options["lithology"], options["lithology_options"] = _shared_table(
+        options.get("lithology"), options.get("lithology_options"))
+    wells = WellList()
+    for file in files:
+        if not isinstance(file, (str, Path)):
+            raise TypeError(f"petrophys.read takes file paths; got {type(file).__name__}")
+        try:
+            wells.append(read(file, **options))
+        except (OSError, ValueError, KeyError, IndexError) as exc:
+            wells.failed[Path(file).name] = f"{type(exc).__name__}: {exc}"
+    if wells.failed:
+        warnings.warn(
+            f"{len(wells.failed)} of {len(files)} well files were not read: "
+            + "; ".join(f"{name} ({reason})" for name, reason in wells.failed.items()),
+            UserWarning, stacklevel=3,
+        )
+    return wells
 
 
 def _attach_geology(
@@ -205,7 +337,7 @@ def _attach_geology(
 
 
 def plot(
-    well: Union["Well", "DynamicWorkflowResult", PathLike],
+    well: Union["Well", "DynamicWorkflowResult", PathLike, Sequence[Any]],
     *,
     top: Optional[float] = None,
     bottom: Optional[float] = None,
@@ -221,15 +353,29 @@ def plot(
     strict: bool = False,
     curve_aliases: Optional[Any] = None,
     curve_styles: Optional[Mapping[str, Mapping[str, Any]]] = None,
-) -> "LogViewer":
+) -> Any:
     """Draw a multi-track log plot of a well or an interpretation result.
+
+    Several wells (a list of wells, results or files, the wells :func:`read`
+    returns for a folder, the results :func:`interpret` returns for several
+    wells, or a folder or file pattern) give one of two plots:
+
+    * without ``curves``, each well's own log plot, with the other options
+      applied to each
+      (:class:`~petrophys.visualization.multi_well_plot.MultiWellPlot`):
+      shown one after another, ``.save(folder)`` writes a file per well, and
+      the figures are drawn one at a time;
+    * with ``curves``, one figure comparing the wells
+      (:class:`~petrophys.visualization.multi_well_plot.WellComparisonPlot`):
+      a track per curve, every well's curve in it, ``top`` and ``bottom``
+      bounding the depth axis and ``figsize`` its size.
 
     Parameters
     ----------
-    well : Well, DynamicWorkflowResult, str or Path
+    well : Well, DynamicWorkflowResult, str, Path or list
         Well to plot, or a well file to read with :func:`read`. Passing the
         result of :func:`interpret` plots the interpreted well, including
-        calculated curves.
+        calculated curves. Several wells as above.
     top, bottom : float, optional
         Top and bottom depth of the plot window, in the well's depth unit.
         Default to the top and bottom of the logged interval.
@@ -244,8 +390,8 @@ def plot(
         Defaults to every track the template can fill.
     template : str, default "auto"
         Built-in layout. ``"auto"`` builds tracks from the curves present;
-        ``"raw"``, ``"petrophysics"``, ``"minerals"``, ``"comprehensive"`` and
-        ``"geolink_full"`` are fixed layouts.
+        ``"raw"``, ``"petrophysics"``, ``"minerals"`` and ``"comprehensive"``
+        are fixed layouts; ``"geolink_full"`` is another name for ``"comprehensive"``.
     template_xml_path : str or Path, optional
         Custom XML template; overrides ``template``.
     formations : path, DataFrame, mapping, or sequence, optional
@@ -280,18 +426,55 @@ def plot(
 
     Returns
     -------
-    LogViewer
-        The rendered viewer. Use ``.save(path)``, ``.show()`` or ``.close()``;
-        ``.warnings`` lists anything that could not be drawn as requested.
+    LogViewer, MultiWellPlot or WellComparisonPlot
+        The rendered viewer, a matplotlib figure shown inline in a notebook.
+        Use ``.save(path)`` (png, pdf, svg, ... by the extension), ``.show()``
+        or ``.close()``; ``.fig`` and ``.axes`` are the figure and its
+        tracks, and ``.warnings`` lists anything that could not be drawn as
+        requested.
 
     Examples
     --------
     >>> import petrophys as pp
     >>> viewer = pp.plot(pp.sample("30_6-5"), top=2800, bottom=3000)
     >>> viewer.save("well.png")  # doctest: +SKIP
+    >>> pp.plot(results).save("plots/")                       # doctest: +SKIP
+    >>> pp.plot(results, curves=["GR", "RDEP", "PHIE"]).save("compare.png")  # doctest: +SKIP
     """
     from petrophys.io.lithology_reader import read_lithology_codes
     from petrophys.visualization import create_log_viewer
+
+    items = _plot_items(well)
+    if items is not None:
+        if curves is not None:
+            from petrophys.visualization.multi_well_plot import compare_wells
+
+            unused = [name for name, value in (
+                ("tracks", tracks), ("template_xml_path", template_xml_path), ("formations", formations),
+                ("lithology", lithology), ("lithology_codes", lithology_codes),
+                ("formation_name", formation_name), ("curve_styles", curve_styles),
+            ) if value is not None] + (["template"] if template != "auto" else [])
+            if unused:
+                raise TypeError(
+                    f"A comparison of wells (curves=) takes top, bottom, figsize and curve_aliases; "
+                    f"{', '.join(unused)} apply to each well's own plot (leave out curves=)."
+                )
+            if curve_aliases is not None:
+                from petrophys.preprocessing.standardization.user_aliases import attach_curve_aliases
+
+                items = [deepcopy(getattr(item, "well", item)) for item in items]
+                for item in items:
+                    attach_curve_aliases(item, curve_aliases)
+            return compare_wells(items, [curves] if isinstance(curves, str) else list(curves),
+                                 top=top, bottom=bottom, figsize=figsize)
+        from petrophys.visualization.multi_well_plot import MultiWellPlot
+
+        return MultiWellPlot(items, dict(
+            top=top, bottom=bottom, tracks=tracks, template=template, template_xml_path=template_xml_path,
+            formations=formations, lithology=lithology, lithology_codes=lithology_codes,
+            formation_name=formation_name, figsize=figsize, strict=strict, curve_aliases=curve_aliases,
+            curve_styles=curve_styles,
+        ))
 
     if isinstance(well, (str, Path)):
         well = read(well)
@@ -363,7 +546,7 @@ def plot(
 
 
 def interpret(
-    well: Union["Well", PathLike],
+    well: Union["Well", PathLike, Sequence[Any]],
     config: Union["DynamicWorkflowConfig", Mapping[str, Any], None] = None,
     *,
     formations: Optional[Any] = None,
@@ -374,8 +557,8 @@ def interpret(
     context_profile: Optional[str] = None,
     curve_aliases: Optional[Any] = None,
     **options: Any,
-) -> "DynamicWorkflowResult":
-    """Run the full petrophysical interpretation on one well.
+) -> Any:
+    """Run the full petrophysical interpretation on one well or several.
 
     The workflow standardizes vendor mnemonics and units, checks which curves
     and parameters are available and runs every step it can (clay volume,
@@ -388,10 +571,22 @@ def interpret(
     records none, and of these assumptions only the default Rw is warned
     about.
 
+    Several wells (a list of wells or files, the wells :func:`read` returns
+    for a folder, or a folder or file pattern) are each interpreted with the
+    same settings, and LAS header values fill each well's unset settings from
+    its own header. The result is a
+    :class:`~petrophys.workflow.multi_well.MultiWellResult`: one table across
+    the wells from ``formation_summary()`` and ``summary()``, a LAS file or plot
+    per well from ``to_las(folder)`` and ``save_plots(folder)``, and each
+    well's result by name (``results["15/9-12"]``). A well whose
+    interpretation raises is named in ``results.failed`` and in a warning;
+    the other wells are interpreted.
+
     Parameters
     ----------
-    well : Well or str or Path
-        Well to interpret, or a well file to read with :func:`read`.
+    well : Well, str, Path or list
+        Well to interpret, or a well file to read with :func:`read`; several
+        wells as above.
     config : DynamicWorkflowConfig or dict, optional
         Complete workflow settings, or a dict of settings (the same as
         keywords). When omitted, settings come from
@@ -407,7 +602,8 @@ def interpret(
         well's lithology code curve (e.g. ``"FACIES"``), or a lithology
         domain (``"clastic"``, ``"carbonate"``, ``"evaporite"``, ``"auto"``).
     output : str or Path, optional
-        Write the interpreted well to this LAS file.
+        Write the interpreted well to this LAS file; for several wells, a
+        folder for one LAS file per well.
     inplace : bool, default False
         If False, the well is copied and the caller's well is left unchanged.
         If True, calculated curves are added to ``well`` itself.
@@ -436,7 +632,7 @@ def interpret(
 
     Returns
     -------
-    DynamicWorkflowResult
+    DynamicWorkflowResult or MultiWellResult
         Interpreted well (``result.well``), the settings actually used
         (``result.config``), and a step-by-step trace (``result.print_trace()``,
         ``result.to_trace_dict()``). Call ``result.raise_for_errors()`` to stop
@@ -458,8 +654,19 @@ def interpret(
     'interpreted'
     >>> result = pp.interpret("well.las", formations="tops.csv", lithology="FACIES",
     ...                       output="well_interpreted.las")  # doctest: +SKIP
+    >>> results = pp.interpret("logs/", formations="tops.xlsx")         # doctest: +SKIP
+    >>> table = results.formation_summary()                              # doctest: +SKIP
     """
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, run_dynamic_workflow
+
+    from petrophys.workflow.multi_well import WellList
+
+    items = list(well) if isinstance(well, (list, tuple, WellList)) else _well_files(well, depth_unit)
+    if items is not None:
+        return _interpret_many(
+            items, config, formations=formations, lithology=lithology, output=output, inplace=inplace,
+            depth_unit=depth_unit, context_profile=context_profile, curve_aliases=curve_aliases, **options,
+        )
 
     if isinstance(config, Mapping):
         # Settings as a dict: the same as keywords.
@@ -516,10 +723,10 @@ def interpret(
     from petrophys.model.well import Well
 
     if isinstance(well, (str, Path)):
-        well = read(well) if depth_unit is None else read(well, depth_unit=depth_unit)
+        well = cast("Well", read(well) if depth_unit is None else read(well, depth_unit=depth_unit))
     elif not isinstance(well, Well):
         raise TypeError(
-            f"interpret() takes a Well or a well file path; got {type(well).__name__}. "
+            f"interpret() takes a Well, a well file path, or a list of them; got {type(well).__name__}. "
             "Read files with petrophys.read()."
         )
     else:
@@ -527,6 +734,7 @@ def interpret(
             raise ValueError("depth_unit only applies when interpret() reads a file.")
         if not inplace:
             well = deepcopy(well)
+    assert isinstance(well, Well)
     if curve_aliases is not None:
         from petrophys.preprocessing.standardization.user_aliases import attach_curve_aliases
 
@@ -550,6 +758,65 @@ def interpret(
     if output is not None:
         result.to_las(output)
     return result
+
+
+def _interpret_many(items: list, config: Any, *, output: Optional[PathLike] = None, **options: Any) -> Any:
+    """Interpret each of ``items`` with :func:`interpret`; see its several-wells form."""
+    import warnings
+
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
+    from petrophys.workflow.multi_well import MultiWellResult
+
+    if not items:
+        raise ValueError("No wells to interpret: the list is empty.")
+    settings = {key: value for key, value in options.items() if key not in _INTERPRET_KEYWORDS}
+    if options.get("context_profile") is None:
+        # The settings are the same for every well: check them once, before any well runs.
+        merged = dict(config) if isinstance(config, Mapping) else {}
+        repeated = sorted(set(merged) & set(settings))
+        if repeated:
+            raise TypeError(f"{', '.join(repeated)} given in config and as a keyword")
+        merged.update(settings)
+        known = {item.name for item in dataclasses.fields(DynamicWorkflowConfig) if not item.name.startswith("_")}
+        unknown = sorted(set(merged) - known)
+        if unknown:
+            hints = []
+            for name in unknown:
+                close = difflib.get_close_matches(name, sorted(known), n=1)
+                hints.append(f"{name!r}" + (f" (did you mean {close[0]!r}?)" if close else ""))
+            raise TypeError(
+                "Unknown interpretation setting(s): " + ", ".join(hints)
+                + ". See petrophys.DynamicWorkflowConfig for the available settings."
+            )
+        if isinstance(config, DynamicWorkflowConfig):
+            dataclasses.replace(config, **merged)
+        else:
+            DynamicWorkflowConfig(**merged)
+    options["formations"], _ = _shared_table(options.get("formations"), None)
+    options["lithology"], _ = _shared_table(options.get("lithology"), None)
+    results, failed = [], {}
+    for item in items:
+        name = getattr(item, "name", None) or Path(str(item)).name
+        try:
+            results.append(interpret(item, config, **options))
+        except (OSError, ValueError, KeyError, IndexError, RuntimeError) as exc:
+            failed[str(name)] = f"{type(exc).__name__}: {exc}"
+    if failed:
+        warnings.warn(
+            f"{len(failed)} of {len(items)} wells were not interpreted: "
+            + "; ".join(f"{name} ({reason})" for name, reason in failed.items()),
+            UserWarning, stacklevel=3,
+        )
+    multi = MultiWellResult(results, failed)
+    if output is not None:
+        multi.to_las(output)
+    return multi
+
+
+#: Keywords of :func:`interpret` that are not workflow settings.
+_INTERPRET_KEYWORDS = {
+    "formations", "lithology", "inplace", "depth_unit", "context_profile", "curve_aliases",
+}
 
 
 def _names_curve_or_domain(value: Any, well: "Well") -> bool:

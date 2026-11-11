@@ -538,8 +538,14 @@ class DLISReader:
         well_info = self.get_well_info()
 
         frame_payloads: List[Dict[str, Any]] = []
+        available_channels: List[str] = []
+        time_frames: List[str] = []
         for frame in self.active_file.frames:
             if selected_frames and frame.name.upper() not in selected_frames:
+                continue
+            if str(getattr(frame, "index_type", "") or "").strip().upper().startswith("TIME"):
+                # A time-indexed record (a pretest, a stationary test) is no depth log.
+                time_frames.append(frame.name)
                 continue
 
             try:
@@ -576,6 +582,8 @@ class DLISReader:
             n_samples = len(depth)
             for ch, field_name in zip(frame.channels, field_names):
                 name = ch.name.upper()
+                if name not in DEPTH_CHANNELS:
+                    available_channels.append(name)
                 if not _channel_requested(name, requested):
                     continue
                 if name in DEPTH_CHANNELS or field_name is None:
@@ -614,6 +622,28 @@ class DLISReader:
         well.header.field = well_info.get("field_name", "")
         well.header.company = well_info.get("company", "")
 
+        if requested is not None:
+            missing = sorted(
+                name for name in requested
+                if not any(_channel_requested(channel, {name}) for channel in available_channels)
+            )
+            if missing:
+                listed = ", ".join(sorted(set(available_channels)))
+                message = f"DLIS channels not found: {', '.join(missing)}. The depth frames hold: {listed}."
+                if not frame_payloads:
+                    raise ValueError(message)
+                warnings.warn(message, stacklevel=3)
+        if not frame_payloads and time_frames:
+            raise ValueError(
+                f"The DLIS frames ({', '.join(time_frames)}) are indexed by time, not depth: a station "
+                "record such as a formation-pressure pretest. Read pretests with "
+                "petrophys.interpretation.saturation.height.read_mdt_pretest."
+            )
+        if time_frames:
+            warnings.warn(
+                f"Time-indexed DLIS frames left out of the depth log: {', '.join(time_frames)}.",
+                stacklevel=3,
+            )
         if not frame_payloads:
             warnings.warn("No scalar DLIS frames could be merged")
             return well
@@ -656,6 +686,15 @@ class DLISReader:
                     f"or raise max_samples (currently {max_samples:,})."
                 )
             target_depth = np.arange(top, bottom + float(step) * 0.5, float(step))
+            n_curves = sum(len(payload["curves"]) for payload in frame_payloads)
+            gigabytes = target_depth.size * n_curves * 8 / 1e9
+            if gigabytes > 0.5:
+                warnings.warn(
+                    f"Merging {n_curves} DLIS channels onto a {step:g} {depth_unit} grid "
+                    f"({target_depth.size:,} samples) takes about {gigabytes:.1f} GB; pass step= "
+                    "(e.g. 0.1524 m) or step_strategy='median' for a log-resolution well.",
+                    stacklevel=3,
+                )
         else:
             target_depth = np.asarray(target_depth, dtype=float)
 

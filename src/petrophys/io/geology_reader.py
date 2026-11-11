@@ -20,8 +20,103 @@ CONTEXT_COLUMNS = {
 }
 
 
+#: A ``depth_ref`` column holds a datum (KB, GL, MSL ...) or a depth
+#: reference (MD, TVD, TVDSS), and is read by its values.
+DEPTH_REF_COLUMNS = ("depthref",)
+
+#: Datum spellings (letters only, upper case) and the abbreviation they read as.
+DATUM_NAMES = {
+    "KB": "KB", "KELLYBUSHING": "KB", "RKB": "RKB", "ROTARYKELLYBUSHING": "RKB",
+    "DF": "DF", "DERRICKFLOOR": "DF", "DRILLFLOOR": "DF", "DRILLINGFLOOR": "DF",
+    "RT": "RT", "ROTARYTABLE": "RT", "GL": "GL", "GROUNDLEVEL": "GL",
+    "MSL": "MSL", "MEANSEALEVEL": "MSL", "SL": "SL", "SEALEVEL": "SL",
+    "LAT": "LAT", "LOWESTASTRONOMICALTIDE": "LAT",
+}
+
+#: Depth references a ``depth_ref`` value can name.
+DEPTH_REFERENCE_NAMES = ("TVDSS", "TVD", "MD")
+
+#: Datums that name the same level: the kelly bushing, with or without "rotary".
+_SAME_DATUM = {"RKB": "KB"}
+
+
 def _key(value):
     return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
+
+def _split_depth_ref(value):
+    """The (depth reference, datum) a ``depth_ref`` value names; None for a part it lacks.
+
+    "KB" gives (None, "KB"), "TVDSS" ("TVDSS", None), "MD RKB" or "MDRKB"
+    ("MD", "RKB"). A value naming neither returns (None, None).
+    """
+    text = re.sub(r"[^A-Z]", "", str(value).upper())
+    if not text:
+        return None, None
+    if text in DATUM_NAMES:
+        return None, DATUM_NAMES[text]
+    for reference in DEPTH_REFERENCE_NAMES:
+        if text == reference:
+            return reference, None
+        rest = text[len(reference):]
+        if text.startswith(reference) and rest in DATUM_NAMES:
+            return reference, DATUM_NAMES[rest]
+    return None, None
+
+
+def _same_datum(first, second):
+    """True when two datum labels name the same level (KB and RKB, or "Kelly Bushing" and KB)."""
+    def canonical(value):
+        text = re.sub(r"[^A-Z]", "", str(value).upper())
+        name = DATUM_NAMES.get(text, text)
+        return _SAME_DATUM.get(name, name)
+
+    return canonical(first) == canonical(second)
+
+
+def _log_datum(well):
+    """The datum the log's depths are measured from, by the LAS LMF (else DMF) item, or None."""
+    items = getattr(getattr(well, "header", None), "las_well_items", None) or {}
+    for name in ("LMF", "DMF"):
+        value = (items.get(name) or {}).get("value")
+        reference, datum = _split_depth_ref(value) if value is not None else (None, None)
+        if datum is not None and reference is None:
+            return datum, f"{name} {str(value).strip()}"
+    return None, ""
+
+
+def _read_depth_ref_column(table, source, column, notes):
+    """Fill ``datum`` and ``depth_reference`` columns of ``table`` from the values of a ``depth_ref`` column.
+
+    ``source`` holds the column's values, row-aligned with ``table``, and
+    ``column`` its name. Returns the canonical fields it filled. A value
+    naming neither a datum nor a depth reference leaves the column unread,
+    with a note.
+    """
+    values = source.fillna("").astype(str).str.strip()
+    parts = [_split_depth_ref(value) for value in values]
+    unread = sorted({value for value, part in zip(values, parts) if value and part == (None, None)})
+    if unread:
+        notes.append(
+            f"Column {column!r} values {unread} name no datum (KB, RKB, DF, RT, GL, MSL, SL, LAT) "
+            "or depth reference (MD, TVD, TVDSS); the column is not read."
+        )
+        return ()
+    filled = []
+    for index, field in ((0, "depth_reference"), (1, "datum")):
+        found = [part[index] for part in parts]
+        if all(item is None for item in found):
+            continue
+        if any(item is None for item in found):
+            raise ValueError(f"Column {column!r} gives a {field} in some rows only; fill every row.")
+        if field in table:
+            given = table[field].astype(str).str.strip().str.upper()
+            if not all(_same_datum(a, b) if field == "datum" else a == b for a, b in zip(given, found)):
+                raise ValueError(f"Conflicting {field} values in {column!r} and the {field} column.")
+            continue
+        table[field] = found
+        filled.append(field)
+    return tuple(filled)
 
 
 def _well_key(value):
@@ -101,10 +196,27 @@ def _prepare_table(source, aliases, required, *, columns=None, well_name=None,
     unknown_mappings = set(columns or {}) - set(aliases) - set(CONTEXT_COLUMNS)
     if unknown_mappings:
         raise ValueError(f"Unknown canonical column mappings: {sorted(unknown_mappings)}")
-    extras = [str(column) for column in table.columns if column not in mapping]
+    from petrophys._internal.benchmark import reproducing_benchmark
+
+    notes = []
+    depth_ref_column = None
+    modern = not reproducing_benchmark()
+    if modern:
+        depth_ref_column = next((lookup[name] for name in DEPTH_REF_COLUMNS
+                                 if name in lookup and lookup[name] not in mapping), None)
+    extras = [str(column) for column in table.columns
+              if column not in mapping and column != depth_ref_column]
     if strict_columns and extras:
         raise ValueError(f"Unsupported lithology columns {extras}; use the input template or explicit mappings.")
+    depth_ref = table[depth_ref_column].reset_index(drop=True) if depth_ref_column is not None else None
     table = table.rename(columns=mapping)[list(mapping.values())].reset_index(drop=True)
+    inferred = ()
+    if depth_ref is not None:
+        inferred = _read_depth_ref_column(table, depth_ref, str(depth_ref_column), notes)
+        if inferred:
+            mapping[depth_ref_column] = " and ".join(inferred)
+        else:
+            extras.append(str(depth_ref_column))
     missing = set(required) - set(table.columns)
     if missing:
         raise ValueError(
@@ -112,7 +224,6 @@ def _prepare_table(source, aliases, required, *, columns=None, well_name=None,
             "use the input templates or pass columns and sep explicitly."
         )
     input_rows = len(table)
-    notes = []
     selected_well = None
     if "well" in table:
         identifiers = table["well"].fillna("").astype(str).str.strip()
@@ -145,7 +256,11 @@ def _prepare_table(source, aliases, required, *, columns=None, well_name=None,
         if declared is not None:
             values.append(declared)
         values = [_unit(value) if field == "depth_unit" else str(value).strip().upper() for value in values]
-        if len(set(values)) > 1:
+        distinct = len(set(values)) > 1
+        if distinct and field == "datum" and modern:
+            # "KELLY BUSHING" and KB, or RKB and KB, name one datum.
+            distinct = not all(_same_datum(values[0], value) for value in values[1:])
+        if distinct:
             raise ValueError(f"Conflicting {field} values: {values}; align inputs before import.")
         metadata[field] = values[0] if values else None
 
@@ -153,10 +268,29 @@ def _prepare_table(source, aliases, required, *, columns=None, well_name=None,
         for field in ("depth_reference", "datum"):
             target = well.get_parameter(field)
             source_value = metadata[field]
+            origin = ""
+            if field == "datum" and not target and source_value and modern:
+                # The LAS header's LMF ("log measured from") names the log's datum.
+                target, origin = _log_datum(well)
+            if source_value and not target and modern and (field == "datum" or source_value == "MD"):
+                # A datum, or MD (the depth of a log), the well does not
+                # declare: the geology is taken as given, as a geology table
+                # without one is.
+                notes.append(
+                    f"Geology {field} {source_value}; the well declares no {field}, so the "
+                    "geology is assumed to be on the well's (not independently verified)."
+                )
+                continue
             if source_value and not target:
                 raise ValueError(f"Geology declares {field}={source_value}; set well.set_parameter('{field}', ...) before joining.")
-            if source_value and str(target).strip().upper() != source_value:
-                raise ValueError(f"Incompatible {field}: geology={source_value}, well={target}; a survey/datum transformation is required.")
+            same = (_same_datum(target, source_value) if field == "datum" and modern
+                    else str(target).strip().upper() == source_value)
+            if source_value and not same:
+                raise ValueError(f"Incompatible {field}: geology={source_value}, well={target}"
+                                 + (f" (LAS {origin})" if origin else "")
+                                 + "; a survey/datum transformation is required.")
+            if source_value and origin:
+                notes.append(f"Geology {field} {source_value} matches the log's datum (LAS {origin}).")
             if not source_value:
                 notes.append(f"No geology {field} supplied; assumed to match the well (not independently verified).")
                 metadata[field] = target
@@ -334,17 +468,27 @@ _RANK_SUFFIXES = (
 )
 
 
+#: An NPD informal unit inside a formation, e.g. "Intra Balder Fm. Sst.".
+_INFORMAL_UNIT = re.compile(r"^INTRA\s.*\b(?:FM|GP|MB)\.?\s", re.IGNORECASE)
+
+
 def _infer_rank_from_names(table):
     """Add a ``rank`` column from NPD-style names ("Brent Gp.", "Etive Fm.", ...).
 
     Only applied when the table has no rank column and every name carries a
-    group, formation or member suffix, as in NPD picks.
+    group, formation or member suffix, as in NPD picks. An NPD informal unit
+    inside a formation ("Intra Balder Fm. Sst.") ranks as a member.
     """
     if "rank" in table or table.empty:
         return
+    from petrophys._internal.benchmark import reproducing_benchmark
+
     ranks = []
     for name in table["formation_name"]:
-        rank = next((label for label, pattern in _RANK_SUFFIXES if pattern.search(str(name).strip())), None)
+        text = str(name).strip()
+        rank = next((label for label, pattern in _RANK_SUFFIXES if pattern.search(text)), None)
+        if rank is None and not reproducing_benchmark() and _INFORMAL_UNIT.search(text):
+            rank = "member"
         if rank is None:
             return
         ranks.append(rank)

@@ -183,7 +183,7 @@ def list_integration_fixtures(kind: Optional[str] = None) -> List[str]:
 def data_dir() -> Path:
     """The folder downloaded fixtures are kept in.
 
-    ``PETROPHYS_DATA_DIR`` when set; otherwise ``%LOCALAPPDATA%\petrophys`` on
+    ``PETROPHYS_DATA_DIR`` when set; otherwise ``%LOCALAPPDATA%/petrophys`` on
     Windows and ``$XDG_CACHE_HOME/petrophys`` (``~/.cache/petrophys``)
     elsewhere.
     """

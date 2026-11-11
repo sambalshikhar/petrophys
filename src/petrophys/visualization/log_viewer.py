@@ -371,6 +371,28 @@ INDUSTRY_LITHOLOGY_LABEL_ALIASES: Dict[str, str] = {
 }
 
 
+def _readable_text_color(color: Any) -> Any:
+    """``color`` darkened enough to read as text on white (pale flag colours such as #fee08b)."""
+    from matplotlib.colors import to_rgb
+
+    try:
+        red, green, blue = to_rgb(color)
+    except ValueError:
+        return color
+    luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    if luminance <= 0.55:
+        return color
+    scale = 0.55 / luminance
+    return (red * scale, green * scale, blue * scale)
+
+
+def _non_interactive_backend() -> bool:
+    """Whether matplotlib draws to files only (Agg, PDF, SVG...), as in scripts and batch jobs."""
+    import matplotlib
+
+    return str(matplotlib.get_backend()).lower() in {"agg", "pdf", "ps", "svg", "pgf", "cairo", "template"}
+
+
 def _sample_cell_fill(depth: np.ndarray, active: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Depths and mask for ``fill_betweenx`` that shade each active sample's cell.
 
@@ -602,8 +624,8 @@ LITHOLOGY_LABEL_COLORS: Dict[str, str] = {
     "limestone": "#b0f0e0",                     # light teal (anchor)
     "argillaceous limestone": "#95c9d6",        # blue-gray teal (clay)
     "sandy limestone": "#a6e8d6",
-    "dolomite": "#7fe4d2",                      # cyan-teal
-    "dolomite2": "#7fe4d2",
+    "dolomite": "#3fae9c",                      # deep teal, apart from limestone
+    "dolomite2": "#3fae9c",
     # --- marl / calcareous shale (light blue) ---
     "marl": "#bfe3ec",
     "marlstone": "#bfe3ec",
@@ -1085,6 +1107,9 @@ class LogCurveSpec:
     candidates: List[str] = field(default_factory=list)
     #: Style keys set through ``curve_styles``: those values are drawn as given.
     styled: frozenset = frozenset()
+    #: For an imputed curve beside the curve it rebuilds: that curve's mnemonic.
+    #: The imputed curve is drawn only where that curve has no value.
+    gaps_of: Optional[str] = None
 
 
 @dataclass
@@ -1257,6 +1282,57 @@ def _adaptive_curve_range(well: "Well", curve_name: str) -> Tuple[float, float]:
     return float(math.floor(left / step) * step), float(math.ceil(right / step) * step)
 
 
+#: Suffix of a curve rebuilt by :func:`petrophys.impute` (measured values plus predictions in the gaps).
+IMPUTED_SUFFIX = "_IMPUTED"
+
+
+def _imputed_curve_for(well: "Well", spec: "LogCurveSpec", resolved: Optional[str]) -> Optional[str]:
+    """The well's ``<curve>_IMPUTED`` curve that rebuilds the curve ``spec`` draws, or None."""
+    if spec.curve_name.upper().endswith(IMPUTED_SUFFIX):
+        return None
+    names = {spec.curve_name.upper(), *(str(name).upper() for name in spec.candidates),
+             *(str(name).upper() for name in CURVE_ALIAS_CANDIDATES.get(spec.curve_name.upper(), []))}
+    if resolved:
+        names.add(str(resolved).upper())
+    for curve in getattr(well, "curves", []):
+        upper = str(curve).upper()
+        if upper.endswith(IMPUTED_SUFFIX):
+            base = upper[: -len(IMPUTED_SUFFIX)]
+            if base in names or get_standard_mnemonic(base) == spec.curve_name.upper():
+                return str(curve)
+    return None
+
+
+def _imputed_spec(spec: "LogCurveSpec", imputed: str, measured: Optional[str] = None) -> "LogCurveSpec":
+    """``spec`` for its imputed curve: the same track and scale, dashed, labelled as imputed.
+
+    Beside the ``measured`` curve it rebuilds, it is drawn only in that curve's gaps.
+    """
+    return replace(
+        spec, curve_name=imputed, candidates=[], line_style="--", fill=None,
+        left_crossover=None, right_crossover=None, gaps_of=measured,
+        display_name=f"{spec.display_name or spec.curve_name} imputed",
+    )
+
+
+def _share_unit_ranges(well: "Well", specs: List["LogCurveSpec"]) -> List["LogCurveSpec"]:
+    """Curves of one unit in a generic track drawn on one scale, so their overlay compares like with like."""
+    groups: Dict[str, List[int]] = {}
+    for index, spec in enumerate(specs):
+        curve = well.get(spec.curve_name)
+        unit = str(getattr(curve, "unit", "") or "").strip().lower()
+        if unit and spec.left is not None and spec.right is not None and spec.left < spec.right:
+            groups.setdefault(unit, []).append(index)
+    shared = list(specs)
+    for members in groups.values():
+        if len(members) > 1:
+            left = min(float(specs[i].left) for i in members)  # type: ignore[arg-type]
+            right = max(float(specs[i].right) for i in members)  # type: ignore[arg-type]
+            for i in members:
+                shared[i] = replace(specs[i], left=left, right=right)
+    return shared
+
+
 def _sp_range(well: "Well", curve_name: str) -> Tuple[float, float]:
     """SP scale: right edge at the shale baseline, at least 100 mV wide.
 
@@ -1271,6 +1347,23 @@ def _sp_range(well: "Well", curve_name: str) -> Tuple[float, float]:
     right = 10.0 * math.ceil(high / 10.0)
     span = max(100.0, 10.0 * math.ceil((right - low) / 10.0))
     return right - span, right
+
+
+#: Sonic slowness a DTE curve must have (median, us/ft) to be drawn as a sonic.
+_SLOWNESS_RANGE = (40.0, 400.0)
+
+
+def _plausible_slowness(well: "Well", curve_name: str) -> bool:
+    """True when ``curve_name`` reads as a sonic slowness in us/ft (median 40-400)."""
+    curve = well.get(curve_name)
+    if curve is None:
+        return False
+    unit = str(getattr(curve, "unit", "") or "").strip().lower()
+    if unit and unit not in {"us/ft", "us/f", "usec/ft", "usec/f", "microsecond/ft", "microseconds/ft"}:
+        return False
+    data = np.asarray(curve.data, dtype=float)
+    finite = data[np.isfinite(data)]
+    return bool(finite.size) and _SLOWNESS_RANGE[0] <= float(np.median(finite)) <= _SLOWNESS_RANGE[1]
 
 
 def _curve_has_finite_values(well: "Well", curve_name: str) -> bool:
@@ -1381,6 +1474,11 @@ def create_adaptive_log_viewer_template(
         track_resolved = set()
         for spec in specs:
             resolved = _resolve_curve_name_for_well(well, spec.curve_name, spec.candidates)
+            if resolved is None:
+                # A curve rebuilt by imputation takes the place of the one it rebuilds.
+                imputed = _imputed_curve_for(well, spec, None)
+                if imputed is not None:
+                    resolved, spec = imputed, _imputed_spec(spec, imputed)
             if resolved is None or resolved in track_resolved:
                 continue
             # A curve an earlier track draws is not drawn again under another
@@ -1388,6 +1486,8 @@ def create_adaptive_log_viewer_template(
             if resolved in used_resolved and resolved.upper() != spec.curve_name.upper():
                 continue
             if not _curve_has_finite_values(well, resolved):
+                continue
+            if spec.curve_name.upper() == "DTE" and not _plausible_slowness(well, resolved):
                 continue
             track_resolved.add(resolved)
             used_resolved.add(resolved)
@@ -1398,6 +1498,13 @@ def create_adaptive_log_viewer_template(
                 )
                 spec = LogCurveSpec(**{**spec.__dict__, "left": spec_left, "right": spec_right})
             track_specs.append(spec)
+            imputed = _imputed_curve_for(well, spec, resolved)
+            if imputed is not None and imputed not in track_resolved and _curve_has_finite_values(well, imputed):
+                track_resolved.add(imputed)
+                used_resolved.add(imputed.upper())
+                track_specs.append(_imputed_spec(spec, imputed, resolved))
+        if display_name.startswith("OTHER"):
+            track_specs = _share_unit_ranges(well, track_specs)
         if track_specs:
             template.tracks.append(
                 LogTrackSpec(
@@ -1487,6 +1594,8 @@ def create_adaptive_log_viewer_template(
         [
             _adaptive_spec("DTC", "DTC", 140, 40, "#762a83"),
             _adaptive_spec("DTS", "DTS", 240, 40, "#e7298a", line_style="--"),
+            # DTE (shear slowness in GeoLink-style sets) on the shear scale.
+            _adaptive_spec("DTE", "DTE", 240, 40, "#1b9e77", line_style=":"),
         ],
         width=1.1,
     )
@@ -1779,8 +1888,8 @@ def load_log_viewer_template(
     Load a log-viewer template from XML or from a built-in default.
 
     XML can use either a ``<template>`` root or PetroPy-style ``<graph>`` root.
-    Built-in names include ``raw``, ``petrophysics``, ``minerals``,
-    ``comprehensive``, and ``geolink_full``.
+    Built-in names include ``raw``, ``petrophysics``, ``minerals`` and
+    ``comprehensive`` (also called ``geolink_full``).
     """
     if template_xml_path is not None:
         root = ET.parse(template_xml_path).getroot()
@@ -1887,8 +1996,8 @@ class LogViewer:
         XML template file. When omitted, ``template_defaults`` is used.
     template_defaults : str
         Template mode/name. ``auto`` builds tracks from available curves.
-        Built-in XML names include ``raw``, ``petrophysics``, ``minerals``,
-        ``comprehensive``, and ``geolink_full``.
+        Built-in XML names include ``raw``, ``petrophysics``, ``minerals`` and
+        ``comprehensive`` (also called ``geolink_full``).
     strict : bool
         If True, missing curves listed by the template raise ``ValueError``.
         If False, they are skipped and recorded in ``warnings``.
@@ -1972,6 +2081,8 @@ class LogViewer:
             self._adaptive_template = True
         else:
             self.template = load_log_viewer_template(template_xml_path, template_defaults)
+            self._add_imputed_curves()
+            self._add_relative_scales()
         if self.lithology_intervals is not None and not any(
             track.track_type == "lithology" for track in self.template.tracks
         ):
@@ -1987,10 +2098,13 @@ class LogViewer:
             requested = [str(name).strip().upper() for name in tracks]
             available = {track.display_name.upper(): track for track in self.template.tracks}
             unknown = set(requested) - set(available)
-            if unknown or not requested or len(requested) != len(set(requested)):
+            if unknown:
                 raise ValueError(
-                    f"Select unique track names from {list(available)}; requested {requested}."
+                    f"Unknown track {', '.join(sorted(unknown))}; the tracks of this plot are "
+                    f"{', '.join(available)}. Use curves= to pick single curves."
                 )
+            if not requested or len(requested) != len(set(requested)):
+                raise ValueError(f"Name each track once, at least one; requested {requested}.")
             self.template.tracks = [available[name] for name in requested]
         if curves is not None:
             self._select_curves(curves)
@@ -2015,6 +2129,7 @@ class LogViewer:
         self.fig: Optional[Figure] = None
         self.axes: List[Axes] = []
         self.header_axes: List[Axes] = []
+        self._window: Tuple[Any, Any, Any] = (None, None, None)
         import_messages = list(self.formation_import_report.get("diagnostics", []))
         if self.lithology_intervals is not None:
             import_messages.extend(self.lithology_intervals.attrs.get("import_report", {}).get("diagnostics", []))
@@ -2023,12 +2138,22 @@ class LogViewer:
         self.curve_lookup: Dict[str, str] = {}
         for name in self.well.curves:
             report = self.well.get(name).metadata.custom.get("range_screening") or {}
-            if report and report.get("masked") == report.get("finite") and report.get("finite"):
+            if report and report.get("finite") and (
+                report.get("masked") == report.get("finite") or report.get("whole_curve")
+            ):
+                share = "all" if report["masked"] == report["finite"] else f"{report['masked']} of"
                 self.warnings.append(
-                    f"{name}: all {report['finite']} values lie outside the plausible "
+                    f"{name}: {share} {report['finite']} values lie outside the plausible "
                     f"{report['standard_curve']} range {report['low']:g}-{report['high']:g}"
                     f"{' ' + str(report['unit']) if report.get('unit') else ''}; not drawn."
                     + (f" {report['hint'].capitalize()}." if report.get("hint") else "")
+                )
+        if self._adaptive_template and curves is None and tracks is None:
+            dte = _resolve_curve_name_for_well(self.well, "DTE")
+            if dte is not None and _curve_has_finite_values(self.well, dte) and dte in self._curves_without_track():
+                self.warnings.append(
+                    f"{dte}: not drawn; its values are not a sonic slowness in us/ft "
+                    f"(median {_SLOWNESS_RANGE[0]:g}-{_SLOWNESS_RANGE[1]:g}). Select it with curves= to see it."
                 )
         if not interpreted and self._adaptive_template and curves is None and tracks is None:
             undrawn = self._curves_without_track()
@@ -2041,6 +2166,33 @@ class LogViewer:
         self._header_axis_by_data_axis: Dict[int, Axes] = {}
         self._header_row_counts: Dict[int, int] = {}
         self._bad_hole_legend = None
+
+    def _add_relative_scales(self) -> None:
+        """Give an SP curve without a template scale the well's relative SP scale (see ``_sp_range``)."""
+        for track in self.template.tracks:
+            for index, spec in enumerate(track.curves):
+                if spec.curve_name.upper() != "SP" or (spec.left is not None and spec.right is not None):
+                    continue
+                resolved = _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates)
+                if resolved is not None and _curve_has_finite_values(self.well, resolved):
+                    left, right = _sp_range(self.well, resolved)
+                    track.curves[index] = replace(spec, left=left, right=right)
+
+    def _add_imputed_curves(self) -> None:
+        """Draw each ``<curve>_IMPUTED`` curve dashed beside the curve it rebuilds, in its track."""
+        for track in self.template.tracks:
+            if track.depth_track or track.track_type == "lithology":
+                continue
+            drawn = {spec.curve_name.upper() for spec in track.curves}
+            companions = []
+            for spec in track.curves:
+                resolved = _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates)
+                imputed = _imputed_curve_for(self.well, spec, resolved)
+                if imputed is not None and imputed.upper() not in drawn:
+                    drawn.add(imputed.upper())
+                    companions.append((spec, _imputed_spec(spec, imputed, resolved)))
+            for spec, companion in companions:
+                track.curves.insert(track.curves.index(spec) + 1, companion)
 
     def _select_curves(self, curves: Sequence[str]) -> None:
         """Keep only ``curves`` in the template, each in its track; others go to generic tracks.
@@ -2090,6 +2242,14 @@ class LogViewer:
                 if resolved is None:
                     continue
                 key = resolved.upper()
+                if specs and key.endswith(IMPUTED_SUFFIX) and key not in placed and (
+                    str(_imputed_curve_for(self.well, specs[-1], None) or "").upper() == key
+                ):
+                    # The imputed curve goes with the curve it rebuilds.
+                    placed.add(key)
+                    specs.append(spec)
+                    satisfied.update(n for n, t in targets.items() if t == key)
+                    continue
                 by_family = spec.curve_name.upper() in targets
                 if (key in target_set or by_family) and key not in placed:
                     placed.add(key)
@@ -2112,25 +2272,42 @@ class LogViewer:
             if name not in satisfied and targets[name] not in placed and targets[name] != code
         ))
         colors = ["#000000", "#1b7837", "#d73027", "#0571b0", "#762a83", "#8c510a"]
-        for index in range(0, len(leftover), 3):
-            specs = []
-            for offset, name in enumerate(leftover[index:index + 3]):
-                left, right = _adaptive_curve_range(self.well, name)
-                specs.append(LogCurveSpec(**{**_adaptive_spec(name, name, color=colors[(index + offset) % len(colors)]).__dict__,
-                                             "left": left, "right": right}))
-            kept.append(LogTrackSpec(display_name="OTHER", width=1.15, curves=specs))
+        others = [track for track in kept if track.display_name.startswith("OTHER")]
+
+        def unit_of(name: str) -> str:
+            curve = self.well.get(name)
+            return str(getattr(curve, "unit", "") or "").strip().lower()
+
+        for index, name in enumerate(leftover):
+            left, right = _adaptive_curve_range(self.well, name)
+            spec = LogCurveSpec(**{**_adaptive_spec(name, name, color=colors[index % len(colors)]).__dict__,
+                                   "left": left, "right": right})
+            # A generic track with room takes the curve, first one holding a curve of its unit.
+            room = [track for track in others if len(track.curves) < 3]
+            same_unit = [track for track in room if unit_of(name) and any(
+                unit_of(other.curve_name) == unit_of(name) for other in track.curves)]
+            target = (same_unit or room or [None])[0]
+            if target is None:
+                target = LogTrackSpec(display_name="OTHER", width=1.15, curves=[])
+                kept.append(target)
+                others.append(target)
+            if any(other.color == spec.color for other in target.curves):
+                used = {other.color for other in target.curves}
+                spec = replace(spec, color=next((color for color in colors if color not in used), spec.color))
+            target.curves.append(spec)
         generic = 0
         for track in kept:
             if track.display_name.startswith("OTHER"):
                 generic += 1
                 track.display_name = f"OTHER {generic}"
+                track.curves = _share_unit_ranges(self.well, track.curves)
         self.template.tracks = kept
 
     def _apply_curve_styles(self, styles: Mapping[str, Mapping[str, Any]]) -> List[str]:
         """Apply per-curve style changes; returns a warning for names no track draws."""
         from matplotlib.colors import is_color_like
 
-        allowed = {item.name for item in fields(LogCurveSpec)} - {"curve_name", "candidates", "styled"}
+        allowed = {item.name for item in fields(LogCurveSpec)} - {"curve_name", "candidates", "styled", "gaps_of"}
         wanted: Dict[str, Dict[str, Any]] = {}
         for name, style in styles.items():
             unknown = set(style) - allowed
@@ -2184,6 +2361,7 @@ class LogViewer:
         height: Optional[float] = None,
     ) -> Tuple[Figure, List[Axes]]:
         """Create and return ``(figure, axes)``."""
+        self._window = (depth_range, top, height)
         depth = self._depth()
         plot_top, plot_bottom = self._resolve_depth_window(depth, depth_range, top, height)
         if not plot_bottom > plot_top:
@@ -2195,9 +2373,8 @@ class LogViewer:
             if message not in self.warnings:
                 self.warnings.append(message)
             warnings.warn(message, UserWarning, stacklevel=3)
-        tracks = self.template.tracks
-        if self._adaptive_template:
-            tracks = self._filter_visible_tracks(tracks, depth, plot_top, plot_bottom)
+        # Tracks without data in the window are left out, for fixed templates too.
+        tracks = self._filter_visible_tracks(self.template.tracks, depth, plot_top, plot_bottom)
         tracks = self._tracks_for_plot(tracks)
 
         width_ratios = [self._track_width_ratio(track) for track in tracks]
@@ -2271,7 +2448,7 @@ class LogViewer:
     def show(self) -> None:
         """Display the figure."""
         if self.fig is None:
-            self.create()
+            self.create(*self._window)
         plt.show()
 
     def close(self) -> None:
@@ -2282,13 +2459,21 @@ class LogViewer:
 
     @_styled_plot
     def save(self, filename: str | Path, dpi: int = 150) -> None:
-        """Save the plot to disk."""
+        """Save the plot to disk.
+
+        Outside an interactive session (a script or batch job, where no window
+        shows the figure) the figure is released from pyplot after saving, so
+        plotting many wells does not hold every figure in memory; ``.fig``
+        keeps it, with any changes you made, for further edits and saves.
+        """
         if self.fig is None:
-            self.create()
+            self.create(*self._window)
         assert self.fig is not None
         output_path = Path(filename)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         save_figure(self.fig, output_path, dpi=dpi)
+        if _non_interactive_backend():
+            plt.close(self.fig)
 
     def _well_title(self) -> str:
         header = getattr(self.well, "header", None)
@@ -2371,6 +2556,8 @@ class LogViewer:
                 or self._track_has_visible_data(track, visible)
             ):
                 filtered.append(track)
+            elif not any(self._get_curve(spec) is not None for spec in track.curves):
+                self.omitted_tracks.append({"track": track.display_name, "reason": "no curve of this track on the well"})
             else:
                 self.omitted_tracks.append({"track": track.display_name, "reason": "no finite data in depth window"})
         if len(filtered) == 0:
@@ -2490,11 +2677,18 @@ class LogViewer:
     def _plot_curve_track(self, ax: Axes, track: LogTrackSpec, depth: np.ndarray) -> None:
         label_rows = 0
         plotted_curves: List[Dict[str, Any]] = []
+        drawn: set = set()
         for spec in track.curves:
             curve = self._get_curve(spec)
             if curve is None:
                 self._warn_missing(spec.curve_name)
                 continue
+            # A curve the track already draws is not drawn again under another
+            # name's alias (PHIE_CC found for PHIE beside its own PHIE_CC entry).
+            key = (str(curve.mnemonic).upper(), spec.gaps_of)
+            if key in drawn:
+                continue
+            drawn.add(key)
             if get_standard_mnemonic(curve.mnemonic) in CORE_SATURATION_CURVES:
                 curve = standardize_core_saturation(curve, warn=False)
                 evidence = curve.metadata.custom["core_saturation_normalization"]
@@ -2511,6 +2705,7 @@ class LogViewer:
                 continue
 
             label = self._curve_label(self._display_label(spec, curve), curve)
+            self._warn_off_scale(ax, curve, data, x, depth, finite, left, right)
             fill_color = spec.fill_color or spec.color
             if spec.fill:
                 self._plot_curve_fill(
@@ -2569,6 +2764,36 @@ class LogViewer:
             )
             label_rows += 1
         self._plot_crossover_flag_overlay(ax, track, depth, plotted_curves)
+
+    def _warn_off_scale(
+        self,
+        ax: Axes,
+        curve: Any,
+        data: np.ndarray,
+        x: np.ndarray,
+        depth: np.ndarray,
+        finite: np.ndarray,
+        left: float,
+        right: float,
+    ) -> None:
+        """Add a warning when 5% or more of a curve's samples in the window lie outside its track scale."""
+        low, high = sorted(ax.get_ylim())
+        in_window = finite & (depth >= low) & (depth <= high)
+        off = in_window & ((x < -1e-9) | (x > 1.0 + 1e-9))
+        n_window, n_off = int(in_window.sum()), int(off.sum())
+        if not n_window or n_off / n_window < 0.05:
+            return
+        unit = self._curve_unit(curve)
+        values = data[off]
+        name = curve.mnemonic
+        message = (
+            f"{name}: {100.0 * n_off / n_window:.0f}% of the samples in the window "
+            f"(values {np.nanmin(values):.4g}-{np.nanmax(values):.4g}) lie outside the track scale "
+            f"{left:g} to {right:g}{' ' + unit if unit else ''} and run off the track; "
+            f"curve_styles={{'{name}': {{'left': ..., 'right': ...}}}} sets the scale."
+        )
+        if message not in self.warnings:
+            self.warnings.append(message)
 
     def _plot_curve_fill(
         self,
@@ -2940,7 +3165,7 @@ class LogViewer:
             self._plot_no_lithology(ax)
             return
 
-        legend_handles_by_label: Dict[str, Patch] = {}
+        legend_entries: List[Tuple[str, str, Any, str, str]] = []
         cmap = plt.get_cmap(spec.fill_color_map or "tab20")
         for index, (label, code, segments) in enumerate(beds):
             color = self._lithology_color(code, label, cmap, index, len(beds))
@@ -2970,13 +3195,26 @@ class LogViewer:
                 )
                 if pattern:
                     self._draw_lithology_pattern(ax, label, y0, y1)
-            legend_label = self._lithology_legend_label(label)
-            if legend_label not in legend_handles_by_label:
-                legend_handles_by_label[legend_label] = Patch(
+            legend_entries.append(
+                (self._lithology_legend_label(label), str(label), color, pattern or legend_hatch, legend_hatch)
+            )
+
+        # One legend entry per style drawn: a family name (Limestone/Chalk) when
+        # its members share one colour and pattern, each rock name otherwise.
+        from matplotlib.colors import to_hex
+
+        styles_by_family: Dict[str, set] = {}
+        for family, _, color, style, _ in legend_entries:
+            styles_by_family.setdefault(family, set()).add((to_hex(color), style))
+        legend_handles_by_label: Dict[str, Patch] = {}
+        for family, rock, color, style, legend_hatch in legend_entries:
+            name = family if len(styles_by_family[family]) == 1 else rock
+            if name not in legend_handles_by_label:
+                legend_handles_by_label[name] = Patch(
                     facecolor=color,
                     edgecolor="0.28",
                     hatch=legend_hatch,
-                    label=legend_label,
+                    label=name,
                 )
 
         ax.set_xlim(0.0, 1.0)
@@ -3538,7 +3776,8 @@ class LogViewer:
             )
             ax.axvline(y0, color="0.92", linewidth=0.4, zorder=0)
             label = spec.display_name or curve.mnemonic
-            self._add_curve_header(ax, idx, label, 0.0, 1.0, spec.color, "linear")
+            self._add_curve_header(ax, idx, label, 0.0, 1.0, color, "linear",
+                                   text_color=_readable_text_color(color))
         ax.set_xlim(0.0, 1.0)
 
     def _plot_no_flags(self, ax: Axes) -> None:
@@ -3652,6 +3891,7 @@ class LogViewer:
         scale: str,
         line_style: str = "-",
         marker: Optional[str] = None,
+        text_color: Optional[str] = None,
     ) -> None:
         header_ax = self._header_axis_by_data_axis.get(id(ax))
         if header_ax is None:
@@ -3676,22 +3916,33 @@ class LogViewer:
         label_y = row_center + row_step * 0.16
         scale_y = row_center - row_step * 0.22
         sample_style = "None" if str(line_style).lower() == "none" else line_style
-        header_ax.plot(
-            [0.25, 0.39],
-            [label_y, label_y],
-            color=color,
-            linestyle=sample_style,
-            linewidth=1.75,
-            marker=marker,
-            markersize=5.4 if marker else 0.0,
-            transform=transform,
-            clip_on=True,
-        )
+        if sample_style != "None":
+            header_ax.plot(
+                [0.25, 0.39],
+                [label_y, label_y],
+                color=color,
+                linestyle=sample_style,
+                linewidth=1.75,
+                transform=transform,
+                clip_on=True,
+            )
+        if marker:
+            # One symbol in the middle of the sample, not one at each end.
+            header_ax.plot(
+                [0.32],
+                [label_y],
+                color=color,
+                linestyle="None",
+                marker=marker,
+                markersize=5.4,
+                transform=transform,
+                clip_on=True,
+            )
         header_ax.text(
             0.43,
             label_y,
             self._compact_header_label(label_text),
-            color=color,
+            color=text_color or color,
             fontsize=8.9,
             fontweight="bold",
             ha="left",
@@ -3715,7 +3966,7 @@ class LogViewer:
                 0.50,
                 scale_y,
                 unit_text,
-                color=color,
+                color=text_color or color,
                 fontsize=6.6,
                 fontweight="bold",
                 ha="center",
@@ -3742,6 +3993,9 @@ class LogViewer:
         return label
 
     def _display_label(self, spec: LogCurveSpec, curve: Any) -> str:
+        if "display_name" in spec.styled and spec.display_name:
+            # A name given in curve_styles is shown as given.
+            return str(spec.display_name)
         mnemonic = str(getattr(curve, "mnemonic", spec.curve_name)).upper()
         if mnemonic in RESISTIVITY_CURVE_NAMES or spec.curve_name.upper() in RESISTIVITY_CURVE_NAMES:
             return mnemonic
@@ -3923,18 +4177,29 @@ class LogViewer:
         span = max(abs(hi - lo), 1.0)
         next_label_depth = -np.inf
         label_ax = self.axes[0]
+        # Labels wider than the first track run over the next tracks instead
+        # of being cut off beneath them.
+        label_ax.set_zorder(max(ax.get_zorder() for ax in self.axes) + 1)
         for depth, names in grouped.items():
             for ax in self.axes:
                 ax.axhline(depth, linewidth=0.7, color="black", alpha=0.85, zorder=7)
+            if depth >= hi:
+                # A top on the bottom edge would be labelled below the plot.
+                self.suppressed_formation_labels.extend(
+                    {"name": name, "depth": depth, "reason": "at the bottom of the window"} for name in names
+                )
+                continue
             if depth < next_label_depth:
                 self.suppressed_formation_labels.extend(
                     {"name": name, "depth": depth, "reason": "label spacing"} for name in names
                 )
                 continue
+            # A label that would hang below the window sits above its top line.
+            above = depth + span * 0.035 * len(names) > hi
             label_ax.annotate(
                 "\n".join(names), xy=(0.02, depth), xycoords=("axes fraction", "data"),
-                xytext=(2, -2), textcoords="offset points", fontsize=8.0,
-                fontweight="bold", color="black", ha="left", va="top",
+                xytext=(2, 2 if above else -2), textcoords="offset points", fontsize=8.0,
+                fontweight="bold", color="black", ha="left", va="bottom" if above else "top",
                 bbox={"boxstyle": "square,pad=0.12", "facecolor": "white",
                       "edgecolor": "none", "alpha": 0.72}, zorder=8,
             )
@@ -3975,6 +4240,12 @@ class LogViewer:
         curve = self.well.get(resolved)
         if curve is not None:
             self.curve_lookup[spec.curve_name.upper()] = curve.mnemonic
+        measured = self.well.get(spec.gaps_of) if spec.gaps_of else None
+        if curve is not None and measured is not None:
+            # Only the predictions: where the measured curve has values, it is drawn itself.
+            curve = curve.copy()
+            data = np.asarray(curve.data, dtype=float)
+            curve.data = np.where(np.isfinite(np.asarray(measured.data, dtype=float)), np.nan, data)
         return curve
 
     def _warn_missing(self, curve_name: str) -> None:

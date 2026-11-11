@@ -180,9 +180,8 @@ plt.show()
 Apply the transform along the log and compare it with the plugs.
 
 ```{code-cell} python
-apply_poro_perm_transform(logs, transform, porosity_curve="PHID",
-                          output_curve="PERM_CORE")
-fig, axes = plot_core_on_logs(logs, core, curves=["PHID", "PERM_CORE"], figsize=(8, 7),
+apply_poro_perm_transform(logs, transform, porosity_curve="PHID")  # writes PERM_CC
+fig, axes = plot_core_on_logs(logs, core, curves=["PHID", "PERM_CC"], figsize=(8, 7),
                               depth_range=(core.top - 10, core.bottom + 10))
 plt.show()
 ```
@@ -277,6 +276,8 @@ suspect flags and conditional sensitivity intervals. A single gradient, weak
 separation, competing models or ambiguous fluid identities do not yield a definite
 FWL. Density bounds and pressure error are configurable interpretation assumptions.
 Do not use a selection mask drawn from known fluid intervals as measurement QC.
+The plot frames the stations assigned to a gradient and notes how many lie
+outside; `zoom="all"` shows every station.
 
 The bundled station files carry measurements only, without fluid labels. In
 Tutorial 15, 35/11-13 uses the 21 tests with `QC` 0, including the shallow gas
@@ -293,7 +294,9 @@ inputs through `read_mdt_pretest`. Three original MDT pretest DLIS files from
 IODP Hole C0009A are bundled with LAS copies (`319-C0009A_MDT_059LTP` and
 `c0009a_mdt_059`, likewise 067 and 078). `pick_pressure()` accepts 4102.13 psi
 for file 059; the low-mobility test 067 and the unstable-baseline test 078 are
-returned for review. DLIS input needs the `dlis` extra. After a user
+returned for review. `create_mdt_pretest_plot(trace, pick)` shades the mud
+baselines at both ends and the buildup windows, with the baseline that failed the
+stability check in red. DLIS input needs the `dlis` extra. After a user
 supplies verified TVD values, `formation_pressures_from_mdt` builds station
 data for `.infer_contacts()`.
 

@@ -104,9 +104,17 @@ class CoreData:
         sw_col: Optional[str] = None,
         so_col: Optional[str] = None,
         lithology_col: Optional[str] = None,
+        porosity_unit: Optional[str] = None,
+        saturation_unit: Optional[str] = None,
     ) -> "CoreData":
         """
         Create CoreData from a pandas DataFrame.
+
+        Porosity and saturations are stored as fractions (v/v). Without a
+        stated unit, a column whose values are mostly above 1 with a median of
+        at least 2 is read as percent and divided by 100, with a warning;
+        values outside 0-1 after that are masked with a warning
+        (:func:`~petrophys.model.units.core_saturation_to_fraction`).
 
         Parameters
         ----------
@@ -126,6 +134,9 @@ class CoreData:
             Column name for oil saturation.
         lithology_col : str, optional
             Column name for lithology.
+        porosity_unit, saturation_unit : str, optional
+            ``"%"`` or ``"v/v"`` (also ``"pu"``, ``"frac"`` ...) to state the
+            scale of the porosity or saturation columns instead of inferring it.
 
         Returns
         -------
@@ -141,9 +152,20 @@ class CoreData:
                 return df[col_name].values
             return None
 
-        porosity = _get_col(porosity_col)
-        if porosity is not None:
-            porosity = porosity.astype(np.float64)
+        from petrophys.model.units import core_saturation_to_fraction
+
+        messages = []
+
+        def _fraction(values, col_name, unit, quantity):
+            if values is None:
+                return None
+            fractions, record = core_saturation_to_fraction(
+                values.astype(np.float64), mnemonic=str(col_name), source_unit=unit, quantity=quantity,
+            )
+            messages.extend(record["warnings"])
+            return fractions
+
+        porosity = _fraction(_get_col(porosity_col), porosity_col, porosity_unit, "porosity")
 
         perm = _get_col(perm_col)
         if perm is not None:
@@ -153,13 +175,16 @@ class CoreData:
         if gd is not None:
             gd = gd.astype(np.float64)
 
-        sw = _get_col(sw_col)
-        if sw is not None:
-            sw = sw.astype(np.float64)
+        sw = _fraction(_get_col(sw_col), sw_col, saturation_unit, "saturation")
+        so = _fraction(_get_col(so_col), so_col, saturation_unit, "saturation")
+        if messages:
+            import warnings
 
-        so = _get_col(so_col)
-        if so is not None:
-            so = so.astype(np.float64)
+            for message in messages:
+                # No unit label is involved here; drop the label clause of the shared message.
+                message = message.replace(" despite unit ''", "")
+                warnings.warn(f"CoreData: {message} (porosity_unit=/saturation_unit= state it)",
+                              UserWarning, stacklevel=2)
 
         lithology = _get_col(lithology_col)
         if porosity is None and perm is None and gd is None and sw is None and so is None:

@@ -24,6 +24,7 @@ and Applications*. Halliburton Energy Services, Houston.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -267,6 +268,7 @@ class NMRData:
         t2_centers: Optional[np.ndarray] = None,
         t2_cutoff: float = T2_CUTOFF_CLASTIC,
         null_value: float = -999.25,
+        porosity_unit: Optional[str] = None,
         **read_csv_kwargs,
     ) -> "NMRData":
         """
@@ -291,6 +293,8 @@ class NMRData:
             T2 bin centre values (ms).
         t2_cutoff : float
         null_value : float
+        porosity_unit : {"v/v", "pu"}, optional
+            Unit of the porosity columns; see :meth:`from_dataframe`.
         """
         if not HAS_PANDAS:
             raise ImportError("pandas is required: pip install pandas")
@@ -306,6 +310,7 @@ class NMRData:
             t2_centers=t2_centers,
             t2_cutoff=t2_cutoff,
             null_value=null_value,
+            porosity_unit=porosity_unit,
         )
 
     @classmethod
@@ -321,37 +326,73 @@ class NMRData:
         t2_centers: Optional[np.ndarray] = None,
         t2_cutoff: float = T2_CUTOFF_CLASTIC,
         null_value: float = -999.25,
+        porosity_unit: Optional[str] = None,
     ) -> "NMRData":
-        """Create NMRData from a pandas DataFrame."""
+        """Create NMRData from a pandas DataFrame.
+
+        Column names match without regard to case. The NMR calculations take
+        porosity in porosity units (pu, percent): ``porosity_unit="v/v"``
+        multiplies the porosity and bin columns by 100, ``"pu"`` keeps them.
+        Unset, a total porosity of at most 1.5 everywhere is read as v/v and
+        converted, with a warning.
+        """
         if not HAS_PANDAS:
             raise ImportError("pandas is required")
+        if porosity_unit is not None and porosity_unit.strip().lower() not in {"v/v", "pu"}:
+            raise ValueError(f"porosity_unit must be 'v/v' or 'pu', not {porosity_unit!r}")
+
+        by_upper = {str(column).upper(): column for column in df.columns}
+
+        def _name(name: Optional[str]) -> Optional[Any]:
+            if not name:
+                return None
+            return name if name in df.columns else by_upper.get(str(name).upper())
 
         if bin_cols is None:
-            bin_cols = [c for c in DEFAULT_BIN_COLS if c in df.columns]
+            bin_cols = [c for c in DEFAULT_BIN_COLS if _name(c) is not None]
 
         def _col(name: Optional[str]) -> Optional[np.ndarray]:
-            if not name or name not in df.columns:
+            column = _name(name)
+            if column is None:
                 return None
-            arr = df[name].values.astype(float)
+            arr = df[column].values.astype(float)
             arr[arr == null_value] = np.nan
             return arr
 
-        depth = df[depth_col].values.astype(float)
+        columns = ", ".join(map(str, df.columns))
+        depth = _col(depth_col)
+        if depth is None:
+            raise ValueError(f"Depth column {depth_col!r} not found; pass depth_col= one of: {columns}")
         mphi = _col(mphi_col)
         if mphi is None:
-            raise ValueError(f"MPHI column '{mphi_col}' not found")
+            raise ValueError(f"Total NMR porosity column {mphi_col!r} not found; pass mphi_col= one of: {columns}")
 
         bins = None
         if bin_cols:
             bins = np.column_stack([_col(c) for c in bin_cols]).astype(float)
+
+        mffi, mbvi = _col(mffi_col), _col(mbvi_col)
+        unit = porosity_unit.strip().lower() if porosity_unit else None
+        if unit is None and _looks_fractional(mphi):
+            warnings.warn(
+                f"NMR porosity {mphi_col!r} is at most 1.5 everywhere, so it is read as v/v and "
+                "multiplied by 100 to porosity units (pu); pass porosity_unit='pu' if it is already in pu.",
+                UserWarning, stacklevel=2,
+            )
+            unit = "v/v"
+        if unit == "v/v":
+            mphi = mphi * 100.0
+            mffi = None if mffi is None else mffi * 100.0
+            mbvi = None if mbvi is None else mbvi * 100.0
+            bins = None if bins is None else bins * 100.0
 
         t2c = t2_centers if t2_centers is not None else DEFAULT_T2_CENTERS.copy()
 
         return cls(
             depth=depth,
             mphi=mphi,
-            mffi=_col(mffi_col),
-            mbvi=_col(mbvi_col),
+            mffi=mffi,
+            mbvi=mbvi,
             bins=bins,
             t2lm_stored=_col(t2lm_col),
             t2_centers=np.asarray(t2c, dtype=float),

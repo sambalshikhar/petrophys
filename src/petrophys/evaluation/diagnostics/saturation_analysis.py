@@ -28,6 +28,9 @@ if TYPE_CHECKING:
 _STABLE_HC_CLASSES = ("EXCELLENT_HC_SATURATION", "GOOD_HC_SATURATION")
 # BVW classes of an excellent hydrocarbon zone, under the "current" class tables.
 _EXCELLENT_ZONE_BVW_CLASSES = ("VERY_LOW_BVW", "LOW_BVW")
+#: Effective porosity (v/v) below which a sample's BVW is not graded
+#: (NO_EFFECTIVE_POROSITY), under the "current" class tables.
+MIN_BVW_POROSITY = 0.01
 
 
 class SaturationAnalysis:
@@ -118,6 +121,12 @@ class SaturationAnalysis:
         bvw_labels = np.full(n_samples, "NO_BVW_DATA", dtype=object)
         if bvw is not None:
             bvw_labels = self.BVW_BANDS.classify(bvw, missing="NO_BVW_DATA")
+            if phie is not None and not (benchmark or reproducing_benchmark()):
+                # BVW grades the water held in pore space; rock without effective
+                # porosity (shale, tight streaks) holds none to grade.
+                with np.errstate(invalid="ignore"):
+                    no_pores = np.isfinite(phie) & (phie < MIN_BVW_POROSITY)
+                bvw_labels = np.where(no_pores, "NO_EFFECTIVE_POROSITY", bvw_labels).astype(object)
 
         invasion_ratio = np.full(n_samples, np.nan, dtype=float)
         movability_labels = np.full(n_samples, "NO_INVASION_DATA", dtype=object)
@@ -270,7 +279,11 @@ class SaturationAnalysis:
             texts = {
                 "water": CLASS_TABLES["SW"].describe(),
                 "bvw_description": "Bulk volume water (effective porosity x water saturation) classes.",
-                "bvw": CLASS_TABLES["BVW"].describe(),
+                "bvw": CLASS_TABLES["BVW"].describe() + (
+                    "" if reproducing_benchmark() else
+                    f" NO_EFFECTIVE_POROSITY where effective porosity < {MIN_BVW_POROSITY:g} "
+                    "(no pore water to grade)."
+                ),
                 "movability_methodology": (
                     f"Prefers MHI={format_curve_source(mhi_source)}. If MHI is unavailable, uses the "
                     f"{movability_source_text}."

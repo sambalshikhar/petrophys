@@ -36,6 +36,15 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "M2RX",
         "RESDEP",
         "RVDR",
+        # AIT-H/M 90 in and 60 in curves (1, 2 and 4 ft resolution) and the
+        # HRLA/HALS deep laterologs.
+        "AHT90",
+        "AHO90",
+        "AHF90",
+        "AHT60",
+        "AHO60",
+        "HLLD",
+        "HDRS",
     ],
     # Medium Resistivity (RMED)
     # NOTE: AT10 (10in array induction) and RLLS (laterolog shallow) belong to RSHA,
@@ -51,6 +60,8 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RMED",
         "RLA3",
         "RESMED",
+        "AHT30",
+        "AHO30",
     ],
     # Shallow Resistivity (RSHA)
     # AT30 is not here: it is the medium array-induction spacing (RMED).
@@ -70,6 +81,11 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RVSR",
         "LL3",
         "RLL3",
+        "AHT10",
+        "AHO10",
+        "AHT20",
+        "AHO20",
+        "HLLS",
     ],
     # Flushed zone Resistivity (RXO)
     "RXO": [
@@ -119,6 +135,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "APLC",
         "PHIS_NEU",
         "NPHI_LS",
+        "CNC",
         # Sandstone-referenced neutron: see NEUTRON_MATRIX_REFERENCE.
         "NPSS",
         "CNSS",
@@ -144,7 +161,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
     # Photoelectric Factor (PEF)
     "PEF": ["PE", "PEF", "PEFZ", "PEFL", "PEF8", "PHOTO"],
     # Caliper (CALI)
-    "CALI": ["CALI", "HCAL", "CAL", "CALIPER", "C1", "C2", "HD1_PPC1", "HD2_PPC1", "CALD", "DCAL", "MCAL"],
+    "CALI": ["CALI", "HCAL", "CAL", "CALIPER", "C1", "C2", "HD1_PPC1", "HD2_PPC1", "CALD", "DCAL", "MCAL", "CALX"],
     # Gamma Ray (GR)
     "GR": [
         "GR",
@@ -181,6 +198,8 @@ ALIAS_MAP: Dict[str, List[str]] = {
     "VCL": ["VCL", "VCLAY", "VSH", "VSH_GR", "VSH_ND", "VCL_HILT"],
     # Core-calibrated porosity
     "PHIE_CC": ["PHIE_CC", "PHIE_CORECAL"],
+    # Core-calibrated permeability
+    "PERM_CC": ["PERM_CC", "PERM_CORECAL"],
     # NMR processed outputs, including vendor-specific aliases
     "NMR_PHIT": ["MPHI", "TCMR", "CMRPHI", "NMRP", "PHINMR"],
     "NMR_FFI": ["MFFI", "CMFF", "CMR_FFI", "NMR_FFI", "FFI"],
@@ -210,15 +229,17 @@ NEUTRON_MATRIX_REFERENCE: Dict[str, str] = {
 }
 
 #: NPHI aliases the benchmark context packages did not have.
-_BENCHMARK_MISSING_NPHI_ALIASES = ("NPHI_LS", "NPSS", "CNSS", "NPHI_SS")
+_BENCHMARK_MISSING_NPHI_ALIASES = ("NPHI_LS", "NPSS", "CNSS", "NPHI_SS", "CNC")
+#: Deep-resistivity aliases the benchmark context packages did not have.
+_BENCHMARK_MISSING_RDEP_ALIASES = ("AHT90", "AHO90", "AHF90", "AHT60", "AHO60", "HLLD", "HDRS")
 #: Other aliases the benchmark context packages did not have: the density and
-#: microlog calipers, the density correction CORR, the medium induction RILM
-#: and the shallow laterolog-3.
+#: microlog calipers, the density correction CORR, the medium induction RILM,
+#: the shallow laterolog-3 and the AIT-H/M and HRLA/HALS curves.
 _BENCHMARK_MISSING_ALIASES: Dict[str, tuple] = {
-    "CALI": ("CALD", "DCAL", "MCAL"),
+    "CALI": ("CALD", "DCAL", "MCAL", "CALX"),
     "DRHO": ("CORR",),
-    "RMED": ("RILM",),
-    "RSHA": ("LL3", "RLL3"),
+    "RMED": ("RILM", "AHT30", "AHO30"),
+    "RSHA": ("LL3", "RLL3", "AHT10", "AHO10", "AHT20", "AHO20", "HLLS"),
 }
 
 #: Alias lists the benchmark context packages were computed with, where they
@@ -226,9 +247,10 @@ _BENCHMARK_MISSING_ALIASES: Dict[str, tuple] = {
 #: a GR alias, and NPHI had no NPHI_LS or sandstone-referenced aliases. Used
 #: inside ``historical_benchmark()``.
 _BENCHMARK_ALIAS_MAP: Dict[str, List[str]] = {
+    "PERM_CC": ["PERM_CC"],
     "RDEP": [
         name if name not in ("AT60", "AT90") else {"AT60": "AT90", "AT90": "AT60"}[name]
-        for name in ALIAS_MAP["RDEP"]
+        for name in ALIAS_MAP["RDEP"] if name not in _BENCHMARK_MISSING_RDEP_ALIASES
     ],
     "GR": [*ALIAS_MAP["GR"][:ALIAS_MAP["GR"].index("HGR")], "HCGR", *ALIAS_MAP["GR"][ALIAS_MAP["GR"].index("HGR"):]],
     "CGR": [name for name in ALIAS_MAP["CGR"] if name != "HCGR"],
@@ -243,6 +265,8 @@ _BENCHMARK_REVERSE_MAP: Dict[str, str] = {
     "HCGR": "GR",
     "RMIC": "RMIC",
     **{name: name for name in _BENCHMARK_MISSING_NPHI_ALIASES},
+    **{name: name for name in _BENCHMARK_MISSING_RDEP_ALIASES},
+    "PERM_CORECAL": "PERM_CORECAL",
     **{name: name for names in _BENCHMARK_MISSING_ALIASES.values() for name in names},
 }
 
