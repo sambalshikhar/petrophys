@@ -107,16 +107,18 @@ class PickettPlot:
         # Add Sw isolines
         phie_range = np.logspace(-2, 0, 100)  # 0.01 to 1.0
 
-        for sw in sw_lines:
+        for i, sw in enumerate(sorted(sw_lines)):
             # Archie equation: Rt = a * Rw / (PHIE^m * Sw^n)
             rt_line = a * rw / (phie_range ** m * sw ** n)
             self.ax.plot(phie_range, rt_line, 'k--', linewidth=0.5, alpha=0.7)
-            # Label the line
-            label_idx = len(phie_range) // 3
+            # Each label sits further along its line than the one before, so
+            # the labels of closely spaced lines step apart instead of stacking.
+            label_idx = min(len(phie_range) // 3 + 8 * i, len(phie_range) - 1)
             self.ax.annotate(
                 f'Sw={sw:.0%}',
                 (phie_range[label_idx], rt_line[label_idx]),
-                fontsize=8, alpha=0.7
+                fontsize=8, alpha=0.7,
+                bbox=dict(facecolor="white", edgecolor="none", alpha=0.6, pad=0.5),
             )
 
         # Set log scale
@@ -303,6 +305,10 @@ def create_pickett_plot(
 
     well_name = well.name or "Unknown Well"
     title = f"Pickett Plot - {well_name}"
+    if depth_range:
+        # Name the window, so a water-leg check reads as one.
+        unit = f" {well.depth_unit}" if getattr(well, "depth_unit", None) else ""
+        title += f" ({min(depth_range):g}-{max(depth_range):g}{unit})"
 
     plot = PickettPlot(figsize=figsize)
     plot.create(

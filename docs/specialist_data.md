@@ -190,7 +190,7 @@ Core saturation stays calibration evidence; it does not replace the log Sw curve
 
 ## Saturation-height: HW-3
 
-A Leverett J-function fitted to porosity, permeability and log Sw predicts Sw from height above the free-water level (FWL). HW-3 covers only the Kharaib-2 carbonate. Its FWL is assumed 20 ft below the deepest valid sample, not picked from pressures.
+A Leverett J-function fitted to porosity, permeability and log Sw predicts Sw from height above the free-water level (FWL). HW-3 covers only the Kharaib-2 carbonate. Its FWL is assumed 1 ft below the deepest valid sample, where log Sw has climbed to 0.9 (the base of the transition zone), not picked from pressures.
 HW-3 has no TVD curve, so `saturation_height_from_logs` takes the depth index as true vertical depth and warns that this holds for a vertical well only; for a deviated well, pass `tvd_curve`.
 
 ```{code-cell} python
@@ -204,7 +204,7 @@ hw3 = pp.read(pp.sample("HW-3"))
 table = hw3.to_dataframe()
 phi, perm, sw = table["PHIE_CC"].values, table["PERM_CC"].values, table["SW_INPUT"].values
 valid = (phi > 0) & (perm > 0) & (sw > 0) & (sw <= 1)
-fwl = table["DEPTH"][valid].max() + 20.0                    # ft, assumed
+fwl = table["DEPTH"][valid].max() + 1.0                     # ft, assumed
 ift, theta = FLUID_SYSTEMS["oil_brine"]
 height = np.clip(fwl - table["DEPTH"].values, 0, None)
 pc = pc_from_height(height, sg_water=1.0, sg_hc=0.8)
