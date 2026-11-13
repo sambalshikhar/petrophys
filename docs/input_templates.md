@@ -15,10 +15,8 @@ copy one, replace its synthetic rows, and read it with the function listed here.
 
 ```{code-cell} python
 :tags: [remove-cell]
-%matplotlib inline
 import textwrap
 import warnings
-import numpy as np
 import pandas as pd
 
 # Display settings for this page: whole table cells, warnings wrapped and without file paths.
@@ -27,23 +25,18 @@ warnings.formatwarning = lambda message, category, *args, **kwargs: textwrap.fil
     f"{category.__name__}: {message}", 88, subsequent_indent="    ") + "\n"
 ```
 
+| Template | Holds | Read with |
+| --- | --- | --- |
+| `formation_tops_template` | Formation tops (point picks) | `pp.read_formations`, or `formations=` in `pp.read` |
+| `formation_intervals_template` | Formation intervals (top and bottom) | `pp.read_formations`, or `formations=` in `pp.read` |
+| `lithology_intervals_template` | Rock names by depth interval | {func}`petrophys.io.read_lithology_intervals`, or `lithology=` in `pp.read` |
+| `lithology_codes_template` | Codebook of a lithology code curve | {func}`petrophys.io.read_lithology_codes`, or `lithology_codes=` in `pp.interpret` |
+
 ```{code-cell} python
 import pandas as pd
 import petrophys as pp
 
-readers = {
-    "formation_tops_template": "pp.read_formations",
-    "formation_intervals_template": "pp.read_formations",
-    "lithology_intervals_template": "petrophys.io.read_lithology_intervals",
-    "lithology_codes_template": "petrophys.io.read_lithology_codes",
-}
-rows = []
-for name in pp.list_samples("templates"):
-    columns = list(pd.read_csv(pp.sample(name)).columns)
-    more = f" + {len(columns) - 4} more" if len(columns) > 4 else ""
-    rows.append({"Template": name, "Read with": readers[name],
-                 "Columns": ", ".join(columns[:4]) + more})
-pd.DataFrame(rows).style.hide(axis="index")
+pp.list_samples("templates")
 ```
 
 Download:
@@ -59,9 +52,7 @@ Attached to a well, formation and lithology tables become the tops and the
 lithology track. The bundled 30/6-5 files follow the same templates.
 
 ```{code-cell} python
-:tags: [hide-input]
-import warnings
-
+:tags: [remove-cell]
 # The SWC/SOC unit message is explained in "Core saturation units" below; hide only that.
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
 ```
@@ -73,13 +64,8 @@ well = pp.read(
     formation_options={"rank": "formation"},
     lithology=pp.sample("lithology_30_6-5"),
 )
-pp.plot(
-    well,
-    top=2550,
-    bottom=3150,
-    tracks=["LITHOLOGY", "GAMMA / HOLE", "RESISTIVITY", "DENSITY / NEUTRON"],
-    figsize=(9.5, 10),
-).show()
+pp.plot(well, top=2550, bottom=3150,
+        tracks=["LITHOLOGY", "GAMMA / HOLE", "RESISTIVITY", "DENSITY / NEUTRON"])
 ```
 
 ## Rules for every file
@@ -99,10 +85,11 @@ pp.plot(
 Tops are point picks; intervals add a `bottom_depth` for thickness and summaries.
 
 ```{code-cell} python
-from IPython.display import display
+pd.read_csv(pp.sample("formation_tops_template"))
+```
 
-display(pd.read_csv(pp.sample("formation_tops_template")))
-display(pd.read_csv(pp.sample("formation_intervals_template")))
+```{code-cell} python
+pd.read_csv(pp.sample("formation_intervals_template"))
 ```
 
 The reader maps vendor headers and infers the rank from NPD-style names:
@@ -151,10 +138,12 @@ vendor = pd.DataFrame({"FROM": [1000.0, 1025.0], "TO": [1025.0, 1050.0],
                        "ROCK": ["Shale", "Sandstone"], "Comment": ["cuttings", "core"]})
 from petrophys.io import read_lithology_intervals
 
-columns = {"top": "FROM", "bottom": "TO", "lithology": "ROCK"}
-lithology = read_lithology_intervals(vendor, columns=columns)
-print("ignored:", lithology.attrs["import_report"]["ignored_columns"])
+lithology = read_lithology_intervals(vendor, columns={"top": "FROM", "bottom": "TO", "lithology": "ROCK"})
 lithology
+```
+
+```{code-cell} python
+lithology.attrs["import_report"]["ignored_columns"]
 ```
 
 | Rule | Behaviour |
@@ -197,13 +186,21 @@ pd.read_csv(pp.sample("lithology_codes_template"))
 ```{code-cell} python
 from petrophys.io import read_lithology_codes
 
-print(read_lithology_codes(pp.sample("lithology_codes_template")))
+read_lithology_codes(pp.sample("lithology_codes_template"))
+```
 
+A Kingdom codebook names each code twice, by rock (`Attribute`) and by family
+(`Lithology Attribute`); `label_column` picks one:
+
+```{code-cell} python
 kingdom = pd.DataFrame({"Abbreviation": ["SS", "SH", "LS"],
                         "Attribute": ["Sandstone", "Shale", "Limestone"],
                         "Lithology Attribute": ["Clastic", "Clastic", "Carbonate"]})
-print(read_lithology_codes(kingdom))
-print(read_lithology_codes(kingdom, label_column="Lithology Attribute"))
+read_lithology_codes(kingdom)
+```
+
+```{code-cell} python
+read_lithology_codes(kingdom, label_column="Lithology Attribute")
 ```
 
 | Rule | Behaviour |
@@ -296,7 +293,7 @@ wanted. A COSTA well with the field calibration:
 ```{code-cell} python
 carbonate = pp.interpret(pp.read(pp.sample("HW-3")), lithology="carbonate",
                          carbonate_calibration="costa")
-print(carbonate.config.lithology_domain, carbonate.config.carbonate_calibration)
+carbonate.config.lithology_domain, carbonate.config.carbonate_calibration
 ```
 
 In LAS metadata, use `PP_DOMAIN` or `LITHOLOGY_DOMAIN`. On the command line,
@@ -359,12 +356,15 @@ fraction but stores percentages:
 ```{code-cell} python
 from petrophys.preprocessing.standardization import standardize_core_saturation
 
-swc = pp.read(pp.sample("30_6-5"))["SWC"]
-print(f"as stored:  {np.nanmin(swc.data):.3f} - {np.nanmax(swc.data):.3f} {swc.unit}")
-standardize_core_saturation(swc, inplace=True)
-print(f"normalized: {np.nanmin(swc.data):.3f} - {np.nanmax(swc.data):.3f} {swc.unit}")
-record = swc.metadata.custom["core_saturation_normalization"]
-{key: value for key, value in record.items() if key != "warnings"}
+stored = pp.read(pp.sample("30_6-5"))["SWC"]
+normalized = standardize_core_saturation(stored)
+pd.DataFrame({"as stored": stored.describe(), "normalized": normalized.describe()})
+```
+
+The conversion is recorded on the curve:
+
+```{code-cell} python
+normalized.metadata.custom["core_saturation_normalization"]
 ```
 
 | Case | Result |

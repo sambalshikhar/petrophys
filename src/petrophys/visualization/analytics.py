@@ -348,9 +348,29 @@ def create_tornado_plot(
     return fig, ax
 
 
+def _curve_by_well(wells: Any, curve: str) -> Tuple[Dict[str, np.ndarray], str]:
+    """``{well name: values}`` of ``curve`` in each well or result, and its unit."""
+    from petrophys.visualization.log_viewer import _resolve_curve_name_for_well
+
+    items = list(wells.items()) if isinstance(wells, Mapping) else [(None, well) for well in wells]
+    data: Dict[str, np.ndarray] = {}
+    units = set()
+    for label, item in items:
+        well = getattr(item, "well", item)
+        name = _resolve_curve_name_for_well(well, curve)
+        if name is None:
+            raise KeyError(f"{well.name} has no {curve} curve")
+        values = well.get(name)
+        data[str(label if label is not None else well.name)] = np.asarray(values.data, dtype=float)
+        units.add(str(values.unit or "").strip())
+    units.discard("")
+    return data, (units.pop() if len(units) == 1 else "")
+
+
 @_styled_plot
 def create_histogram_comparison(
-    datasets: "Mapping[str, Any]",
+    datasets: Any,
+    curve: Optional[str] = None,
     bins: int = 40,
     density: bool = False,
     figsize: Tuple[float, float] = (9, 5),
@@ -363,15 +383,24 @@ def create_histogram_comparison(
 ) -> Tuple["Figure", "Axes"]:
     """Overlay histograms of several datasets (e.g. GR before/after normalization).
 
-    ``datasets`` maps a label to a 1-D array; NaNs are dropped.
+    ``datasets`` maps a label to a 1-D array; NaNs are dropped. Or it is
+    several wells or interpretation results (a list, the wells
+    :func:`petrophys.read` returns, or a mapping of label to well) and
+    ``curve`` names the curve to compare (``"GR"``, a standard or the well's
+    own name), labelled by well name; the x-axis is labelled with its unit.
     ``value_range`` fixes the bin range (spikes otherwise stretch it), and
     ``histtype="step"`` draws outlines, which stay readable for several wells.
     """
     _require_mpl()
+    if curve is not None:
+        datasets, unit = _curve_by_well(datasets, curve)
+        xlabel = xlabel or (f"{curve} ({unit})" if unit else curve)
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
         fig = ax.figure
+    # More than ten datasets would repeat the default ten colours.
+    colors = plt.get_cmap("tab20" if len(datasets) > 10 else "tab10")
 
     all_finite = []
     for arr in datasets.values():
@@ -384,13 +413,14 @@ def create_histogram_comparison(
         hi = max((a.max() for a in all_finite if a.size), default=1.0)
     edges = np.linspace(lo, hi, bins + 1)
 
-    for label, arr in datasets.items():
+    for index, (label, arr) in enumerate(datasets.items()):
         a = np.asarray(arr, dtype=float)
         a = a[np.isfinite(a)]
+        color = colors(index % colors.N)
         if histtype == "step":
-            ax.hist(a, bins=edges, density=density, histtype="step", linewidth=1.4, label=label)
+            ax.hist(a, bins=edges, density=density, histtype="step", linewidth=1.4, label=label, color=color)
         else:
-            ax.hist(a, bins=edges, density=density, alpha=alpha, histtype=histtype, label=label)
+            ax.hist(a, bins=edges, density=density, alpha=alpha, histtype=histtype, label=label, color=color)
 
     ax.set_xlabel(xlabel or "")
     ax.set_ylabel("density" if density else "count")

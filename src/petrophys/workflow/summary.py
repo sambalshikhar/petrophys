@@ -27,6 +27,52 @@ SUMMARY_CURVES = ("VCL", "PHIT", "PHIE", "SW", "PERM")
 NET_FLAGS = ("NET_ROCK", "NET_RES", "NET_PAY")
 
 
+def _summary_curves(result: "DynamicWorkflowResult") -> tuple:
+    """The curves a summary describes: SUMMARY_CURVES, with the core-corrected
+    PHIE_CC and PERM_CC after their plain curves wherever the pay averages
+    use them (not under the benchmark profiles, whose summaries had none)."""
+    from petrophys.evaluation.summaries.zone_summary import pay_average_curves
+    from petrophys.workflow.dynamic_workflow import _BENCHMARK_PROFILES
+
+    if result.config.calculation_profile in _BENCHMARK_PROFILES:
+        return SUMMARY_CURVES
+    chosen = pay_average_curves(result.well)
+    names = []
+    for name in SUMMARY_CURVES:
+        names.append(name)
+        corrected = chosen.get(name)
+        if corrected and corrected != name:
+            names.append(corrected)
+    return tuple(names)
+
+
+def statistics_table(well: "Well", curves: Any = None, top: Optional[float] = None,
+                     bottom: Optional[float] = None, default: Iterable[str] = SUMMARY_CURVES) -> Any:
+    """A row per curve of ``well`` over a depth window: unit, finite samples,
+    mean, p10, median and p90. ``curves`` defaults to those of ``default``
+    present on the well."""
+    import pandas as pd
+
+    if isinstance(curves, str):
+        curves = [curves]
+    names = list(curves) if curves is not None else [name for name in default if well.get(name) is not None]
+    missing = [name for name in names if well.get(name) is None]
+    if missing:
+        raise KeyError(f"No curve {', '.join(missing)} in the well")
+    window = depth_mask(well.depth, top, bottom)
+    rows = {}
+    for name in names:
+        curve = well.get(name)
+        assert curve is not None
+        values = np.asarray(curve.data, dtype=float)[window]
+        values = values[np.isfinite(values)]
+        p10, median, p90 = np.percentile(values, [10, 50, 90]) if values.size else (np.nan,) * 3
+        rows[name] = {"unit": curve.unit or "", "samples": int(values.size),
+                      "mean": float(values.mean()) if values.size else np.nan,
+                      "p10": float(p10), "median": float(median), "p90": float(p90)}
+    return pd.DataFrame.from_dict(rows, orient="index")
+
+
 def curve_results(well: "Well", names: Iterable[str], mask: np.ndarray) -> Dict[str, Any]:
     """Unit and statistics of each named curve over ``mask``; absent curves are left out."""
     results: Dict[str, Any] = {}
@@ -100,7 +146,7 @@ def summarize_result(
         },
         "settings_used": settings,
         "summary_interval": {"top": top, "bottom": bottom, "depth_unit": well.depth_unit},
-        "key_results": curve_results(well, SUMMARY_CURVES, mask),
+        "key_results": curve_results(well, _summary_curves(result), mask),
         "net_thickness": net_thickness(
             well, mask, cells=result.config.calculation_profile not in _BENCHMARK_PROFILES
         ),

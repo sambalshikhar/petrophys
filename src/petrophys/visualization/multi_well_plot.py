@@ -36,15 +36,19 @@ class MultiWellPlot:
     :class:`~petrophys.visualization.log_viewer.LogViewer`.
     """
 
-    def __init__(self, items: Sequence[Any], options: Optional[Dict[str, Any]] = None):
+    def __init__(self, items: Sequence[Any], options: Optional[Dict[str, Any]] = None,
+                 labels: Optional[Sequence[str]] = None):
         self.items: List[Any] = list(items)
         self.options: Dict[str, Any] = dict(options or {})
+        self.labels: Optional[List[str]] = None if labels is None else [str(label) for label in labels]
         #: Each drawn well's viewer warnings, by well name.
         self.warnings: Dict[str, List[str]] = {}
 
     @property
     def names(self) -> List[str]:
-        """Well names, in plotting order."""
+        """Labels, or else well names, in plotting order."""
+        if self.labels is not None:
+            return list(self.labels)
         return [str(_plotted_well(item).name) for item in self.items]
 
     def __len__(self) -> int:
@@ -57,7 +61,7 @@ class MultiWellPlot:
         from petrophys.api import plot
 
         viewer = plot(item, **self.options)
-        self.warnings[str(_plotted_well(item).name)] = list(viewer.warnings)
+        self.warnings[self.names[self.items.index(item)]] = list(viewer.warnings)
         return viewer
 
     def __getitem__(self, key: Union[int, str]) -> "LogViewer":
@@ -96,11 +100,9 @@ class MultiWellPlot:
         """Nothing stays open: each figure is closed once shown or saved."""
 
     def _ipython_display_(self) -> None:
-        from IPython.display import display
-
         for item in self.items:
             viewer = self._viewer(item)
-            display(viewer.fig)
+            viewer._ipython_display_()  # the PNG, once, under any backend
             viewer.close()
 
 
@@ -153,6 +155,16 @@ class WellComparisonPlot:
 
         plt.show()
 
+    def _ipython_display_(self) -> None:
+        # At the end of a notebook cell the comparison shows its figure, once.
+        import matplotlib.pyplot as plt
+        from IPython.core.pylabtools import print_figure
+        from IPython.display import Image, display
+
+        if self.fig is not None:
+            display(Image(data=print_figure(self.fig, "png")))
+            plt.close(self.fig)
+
     def close(self) -> None:
         """Close the figure and free its memory."""
         import matplotlib.pyplot as plt
@@ -170,6 +182,7 @@ def compare_wells(
     top: Optional[float] = None,
     bottom: Optional[float] = None,
     figsize: Optional[Tuple[float, float]] = None,
+    labels: Optional[Sequence[str]] = None,
 ) -> WellComparisonPlot:
     """Draw ``curves`` of several wells in one figure, each curve in its own track.
 
@@ -182,7 +195,8 @@ def compare_wells(
     0.5-99.5 percentiles. Depths are in the first well's depth unit; a well
     logged in the other unit is converted. ``top`` and ``bottom`` bound the
     depth axis. ``warnings`` names the wells without a curve, and curves
-    whose units still differ after conversion.
+    whose units still differ after conversion. ``labels`` name the lines
+    (default: the well names), so runs of one well can be compared.
     """
     import matplotlib.pyplot as plt
 
@@ -193,6 +207,9 @@ def compare_wells(
     )
 
     wells = [_display_well(_plotted_well(item), interpreted=hasattr(item, "steps_executed")) for item in items]
+    names = [str(label) for label in labels] if labels is not None else [str(well.name) for well in wells]
+    if len(names) != len(wells):
+        raise ValueError(f"{len(names)} labels for {len(wells)} wells")
     conventions: Dict[str, Tuple[bool, bool]] = {}
     for name in curves:
         for well in wells:
@@ -223,7 +240,7 @@ def compare_wells(
         for index, well in enumerate(wells):
             resolved = _resolve_curve_name_for_well(well, name)
             if resolved is None:
-                notes.append(f"{well.name}: no {name} curve")
+                notes.append(f"{names[index]}: no {name} curve")
                 continue
             curve = well.get(resolved)
             depth = np.asarray(well.depth, dtype=float)
@@ -232,7 +249,7 @@ def compare_wells(
                 depth = depth * 0.3048 if unit == "m" else depth / 0.3048
             values = np.asarray(curve.data, dtype=float)
             log_track = log_track or conventions.get(name, (False, False))[0] or _log_scale(name, resolved)
-            ax.plot(values, depth, color=colors(index % colors.N), linewidth=0.8, label=str(well.name))
+            ax.plot(values, depth, color=colors(index % colors.N), linewidth=0.8, label=names[index])
             units.add(str(curve.unit or "").strip())
             inside = np.isfinite(values) & np.isfinite(depth)
             if top is not None:

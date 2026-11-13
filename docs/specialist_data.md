@@ -15,20 +15,13 @@ Logs are rarely the only measurements in a well. NMR, spectral gamma, core, satu
 ```{code-cell} python
 :tags: [remove-cell]
 
-%matplotlib inline
-import textwrap
 import warnings
 
-import matplotlib.pyplot as plt
-
-# Warnings wrapped and without file paths.
-warnings.formatwarning = lambda message, category, *args, **kwargs: textwrap.fill(
-    f"{category.__name__}: {message}", 88, subsequent_indent="    ") + "\n"
+# Warnings as one line, without the source file.
+warnings.formatwarning = lambda message, category, *args, **kwargs: f"{category.__name__}: {message}\n"
 # 30/6-5 labels its percent core saturations (SWC, SOC) as fractions; Petrophys
 # converts them to v/v and warns. The page explains this once, in the text.
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
-from petrophys.visualization import use_plot_style
-use_plot_style()
 ```
 
 ## NMR: Daydream CMR
@@ -37,109 +30,69 @@ The bundled Daydream 1 file is a vendor CMR summary, with GR and calipers.
 {func}`~petrophys.visualization.create_nmr_panel` draws the standard display from its curves.
 
 ```{code-cell} python
-import matplotlib.pyplot as plt
-import numpy as np
 import petrophys as pp
-from petrophys.interpretation.nmr import NMRData
 from petrophys.visualization import create_nmr_panel
 
 cmr = pp.read(pp.sample("daydream1_cmr"))
-create_nmr_panel(cmr, depth_range=(3900, 4100), figsize=(12, 8.5))
-plt.show()
+create_nmr_panel(cmr, depth_range=(3900, 4100));
 ```
 
 {class}`~petrophys.interpretation.nmr.NMRData` loads the same file to compute bound fluid (`MPHI - MFFI`), irreducible saturation and permeability.
 The default T2 cutoff is 33 ms, the sandstone value (92 ms for carbonates; Coates, Xiao and Prammer, 1999). With T2 bins, the bin that straddles the cutoff counts with the part of its log-T2 width below it; `partial_bins=False` counts whole bins instead, as some vendor summaries do.
 
 ```{code-cell} python
-nmr = NMRData.from_las(pp.sample("daydream1_cmr"),
-                       mphi_mnemonic="TCMR", mffi_mnemonic="CMFF")
-print(f"{nmr.n_samples} samples, {nmr.top:.0f}-{nmr.bottom:.0f} m, "
-      f"T2 cutoff {nmr.t2_cutoff:.0f} ms")
-print("T2 bins:", nmr.has_bins, "| stored T2 log-mean:", nmr.has_t2lm)
-print(f"Median MPHI {np.nanmedian(nmr.mphi):.1f} pu, "
-      f"MBVI {np.nanmedian(nmr.mbvi):.1f} pu, Swirr {np.nanmedian(nmr.swirr_nmr()):.2f}")
+from petrophys.interpretation.nmr import NMRData
 
-k_library = nmr.permeability_coates(prefer_stored=False)  # textbook constants
-k_vendor = nmr.stored_permeability["KTIM"]                 # the vendor's curve
-both = (k_library > 0) & (k_vendor > 0)
-bias = np.log10(k_library[both] / k_vendor[both])
-print(f"Library vs vendor Timur-Coates: {both.sum()} samples, "
-      f"mean {bias.mean():+.3f} decades, spread {bias.std():.3f}")
-print(nmr.calibrate_coates(nmr.depth[both], k_vendor[both]))
-
-fig, ax = plt.subplots(figsize=(6, 4.5))
-ax.loglog(k_vendor[both], k_library[both], ".", ms=2, alpha=0.3, color="navy")
-ax.plot((1e-4, 1e2), (1e-4, 1e2), color="red", lw=1, label="1:1")
-ax.set(xlim=(1e-4, 1e2), ylim=(1e-4, 1e2), xlabel="Vendor KTIM (mD)",
-       ylabel="Petrophys Timur-Coates (mD)",
-       title="Daydream 1: Timur-Coates, library vs vendor")
-ax.legend()
-plt.show()
+nmr = NMRData.from_las(pp.sample("daydream1_cmr"), mphi_mnemonic="TCMR", mffi_mnemonic="CMFF")
+nmr
 ```
 
-`permeability_coates()` and `permeability_sdr()` return the vendor curve unless `prefer_stored=False`. This file has no T2 bins, so T2 log-mean and SDR from scratch need a richer delivery. Petrophys does not rebuild distributions from raw echo trains.
+`nmr.to_dataframe()` holds the curves, the computed ones included: total and
+free-fluid porosity (`MPHI`, `MFFI`, in porosity units), bound fluid `MBVI`,
+irreducible saturation `SWIRR` and the vendor's Timur-Coates permeability `KTIM`:
+
+```{code-cell} python
+nmr.to_dataframe()[["MPHI", "MFFI", "MBVI", "SWIRR", "KTIM"]].describe()
+```
+
+`permeability_coates()` and `permeability_sdr()` return the vendor curve unless `prefer_stored=False`, which computes Timur-Coates with the textbook constants. Over this file the two agree closely (median 0.0012 against 0.0013 mD):
+
+```{code-cell} python
+import pandas as pd
+
+pd.DataFrame({"Petrophys": nmr.permeability_coates(prefer_stored=False),
+              "vendor KTIM": nmr.stored_permeability["KTIM"]}).describe()
+```
+
+This file has no T2 bins, so T2 log-mean and SDR from scratch need a richer delivery. Petrophys does not rebuild distributions from raw echo trains.
 
 ## Spectral gamma: 25/5-1
 
 The trace confirms that `pp.interpret` skips it:
 
 ```{code-cell} python
-from textwrap import fill
-
 well25 = pp.read(pp.sample("25_5-1"))
-print(fill(pp.interpret(well25).specific_steps_skipped["spectral_gamma"], 88))
+pp.interpret(well25).specific_steps_skipped["spectral_gamma"]
 ```
 
-{func}`~petrophys.interpretation.geochemistry.interpret_spectral_gamma` finds thorium and uranium, converts units, and adds uranium's share of the gamma ray. The GR mnemonic does not name the spectral tool, so we pass it as the total.
+{func}`~petrophys.interpretation.geochemistry.interpret_spectral_gamma` finds thorium and uranium, converts units, and adds uranium's share of the gamma ray to the well. The GR mnemonic does not name the spectral tool, so we pass it as the total.
 
 ```{code-cell} python
 from petrophys.interpretation.geochemistry import interpret_spectral_gamma
 
 gamma = interpret_spectral_gamma(well25, alias_overrides={"SGR": ["GR"]})
-print("Inputs used:", gamma.sources)
-added = ", ".join(gamma.output_curves)
-print(fill(f"Curves added: {added}", 88, subsequent_indent="    "))
-
-depth, gr = well25.depth, well25["GR"].data
-th, u = gamma.measurements["THORIUM"], gamma.measurements["URANIUM"]
-logged = np.isfinite(gr) & np.isfinite(th) & np.isfinite(u)
-# The run ends with held readings (a value repeated exactly, then zeros); stop above.
-rows = np.flatnonzero(logged)
-held = np.concatenate([rows[1:][np.diff(x[rows]) == 0] for x in (gr, th, u)])
-window = logged & (depth < depth[held].min())
-u_rich = window & (gamma.derived["SGR_URANIUM_EXCESS_FLAG"] == 1)
-rated = window & (u >= 0.5)                           # rate Th/U only where U >= 0.5 ppm
-th_u = np.full(depth.shape, np.nan)
-th_u[rated] = th[rated] / u[rated]
-print(f"Window {depth[window].min():.0f}-{depth[window].max():.0f} m: {u_rich.sum()} of "
-      f"{window.sum()} samples get at least half their gamma ray from uranium")
-
-fig, axes = plt.subplots(1, 3, figsize=(10, 6), sharey=True)
-axes[0].plot(np.where(window, gr, np.nan), depth, color="0.25", lw=0.7)
-for curve, color, label in [(th, "#eb6834", "thorium"), (u, "#2a78d6", "uranium")]:
-    axes[1].plot(np.where(window, curve, np.nan), depth, color=color, lw=0.7, label=label)
-for lo, hi, color, label in [(0.1, 2, "#2a78d6", "< 2 marine, reducing"),
-                             (2, 7, "0.6", "2-7 marine"),
-                             (7, 1000, "#eb6834", "> 7 continental")]:
-    axes[2].axvspan(lo, hi, color=color, alpha=0.12, lw=0, label=label)
-axes[2].scatter(th_u, depth, s=3, color="0.35", lw=0)
-for ax in axes:
-    ax.fill_betweenx(depth, 0, 1, where=u_rich, transform=ax.get_yaxis_transform(),
-                     color="#2a78d6", alpha=0.12, lw=0)
-    ax.grid(alpha=0.3)
-axes[0].set(xlabel="GR (API)", ylabel="Depth (m)",
-            ylim=(depth[window].max(), depth[window].min()))
-axes[1].set(xlabel="Th, U (ppm)")
-axes[2].set(xscale="log", xlim=(0.2, 100), xlabel="Th/U")
-axes[1].legend(loc="lower right", fontsize=8)
-axes[2].legend(loc="lower right", fontsize=8)
-fig.suptitle("25/5-1 spectral gamma (blue bands: uranium ≥ 50% of GR)")
-plt.tight_layout()
-plt.show()
+gamma.output_curves
 ```
 
-Where uranium dominates, GR over-reads clay and thorium is the safer clay indicator. {func}`~petrophys.interpretation.geochemistry.interpret_elemental_spectroscopy` handles elemental yields, also outside `pp.interpret`.
+The run ends at 3432 m with held readings (values repeated exactly, then zeros), so the plot stops at 3423 m. Between 2906 and 3423 m, 373 of the 3397 logged samples get at least half their gamma ray from uranium (`SGR_URANIUM_FRACTION` of 0.5 or more, flagged in `SGR_URANIUM_EXCESS_FLAG`); 350 of them lie in the uranium-rich shale above 2990 m, where uranium reaches 34 ppm:
+
+```{code-cell} python
+pp.plot(well25, curves=["GR", "THOR", "URAN", "SGR_URANIUM_FRACTION"], top=2900, bottom=3423,
+        curve_styles={"GR": {"right": 320}, "URAN": {"right": 35},
+                      "SGR_URANIUM_FRACTION": {"left": 0, "right": 1}})
+```
+
+Where uranium dominates, GR over-reads clay and thorium is the safer clay indicator. The thorium-uranium ratio points to the depositional setting: Th/U below 2 suggests marine, reducing conditions, 2 to 7 marine, above 7 continental (`U_TH_RATIO` holds its inverse, U/Th). {func}`~petrophys.interpretation.geochemistry.interpret_elemental_spectroscopy` handles elemental yields, also outside `pp.interpret`.
 
 ## Core data and calibration: 30/6-5
 
@@ -147,87 +100,123 @@ The 30/6-5 LAS contains core porosity, permeability, grain-density and saturatio
 
 ```{code-cell} python
 from petrophys.interpretation.core_analysis import (
-    apply_poro_perm_transform, calibrate_porosity, core_data_from_well,
-    fit_poro_perm_transform,
+    calibrate_porosity, core_data_from_well, fit_poro_perm_transform,
 )
 
-logs = pp.read(pp.sample("30_6-5"))
-core = core_data_from_well(logs)
-print(core)
+result = pp.interpret(pp.sample("30_6-5"), rw=0.07, rw_meas_temp_f=230)
+core = core_data_from_well(result)
+core
 ```
 
-Calibrate an independent density porosity against the plugs, and fit a poro-perm transform.
+Compare a log porosity with the plugs, like with like: plug porosity is total
+porosity, so the comparison takes `PHID`, the total density porosity of the
+interpretation, which uses a quartz matrix and is independent of the core.
+(Effective porosity, `PHIE` or `PHIE_CC`, excludes clay-bound water and reads below
+the plugs in shaly rock.)
 
 ```{code-cell} python
 from petrophys.visualization import plot_calibration, plot_core_on_logs, plot_poro_perm
 
-rhob = logs["RHOB"].data
-logs.add_curve("PHID", np.clip((2.65 - rhob) / (2.65 - 1.0), 0, 0.5), "v/v",
-               "Density porosity, quartz matrix")
-calibration = calibrate_porosity(logs, core, log_curve="PHID")
-transform = fit_poro_perm_transform(core)
-print(f"PHID - core: bias {calibration.bias:+.3f} v/v, RMSE {calibration.rmse:.3f}, "
-      f"R² {calibration.r_squared:.2f} over {calibration.n_points} plugs")
-print(f"log10 k = {transform.A:.1f} φ {transform.B:+.2f}  (R² {transform.r_squared:.2f})")
-
-fig, (left, right) = plt.subplots(1, 2, figsize=(12, 4.5))
-plot_calibration(calibration, ax=left, title="Density porosity against core")
-plot_poro_perm(core, transform=transform, ax=right, title="Core poro-perm and transform")
-plt.tight_layout()
-plt.show()
+calibration = calibrate_porosity(result, core, log_curve="PHID")
+plot_calibration(calibration, title="Density porosity against core");
 ```
 
-Apply the transform along the log and compare it with the plugs.
+Density porosity reads 0.02 v/v below the plugs on average (RMSE 0.046 v/v, R² 0.65
+over 200 plugs). A poro-perm transform fitted to the plugs predicts permeability
+from porosity:
 
 ```{code-cell} python
-apply_poro_perm_transform(logs, transform, porosity_curve="PHID")  # writes PERM_CC
-fig, axes = plot_core_on_logs(logs, core, curves=["PHID", "PERM_CC"], figsize=(8, 7),
-                              depth_range=(core.top - 10, core.bottom + 10))
-plt.show()
+transform = fit_poro_perm_transform(core)
+plot_poro_perm(core, transform=transform, title="Core poro-perm and transform");
+```
+
+`pp.interpret` applies a core calibration itself when the well has core: it writes
+core-corrected effective porosity `PHIE_CC` and, from it, permeability `PERM_CC` on
+the plugs' scale (left undefined in rock shalier than the plugs). Plot density
+porosity and `PERM_CC` with the plugs
+({func}`~petrophys.interpretation.core_analysis.apply_poro_perm_transform` applies a
+transform of your own to any porosity curve):
+
+```{code-cell} python
+plot_core_on_logs(result, core, curves=["PHID", "PERM_CC"], figsize=(8, 7),
+                  depth_range=(core.top - 10, core.bottom + 10));
 ```
 
 Core saturation stays calibration evidence; it does not replace the log Sw curve. Check depth ties first: on 25/5-1 the plugs need a depth shift before they match the logs ({doc}`tutorial 12 <tutorials/part_b/12_core_calibration_and_digital_core>`).
 
-## Saturation-height: HW-3
+## Saturation-height from core: COSTA
 
-A Leverett J-function fitted to porosity, permeability and log Sw predicts Sw from height above the free-water level (FWL). HW-3 covers only the Kharaib-2 carbonate. Its FWL is assumed 1 ft below the deepest valid sample, where log Sw has climbed to 0.9 (the base of the transition zone), not picked from pressures.
-HW-3 has no TVD curve, so `saturation_height_from_logs` takes the depth index as true vertical depth and warns that this holds for a vertical well only; for a deviated well, pass `tvd_curve`.
+A saturation-height model predicts Sw from height above the free-water level (FWL).
+The core-first workflow builds it from laboratory capillary pressure and then uses
+the logs only to place the FWL. The bundled COSTA mercury-injection data hold 110
+plugs, each with its porosity and permeability; no well or depth is recorded for them:
 
 ```{code-cell} python
 from petrophys.interpretation.saturation.height import (
-    FLUID_SYSTEMS, fit_j_function, leverett_j, pc_from_height,
-    saturation_height_from_logs,
+    estimate_fwl_from_logs, fit_j_function_from_core, read_capillary_pressure,
+    water_contact_from_fwl,
 )
-from petrophys.visualization import create_saturation_height_plot
 
-hw3 = pp.read(pp.sample("HW-3"))
-table = hw3.to_dataframe()
-phi, perm, sw = table["PHIE_CC"].values, table["PERM_CC"].values, table["SW_INPUT"].values
-valid = (phi > 0) & (perm > 0) & (sw > 0) & (sw <= 1)
-fwl = table["DEPTH"][valid].max() + 1.0                     # ft, assumed
-ift, theta = FLUID_SYSTEMS["oil_brine"]
-height = np.clip(fwl - table["DEPTH"].values, 0, None)
-pc = pc_from_height(height, sg_water=1.0, sg_hc=0.8)
-j = leverett_j(pc, perm, phi, ift=ift, theta=theta)
-fit = valid & (j > 0)
-model = fit_j_function(j[fit], sw[fit], form="power", ift=ift, theta=theta,
-                       sg_water=1.0, sg_hc=0.8)
-print(f"Sw = {model.a:.3f} J^{model.b:.3f}, R² {model.r2:.2f}, {fit.sum()} samples")
-
-predicted = saturation_height_from_logs(hw3, model, fwl_depth=fwl,
-                                        perm_curve=("PERM_CC",), phi_curve=("PHIE_CC",),
-                                        depth_increases_down=True)
-error = predicted[fit] - sw[fit]
-print(f"Model against log Sw: mean absolute error {np.abs(error).mean():.3f}, "
-      f"bias {error.mean():+.3f}")
-
-create_saturation_height_plot(model, j=j[fit], sw=sw[fit], max_height_ft=250,
-                              rock_classes=[(1, 0.08), (10, 0.15), (100, 0.25)],
-                              figsize=(11, 4.5), title="HW-3 Kharaib-2 saturation-height")
-plt.show()
+cap = read_capillary_pressure(pp.sample("costa_core_pc"))
+cap
 ```
 
-The low R² is typical of a heterogeneous carbonate with one assumed FWL. Better rock still drains to lower Sw at the same height.
+A Thomeer hyperbola fitted to each plug's curve gives its entry pressure `Pd` (psi,
+air-mercury), pore geometry factor `G` and mercury volume at infinite pressure
+`BV_INF` (percent of bulk volume); the medians over the plugs:
+
+```{code-cell} python
+cap.thomeer().median()
+```
+
+The Leverett J-function makes the plugs comparable: it scales capillary pressure by
+the square root of permeability over porosity. `fit_j_function_from_core` converts the
+laboratory curves to oil-brine at reservoir conditions and fits Sw against J over every
+point. The fluid densities are assumed, not measured: brine 1.14 g/cm3 (a saline
+formation water, about 200,000 ppm) and oil 0.75 g/cm3.
+
+```{code-cell} python
+model = fit_j_function_from_core(cap, "oil_brine", sg_water=1.14, sg_hc=0.75)
+model
+```
+
+```{code-cell} python
+model.plot();
+```
+
+Sw = 0.172 J^-0.653 fits the 4562 core points with R² 0.68; the scatter is plug-to-plug
+pore-geometry variation that one J-function averages. With the model fixed, the FWL
+is the depth at which the model, applied to a well's porosity and permeability, best
+matches its log Sw. On HW-24, which logs a transition zone:
+
+```{code-cell} python
+fit = estimate_fwl_from_logs(pp.read(pp.sample("HW-24")), model, sw_curve="SW_INPUT",
+                             perm_curve="PERM_CC", phi_curve="PHIE_CC")
+fit
+```
+
+```{code-cell} python
+fit.plot();
+```
+
+The FWL is 8585.1 ft (95 % range 8574.0-8604.1 ft), with an RMS Sw misfit of 0.084:
+the model follows log Sw from the low-saturation column down through the transition
+zone. HW-24 has no TVD curve, so its depth index is taken as true vertical depth, which
+holds for a vertical well only; for a deviated well, pass `tvd_curve`. A well that logs
+no transition zone only bounds the FWL: for HW-3 the answer is "deeper than 8116.7 ft".
+
+The water contact, where Sw first falls below 1, lies above the FWL by the height of the
+entry pressure. With the median oil-brine entry pressure of the plugs (1.54 psi), it is
+at 8576.0 ft:
+
+```{code-cell} python
+entry = cap.to_reservoir("oil_brine").entry_pressure().median()
+water_contact_from_fwl(fit.fwl, entry, sg_water=1.14, sg_hc=0.75)
+```
+
+`saturation_height_from_logs(well, model, fwl_depth=...)` applies the model along a
+well. Without core capillary pressure, `fit_j_function_from_well` fits the J-function
+to log Sw above an FWL you give.
 
 ## Borehole images
 
@@ -236,21 +225,25 @@ Petrophys orients, equalizes, measures coverage of and draws image logs; it does
 ```{code-cell} python
 :tags: [skip-execution]
 
-from petrophys.interpretation.borehole_imaging import (
-    azimuthal_coverage, orient_to_azimuth, plot_fmi, read_fmi_dlis,
-)
 from petrophys.datasets import integration_fixture
+from petrophys.interpretation.borehole_imaging import read_fmi_dlis
 from petrophys.visualization import create_fmi_panel
 
 image = read_fmi_dlis(integration_fixture("daydream1_fmi_processed_dynamic_image.dlis"))
-window = image.filter_by_depth(2900.0, 2910.0)       # cut a window before orienting
-oriented = orient_to_azimuth(window, n_azimuth=180, reference="north")
-print(f"Imaged circumference: {np.nanmean(azimuthal_coverage(oriented)):.0%}")
-plot_fmi(oriented, equalize="static")
+image
+```
+
+```{code-cell} python
+:tags: [skip-execution]
+
 create_fmi_panel(image, depth_range=(4052, 4058), orient=True, equalize="dynamic")
 ```
 
-{doc}`Tutorial 16 <tutorials/part_b/16_borehole_image_fmi>` runs it on the real Daydream 1 FMI.
+`orient_to_azimuth` turns an image to north, `azimuthal_coverage` gives the imaged
+fraction of the circumference and `plot_fmi` draws an image with static or dynamic
+equalization, all in `petrophys.interpretation.borehole_imaging`; cut a depth window
+with `image.filter_by_depth(top, bottom)` before orienting.
+{doc}`Tutorial 16 <tutorials/part_b/16_borehole_image_fmi>` runs them on the real Daydream 1 FMI.
 
 ## Core-scanner, NMR and capillary-pressure data
 
@@ -265,7 +258,7 @@ dataset supports, and what it does not contain:
 | Grain size and Kozeny-Carman | `GrainSizeData` | Epslog P50 and routine core | P13/P87 percentiles | 12 |
 | Scanner strength and dynamic mechanics | `CoreMechanical` | Epslog Vp/Vs | static moduli, plug tests, same-well wireline logs | 12 |
 | NMR T2 distributions and SDR | `NMRData` with bins | Phillips teaching example | a field T2 distribution with matching core | 14 |
-| Laboratory capillary pressure | `convert_pc_lab_to_reservoir`, `fit_brooks_corey`, `fit_j_function` | COSTA mercury-injection curves | fluid properties and the well and depth of each plug | 15 |
+| Laboratory capillary pressure | `read_capillary_pressure` (`.thomeer()`, `.to_reservoir()`, `.entry_pressure()`), `fit_j_function_from_core`, `estimate_fwl_from_logs`, `water_contact_from_fwl` | COSTA mercury-injection curves | fluid properties and the well and depth of each plug | 15 |
 
 `read_formation_pressure` accepts CSV/LAS station files, DataFrames and LAS objects.
 Fluid labels are optional. For unlabeled stations call `.infer_contacts()` and
@@ -310,7 +303,7 @@ or rock-property calibration and fluid properties are still required.
 `saturation_height_from_logs` takes `fwl_depth` in the unit of the well's depth
 index, or of `tvd_curve` when one is given, and on the same datum; it converts
 heights in metres to feet for the capillary relation itself. Neither of these
-contacts applies to the separate HW-3 example.
+contacts applies to the separate COSTA example.
 
 Sonic saturation (`petrophys.interpretation.saturation.sonic`) estimates Sw without resistivity, by Gassmann substitution, and says when the fluid effect is undetectable.
 

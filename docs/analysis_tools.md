@@ -24,10 +24,11 @@ your input uncertainties. The first section shows how each gets in.
 ```{code-cell} python
 :tags: [remove-cell]
 
-%matplotlib inline
 import warnings
 
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
+# Warnings as one line, without the source file.
+warnings.formatwarning = lambda message, category, *args, **kwargs: f"{category.__name__}: {message}\n"
 import pandas as pd
 
 pd.set_option("display.width", 100)
@@ -35,16 +36,15 @@ pd.set_option("display.max_columns", 12)
 ```
 
 The examples use the interpreted 30/6-5 well (Brent Group sands at 2841-2958 m),
-its core plugs and its formation tops.
+its core plugs and its formation tops. The interpreted curves come out as a table,
+from which the Brent Group is one query:
 
 ```{code-cell} python
-import numpy as np
 import petrophys as pp
 
-result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.070, rw_meas_temp_f=230.0)
-well = result.well
-depth = np.asarray(well.depth)
-brent = (depth >= 2841) & (depth <= 2958)
+result = pp.interpret(pp.sample("30_6-5"), rw=0.070, rw_meas_temp_f=230.0)
+logs = result.well.to_dataframe()
+brent = logs.query("2841 <= DEPTH <= 2958")
 ```
 
 ## Getting your data in
@@ -62,28 +62,33 @@ brent = (depth >= 2841) & (depth <= 2958)
 ``Kh Kl. (mD)``, ``KAIR``, ``Grain density``), converts percent and
 percent-labelled-as-fraction porosity, darcy and kg/m3, and converts depths
 to the well's unit. Here the bundled 15/12-20 S plug table, which reports
-porosity in percent:
+porosity in percent; `CPOR` holds it as a fraction:
 
 ```{code-cell} python
 from petrophys.io import read_core
 
 core = read_core(pp.sample("epslog_15_12_20_s_core"))
-print(core, "| columns:", core.metadata["import_report"]["columns"])
-print(f"porosity median {np.nanmedian(core.porosity):.3f} v/v")
+core.to_dataframe().head()
+```
+
+The import report names the column found for each property:
+
+```{code-cell} python
+core.metadata["import_report"]["columns"]
 ```
 
 **Pressures and the free-water level.** Station tables are read with their
 datum. Labelled stations give the FWL from the water and hydrocarbon
 gradients; unlabelled ones, as in the 35/11-13 MDT file, go through
-`infer_contacts`:
+`infer_contacts`, which finds an oil gradient over a water gradient and their
+intersection:
 
 ```{code-cell} python
 from petrophys.interpretation.saturation.height import read_formation_pressure
 
 stations = read_formation_pressure(pp.sample("35_11_13_mdt"))
 contacts = stations.infer_contacts()
-print(contacts.status, [(c.kind, round(c.depth, 1)) for c in contacts.contacts],
-      stations.depth_unit, stations.depth_reference)
+contacts.status, contacts.fwl_depth, contacts.depth_unit, contacts.depth_reference
 ```
 
 **When your file is laid out differently.** Each reader finds columns and
@@ -114,8 +119,8 @@ whichever way the file records it:
 ```{code-cell} python
 from petrophys.io import depth_reference_elevation
 
-for name in ("daydream1_cmr", "teapot_44-mdx-10"):
-    print(name, depth_reference_elevation(pp.read(pp.sample(name))))
+{name: depth_reference_elevation(pp.read(pp.sample(name)))
+ for name in ("daydream1_cmr", "teapot_44-mdx-10")}
 ```
 
 **Surveys, tool responses and uncertainties** (no such files are bundled):
@@ -136,9 +141,9 @@ table (one row per point) or a wide one (one column per tool).
 ## Gap filling with machine learning
 
 {func}`pp.impute <petrophys.preprocessing.imputation.impute>` trains a model on the fly to rebuild a
-missing curve from the other logs (it needs the `ml` extra). Here the density
-log of the COSTA well HW-24 is removed and rebuilt from the 16 other COSTA
-wells; the result is added as `RHOB_IMPUTED`.
+missing curve from the other logs (it needs the `ml` extra). The result is added as
+`<CURVE>_IMPUTED`: the measured values where the curve was logged, the predictions
+in its gaps.
 
 On the 223 GeoLink North Sea wells, with 80 % of the wells as `train_wells` and
 each curve removed from the 36 others and rebuilt, R² over the rebuilt samples
@@ -147,81 +152,100 @@ and 0.63 for NPHI (0.050 v/v; two wells whose NPHI is zero-filled are not
 scored). Scores vary from well to well, so check a rebuild against measured
 data in your own wells before using it.
 
-`pp.plot` draws an imputed curve in the track of the curve it rebuilds, on the
-same scale: dashed where it fills the gaps, the measured curve solid where it
-was logged.
+`pp.impute` also writes `<CURVE>_PREDICTED`, a prediction at every depth, so a
+rebuild can be checked where the curve was measured. The check is out-of-fold: the
+well is cut into five depth blocks, and each measured sample is predicted by a model
+that did not learn from its block (the training wells are always used). A model
+judged on samples it learned from looks better than it is. Here the density of the
+COSTA well HW-24 is predicted from its other logs and the 16 other COSTA wells:
 
 ```{code-cell} python
-import matplotlib.pyplot as plt
-from petrophys.visualization import use_plot_style
-
-use_plot_style()
-costa_names = [name for name in pp.list_samples() if name.startswith("HW-")]
-hw24 = pp.read(pp.sample("HW-24"))
-measured = hw24["RHOB"].data.copy()
-hw24.remove_curve("RHOB")
-pp.impute(hw24, "RHOB", train_wells=[pp.sample(n) for n in costa_names if n != "HW-24"])
-rebuilt = hw24["RHOB_IMPUTED"].data
-both = np.isfinite(measured) & np.isfinite(rebuilt)
-print(f"Rebuilt against measured RHOB: mean absolute difference "
-      f"{np.mean(np.abs(rebuilt[both] - measured[both])):.3f} g/cm3 over {both.sum()} samples")
-
-fig, ax = plt.subplots(figsize=(3.6, 5))
-ax.plot(measured, hw24.depth, color="#9aa5b1", lw=2.2, label="Measured")
-ax.plot(rebuilt, hw24.depth, color="#176b87", lw=1, label="Rebuilt")
-ax.invert_yaxis()
-ax.set(xlabel="RHOB (g/cm3)", ylabel=f"Depth ({hw24.depth_unit})",
-       title="HW-24 density from 16 wells")
-ax.legend(loc="lower left", fontsize=8)
-plt.show()
+costa = [name for name in pp.list_samples() if name.startswith("HW-") and name != "HW-24"]
+hw24 = pp.impute(pp.sample("HW-24"), "RHOB", train_wells=[pp.sample(name) for name in costa])
+hw24["RHOB_PREDICTED"].description
 ```
+
+Over the 433 measured samples the prediction is off by 0.035 g/cm3 on average, with
+almost no bias and R² 0.89. `pp.plot` draws it over the measured density, in black, in
+the density track:
+
+```{code-cell} python
+pp.plot(hw24, curves=["GR", "RHOB", "RHOB_PREDICTED"])
+```
+
+The prediction follows the dense intervals at the top and base and the porous
+limestone between them. In a well with gaps, `RHOB_IMPUTED` keeps the measured density
+and takes the prediction only in the gaps, where `pp.plot` draws it dashed.
 
 ## Matrix and water indicators
 
 Apparent water resistivity, apparent matrix parameters (the inputs of the
 MID and RHOmaa-Umaa plots), the Raymer-Hunt-Gardner sonic transform and
-Winland R35.
+Winland R35. Each function takes curves as arrays or table columns.
+
+In clean water-bearing sand, apparent water resistivity (Rwa, Archie solved for Rw
+at Sw = 1) reads Rw; clay conduction lowers it in shaly rock. Over the clean
+Statfjord water sand it reads 0.089 ohm.m, somewhat above the 0.067 ohm.m that the
+interpretation's Rw (0.07 ohm.m at 230 °F) gives at that temperature; in a water leg,
+a Rwa well away from Rw questions the Rw or the Archie constants:
 
 ```{code-cell} python
-from petrophys.evaluation.rock_quality import calculate_winland_r35, classify_pore_throat
 from petrophys.interpretation.electrical.rw import apparent_water_resistivity
+
+water = logs.query("3223 <= DEPTH <= 3556 and VCL < 0.15 and PHIE > 0.15")
+water.assign(RWA=apparent_water_resistivity(water.RDEP, water.PHIE, a=0.8))[["RWA", "RW"]].median()
+```
+
+Apparent matrix density and slowness, from the apparent porosity of density and
+neutron together. Quartz reads 2.65 g/cm3 and about 55 us/ft; the Brent Group
+medians, 2.74 g/cm3 and 62 us/ft, sit above it, where clay and mica in the sands
+move both:
+
+```{code-cell} python
 from petrophys.interpretation.lithology import (
     apparent_matrix_density, apparent_matrix_slowness, apparent_total_porosity,
 )
+
+phia = apparent_total_porosity(brent.RHOB, brent.NPHI)
+brent.assign(RHOMAA=apparent_matrix_density(brent.RHOB, phia),
+             DTMAA=apparent_matrix_slowness(brent.DTC, phia))[["RHOMAA", "DTMAA"]].median()
+```
+
+Sonic porosity of the Brent Group by the Wyllie time average and by the
+Raymer-Hunt-Gardner transform, which does not need a compaction correction:
+
+```{code-cell} python
 from petrophys.interpretation.porosity import raymer_hunt_gardner, wyllie_time_average
 
-rhob, nphi, dtc = (np.asarray(well.get(n).data)[brent] for n in ("RHOB", "NPHI", "DTC"))
-phia = apparent_total_porosity(rhob, nphi)
-# Rwa in the clean Statfjord water sand reads Rw (clay conduction lowers it in shaly rock).
-curve = lambda name: np.asarray(well.get(name).data)
-water = (depth >= 3223) & (depth <= 3556) & (curve("VCL") < 0.15) & (curve("PHIE") > 0.15)
-rwa = apparent_water_resistivity(curve("RDEP")[water], curve("PHIE")[water], a=0.8)
-print(f"Statfjord clean sand: Rwa median {np.nanmedian(rwa):.3f} ohm.m; "
-      f"Rw of the interpretation {np.nanmedian(curve('RW')[water]):.3f} ohm.m")
-print(f"RHOmaa median {np.nanmedian(apparent_matrix_density(rhob, phia)):.2f} g/cc, "
-      f"DTmaa median {np.nanmedian(apparent_matrix_slowness(dtc, phia)):.1f} us/ft")
-print(f"Sonic porosity at 80 us/ft: Wyllie {wyllie_time_average(80.0):.3f}, RHG {raymer_hunt_gardner(80.0):.3f}")
+brent.assign(WYLLIE=wyllie_time_average(brent.DTC),
+             RHG=raymer_hunt_gardner(brent.DTC))[["WYLLIE", "RHG"]].median()
+```
 
-core = np.isfinite(np.asarray(well.get("KH_CORE").data)) & brent
-r35 = calculate_winland_r35(np.asarray(well.get("KH_CORE").data)[core], np.asarray(well.get("PHIC").data)[core])
-print(pd.Series(classify_pore_throat(r35)).value_counts().to_string())
+Winland R35 is the pore-throat radius at 35 % mercury saturation, from core
+permeability and porosity; it sorts the Brent plugs into pore-throat classes:
+
+```{code-cell} python
+from petrophys.evaluation.rock_quality import calculate_winland_r35, classify_pore_throat
+from petrophys.interpretation.core_analysis import core_data_from_well
+
+plugs = core_data_from_well(result).filter_by_depth(2841, 2958)
+r35 = calculate_winland_r35(plugs.permeability, plugs.porosity)
+pd.Series(classify_pore_throat(r35)).value_counts()
 ```
 
 ## Shale distribution: Thomas-Stieber
 
 Total porosity against shale volume splits shale into laminae, pore-filling
 (dispersed) and grain-replacing (structural) shale. The end points come from
-the interval: the clean sand's porosity and the shale's.
+the interval: the clean sand's porosity (90th percentile where VCL is below 0.1)
+and the shale's (median where VCL is above 0.8).
 
 ```{code-cell} python
 from petrophys.interpretation.clay_volume import thomas_stieber
 
-phit, vcl = (np.asarray(well.get(n).data)[brent] for n in ("PHIT", "VCL"))
-phi_sand = float(np.nanpercentile(phit[vcl < 0.1], 90))
-phi_shale = float(np.nanmedian(phit[vcl > 0.8]))
-ts = thomas_stieber(phit, vcl, phi_sand, phi_shale)
-print(f"phi_sand {phi_sand:.3f}, phi_shale {phi_shale:.3f}; sand-bed fraction (N/G) "
-      f"{np.nanmean(ts.net_to_gross):.2f}; samples outside the model {int(np.sum(ts.regime == 0))}")
+phi_sand = brent.PHIT[brent.VCL < 0.1].quantile(0.9)
+phi_shale = brent.PHIT[brent.VCL > 0.8].median()
+thomas_stieber(brent.PHIT, brent.VCL, phi_sand, phi_shale)
 ```
 
 ## Clay typing from Th/K
@@ -234,24 +258,19 @@ configurable). Here the Daydream 1 HNGS log.
 from petrophys.datasets import integration_fixture
 from petrophys.interpretation.geochemistry import clay_typing_from_well
 
-daydream = pp.read(integration_fixture("daydream1_shallow_aps_pex_hngs.las"))
-typing = clay_typing_from_well(daydream)
-print("From", typing.sources, f"- {typing.classified} samples typed")
-print({name: round(share, 3) for name, share in typing.fractions.items() if share})
+clay_typing_from_well(pp.read(integration_fixture("daydream1_shallow_aps_pex_hngs.las")))
 ```
 
 ## Heterogeneity: Lorenz and Dykstra-Parsons
 
-From core permeability and porosity over one reservoir unit.
+From core permeability and porosity over one reservoir unit, here the Brent plugs.
+The Lorenz coefficient runs from 0 (homogeneous) to 1; a Dykstra-Parsons
+coefficient above about 0.7 marks a very heterogeneous reservoir.
 
 ```{code-cell} python
 from petrophys.evaluation import dykstra_parsons, lorenz_coefficient
 
-k = np.asarray(well.get("KH_CORE").data)[core]
-phi = np.asarray(well.get("PHIC").data)[core]
-dp = dykstra_parsons(k)
-print(f"Lorenz {lorenz_coefficient(k, phi).coefficient:.2f}; Dykstra-Parsons V {dp.coefficient:.2f} "
-      f"(k50 {dp.k50:.1f} mD, log-normal fit R2 {dp.r_squared:.2f}) from {dp.n_samples} plugs")
+lorenz_coefficient(plugs.permeability, plugs.porosity), dykstra_parsons(plugs.permeability)
 ```
 
 ## Change-point zonation
@@ -263,8 +282,8 @@ the result with the formation tops.
 ```{code-cell} python
 from petrophys.evaluation import zone_well
 
-zones = zone_well(well, ["GR", "RHOB"], min_thickness=2.0, top=2700, bottom=3600, max_zones=12)
-print(zones.to_dataframe()[["top", "bottom", "GR_mean", "RHOB_mean"]].round(2).to_string(index=False))
+zones = zone_well(result.well, ["GR", "RHOB"], min_thickness=2.0, top=2700, bottom=3600, max_zones=12)
+zones.to_dataframe()[["top", "bottom", "GR_mean", "RHOB_mean"]].round(2)
 ```
 
 ## Statistics by zone
@@ -275,9 +294,10 @@ or a list of intervals.
 ```{code-cell} python
 from petrophys.evaluation.summaries import zone_statistics
 
-stats = zone_statistics(well, pp.sample("formations_30_6-5"), ["PHIE", "SW", "VCL"], rank="formation")
-brent_stats = stats[stats.zone.isin(["Ness Fm.", "Etive Fm."])]
-print(brent_stats[["zone", "curve", "coverage", "arithmetic_mean", "p10", "p50", "p90"]].round(3).to_string(index=False))
+stats = zone_statistics(result.well, pp.sample("formations_30_6-5"), ["PHIE", "SW", "VCL"],
+                        rank="formation")
+stats.query("zone in ['Ness Fm.', 'Etive Fm.']")[
+    ["zone", "curve", "coverage", "arithmetic_mean", "p10", "p50", "p90"]].round(3)
 ```
 
 ## Monte Carlo uncertainty
@@ -289,24 +309,28 @@ calibration error of 0.015 that is the same at every depth
 (`correlated_depths`).
 
 ```{code-cell} python
+import numpy as np
 from petrophys.evaluation import monte_carlo
 from petrophys.interpretation.saturation import archie
 
-etive = (depth >= 2865) & (depth <= 2958) & (np.asarray(well.get("NET_RES").data) > 0.5)
-rt = np.asarray(well.get("RDEP").data)[etive]
-phie = np.asarray(well.get("PHIE").data)[etive]
-rw = float(np.nanmedian(np.asarray(well.get("RW").data)[etive]))
+etive = logs.query("2865 <= DEPTH <= 2958 and NET_RES > 0.5")
+rw = etive.RW.median()
 
 def mean_sw(rt, phi, rw, m, n):
     sw = archie(rt=rt, rw=rw, phi=np.clip(phi, 0.01, None), a=0.8, m=m, n=n)
     return np.nanmean(np.clip(sw, 0, 1), axis=-1)
 
 mc = monte_carlo(mean_sw, {
-    "rt": rt, "phi": {"dist": "normal", "mean": phie, "sd": 0.015},
+    "rt": etive.RDEP.values, "phi": {"dist": "normal", "mean": etive.PHIE.values, "sd": 0.015},
     "rw": ("triangular", 0.8 * rw, rw, 1.2 * rw), "m": ("uniform", 1.8, 2.2), "n": ("uniform", 1.8, 2.2),
 }, n=2000, correlated_depths=["phi"])
-print("Etive net reservoir, mean Sw p10/p50/p90:", [round(float(v), 3) for v in mc.percentiles.values()])
-print("Rank correlation with the answer:", {k: round(v, 2) for k, v in mc.sensitivity.items()})
+mc
+```
+
+The rank correlation of each input with the answer shows which one drives the spread:
+
+```{code-cell} python
+mc.sensitivity
 ```
 
 ## Invasion, saturation height and pore pressure
@@ -359,8 +383,8 @@ measured pressure with the shale trend across that depth.
 from petrophys.interpretation.pore_pressure import eaton_from_well, fit_normal_compaction_trend
 
 well = pp.read("my_well.las", survey="survey.csv")
-nct = fit_normal_compaction_trend(tvd, dtc, kind="sonic", mask=shale & normally_pressured, mudline=135)
 shale = well["VCL"].data > 0.6
+nct = fit_normal_compaction_trend(tvd, dtc, kind="sonic", mask=shale & normally_pressured, mudline=135)
 ppr = eaton_from_well(well, nct, water_depth=110, density_above_log=1.95, shale=shale)  # air gap from the header
 exponent, misfit = ppr.calibrate(mdt_tvdss, mdt_bar, datum="TVDSS")      # fit Eaton's exponent
 ppr = eaton_from_well(well, nct, water_depth=110, density_above_log=1.95, shale=shale, exponent=exponent,

@@ -11,45 +11,55 @@ mystnb:
 
 The quickstart ran a bundled LAS; your own data rarely arrive that way. Read
 your logs, attach formation and lithology tables, check that their depths
-agree, then interpret and export. A CSV cut from the bundled 30/6-5 well stands
-in for your file.
+agree, then interpret and export. Files cut from the bundled 30/6-5 well stand
+in for yours: a CSV of logs, the same tops in feet, and a supplier workbook.
 
 ```{code-cell} python
 :tags: [remove-cell]
-%matplotlib inline
-import textwrap
-import warnings
+import os, tempfile, textwrap, warnings
 import pandas as pd
+import petrophys as pp
 
-# Display settings for this page: whole table cells, warnings wrapped and without file paths.
+# Display settings for this page: whole table cells, three decimals, wrapped warnings.
 pd.set_option("display.max_colwidth", None)
+pd.set_option("display.precision", 3)
 warnings.formatwarning = lambda message, category, *args, **kwargs: textwrap.fill(
     f"{category.__name__}: {message}", 88, subsequent_indent="    ") + "\n"
+os.chdir(tempfile.mkdtemp())  # the stand-in files and the exports go to a scratch folder
+
+# Stand-ins for your files, from the bundled 30/6-5 data.
+curves = ["GR", "CALI", "BS", "RHOB", "NPHI", "DTC", "RDEP", "RMED", "SP", "PEF", "DRHO"]
+logs = pp.read(pp.sample("30_6-5")).depth_slice(2700, 3100).to_dataframe(curves=curves)
+logs.rename(columns={"DEPTH": "MD"}).round(4).to_csv("my_logs.csv", index=False)
+
+picks = pd.read_csv(pp.sample("formations_30_6-5")).query("rank == 'formation'")
+picks = picks[["formation_name", "top_depth", "bottom_depth"]]
+picks.assign(top_depth=picks.top_depth / 0.3048, bottom_depth=picks.bottom_depth / 0.3048
+             ).to_csv("formations_ft.csv", index=False)
+
+brent = picks.query("formation_name in ['Ness Fm.', 'Etive Fm.']")
+costa = pd.read_csv(pp.sample("formations_costa")).query("well == 'HW-3'")
+supplier = pd.DataFrame({
+    "Well ID": ["30/6-5"] * len(brent) + ["HW-3"],
+    "Marker": [*brent.formation_name, *costa.formation_name],
+    "Pick ft": [*(brent.top_depth / 0.3048), *costa.top_depth],
+})
+with pd.ExcelWriter("supplier_tops.xlsx") as writer:
+    supplier.to_excel(writer, sheet_name="Tops", index=False)
+    pd.DataFrame({"note": ["Picks from the bundled tops files"]}).to_excel(
+        writer, sheet_name="Notes", index=False)
 ```
 
 ## Your logs
 
-The stand-in file has a depth column called `MD` and eleven log curves, and,
-like any CSV, no units or header.
+The stand-in file, `my_logs.csv`, holds 400 m of 30/6-5 logs: a depth column
+called `MD` and eleven log curves, and, like any CSV, no units or header.
 
 ```{code-cell} python
-:tags: [hide-input]
-import tempfile
-from pathlib import Path
-
 import pandas as pd
 import petrophys as pp
 
-folder = tempfile.TemporaryDirectory()
-workdir = Path(folder.name)
-
-# Stand-in for your file: 400 m of 30/6-5 logs written as a plain CSV.
-source = pp.read(pp.sample("30_6-5")).depth_slice(2700, 3100)
-curves = ["GR", "CALI", "BS", "RHOB", "NPHI", "DTC", "RDEP", "RMED", "SP", "PEF", "DRHO"]
-logs = source.to_dataframe(curves=curves)
-logs.rename(columns={"DEPTH": "MD"}).round(4).to_csv(workdir / "my_logs.csv", index=False)
-
-pd.read_csv(workdir / "my_logs.csv").head(3)
+pd.read_csv("my_logs.csv").head(3)
 ```
 
 ## Read them
@@ -57,12 +67,8 @@ pd.read_csv(workdir / "my_logs.csv").head(3)
 A CSV does not record its depth unit, so `depth_unit` is required.
 
 ```{code-cell} python
-well = pp.read(workdir / "my_logs.csv", depth_column="MD", depth_unit="m",
-               well_name="30/6-5")
-
-print(well)
-print(f"{well.top:.2f} - {well.bottom:.2f} {well.depth_unit}, step {well.step:.4f}")
-print(well.curves)
+well = pp.read("my_logs.csv", depth_column="MD", depth_unit="m", well_name="30/6-5")
+well
 ```
 
 | Option of `pp.read` | Applies to | What it does |
@@ -83,31 +89,16 @@ Excel logs: read them with pandas, then use {meth}`Well.from_dataframe
 
 ## Attach formations and lithology
 
-Copy a template's columns and fill in your picks; {doc}`input_templates` lists
-every template. Here the rows come from the bundled 30/6-5 picks.
+Pass your tables as `formations=` and `lithology=`. Copy a template's columns
+and fill in your picks; {doc}`input_templates` lists every template. Here the
+bundled 30/6-5 tops and lithology intervals stand in for yours.
 
 ```{code-cell} python
-formation_columns = pd.read_csv(pp.sample("formation_intervals_template")).columns
-picks = pd.read_csv(pp.sample("formations_30_6-5")).query("rank == 'formation'")
-picks[formation_columns].to_csv(workdir / "formations.csv", index=False)
-
-lithology_columns = pd.read_csv(pp.sample("lithology_intervals_template")).columns
-rocks = pd.read_csv(pp.sample("lithology_30_6-5"))
-rocks[lithology_columns].to_csv(workdir / "lithology.csv", index=False)
-
-well = pp.read(
-    workdir / "my_logs.csv", depth_column="MD", depth_unit="m", well_name="30/6-5",
-    formations=workdir / "formations.csv",
-    lithology=workdir / "lithology.csv",
-)
-viewer = pp.plot(
-    well,
-    top=2800,
-    bottom=3000,
-    tracks=["LITHOLOGY", "GAMMA / HOLE", "RESISTIVITY", "DENSITY / NEUTRON"],
-    figsize=(9.5, 10),
-)
-viewer.show()
+well = pp.read("my_logs.csv", depth_column="MD", depth_unit="m", well_name="30/6-5",
+               formations=pp.sample("formations_30_6-5"),
+               lithology=pp.sample("lithology_30_6-5"))
+pp.plot(well, top=2800, bottom=3000,
+        tracks=["LITHOLOGY", "GAMMA / HOLE", "RESISTIVITY", "DENSITY / NEUTRON"])
 ```
 
 ## Curve names no alias table knows
@@ -132,41 +123,31 @@ alias table knows.
 ## Read the import report
 
 Every geology reader returns a table plus a report of what it accepted, mapped
-and assumed. Here it notes the rows outside the logged interval.
+and assumed. Here it notes that no depth reference or datum was declared, and
+the rows outside the logged interval.
 
 ```{code-cell} python
-from textwrap import fill
-
-tops = pp.read_formations(workdir / "formations.csv", well=well)
-report = tops.attrs["import_report"]
-print(report["accepted_rows"], "of", report["input_rows"], "rows accepted")
-for line in report["diagnostics"]:
-    print(fill(f"- {line}", 88, subsequent_indent="  "))
+tops = pp.read_formations(pp.sample("formations_30_6-5"), well=well)
+tops.attrs["import_report"]
 ```
 
 ## Check depth reference and datum
 
 Declare the depth unit, reference and datum of each table. Units are then
 converted, and a table on a different reference is rejected instead of silently
-misplaced.
+misplaced. The well declares its own with `depth_reference=` and `datum=`.
+Here the same formation picks arrive in feet, in `formations_ft.csv`:
 
 ```{code-cell} python
-declared = {"depth_unit": "m", "depth_reference": "MD", "datum": "RKB"}
-well = pp.read(
-    workdir / "my_logs.csv", depth_column="MD", depth_unit="m", well_name="30/6-5",
-    depth_reference="MD", datum="RKB",
-    formations=workdir / "formations.csv", formation_options=declared,
-    lithology=workdir / "lithology.csv", lithology_options=declared,
-)
-
-# The same picks, delivered in feet:
-in_feet = picks[formation_columns].assign(top_depth=picks.top_depth / 0.3048,
-                                          bottom_depth=picks.bottom_depth / 0.3048)
-in_feet.to_csv(workdir / "formations_ft.csv", index=False)
-tops = pp.read_formations(workdir / "formations_ft.csv", well=well,
+well = pp.read("my_logs.csv", depth_column="MD", depth_unit="m", well_name="30/6-5",
+               depth_reference="MD", datum="RKB")
+tops = pp.read_formations("formations_ft.csv", well=well,
                           depth_unit="ft", depth_reference="MD", datum="RKB")
-print(tops.attrs["import_report"]["depth_conversion"])
-tops.tail(3).style.hide(axis="index").format(precision=1)
+tops.attrs["import_report"]["depth_conversion"]
+```
+
+```{code-cell} python
+tops.tail(3)
 ```
 
 | Situation | What Petrophys does |
@@ -180,35 +161,31 @@ tops.tail(3).style.hide(axis="index").format(precision=1)
 | Some rows outside the logged interval | Counts them in the report |
 | No row overlaps the logs | Warns with {class}`~petrophys.exceptions.DataQualityWarning`, suggesting the other unit if it fits |
 
+`pp.read` takes the same declarations for its tables through
+`formation_options` and `lithology_options`, for example
+`formation_options={"depth_unit": "ft", "depth_reference": "MD", "datum": "RKB"}`.
+
 ## A supplier workbook
 
 Suppliers often deliver one Excel workbook with several sheets and several
-wells, under their own column names. Name the sheet, map the columns (from the
-template's name to the supplier's) and pass the well: rows of other wells are
-filtered out and counted in the report. Here the 30/6-5 Brent Group picks share
-a sheet with the Kharaib-2 pick of the COSTA well HW-3, in feet:
+wells, under their own column names. Here the 30/6-5 Brent Group picks share
+the `Tops` sheet with the Kharaib-2 pick of the COSTA well HW-3, in feet:
 
 ```{code-cell} python
-brent_picks = picks.query("formation_name in ['Ness Fm.', 'Etive Fm.']")
-costa_pick = pd.read_csv(pp.sample("formations_costa")).query("well == 'HW-3'")
-supplier = pd.DataFrame({
-    "Well ID": ["30/6-5"] * len(brent_picks) + ["HW-3"],
-    "Marker": [*brent_picks.formation_name, *costa_pick.formation_name],
-    "Pick ft": [*(brent_picks.top_depth / 0.3048), *costa_pick.top_depth],
-})
-with pd.ExcelWriter(workdir / "supplier_tops.xlsx") as writer:
-    supplier.to_excel(writer, sheet_name="Tops", index=False)
-    pd.DataFrame({"note": ["Picks from the bundled tops files"]}).to_excel(
-        writer, sheet_name="Notes", index=False)
+pd.read_excel("supplier_tops.xlsx", sheet_name="Tops")
+```
 
+Name the sheet, map the columns (from the template's name to the supplier's)
+and pass the well: rows of other wells are filtered out and counted in the
+report (`filtered_rows`).
+
+```{code-cell} python
 tops = pp.read_formations(
-    workdir / "supplier_tops.xlsx", sheet_name="Tops", well=well,
+    "supplier_tops.xlsx", sheet_name="Tops", well=well,
     columns={"well": "Well ID", "formation_name": "Marker", "top_depth": "Pick ft"},
     depth_unit="ft", depth_reference="MD", datum="RKB",
 )
-report = tops.attrs["import_report"]
-print(report["filtered_rows"], "row of another well filtered out")
-tops.style.hide(axis="index").format(precision=1)
+tops
 ```
 
 Without `sheet_name`, a workbook with several sheets raises an error that
@@ -218,81 +195,69 @@ keep vendor comment columns out, and the report lists them.
 
 ## Errors you will meet
 
-Petrophys stops with a message that says what to fix. Each line below is a real
-error raised by the call next to it.
+Petrophys stops with a message that says what to fix. Each message below is a
+real error raised by the call next to it.
 
 ```{code-cell} python
-from petrophys.io import read_lithology_intervals
-
-
-def show_error(action):
+mistakes = {
+    "A CSV without a depth unit": lambda: pp.read("my_logs.csv", depth_column="MD"),
+    "Tops on another depth reference": lambda: pp.read_formations(
+        "formations_ft.csv", well=well, depth_unit="ft", depth_reference="TVDSS"),
+    "A misspelt setting": lambda: pp.interpret(well, rw=0.07, rw_temp_f=230),
+}
+for mistake, call in mistakes.items():
     try:
-        action()
+        call()
     except (ValueError, TypeError) as error:
-        print(fill(f"{type(error).__name__}: {error}", 88, subsequent_indent="    "))
-
-# No depth unit for a CSV:
-show_error(lambda: pp.read(workdir / "my_logs.csv", depth_column="MD"))
-# Tops on another depth reference:
-show_error(lambda: pp.read_formations(workdir / "formations.csv", well=well,
-                                      depth_reference="TVDSS"))
-# Overlapping lithology rows:
-show_error(lambda: read_lithology_intervals(rocks.assign(top=rocks.top - 5)))
-# A misspelt setting:
-show_error(lambda: pp.interpret(well, rw=0.07, rw_temp_f=230))
+        print(f"{mistake}:\n    {type(error).__name__}: {error}\n")
 ```
 
 ## Interpret, summarize, export
 
 A CSV has no header, so there is no bottom-hole temperature or mud-filtrate
-resistivity. The trace and `result.warnings` say what was assumed or skipped.
+resistivity. `result.warnings` and the skipped steps say what was assumed or
+left out.
+
+```{code-cell} python
+well = pp.read("my_logs.csv", depth_column="MD", depth_unit="m", well_name="30/6-5",
+               formations=pp.sample("formations_30_6-5"),
+               lithology=pp.sample("lithology_30_6-5"))
+result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
+result.warnings
+```
+
+The second warning is the missing temperature: an assumed 30 °C/km gradient
+sets the Rw and Rmf temperature corrections. The `rmf` step did not run:
+
+```{code-cell} python
+result.specific_steps_skipped["rmf"]
+```
+
 Supply the values with `bht_f` and `rmf_at_meas_temp` (or the mud report's
 filtrate chlorides, `rmf_chlorides_mg_l`), or write the CSV well to LAS with
 those values in its header ({doc}`input_templates` lists the parameters).
-
-```{code-cell} python
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
-print("status:", result.status)
-
-temperature = next(step for step in result.steps_executed if step.step == "temperature")
-for label, text in [("temperature", temperature.decisions[0]),
-                    ("rmf skipped", result.specific_steps_skipped["rmf"])]:
-    print(fill(f"{label}: {text}", 88, subsequent_indent="    "))
-for message in result.warnings:
-    print(fill(f"warning: {message}", 88, subsequent_indent="    "))
-```
 
 The `input_context` step records where the lithology came from. By default
 attached lithology intervals come first, then a recognized lithology log in the
 LAS, then the lithology computed from the logs; `lithology_source="external"`,
 `"vendor"`, `"computed"` or `"config"` selects one, and a source you request
-that is missing fails the run.
+that is missing fails the run. Here the attached intervals were selected:
 
 ```{code-cell} python
-source = next(step for step in result.steps_executed
-              if step.step == "input_context").parameters
-print("lithology source requested / selected:",
-      source["requested_source"], "/", source["selected_source"])
+result.step("input_context").decisions
 ```
 
 Attached formations organize the answer. Averages are over net-pay samples, so
 a formation without pay shows no averages.
 
 ```{code-cell} python
-summary = result.formation_summary()
-columns = ["Formation", "Top", "Bottom", "Gross (m)", "Net Pay (m)",
-           "Avg PHIE", "Avg Sw", "Avg VCL"]
-summary[columns].style.hide(axis="index").format(precision=2, na_rep="–")
+result.formation_summary()
 ```
 
 ```{code-cell} python
-result.to_las(workdir / "my_well_interpreted.las")       # curves and the settings used
-result.to_json(workdir / "my_well_trace.json")           # the complete trace
-result.well.to_csv(workdir / "my_well_interpreted.csv")  # curves only
-
-for name in sorted(path.name for path in workdir.iterdir()):
-    print(name)
-folder.cleanup()
+result.to_las("my_well_interpreted.las")       # curves and the settings used
+result.to_json("my_well_trace.json")           # the complete trace
+result.well.to_csv("my_well_interpreted.csv")  # curves only
 ```
 
 ## Next

@@ -141,7 +141,7 @@ def zone_statistics(
     ----------
     well : Well
         Well with the curves.
-    zones : table, path, list or mapping
+    zones : DataFrame, path, list or mapping
         Zones as :func:`petrophys.read_formations` reads them: a CSV/Excel
         file or DataFrame of formation tops, a list of ``{"name", "top",
         "bottom"}`` dicts, or ``{name: top}``. Give bottoms for every zone

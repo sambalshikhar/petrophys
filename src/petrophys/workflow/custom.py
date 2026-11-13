@@ -1492,7 +1492,7 @@ class Workflow:
         strict : bool, default True
             As in :meth:`run`, per well: a well that cannot run, or whose step
             fails, is recorded in ``errors`` and the batch continues.
-        formations : path or table, optional
+        formations : path or DataFrame, optional
             Formation tops attached to every well (a multi-well table is
             matched by well name), for per-formation summaries.
         params : dict, optional
@@ -1880,6 +1880,27 @@ class WorkflowRunResult:
         self._step_warnings: Dict[str, List[str]] = {}
 
     # -- recording -----------------------------------------------------------
+
+    def step(self, name: str) -> StepResult:
+        """The record of one step that ran: its ``method``, ``decisions``,
+        ``parameters``, ``input_curves`` and ``output_curves``."""
+        for step in self.steps:
+            if step.step == name:
+                return step
+        skipped = self.steps_skipped.get(name)
+        raise KeyError(
+            f"Step {name!r} did not run" + (f": {skipped}" if skipped else "")
+            + f". Steps run: {', '.join(step.step for step in self.steps)}"
+        )
+
+    def statistics(self, curves: Any = None, top: Optional[float] = None,
+                   bottom: Optional[float] = None) -> Any:
+        """Statistics of curves of the run's well over a depth window: a row
+        per curve with ``unit``, ``samples``, ``mean``, ``p10``, ``median``
+        and ``p90`` (default VCL, PHIT, PHIE, SW and PERM where present)."""
+        from petrophys.workflow.summary import statistics_table
+
+        return statistics_table(self.well, curves, top, bottom, default=("VCL", "PHIT", "PHIE", "SW", "PERM"))
 
     def _skip(self, step: Step, reason: str) -> None:
         self.steps_skipped[step.name] = reason[:1].upper() + reason[1:]

@@ -757,6 +757,11 @@ wherever the package used the function.
 
 #### Saturation
 
+- The salinity of the Rw the workflow uses (given with its temperature, or
+  from the header) chooses between the shaly-sand models when
+  `salinity_ppm` is not set: 30/6-5 with Rw 0.07 ohm.m at 230 degF routes to
+  Simandoux. A setting given by the caller (`rmf_chlorides_mg_l`, ...) is
+  used even when it equals the header value.
 - `sw_model="modified_simandoux"` and `modified_simandoux()` add the modified
   Simandoux equation, 1/Rt = phi^m Sw^n/(a Rw (1 - Vcl)) + Vcl Sw/Rcl, the
   form many service-company reports use. `simandoux()` is documented as the
@@ -846,6 +851,21 @@ wherever the package used the function.
 
 #### Permeability, saturation height and NMR
 
+- Special core analysis: `read_capillary_pressure` reads plug capillary
+  pressure curves (Pc against Sw, with each plug's porosity and
+  permeability) from a CSV or Excel table. `.thomeer()` fits the Thomeer
+  (1960) hyperbola to each plug (entry pressure Pd, pore geometrical factor
+  G, Bv-infinity), `.to_reservoir(fluids)` converts lab Pc by the ratio of
+  sigma cos(theta), and `fit_j_function_from_core` fits one Leverett
+  J-function to all plugs at reservoir conditions.
+- Fluid contacts from capillary pressure: `estimate_fwl_from_logs` finds the
+  free-water level at which a core saturation-height model best matches the
+  log Sw, with a 95% range (or says the FWL lies deeper or shallower than the
+  logged interval when the logs miss the transition zone), and
+  `water_contact_from_fwl` places the water contact above the FWL by the
+  entry-pressure height.
+- `swirr` takes one value per lithology, as Archie a, m and n do; other
+  lithologies keep the automatic estimate.
 - `perm_method="wyllie_rose"` and `wyllie_rose()` follow the published
   Wyllie and Rose (1950) family k = P phi^Q / Swi^R (k in mD, phi and Swi as
   fractions), with presets in `WYLLIE_ROSE_PRESETS`: `morris_biggs_oil`
@@ -1178,7 +1198,36 @@ wherever the package used the function.
   the wells that failed in `failed`. `pp.plot` on several wells draws each
   well's log plot, one figure at a time (`.save(folder)` writes a file per
   well); with `curves=` it draws one figure with a track per curve and every
-  well's curve in it.
+  well's curve in it. A mapping of labels to wells or results
+  (`pp.plot({"archie": run_a, "indonesia": run_b}, curves=["SW"])`) names
+  each line, so runs of one well can be compared.
+- Short calls on a result: `result.step("rw")` gives one step's record
+  (method, decisions, parameters), and `result.statistics(curves, top,
+  bottom)` a table of any curves' statistics over a depth window, for
+  `pp.interpret` and custom `Workflow` runs alike; `curve.description` reads a
+  curve's description. Plotters
+  (`create_nd_crossplot`, `create_pickett_plot`, ...) and the core
+  calibration functions (`core_data_from_well`, `calibrate_porosity`, ...),
+  `cutoff_sensitivity` and `zone_well` take an interpretation result as well
+  as a well. `result.summary()` describes PHIE_CC and PERM_CC beside PHIE and
+  PERM, and the several-wells `summary()` takes its PHIE and PERM medians
+  from them where the interpretation produced them, as the formation
+  summaries do.
+- `create_histogram_comparison(wells, "GR")` compares one curve across wells
+  or results; `calculate_flow_units(core)` and `create_flow_unit_plot(core)`
+  take core data, and the flow-unit result gives `to_dataframe()` and
+  `summary()`; `fit_j_function_from_well(well, fwl_depth)` fits a Leverett
+  J-function to a well's log Sw above a free-water level, and the model's
+  `plot()` draws the fit.
+- Notebook display: every figure shows at the end of its cell, once,
+  without `%matplotlib inline` or `plt.show()`, and `pp.plot(...)` as a
+  cell's last line shows its figure, not the viewer's name. Log-plot track
+  headers space their curve rows so names and units do not overlap; volume
+  fractions show as v/v (saturations as frac), an imputed curve takes its
+  measured curve's unit, and a track of curves no template track takes is
+  titled by them. The NMR panel's permeability axis spans the data.
+  `formation_summary` gives one warning for the curves undefined at some
+  pay samples, and a borehole image prints a one-line summary.
 - Batch use: outside an interactive session `LogViewer.save` closes the
   figure after saving, so plotting many wells keeps memory flat; a later
   `save` or `show` redraws the same depth window. `petrophys.read` on a
@@ -1212,8 +1261,10 @@ wherever the package used the function.
     and limestone carry no anhydrite.
   - The core porosity correction leaves log porosity at or below its fitted
     range (shale) as it is; core-calibrated permeability (PERM_CC) comes
-    from the effective part of the corrected porosity and is not
-    extrapolated outside the porosity range of the core pairs.
+    from the corrected porosity, on the scale of the core porosity its
+    transform was fitted on, and is not extrapolated outside the rock of
+    the core pairs: their porosity range and their clay volume (P95 of VCL
+    at the plugs).
   - A zone run's whole-well tallies (bad-hole pay) are not repeated under
     the zone's label.
   - Shale takes the grain endpoints of its solids for total porosity (clay
@@ -1361,7 +1412,13 @@ wherever the package used the function.
   counts imputed samples whose inputs lie outside the training range. Needs
   the `ml` extra. `pp.plot` draws `<CURVE>_IMPUTED` in the track of the
   curve it rebuilds, on its scale, dashed where it fills that curve's gaps.
-  Curves of one unit in a generic track share one scale.
+  Curves of one unit in a generic track share one scale. `<CURVE>_PREDICTED`
+  checks the model: a prediction at every depth, where each measured sample
+  is predicted by a model that did not learn from its fifth of the well (five
+  contiguous depth blocks), so its difference from the measured curve is the
+  error to expect in a gap. The curve's description gives that error (mean
+  absolute error, bias, R2), and `pp.plot(well, curves=["RHOB",
+  "RHOB_PREDICTED"])` draws it over the measured curve.
 - Plotting: `create_heatmap` centres each cell on its coordinate, draws
   unevenly and log-spaced bins such as NMR T2, and accepts cell edges; the
   core plotting helpers (`plot_calibration`, `plot_poro_perm`,

@@ -1162,8 +1162,12 @@ class DynamicWorkflowConfig:
     #: where no core model is fitted); ``lith_vcl`` takes none. Not available
     #: under the "geolink" profile.
     perm_coefficients: Optional[Dict[str, float]] = None
-    #: Irreducible water saturation, v/v. Defaults to curves or NMR data.
-    swirr: Optional[float] = None
+    #: Irreducible water saturation, v/v, for the permeability equations. One
+    #: value for every sample, or one per lithology as for ``a``, e.g.
+    #: ``{"sandstone": 0.12, "limestone": 0.20}`` (SCAL or NMR values by rock
+    #: type); a lithology not given takes the automatic estimate. Defaults to
+    #: a SWIRR curve or NMR data, else the Buckles bulk-volume-water estimate.
+    swirr: Optional[Any] = None
     #: Clay porosity behind the PHIE that picks the SWIRR_APP samples, i.e. the
     #: reservoir flag built before permeability when the well has no RESFLAG or
     #: NET_RES curve. ``"workflow"`` uses the reported PHIE. ``"all_shale_phit"``
@@ -1335,7 +1339,7 @@ def _per_lithology_values(config: "DynamicWorkflowConfig", errors: List[str]) ->
     from petrophys.model.constants import ArchieParameterDefaults
 
     known = set(ArchieParameterDefaults.names())
-    for name in (*_ARCHIE_FIELDS, *_CUTOFF_FIELDS):
+    for name in (*_ARCHIE_FIELDS, "swirr", *_CUTOFF_FIELDS):
         value = getattr(config, name)
         if not isinstance(value, Mapping):
             continue
@@ -1348,7 +1352,7 @@ def _per_lithology_values(config: "DynamicWorkflowConfig", errors: List[str]) ->
             key = str(raw_key).strip().lower().replace(" ", "_")
             if key == "*":
                 target = "*"  # every lithology not listed
-            elif name in _ARCHIE_FIELDS:
+            elif name in _ARCHIE_FIELDS or name == "swirr":
                 if key in _FAMILIES:
                     target = key
                 elif key in known:
@@ -3024,6 +3028,47 @@ class DynamicWorkflowResult:
 
         return summarize_result(self, top, bottom)
 
+    def step(self, name: str) -> "StepResult":
+        """The record of one executed step: its ``method``, ``decisions``,
+        ``parameters``, ``input_curves`` and ``output_curves``.
+
+        >>> result.step("rw").decisions  # doctest: +SKIP
+        """
+        for step in self.steps_executed:
+            if step.step == name:
+                return step
+        skipped = self.specific_steps_skipped.get(name)
+        ran = ", ".join(step.step for step in self.steps_executed)
+        raise KeyError(
+            f"Step {name!r} did not run" + (f": {skipped}" if skipped else "") + f". Steps run: {ran}"
+        )
+
+    def statistics(
+        self,
+        curves: Optional[Sequence[str]] = None,
+        top: Optional[float] = None,
+        bottom: Optional[float] = None,
+    ) -> Any:
+        """Statistics of curves of the interpreted well over a depth window.
+
+        Parameters
+        ----------
+        curves : str or sequence of str, optional
+            Curves to describe (the well's names); default VCL, PHIT, PHIE,
+            SW and PERM where present.
+        top, bottom : float, optional
+            Depth window in the well's depth unit; default the whole well.
+
+        Returns
+        -------
+        pandas.DataFrame
+            A row per curve: ``unit``, ``samples`` (finite), ``mean``,
+            ``p10``, ``median`` and ``p90``.
+        """
+        from petrophys.workflow.summary import statistics_table
+
+        return statistics_table(self.well, curves, top, bottom, default=("VCL", "PHIT", "PHIE", "SW", "PERM"))
+
     def provenance_parameters(self) -> List[Dict[str, Any]]:
         """Summarize the settings this interpretation used, as LAS parameters.
 
@@ -4079,6 +4124,23 @@ class DynamicWorkflow:
             vcl, phie, sw, explicit,
             _non_reservoir_samples(well, lithology),
         )
+
+    def _swirr_by_lithology(self, well: "Well") -> np.ndarray:
+        """Each sample's Swirr from a per-lithology ``swirr`` setting; NaN where none is given."""
+        from petrophys.evaluation.net_pay.cutoffs import cutoff_family
+        from petrophys.model.constants import ArchieParameterDefaults
+
+        n = well.n_samples
+        labels = self._build_lithology_log(well)
+        if not isinstance(labels, np.ndarray) or labels.shape != (n,):
+            labels = np.full(n, labels or self.config.lithology_domain, dtype=object)
+        fallback = self.config.lithology_domain or "generic_clean"
+        values = np.full(n, np.nan)
+        for index, raw in enumerate(labels):
+            name = _coerce_lithology_group(raw) or fallback
+            canonical = str(ArchieParameterDefaults.get(name).lithology)
+            values[index] = _lithology_value(self.config.swirr, canonical, cutoff_family(name), float("nan"))
+        return values
 
     def _archie_coefficients_for_lithology(
         self,
@@ -6813,6 +6875,9 @@ class DynamicWorkflow:
             if value is None:
                 return False
             header_value = header_derived.get(name)
+            if not self._reproducing_benchmark and name in (
+                    getattr(self.config, "_explicit_settings", None) or frozenset()):
+                return True  # the caller's own value, even when it equals the header's
             return header_value is None or not np.isclose(float(value), float(header_value))
 
         if _explicit("rmf_salinity_ppm"):
@@ -8627,6 +8692,12 @@ class DynamicWorkflow:
         if not self._reproducing_benchmark:
             # Core porosity is fitted to PHIT, and PHIT - PHIE is taken off again.
             trace.input_curves = [name for name in ("PHIT", "PHIE") if get_curve(well, [name]) is not None]
+            for model in result.metadata.get("core_models", []):
+                if model.get("vcl_max") is not None:
+                    decisions.append(
+                        f"PERM_CC from the {model.get('source_formation') or 'whole-well'} transform only "
+                        f"where VCL <= {model['vcl_max']:.2f}, the clay volume its core plugs span (P95)"
+                    )
             trace.parameters["core_porosity_fits"] = result.metadata.get("core_porosity_fits")
             trace.parameters["core_porosity_min_r_squared"] = _CORE_POROSITY_MIN_R_SQUARED
             decisions.extend(self._core_porosity_decisions(result.metadata, "PHIE_CC" in outputs))
@@ -8694,6 +8765,21 @@ class DynamicWorkflow:
         # Lab CEC is reported in meq/100 g; waxman_smits() takes meq/g.
         return cec / 100.0
 
+    def _routing_salinity(self) -> Optional[float]:
+        """Formation-water salinity for the saturation model choice: the
+        ``salinity_ppm`` setting, else the salinity of the Rw the rw step used
+        (a given or header Rw at its temperature), so a saline water routes to
+        Simandoux whichever way it was given."""
+        if self.config.salinity_ppm is not None or self._reproducing_benchmark or self._historical:
+            return self.config.salinity_ppm
+        for step in self._result.steps_executed:
+            if step.step == "rw":
+                for key in ("salinity_ppm", "salinity_ppm_estimated"):
+                    value = step.parameters.get(key)
+                    if isinstance(value, (int, float)) and np.isfinite(value) and value > 0:
+                        return float(value)
+        return None
+
     def _step_saturation(self, well: "Well") -> StepResult:
         from petrophys.interpretation.saturation.sw_module import SaturationModule
         from petrophys.workflow._canonical_calculations import (
@@ -8752,7 +8838,7 @@ class DynamicWorkflow:
         result = sw_module.calculate(
             well, phie=sat_phie, phit=sat_phit,
             rw=self._result.rw_computed, rcl=self._result.rcl_computed,
-            salinity=self.config.salinity_ppm,
+            salinity=self._routing_salinity(),
             rmf=self._result.rmf_computed if flushed_zone else None,
             lithology=lithology, cec=cec, b_coeff=self.config.b_coeff,
             rho_ma=self._grain_density_setting(), m_star=self.config.m_star,
@@ -9095,13 +9181,31 @@ class DynamicWorkflow:
         elif code_curve is None and not self._has_curve(well, "LITHO_CLASS", "LITHO"):
             lithology = self._build_lithology_log(well)
 
+        peer_wells = self._core_peer_wells(well, decisions)
         result = perm_module.calculate(
             well,
-            swi=self.config.swirr,
+            swi=None if isinstance(self.config.swirr, Mapping) else self.config.swirr,
             lithology=lithology,
-            peer_wells=self._core_peer_wells(well, decisions),
+            peer_wells=peer_wells,
             formation_tops=self.config.formation_tops,
         )
+        if isinstance(self.config.swirr, Mapping):
+            # Swirr by lithology; a lithology not given keeps the automatic estimate.
+            given = self._swirr_by_lithology(well)
+            automatic = np.broadcast_to(np.asarray(result.swi_used, dtype=float), given.shape) \
+                if result.swi_used is not None else np.full(given.shape, np.nan)
+            result = perm_module.calculate(
+                well,
+                swi=np.where(np.isfinite(given), given, automatic),
+                lithology=lithology,
+                peer_wells=peer_wells,
+                formation_tops=self.config.formation_tops,
+            )
+            decisions.append(
+                "Swirr by lithology: " + ", ".join(f"{key} {value:g}" for key, value in self.config.swirr.items())
+                + f" ({int(np.isfinite(given).sum())} of {given.size} samples); other samples keep the "
+                "automatic estimate"
+            )
         empirical_perm = result.metadata.get("empirical_perm")
         empirical_method = result.metadata.get("empirical_method") or self.config.perm_fallback_method
         perm_output = empirical_perm if empirical_perm is not None else result.perm

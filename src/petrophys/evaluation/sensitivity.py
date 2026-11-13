@@ -23,6 +23,8 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Unio
 
 import numpy as np
 
+from petrophys._internal.analysis_helpers import as_well as _as_well
+
 from petrophys.evaluation.net_pay.pay_summary import (
     PHIE_CURVES,
     SW_CURVES,
@@ -151,6 +153,7 @@ def cutoff_sensitivity(
     The cutoffs are strict, so the samples at VCL = 0.2 and at Sw = 0.5 or
     0.7 fail the matching cutoff.
     """
+    well = _as_well(well)
     import pandas as pd
 
     _, arrays, dz, unit, _ = resolve_windowed_inputs(

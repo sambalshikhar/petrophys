@@ -780,6 +780,13 @@ DEFAULT_CURVE_DISPLAY_UNITS: Dict[str, str] = {
 
 
 UNIT_DISPLAY_ALIASES: Dict[str, str] = {
+    # Volume fractions, however the file spells them.
+    "ft3/ft3": "v/v",
+    "m3/m3": "v/v",
+    "frac": "v/v",
+    "fraction": "v/v",
+    "dec": "v/v",
+    "decimal": "v/v",
     "api": "API",
     "gapi": "API",
     "in": "in",
@@ -1284,6 +1291,8 @@ def _adaptive_curve_range(well: "Well", curve_name: str) -> Tuple[float, float]:
 
 #: Suffix of a curve rebuilt by :func:`petrophys.impute` (measured values plus predictions in the gaps).
 IMPUTED_SUFFIX = "_IMPUTED"
+#: Suffix of the out-of-fold check curve of an imputation (``RHOB_PREDICTED``).
+PREDICTED_SUFFIX = "_PREDICTED"
 
 
 def _imputed_curve_for(well: "Well", spec: "LogCurveSpec", resolved: Optional[str]) -> Optional[str]:
@@ -1971,11 +1980,26 @@ def _display_well(well: "Well", interpreted: bool = False) -> "Well":
         if percent:
             curve._data = values / 100.0
             curve.unit = "v/v"
+    units_before = {name: str(curve.unit or "").strip() for name, curve in display._curves.items()}
     standardize_curves(
         display, rename_curves=False, convert_units=True,
         plausible_ranges={} if interpreted else None,
     )
     display._curves.update(depth_curves)
+    # An imputed companion (NPHI_IMPUTED) is converted as its measured curve was.
+    from petrophys.preprocessing.standardization.unit_converter import get_conversion_factor
+
+    for name, curve in display._curves.items():
+        suffix = next((s for s in (IMPUTED_SUFFIX, PREDICTED_SUFFIX) if name.upper().endswith(s)), None)
+        base = display._curves.get(name[: -len(suffix)]) if suffix else None
+        if base is None:
+            continue
+        old_unit, new_unit = units_before.get(base.mnemonic, ""), str(base.unit or "").strip()
+        if old_unit != new_unit and str(curve.unit or "").strip() == old_unit:
+            factor = get_conversion_factor(old_unit, new_unit) if old_unit else 1.0
+            if factor is not None:
+                curve._data = np.asarray(curve.data, dtype=float) * factor
+                curve.unit = new_unit
     # NMR porosities standardize to porosity units (pu); the porosity track is in v/v.
     for mnemonic, curve in display._curves.items():
         if str(get_standard_mnemonic(mnemonic)).upper() in {"NMR_PHIT", "NMR_FFI", "NMR_BVI", "NMR_3MS"}                 and str(curve.unit or "").strip().lower() in PERCENT_SATURATION_UNITS:
@@ -2267,6 +2291,32 @@ class LogViewer:
                     for spec in specs
                 ]
                 kept.append(track)
+        # A requested <curve>_PREDICTED goes beside its curve, on its scale.
+        for name in requested:
+            key = targets[name]
+            if not key.endswith(PREDICTED_SUFFIX):
+                continue
+            base = key[: -len(PREDICTED_SUFFIX)]
+            for track in kept:
+                if track.display_name.startswith("OTHER"):
+                    continue
+                spot = next((index for index, spec in enumerate(track.curves) if str(
+                    _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates) or "").upper() == base), None)
+                if spot is not None:
+                    # Out of any generic track the layout gave it.
+                    for other in kept:
+                        if other.display_name.startswith("OTHER"):
+                            other.curves = [s for s in other.curves if s.curve_name.upper() != key]
+                    kept[:] = [t for t in kept if t.curves or not t.display_name.startswith("OTHER")]
+                    spec = track.curves[spot]
+                    track.curves.insert(spot + 1, replace(
+                        spec, curve_name=available[key], candidates=[], line_style="-", fill=None,
+                        color="#000000", line_width=1.0,  # stands out from the measured curve
+                        left_crossover=None, right_crossover=None, gaps_of=None,
+                        display_name=f"{spec.display_name or spec.curve_name} predicted"))
+                    satisfied.add(name)
+                    placed.add(key)
+                    break
         leftover = list(dict.fromkeys(
             available[targets[name]] for name in requested
             if name not in satisfied and targets[name] not in placed and targets[name] != code
@@ -2451,6 +2501,17 @@ class LogViewer:
             self.create(*self._window)
         plt.show()
 
+    def _ipython_display_(self) -> None:
+        # A viewer at the end of a notebook cell shows its figure, once.
+        from IPython.core.pylabtools import print_figure
+        from IPython.display import Image, display
+
+        if self.fig is None:
+            self.create(*self._window)
+        # The PNG itself, as the inline backend draws it, so any backend shows the image.
+        display(Image(data=print_figure(self.fig, "png")))
+        plt.close(self.fig)  # keeps .fig for saving; the notebook does not draw it again
+
     def close(self) -> None:
         """Close the underlying matplotlib figure and release it (frees memory)."""
         if self.fig is not None:
@@ -2604,10 +2665,19 @@ class LogViewer:
         ax.set_xlim(0.0, 1.0)
         ax.set_ylim(0.0, 1.0)
         ax.axis("off")
+        title = str(track.display_name)
+        if re.fullmatch(r"OTHER( \d+)?", title):
+            # A generic track is titled by the curves it holds.
+            names = list(dict.fromkeys(str(spec.display_name or spec.curve_name) for spec in track.curves))
+            title = " / ".join(names)
+            while len(names) > 1 and len(title) > 26:
+                names = names[:-1]
+                title = " / ".join(names) + " / ..."
+            title = title or "OTHER CURVES"
         ax.text(
             0.5,
             0.96,
-            track.display_name,
+            title,
             fontsize=10.2,
             fontweight="bold",
             ha="center",
@@ -3906,8 +3976,10 @@ class LogViewer:
                 row_step = 0.22
                 row_center = 0.46
             else:
-                row_step = min(0.135, 0.64 / (row_count - 1))
-                row_top = min(0.72, 0.14 + row_step * (row_count - 1))
+                # Rows spread over the header below its title, so a row's
+                # scale line does not run into the next row's name.
+                row_step = min(0.22, 0.60 / (row_count - 1))
+                row_top = min(0.70, 0.14 + row_step * (row_count - 1))
                 row_center = row_top - row * row_step
 
         label_text, unit_text = self._split_header_label(label)
@@ -4011,7 +4083,10 @@ class LogViewer:
         unit = str(unit).strip()
         mnemonic = str(getattr(curve, "mnemonic", "") or "").upper()
         normalized = self._normalize_display_unit(unit)
-        if mnemonic in FRACTION_SATURATION_CURVE_NAMES and normalized in {"", "v/v", "frac"}:
+        saturation = (mnemonic in FRACTION_SATURATION_CURVE_NAMES
+                      or str(get_standard_mnemonic(mnemonic)).upper() in FRACTION_SATURATION_CURVE_NAMES
+                      or mnemonic.split("_")[0] in FRACTION_SATURATION_CURVE_NAMES)  # SW_INPUT, SXO_CORE
+        if saturation and normalized in {"", "v/v", "frac"}:
             return "frac"
         if mnemonic in RESISTIVITY_CURVE_NAMES and normalized in {"", "ohm.m"}:
             return "ohm.m"

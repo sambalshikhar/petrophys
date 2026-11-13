@@ -137,6 +137,11 @@ class Curve:
             self._depth = None
 
     @property
+    def description(self) -> str:
+        """The curve's description (``metadata.description``)."""
+        return self.metadata.description
+
+    @property
     def values(self) -> np.ndarray:
         """Alias for data property."""
         return self._data

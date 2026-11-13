@@ -5,6 +5,8 @@ Zone summary calculations.
 from typing import TYPE_CHECKING, Optional, List, Dict, Union
 from dataclasses import dataclass, field
 import warnings
+from contextlib import contextmanager
+from contextvars import ContextVar
 import numpy as np
 
 from petrophys._internal.analysis_helpers import (
@@ -63,6 +65,33 @@ class ZoneSummary:
         if not self.gross_thickness or not np.isfinite(self.net_reservoir):
             return np.nan
         return self.net_reservoir / self.gross_thickness
+
+
+#: Undefined pay-average samples collected over the zones of one summary.
+_PAY_GAPS: "ContextVar[Optional[list]]" = ContextVar("_pay_gaps", default=None)
+
+
+@contextmanager
+def _one_pay_gap_warning():
+    """Warn once, for all the zones of a summary, where a pay-average curve is undefined."""
+    if _PAY_GAPS.get() is not None:
+        yield
+        return
+    gaps: list = []
+    token = _PAY_GAPS.set(gaps)
+    try:
+        yield
+    finally:
+        _PAY_GAPS.reset(token)
+        by_curve: Dict[str, List[str]] = {}
+        for name, zone, missing, total in gaps:
+            by_curve.setdefault(name, []).append(f"{zone} {missing} of {total}")
+        for name, zones in by_curve.items():
+            warnings.warn(
+                f"{name} is undefined at some net-pay samples ({'; '.join(zones)}); "
+                "each average covers the other pay samples.",
+                UserWarning, stacklevel=4,
+            )
 
 
 def _written_by_workflow_step(curve) -> bool:
@@ -231,7 +260,9 @@ def calculate_zone_summary(
         avg_perm = _geometric_mean(perm[pay_mask])
         for name, data in ((phie_curve, phie), (perm_curve, perm)):
             missing = int(np.count_nonzero(pay_mask & ~np.isfinite(data)))
-            if name and n_pay_samples and missing:
+            if name and n_pay_samples and missing and _PAY_GAPS.get() is not None:
+                _PAY_GAPS.get().append((name, zone_name, missing, n_pay_samples))
+            elif name and n_pay_samples and missing:
                 warnings.warn(
                     f"{zone_name}: {name} is undefined at {missing} of {n_pay_samples} net-pay "
                     f"samples; its average covers the other {n_pay_samples - missing}.",
@@ -345,15 +376,16 @@ def summarize_zones(
     summaries = []
     tops = {float(zone["top"]) for zone in zones}
 
-    for zone in zones:
-        summary = calculate_zone_summary(
-            well,
-            top_depth=zone["top"],
-            bottom_depth=zone["bottom"],
-            zone_name=zone.get("name", "Zone"),
-            # A boundary sample shared with the next zone is counted once, in that zone.
-            include_bottom=float(zone["bottom"]) not in tops,
-        )
-        summaries.append(summary)
+    with _one_pay_gap_warning():
+        for zone in zones:
+            summary = calculate_zone_summary(
+                well,
+                top_depth=zone["top"],
+                bottom_depth=zone["bottom"],
+                zone_name=zone.get("name", "Zone"),
+                # A boundary sample shared with the next zone is counted once, in that zone.
+                include_bottom=float(zone["bottom"]) not in tops,
+            )
+            summaries.append(summary)
 
     return summaries

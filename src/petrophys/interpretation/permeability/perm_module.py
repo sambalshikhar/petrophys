@@ -135,6 +135,9 @@ class CorePermModel:
     input_curve: str = "PHIE"
     core_porosity_curve: Optional[str] = None
     core_permeability_curve: Optional[str] = None
+    #: The clay volume the transform's core plugs span (their 95th percentile);
+    #: no permeability is predicted in rock more shaly than that.
+    vcl_max: Optional[float] = None
 
     @property
     def n_core_points(self) -> int:
@@ -143,25 +146,19 @@ class CorePermModel:
             return self.perm_transform.n_points
         return self.porosity_correction.n_points
 
-    def predict(self, porosity: np.ndarray, bound: Optional[np.ndarray] = None) -> tuple[np.ndarray, np.ndarray]:
+    def predict(self, porosity: np.ndarray, vcl: Optional[np.ndarray] = None) -> tuple[np.ndarray, np.ndarray]:
         """Predict corrected porosity and permeability for a log curve.
 
-        ``bound`` is the clay-bound porosity (PHIT - PHIE) of the samples. For
-        a model fitted to total porosity (``input_curve`` PHIT), permeability
-        is predicted from the effective part of the corrected porosity, so a
-        shale's clay-bound water does not read as flow porosity.
-
-        Permeability is all-NaN when the model has no fitted poro-perm
-        transform, and NaN where the corrected porosity lies outside the
-        porosity range of the core pairs the transform was fitted on: the
-        exponential transform is not extrapolated (to shale, or to shallow
-        unconsolidated rock far more porous than the cored reservoir).
+        Permeability comes from the corrected porosity, on the scale of the
+        core porosity the transform was fitted on. It is all-NaN when the
+        model has no fitted poro-perm transform, and NaN where the sample lies
+        outside the rock of the core pairs: corrected porosity outside their
+        porosity range (shale, or shallow unconsolidated rock far more porous
+        than the cored reservoir), or clay volume ``vcl`` above
+        :attr:`vcl_max`. The exponential transform is not extrapolated.
         """
         phi_corr = self.porosity_correction.predict(porosity)
         phi_flow = np.asarray(phi_corr, dtype=float)
-        if bound is not None and str(self.input_curve).upper() == "PHIT":
-            with np.errstate(invalid="ignore"):
-                phi_flow = np.clip(phi_flow - np.asarray(bound, dtype=float), 0.0, phi_flow)
         if self.perm_transform is None:
             perm = np.full_like(phi_flow, np.nan)
         else:
@@ -170,6 +167,9 @@ class CorePermModel:
             if not reproducing_benchmark() and np.isfinite(low) and np.isfinite(high):
                 with np.errstate(invalid="ignore"):
                     perm = np.where((phi_flow < low) | (phi_flow > high), np.nan, perm)
+            if not reproducing_benchmark() and vcl is not None and self.vcl_max is not None:
+                with np.errstate(invalid="ignore"):
+                    perm = np.where(np.asarray(vcl, dtype=float) > self.vcl_max, np.nan, perm)
         return phi_corr, perm
 
 
@@ -634,7 +634,7 @@ def _get_formation_tops(
 
 def _serialize_core_model(model: CorePermModel) -> Dict[str, Any]:
     """Convert a core-derived permeability model to simple metadata."""
-    return {
+    record = {
         "source_well": model.source_well,
         "source_field": model.source_field,
         "source_formation": model.source_formation,
@@ -656,6 +656,9 @@ def _serialize_core_model(model: CorePermModel) -> Dict[str, Any]:
             else None
         ),
     }
+    if not reproducing_benchmark() and model.vcl_max is not None:
+        record["vcl_max"] = model.vcl_max
+    return record
 
 
 def _fit_core_perm_model(
@@ -796,6 +799,7 @@ def _fit_core_perm_model(
     return CorePermModel(
         porosity_correction=correction,
         perm_transform=transform,
+        vcl_max=_plug_vcl_max(source_well, core) if transform is not None else None,
         source_well=source_well.name,
         source_field=source_well.header.field,
         source_formation=formation_name,
@@ -830,18 +834,29 @@ def _model_rank(model: CorePermModel) -> tuple[float, float, float]:
     )
 
 
-def _bound_porosity(well: "Well") -> Optional[np.ndarray]:
-    """Clay-bound porosity PHIT - PHIE of ``well``, or None without both curves
-    (and under benchmark reproduction, whose packages predicted permeability
-    from total porosity)."""
+def _plug_vcl_max(well: "Well", core: Any) -> Optional[float]:
+    """The 95th percentile of the log clay volume at the core plugs with porosity
+    and permeability, or None without a VCL curve or such plugs."""
+    vcl_curve = get_curve(well, ["VCL"])
+    if vcl_curve is None or core.depth is None or core.porosity is None or core.permeability is None:
+        return None
+    plugs = np.isfinite(core.porosity) & np.isfinite(core.permeability)
+    depth = np.asarray(well.depth, dtype=float)
+    if not np.any(plugs) or depth.size == 0:
+        return None
+    index = np.clip(np.searchsorted(depth, np.asarray(core.depth, dtype=float)[plugs]), 0, depth.size - 1)
+    values = np.asarray(vcl_curve.data, dtype=float)[index]
+    values = values[np.isfinite(values)]
+    return float(np.percentile(values, 95)) if values.size else None
+
+
+def _vcl_for_perm(well: "Well") -> Optional[np.ndarray]:
+    """The clay volume that bounds core-transform permeability, or None without
+    VCL (and under benchmark reproduction, whose packages had no such bound)."""
     if reproducing_benchmark():
         return None
-    phit, _, _ = get_curve_data_depthwise(well, ["PHIT"])
-    phie, _, _ = get_curve_data_depthwise(well, ["PHIE"])
-    if phit is None or phie is None:
-        return None
-    with np.errstate(invalid="ignore"):
-        return np.clip(np.asarray(phit, dtype=float) - np.asarray(phie, dtype=float), 0.0, None)
+    curve = get_curve(well, ["VCL"])
+    return None if curve is None else np.asarray(curve.data, dtype=float)
 
 
 def _apply_core_model(
@@ -850,12 +865,12 @@ def _apply_core_model(
     model: CorePermModel,
     phi_corecal: np.ndarray,
     perm_core: np.ndarray,
-    bound: Optional[np.ndarray] = None,
+    vcl: Optional[np.ndarray] = None,
 ):
     """Apply a fitted core model into masked portions of full-length arrays."""
     if not np.any(mask):
         return
-    phi_corr, perm = model.predict(phi_input[mask], None if bound is None else bound[mask])
+    phi_corr, perm = model.predict(phi_input[mask], None if vcl is None else vcl[mask])
     phi_corecal[mask] = phi_corr
     perm_core[mask] = perm
 
@@ -872,7 +887,7 @@ def _build_same_well_core_prediction(
     """Build same-well core-calibrated porosity and permeability."""
     porosity_curve = _core_porosity_curve_name(well, porosity_curve)
     phi_input = np.asarray(well.get(porosity_curve).data, dtype=float)
-    bound = _bound_porosity(well)
+    vcl = _vcl_for_perm(well)
     depth = np.asarray(well.depth, dtype=float)
 
     phi_corecal = np.full_like(phi_input, np.nan, dtype=float)
@@ -895,7 +910,7 @@ def _build_same_well_core_prediction(
                 continue
 
             mask = interval.contains(depth)
-            _apply_core_model(phi_input, mask, model, phi_corecal, perm_core, bound)
+            _apply_core_model(phi_input, mask, model, phi_corecal, perm_core, vcl)
             models.append(model)
 
     unresolved = ~np.isfinite(perm_core)
@@ -910,7 +925,7 @@ def _build_same_well_core_prediction(
             min_porosity_r_squared=min_porosity_r_squared,
         )
         if model is not None:
-            _apply_core_model(phi_input, unresolved, model, phi_corecal, perm_core, bound)
+            _apply_core_model(phi_input, unresolved, model, phi_corecal, perm_core, vcl)
             models.append(model)
 
     return phi_corecal, perm_core, models
@@ -932,7 +947,7 @@ def _build_peer_core_prediction(
     wells (stored on each well as ``well.set_parameter("formation_tops", tops)``).
     """
     phi_input = np.asarray(well.get(_core_porosity_curve_name(well, porosity_curve)).data, dtype=float)
-    bound = _bound_porosity(well)
+    vcl = _vcl_for_perm(well)
     depth = np.asarray(well.depth, dtype=float)
     phi_corecal = np.full_like(phi_input, np.nan, dtype=float)
     perm_core = np.full_like(phi_input, np.nan, dtype=float)
@@ -980,7 +995,7 @@ def _build_peer_core_prediction(
             continue
 
         mask = interval.contains(depth)
-        _apply_core_model(phi_input, mask, best_model, phi_corecal, perm_core, bound)
+        _apply_core_model(phi_input, mask, best_model, phi_corecal, perm_core, vcl)
         models.append(best_model)
 
     return phi_corecal, perm_core, models
@@ -1312,9 +1327,9 @@ class PermeabilityModule:
             if same_well_global is not None:
                 core_phi = self._core_input_porosity(well, phi, core_curve)
                 need_mask = phi_unresolved | perm_unresolved
-                bound = _bound_porosity(well)
+                vcl = _vcl_for_perm(well)
                 phi_global, perm_global = same_well_global.predict(
-                    core_phi[need_mask], None if bound is None else bound[need_mask])
+                    core_phi[need_mask], None if vcl is None else vcl[need_mask])
                 global_phi = np.full_like(phi_corecal, np.nan)
                 global_perm = np.full_like(perm_core, np.nan)
                 global_phi[need_mask] = phi_global
@@ -1456,9 +1471,9 @@ class PermeabilityModule:
             if same_well_global is not None:
                 core_phi = self._core_input_porosity(well, phi, core_curve)
                 needed = unresolved | ~np.isfinite(phi_corecal)
-                bound = _bound_porosity(well)
+                vcl = _vcl_for_perm(well)
                 phi_global, perm_global = same_well_global.predict(
-                    core_phi[needed], None if bound is None else bound[needed])
+                    core_phi[needed], None if vcl is None else vcl[needed])
                 global_phi = np.full_like(phi_corecal, np.nan)
                 global_perm = np.full_like(perm_core, np.nan)
                 global_phi[needed] = phi_global

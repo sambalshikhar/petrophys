@@ -21,20 +21,9 @@ import pandas as pd
 # Display settings for this page: whole table cells, warnings without file paths.
 pd.set_option("display.max_colwidth", None)
 warnings.formatwarning = lambda message, category, *args, **kwargs: f"{category.__name__}: {message}\n"
-```
-
-```{code-cell} python
-:tags: [hide-input]
-import warnings
-import petrophys as pp
-
 # The bundled LAS stores its SWC/SOC core saturations as percentages under a 'frac'
 # label; Petrophys converts them and warns. Hide only that message.
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
-
-well = pp.read(pp.sample("30_6-5"))
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
-print("30/6-5 interpreted:", result.status, "|", len(result.steps_executed), "steps ran")
 ```
 
 ## Terms
@@ -74,33 +63,18 @@ In `pp.read`, `lithology=` attaches lithology intervals only. As a
 ## Curves the workflow adds
 
 Every curve `pp.interpret` added on 30/6-5, with the unit and description it
-carries and the step that first wrote it. Other inputs can add or omit curves;
-fractions are in v/v.
+carries and the fraction of depths it covers. Other inputs can add or omit
+curves; fractions are in v/v. The trace, `result.to_dataframe()`, names the step
+that wrote each one. The clay volumes are kept under a second name for other readers, with the same values: `VCLAY` for `VCL`, `VCLGR` for `VCL_GR`, `VCLSP` for `VCL_SP` and `VCLND` for `VCL_ND`.
 
 ```{code-cell} python
-:tags: [hide-input]
-import numpy as np
+import pandas as pd
+import petrophys as pp
 
-writer = {}
-for step in result.steps_executed:
-    for name in step.output_curves:
-        writer.setdefault(name, step.step)
-
-rows, kept = [], {}
-for item in result.well.describe()["curves"]:
-    name = item["mnemonic"]
-    if name in well.curves:
-        continue  # an input curve
-    data = result.well[name].data
-    twin = next((other for other, (unit, text, values) in kept.items()
-                 if (unit, text) == (item["unit"], item["description"]) and np.array_equal(values, data, equal_nan=True)), None)
-    if twin:  # the same values under a second, compatibility name
-        rows[list(kept).index(twin)]["Curve"] += f" (also {name})"
-        continue
-    kept[name] = (item["unit"], item["description"], data)
-    rows.append({"Curve": name, "Unit": item["unit"], "Description": item["description"],
-                 "Written by": writer.get(name, "not listed in the trace")})
-pd.DataFrame(rows).style.hide(axis="index")
+well = pp.read(pp.sample("30_6-5"))
+result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
+curves = pd.DataFrame(result.well.describe()["curves"])
+curves[~curves["mnemonic"].isin(well.curves)]
 ```
 
 The cutoffs behind `NET_ROCK`, `NET_RES` and `NET_PAY` are given under

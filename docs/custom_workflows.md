@@ -15,12 +15,15 @@ Check it against a well, run it on one well or a whole folder, and save it to sh
 
 ```{code-cell} python
 :tags: [remove-cell]
-%matplotlib inline
-import warnings
-
+import os, tempfile, textwrap, warnings
 import pandas as pd
 
-pd.set_option("display.max_colwidth", None)  # show table text in full
+# Display settings for this page: whole table text, three decimals, wrapped warnings.
+pd.set_option("display.max_colwidth", None)
+pd.set_option("display.float_format", "{:.3f}".format)
+warnings.formatwarning = lambda message, category, *args, **kwargs: textwrap.fill(
+    f"{category.__name__}: {message}", 88, subsequent_indent="    ") + "\n"
+os.chdir(tempfile.mkdtemp())  # the files this page writes go to a scratch folder
 
 # 30/6-5 stores core saturation in percent under a "frac" label. pp.interpret
 # converts it for its core calibration and warns (explained below). Only that
@@ -33,7 +36,7 @@ warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core sat
 Add steps in the order they run. Each step states the curves it needs and the curves it adds.
 
 ```{code-cell} python
-import numpy as np
+import pandas as pd
 import petrophys as pp
 from petrophys.workflow import Workflow, WorkflowValidationError, steps, workflow_step
 
@@ -49,17 +52,10 @@ wf.describe()
 Parameters are checked when a step is created, so a typo fails at once and names the closest valid option.
 
 ```{code-cell} python
-from textwrap import fill
-
-def show(error):
-    """Print an error message wrapped to the page width."""
-    for line in str(error).splitlines():
-        print(fill(line, 88, subsequent_indent="      "))
-
 try:
     steps.porosity(method="densty")
 except ValueError as error:
-    show(error)
+    print(error)
 ```
 
 ## Check a well before running
@@ -72,7 +68,7 @@ Here the Rw step is left out on purpose.
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
 draft = wf.copy("draft").remove("formation_water")
 report = draft.check(well)
-report[~report["Met"]].style.hide(axis="index")
+report[~report["Met"]]
 ```
 
 A run is strict by default: it stops before any calculation and lists every unmet input.
@@ -82,7 +78,7 @@ With `strict=False` it runs the other steps and records why each skipped step co
 try:
     draft.run(well)
 except WorkflowValidationError as error:
-    show(error)
+    print(error)
 ```
 
 ## Run and read the trace
@@ -91,27 +87,27 @@ except WorkflowValidationError as error:
 
 ```{code-cell} python
 run = wf.run(well)
-run.to_dataframe()[["Step", "Status", "Method", "Output Curves"]].style.hide(axis="index")
+run
+```
+
+Over the Brent Group window, the net thickness and the statistics of the curves:
+
+```{code-cell} python
+brent = run.summary(top=2841, bottom=2958)
+brent["net_thickness"]
 ```
 
 ```{code-cell} python
-brent = run.summary(top=2841, bottom=2958)   # Brent Group window
-print("status:", run.status)
-print("net pay in the Brent Group:", brent["net_thickness"]["net_pay"], "m")
-print({name: round(stats["mean"], 3) for name, stats in brent["key_results"].items()
-       if name in ("VCL", "PHIE", "SW")})
+run.statistics(top=2841, bottom=2958)
 ```
 
 ## Plot the result
 
-The interpreted well plots like any other well.
+`run.plot` takes the options of `pp.plot`.
 
 ```{code-cell} python
-viewer = pp.plot(run.well, top=2830, bottom=2970, figsize=(11, 10),
-                 tracks=["LITHOLOGY", "GAMMA / HOLE", "RESISTIVITY", "POROSITY",
-                         "SATURATION", "FLAGS"])
-viewer.show()
-viewer.close()
+run.plot(top=2830, bottom=2970,
+         tracks=["LITHOLOGY", "GAMMA / HOLE", "RESISTIVITY", "POROSITY", "SATURATION", "FLAGS"])
 ```
 
 ## Save and share
@@ -120,17 +116,12 @@ A workflow saves as a short JSON file that anyone can load and run on their well
 `run.to_las(path)` also writes the workflow into the LAS parameter section.
 
 ```{code-cell} python
-import json
-import pathlib
-import tempfile
+path = wf.save("brent_quicklook.json")
+print(path.read_text())
+```
 
-with tempfile.TemporaryDirectory() as folder:
-    path = wf.save(pathlib.Path(folder) / "brent_quicklook.json")
-    print(path.name)
-    for step in json.loads(path.read_text())["steps"]:
-        print(f"  {step['name']}: {step['params']}")
-    loaded = Workflow.load(path)
-print("loaded == wf:", loaded == wf)
+```{code-cell} python
+Workflow.load("brent_quicklook.json") == wf
 ```
 
 ## Try a parameter without editing the workflow
@@ -138,10 +129,8 @@ print("loaded == wf:", loaded == wf)
 `params` changes a step for one run only.
 
 ```{code-cell} python
-for n in (1.8, 2.0, 2.2):
-    trial = wf.run(well, params={"saturation": {"n": n}})
-    pay = trial.summary(top=2841, bottom=2958)["net_thickness"]["net_pay"]
-    print(f"n = {n}: Brent Group net pay {pay} m")
+pd.DataFrame({f"n = {n}": wf.run(well, params={"saturation": {"n": n}})
+              .summary(top=2841, bottom=2958)["net_thickness"] for n in (1.8, 2.0, 2.2)})
 ```
 
 ## Add your own step
@@ -150,6 +139,8 @@ Decorate a function that takes the well and returns its curves.
 `requires` is checked before running; `produces` gives each curve its unit.
 
 ```{code-cell} python
+import numpy as np
+
 @workflow_step(requires=["PHIE", "SW", "NET_PAY"], produces={"PHIH": "v/v"})
 def hydrocarbon_porosity(well, pay_only=True):
     """Hydrocarbon-filled porosity, PHIE * (1 - SW)."""
@@ -160,10 +151,14 @@ def hydrocarbon_porosity(well, pay_only=True):
 
 wf.add(hydrocarbon_porosity())
 run = wf.run(well)
-depth = run.well.depth
-brent_rows = (depth >= 2841) & (depth <= 2958)
-hpt = np.nansum(run.well.get("PHIH").data[brent_rows]) * run.well.step
-print(f"Brent Group hydrocarbon pore thickness: {hpt:.1f} m")
+run.plot(top=2841, bottom=2958, curves=["PHIE", "SW", "NET_PAY", "PHIH"],
+         curve_styles={"PHIH": {"left": 0, "right": 0.3}})
+```
+
+Summed over the pay of an interval, PHIH is its hydrocarbon pore thickness, the `HCPV` column of the formation summary: 3.1 m in the Brent Group.
+
+```{code-cell} python
+run.formation_summary(rank="group")[["Formation", "Net Pay (m)", "HCPV"]]
 ```
 
 :::{note}
@@ -182,10 +177,7 @@ auto_plus = Workflow("pp.interpret + hydrocarbon porosity", [
     steps.formation_summary(rank="formation"),
 ])
 auto = auto_plus.run(well)
-table = auto.artifacts["formation_summary"]
-brent = table[table["Formation"].isin(["Ness Fm.", "Etive Fm."])]
-columns = ["Formation", "Net Pay (m)", "Avg PHIE", "Avg Sw"]
-brent[columns].style.hide(axis="index").format(precision=3)
+auto.artifacts["formation_summary"]
 ```
 
 ## Run many wells
@@ -206,24 +198,15 @@ carbonate = Workflow("Kharaib-2 screen", [
 names = ["HW-3", "HW-4", "HW-6", "HW-24", "HW-25", "HW-29"]
 batch = carbonate.run_many([pp.sample(name) for name in names])
 field = batch.summary_table()
-columns = ["Well", "Status", "Gross", "Net Pay", "Pay/Gross", "Avg PHIE", "Avg Sw"]
-field[columns].style.hide(axis="index").format(precision=2)
+field
 ```
 
 ```{code-cell} python
-:tags: [remove-input]
-import matplotlib.pyplot as plt
-from petrophys.visualization import use_plot_style
-use_plot_style()
+from petrophys.visualization import create_bar_comparison
 
-ranked = field.sort_values("Net Pay")
-fig, ax = plt.subplots(figsize=(8, 4.5))
-ax.barh(ranked["Well"], ranked["Net Pay"], color="#087f73")
-ax.set_xlabel("Net pay (ft)")
-ax.set_title("Net pay by well, Kharaib-2 interval (custom workflow)")
-ax.spines[["top", "right"]].set_visible(False)
-plt.tight_layout()
-plt.show()
+create_bar_comparison(field["Well"], field["Net Pay"], horizontal=True, sort_by=0,
+                      xlabel="Net pay (ft)", title="Net pay by well, Kharaib-2 interval (custom workflow)",
+                      figsize=(8, 4.5));
 ```
 
 ## Custom workflow or `pp.interpret`?

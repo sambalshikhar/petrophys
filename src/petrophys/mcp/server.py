@@ -852,8 +852,8 @@ def create_server(
         ] = None,
         rank: Annotated[
             Optional[Literal["formation", "group"]],
-            Field(description="Summarize one level only: 'formation' or 'group'. Default: every "
-                              "zone in the tops, groups and formations mixed."),
+            Field(description="The level to summarize: 'formation' or 'group'. Default: the "
+                              "formations, where the tops name both levels."),
         ] = None,
         names: Annotated[
             Optional[List[str]],
@@ -865,8 +865,8 @@ def create_server(
         Sw, VCL averaged over net-pay samples, permeability (geometric mean).
 
         Zones are the attached formations (or a tops file), or one window (top,
-        bottom). Tops often mix groups and their formations: rank='formation' or
-        'group' gives one level with totals; names=[...] picks zones.
+        bottom). Where the tops name groups and their formations, the table is
+        per formation; rank='group' gives the groups; names=[...] picks zones.
         """
         from petrophys.evaluation.summaries.zone_summary import calculate_zone_summary
 

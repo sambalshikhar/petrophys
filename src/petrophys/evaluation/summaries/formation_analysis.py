@@ -19,6 +19,7 @@ import csv
 
 from petrophys.evaluation.summaries.zone_summary import (
     ZoneSummary,
+    _one_pay_gap_warning,
     calculate_zone_summary,
     pay_average_curves,
 )
@@ -181,6 +182,7 @@ def _get_formation_average(well, curve_name: str, mask: np.ndarray) -> float:
     return float(np.mean(valid)) if len(valid) > 0 else np.nan
 
 
+@_one_pay_gap_warning()
 def analyze_formations(
     well,
     formations: List[Formation],

@@ -28,6 +28,8 @@ import warnings
 
 import numpy as np
 
+from petrophys._internal.analysis_helpers import as_well as _as_well
+
 
 @dataclass
 class Zonation:
@@ -240,6 +242,7 @@ def zone_well(
     **options: Any,
 ) -> Zonation:
     """:func:`change_point_zonation` on curves of a well, optionally in a depth window."""
+    well = _as_well(well)
     depth = np.asarray(well.depth, dtype=float)
     window = np.ones(depth.shape, dtype=bool)
     if top is not None:

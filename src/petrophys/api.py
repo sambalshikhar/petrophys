@@ -18,7 +18,7 @@ import dataclasses
 import difflib
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -337,7 +337,7 @@ def _attach_geology(
 
 
 def plot(
-    well: Union["Well", "DynamicWorkflowResult", PathLike, Sequence[Any]],
+    well: Union["Well", "DynamicWorkflowResult", PathLike, Sequence[Any], Mapping[str, Any]],
     *,
     top: Optional[float] = None,
     bottom: Optional[float] = None,
@@ -358,7 +358,9 @@ def plot(
 
     Several wells (a list of wells, results or files, the wells :func:`read`
     returns for a folder, the results :func:`interpret` returns for several
-    wells, or a folder or file pattern) give one of two plots:
+    wells, or a folder or file pattern) give one of two plots. A mapping of
+    labels to wells or results (``{"archie": run_a, "indonesia": run_b}``)
+    names each by its label, so runs of one well can be told apart:
 
     * without ``curves``, each well's own log plot, with the other options
       applied to each
@@ -372,18 +374,19 @@ def plot(
 
     Parameters
     ----------
-    well : Well, DynamicWorkflowResult, str, Path or list
+    well : Well, DynamicWorkflowResult, str, Path, list or mapping
         Well to plot, or a well file to read with :func:`read`. Passing the
         result of :func:`interpret` plots the interpreted well, including
-        calculated curves. Several wells as above.
+        calculated curves. Several wells as above; a mapping labels them.
     top, bottom : float, optional
         Top and bottom depth of the plot window, in the well's depth unit.
         Default to the top and bottom of the logged interval.
     curves : str or sequence of str, optional
         Draw only these curves (the well's own names or standard names such
         as ``"GR"``), each in its track;
-        curves no track takes get generic tracks. Tracks left empty are not
-        drawn.
+        curves no track takes get a track titled by their names. Tracks left
+        empty are not drawn; lithology intervals attached by :func:`read`
+        stay as the lithology column.
     tracks : str or sequence of str, optional
         Track names to show, in order (e.g. ``["GAMMA / HOLE", "RESISTIVITY"]``;
         ``viewer.template.tracks`` lists a template's track names).
@@ -440,10 +443,15 @@ def plot(
     >>> viewer.save("well.png")  # doctest: +SKIP
     >>> pp.plot(results).save("plots/")                       # doctest: +SKIP
     >>> pp.plot(results, curves=["GR", "RDEP", "PHIE"]).save("compare.png")  # doctest: +SKIP
+    >>> pp.plot({"archie": run_a, "indonesia": run_b}, curves=["SW"])          # doctest: +SKIP
     """
     from petrophys.io.lithology_reader import read_lithology_codes
     from petrophys.visualization import create_log_viewer
 
+    labels: Optional[List[str]] = None
+    if isinstance(well, Mapping):
+        labels = [str(label) for label in well]
+        well = list(well.values())
     items = _plot_items(well)
     if items is not None:
         if curves is not None:
@@ -466,7 +474,7 @@ def plot(
                 for item in items:
                     attach_curve_aliases(item, curve_aliases)
             return compare_wells(items, [curves] if isinstance(curves, str) else list(curves),
-                                 top=top, bottom=bottom, figsize=figsize)
+                                 top=top, bottom=bottom, figsize=figsize, labels=labels)
         from petrophys.visualization.multi_well_plot import MultiWellPlot
 
         return MultiWellPlot(items, dict(
@@ -474,7 +482,7 @@ def plot(
             formations=formations, lithology=lithology, lithology_codes=lithology_codes,
             formation_name=formation_name, figsize=figsize, strict=strict, curve_aliases=curve_aliases,
             curve_styles=curve_styles,
-        ))
+        ), labels=labels)
 
     if isinstance(well, (str, Path)):
         well = read(well)

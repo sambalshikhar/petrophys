@@ -106,6 +106,15 @@ class BoreholeImageData:
     value_unit: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    def __repr__(self) -> str:
+        # A summary, not the arrays (or the source file's location in metadata).
+        top, bottom = self.top, self.bottom
+        window = f"{top:g}-{bottom:g} {self.depth_unit}" if top is not None and bottom is not None else "no depth"
+        return (
+            f"BoreholeImageData({self.image_type}, {', '.join(self.channel_names)}: "
+            f"{self.n_samples} depths x {self.n_borehole_samples} samples around the hole, {window})"
+        )
+
     @property
     def n_samples(self) -> int:
         return int(len(self.depth))

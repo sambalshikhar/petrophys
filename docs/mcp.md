@@ -36,10 +36,8 @@ server = create_server(roots=[workspace.name])  # the folders the model may use
 
 async with Client(server) as client:
     tools = (await client.list_tools()).tools
-pd.DataFrame([{"Tool": tool.name,
-               "What it does": tool.description.splitlines()[0],
-               "Changes state": "no" if tool.annotations.read_only_hint else "yes"}
-              for tool in tools]).style.hide(axis="index")
+pd.DataFrame([{"Tool": tool.name, "What it does": tool.description.splitlines()[0],
+               "Changes state": not tool.annotations.read_only_hint} for tool in tools])
 ```
 
 The server also offers the resources `petrophys://guide`, `petrophys://settings` and `petrophys://workflow-steps`, and an `interpretation_report` prompt.
@@ -157,35 +155,27 @@ async def call(tool, **arguments):
         return await client.call_tool(tool, arguments)
 ```
 
-**Load** a sample well with its formations and lithology:
+**Load** a sample well with its formations and lithology. The answer gives the well's identifier, its logged interval, depth unit, curves and formations:
 
 ```{code-cell} python
-loaded = await call("load_sample_well", name="30_6-5", with_geology=True)
-well = loaded.structured_content
-print(well["well_id"], f"| {well['top']:.0f}-{well['bottom']:.0f} {well['depth_unit']}",
-      f"| {len(well['curves'])} curves | {len(well['formations'])} formations")
+well = (await call("load_sample_well", name="30_6-5", with_geology=True)).structured_content
+well["well_id"], well["top"], well["bottom"], well["depth_unit"], len(well["curves"]), len(well["formations"])
 ```
 
-**Interpret** with the Rw the user supplied, summarizing the Brent Group window:
+**Interpret** with the Rw the user supplied, summarizing the Brent Group window. The answer also lists `skipped_steps` and `warnings`, each with its reason:
 
 ```{code-cell} python
 run = (await call("interpret_well", well_id="30_6-5",
                   settings={"rw": 0.07, "rw_meas_temp_f": 230},  # Rw (ohm.m) at 230 degF
                   summary_top=2841, summary_bottom=2958)).structured_content
-print(run["interpretation_id"], "|", run["status"], "|", run["resolved"])
-print("net thickness:", run["net_thickness"])
-print(len(run["skipped_steps"]), "skipped steps and", len(run["warnings"]),
-      "warnings, each with a reason")
+run["interpretation_id"], run["status"], run["resolved"], run["net_thickness"]
 ```
 
 `assumptions` says in plain words what the numbers rest on, and `review_notes` what to confirm with the user; this run has no review notes.
 The net-pay lines give the cutoffs of each lithology family and the samples left out of net reservoir and pay (evaporite, coal, halite recognized by its log response, bad hole), with the net pay each removed over the whole well, not just the summary window:
 
 ```{code-cell} python
-from textwrap import fill
-
-for line in run["assumptions"] + run["review_notes"]:
-    print(fill(f"- {line}", 88, subsequent_indent="  "))
+run["assumptions"] + run["review_notes"]
 ```
 
 A bad setting fails before anything runs, with a message the model can act on:
@@ -201,8 +191,8 @@ print(bad.content[0].text)
 ```{code-cell} python
 zones = (await call("summarize_zones", interpretation_id=run["interpretation_id"],
                     top=2841, bottom=2958)).structured_content
-columns = ["zone_name", "gross_thickness", "net_pay", "avg_phie", "avg_sw", "avg_vcl"]
-pd.DataFrame(zones["zones"])[columns].style.hide(axis="index").format(precision=3)
+pd.DataFrame(zones["zones"])[
+    ["zone_name", "gross_thickness", "net_pay", "avg_phie", "avg_sw", "avg_vcl"]].round(3)
 ```
 
 **Plot** the reservoir; `plot_well` returns a PNG the client shows to the model and the user:

@@ -38,6 +38,7 @@ from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
+    from petrophys.model.core import CoreData
 
 _RQI_CONST = 0.0314
 
@@ -55,6 +56,27 @@ class FlowUnitResult:
     fzi_unit_mean: np.ndarray    # geometric-mean FZI per unit (length n_units)
     fzi_boundaries: np.ndarray   # FZI values separating adjacent units (length n_units-1)
     counts: np.ndarray = field(default=None)  # samples per unit
+    depth: Optional[np.ndarray] = field(default=None, repr=False)  # sample depths, from core data
+
+    def to_dataframe(self):
+        """A row per sample: depth (when known), HFU, RQI, phi_z, FZI and the
+        unit-predicted permeability."""
+        import pandas as pd
+
+        frame = pd.DataFrame({"HFU": self.hfu, "RQI": self.rqi, "PHI_Z": self.phi_z,
+                              "FZI": self.fzi, "PERM_HFU": self.perm_predicted})
+        if self.depth is not None:
+            frame.insert(0, "DEPTH", self.depth)
+        return frame
+
+    def summary(self):
+        """A row per flow unit: samples and its geometric-mean FZI."""
+        import pandas as pd
+
+        units = np.arange(1, int(self.n_units) + 1)
+        counts = [int(np.count_nonzero(np.asarray(self.hfu) == unit)) for unit in units]
+        return pd.DataFrame({"Samples": counts, "Mean FZI": np.asarray(self.fzi_unit_mean, dtype=float)},
+                            index=pd.Index(units, name="HFU"))
 
 
 def _kmeans_1d(x: np.ndarray, k: int, n_iter: int = 200) -> np.ndarray:
@@ -212,14 +234,25 @@ def predict_perm_from_fzi(
 
 
 def calculate_flow_units(
-    perm_k: Union[np.ndarray, Sequence[float]],
-    phi_e: Union[np.ndarray, Sequence[float]],
+    perm_k: Union[np.ndarray, Sequence[float], "CoreData"],
+    phi_e: Optional[Union[np.ndarray, Sequence[float]]] = None,
     n_units: Optional[int] = None,
     method: str = "kmeans",
     fzi_cutoffs: Optional[Sequence[float]] = None,
     max_units: int = 6,
 ) -> FlowUnitResult:
     """Determine hydraulic flow units from porosity and permeability."""
+    depth = None
+    if phi_e is None and hasattr(perm_k, "permeability") and hasattr(perm_k, "porosity"):
+        # Core data: its plugs with both porosity and permeability.
+        core = perm_k
+        if core.porosity is None or core.permeability is None:
+            raise ValueError("The core data needs porosity and permeability for flow units")
+        plugs = np.isfinite(core.porosity) & np.isfinite(core.permeability)
+        perm_k, phi_e = np.asarray(core.permeability)[plugs], np.asarray(core.porosity)[plugs]
+        depth = None if core.depth is None else np.asarray(core.depth, dtype=float)[plugs]
+    elif phi_e is None:
+        raise ValueError("calculate_flow_units takes core data, or permeability and porosity arrays")
     perm_k = np.asarray(perm_k, dtype=float)
     phi_e = np.asarray(phi_e, dtype=float)
     rqi = np.asarray(calculate_rqi(perm_k, phi_e), dtype=float)
@@ -249,6 +282,7 @@ def calculate_flow_units(
         fzi_unit_mean=unit_mean_fzi,
         fzi_boundaries=boundaries,
         counts=counts,
+        depth=depth,
     )
 
 

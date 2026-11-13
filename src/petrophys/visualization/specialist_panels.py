@@ -127,7 +127,17 @@ def create_nmr_panel(
 
     _plot_first(axes[3], well, ("KSDR", "NMR_KSDR"), depth, "royalblue", "KSDR", log=True)
     _plot_first(axes[3], well, ("KTIM", "NMR_KTIM", "K_COATES"), depth, "red", "KTIM", log=True)
-    axes[3].set_xlim(0.01, 10000)
+    # Whole decades spanning the curves' 1-99 percentiles (0.01-10,000 mD at
+    # most wide), so a tight well is not drawn off the scale.
+    perms = [np.asarray(line.get_xdata(), dtype=float) for line in axes[3].get_lines()]
+    perms = [values[np.isfinite(values) & (values > 0)] for values in perms]
+    perms = np.concatenate(perms) if perms else np.array([])
+    if perms.size:
+        low, high = np.percentile(perms, [1, 99])
+        low, high = 10.0 ** np.floor(np.log10(low)), 10.0 ** np.ceil(np.log10(high))
+        axes[3].set_xlim(min(low, 0.01), max(high, low * 1000))
+    else:
+        axes[3].set_xlim(0.01, 10000)
     axes[3].set_title("NMR Perm")
 
     swirr, swirr_name = _nmr_swirr_for_plot(well)

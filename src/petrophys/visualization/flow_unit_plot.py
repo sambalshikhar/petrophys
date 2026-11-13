@@ -35,11 +35,14 @@ def create_flow_unit_plot(
 ):
     """Render the RQI vs phi_z flow-unit crossplot.
 
-    Provide either a pre-computed ``result`` or ``phi_e`` + ``perm`` arrays
+    Provide a pre-computed ``result``, core data (``create_flow_unit_plot(core)``,
+    its plugs with porosity and permeability), or ``phi_e`` + ``perm`` arrays
     (``**kwargs`` are forwarded to :func:`calculate_flow_units`).
     """
     if not HAS_MPL:
         raise ImportError("matplotlib is required for visualization")
+    if result is not None and hasattr(result, "permeability") and hasattr(result, "porosity"):
+        result = calculate_flow_units(result, **kwargs)
     if result is None:
         if phi_e is None or perm is None:
             raise ValueError("provide either result or both phi_e and perm")

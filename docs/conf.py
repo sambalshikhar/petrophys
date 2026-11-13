@@ -10,6 +10,17 @@ from pathlib import Path
 # Keep matplotlib headless during autodoc imports.
 os.environ.setdefault("MPLBACKEND", "Agg")
 
+# The executed pages run in kernels that inherit that setting; an IPython
+# profile turns notebook figure display on in each kernel, as Jupyter does.
+import tempfile
+
+_IPYTHON_DIR = Path(tempfile.mkdtemp(prefix="petrophys-docs-ipython-"))
+(_IPYTHON_DIR / "profile_default").mkdir()
+(_IPYTHON_DIR / "profile_default" / "ipython_kernel_config.py").write_text(
+    'c.InteractiveShellApp.matplotlib = "inline"\n', encoding="utf-8"
+)
+os.environ["IPYTHONDIR"] = str(_IPYTHON_DIR)
+
 sys.path.insert(0, os.path.abspath("../src"))
 
 # -- Project information -----------------------------------------------------

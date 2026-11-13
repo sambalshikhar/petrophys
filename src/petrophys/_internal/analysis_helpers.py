@@ -499,3 +499,10 @@ def classification_code(labels: np.ndarray, mapping: dict[str, int]) -> np.ndarr
         mask = np.asarray(labels, dtype=object) == name
         codes[mask] = float(code)
     return codes
+
+
+def as_well(value):
+    """The interpreted well of an interpretation result; anything else as it is."""
+    if hasattr(value, "steps_executed") and hasattr(value, "well"):
+        return value.well
+    return value

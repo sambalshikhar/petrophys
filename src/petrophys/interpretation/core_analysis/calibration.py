@@ -27,6 +27,8 @@ import warnings
 
 import numpy as np
 
+from petrophys._internal.analysis_helpers import as_well as _as_well
+
 from petrophys.model.core import CoreData
 from petrophys.model.units import core_saturation_to_fraction
 from petrophys._internal.analysis_helpers import get_curve
@@ -243,6 +245,7 @@ def core_data_from_well(
     (``LITHOLOGY_GEOLINK``, or another lithology-code curve as
     :func:`petrophys.interpret` reads it).
     """
+    well = _as_well(well)
     if well.depth is None:
         raise ValueError("Well has no depth data")
 
@@ -376,6 +379,7 @@ def calibrate_porosity(
     CalibrationResult
         Statistics and data for the comparison.
     """
+    well = _as_well(well)
     if core.porosity is None:
         raise ValueError("CoreData has no porosity measurements")
 
@@ -403,6 +407,7 @@ def fit_porosity_correction(
     This is the appropriate direction for applying a correction back onto the
     full log.
     """
+    well = _as_well(well)
     if core.porosity is None:
         raise ValueError("CoreData has no porosity measurements")
 
@@ -495,6 +500,7 @@ def calibrate_permeability(
     -------
     CalibrationResult
     """
+    well = _as_well(well)
     if core.permeability is None:
         raise ValueError("CoreData has no permeability measurements")
 
@@ -547,6 +553,7 @@ def calibrate_saturation(
     CalibrationResult
         Statistics and matched fraction-valued core/log saturation arrays.
     """
+    well = _as_well(well)
     if core.sw is None:
         raise ValueError("CoreData has no water-saturation measurements")
 
@@ -792,6 +799,7 @@ def correct_porosity_with_grain_density(
     np.ndarray
         Corrected density porosity array.
     """
+    well = _as_well(well)
     if core.grain_density is None:
         raise ValueError("CoreData has no grain density measurements")
 
@@ -870,6 +878,7 @@ def estimate_archie_m(
         Plug values of m outside 0.5-5 are dropped as outliers before these
         statistics, and ``n_points`` counts the values kept.
     """
+    well = _as_well(well)
     if core.porosity is None or core.sw is None:
         raise ValueError("CoreData needs both porosity and Sw for Archie m estimation")
 

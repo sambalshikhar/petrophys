@@ -14,13 +14,16 @@ With a well read and its geology attached ({doc}`own_data`), one call interprets
 The last section, {ref}`review-interpretation`, checks the answer before you use it.
 
 ```{code-cell} python
-:tags: [hide-cell]
-%matplotlib inline
-import warnings
-
+:tags: [remove-cell]
+import os, tempfile, textwrap, warnings
 import pandas as pd
 
-pd.set_option("display.max_colwidth", None)  # show table text in full
+# Display settings for this page: whole table text, three decimals, wrapped warnings.
+pd.set_option("display.max_colwidth", None)
+pd.set_option("display.float_format", "{:.3f}".format)
+warnings.formatwarning = lambda message, category, *args, **kwargs: textwrap.fill(
+    f"{category.__name__}: {message}", 88, subsequent_indent="    ") + "\n"
+os.chdir(tempfile.mkdtemp())  # the files this page writes go to a scratch folder
 
 # 30/6-5 stores core saturation in percent under a "frac" label. Petrophys
 # converts it and warns; see "Core saturation units" in the input templates. Only that
@@ -36,8 +39,7 @@ import petrophys as pp
 
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
 result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)  # Rw 0.07 ohm.m at 230 degF
-print(result.status, "|", result.lithology_domain, "|",
-      len(result.steps_executed), "trace records")
+result.status
 ```
 
 ```{code-cell} python
@@ -83,23 +85,17 @@ plt.show()
 ## Read the trace
 
 Each step records its method, inputs, outputs, parameters and decisions.
-{meth}`~petrophys.workflow.DynamicWorkflowResult.to_dataframe` gives one row per step; here are six key steps with their first two decisions.
+{meth}`~petrophys.workflow.DynamicWorkflowResult.to_dataframe` gives one row per step; here are three key steps with their decisions.
 
 ```{code-cell} python
-trace = result.to_dataframe()
-key = trace["Step"].isin(["temperature", "vclay", "lithology", "rw",
-                          "saturation", "net_pay"])
-key_steps = trace.loc[key, ["Step", "Method", "Decisions"]]
-first_two = key_steps["Decisions"].str.split(" | ", regex=False).str[:2]
-key_steps["Decisions"] = first_two.str.join("; ")
-key_steps.style.hide(axis="index")
+trace = result.to_dataframe().set_index("Step")
+trace.loc[["temperature", "rw", "saturation"], ["Method", "Decisions"]]
 ```
 
 Skipped steps keep their reason:
 
 ```{code-cell} python
-skipped = pd.DataFrame(result.specific_steps_skipped.items(), columns=["Step", "Reason"])
-skipped.style.hide(axis="index")
+result.specific_steps_skipped
 ```
 
 {meth}`~petrophys.workflow.DynamicWorkflowResult.print_trace` prints the full record, and {meth}`~petrophys.workflow.DynamicWorkflowResult.to_json` saves it.
@@ -127,7 +123,7 @@ The pipeline runs in this order. Use these names in `skip_steps`.
 ```{code-cell} python
 from petrophys.workflow import workflow_steps
 
-pd.DataFrame(workflow_steps()).style.hide(axis="index")
+pd.DataFrame(workflow_steps())
 ```
 
 (workflows-settings)=
@@ -137,13 +133,10 @@ Settings are {class}`~petrophys.workflow.DynamicWorkflowConfig` fields, passed a
 Invalid values fail before anything runs, with the accepted values:
 
 ```{code-cell} python
-from textwrap import fill
-
 try:
     pp.interpret(well, rw=0.07, rw_meas_temp_f=230, sw_model="archy", hc_type="gass")
 except ValueError as error:
-    for line in str(error).splitlines():
-        print(fill(line, 88, subsequent_indent="      "))
+    print(error)
 ```
 
 The most-used settings, from {func}`~petrophys.workflow.config_schema`. {doc}`api/settings` lists them all.
@@ -151,12 +144,10 @@ The most-used settings, from {func}`~petrophys.workflow.config_schema`. {doc}`ap
 ```{code-cell} python
 from petrophys.workflow import config_schema
 
-used_most = ["rw", "rw_meas_temp_f", "bht_f", "lithology_domain", "matrix_type", "gr_min",
-             "gr_max", "sw_model", "vcl_cutoff", "phie_cutoff", "sw_cutoff", "skip_steps"]
-schema = {item["name"]: item for item in config_schema()}
-pd.DataFrame([{"setting": name, "default": repr(schema[name]["default"]),
-               "description": schema[name]["description"]}
-              for name in used_most]).style.hide(axis="index")
+settings = pd.DataFrame(config_schema()).set_index("name")
+settings.loc[["rw", "rw_meas_temp_f", "bht_f", "lithology_domain", "matrix_type", "gr_min",
+              "gr_max", "sw_model", "vcl_cutoff", "phie_cutoff", "sw_cutoff", "skip_steps"],
+             ["default", "description"]]
 ```
 
 Net-pay cutoffs left unset take the standard of each sample's lithology family: clastic VCL < 0.40, PHIE > 0.08 and SW < 0.60; carbonate VCL < 0.30, PHIE > 0.045 and SW < 0.70.
@@ -281,19 +272,17 @@ With `sw_model="auto"` (the default), saturation is routed per sample.
 Samples with VCL below `sw_routing_vcl_cutoff` (by default `vcl_cutoff`, or 0.3 when that is unset) get Archie; the same clay volume bounds the samples SWIRR_APP is picked from.
 With `vcl_cutoff` unset, routing switches at 0.3 while clastic net rock extends to VCL 0.40, so net rock with 0.3-0.4 clay gets a shaly-sand equation.
 In shaly rock, carbonate samples get Dual Water when the bound-water resistivity `rwb` is given; Rwb is never estimated.
-All other shaly samples get Waxman-Smits when `cec` (meq/100 g) and `b_coeff` ((S/m)/(meq/cm3)) are given, Simandoux when `salinity_ppm` is at least 20,000 ppm, and otherwise Indonesia, the published equation of Poupon and Leveaux (1971).
+All other shaly samples get Waxman-Smits when `cec` (meq/100 g) and `b_coeff` ((S/m)/(meq/cm3)) are given, Simandoux when the formation-water salinity is at least 20,000 ppm (`salinity_ppm`, or else the salinity of the given or header Rw at its temperature), and otherwise Indonesia, the published equation of Poupon and Leveaux (1971). On 30/6-5, Rw 0.07 ohm.m at 230 degF is a water of about 30,500 ppm, so shaly samples get Simandoux.
 `sw_model="dual_water"` without `rwb`, or `"waxman_smits"` without `cec` and `b_coeff`, fails the saturation step with a message naming the missing input.
 With oil-based mud (`mud_type="OBM"`), no SXO or MHI is computed and Rw is not estimated from the SP or Rxo/Rt.
 
 One setting apart, the saturation model changes the Brent Group answer. Dual Water and Waxman-Smits are left out here, as 30/6-5 gives no `rwb`, `cec` or `b_coeff`:
 
 ```{code-cell} python
-sw_pay = {}
-for model in ["archie", "simandoux", "indonesia", "auto"]:
-    sw_run = pp.interpret(well, rw=0.07, rw_meas_temp_f=230, sw_model=model)
-    sw_pay[model] = sw_run.summary(top=2841, bottom=2958)["net_thickness"]["net_pay"]
-pd.DataFrame({"sw_model": list(sw_pay), "Brent Group net pay (m)": list(sw_pay.values())}
-             ).style.hide(axis="index").format(precision=1)
+runs = {model: pp.interpret(well, rw=0.07, rw_meas_temp_f=230, sw_model=model)
+        for model in ["archie", "simandoux", "indonesia", "auto"]}
+pd.DataFrame({model: run.summary(top=2841, bottom=2958)["net_thickness"]
+              for model, run in runs.items()})
 ```
 
 ## Lithology domain
@@ -321,46 +310,13 @@ Here the clastic run on 30/6-5 is set against a carbonate run on the COSTA well 
 # Rw comes from the LAS header; COSTA wells take the field's own calibration.
 hw3 = pp.interpret(pp.read(pp.sample("HW-3")), lithology="carbonate",
                    carbonate_calibration="costa")
-
-def lithology_step(run):
-    return next(record for record in run.steps_executed if record.step == "lithology")
-
-rows = []
-for name, run in {"30/6-5": result, "HW-3": hw3}.items():
-    step = lithology_step(run)
-    rows.append({"well": name, "domain": run.lithology_domain, "method": step.method,
-                 "solved": f"{step.parameters['multi_mineral_solved_samples']} of "
-                           f"{step.parameters['multi_mineral_total_samples']}",
-                 "outputs": ", ".join(step.output_curves)})
-print("HW-3 illite:", lithology_step(hw3).parameters["clay_source"])
-pd.DataFrame(rows).style.hide(axis="index")
+pd.DataFrame({name: {"method": run.step("lithology").method,
+                     "outputs": run.step("lithology").output_curves}
+              for name, run in {"30/6-5": result, "HW-3": hw3}.items()})
 ```
 
 ```{code-cell} python
-:tags: [remove-input]
-logs = hw3.well.to_dataframe()
-depth = logs["DEPTH"]
-fig, (ax_gr, ax_rho, ax_min) = plt.subplots(
-    1, 3, figsize=(8, 4.5), sharey=True, gridspec_kw={"width_ratios": [1, 1, 2]})
-ax_gr.plot(logs["GR"], depth, color="#3b4550", lw=1)
-ax_gr.set_xlabel("GR (API)")
-ax_rho.plot(logs["RHOB"], depth, color="#e34948", lw=1)
-ax_rho.set_xlabel("RHOB (g/cm3)")
-left = 0
-for curve, label, color in [("VILL", "illite", "#008300"), ("VCALC", "calcite", "#2a78d6"),
-                            ("VDOLO", "dolomite", "#e87ba4"), ("PHIT", "porosity", "#d9f2ea")]:
-    ax_min.fill_betweenx(depth, left, left + logs[curve], color=color, lw=0, label=label)
-    left = left + logs[curve]
-ax_min.set_xlim(0, 1)
-ax_min.set_xlabel("volume fraction")
-ax_min.legend(loc="lower right", fontsize=8, framealpha=0.9)
-ax_gr.set_ylabel(f"depth ({hw3.well.depth_unit})")
-ax_gr.invert_yaxis()
-for axis in (ax_gr, ax_rho, ax_min):
-    axis.grid(alpha=0.3)
-fig.suptitle("HW-3, Kharaib-2: carbonate mineral volumes from GR, RHOB and porosity", fontsize=11)
-fig.tight_layout()
-plt.show()
+pp.plot(hw3, tracks=["GAMMA / HOLE", "DENSITY / NEUTRON", "MINERAL VOLUMES"])
 ```
 
 The carbonate solve is closed-form over whole arrays, through the apparent matrix density (Clavier and Rust, 1976), so a whole well takes well under a second; the "geolink" calculation profile keeps the COSTA notebooks' sample-by-sample solve, which takes about a second on a COSTA interval but minutes on a whole well.
@@ -373,36 +329,21 @@ Where the solved volumes miss RHOB by more than 0.02 g/cm3 (an apparent matrix d
 {func}`~petrophys.workflow.process_las_directory_with_workflow` interprets every LAS file in a folder and writes the interpreted LAS plus a JSON trace per well.
 Each file runs through {func}`~petrophys.workflow.run_dynamic_workflow_with_zones`, where LAS header values fill settings you leave unset. Header zones such as `TOP_Z1`, `BOT_Z1`, `RW_Z1` re-run their depth range with their own settings, from the input curves rather than the whole-well run's results; a curve the zone run did not compute (for example `PHIE_CC` where the zone holds too few core plugs) is NaN in the zone after the merge, and a warning names it.
 
+Here the three COSTA wells HW-3, HW-4 and HW-5 of the bundled COSTA folder are interpreted into `interpreted/`, and {func}`~petrophys.workflow.write_batch_report` writes one CSV row per file:
+
 ```{code-cell} python
-import shutil
-import tempfile
 from pathlib import Path
+from petrophys.workflow import process_las_directory_with_workflow, write_batch_report
 
-from petrophys.workflow import process_las_directory_with_workflow
-
-with tempfile.TemporaryDirectory() as folder:
-    incoming = Path(folder, "incoming")
-    incoming.mkdir()
-    for name in ["HW-3", "HW-4", "HW-5"]:
-        shutil.copy(pp.sample(name), incoming)
-    batch = process_las_directory_with_workflow(
-        incoming, Path(folder, "interpreted"),
-        config=pp.DynamicWorkflowConfig(lithology_domain="carbonate",
-                                        carbonate_calibration="costa"))
-    written = sorted(p.relative_to(folder).as_posix() for p in Path(folder).rglob("*.*"))
-
-print("\n".join(written))
-pd.DataFrame([{
-    "well": Path(item.source_file).stem,
-    "success": item.success,
-    "zones": item.zones_applied,
-    "new curves": len(item.computed_curves),
-    "net pay (ft)": item.result.base_result.summary()["net_thickness"]["net_pay"],
-    "first warning": item.warnings[0] if item.warnings else "",
-} for item in batch]).style.hide(axis="index").format(precision=1)
+costa_folder = Path(pp.sample("HW-3")).parent
+batch = process_las_directory_with_workflow(
+    costa_folder, "interpreted", pattern="HW-[345].las",
+    config=pp.DynamicWorkflowConfig(lithology_domain="carbonate", carbonate_calibration="costa"))
+report = pd.read_csv(write_batch_report(batch, "batch_report.csv"))
+report[["output_file", "success", "zones_applied", "rw_methods", "rw_values"]]
 ```
 
-Failed files are reported, not raised. {func}`~petrophys.workflow.write_batch_report` and {func}`~petrophys.workflow.write_curve_audit_report` turn the results into CSV reports.
+Failed files are reported, not raised. {func}`~petrophys.workflow.write_curve_audit_report` adds a CSV report of the curves.
 For wells already in memory, {class}`~petrophys.workflow.BatchProcessor` runs the same workflow on each, with the settings as a dict: `BatchProcessor(config={"lithology_domain": "carbonate"}).process_wells(wells)`.
 
 ## Run selected steps
@@ -415,9 +356,7 @@ from petrophys.workflow import DynamicWorkflow, WorkflowStep
 workflow = DynamicWorkflow(pp.DynamicWorkflowConfig(rw=0.07, rw_meas_temp_f=230))
 partial = workflow.run_selected_steps(pp.read(pp.sample("30_6-5")),
                                       [WorkflowStep.VCLAY, WorkflowStep.POROSITY])
-for record in partial.steps_executed:
-    outputs = ", ".join(record.output_curves[:5])
-    print(f"{record.step:14s} {record.method:28s} {outputs}")
+partial.to_dataframe()[["Step", "Method", "Output Curves"]]
 ```
 
 {class}`~petrophys.workflow.standard_workflow.StandardWorkflow` is deprecated: it raises a `DeprecationWarning`; use `pp.interpret` or `DynamicWorkflow`.
@@ -433,18 +372,11 @@ The checks below run on 30/6-5 again, with its lithology intervals attached as w
 ```{code-cell} python
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"),
                lithology=pp.sample("lithology_30_6-5"))
-with warnings.catch_warnings(record=True) as caught:
-    warnings.simplefilter("always")
-    result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
-
-print("status:", result.status)
-# Print each message once: the core-saturation notes are raised many times.
-for message in dict.fromkeys([str(item.message) for item in caught] + result.warnings):
-    print(fill(f"- {message}", 88, subsequent_indent="  "))
+result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
+result.warnings
 ```
 
-The first two are Python warnings, from the conversion of the percent core saturations ({ref}`core-saturation-units`).
-The rest stay on the result in `result.warnings`.
+This page hides one more message, a Python warning raised each time the percent core saturations are converted ({ref}`core-saturation-units`).
 
 ### A review checklist
 
@@ -464,23 +396,14 @@ Do not tune Rw just to get the pay you expect.
 (review-inputs)=
 ### Implausible inputs and bad hole
 
-{class}`DataQualityWarning <petrophys.exceptions.DataQualityWarning>` flags values a curve's unit cannot explain. Catch it to see what was removed:
+{class}`DataQualityWarning <petrophys.exceptions.DataQualityWarning>` flags values a curve's unit cannot explain, and says what was removed:
 
 ```{code-cell} python
-from petrophys.exceptions import DataQualityWarning
-
-with warnings.catch_warnings(record=True) as caught:
-    warnings.simplefilter("always", DataQualityWarning)
-    checked = pp.interpret(pp.read(pp.sample("15_9-14")))
-
-for item in caught:
-    if issubclass(item.category, DataQualityWarning):
-        text = f"{item.category.__name__}: {item.message}"
-        print(fill(text, 88, subsequent_indent="    "))
-print("status:", checked.status)
+checked = pp.interpret(pp.read(pp.sample("15_9-14")))
+checked.status
 ```
 
-The run continues without those samples, and the message stays in `result.warnings`.
+The run continues without those samples, and the messages stay in `result.warnings`.
 
 `pp.interpret` raises the lower limit of the DTC range and adds one for SP. Compressional slowness (DTC) below 38.5 us/ft is removed: no rock matrix is faster (dolomite is 38.5-43.5 us/ft, calcite 43.5-47.6 and quartz 51-55.5; Schlumberger, 1989), so a lower value is a unit or scale error.
 SP beyond ±500 mV is removed: a formation's static SP lies within about 200 mV of the shale baseline, so such readings come from the tool or the recording.
@@ -501,40 +424,21 @@ The `bad_hole` step records where its bit sizes came from (`bit_size_source`) an
 
 ### Rw needs its temperature
 
-Without `rw_meas_temp_f`, Rw is taken at the well's median formation temperature, recorded in the `rw` step and in `result.warnings`. On 30/6-5 that changes the answer:
+Without `rw_meas_temp_f`, Rw is taken at the well's median formation temperature, recorded in the `rw` step and in `result.warnings`. On 30/6-5 the median formation temperature is 168 degF, not 230 degF, so the same 0.07 ohm.m stands for a saltier water: Rw in the reservoir reads lower, Sw lower, and the Brent Group net pay rises from 23.0 m to 24.8 m.
 
 ```{code-cell} python
 assumed = pp.interpret(well, rw=0.07)  # no temperature given
-rw_step = next(step for step in assumed.steps_executed if step.step == "rw")
-print(rw_step.method)
-print(fill(next(text for text in assumed.warnings if "rw_meas_temp_f" in text), 88))
-for name, run in {"Rw at 230 degF": result, "Rw at the median temperature": assumed}.items():
-    pay = run.summary(top=2841, bottom=2958)["net_thickness"]["net_pay"]
-    print(f"{name:30s} Brent Group net pay {pay:.1f} m")
+[text for text in assumed.warnings if "rw_meas_temp_f" in text]
 ```
 
 ```{code-cell} python
-:tags: [remove-input]
-fig, (ax_rw, ax_sw) = plt.subplots(1, 2, figsize=(8, 4.5), sharey=True,
-                                   gridspec_kw={"width_ratios": [1, 2]})
-for run, label, color in [(result, "Rw 0.07 at 230 degF", "#2a78d6"),
-                          (assumed, "Rw 0.07 at the median temperature (assumed)", "#eb6834")]:
-    logs = run.well.to_dataframe()
-    brent = logs[(logs["DEPTH"] >= 2841) & (logs["DEPTH"] <= 2958)]
-    ax_rw.plot(brent["RW"], brent["DEPTH"], color=color, lw=1.5, label=label)
-    ax_sw.plot(brent["SW"], brent["DEPTH"], color=color, lw=1, label=label)
-ax_rw.set_xlabel("Rw at formation temp. (ohm.m)")
-ax_rw.set_xlim(0, None)
-ax_sw.set_xlabel("SW (v/v)")
-ax_sw.set_xlim(0, 1)
-ax_rw.set_ylabel("depth (m)")
-ax_rw.invert_yaxis()
-ax_sw.legend(loc="lower left", fontsize=8, framealpha=0.9)
-for axis in (ax_rw, ax_sw):
-    axis.grid(alpha=0.3)
-fig.suptitle("30/6-5, Brent Group: the same Rw quoted at two temperatures", fontsize=11)
-fig.tight_layout()
-plt.show()
+pd.DataFrame({"Rw at 230 degF": result.summary(top=2841, bottom=2958)["net_thickness"],
+              "Rw at the median temperature": assumed.summary(top=2841, bottom=2958)["net_thickness"]})
+```
+
+```{code-cell} python
+pp.plot({"Rw at 230 degF": result, "Rw at the median temperature": assumed},
+        curves=["RW", "SW"], top=2841, bottom=2958)
 ```
 
 (review-pay)=
@@ -545,28 +449,18 @@ Summarize them per group before trusting a total:
 
 ```{code-cell} python
 groups = result.formation_summary(rank="group")
-columns = ["Formation", "Top", "Bottom", "Net Pay (m)", "Avg PHIE", "Avg Sw"]
-groups[columns].style.hide(axis="index").format(precision=2, na_rep="–")
+groups
 ```
 
 ```{code-cell} python
-:tags: [remove-input]
-fig, ax = plt.subplots(figsize=(8, 4.5))
-labels = [f"{name}  {top:.0f}-{bottom:.0f} m" for name, top, bottom in
-          zip(groups["Formation"], groups["Top"], groups["Bottom"])]
-colors = ["#087f73" if name == "BRENT GP." else "#b8c0c7" for name in groups["Formation"]]
-bars = ax.barh(labels, groups["Net Pay (m)"], color=colors, height=0.7)
-ax.bar_label(bars, fmt="%.0f m", padding=3, fontsize=8, color="#3b4550")
-ax.invert_yaxis()
-ax.set_xlim(0, 1.12 * groups["Net Pay (m)"].max())
-ax.set_xlabel("flagged net pay (m)")
-ax.grid(axis="x", alpha=0.3)
-ax.set_title("30/6-5: net-pay flags by group, default cutoffs (Brent Group in teal)", fontsize=11)
-fig.tight_layout()
-plt.show()
+from petrophys.visualization import create_bar_comparison
+
+create_bar_comparison(groups["Formation"], groups["Net Pay (m)"], horizontal=True, value_labels=True,
+                      xlabel="Flagged net pay (m)", title="30/6-5: net-pay flags by group",
+                      figsize=(8, 4.5));
 ```
 
-With these tops and lithology attached, nearly all the flagged pay lies in the Brent Group, the reservoir. The 0.15 m flagged in the Shetland Group still needs a geological check.
+With these tops and lithology attached, nearly all the flagged pay lies in the Brent Group, the reservoir. The 0.6 m flagged in the Hordaland Group and the 0.15 m each in the Shetland and Viking groups still need a geological check.
 Summarize the reservoir window:
 
 ```{code-cell} python
@@ -594,9 +488,8 @@ Petrophys does not model a formation-water salinity that changes with depth.
 The 30/6-5 lithology file has samples of both families, clastic and carbonate, so the `net_pay` step lists the cutoffs per family (the standards are under {ref}`Settings <workflows-settings>` above):
 
 ```{code-cell} python
-net_pay = next(step for step in result.steps_executed if step.step == "net_pay")
-print(fill(f"cutoff_source: {net_pay.parameters['cutoff_source']}", 88, subsequent_indent="    "))
-pd.DataFrame.from_dict(net_pay.parameters["cutoffs_by_family"], orient="index")
+net_pay = result.step("net_pay")
+pd.DataFrame(net_pay.parameters["cutoffs_by_family"]).T
 ```
 
 The step also records the samples left out of net reservoir and pay, and the thickness each kind removed over the whole well. On 30/6-5 only bad hole removes any:

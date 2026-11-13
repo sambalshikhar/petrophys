@@ -5,6 +5,7 @@ kernelspec:
   display_name: Python 3
 mystnb:
   execution_mode: force
+  execution_in_temp: true
 ---
 
 # Context export
@@ -26,7 +27,7 @@ The same exports run from the command line ({ref}`context-cli`). Geology tables 
 optional; their layouts are in {doc}`input_templates`.
 
 ```{code-cell} python
-:tags: [hide-cell]
+:tags: [remove-cell]
 import warnings
 
 import pandas as pd
@@ -45,19 +46,17 @@ Without an output path, {func}`pp.export_context <petrophys.reporting.context.ex
 
 ```{code-cell} python
 import json
-
-import pandas as pd
 import petrophys as pp
 
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
 result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)  # Rw 0.07 ohm.m at 230 degF
 context = pp.export_context(result)
+```
 
-def size(value):
-    return len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+Its size in bytes, in all and by top-level key:
 
-print("total:", size(context), "bytes")
-pd.Series({key: size(value) for key, value in context.items()}, name="bytes").to_frame()
+```{code-cell} python
+len(json.dumps(context)), {key: len(json.dumps(value)) for key, value in context.items()}
 ```
 
 | Key | Holds |
@@ -69,9 +68,7 @@ pd.Series({key: size(value) for key, value in context.items()}, name="bytes").to
 Each attached formation or group is one entry under `geology`, for example the Brent Group:
 
 ```{code-cell} python
-formations = context["geology"]["formations"]
-brent = next(item for item in formations if item["formation_name"] == "BRENT GP.")
-print(json.dumps(brent, indent=1))
+next(item for item in context["geology"]["formations"] if item["formation_name"] == "BRENT GP.")
 ```
 
 Pass a result, not a raw well: a one-well summary runs no calculations, so a well alone gives no computed curves or trace.
@@ -79,64 +76,53 @@ Pass a result, not a raw well: a one-well summary runs no calculations, so a wel
 Given an output path, `pp.export_context` writes the same summary to a file:
 
 ```{code-cell} python
-import tempfile
-from pathlib import Path
-
-with tempfile.TemporaryDirectory() as folder:
-    saved = pp.export_context(result, Path(folder, "30_6-5_context.json"))
-    print(saved.name, saved.stat().st_size, "bytes")
+saved = pp.export_context(result, "30_6-5_context.json")
+saved.name, saved.stat().st_size
 ```
 
 ## Many wells: context packages
 
 A package reads a folder of well files, interprets each well and writes one JSON per well, formation and lithology group. LAS is selected by default; use `pattern="*.dlis"` for DLIS.
 Within a formation, a lithology group is a run of consecutive samples with one lithology, taken from the lithology code curve the interpretation read (`LITHOLOGY_GEOLINK` or another lithology-code curve; see {doc}`input_templates`) or from the lithology intervals it selected.
-Packages interpret as clastic unless told otherwise, so carbonate wells need the carbonate setting; COSTA wells also take the field's mineral calibration, `carbonate_calibration="costa"`, which writes the illite volume `VILL`. Here are two COSTA wells, labelled with their Kharaib-2 tops:
+Packages interpret as clastic unless told otherwise, so carbonate wells need the carbonate setting; COSTA wells also take the field's mineral calibration, `carbonate_calibration="costa"`, which writes the illite volume `VILL`. Here are two of the COSTA wells bundled in one folder, chosen with `well_names` and labelled with their Kharaib-2 tops:
 
 ```{code-cell} python
-import shutil
-
-with tempfile.TemporaryDirectory() as folder:
-    logs = Path(folder, "logs")
-    logs.mkdir()
-    for name in ["HW-3", "HW-4"]:
-        shutil.copy(pp.sample(name), logs)
-    package = Path(folder, "context")
-    records = pp.export_context(
-        logs, package,
-        layout="package",
-        formations=pp.sample("formations_costa"),
-        lithology_domain="carbonate",          # settings as for pp.interpret
-        carbonate_calibration="costa",
-    )
-    files = sorted(path for path in (package / "porosity").rglob("*.json"))
-    print(f"{len(records)} files in", sorted(path.name for path in package.iterdir() if path.is_dir()))
-    print("The porosity files:")
-    for path in files:
-        name = path.relative_to(package).as_posix()
-        print(f"{name:72s} {path.stat().st_size:>7,d} bytes")
-    group_file = next(path for path in files if path.parent.name == "KHARAIB-2")
-    document = json.loads(group_file.read_text(encoding="utf-8"))
+records = pp.export_context(
+    pp.sample("HW-3").parent, "context", layout="package", well_names=["HW-3", "HW-4"],
+    formations=pp.sample("formations_costa"),
+    lithology_domain="carbonate", carbonate_calibration="costa",  # settings as for pp.interpret
+)
+len(records)
 ```
 
-Each group file records the interval, the logs used and statistics of every curve. An excerpt from the first one:
+The run wrote 168 group files, one record each: six category folders beside a
+`curve_name_mapping.json`, and in each the files of every well and formation. The
+porosity files of HW-3 hold one lithology group of the Kharaib-2 each:
 
 ```{code-cell} python
-from textwrap import fill
+from pathlib import Path
 
-analysis = document["analysis_results"]
-statistics = analysis["statistics"]
-excerpt = {
-    "formation_info": document["formation_info"],
-    "well_name": analysis["well_name"],
-    "lithology group": analysis["lithology group"],
-    "input_logs_present": analysis["input_logs_present"],
-    "mean": {curve: statistics[f"{curve}_overall"]["arithmetic_mean"]
-             for curve in ["VILL", "VCALC", "VDOLO", "PHIE", "SW"]},
-    "missing_primary_logs": analysis["data_completeness"]["missing_primary_logs"],
-}
-for key, value in excerpt.items():
-    print(fill(f'"{key}": {json.dumps(value)}', 88, subsequent_indent="    "))
+sorted(path.name for path in Path("context").iterdir())
+```
+
+```{code-cell} python
+sorted(path.name for path in Path("context/porosity/HW-3/KHARAIB-2").glob("*.json"))
+```
+
+Each group file records the interval, the logs used and statistics of every curve. From the first limestone group of HW-3, the interval, the input logs and the statistics of effective porosity:
+
+```{code-cell} python
+group = Path("context/porosity/HW-3/KHARAIB-2/KHARAIB-2_LIMESTONE_GROUP_1_porosity.json")
+document = json.loads(group.read_text(encoding="utf-8"))
+document["formation_info"]
+```
+
+```{code-cell} python
+document["analysis_results"]["input_logs_present"]
+```
+
+```{code-cell} python
+document["analysis_results"]["statistics"]["PHIE_overall"]
 ```
 
 Depths are in the well's own unit, feet for HW-3: `formation_info` and `analysis_results.lithology_group_info` name it in `depth_unit`, and the bad-hole intervals in `analysis_results.BADHOLE_QC_CHECK` and the note on KH carry it too.
@@ -220,8 +206,7 @@ A sample without a value gets the table's `NO_*_DATA` label, never a class:
 ```{code-cell} python
 from petrophys.model import CLASS_TABLES
 
-pd.DataFrame([{"table": name, "classes": table.describe()}
-              for name, table in CLASS_TABLES.items()]).style.hide(axis="index")
+pd.Series({name: table.describe() for name, table in CLASS_TABLES.items()}).to_frame("classes")
 ```
 
 Reservoir quality grades effective porosity (PHIE_CC, else PHIE, else PHIT), permeability (PERM_CC, else PERM, PERM_CORE or PERM_TIMUR) and clay volume (VCL, else VCLAY, else VSH) together, with the limits of the lithology family of the group's lithology.

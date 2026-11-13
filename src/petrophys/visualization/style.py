@@ -64,11 +64,18 @@ def plot_style(overrides=None):
     settings = dict(PLOT_STYLE)
     settings.update(overrides or {})
     token = _active_style.set(True)
+    interactive = mpl.is_interactive()
     try:
         with mpl.rc_context(settings):
-            yield
+            try:
+                yield
+            finally:
+                interactive = mpl.is_interactive()
     finally:
         _active_style.reset(token)
+        # A notebook's inline backend turns on interactive mode when the first
+        # figure is drawn; keep it, or later figures would not display.
+        mpl.interactive(interactive)
 
 
 def use_plot_style():
@@ -80,9 +87,17 @@ def use_plot_style():
     mpl.rcParams.update(PLOT_STYLE)
 
 
+from petrophys._internal.analysis_helpers import as_well as _as_well  # noqa: E402
+
+
 def _styled_plot(function):
     @wraps(function)
     def wrapped(*args, **kwargs):
+        # Plotters that take a well also take an interpretation result.
+        if args:
+            args = (_as_well(args[0]),) + tuple(args[1:])
+        if "well" in kwargs:
+            kwargs["well"] = _as_well(kwargs["well"])
         if _active_style.get():
             return function(*args, **kwargs)
         with plot_style():

@@ -20,6 +20,7 @@ from petrophys.interpretation.saturation.height.saturation_height_module import 
     JFunctionModel,
     BrooksCoreyModel,
     fit_j_function,
+    fit_j_function_from_well,
     fit_brooks_corey,
     saturation_height_from_logs,
 )
@@ -33,6 +34,16 @@ from petrophys.interpretation.saturation.height.pressure_contacts import (
 from petrophys.interpretation.saturation.height.mdt_pretest import (
     MDTPickingConfig, MDTBuildup, MDTPressurePick, MDTPretest,
     read_mdt_pretest, pick_mdt_pressure, formation_pressures_from_mdt,
+)
+
+from petrophys.interpretation.saturation.height.scal import (
+    CapillaryPressureData,
+    FWLFromLogs,
+    estimate_fwl_from_logs,
+    fit_j_function_from_core,
+    fit_thomeer,
+    read_capillary_pressure,
+    water_contact_from_fwl,
 )
 
 from petrophys.interpretation.saturation.height.empirical import (
@@ -60,6 +71,14 @@ __all__ = [
     "JFunctionModel",
     "BrooksCoreyModel",
     "fit_j_function",
+    "fit_j_function_from_well",
+    "CapillaryPressureData",
+    "FWLFromLogs",
+    "estimate_fwl_from_logs",
+    "fit_j_function_from_core",
+    "fit_thomeer",
+    "read_capillary_pressure",
+    "water_contact_from_fwl",
     "fit_brooks_corey",
     "saturation_height_from_logs",
     "PressureGradient",

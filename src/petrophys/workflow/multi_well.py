@@ -107,7 +107,9 @@ class MultiWellResult:
         pandas.DataFrame
             ``Well``, ``Status``, ``Depth unit``, ``Net rock``, ``Net
             reservoir`` and ``Net pay`` (thickness in the well's depth unit),
-            the medians of VCL, PHIE, SW and PERM over the well, and the
+            the medians of VCL, PHIE, SW and PERM over the well (PHIE_CC
+            and PERM_CC where the interpretation produced them, as in the
+            formation summaries), and the
             number of warnings.
         """
         import pandas as pd
@@ -125,8 +127,12 @@ class MultiWellResult:
                 "Net reservoir": net.get("net_res"),
                 "Net pay": net.get("net_pay"),
             }
+            # PHIE and PERM: the core-corrected curve where the pay averages use it.
+            from petrophys.evaluation.summaries.zone_summary import pay_average_curves
+
+            chosen = pay_average_curves(result.well)
             for name in ("VCL", "PHIE", "SW", "PERM"):
-                row[f"Median {name}"] = (key.get(name) or {}).get("median")
+                row[f"Median {name}"] = (key.get(chosen.get(name) or name) or {}).get("median")
             row["Warnings"] = len(summary["warnings"])
             rows.append(row)
         return pd.DataFrame(rows)

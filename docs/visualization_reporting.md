@@ -5,6 +5,7 @@ kernelspec:
   display_name: Python 3
 mystnb:
   execution_mode: force
+  execution_in_temp: true
 ---
 
 # Visualization and reporting
@@ -16,48 +17,22 @@ This page shows each plot type on the bundled wells, then every export format.
 ```{code-cell} python
 :tags: [remove-cell]
 
-%matplotlib inline
 import warnings
-
-import matplotlib.pyplot as plt
-import pandas as pd
-from matplotlib.ticker import NullFormatter
-from myst_nb import glue
 
 # 30/6-5 labels its percent core saturations (SWC, SOC) as fractions; Petrophys
 # converts them to v/v and warns. The page explains this once, in the text.
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
-pd.set_option("display.max_colwidth", None)
-from petrophys.visualization import use_plot_style
-use_plot_style()
-
-
-def place(key, fig):
-    """Put a figure in the tab or card that names ``key``."""
-    for ax in fig.axes:  # small log axes: keep only the decade labels
-        if ax.get_xscale() == "log":
-            ax.xaxis.set_minor_formatter(NullFormatter())
-    glue(key, fig, display=False)
-    plt.close(fig)
 ```
 
 The examples interpret 30/6-5 once, with Rw 0.07 ohm.m at 230 °F. Its core SWC and SOC are percent values labelled as fractions. Petrophys converts them and warns; this page hides that warning.
 
 ```{code-cell} python
-import numpy as np
-import pandas as pd
 import petrophys as pp
 
-BRENT = (2841, 2958)  # Brent Group reservoir, m
-well = pp.read(
-    pp.sample("30_6-5"),
-    formations=pp.sample("formations_30_6-5"),
-    lithology=pp.sample("lithology_30_6-5"),
-)
+well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"),
+               lithology=pp.sample("lithology_30_6-5"))
 result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
-
-viewer = pp.plot(result, top=2800, bottom=3000, figsize=(15, 11))
-viewer.show()
+pp.plot(result, top=2800, bottom=3000)
 ```
 
 ## Figure style and export
@@ -79,45 +54,44 @@ Viewer `.save(...)` methods use the same defaults.
 
 ## Log plot templates
 
-`pp.plot` builds its tracks from the curves present (`template="auto"`, above). Named templates give a fixed layout, {func}`~petrophys.visualization.create_triple_combo` draws the classic first look, and a well plots before any interpretation. Below, `place()` is a small page helper that puts each figure in its tab or card.
+`pp.plot` builds its tracks from the curves present (`template="auto"`, above).
+A named template gives a fixed layout instead: `raw`, `triple_combo`, `petrophysics`,
+`interpretation`, `minerals`, `comprehensive` and a few more. The examples below show
+the Brent Group (2841-2958 m) with a margin.
+
+The `petrophysics` template keeps the interpretation tracks:
 
 ```{code-cell} python
-from petrophys.visualization import DEFAULT_LOG_VIEWER_TEMPLATES, create_triple_combo
-
-from textwrap import fill
-
-TOP, BOTTOM = 2830, 2970  # the Brent Group with a margin
-print(fill("Named templates: " + ", ".join(DEFAULT_LOG_VIEWER_TEMPLATES), 88))
-for name, size in [("petrophysics", (14, 10.5)), ("comprehensive", (18, 12))]:
-    place(name, pp.plot(result, top=TOP, bottom=BOTTOM, template=name, figsize=size).fig)
-triple = create_triple_combo(result.well, depth_range=(TOP, BOTTOM), figsize=(10, 10))
-place("triple_combo", triple.fig)
-raw = pp.plot(well, top=TOP, bottom=BOTTOM, figsize=(13, 10))  # no pp.interpret needed
-place("uninterpreted", raw.fig)
+pp.plot(result, top=2830, bottom=2970, template="petrophysics")
 ```
 
-::::{tab-set}
-:::{tab-item} petrophysics
-```{glue:figure} petrophysics
+`comprehensive` adds the mineral volumes of the multi-mineral solution and a seal flag:
+
+```{code-cell} python
+pp.plot(result, top=2830, bottom=2970, template="comprehensive")
 ```
-:::
-:::{tab-item} comprehensive
-```{glue:figure} comprehensive
+
+`triple_combo` is the classic first look at gamma ray, resistivity and density-neutron
+({func}`~petrophys.visualization.create_triple_combo` draws the same):
+
+```{code-cell} python
+pp.plot(result, top=2830, bottom=2970, template="triple_combo")
 ```
-:::
-:::{tab-item} triple combo
-```{glue:figure} triple_combo
+
+A well plots before any interpretation; only the measured curves are drawn:
+
+```{code-cell} python
+pp.plot(well, top=2830, bottom=2970)
 ```
-:::
-:::{tab-item} before interpretation
-```{glue:figure} uninterpreted
-```
-:::
-::::
 
 ## Crossplots
 
-Each crossplot answers one question. The lithology plots use the interval where PEF and sonic are logged; the resistivity plots use the Statfjord water leg.
+Each crossplot answers one question. The lithology plots use the interval where PEF
+and sonic are both logged (2784-3176 m); the resistivity plots use the Statfjord water
+leg (3223-3556 m), where the points fall on the water line.
+
+**Neutron-density** shows lithology and gas against the sandstone, limestone and
+dolomite lines:
 
 ```{code-cell} python
 from petrophys.visualization import (
@@ -125,187 +99,128 @@ from petrophys.visualization import (
     create_mn_plot, create_nd_crossplot, create_pickett_plot,
 )
 
-geo = result.well
-LITH = (2784, 3176)   # PEF and sonic both logged
-WATER = (3223, 3556)  # Statfjord water leg
-SMALL = (5, 4.2)
-carbonate = pp.interpret(pp.read(pp.sample("HW-3")))  # COSTA carbonate, Rw in header
-
-place("nd", create_nd_crossplot(geo, depth_range=LITH, figsize=SMALL))
-place("mn", create_mn_plot(geo, depth_range=LITH, figsize=SMALL))
-place("mid", create_mid_plot(geo, depth_range=LITH, figsize=SMALL))
-place("pickett", create_pickett_plot(geo, rw=0.07, rt_curve="RDEP", color_curve="VCL",
-                                     a=0.8, depth_range=WATER, figsize=SMALL).fig)
-place("hingle", create_hingle_plot(geo, rw=0.07, a=0.8, depth_range=WATER, figsize=SMALL))
-place("buckles", create_buckles_plot(carbonate.well, figsize=SMALL))
+create_nd_crossplot(result, depth_range=(2784, 3176));
 ```
 
-::::{grid} 1 1 2 2
-:gutter: 3
+**M-N plot**: matrix minerals from density, neutron and sonic together:
 
-:::{grid-item-card} Neutron-density
-```{glue:figure} nd
+```{code-cell} python
+create_mn_plot(result, depth_range=(2784, 3176));
 ```
-Lithology and gas: sandstone, limestone and dolomite lines. `create_nd_crossplot`
-:::
-:::{grid-item-card} M-N plot
-```{glue:figure} mn
+
+**MID plot**: apparent matrix density against apparent matrix slowness:
+
+```{code-cell} python
+create_mid_plot(result, depth_range=(2784, 3176));
 ```
-Matrix minerals from density, neutron and sonic. `create_mn_plot`
-:::
-:::{grid-item-card} MID plot
-```{glue:figure} mid
+
+**Pickett plot**: log Rt against log porosity. Water-bearing rock falls on a straight
+line whose slope is -m and whose intercept gives Rw; lines of constant Sw lie
+above it. Here with the operator's Archie constants (a 0.8, m and n 2):
+
+```{code-cell} python
+create_pickett_plot(result, rw=0.07, a=0.8, rt_curve="RDEP", color_curve="VCL",
+                    depth_range=(3223, 3556));
 ```
-Apparent matrix density against apparent matrix slowness. `create_mid_plot`
-:::
-:::{grid-item-card} Pickett plot
-```{glue:figure} pickett
+
+**Hingle plot**: the same Archie water line on linear axes, where it passes through
+the matrix point at zero porosity:
+
+```{code-cell} python
+create_hingle_plot(result, rw=0.07, a=0.8, depth_range=(3223, 3556));
 ```
-Rw and m from the water line; Sw lines above it. `create_pickett_plot`
-:::
-:::{grid-item-card} Hingle plot
-```{glue:figure} hingle
+
+**Buckles plot**: points on one PHIE × Sw hyperbola are at irreducible water. HW-3,
+a COSTA carbonate whose header carries Rw:
+
+```{code-cell} python
+create_buckles_plot(pp.interpret(pp.sample("HW-3")));
 ```
-The Archie water line on linear axes. `create_hingle_plot`
-:::
-:::{grid-item-card} Buckles plot (HW-3)
-```{glue:figure} buckles
-```
-Points on one PHIE × Sw hyperbola are at irreducible water. `create_buckles_plot`
-:::
-::::
 
 ## Reservoir displays
 
-Flow units, net flags and formation bands sum up where the good rock is.
+Flow units, net flags and formation tops sum up where the good rock is.
+
+**Flow units** plot the reservoir quality index (RQI) against normalized porosity
+(φz) for the core plugs; each hydraulic flow unit lies on its own line:
 
 ```{code-cell} python
-from petrophys.evaluation import calculate_flow_units
-from petrophys.visualization import (
-    LogPlot, add_zone_shading, create_flow_unit_plot, plot_zone_flags,
-)
+from petrophys.interpretation.core_analysis import core_data_from_well
+from petrophys.visualization import create_flow_unit_plot, plot_zone_flags
 
-plugs = np.isfinite(geo["PHIC"].data) & np.isfinite(geo["KH_CORE"].data)
-# Permeability first, then porosity:
-units = calculate_flow_units(geo["KH_CORE"].data[plugs], geo["PHIC"].data[plugs])
-place("flow_units", create_flow_unit_plot(result=units, figsize=SMALL))
-
-fig, ax = plot_zone_flags(geo, flag_curves=["NET_ROCK", "NET_RES", "NET_PAY"],
-                          depth_range=BRENT, figsize=SMALL)
-place("zone_flags", fig)
-
-tops = pp.read_formations(pp.sample("formations_30_6-5"))
-brent_formations = tops[(tops["rank"] == "formation") & (tops["top_depth"] >= BRENT[0])
-                        & (tops["bottom_depth"] <= BRENT[1])]
-panel = LogPlot(geo, figsize=SMALL)
-panel.create_figure(n_tracks=2)
-panel.add_curve(0, "GR", color="#1b7837", xlim=(0, 150))
-panel.add_curve(1, "PHIE", color="navy", xlim=(0.4, 0))
-panel.set_depth_range(top=BRENT[0] - 10, bottom=BRENT[1] + 10)
-colors = ["#fee08b", "#9ecae1"]
-zones = [{"top": row.top_depth, "bottom": row.bottom_depth, "name": row.formation_name,
-          "color": color} for row, color in zip(brent_formations.itertuples(), colors)]
-for axis in panel.axes:
-    add_zone_shading(axis, zones, alpha=0.35)
-place("shading", panel.fig)
+create_flow_unit_plot(core_data_from_well(result));
 ```
 
-::::{grid} 1 1 2 2
-:gutter: 3
+**Zone flags** draw net rock, net reservoir and net pay as depth bars:
 
-:::{grid-item-card} Flow units
-```{glue:figure} flow_units
+```{code-cell} python
+plot_zone_flags(result, flag_curves=["NET_ROCK", "NET_RES", "NET_PAY"],
+                depth_range=(2841, 2958));
 ```
-RQI against φz for the core plugs, one line per unit. `create_flow_unit_plot`
-:::
-:::{grid-item-card} Zone flags
-```{glue:figure} zone_flags
-```
-Net rock, reservoir and pay as depth bars. `plot_zone_flags`
-:::
-:::{grid-item-card} Formation shading
-```{glue:figure} shading
-```
-Named bands on any matplotlib axis. `add_zone_shading`
-:::
-::::
+
+Formation tops given to `pp.read` (or to `pp.plot` as `formations=`) are drawn on
+every log plot, as above. To shade named intervals on a Matplotlib axis of your own,
+use {func}`~petrophys.visualization.add_zone_shading`.
 
 ## Multi-well and sensitivity charts
 
-`petrophys.visualization` also draws charts that are not depth tracks, from plain arrays or `Well` objects. `create_bar_comparison` and `create_line_comparison` complete the set.
+`petrophys.visualization` also draws charts that are not depth tracks.
+`create_bar_comparison` and `create_line_comparison` complete the set.
+
+**Multi-well overlay**: one curve from several wells on a shared depth axis, here the
+normalized gamma ray of five COSTA wells:
 
 ```{code-cell} python
-from petrophys.evaluation import STANDARD_CUTOFFS, NetPayModule
 from petrophys.visualization import (
     create_heatmap, create_histogram_comparison, create_multiwell_overlay,
     create_tornado_plot,
 )
 
-costa = [pp.read(pp.sample(name)) for name in ["HW-3", "HW-4", "HW-5", "HW-6", "HW-7"]]
-fig, ax = create_multiwell_overlay(costa, "GR", normalize=True, figsize=SMALL,
-                                   title="Normalized GR, five COSTA wells")
-place("overlay", fig)
-gr_by_well = {w.name: w["GR"].data for w in costa}
-fig, ax = create_histogram_comparison(gr_by_well, density=True, xlabel="GR (API)",
-                                      title="GR by well", figsize=SMALL)
-place("histogram", fig)
-
-# Brent Group net pay as the cutoffs move; the interpreted curves stay fixed. NetPayModule
-# applies the cutoffs alone, so the samples pp.interpret leaves out of NET_PAY
-# (bad hole, evaporite, coal, halite) count here.
-brent = geo.depth_slice(*BRENT)
-base = STANDARD_CUTOFFS["clastic"]
-def net_pay(**change):
-    return NetPayModule(**{**base, **change}).calculate(brent).net_pay_thickness
-
-cases = {"VCL cutoff 0.3 / 0.5": ("vcl_cutoff", 0.3, 0.5),
-         "PHIE cutoff 0.12 / 0.05": ("phie_cutoff", 0.12, 0.05),
-         "Sw cutoff 0.5 / 0.7": ("sw_cutoff", 0.5, 0.7)}
-low = [net_pay(**{key: lo}) for key, lo, hi in cases.values()]
-high = [net_pay(**{key: hi}) for key, lo, hi in cases.values()]
-fig, ax = create_tornado_plot(list(cases), low, high, base=net_pay(),
-                              xlabel="Brent Group net pay (m)",
-                              title="Net pay sensitivity to cutoffs", figsize=SMALL)
-place("tornado", fig)
-
-vcl_cuts, sw_cuts = np.arange(0.2, 0.55, 0.05), np.arange(0.4, 0.85, 0.05)
-phie_cut = base["phie_cutoff"]
-ntg = [[NetPayModule(vcl_cutoff=v, phie_cutoff=phie_cut, sw_cutoff=s).calculate(brent)
-        for s in sw_cuts] for v in vcl_cuts]
-ntg = np.array([[r.net_pay_thickness / r.gross_thickness for r in row] for row in ntg])
-fig, ax = create_heatmap(ntg, x=sw_cuts, y=vcl_cuts, cmap="RdYlGn", invert_yaxis=False,
-                         xlabel="Sw cutoff", ylabel="VCL cutoff",
-                         colorbar_label="Net-to-gross",
-                         title="Brent Group net-to-gross", figsize=SMALL)
-place("heatmap", fig)
-print("Standard clastic cutoffs:", base)
-print(f"Brent Group net pay with them, cutoffs alone: {net_pay():.1f} m")
+costa = pp.read([pp.sample(name) for name in ["HW-3", "HW-4", "HW-5", "HW-6", "HW-7"]])
+create_multiwell_overlay(costa, "GR", normalize=True, title="Normalized GR, five COSTA wells");
 ```
 
-::::{grid} 1 1 2 2
-:gutter: 3
+**Histogram comparison**: distributions on common bins, for example before
+normalization:
 
-:::{grid-item-card} Multi-well overlay
-```{glue:figure} overlay
+```{code-cell} python
+create_histogram_comparison(costa, "GR", density=True, xlabel="GR (API)", title="GR by well");
 ```
-One curve from several wells on a shared depth axis. `create_multiwell_overlay`
-:::
-:::{grid-item-card} Histogram comparison
-```{glue:figure} histogram
+
+**Tornado**: how far each assumption moves the answer.
+{func}`~petrophys.evaluation.cutoff_sensitivity` re-applies the net-pay cutoffs to
+the interpreted curves, which stay fixed; it applies the cutoffs alone, so the samples
+`pp.interpret` leaves out of `NET_PAY` (bad hole, evaporite, coal, halite) count
+here. The standard clastic cutoffs are VCL 0.4, PHIE 0.08 and Sw 0.6. Each case
+moves one cutoff to a low and a high value:
+
+```{code-cell} python
+from petrophys.evaluation import cutoff_sensitivity
+
+def net_pay(**cutoffs):
+    grid = cutoff_sensitivity(result.well, top=2841, bottom=2958, **cutoffs)
+    return grid["net_pay_thickness"].tolist()
+
+low, high = zip(net_pay(vcl_cutoffs=[0.3, 0.5]), net_pay(phie_cutoffs=[0.12, 0.05]),
+                net_pay(sw_cutoffs=[0.5, 0.7]))
+create_tornado_plot(["VCL cutoff 0.3 / 0.5", "PHIE cutoff 0.12 / 0.05", "Sw cutoff 0.5 / 0.7"],
+                    low, high, base=net_pay()[0], xlabel="Brent Group net pay (m)");
 ```
-Distributions on common bins, e.g. before normalization. `create_histogram_comparison`
-:::
-:::{grid-item-card} Tornado
-```{glue:figure} tornado
+
+With the standard cutoffs the Brent Group has 23.3 m of net pay. The Sw cutoff moves
+it most, from 21.0 to 25.6 m; the VCL and PHIE cutoffs move it by less than 1.3 m
+either way.
+
+**Heatmap**: any 2-D grid, such as net-to-gross over two cutoffs at once:
+
+```{code-cell} python
+grid = cutoff_sensitivity(result.well, top=2841, bottom=2958,
+                          vcl_cutoffs=[0.2, 0.3, 0.4, 0.5], sw_cutoffs=[0.4, 0.5, 0.6, 0.7, 0.8])
+ntg = grid.pivot(index="vcl_cutoff", columns="sw_cutoff", values="ntg_pay")
+create_heatmap(ntg, x=ntg.columns, y=ntg.index, cmap="RdYlGn", invert_yaxis=False,
+               xlabel="Sw cutoff", ylabel="VCL cutoff", colorbar_label="Net-to-gross pay",
+               title="Brent Group net-to-gross pay", figsize=(7, 4.5));
 ```
-How far each assumption moves the answer. `create_tornado_plot`
-:::
-:::{grid-item-card} Heatmap
-```{glue:figure} heatmap
-```
-Any 2-D grid, such as net-to-gross over two cutoffs. `create_heatmap`
-:::
-::::
 
 Specialist displays (NMR panel, borehole images, XRF, saturation-height, core plots) are shown in {doc}`specialist_data`.
 
@@ -314,18 +229,21 @@ Specialist displays (NMR panel, borehole images, XRF, saturation-height, core pl
 `pp.plot` takes a well, a result or a well file (`pp.plot("well.las")`) and returns a {class}`~petrophys.visualization.LogViewer`, a matplotlib figure shown inline in a notebook and saved by `.save(path)` as PNG, PDF, SVG or any other matplotlib format. Choose the window and tracks, then read what it did.
 Several wells give a {class}`~petrophys.visualization.MultiWellPlot` (each well's own plot, one at a time; `.save(folder)` writes a file per well), or with `curves=` a {class}`~petrophys.visualization.WellComparisonPlot` (one figure, a track per curve with every well in it).
 
-```{code-cell} python
-tracks = [track.display_name for track in viewer.template.tracks]
-print(fill("Track names: " + ", ".join(tracks), 88, subsequent_indent="    "))
+The `auto` template of the interpreted 30/6-5 has the tracks DEPTH, LITHOLOGY,
+GAMMA / HOLE, RESISTIVITY, DENSITY / NEUTRON, SONIC, POROSITY, SATURATION,
+PERMEABILITY, ROCK QUALITY, MINERAL VOLUMES and FLAGS; `tracks=` keeps a few of them:
 
-focus = pp.plot(result, top=BRENT[0], bottom=BRENT[1], figsize=(9, 9.5),
+```{code-cell} python
+focus = pp.plot(result, top=2841, bottom=2958,
                 tracks=["GAMMA / HOLE", "POROSITY", "SATURATION", "FLAGS"])
-print("Omitted tracks:", focus.omitted_tracks)
-print("Lithology from:", focus.diagnostics["lithology_source"])
-print("Labels suppressed:", focus.diagnostics["suppressed_formation_labels"])
-warning = f"Warnings: {len(focus.warnings)}; the first: {focus.warnings[0]}"
-print(fill(warning, 88, subsequent_indent="    "))
-focus.show()
+focus
+```
+
+The viewer reports what it did. The Dunlin Group and Drake Formation tops sit at the
+bottom of this window, so their labels are suppressed:
+
+```{code-cell} python
+focus.diagnostics["suppressed_formation_labels"]
 ```
 
 | Control or attribute | What it does |
@@ -337,6 +255,7 @@ focus.show()
 | `curve_aliases=` | Your mnemonics to standard names: a dict, or a CSV/Excel table with `curve` and `standard` columns |
 | `template=` / `template_xml_path=` | Named layout, or an XML file with your own tracks, scales and fills |
 | `formations=`, `lithology=` | Formation tops and lithology intervals for this plot only, as for `pp.read`; geology passed to `pp.read` also feeds the interpretation |
+| `formation_name=` | Formation name shown in the plot title |
 | `lithology_codes=` | Codebook of a lithology code curve: a mapping of code to rock name, or a CSV/Excel codebook |
 | `strict=True` | Fail when a fixed template needs a missing curve, instead of skipping the track |
 | `viewer.omitted_tracks` | Tracks left out because their curves are missing |
@@ -355,20 +274,17 @@ pp.plot(result, lithology_codes={65000: "Sandstone", 30000: "Shale"})
 
 ### Your curve names, your curves, your styles
 
-The Teapot Dome well 44-MDX-10 uses company mnemonics. Standard names find most of
-them; its spontaneous potential `SPR` is known to no alias table, so a mapping
-places it. The mapping can be a dict or a CSV/Excel table (`curve`, `standard`),
-given to `pp.read` (stored on the well, used by plotting and interpretation alike)
-or to one `pp.plot`.
+The Teapot Dome well 44-MDX-10 uses company mnemonics (`DT`, `SPR`, `LLS`, `LLD`,
+`MSFL`, `NPOR`, `RHOB`, `CORR`, `GRD`, `CALD`). Standard names find most of them;
+its spontaneous potential `SPR` is known to no alias table, so a mapping places it.
+The mapping can be a dict or a CSV/Excel table (`curve`, `standard`), given to
+`pp.read` (stored on the well, used by plotting and interpretation alike) or to one
+`pp.plot`. `curve_styles` restyles single curves:
 
 ```{code-cell} python
-teapot = pp.read(pp.sample("teapot_44-mdx-10"))
-print("File curves:", list(teapot.curves))
-own = pp.plot(teapot, curves=["GR", "SP", "RDEP", "RMED", "NPHI", "RHOB"],
-              curve_aliases={"SPR": "SP"}, top=2400, bottom=3000, figsize=(9, 8),
-              curve_styles={"GR": {"color": "black"}, "SP": {"color": "#984ea3", "line_width": 1.2}})
-print("Drawn:", own.diagnostics["curve_lookup"])
-own.show()
+pp.plot(pp.sample("teapot_44-mdx-10"), curves=["GR", "SP", "RDEP", "RMED", "NPHI", "RHOB"],
+        curve_aliases={"SPR": "SP"}, top=2400, bottom=3000,
+        curve_styles={"GR": {"color": "black"}, "SP": {"color": "#984ea3"}})
 ```
 
 Coincident formation tops are grouped, not discarded. Plotting never computes a missing curve: a well without Sw shows no Sw. {func}`~petrophys.visualization.create_adaptive_log_viewer_template` lists the tracks `auto` would draw before you render.
@@ -376,42 +292,38 @@ Coincident formation tops are grouped, not discarded. Plotting never computes a 
 ## Exports
 
 Write curves for other software, a full trace for review, or a delivery package for a folder of wells.
+The interpretation writes its own LAS file and trace:
 
 ```{code-cell} python
-import shutil
-import tempfile
-from pathlib import Path
+result.to_las("30_6-5_interpreted.las")   # curves + settings in ~Params
+result.to_json("30_6-5_trace.json")       # every step, input and decision
+result.to_markdown("30_6-5_trace.md");
+```
 
+Chosen curves go to CSV or Excel, and a delivery LAS standardizes the curve families:
+
+```{code-cell} python
 from petrophys.io import export_csv, export_excel
-from petrophys.reporting import (
-    export_example_format_las, export_example_work_package_directory,
-)
-from petrophys.visualization import (
-    export_interpretation_plots, write_visualization_report,
-)
+from petrophys.reporting import export_example_format_las
 
 curves = ["GR", "VCL", "PHIE", "SW", "PERM", "NET_PAY"]
-with tempfile.TemporaryDirectory() as tmp:
-    out = Path(tmp)
-    result.to_las(out / "30_6-5_interpreted.las")        # curves + settings in ~Params
-    result.to_json(out / "30_6-5_trace.json")            # every step, input and decision
-    result.to_markdown(out / "30_6-5_trace.md")
-    export_csv(result.well, out / "30_6-5.csv", curves=curves)
-    export_excel(result.well, out / "30_6-5.xlsx", curves=curves)
-    export_example_format_las(result.well, out / "delivery" / "30_6-5.las",
-                              set_name="Petrophys interpretation")
+export_csv(result.well, "30_6-5.csv", curves=curves)
+export_excel(result.well, "30_6-5.xlsx", curves=curves)
+export_example_format_las(result.well, "delivery/30_6-5.las", set_name="Petrophys interpretation");
+```
 
-    logs = out / "logs"                                  # a folder of LAS files
-    logs.mkdir()
-    shutil.copy(pp.sample("30_6-5"), logs)
-    export_example_work_package_directory(logs, out / "package")
-    plots = export_interpretation_plots(logs, out / "plots", figsize=(10, 7), dpi=60)
-    write_visualization_report(plots, out / "plots" / "plots.csv")
+Several wells interpret together and write a LAS file and a plot per well:
 
-    for path in sorted(out.rglob("*.*")):
-        if path.parent != logs:
-            size = path.stat().st_size / 1e3
-            print(f"{path.relative_to(out).as_posix():28s} {size:8,.0f} kB")
+```{code-cell} python
+results = pp.interpret(costa, lithology="carbonate", carbonate_calibration="costa")
+results.to_las("interpreted")
+results.save_plots("plots");
+```
+
+```{code-cell} python
+from pathlib import Path
+
+sorted(path.as_posix() for path in Path().rglob("*.*"))
 ```
 
 | Export | Call | Contents |
@@ -420,8 +332,9 @@ with tempfile.TemporaryDirectory() as tmp:
 | Trace | `result.to_json(path)`, `result.to_markdown(path)` | Every step's method, inputs, outputs, parameters and decisions |
 | Tables | `export_csv`, `export_excel` from `petrophys.io` | Chosen curves with depth; missing values left blank |
 | Delivery LAS | `export_example_format_las` | Standardized curve families with calculation provenance |
+| Several wells | `results.to_las(folder)`, `results.save_plots(folder)` | One interpreted LAS and one plot per well |
 | Work package | `export_example_work_package_directory` | Runs the workflow on each LAS in a folder: interpreted LAS plus reference JSON |
-| Batch plots | `export_interpretation_plots`, `write_visualization_report` | One PNG per LAS and a CSV of what was drawn or skipped |
+| Batch plots | `export_interpretation_plots`, `write_visualization_report` | One PNG per LAS in a folder and a CSV of what was drawn or skipped |
 
 For LLM-ready JSON grouped by formation and lithology, see {doc}`context`.
 

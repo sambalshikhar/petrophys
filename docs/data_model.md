@@ -11,29 +11,33 @@ mystnb:
 
 A {class}`~petrophys.model.Well` holds one depth index, a set of
 {class}`~petrophys.model.Curve` objects, header values and any attached
-geology. This page takes the bundled 30/6-5 well apart.
+geology. This page takes the bundled 30/6-5 well apart: 22,176 depth samples
+0.152 m apart, from 176.6 m to 3556.1 m. The header values the interpretation
+reads are the bottom-hole temperature (degC), the formation-water resistivity and
+its temperature (degF), and the mud-filtrate resistivity:
 
 ```{code-cell} python
 :tags: [remove-cell]
-%matplotlib inline
 import textwrap
 import warnings
 import pandas as pd
 
-# Display settings for this page: whole table cells, warnings wrapped and without file paths.
+# Display settings for this page: whole table cells, three decimals, wrapped warnings.
 pd.set_option("display.max_colwidth", None)
+pd.set_option("display.float_format", "{:.3f}".format)
 warnings.formatwarning = lambda message, category, *args, **kwargs: textwrap.fill(
     f"{category.__name__}: {message}", 88, subsequent_indent="    ") + "\n"
+# 30/6-5 stores core saturation in percent under a "frac" label; Petrophys converts it
+# and warns (see "Core saturation units" in the input templates). Only that message is hidden.
+warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
 ```
 
 ```{code-cell} python
+import pandas as pd
 import petrophys as pp
 
 well = pp.read(pp.sample("30_6-5"))
-summary = well.describe()
-for key, value in summary.items():
-    if key != "curves":
-        print(f"{key:<20}{round(value, 3) if isinstance(value, float) else value}")
+well.describe()["header_parameters"]
 ```
 
 ## The well at a glance
@@ -52,17 +56,10 @@ for key, value in summary.items():
 ## Curves, units and statistics
 
 Every curve keeps the mnemonic, unit and values found in the file.
+`well.describe()` lists them, with the fraction of depths each one covers:
 
 ```{code-cell} python
-import pandas as pd
-
-rows = []
-for item in summary["curves"]:
-    stats = well[item["mnemonic"]].describe()
-    rows.append({"Curve": item["mnemonic"], "Unit": item["unit"],
-                 "Valid %": round(100 * item["valid_fraction"]),
-                 "Min": stats["min"], "Median": stats["median"], "Max": stats["max"]})
-pd.DataFrame(rows).style.hide(axis="index").format(precision=3)
+pd.DataFrame(well.describe()["curves"])
 ```
 
 Core samples (`PHIC` to `SOC`) fill 1% of depths or less. `SWC` and `SOC` say
@@ -73,56 +70,47 @@ Core samples (`PHIC` to `SOC`) fill 1% of depths or less. `SWC` and `SOC` say
 A curve carries its data, its depths and its metadata.
 
 ```{code-cell} python
-gr = well["GR"]
-print(gr, "| depth unit:", gr.depth_unit, "| source:", gr.metadata.source)
-pd.DataFrame([gr.describe()], index=["GR"]).round(2)
+well["GR"]
 ```
+
+```{code-cell} python
+well["GR"].describe()
+```
+
+The raw gamma ray reaches -12.6 API, a value no formation gives; `pp.interpret`
+screens implausible values before it uses a curve ({ref}`review-inputs`).
 
 ## Arrays and tables
 
 `well.depth` and `curve.data` are NumPy arrays of the same length, so any
-plotting or numerical library can use them.
+plotting or numerical library can use them. `depth_slice` cuts a depth window
+into a new well, and `to_dataframe` gives a table with one row per depth:
 
 ```{code-cell} python
-import matplotlib.pyplot as plt
-from petrophys.visualization import use_plot_style
-use_plot_style()
-
 brent = well.depth_slice(2841, 2958)          # the Brent Group, in metres
-fig, axes = plt.subplots(1, 3, figsize=(8, 5), sharey=True)
-colors = ["tab:green", "tab:red", "black"]
-for ax, name, color in zip(axes, ["GR", "RHOB", "RDEP"], colors):
-    ax.plot(brent[name].data, brent.depth, color=color, linewidth=0.8)
-    ax.set_xlabel(f"{name} [{brent[name].unit}]")
-axes[2].set_xscale("log")
-axes[0].set_ylabel(f"Depth [{brent.depth_unit}]")
-axes[0].invert_yaxis()
-fig.suptitle("30/6-5, Brent Group: three curves plotted from their arrays")
-plt.show()
-```
-
-```{code-cell} python
-brent.to_dataframe(curves=["GR", "RHOB", "NPHI", "RDEP"]).head().round(3)
+brent.to_dataframe(curves=["GR", "RHOB", "NPHI", "RDEP"]).head()
 ```
 
 ## Add a curve
 
-`add_curve` puts a calculated array on the well's depth index. The array must
-have one value per depth sample: an array of any other length is refused with a
-`ValueError` that gives both lengths, as the second call below shows on purpose.
+`add_curve` puts an array on the well's depth index, for example a curve from
+another source on the same depths. Here the effective porosity of an
+interpretation goes back on the raw well:
 
 ```{code-cell} python
-import numpy as np
+result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
+well.add_curve("PHIE", result.well["PHIE"].data, unit="v/v", description="Effective porosity")
+well["PHIE"]
+```
 
-phid = (2.65 - well["RHOB"].data) / (2.65 - 1.0)
-well.add_curve("PHID_SS", phid, unit="v/v",
-               description="Density porosity, sandstone matrix")
-print(well["PHID_SS"], "| curves now:", well.n_curves)
+The array must have one value per depth sample: an array of any other length is
+refused with a `ValueError` that gives both lengths.
 
+```{code-cell} python
 try:
-    well.add_curve("TOO_SHORT", np.zeros(10))
+    well.add_curve("TOO_SHORT", result.well["PHIE"].data[:10])
 except ValueError as error:
-    print("ValueError:", error)
+    print(error)
 ```
 
 `pp.interpret` adds its curves the same way, on a copy of the well.
@@ -136,10 +124,11 @@ record it. Convert values with {class}`~petrophys.model.UnitConverter`.
 ```{code-cell} python
 from petrophys.model import UnitConverter
 
-print(f"window: {brent.top:.2f} - {brent.bottom:.2f} {brent.depth_unit}, "
-      f"{brent.n_samples} samples")
-top_ft, bottom_ft = UnitConverter.depth(np.array([brent.top, brent.bottom]), "m", "ft")
-print(f"in feet: {top_ft:.1f} - {bottom_ft:.1f} ft")
+brent.top, brent.bottom, brent.depth_unit
+```
+
+```{code-cell} python
+UnitConverter.depth(brent.depth[[0, -1]], "m", "ft")
 ```
 
 | Input | Depth behaviour |
@@ -166,29 +155,17 @@ print(f"in feet: {top_ft:.1f} - {bottom_ft:.1f} ft")
 
 ## Curve names and units
 
-Vendor mnemonics are recognized and supported units converted. Here four 30/6-5
-curves are renamed to Schlumberger-style mnemonics first.
+Vendor mnemonics are recognized and supported units converted. The Teapot Dome
+well 17-WX-21 is logged under its contractor's mnemonics (`GRD`, `CALD`, `ILD`,
+...) and units (`G/C3`, `DEC`, `US/F`):
 
 ```{code-cell} python
-import copy
 from petrophys.preprocessing.standardization import standardize_curves
 
-vendor = well.depth_slice(2841, 2958)
-schlumberger = {"RHOB": "RHOZ", "NPHI": "TNPH", "RDEP": "AT90", "GR": "GR_EDTC"}
-for name, vendor_name in schlumberger.items():
-    vendor.rename_curve(name, vendor_name)
-
-standard = standardize_curves(copy.deepcopy(vendor), rename_curves=True,
-                              convert_units=True)
-changes = pd.DataFrame({
-    "In the file": vendor.curves,
-    "Unit": [vendor[name].unit for name in vendor.curves],
-    "Standard name": standard.curves,
-    "Standard unit": [standard[name].unit for name in standard.curves],
-})
-changed = ((changes["In the file"] != changes["Standard name"])
-           | (changes["Unit"] != changes["Standard unit"]))
-changes[changed].style.hide(axis="index")
+teapot = pp.read(pp.sample("teapot_17-wx-21"))
+standard = standardize_curves(pp.read(pp.sample("teapot_17-wx-21")), rename_curves=True)
+pd.DataFrame({"In the file": teapot.curves, "Unit": [teapot[name].unit for name in teapot.curves],
+              "Standard": standard.curves, "Standard unit": [standard[name].unit for name in standard.curves]})
 ```
 
 Unknown mnemonics and units are kept, never guessed. `pp.interpret` keeps
@@ -202,21 +179,16 @@ tests and core measurements, with geology tables and input templates.
 `pp.list_samples(kind)` lists one kind, or one collection such as `"costa"`:
 
 ```{code-cell} python
-from textwrap import fill
-
 from petrophys.datasets import SAMPLE_KINDS
 
-for kind in SAMPLE_KINDS:
-    names = pp.list_samples(kind)
-    print(fill(f"{kind} ({len(names)}): {', '.join(names)}", 88, subsequent_indent="    "))
+pd.Series({kind: pp.list_samples(kind) for kind in SAMPLE_KINDS})
 ```
 
-The Daydream CMR logs are installed as LAS and hold scalar NMR curves only:
+The Daydream CMR logs are installed as LAS and hold scalar NMR curves only,
+from 3755 m to 4145 m:
 
 ```{code-cell} python
-cmr = pp.read(pp.sample("daydream1_cmr"))
-print(cmr, f"{cmr.top:.0f} - {cmr.bottom:.0f} {cmr.depth_unit}")
-print(fill(", ".join(cmr.curves), 88))
+pp.read(pp.sample("daydream1_cmr")).curves
 ```
 
 The large native Daydream DLIS files are not installed:
