@@ -1382,10 +1382,17 @@ wherever the package used the function.
   gallery of every capability. An interpretation-settings page generated
   from `config_schema()`, a "Terms, curves and steps" reference and a review
   checklist for interpretations.
+- Getting started for people who have not programmed: "New to Python?"
+  explains notebooks, running cells and reading your own file in Google
+  Colab, and "On your own computer" installs Python, Petrophys and
+  JupyterLab step by step for data that must stay on the machine.
 - Tutorials: a complete-tour notebook covering the whole library on four
-  bundled GeoLink wells, foundations and advanced series, case studies, a
+  bundled GeoLink wells, foundations and advanced series, case studies, and a
   spectral-gamma geochemistry part and a second-well core calibration in
-  tutorial 12, and an own-data notebook. `scripts/check_notebook_outputs.py`
+  tutorial 12. Each tutorial and the quickstart opens in Google Colab from an
+  "Open in Colab" button, with a first cell that installs Petrophys there;
+  `scripts/colab_notebooks.py` adds the buttons and writes the quickstart
+  notebook from the quickstart page. `scripts/check_notebook_outputs.py`
   rejects tutorial notebooks with unexecuted cells, errors or local paths in
   their saved outputs.
 - Third-party data provenance and model validation records accompany the

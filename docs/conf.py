@@ -61,6 +61,8 @@ for source_relative, destination_relative in NOTEBOOK_GROUPS.items():
     destination = DOCS_DIR / destination_relative
     destination.mkdir(parents=True, exist_ok=True)
     for notebook in sorted(source.glob("*.ipynb")):
+        if notebook.name == "quickstart.ipynb":
+            continue  # the Colab copy of quickstart.md, which is the page itself
         target = destination / notebook.name
         copy_tutorial(notebook, target)
 

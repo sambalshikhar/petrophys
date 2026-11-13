@@ -9,9 +9,13 @@ mystnb:
 
 # Quickstart
 
-With Petrophys installed ({doc}`installation`), run a first well: read a
-bundled well, plot it, interpret it and export the result. Every output on this
-page is produced when the documentation is built.
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sambalshikhar/petrophys/blob/main/examples/quickstart.ipynb)
+
+Run a first well: read a bundled well, plot it, interpret it and export the
+result. Every output shown is computed from that well. Run it with Petrophys
+installed ({doc}`installation`), or open it in Google Colab with the button
+above and run it in your browser, with nothing to install
+({doc}`new_to_python`).
 
 ```{code-cell} python
 :tags: [remove-cell]

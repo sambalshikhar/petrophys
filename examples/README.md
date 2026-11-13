@@ -12,6 +12,15 @@ The curriculum starts at
 [`00_orientation_and_setup.ipynb`](part_a_foundations/00_orientation_and_setup.ipynb);
 work through the numbered notebooks in order.
 
+Every notebook opens in Google Colab from the **Open in Colab** button under
+its title; its first code cell installs Petrophys there and does nothing
+anywhere else. [New to Python?](https://petrophys.netlify.app/new_to_python)
+explains notebooks for readers who have not programmed.
+`quickstart.ipynb` is the Quickstart page as a notebook, for Colab: edit
+`docs/quickstart.md` and run `python scripts/colab_notebooks.py`, which also
+adds the button and install cell to new notebooks, then re-run the changed
+notebooks.
+
 For one notebook that covers the whole library - loading, QC, every
 interpretation step, the workflow, multi-well work, core calibration,
 sensitivity analysis and a full plotting gallery - open

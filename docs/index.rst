@@ -11,6 +11,7 @@
      </p>
      <div class="ph-actions">
        <a href="quickstart.html">Run the quickstart</a>
+       <a href="new_to_python.html">New to Python?</a>
        <a href="api/index.html">Browse the API</a>
      </div>
    </header>
@@ -235,6 +236,8 @@ Continue with the :doc:`installation guide <installation>` and the
    :maxdepth: 2
    :caption: Getting started
 
+   new_to_python
+   your_computer
    installation
    quickstart
    own_data
