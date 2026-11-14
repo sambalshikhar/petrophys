@@ -853,7 +853,10 @@ wherever the package used the function.
 
 - Special core analysis: `read_capillary_pressure` reads plug capillary
   pressure curves (Pc against Sw, with each plug's porosity and
-  permeability) from a CSV or Excel table. `.thomeer()` fits the Thomeer
+  permeability) from a CSV or Excel table. Columns are found by name with any
+  unit in brackets ignored, the pressure unit comes from the header or
+  `pc_unit=`, and a mercury saturation becomes Sw = 1 - SHg; a saturation
+  that rises with pressure is refused as not Sw. `.thomeer()` fits the Thomeer
   (1960) hyperbola to each plug (entry pressure Pd, pore geometrical factor
   G, Bv-infinity), `.to_reservoir(fluids)` converts lab Pc by the ratio of
   sigma cos(theta), and `fit_j_function_from_core` fits one Leverett
@@ -861,11 +864,15 @@ wherever the package used the function.
 - Fluid contacts from capillary pressure: `estimate_fwl_from_logs` finds the
   free-water level at which a core saturation-height model best matches the
   log Sw, with a 95% range (or says the FWL lies deeper or shallower than the
-  logged interval when the logs miss the transition zone), and
+  logged interval when the logs miss the transition zone, and the R2 of the
+  match), and
   `water_contact_from_fwl` places the water contact above the FWL by the
   entry-pressure height.
 - `swirr` takes one value per lithology, as Archie a, m and n do; other
   lithologies keep the automatic estimate.
+- Fraction settings (`swirr`, `vcl_cutoff`, `phie_cutoff`, `sw_cutoff`,
+  `phi_cl`, `sw_routing_vcl_cutoff`) given above 1, up to 100, are read as
+  percent: `swirr=15` is 0.15.
 - `perm_method="wyllie_rose"` and `wyllie_rose()` follow the published
   Wyllie and Rose (1950) family k = P phi^Q / Swi^R (k in mD, phi and Swi as
   fractions), with presets in `WYLLIE_ROSE_PRESETS`: `morris_biggs_oil`

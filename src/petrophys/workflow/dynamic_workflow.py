@@ -2477,8 +2477,12 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
             errors.append(f"{name} must be greater than 0; got {value!r}")
     for name in _FRACTION_FIELDS:
         value = _number(name)
+        if value is not None and 1.0 < value <= 100.0:
+            # A fraction given in percent (swirr=15 for 0.15).
+            value = value / 100.0
+            setattr(config, name, value)
         if value is not None and not 0.0 <= value <= 1.0:
-            errors.append(f"{name} must be a fraction between 0 and 1; got {value!r}")
+            errors.append(f"{name} must be a fraction between 0 and 1, or a percentage; got {value!r}")
     if config.gr_min is not None and config.gr_max is not None and config.gr_min >= config.gr_max:
         errors.append(f"gr_min ({config.gr_min}) must be less than gr_max ({config.gr_max})")
     if (

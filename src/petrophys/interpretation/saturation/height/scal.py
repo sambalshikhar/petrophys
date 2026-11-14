@@ -29,6 +29,7 @@ integrated reservoir description. AAPG Methods in Exploration 13.
 
 from __future__ import annotations
 
+import re
 import warnings
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -63,18 +64,61 @@ _COLUMNS = {
 }
 
 
+#: Pressure units read from a column header, as psi per unit.
+_PC_UNITS = {"psi": 1.0, "psia": 1.0, "psig": 1.0, "kpa": 0.145038, "mpa": 145.038,
+             "bar": 14.5038, "atm": 14.6959}
+
+
+def _bare(name: Any) -> str:
+    """A header without its unit in brackets, upper case, words joined by ``_``."""
+    text = re.sub(r"[\(\[].*?[\)\]]", " ", str(name))
+    return "_".join(re.findall(r"[A-Z0-9]+", text.upper()))
+
+
+def _header_unit(name: Any) -> str:
+    match = re.search(r"[\(\[]\s*([^\)\]]+?)\s*[\)\]]", str(name))
+    return match.group(1).strip().lower() if match else ""
+
+
+def _nonwetting(name: Any) -> bool:
+    """Whether a saturation header names the non-wetting phase (mercury, gas, oil injected)."""
+    words = set(_bare(name).split("_"))
+    return bool(words & {"HG", "SHG", "MERCURY", "SNW", "NONWETTING", "NON"}) and not words & {"SW", "WATER"}
+
+
+def _keyword_match(bare: str, role: str) -> bool:
+    words = set(bare.split("_"))
+    if role == "sample":
+        return bool(words & {"SAMPLE", "PLUG"})
+    if role == "depth":
+        return "DEPTH" in words
+    if role == "porosity":
+        return bool(words & {"POROSITY", "PHI"})
+    if role == "permeability":
+        return bool(words & {"PERM", "PERMEABILITY", "KLINKENBERG"})
+    if role == "pc":
+        return bool(words & {"PC", "PCHG", "PRESSURE", "PCAP"})
+    if role == "sw":
+        return bool(words & {"SATURATION", "SAT", "SW", "SHG"})
+    return False
+
+
 def _column(frame: "pd.DataFrame", given: Optional[str], role: str, required: bool = True) -> Optional[str]:
     if given is not None:
         if given not in frame.columns:
             raise KeyError(f"No column {given!r}; the table has {list(frame.columns)}")
         return given
-    upper = {str(name).strip().upper().replace(" ", "_"): name for name in frame.columns}
+    bare = {_bare(name): name for name in frame.columns}
     for candidate in _COLUMNS[role]:
-        if candidate in upper:
-            return str(upper[candidate])
+        if candidate in bare:
+            return str(bare[candidate])
+    matches = [name for key, name in bare.items() if _keyword_match(key, role)]
+    if len(matches) == 1:
+        return str(matches[0])
     if required:
-        raise KeyError(f"No {role} column found (looked for {', '.join(_COLUMNS[role])}); "
-                       f"name it with {role}=; the table has {list(frame.columns)}")
+        found = f" (several match: {matches})" if matches else ""
+        raise KeyError(f"No single {role} column found{found}; name it with {role}=; "
+                       f"the table has {list(frame.columns)}")
     return None
 
 
@@ -245,17 +289,27 @@ def read_capillary_pressure(
     system: str = "air_mercury",
     ift: Optional[float] = None,
     theta: Optional[float] = None,
+    pc_unit: Optional[str] = None,
+    saturation: Optional[str] = None,
     sheet_name: Any = 0,
 ) -> CapillaryPressureData:
     """Read plug capillary-pressure curves from a CSV or Excel table (or a DataFrame).
 
     One row per measured point: the plug (``sample``), the capillary pressure
-    in psi (``pc``), the wetting-phase saturation (``sw``), and the plug's
-    ``porosity``, ``permeability`` (mD) and, optionally, ``depth``. Columns
-    are found by common names (``Sample``, ``PcHg`` or ``Pc``, ``Sw``,
-    ``Porosity``, ``Perm`` ...) unless named. Porosity and Sw in percent
-    become v/v. ``system`` names the laboratory fluids, which set the
-    interfacial tension and contact angle (``ift``, ``theta`` override them).
+    (``pc``), the saturation (``sw``), and the plug's ``porosity``,
+    ``permeability`` (mD) and, optionally, ``depth``. Columns are found by
+    their names, with any unit in brackets ignored (``Plug No.``, ``Injection
+    Pressure (psia)``, ``Helium Porosity (%)``, ``Klinkenberg Perm (mD)`` ...),
+    unless named. Porosity and saturation in percent become v/v.
+
+    ``pc_unit`` is the pressure unit (``psi``, ``kPa``, ``MPa``, ``bar``,
+    ``atm``); by default the unit in the header, else psi. ``saturation`` is
+    ``"wetting"`` (Sw) or ``"nonwetting"`` (mercury saturation, converted to
+    Sw = 1 - SHg); by default a header naming mercury (``Hg Saturation``) is
+    non-wetting. A saturation that rises with pressure in most plugs is not
+    Sw, and is refused with a pointer to ``saturation="nonwetting"``.
+    ``system`` names the laboratory fluids, which set the interfacial tension
+    and contact angle (``ift``, ``theta`` override them).
     """
     import pandas as pd
 
@@ -279,8 +333,27 @@ def read_capillary_pressure(
     for key in ("PC", "SW", "POROSITY", "PERMEABILITY"):
         table[key] = pd.to_numeric(table[key], errors="coerce")
     table = table.dropna(subset=["PC", "SW", "POROSITY", "PERMEABILITY"]).reset_index(drop=True)
+    unit = (pc_unit or _header_unit(names["PC"]) or "psi").strip().lower()
+    if unit not in _PC_UNITS:
+        raise ValueError(f"Unknown pressure unit {unit!r}; give pc_unit= as one of {sorted(_PC_UNITS)}")
+    table["PC"] = table["PC"] * _PC_UNITS[unit]
+    kind = saturation or ("nonwetting" if _nonwetting(names["SW"]) else "wetting")
+    if kind not in ("wetting", "nonwetting"):
+        raise ValueError(f'saturation must be "wetting" or "nonwetting"; got {saturation!r}')
     table["SW"] = _fraction(table["SW"].to_numpy(dtype=float))
+    if kind == "nonwetting":
+        table["SW"] = 1.0 - table["SW"]
     table["POROSITY"] = _fraction(table["POROSITY"].to_numpy(dtype=float))
+    rising = [
+        np.corrcoef(group["PC"], group["SW"])[0, 1] > 0
+        for _, group in table.groupby("SAMPLE") if len(group) > 2 and group["SW"].std() > 0
+    ]
+    if rising and np.mean(rising) > 0.5:
+        raise ValueError(
+            f"The saturation in {names['SW']!r} rises with capillary pressure in "
+            f"{int(np.sum(rising))} of {len(rising)} plugs, so it is not the wetting-phase Sw: "
+            'mercury (non-wetting) saturation? Pass saturation="nonwetting".'
+        )
     lab_ift, lab_theta = FLUID_SYSTEMS[system]
     return CapillaryPressureData(table=table, system=system,
                                  ift=lab_ift if ift is None else float(ift),
@@ -369,6 +442,7 @@ class FWLFromLogs:
     depth_unit: str
     profile: "pd.DataFrame" = field(repr=False)
     bound: Optional[str] = None
+    r2: float = float("nan")
     _plot_data: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     def __repr__(self) -> str:
@@ -378,7 +452,7 @@ class FWLFromLogs:
             where = f"FWL shallower than {self.high:.1f} {self.depth_unit} (the well is in the water leg)"
         else:
             where = f"FWL {self.fwl:.1f} {self.depth_unit}, 95% range {self.low:.1f}-{self.high:.1f}"
-        return f"FWLFromLogs({where}, RMS Sw misfit {self.rms:.3f}, n={self.n})"
+        return f"FWLFromLogs({where}, RMS Sw misfit {self.rms:.3f}, R2 {self.r2:.2f}, n={self.n})"
 
     def plot(self) -> Any:
         """The misfit against candidate FWL, and log against model Sw at the best FWL."""
@@ -448,7 +522,8 @@ def estimate_fwl_from_logs(
     ``top`` and ``bottom`` bound the samples used, ``search`` the candidate
     depths (default: from the middle of the samples' depth span to one span
     below the deepest). Depths are in the well's depth unit, or the
-    ``tvd_curve``'s. Takes a well or an interpretation result. Compare the
+    ``tvd_curve``'s. Takes a well or an interpretation result. ``r2`` is how
+    much of the log Sw the model explains at the best FWL. Compare the
     estimate with a pressure FWL where one exists.
     """
     import pandas as pd
@@ -500,9 +575,11 @@ def estimate_fwl_from_logs(
         bound, fwl, high = "deeper", float("nan"), float("inf")
     elif best == 0:
         bound, fwl, low = "shallower", float("nan"), float("-inf")
+    ss_tot = float(np.sum((sw - sw.mean()) ** 2))
+    r2 = 1.0 - float(sse[best]) / ss_tot if ss_tot > 0 else float("nan")
     profile = pd.DataFrame({"FWL": candidates, "RMS": np.sqrt(sse / n)})
     return FWLFromLogs(
-        fwl=fwl, low=low, high=high, rms=float(np.sqrt(sse[best] / n)), n=n, depth_unit=unit,
+        fwl=fwl, low=low, high=high, rms=float(np.sqrt(sse[best] / n)), n=n, depth_unit=unit, r2=r2,
         profile=profile, bound=bound,
         _plot_data={"depth": z, "log_sw": sw, "model_sw": predicted, "best": float(candidates[best])},
     )
