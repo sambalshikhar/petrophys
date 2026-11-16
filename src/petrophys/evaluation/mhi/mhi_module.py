@@ -104,18 +104,23 @@ def calculate_mhi(
 
     Parameters
     ----------
-    sxo : float or np.ndarray
-        Flushed zone water saturation
-    sw : float or np.ndarray
-        Uninvaded zone water saturation
+    sxo : float or array-like
+        Flushed zone water saturation, fraction (v/v)
+    sw : float or array-like
+        Uninvaded zone water saturation, fraction (v/v)
 
     Returns
     -------
     float or np.ndarray
-        Moveable hydrocarbon index; NaN where Sxo <= 0 (MHI undefined)
+        Moveable hydrocarbon index; NaN where Sxo <= 0 (MHI undefined). A
+        list, tuple or pandas Series comes back as an array.
     """
     from petrophys._internal.benchmark import reproducing_benchmark
 
+    if not isinstance(sxo, np.ndarray) and np.ndim(sxo) > 0:
+        sxo = np.asarray(sxo, dtype=float)
+    if not isinstance(sw, np.ndarray) and np.ndim(sw) > 0:
+        sw = np.asarray(sw, dtype=float)
     if reproducing_benchmark():
         # The benchmark packages floored Sxo at 0.01.
         if isinstance(sxo, np.ndarray):

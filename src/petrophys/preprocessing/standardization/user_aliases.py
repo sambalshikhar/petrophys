@@ -6,8 +6,10 @@ well's curves is which; :func:`attach_curve_aliases` stores it on the well,
 where reading, interpretation and plotting all look it up.
 """
 
+import difflib
+import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -33,17 +35,11 @@ def standard_curve_names() -> set:
     return {str(name).upper() for name in names}
 
 
-def read_curve_aliases(source: Any) -> Dict[str, str]:
-    """Read a curve-name mapping: curve name to standard name.
+def _alias_entries(source: Any) -> List[Tuple[str, str, str]]:
+    """The rows of a curve-name mapping: curve name, standard name as given, standard name.
 
-    ``source`` is a mapping (``{"GAMMA_RAY_1": "GR"}``), a CSV/Excel path or a
-    DataFrame. A table's curve column is found under ``curve``, ``mnemonic``
-    or ``name``, its standard column under ``standard``, ``maps_to`` or
-    ``alias`` (case, spaces and punctuation ignored); a table of two other
-    columns is read as curve, then standard. Standard names must be ones the
-    library knows (``GR``, ``RDEP``, ``RHOB``, ``NPHI``, ``DTC``, ``CALI``,
-    ...); a known alias stands for its standard name (``RT`` for ``RDEP``).
-    A curve may map to one only.
+    Names are upper case; the mapping is read and checked as
+    :func:`read_curve_aliases` describes.
     """
     import pandas as pd
 
@@ -68,34 +64,125 @@ def read_curve_aliases(source: Any) -> Dict[str, str]:
 
     known = standard_curve_names()
     mapping: Dict[str, str] = {}
+    entries: List[Tuple[str, str, str]] = []
     for curve_name, standard_name in pairs:
         if curve_name is None or standard_name is None or not str(curve_name).strip() or not str(standard_name).strip():
             raise ValueError("Curve-name mapping rows need both a curve name and a standard name")
-        key, value = str(curve_name).strip().upper(), str(standard_name).strip().upper()
+        key, given = str(curve_name).strip().upper(), str(standard_name).strip().upper()
+        value = given
         # A name that is itself an alias (RT, ILD, ZDEN...) stands for its standard curve.
         standard_value = get_standard_mnemonic(value)
         if standard_value in ALIAS_MAP:
             value = standard_value
         if value not in known:
+            reversed_hint = ""
+            if key in known or get_standard_mnemonic(key) in ALIAS_MAP:
+                reversed_hint = (
+                    f" {curve_name!r} is a standard name: the form is {{your curve name: standard name}}, "
+                    f"so this entry reads {{{str(standard_name)!r}: {str(curve_name)!r}}}."
+                )
             raise ValueError(
-                f"Curve-name mapping: {curve_name!r} maps to {standard_name!r}, which is no standard curve name. "
-                f"Use one of: {', '.join(sorted(known)[:60])}, ..."
+                f"Curve-name mapping: {curve_name!r} maps to {standard_name!r}, which is no standard curve name."
+                f"{reversed_hint} Use one of: {', '.join(sorted(known)[:60])}, ..."
             )
         if key in mapping and mapping[key] != value:
             raise ValueError(f"Curve-name mapping gives {curve_name!r} two standard names: {mapping[key]} and {value}")
         mapping[key] = value
-    return mapping
+        entries.append((key, given, value))
+    return entries
 
 
-def attach_curve_aliases(well: "Well", source: Optional[Any]) -> Dict[str, str]:
+def read_curve_aliases(source: Any) -> Dict[str, str]:
+    """Read a curve-name mapping: curve name to standard name.
+
+    ``source`` is a mapping (``{"GAMMA_RAY_1": "GR"}``), a CSV/Excel path or a
+    DataFrame. A table's curve column is found under ``curve``, ``mnemonic``
+    or ``name``, its standard column under ``standard``, ``maps_to`` or
+    ``alias`` (case, spaces and punctuation ignored); a table of two other
+    columns is read as curve, then standard. Standard names must be ones the
+    library knows (``GR``, ``RDEP``, ``RHOB``, ``NPHI``, ``DTC``, ``CALI``,
+    ...); a known alias stands for its standard name (``RT`` for ``RDEP``).
+    A curve may map to one only.
+    """
+    return {key: value for key, _, value in _alias_entries(source)}
+
+
+def unused_curve_aliases(well: Any, source: Any) -> Dict[str, str]:
+    """The entries of a curve-name mapping that name no curve of ``well``, each with its likely fix.
+
+    Keys are the entries as given, ``{'GAMA': 'GR'}``, names in upper case.
+    The fix is the reversed entry when the standard name was given first
+    (``{"GR": "GAMMA"}`` for a well with a GAMMA curve), the well's closest
+    curve name when there is one, else an empty string. A well without
+    curves gives no entries.
+    """
+    return _unused_entries(well, _alias_entries(source))
+
+
+def _unused_entries(well: Any, entries: List[Tuple[str, str, str]]) -> Dict[str, str]:
+    """The ``entries`` (of :func:`_alias_entries`) that name no curve of ``well``, each with its likely fix."""
+    curves = [str(name).upper() for name in (getattr(well, "curves", None) or [])]
+    unused: Dict[str, str] = {}
+    if not curves:
+        return unused
+    known = standard_curve_names()
+    for key, given, _ in entries:
+        if key in curves:
+            continue
+        fix = ""
+        if key in known and given in curves:
+            # A standard name first and a curve of the well second.
+            fix = (
+                f"reversed: the form is {{your curve name: standard name}}, so write "
+                f"{{{given!r}: {key!r}}}"
+            )
+        else:
+            close = difflib.get_close_matches(key, curves, n=1)
+            if close:
+                fix = f"did you mean {close[0]!r}?"
+        unused[f"{{{key!r}: {given!r}}}"] = fix
+    return unused
+
+
+def unused_curve_aliases_message(unused: Mapping[str, str], where: str, curves: Any = None) -> str:
+    """The warning for mapping entries that name no curve of ``where`` (e.g. ``"well 'A'"``)."""
+    listed = ", ".join(entry + (f" ({fix})" if fix else "") for entry, fix in unused.items())
+    message = (
+        f"curve_aliases: {len(unused)} entr{'y names' if len(unused) == 1 else 'ies name'} no curve of "
+        f"{where} and {'has' if len(unused) == 1 else 'have'} no effect: {listed}."
+    )
+    if curves:
+        names = [str(name) for name in curves]
+        message += " Curves there: " + ", ".join(names[:40]) + (", ..." if len(names) > 40 else "") + "."
+    return message
+
+
+def attach_curve_aliases(
+    well: "Well", source: Optional[Any], unused: Optional[List[Dict[str, str]]] = None
+) -> Dict[str, str]:
     """Store a curve-name mapping on ``well`` (merged with one already there); returns the well's mapping.
 
     Names the well does not have are kept, so one mapping can serve several
-    wells.
+    wells. Entries that name no curve of the well are reported in a
+    UserWarning with their likely fix (see :func:`unused_curve_aliases`), or
+    appended to ``unused`` when a list is given, for a caller that reports
+    them once for several wells.
     """
     current = dict(curve_aliases_of(well))
     if source is not None:
-        current.update(read_curve_aliases(source))
+        entries = _alias_entries(source)
+        current.update({key: value for key, _, value in entries})
+        missing = _unused_entries(well, entries)
+        if unused is not None:
+            unused.append(missing)
+        elif missing:
+            warnings.warn(
+                unused_curve_aliases_message(
+                    missing, f"well {getattr(well, 'name', '')!r}", getattr(well, "curves", None)
+                ),
+                UserWarning,
+                stacklevel=3,
+            )
     if current:
         well.set_parameter(CURVE_ALIASES_PARAMETER, current)
     return current
@@ -119,5 +206,6 @@ __all__ = [
     "curve_aliases_of",
     "read_curve_aliases",
     "standard_curve_names",
+    "unused_curve_aliases",
     "user_standard_name",
 ]

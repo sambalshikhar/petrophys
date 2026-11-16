@@ -84,8 +84,16 @@ class SonicSaturationResult:
 
 
 def _mineral_k_min(well, lithology: str, n: int) -> np.ndarray:
-    """Voigt-Reuss-Hill mineral modulus per sample from VQUAR/VCALC/VDOLO/VCLAY,
-    falling back to the matrix mineral implied by ``lithology``."""
+    """Voigt-Reuss-Hill mineral modulus (GPa) per sample from the mineral
+    volumes on the well (quartz, calcite, dolomite and clay).
+
+    The matrix mineral is the one implied by ``lithology`` (calcite for
+    limestone, dolomite for dolomite, else quartz). Where its own volume is
+    logged the volumes are scaled to sum to 1. Where it is not (a well with
+    a clay volume alone), the matrix mineral fills what the logged volumes
+    leave of 1, so clean rock has the modulus of the matrix mineral. A well
+    with no mineral volume has the matrix mineral throughout.
+    """
     vol = {
         "quartz": get_curve_data_depthwise(well, ["VQUAR", "VSAND", "VQTZ"])[0],
         "calcite": get_curve_data_depthwise(well, ["VCALC", "VLIM"])[0],
@@ -96,8 +104,13 @@ def _mineral_k_min(well, lithology: str, n: int) -> np.ndarray:
     default = {"limestone": "calcite", "dolomite": "dolomite"}.get(lithology, "quartz")
     if not have:
         return np.full(n, MINERAL_ELASTIC[default]["k"])
+    matrix_logged = np.isfinite(have[default]) if default in have else np.zeros(n, dtype=bool)
+    have.setdefault(default, np.zeros(n))
     stack = np.vstack([have[m] for m in have])
     frac = np.where(np.isfinite(stack), np.clip(stack, 0.0, None), 0.0)
+    # The matrix mineral makes up the rest of the solid where it is not logged.
+    rest = np.where(matrix_logged, 0.0, np.clip(1.0 - frac.sum(axis=0), 0.0, None))
+    frac[list(have).index(default)] += rest
     tot = frac.sum(axis=0)
     k = np.full(n, MINERAL_ELASTIC[default]["k"], dtype=float)
     ok = tot > 1e-6
@@ -154,21 +167,60 @@ def sonic_water_saturation(
 
     Parameters
     ----------
-    hc_type : {"gas","oil"}        hydrocarbon end-member for fluid mixing.
+    well : Well
+        Well with a compressional slowness (DTC or DT, us/ft), a bulk
+        density (RHOB) and a porosity curve (the first of PHIE, PHIT,
+        PHIE_CC and NPHI with a value at each depth). A shear slowness (DTS)
+        and mineral volumes are used where present.
+    hc_type : {"gas","oil"}
+        Hydrocarbon end-member for fluid mixing.
     lithology : {"sandstone","limestone","dolomite","shale"}
-        Greenberg-Castagna Vs relation (without DTS) and the matrix mineral
-        where no mineral volumes are logged.
+        Greenberg-Castagna Vs relation (without DTS) and the matrix mineral:
+        calcite for limestone, dolomite for dolomite, else quartz. The
+        mineral modulus is the Voigt-Reuss-Hill average of the mineral
+        volumes on the well; a well with a clay volume and no volume of the
+        matrix mineral has the matrix mineral as the rest of the solid.
+    k_brine : float, optional
+        Bulk modulus of the brine, GPa; default 2.8.
+    k_hc : float, optional
+        Bulk modulus of the hydrocarbon, GPa; default 0.06 for gas and 1.0
+        for oil.
     kdry_method : {"calibrated","model"}
         ``calibrated`` derives the dry frame from the well's water zone (needs
         ``water_zone_mask`` or ``sw_ref``); falls back to ``model`` if unavailable.
-    sw_ref : array, optional        a reference Sw (e.g. Archie) used only to flag
-        the water zone (Sw >= sw_water_cut) for K_dry calibration.
-    dtc_noise_us_ft : float         assumed compressional-slowness noise (us/ft).
-    detect_factor : float           Sw is reported only where the full brine->HC
-        DTC swing exceeds ``detect_factor * dtc_noise_us_ft``; elsewhere the fluid
-        signal is below the noise and Sw is set to NaN (``detectable`` is False).
-        This is the honest scope of the method: it returns a number only where the
+    water_zone_mask : array of bool, optional
+        True at the water-bearing samples the dry frame is calibrated on;
+        used in place of ``sw_ref``. At least 20 usable samples are needed.
+    sw_ref : array, optional
+        A reference Sw (e.g. Archie) used only to flag the water zone
+        (Sw >= sw_water_cut) for K_dry calibration.
+    sw_water_cut : float, default 0.85
+        ``sw_ref`` at or above this value marks a water-zone sample.
+    frame_model : {"krief","critical_porosity"}
+        Dry-frame model used when the frame is not calibrated, with each
+        sample's mineral modulus.
+    dtc_noise_us_ft : float
+        Assumed compressional-slowness noise (us/ft).
+    detect_factor : float
+        Sw is reported only where the full brine->HC DTC swing exceeds
+        ``detect_factor * dtc_noise_us_ft``; elsewhere the fluid signal is
+        below the noise and Sw is set to NaN (``detectable`` is False). This
+        is the honest scope of the method: it returns a number only where the
         sonic can actually resolve the fluid.
+
+    Returns
+    -------
+    SonicSaturationResult
+        ``sw`` (v/v, NaN where not detectable), ``sw_raw``, ``detectable``,
+        ``sw_uncertainty``, ``dtc_fluid_swing`` (us/ft), the moduli ``k_sat``,
+        ``k_dry`` and ``k_fl`` (GPa), ``vs_estimated``, ``kdry_method`` and
+        ``notes``.
+
+    Raises
+    ------
+    ValueError
+        If ``hc_type``, ``lithology`` or ``kdry_method`` is not one of its
+        choices, or the well lacks DTC, RHOB or a porosity curve.
     """
     choices = {
         "hc_type": (hc_type, sorted(set(FLUID_ELASTIC) - {"brine"})),
@@ -217,8 +269,8 @@ def sonic_water_saturation(
         if k_dry is None:
             method = "model (calibration unavailable)"
     if k_dry is None:
-        k_dry, _ = dry_rock_modulus(phi, float(np.nanmedian(k_min)),
-                                    MINERAL_ELASTIC["quartz"]["mu"], frame_model)
+        # The frame has each sample's mineral modulus, as the Gassmann inversion has.
+        k_dry, _ = dry_rock_modulus(phi, k_min, MINERAL_ELASTIC["quartz"]["mu"], frame_model)
         k_dry = np.asarray(k_dry, dtype=float)
 
     k_fl = gassmann_kfl(k_sat, k_dry, k_min, phi)
@@ -261,11 +313,45 @@ class SonicSaturationModule:
         self.kdry_method = kdry_method
 
     def calculate(self, well, **kwargs) -> SonicSaturationResult:
+        """Estimate the well's sonic water saturation.
+
+        Parameters
+        ----------
+        well : Well
+            Well with DTC, RHOB and a porosity curve.
+        **kwargs
+            Other options of :func:`sonic_water_saturation`, e.g. ``sw_ref``
+            or ``water_zone_mask`` for the dry-frame calibration.
+
+        Returns
+        -------
+        SonicSaturationResult
+            The result of :func:`sonic_water_saturation` with this module's
+            ``hc_type``, ``lithology`` and ``kdry_method``.
+        """
         return sonic_water_saturation(
             well, hc_type=self.hc_type, lithology=self.lithology,
             kdry_method=self.kdry_method, **kwargs)
 
     def add_to_well(self, well, result: Optional[SonicSaturationResult] = None, **kwargs):
+        """Add the sonic water saturation to the well as ``SW_SONIC``.
+
+        Parameters
+        ----------
+        well : Well
+            Well to add the curve to.
+        result : SonicSaturationResult, optional
+            Result of :meth:`calculate` for this well; calculated when
+            omitted.
+        **kwargs
+            Options of :meth:`calculate`, used when ``result`` is omitted.
+
+        Returns
+        -------
+        Well
+            ``well``, with ``SW_SONIC`` (v/v; NaN where the fluid signal is
+            below the sonic noise) added or replaced.
+        """
         if result is None:
             result = self.calculate(well, **kwargs)
         well.add_curve("SW_SONIC", result.sw, "v/v", "Sonic (Gassmann) water saturation")

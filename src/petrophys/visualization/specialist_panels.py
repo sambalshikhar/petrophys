@@ -58,7 +58,12 @@ def create_nmr_panel(
     depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (15, 11),
 ) -> "plt.Figure":
-    """Create an NMR specialist panel for processed NMR summary logs."""
+    """Create an NMR specialist panel for processed NMR summary logs.
+
+    ``depth_range`` is the (top, bottom) window drawn, in the well's depth
+    unit (default: the whole log). The permeability track spans the whole
+    decades of the permeabilities inside that window.
+    """
     _require_matplotlib()
     depth = _depth(well)
     top, bottom = _resolve_depth_range(depth, depth_range)
@@ -127,10 +132,15 @@ def create_nmr_panel(
 
     _plot_first(axes[3], well, ("KSDR", "NMR_KSDR"), depth, "royalblue", "KSDR", log=True)
     _plot_first(axes[3], well, ("KTIM", "NMR_KTIM", "K_COATES"), depth, "red", "KTIM", log=True)
-    # Whole decades spanning the curves' 1-99 percentiles (0.01-10,000 mD at
-    # most wide), so a tight well is not drawn off the scale.
-    perms = [np.asarray(line.get_xdata(), dtype=float) for line in axes[3].get_lines()]
-    perms = [values[np.isfinite(values) & (values > 0)] for values in perms]
+    # Whole decades spanning the 1-99 percentiles of the curves in the depth
+    # window (0.01-10,000 mD at most wide), so a tight well is not drawn off
+    # the scale.
+    perms = []
+    for line in axes[3].get_lines():
+        values = np.asarray(line.get_xdata(), dtype=float)
+        at = np.asarray(line.get_ydata(), dtype=float)
+        perms.append(values[np.isfinite(values) & (values > 0)
+                            & (at >= min(top, bottom)) & (at <= max(top, bottom))])
     perms = np.concatenate(perms) if perms else np.array([])
     if perms.size:
         low, high = np.percentile(perms, [1, 99])

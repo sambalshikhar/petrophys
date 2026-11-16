@@ -60,6 +60,28 @@ def _index_format(depth: np.ndarray) -> str:
     return "%.6f"
 
 
+def _regular_step(depth: np.ndarray) -> Optional[float]:
+    """The depth step of regularly sampled ``depth`` (finite values), or None when it varies.
+
+    The step is the mean spacing, (last - first) / (samples - 1), in the unit
+    of ``depth`` and negative for decreasing depths. Sampling is regular when
+    every spacing is within 0.1 % of the first, or every depth lies within
+    1 % of the step of its place on the grid ``first + i * step``: depths
+    stored in single precision or rounded to a few decimals (0.1524 m steps
+    read as 0.1521 to 0.1526 m) are on a regular grid.
+    """
+    if depth.size < 2:
+        return 0.0
+    diffs = np.diff(depth)
+    step = float((depth[-1] - depth[0]) / (depth.size - 1))
+    if np.allclose(diffs, diffs[0], rtol=0.0, atol=1e-3 * abs(diffs[0])):
+        return step
+    grid = depth[0] + step * np.arange(depth.size)
+    if step != 0.0 and bool(np.all(np.abs(depth - grid) <= 1e-2 * abs(step))):
+        return step
+    return None
+
+
 def _export_well_other_comments(las, well: "Well") -> None:
     """Write workflow comments into the LAS ~Other section."""
     lines = []
@@ -216,9 +238,12 @@ def export_las(
 
     Notes
     -----
-    Irregularly sampled depths are written with ``STEP 0`` as LAS 2.0
-    requires, and samples without a finite depth are left out (a LAS index
-    cannot be null). Non-scalar well parameters (dicts, lists) are not written.
+    Regularly sampled depths are written with their mean spacing as STEP,
+    irregularly sampled ones with ``STEP 0`` as LAS 2.0 requires. Depths are
+    regular when every spacing is within 0.1 % of the first or every depth
+    lies within 1 % of the step of an evenly spaced grid, as depths stored in
+    single precision do. Samples without a finite depth are left out (a LAS
+    index cannot be null). Non-scalar well parameters (dicts, lists) are not written.
     Header TD (in the depth unit), BS (in inches), BHT and the other ~Well
     items the LAS reader kept (``header.las_well_items``) are written to
     ~Well, and the ``LAS_OTHER`` parameter to ~Other. Mnemonics that are not
@@ -321,6 +346,7 @@ def export_las(
     # A LAS index is never null: samples without a finite depth are left out.
     keep = None
     irregular = False
+    regular_step: Optional[float] = None
     step_value = well.step
     if well.depth is not None and not historical:
         depth_values = np.asarray(well.depth, dtype=float)
@@ -333,11 +359,8 @@ def export_las(
                 UserWarning,
                 stacklevel=2,
             )
-        diffs = np.diff(depth_values[finite_depth])
-        if diffs.size > 1 and not np.allclose(
-            diffs, diffs[0], rtol=0.0, atol=1e-3 * abs(diffs[0])
-        ):
-            irregular = True  # LAS 2.0: STEP 0 for variable sampling
+        regular_step = _regular_step(depth_values[finite_depth])
+        irregular = regular_step is None  # LAS 2.0: STEP 0 for variable sampling
 
     # Set depth reference
     if well.top is not None:
@@ -408,7 +431,7 @@ def export_las(
                 if irregular:
                     kwargs.setdefault("STEP", index_fmt % 0.0)
                 elif written_depth.size > 1:
-                    kwargs.setdefault("STEP", index_fmt % (written_depth[1] - written_depth[0]))
+                    kwargs.setdefault("STEP", index_fmt % regular_step)
 
     # Get curves to export
     if curves is None:
@@ -452,9 +475,12 @@ def export_las(
             stacklevel=2,
         )
 
-    if irregular and kwargs.get("STEP") is None:
+    if kwargs.get("STEP") is None:
         # lasio otherwise writes the first depth difference as STEP.
-        kwargs["STEP"] = kwargs["fmt"] % 0.0
+        if irregular:
+            kwargs["STEP"] = kwargs["fmt"] % 0.0
+        elif regular_step:
+            kwargs["STEP"] = kwargs["fmt"] % regular_step
 
     # Write file
     # lasio would open the file with the platform's locale encoding, which

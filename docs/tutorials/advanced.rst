@@ -37,22 +37,19 @@ use these package extras where needed:
 
 .. note::
 
-   Some specialist exercises remain unfinished. Epslog scanner data and a
-   matching routine-core extract are available for lesson 12; Phillips NMR
-   examples and COSTA capillary tables support parts of lessons 14 and 15.
-   Collection READMEs distinguish available inputs from missing calibration
-   measurements and metadata. Lesson 15 reads CSV/LAS pressure stations for
-   35/11-13 and 35/11-10 Fensfjord with ``read_formation_pressure``, removes the
-   report-derived fluid labels and calls ``infer_contacts``. The second well
-   uses digitized station markers and returns ambiguity rather than a definite
-   FWL. Report comparisons stay outside the module. The separate HW-3
-   saturation-height example uses its own explicitly assumed FWL.
-
-.. note::
-
-   Sections marked **Coming with real data** in lessons 14 and 15 wait for
-   their datasets to be worked in: the NMR T2 distribution sections (14) and
-   the fit of a measured capillary-pressure curve (15).
+   The specialist lessons work on the bundled data and say what it lacks.
+   Lesson 12 uses Epslog scanner data and a matching routine-core extract.
+   Lesson 14 interprets the Daydream 1 CMR summary curves, which carry no T2
+   distribution, and lists the bundled Phillips NMR examples. Lesson 15 fits
+   the COSTA mercury-injection capillary-pressure curves and reads the
+   formation-pressure stations of 35/11-13 and 35/11-10 with
+   ``read_formation_pressure``; the station files carry no fluid labels, and
+   ``infer_contacts`` finds an oil/water contact in the first well and reports
+   the Fensfjord interval of the second as ambiguous, without a definite FWL.
+   The contacts of the well reports are used only for comparison. The HW-3
+   saturation-height example fits log Sw above an assumed FWL. Collection
+   READMEs list the calibration measurements and metadata each collection
+   does not hold.
 
 Course outline
 --------------
@@ -88,11 +85,12 @@ Course outline
        fluid, Swirr, and Timur-Coates permeability checked against the vendor.
    * - 15
      - :doc:`Saturation height <part_b/15_capillary_pressure_saturation_height>`
-     - Build capillary-pressure, Leverett-J, and saturation-height relationships
-       on a carbonate reservoir interval.
+     - Fit laboratory capillary-pressure curves and a Leverett J-function, find
+       the free-water level from logs and from formation pressures, and predict
+       saturation against height on a carbonate reservoir interval.
    * - 16
      - :doc:`Borehole images and FMI <part_b/16_borehole_image_fmi>`
-     - Read image arrays, orient and equalize data, assess coverage, and render images (needs the ``dlis`` extra and the Git LFS image file of a source checkout).
+     - Read image arrays, orient and equalize data, assess coverage, and render images (needs the ``dlis`` extra; the 112 MB image file is downloaded on first use).
    * - 17
      - :doc:`Visualization masterclass <part_b/17_visualization_masterclass>`
      - Compose interpretation panels, specialist displays, crossplots, and analytics.

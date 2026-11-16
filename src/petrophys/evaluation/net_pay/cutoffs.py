@@ -7,6 +7,9 @@ cutoffs, keyed by lithology family. Values live in
 """
 
 from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
 
 from petrophys.model.constants import DefaultParameters
 
@@ -44,6 +47,24 @@ def standard_cutoffs(lithology: str = "clastic") -> dict:
     """Return a copy of the standard cutoff set for a lithology family."""
     family = cutoff_family(lithology)
     return dict(STANDARD_CUTOFFS[family])
+
+
+def cutoff_fraction(value: Any, name: str = "cutoff") -> float:
+    """A net-pay cutoff as a fraction (v/v).
+
+    A value above 1 and up to 100 is read as percent (``40`` is 0.40), as
+    the interpretation settings are. A value that is not a finite number,
+    negative or above 100 raises ValueError.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a number; got {value!r}") from None
+    if not np.isfinite(number):
+        raise ValueError(f"{name} must be a finite number")
+    if not 0.0 <= number <= 100.0:
+        raise ValueError(f"{name} must be a fraction between 0 and 1, or a percentage up to 100; got {value!r}")
+    return number / 100.0 if number > 1.0 else number
 
 
 @dataclass

@@ -130,6 +130,16 @@ def create_multiwell_overlay(
         Scale each curve so its 5th-95th percentiles span 0-1 before plotting.
     labels : sequence of str, optional
         Legend labels (defaults to each ``well.name``).
+    figsize : (float, float)
+        Figure size in inches, used when ``ax`` is not given.
+    title : str, optional
+        Axes title.
+    ax : matplotlib Axes, optional
+        Axes to draw on.
+
+    Returns
+    -------
+    (Figure, Axes)
     """
     _require_mpl()
     from petrophys.model.units import normalize_depth_unit
@@ -349,7 +359,11 @@ def create_tornado_plot(
 
 
 def _curve_by_well(wells: Any, curve: str) -> Tuple[Dict[str, np.ndarray], str]:
-    """``{well name: values}`` of ``curve`` in each well or result, and its unit."""
+    """``{well name: values}`` of ``curve`` in each well or result, and its unit.
+
+    A well name that repeats in a list (two runs of one well) is numbered:
+    ``"30/6-5"``, ``"30/6-5 (2)"``.
+    """
     from petrophys.visualization.log_viewer import _resolve_curve_name_for_well
 
     items = list(wells.items()) if isinstance(wells, Mapping) else [(None, well) for well in wells]
@@ -361,7 +375,12 @@ def _curve_by_well(wells: Any, curve: str) -> Tuple[Dict[str, np.ndarray], str]:
         if name is None:
             raise KeyError(f"{well.name} has no {curve} curve")
         values = well.get(name)
-        data[str(label if label is not None else well.name)] = np.asarray(values.data, dtype=float)
+        key = base = str(label if label is not None else well.name)
+        count = 1
+        while key in data:
+            count += 1
+            key = f"{base} ({count})"
+        data[key] = np.asarray(values.data, dtype=float)
         units.add(str(values.unit or "").strip())
     units.discard("")
     return data, (units.pop() if len(units) == 1 else "")
@@ -388,6 +407,10 @@ def create_histogram_comparison(
     :func:`petrophys.read` returns, or a mapping of label to well) and
     ``curve`` names the curve to compare (``"GR"``, a standard or the well's
     own name), labelled by well name; the x-axis is labelled with its unit.
+    Wells in a list that share a name (two runs of one well) are labelled
+    ``"30/6-5"``, ``"30/6-5 (2)"`` in list order; pass a mapping
+    (``{"Archie": run_a, "Indonesia": run_b}``) to name them. Wells or
+    results, or a list, without ``curve`` raise ValueError.
     ``value_range`` fixes the bin range (spikes otherwise stretch it), and
     ``histtype="step"`` draws outlines, which stay readable for several wells.
     """
@@ -395,6 +418,12 @@ def create_histogram_comparison(
     if curve is not None:
         datasets, unit = _curve_by_well(datasets, curve)
         xlabel = xlabel or (f"{curve} ({unit})" if unit else curve)
+    elif not isinstance(datasets, Mapping) or any(
+            hasattr(getattr(value, "well", value), "curves") for value in datasets.values()):
+        raise ValueError(
+            "Without curve=, datasets must map a label to an array. To compare wells or "
+            'interpretation results, name the curve: create_histogram_comparison(wells, curve="GR")'
+        )
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
@@ -504,8 +533,18 @@ def create_heatmap(
         drawn centred on its coordinate. Log-spaced centres such as T2 bins get
         log-symmetric cells, so ``ax.set_xscale("log")`` shows them correctly.
         When omitted, cells are indexed 0..n.
+    figsize : (float, float)
+        Figure size in inches, used when ``ax`` is not given.
+    title : str, optional
+        Axes title.
+    xlabel, ylabel : str, optional
+        Axis labels; blank by default.
+    cmap : str
+        Matplotlib colour map name.
     invert_yaxis : bool
         Show y increasing downwards, like a depth track.
+    colorbar_label : str, optional
+        Label of the colour bar.
     log_color : bool
         Log-scaled colour (LogNorm).
     ax : matplotlib Axes, optional

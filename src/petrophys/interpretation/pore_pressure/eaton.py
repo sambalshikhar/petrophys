@@ -92,10 +92,16 @@ def overburden_pressure(
         True vertical depth below the rig floor and bulk density (g/cc).
     water_depth, air_gap : float
         In the depth unit; both 0 onshore with the rig floor at ground level.
+    seawater_density : float
+        Density of the sea water above the mudline (g/cc); default 1.03.
     density_above_log : float, optional
         Mean sediment density between mudline and log top (g/cc). Required
         when the log starts more than 1 % of its depth below the mudline;
         typical shallow sediment averages 1.8-2.1.
+    depth_unit : {"m", "ft"}
+        Unit of ``tvd``, ``water_depth`` and ``air_gap``; default ``"m"``.
+    pressure_unit : {"bar", "psi", "kPa", "MPa"}
+        Unit of the returned stress; default ``"bar"``.
     """
     z = np.asarray(tvd, dtype=float)
     rho = np.asarray(rhob, dtype=float)
@@ -488,6 +494,9 @@ def eaton_from_well(
     tvd_curve, vertical
         TVD below the log depth reference (``TVD`` when present), or declare
         the well vertical.
+    density_curve : str
+        Bulk density curve (g/cc) the overburden is integrated from;
+        default ``RHOB``.
     water_depth : float
         Sea depth at the well (0 onshore), in the well's depth unit.
     air_gap : float, optional
@@ -503,6 +512,9 @@ def eaton_from_well(
         samples and left blank elsewhere, and :meth:`PorePressureResult.calibrate`
         interpolates the shale log across the measurement depths. Without it
         every sample is evaluated and the result is to be read in shales only.
+    pressure_unit : {"bar", "psi", "kPa", "MPa"}
+        Unit of the overburden, hydrostatic and pore pressures; default
+        ``"bar"``.
     add_curves : bool
         Add ``OVERBURDEN``, ``PHYD``, ``PP_EATON`` and ``PP_EATON_EMW``.
     """

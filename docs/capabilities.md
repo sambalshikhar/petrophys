@@ -40,9 +40,9 @@ def thumb(key, fig):
 
 | Area | What you get | Start with | Covered in |
 | --- | --- | --- | --- |
-| Prepare the data | LAS, DLIS and CSV reading; standard names and units; range QC; bad-hole flags; normalization; ML gap filling | `pp.read`, `pp.impute` | {doc}`own_data`, {doc}`data_model`, {ref}`review-inputs`, {ref}`analysis-gap-filling` |
+| Prepare the data | LAS, DLIS, CSV and Excel reading; standard names and units; range QC; bad-hole flags; normalization; ML gap filling | `pp.read`, `pp.impute` | {doc}`own_data`, {doc}`data_model`, {ref}`review-inputs`, {ref}`analysis-gap-filling` |
 | Interpret the rock | Temperature, clay volume, porosity, lithology and minerals, Rw, eight Sw models, permeability, rock physics | `pp.interpret` | {doc}`workflows` |
-| Review the answer | Warnings, the step-by-step trace, the cutoffs used, net pay per formation | `result.print_trace()`, `result.formation_summary` | {ref}`review-interpretation` |
+| Review the answer | Warnings, the step-by-step trace, the cutoffs used, net pay per formation | `result.print_trace()`, `result.formation_summary()` | {ref}`review-interpretation` |
 | Your own recipe | Built-in and custom steps, checked before they run, saved as JSON and run on many wells | `Workflow`, `@workflow_step` | {doc}`custom_workflows` |
 | Plots and delivery | Log viewer templates, crossplots, multi-well charts; LAS, JSON, CSV and Excel exports | `pp.plot` | {doc}`visualization_reporting` |
 | Core and specialist data | Core calibration, NMR, spectral gamma, saturation-height, borehole images, formation pressures | `core_data_from_well`, `NMRData` | {doc}`specialist_data` |
@@ -137,7 +137,7 @@ Brent Group net pay under four saturation models, one setting apart.
 :::{grid-item-card} Permeability from core
 ```{glue:figure} cap_poroperm
 ```
-A poro-perm transform fitted to the 30/6-5 core plugs, then applied along the log.
+A poro-perm transform fitted to the 30/6-5 core plugs: permeability on a log scale against porosity, coloured by depth.
 
 `plot_poro_perm(core, transform=fit_poro_perm_transform(core))`
 +++
@@ -203,7 +203,7 @@ Thorium and uranium on 25/5-1, with the uranium-dominated samples flagged.
 :::{grid-item-card} Saturation-height
 ```{glue:figure} cap_height
 ```
-A J-function fitted on HW-3 predicts Sw from height above the free-water level and rock quality.
+A J-function fitted to the log Sw of HW-3 above an assumed free-water level (7991 ft, 1 ft below the deepest sample that has Sw) predicts Sw from height and rock quality; the fit is loose (R² 0.28).
 
 `fit_j_function_from_well(well, fwl_depth=7991).plot()`
 +++

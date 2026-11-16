@@ -38,8 +38,8 @@ Projects
       :link-type: doc
 
       Screen the Kharaib-2 interval in all 17 COSTA wells with one uniform
-      recipe, rank them by hydrocarbon pore thickness, and cross-check the
-      result against the dynamic workflow.
+      recipe, rank them by hydrocarbon pore thickness, and test how much the
+      field's mineral calibration moves the ranking.
 
    .. grid-item-card:: CS4 | Recovery from incomplete inputs
       :class-card: ph-card-coral

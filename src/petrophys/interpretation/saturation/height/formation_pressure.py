@@ -17,6 +17,19 @@ class PressureGradient:
     rmse: float
 
     def pressure_at(self, depth):
+        """Pressure on the fitted line at a depth.
+
+        Parameters
+        ----------
+        depth : float or array
+            Depth, in the depth unit and on the datum of the fitted data.
+
+        Returns
+        -------
+        float or ndarray
+            ``reference_pressure + gradient * (depth - reference_depth)``, in
+            the pressure unit of the fitted data.
+        """
         return self.reference_pressure + self.gradient * (
             np.asarray(depth, dtype=float) - self.reference_depth
         )

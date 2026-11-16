@@ -97,9 +97,12 @@ def velocity_to_moduli(vp: ArrayLike, vs: ArrayLike, rhob: ArrayLike) -> Tuple[A
     return k, mu
 
 
-def dry_rock_modulus(phi: ArrayLike, k_min: float, mu_min: float, model: str = "krief",
+def dry_rock_modulus(phi: ArrayLike, k_min: ArrayLike, mu_min: float, model: str = "krief",
                      phi_c: float = 0.4) -> Tuple[ArrayLike, ArrayLike]:
     """Dry-frame bulk and shear moduli (GPa) vs porosity.
+
+    ``k_min`` and ``mu_min`` are the mineral bulk and shear moduli (GPa);
+    ``k_min`` is one value or one per sample.
 
     ``krief``  : K_dry = K_min*(1-phi)^(3/(1-phi))  (Krief et al., 1990)
     ``critical_porosity`` : K_dry = K_min*(1 - phi/phi_c) for phi<phi_c (Nur).

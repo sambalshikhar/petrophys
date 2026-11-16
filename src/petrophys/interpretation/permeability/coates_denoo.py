@@ -57,9 +57,12 @@ def coates_denoo(
     Parameters
     ----------
     phi : float or np.ndarray
-        Effective porosity (fraction)
+        Effective porosity (fraction). A porosity at or below zero is
+        replaced by 0.001, so such a sample gets a very small permeability,
+        not NaN.
     swi : float or np.ndarray
-        Irreducible water saturation (fraction)
+        Irreducible water saturation (fraction). A value at or below zero
+        is replaced by 0.01.
     a, b, c : float, optional
         Coefficient, porosity exponent and saturation exponent
 
@@ -117,9 +120,12 @@ def wyllie_rose(
     Parameters
     ----------
     phi : float or np.ndarray
-        Effective porosity (fraction)
+        Effective porosity (fraction). A porosity at or below zero is
+        replaced by 0.001, so such a sample gets a very small permeability,
+        not NaN.
     swi : float or np.ndarray
-        Irreducible water saturation (fraction)
+        Irreducible water saturation (fraction). A value at or below zero
+        is replaced by 0.01.
     preset : str
         Name of the published constants (default: ``"morris_biggs_oil"``)
     p, q, r : float, optional

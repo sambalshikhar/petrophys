@@ -118,17 +118,25 @@ class LithologyModule:
         most clean porous samples (VCL < 0.2, PHIE > 0.12; at least 30) the
         apparent matrix density is quartz-like (< 2.67 g/cm3) while the
         apparent matrix U is calcite-like (> 10 b/cm3), a pairing no common
-        mineral gives. The solve then uses density, neutron (and sonic). Off
-        by default; :func:`petrophys.interpret` turns it on outside the
-        benchmark profiles.
+        mineral gives. The solve then uses density, neutron (and sonic), and
+        ``notes`` says so. Default (None): on, as in
+        :func:`petrophys.interpret`, and off while a benchmark package is
+        reproduced. False always uses PEF. The screen reads PHIE (or PHIT)
+        and VCL from the well, so a well without a porosity curve is not
+        screened, and ``notes`` says that too.
 
     Examples
     --------
+    The mud of 30/6-5 is barite-weighted. On the interpreted well, which has
+    VCL and PHIE, its PEF is set aside and the cored sand is solved as quartz:
+
     >>> import petrophys as pp
-    >>> well = pp.read(pp.sample("30_6-5"))
+    >>> well = pp.interpret(pp.read(pp.sample("30_6-5"))).well
     >>> litho = LithologyModule()
     >>> result = litho.calculate(well)
     >>> well["VQUAR"] = result.v_quartz
+    >>> litho.notes[0][:13]
+    'PEF set aside'
     """
 
     # Lithology codes
@@ -151,7 +159,7 @@ class LithologyModule:
         lithology: str = "auto",
         solver_version: int = 2,
         solver_options: Optional[dict] = None,
-        screen_barite_pef: bool = False,
+        screen_barite_pef: Optional[bool] = None,
     ):
         self._custom_minerals = minerals is not None
         if lithology not in {"auto", "clastic", "carbonate"}:
@@ -166,7 +174,7 @@ class LithologyModule:
         self.include_clay = include_clay
         self.solver_version = solver_version
         self.solver_options = dict(solver_options or {})
-        self.screen_barite_pef = bool(screen_barite_pef)
+        self.screen_barite_pef = None if screen_barite_pef is None else bool(screen_barite_pef)
         #: Notes of the last :meth:`calculate`, e.g. PEF set aside.
         self.notes: List[str] = []
         solver_class = MultiMineralSolverV1 if solver_version == 1 else MultiMineralSolver
@@ -540,7 +548,16 @@ class LithologyModule:
         pef_clean = self._screen_pef(pef) if pef is not None else None
         dtc_clean = self._screen_dtc(dtc) if dtc is not None else None
         self.notes = []
-        if self.screen_barite_pef and pef_clean is not None and phie is not None:
+        screen_barite_pef = self.screen_barite_pef
+        if screen_barite_pef is None:
+            screen_barite_pef = not reproducing_benchmark()
+            if screen_barite_pef and pef_clean is not None and phie is None:
+                self.notes.append(
+                    "PEF not screened for barite-weighted mud: the screen needs PHIE or PHIT (and VCL) "
+                    "on the well to find the clean porous samples; compute them first, e.g. with "
+                    "petrophys.interpret"
+                )
+        if screen_barite_pef and pef_clean is not None and phie is not None:
             share, count = barite_pef_share(rhob, pef_clean, vcl, phie)
             if count >= 30 and share >= 0.5:
                 pef_clean = None
@@ -766,7 +783,7 @@ def calculate_lithology(
     --------
     >>> import petrophys as pp
     >>> from petrophys.interpretation.lithology import calculate_lithology
-    >>> well = pp.read(pp.sample("30_6-5"))
+    >>> well = pp.interpret(pp.read(pp.sample("30_6-5"))).well
     >>> result = calculate_lithology(well)
     """
     module = LithologyModule(**kwargs)

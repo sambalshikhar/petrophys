@@ -64,6 +64,15 @@ class InvasionModule:
         order. Default RXO, the flushed-zone reading.
     rt_curve : str, optional
         Name of deep resistivity curve
+    medium_deep_proxy : bool, optional
+        Where no flushed-zone or shallow curve has a value, use a medium
+        resistivity curve (RMED, RESM) in its place, so the ratio is the
+        medium/deep separation (default: True). When False those samples
+        stay NaN.
+    depthwise_curve_merge : bool, optional
+        Fill a curve's missing samples from the next candidate curve, depth
+        by depth (default: True). When False the first candidate curve
+        present is used as it stands.
     class_bands : Bands, optional
         The Rxo/Rt classes behind the ``conductive_percent``,
         ``minimal_percent`` and ``resistive_percent`` statistics, labelled

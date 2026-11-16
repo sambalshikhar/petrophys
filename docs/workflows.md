@@ -249,7 +249,7 @@ The bad-hole thresholds also set the `BAD_HOLE` band of `pp.plot` and the bad-ho
 `PHIE_CC` is written by the core-correction step alone, before saturation, so SW, BVW, net pay and RQI read the same porosity; the step runs on core porosity named `PHIC`, `CPOR`, `CPOR-AMB` or `CPOR_AMB`, or on peer-well core (`use_peer_core=True` with `peer_wells`).
 A peer well needs PHIE or PHIT (interpret it first; one without is left out, with a warning), and its formations may be attached with `pp.read(..., formations=...)`.
 When the run fits its own core model, input `PHIE_CC` and `PERM_CC` curves are kept as `PHIE_CC_INPUT` and `PERM_CC_INPUT` and not used; without core data, or with `core_correction` in `skip_steps`, input `PHIE_CC` and `PERM_CC` are used as they stand by every step, and a warning says so.
-`PERM_CC` is written only where the core-corrected porosity lies within the porosity range of the plugs behind the poro-perm fit (the samples set aside are counted in the trace).
+`PHIE_CC` and `PERM_CC` are written over the whole well, from each formation's own core model where the tops table gives it one and from the whole-well model elsewhere. `PERM_CC` is written where the core-corrected porosity lies within the porosity range of the plugs behind the poro-perm fit and the clay volume is at or below the net-rock clay cutoff, since a porosity-permeability transform describes reservoir rock, not shale; the trace of the core-correction step gives the limits. The summaries read `PHIE_CC` and `PERM_CC` where they are written and `PHIE` and `PERM` at the other samples.
 `lithology_domain="auto"` without a lithology log or core matrix evidence is settled before the core-correction step, from the mineral solver's volumes or else the clastic default, so Rw, SW and net pay use the domain that `result.config` reports.
 Without a clay indicator (gamma ray, SP or neutron-density) net pay assumes VCL = 0, and a warning says so.
 The `"geolink"` profile keeps the GeoLink eval package's calculation in each case.
@@ -476,7 +476,7 @@ Check flagged pay against the geology, for example the [Sodir description of the
 A run uses one formation-water resistivity for the whole well, corrected for temperature at constant salinity, but shallow formation waters are usually fresher than the reservoir's.
 In undercompacted mudstones the clay indicators also disagree, so clay volume can read low.
 Where no lithology code covers a shallow Tertiary section, a whole-well run can therefore still flag marginal pay there, at SW about 0.5.
-On 25/5-1, for example, a run with default settings flags 259 m of pay above the reservoir top at 2984 m, almost all of it in uncoded Tertiary rock.
+On 25/5-1, for example, a run with default settings flags 199 m of pay above the reservoir top at 2984 m, almost all of it in uncoded Tertiary rock.
 
 Read the results per formation (attach tops), or give the interval its own Rw: pass `zones=` (above), or let the zoned runner take `RW_Z1` between `TOP_Z1` and `BOT_Z1` from the LAS header ({ref}`workflows-batch`), or interpret the interval on its own with its `rw`.
 Petrophys does not model a formation-water salinity that changes with depth.
@@ -492,14 +492,14 @@ net_pay = result.step("net_pay")
 pd.DataFrame(net_pay.parameters["cutoffs_by_family"]).T
 ```
 
-The step also records the samples left out of net reservoir and pay, and the thickness each kind removed over the whole well. On 30/6-5 only bad hole removes any:
+The step also records the samples left out of net reservoir and pay, and the thickness each kind removed over the whole well. On 30/6-5 bad hole removes 53.9 m of pay, and samples that read like coal on the logs 3.8 m:
 
 ```{code-cell} python
 excluded = net_pay.parameters["excluded_from_net_reservoir_and_pay"]
 pd.DataFrame.from_dict(excluded, orient="index")
 ```
 
-Pass project values as `vcl_cutoff`, `phie_cutoff` and `sw_cutoff`; a value you set applies to every sample.
+Pass project values as `vcl_cutoff`, `phie_cutoff` and `sw_cutoff`; a value you set applies to every sample. Give them as fractions: a value above 1 is read as a percentage (`vcl_cutoff=40` is 0.40).
 
 Marl is a clay-carbonate mixture, not pure limestone ([SLB definition](https://glossary.slb.com/en/terms/m/marl)).
 Petrophys interprets marl with the limestone matrix and the carbonate cutoffs, and warns when a lithology file contains it, as above. Supply project endpoints and cutoffs for marl-rich intervals.
@@ -508,9 +508,9 @@ Petrophys interprets marl with the limestone matrix and the carbonate cutoffs, a
 
 | Sample | Limitation | What Petrophys does |
 |---|---|---|
-| 30/6-5 SWC, SOC | labelled frac, stored in percent | `standardize_curves` (and so `interpret`) converts them to v/v with the warnings shown above; the raw-well plots convert for display only; the bundled LAS is unchanged. Give an explicit unit for ambiguous low values |
+| 30/6-5 SWC, SOC | labelled frac, stored in percent | `standardize_curves` (and so `interpret`) converts them to v/v with a warning ({ref}`core-saturation-units`), hidden on this page; the raw-well plots convert for display only; the bundled LAS is unchanged. Give an explicit unit for ambiguous low values |
 | 15/9-14 DTE | values fit no sonic unit; meaning unknown | not treated as shear slowness; range QC removes them. Do not rescale |
-| Daydream CMR | scalar NMR curves only: no T2 bins or T2LM; `CMRP_3MS` is labelled V/V but holds porosity units | T2LM cannot be computed; vendor KSDR and KCMR are read, not recomputed |
+| Daydream CMR | scalar NMR curves only: no T2 bins or T2LM | T2LM cannot be computed; vendor KSDR and KTIM are read, not recomputed |
 | 30/6-5 tops | groups and formations nest | `formation_summary` reports formations; pass `rank="group"` for groups; core permeability is calibrated per group and per formation |
 | COSTA HW-* | each LAS covers only the Kharaib-2 interval | `formations_costa` labels it `KHARAIB-2`; not for whole-well or multi-formation studies |
 

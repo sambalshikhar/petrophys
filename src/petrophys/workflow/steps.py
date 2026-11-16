@@ -506,7 +506,7 @@ def clay_volume(method: str = "gr", *, gr_clean: Optional[float] = None,
         Clean and shale gamma-ray endpoints, API. Default: P5 and P95.
     gr_transform : str, default "linear"
         ``"linear"``, ``"larionov_tertiary"``, ``"larionov_older"``,
-        ``"steiber"`` or ``"clavier"``.
+        ``"stieber"`` (stored as ``"steiber"``) or ``"clavier"``.
     gr_curve : str, optional
         Gamma-ray curve. Default: the first of GR, CGR, SGR, HSGR, HCGR and
         CGR_CALC with data.
@@ -532,7 +532,7 @@ def clay_volume(method: str = "gr", *, gr_clean: Optional[float] = None,
     >>> steps.clay_volume(method="neutron_density").requires
     ('NPHI', 'RHOB')
     """
-    from petrophys.interpretation.clay_volume.gr_method import GR_VCL_METHODS
+    from petrophys.interpretation.clay_volume.gr_method import GR_VCL_METHODS, gr_method_name
 
     check = _Params("steps.clay_volume()")
     method = check.choice("method", method, _CLAY_METHODS)
@@ -540,7 +540,7 @@ def clay_volume(method: str = "gr", *, gr_clean: Optional[float] = None,
         "method": method,
         "gr_clean": check.number("gr_clean", gr_clean),
         "gr_shale": check.number("gr_shale", gr_shale),
-        "gr_transform": check.choice("gr_transform", gr_transform, GR_VCL_METHODS),
+        "gr_transform": check.choice("gr_transform", gr_method_name(gr_transform), GR_VCL_METHODS),
         "gr_curve": check.curve("gr_curve", gr_curve, optional=True),
         "sp_clean": check.number("sp_clean", sp_clean),
         "sp_shale": check.number("sp_shale", sp_shale),

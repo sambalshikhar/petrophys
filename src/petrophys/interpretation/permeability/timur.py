@@ -31,9 +31,11 @@ def timur(
     Parameters
     ----------
     phi : float or np.ndarray
-        Porosity (fraction)
+        Porosity (fraction). A porosity at or below zero is replaced by
+        0.001, so such a sample gets a very small permeability, not NaN.
     swi : float or np.ndarray
-        Irreducible water saturation (fraction)
+        Irreducible water saturation (fraction). A value at or below zero
+        is replaced by 0.01.
     a : float
         Timur constant for percent porosity/Swirr (default: 0.136)
     b : float

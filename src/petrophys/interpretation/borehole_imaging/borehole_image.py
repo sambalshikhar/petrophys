@@ -147,6 +147,42 @@ class BoreholeImageData:
         value_unit: str = "",
         metadata: Optional[dict[str, Any]] = None,
     ) -> "BoreholeImageData":
+        """Build image data from a depth array and a 2D image array.
+
+        Parameters
+        ----------
+        depth : array
+            Depth of each image row.
+        image : array
+            Image values with shape ``(n_depth, n_borehole_samples)``.
+        channel_names : sequence of str, optional
+            Channels that make up the image, in left-to-right order; one
+            channel named ``IMAGE`` by default.
+        samples_per_channel : sequence of int, optional
+            Number of image columns of each channel; by default the whole
+            image width for the one channel.
+        image_type : str, default "dynamic"
+            Image style, for example ``"dynamic"`` or ``"static"``.
+        depth_unit : str, default "m"
+            Unit of ``depth``.
+        value_unit : str, default ""
+            Unit of the image values.
+        metadata : dict, optional
+            Source and frame metadata; copied.
+
+        Returns
+        -------
+        BoreholeImageData
+            The image data.
+
+        Raises
+        ------
+        ValueError
+            If ``image`` is not 2D, its first dimension differs from the
+            length of ``depth``, ``channel_names`` and
+            ``samples_per_channel`` differ in length, or the sample counts do
+            not sum to the image width.
+        """
         depth_arr = np.asarray(depth, dtype=float)
         image_arr = np.asarray(image)
         if image_arr.ndim != 2:
@@ -407,6 +443,20 @@ class BoreholeImageData:
         )
 
     def filter_by_depth(self, top: float, bottom: float) -> "BoreholeImageData":
+        """Return the image rows within a depth interval.
+
+        Parameters
+        ----------
+        top, bottom : float
+            Limits of the interval, in ``depth_unit``, in either order; rows
+            at the limits are kept.
+
+        Returns
+        -------
+        BoreholeImageData
+            Image data holding the rows inside the interval, with the same
+            channels, units and metadata.
+        """
         lo, hi = sorted((float(top), float(bottom)))
         mask = (self.depth >= lo) & (self.depth <= hi)
         metadata = dict(self.metadata)

@@ -41,7 +41,7 @@ class MultiWellPlot:
         self.items: List[Any] = list(items)
         self.options: Dict[str, Any] = dict(options or {})
         self.labels: Optional[List[str]] = None if labels is None else [str(label) for label in labels]
-        #: Each drawn well's viewer warnings, by well name.
+        #: Each drawn well's viewer warnings, by its label (else its well name).
         self.warnings: Dict[str, List[str]] = {}
 
     @property
@@ -57,11 +57,12 @@ class MultiWellPlot:
     def __repr__(self) -> str:
         return f"MultiWellPlot({len(self)} wells: {', '.join(self.names[:6])}{' ...' if len(self) > 6 else ''})"
 
-    def _viewer(self, item: Any) -> "LogViewer":
+    def _viewer(self, index: int) -> "LogViewer":
+        """The log plot of the well at position ``index``; its warnings are kept under its name."""
         from petrophys.api import plot
 
-        viewer = plot(item, **self.options)
-        self.warnings[self.names[self.items.index(item)]] = list(viewer.warnings)
+        viewer = plot(self.items[index], **self.options)
+        self.warnings[self.names[index]] = list(viewer.warnings)
         return viewer
 
     def __getitem__(self, key: Union[int, str]) -> "LogViewer":
@@ -69,21 +70,22 @@ class MultiWellPlot:
             if key not in self.names:
                 raise KeyError(f"No well {key!r}; the wells are {', '.join(self.names)}")
             key = self.names.index(key)
-        return self._viewer(self.items[key])
+        return self._viewer(range(len(self.items))[key])
 
     def save(self, folder: Union[str, Path], format: str = "png", dpi: int = 150) -> List[Path]:
         """Save one plot per well to ``folder/<well name>.<format>`` (png, pdf, svg, ...).
 
         A repeated well name gets _2, _3, ...; each figure is closed once saved.
+        Returns the written paths, in plotting order.
         """
         from petrophys.workflow.multi_well import _unique_file_names
 
         folder = Path(folder)
         folder.mkdir(parents=True, exist_ok=True)
         paths = []
-        for item, name in zip(self.items, _unique_file_names(self.names)):
+        for index, name in enumerate(_unique_file_names(self.names)):
             path = folder / f"{name}.{format.lstrip('.')}"
-            viewer = self._viewer(item)
+            viewer = self._viewer(index)
             viewer.save(path, dpi=dpi)
             viewer.close()
             paths.append(path)
@@ -91,8 +93,8 @@ class MultiWellPlot:
 
     def show(self) -> None:
         """Show each well's plot in turn."""
-        for item in self.items:
-            viewer = self._viewer(item)
+        for index in range(len(self.items)):
+            viewer = self._viewer(index)
             viewer.show()
             viewer.close()
 
@@ -100,8 +102,8 @@ class MultiWellPlot:
         """Nothing stays open: each figure is closed once shown or saved."""
 
     def _ipython_display_(self) -> None:
-        for item in self.items:
-            viewer = self._viewer(item)
+        for index in range(len(self.items)):
+            viewer = self._viewer(index)
             viewer._ipython_display_()  # the PNG, once, under any backend
             viewer.close()
 
@@ -196,7 +198,10 @@ def compare_wells(
     logged in the other unit is converted. ``top`` and ``bottom`` bound the
     depth axis. ``warnings`` names the wells without a curve, and curves
     whose units still differ after conversion. ``labels`` name the lines
-    (default: the well names), so runs of one well can be compared.
+    (default: the well names), so runs of one well can be compared; a number
+    of labels other than the number of wells raises ValueError. ``figsize``
+    is the figure size in inches (default: 3.2 in per curve, at least 6 in,
+    by 11 in). Returns a :class:`WellComparisonPlot`.
     """
     import matplotlib.pyplot as plt
 

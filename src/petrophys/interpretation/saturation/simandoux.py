@@ -68,8 +68,8 @@ def simandoux(
         Tortuosity factor (default: 1.0)
     m : float, optional
         Cementation exponent (default: 2.0)
-    n : float, optional
-        Saturation exponent (default: 2.0)
+    n : float or np.ndarray, optional
+        Saturation exponent (default: 2.0); one value, or one per sample
     modified : bool, optional
         Divide the sand term by (1 - Vcl), the modified Simandoux equation
         (default: False). Vcl is capped at 0.99 there.
@@ -112,7 +112,10 @@ def simandoux(
     B = vcl / rcl                      # coefficient on Sw
     C = 1.0 / rt                       # RHS
 
-    if abs(n - 2.0) < 1e-9:
+    # One exponent for every sample, or one per sample (n by lithology).
+    n_values = np.broadcast_to(np.asarray(n, dtype=float), rt.shape)
+    quadratic = np.abs(n_values - 2.0) < 1e-9
+    if np.all(quadratic):
         # Exact quadratic solution for n = 2:
         #   A * Sw^2 + B * Sw - C = 0  =>  Sw = (-B + sqrt(B^2 + 4AC)) / (2A),
         # evaluated as 2C / (B + sqrt(B^2 + 4AC)), which stays accurate as
@@ -129,9 +132,10 @@ def simandoux(
         sw = np.empty_like(rt)
         for i in range(len(rt)):
             a_i, b_i, c_i = float(A[i]), float(B[i]), float(C[i])
+            n_i = n if np.ndim(n) == 0 else float(n_values[i])
 
             def f(s):
-                return a_i * s ** n + b_i * s - c_i
+                return a_i * s ** n_i + b_i * s - c_i
 
             if not historical and not (
                 np.isfinite(a_i) and np.isfinite(b_i) and np.isfinite(c_i)

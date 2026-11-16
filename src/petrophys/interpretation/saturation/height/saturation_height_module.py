@@ -33,7 +33,7 @@ from petrophys.interpretation.saturation.height.capillary import (
     pc_from_height,
 )
 from petrophys.model.units import normalize_depth_unit
-from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+from petrophys._internal.analysis_helpers import as_well, get_curve_data_depthwise
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -43,7 +43,14 @@ ArrayLike = Union[float, np.ndarray]
 
 @dataclass
 class JFunctionModel:
-    """Sw = a * J^b (optionally above an irreducible floor Swir)."""
+    """Sw = a * J^b (optionally above an irreducible floor Swir).
+
+    ``form`` is ``"power"`` (Sw = a * J^b) or ``"power_swir"``
+    (Sw = Swir + (1 - Swir) * a * J^b). ``ift`` (dyne/cm) and ``theta``
+    (degrees) are the interfacial tension and contact angle J is computed
+    with, ``sg_water`` and ``sg_hc`` the specific gravities that convert
+    height to capillary pressure, and ``r2`` the fit's R2 on Sw.
+    """
 
     a: float
     b: float
@@ -59,20 +66,30 @@ class JFunctionModel:
     #: ``j`` from :func:`~petrophys.interpretation.saturation.height.fit_j_function_from_core`.
     points: Optional[Dict[str, np.ndarray]] = field(default=None, repr=False)
 
+    def _equation(self, digits: int = 4) -> str:
+        """The fitted relation as text, in the model's ``form``."""
+        core = f"{self.a:.{digits}f} * J^{self.b:.{digits}f}"
+        if self.form == "power_swir":
+            return f"Sw = {self.swir:.{digits}f} + (1 - {self.swir:.{digits}f}) * {core}"
+        return f"Sw = {core}"
+
     def __repr__(self) -> str:
         n = "" if self.points is None else f", n={len(self.points['sw'])}"
         r2 = "" if self.r2 is None else f", R2={self.r2:.3f}"
-        return f"JFunctionModel(Sw = {self.a:.4f} * J^{self.b:.4f}{r2}{n})"
+        return f"JFunctionModel({self._equation()}{r2}{n})"
 
     def plot(self, perms: Sequence[float] = (1.0, 10.0, 100.0), ax: Any = None) -> Any:
         """Sw against height above the FWL: the fitted samples coloured by
         permeability and the model's curve for each of ``perms`` (mD), each at
-        the median porosity of the samples near that permeability.
+        the median porosity of the samples near that permeability. Each curve
+        has the colour of its permeability on the colour bar of the samples.
 
         A model fitted from core plugs is drawn as Sw against J, with the
-        fitted curve. Returns the figure.
+        fitted curve. Returns the figure. A model without its fitted samples
+        (``points``) raises ValueError.
         """
         import matplotlib.pyplot as plt
+        from matplotlib import patheffects as path_effects
 
         from petrophys.visualization.style import plot_style
 
@@ -91,13 +108,14 @@ class JFunctionModel:
             fig.colorbar(shown, ax=ax, label="log10 permeability (mD)")
             curve_height = np.linspace(0.5, float(np.nanmax(height)), 200)
             log_perm = np.log10(perm)
-            colors = plt.get_cmap("viridis")(np.linspace(0.05, 0.9, len(perms)))
-            for k, color in zip(perms, colors):
+            outline = [path_effects.withStroke(linewidth=3.6, foreground="black")]
+            for k in perms:
                 near = np.abs(log_perm - np.log10(k)) <= 0.5
                 p = float(np.median(phi[near])) if near.any() else float(np.median(phi))
                 ax.plot(self.sw_from_height(curve_height, np.full_like(curve_height, k),
                                             np.full_like(curve_height, p)),
-                        curve_height, color=color, lw=1.8, label=f"model, {k:g} mD, phi {p:.2f}")
+                        curve_height, color=shown.cmap(shown.norm(np.log10(k))), lw=2.0,
+                        path_effects=outline, label=f"model, {k:g} mD, phi {p:.2f}")
             title = f"J-function fit, R2 = {self.r2:.2f}" if self.r2 is not None else "J-function fit"
             ax.set(xlim=(0, 1), xlabel="Sw (v/v)", ylabel="Height above FWL (ft)", title=title)
             ax.legend(loc="upper right", fontsize=8)
@@ -119,7 +137,7 @@ class JFunctionModel:
             fig.colorbar(shown, ax=ax, label="log10 permeability (mD)")
             line = np.geomspace(max(float(np.nanmin(j)), 1e-4), float(np.nanmax(j)), 200)
             ax.plot(self.sw_from_j(line), line, color="black", lw=1.8,
-                    label=f"Sw = {self.a:.3g} J^{self.b:.3g}")
+                    label=self._equation(3))
             ax.set_yscale("log")
             title = f"J-function from core, R2 = {self.r2:.2f}" if self.r2 is not None else "J-function from core"
             ax.set(xlim=(0, 1), xlabel="Sw (v/v)", ylabel="Leverett J", title=title)
@@ -127,6 +145,19 @@ class JFunctionModel:
             return fig
 
     def sw_from_j(self, j: ArrayLike) -> ArrayLike:
+        """Water saturation (v/v) at Leverett J values.
+
+        Parameters
+        ----------
+        j : float or array
+            Leverett J-function, dimensionless.
+
+        Returns
+        -------
+        float or array
+            Sw between ``swir`` and 1; 1 where J is zero or negative (at or
+            below the free-water level) and NaN where J is not finite.
+        """
         jj = np.asarray(j, dtype=float)
         pos = np.isfinite(jj) & (jj > 0)
         at_fwl = np.isfinite(jj) & (jj <= 0)   # Pc=0 at/below the FWL -> fully water
@@ -141,10 +172,47 @@ class JFunctionModel:
         return float(out) if np.ndim(j) == 0 else out
 
     def sw_from_pc(self, pc_psi: ArrayLike, perm_md: ArrayLike, phi: ArrayLike) -> ArrayLike:
+        """Water saturation (v/v) at a capillary pressure, for a rock's permeability and porosity.
+
+        Parameters
+        ----------
+        pc_psi : float or array
+            Capillary pressure at reservoir conditions, psi.
+        perm_md : float or array
+            Permeability, mD.
+        phi : float or array
+            Porosity, v/v.
+
+        Returns
+        -------
+        float or array
+            Sw from :meth:`sw_from_j` at the J of each sample, computed with
+            the model's ``ift`` and ``theta``; NaN where the permeability or
+            porosity is not positive.
+        """
         j = leverett_j(pc_psi, perm_md, phi, ift=self.ift, theta=self.theta)
         return self.sw_from_j(j)
 
     def sw_from_height(self, height_ft: ArrayLike, perm_md: ArrayLike, phi: ArrayLike) -> ArrayLike:
+        """Water saturation (v/v) at a height above the free-water level.
+
+        Parameters
+        ----------
+        height_ft : float or array
+            Height above the free-water level, ft; a negative height counts
+            as zero.
+        perm_md : float or array
+            Permeability, mD.
+        phi : float or array
+            Porosity, v/v.
+
+        Returns
+        -------
+        float or array
+            Sw from :meth:`sw_from_pc` at the capillary pressure
+            ``0.433 * (sg_water - sg_hc) * height_ft`` psi; 1 at and below the
+            free-water level.
+        """
         pc = pc_from_height(height_ft, sg_water=self.sg_water, sg_hc=self.sg_hc)
         return self.sw_from_pc(pc, perm_md, phi)
 
@@ -159,12 +227,25 @@ class BrooksCoreyModel:
     r2: Optional[float] = None
 
     def sw_from_pc(self, pc_psi: ArrayLike) -> ArrayLike:
+        """Water saturation (v/v) at a capillary pressure.
+
+        Parameters
+        ----------
+        pc_psi : float or array
+            Capillary pressure, psi, in the fluid system of the fitted curve.
+
+        Returns
+        -------
+        float or array
+            Sw between ``swir`` and 1; 1 up to the entry pressure ``pd``,
+            which includes zero and negative pressure (at or below the
+            free-water level), and NaN where the pressure is not finite.
+        """
         pc = np.asarray(pc_psi, dtype=float)
-        sw = np.full(pc.shape, np.nan) if pc.ndim else np.array(np.nan)
-        ok = np.isfinite(pc) & (pc > 0)
-        ratio = np.where(ok, np.minimum(self.pd / np.where(ok, pc, 1.0), 1.0), np.nan)
+        above = np.isfinite(pc) & (pc > 0)
+        ratio = np.where(above, np.minimum(self.pd / np.where(above, pc, 1.0), 1.0), 1.0)
         sw = self.swir + (1.0 - self.swir) * np.power(ratio, self.lam)
-        sw = np.clip(sw, self.swir, 1.0)
+        sw = np.where(np.isfinite(pc), np.clip(sw, self.swir, 1.0), np.nan)
         return float(sw) if np.ndim(pc_psi) == 0 else sw
 
 
@@ -256,11 +337,11 @@ def fit_brooks_corey(pc_psi: ArrayLike, sw: ArrayLike, swir: Optional[float] = N
 
 
 def saturation_height_from_logs(
-    well: "Well",
+    well: Any,
     model: JFunctionModel,
     fwl_depth: float,
-    perm_curve=("PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"),
-    phi_curve=("PHIE_CC", "PHIE", "PHIT"),
+    perm_curve: Union[str, Sequence[str]] = ("PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"),
+    phi_curve: Union[str, Sequence[str]] = ("PHIE_CC", "PHIE", "PHIT"),
     depth_increases_down: bool = True,
     tvd_curve: Optional[str] = None,
 ) -> np.ndarray:
@@ -277,13 +358,23 @@ def saturation_height_from_logs(
     depth, which holds for a vertical well only; a warning says so.
     ``fwl_depth`` must be in the same unit and on the same datum as that
     depth.
+
+    Takes a well or an interpretation result. ``perm_curve`` (mD) and
+    ``phi_curve`` (v/v) each name a curve or several in order of preference;
+    at each depth the first of them with a value is used. A well with none
+    of the named curves raises ValueError. Returns Sw (v/v) at every depth
+    of the well.
     """
+    well = as_well(well)
     height = _height_above_fwl(well, fwl_depth, tvd_curve, depth_increases_down, "saturation_height_from_logs")
-    perm, _, _ = get_curve_data_depthwise(well, list(perm_curve))
-    phi, _, _ = get_curve_data_depthwise(well, list(phi_curve))
-    if perm is None or phi is None:
-        raise ValueError("permeability and porosity curves are required")
-    sw = model.sw_from_height(height, perm, phi)
+    data = {}
+    for role, value in (("permeability", perm_curve), ("porosity", phi_curve)):
+        names = [value] if isinstance(value, str) else list(value)
+        values, _, _ = get_curve_data_depthwise(well, names)
+        if values is None:
+            raise ValueError(f"No {role} curve: the well has none of {names}")
+        data[role] = values
+    sw = model.sw_from_height(height, data["permeability"], data["porosity"])
     return np.asarray(sw, dtype=float)
 
 
@@ -341,11 +432,20 @@ def fit_j_function_from_well(
     :func:`saturation_height_from_logs`. Takes a well or an interpretation
     result.
 
+    ``sw_curve``, ``perm_curve`` and ``phi_curve`` each name a curve or
+    several in order of preference; at each depth the first of them with a
+    value is used. ``sg_water`` and ``sg_hc`` are the specific gravities of
+    the water and the hydrocarbon, and ``form`` and ``swir`` are those of
+    :func:`fit_j_function`. Height is measured along ``tvd_curve`` when one
+    is named, with ``fwl_depth`` in that curve's unit and on its datum;
+    otherwise the depth index is taken as true vertical depth, which holds
+    for a vertical well only, and a warning says so. Unknown ``fluids``, a
+    well with none of the named curves, or fewer than 3 usable samples above
+    the free-water level raise ValueError.
+
     >>> model = fit_j_function_from_well(hw3, fwl_depth=7991)  # doctest: +SKIP
     >>> model.plot()                                           # doctest: +SKIP
     """
-    from petrophys._internal.analysis_helpers import as_well
-
     well = as_well(well)
     if fluids not in FLUID_SYSTEMS:
         raise ValueError(f"fluids must be one of {sorted(FLUID_SYSTEMS)}; got {fluids!r}")

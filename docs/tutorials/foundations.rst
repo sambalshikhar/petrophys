@@ -59,10 +59,10 @@ Course outline
      - Compare gamma-ray, SP, and neutron-density clay-volume methods, combine them, and estimate clay resistivity.
    * - 04
      - :doc:`Porosity <part_a/04_porosity>`
-     - Derive density, neutron, sonic, total, and effective porosity, and apply a hydrocarbon correction.
+     - Derive density, neutron, sonic, total, and effective porosity, and see what the hydrocarbon correction needs.
    * - 05
      - :doc:`Lithology and mineral solving <part_a/05_lithology_and_mineral_solver>`
-     - Read neutron-density and PEF crossplots, solve mineral volumes from response equations, and infer lithology without external geology.
+     - Read neutron-density and PEF crossplots, solve mineral volumes from response equations with porosity as an input or an unknown, and set your own mineral endpoints.
    * - 06
      - :doc:`Formation water and environment <part_a/06_formation_water_and_environment>`
      - Build a temperature profile, correct Rmf and Rw to formation temperature, estimate Rw from salinity and SP, and characterize invasion.

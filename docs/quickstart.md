@@ -5,6 +5,7 @@ kernelspec:
   display_name: Python 3
 mystnb:
   execution_mode: force
+  execution_in_temp: true
 ---
 
 # Quickstart
@@ -19,7 +20,7 @@ above and run it in your browser, with nothing to install
 
 ```{code-cell} python
 :tags: [remove-cell]
-import os, sys, tempfile, textwrap, warnings
+import textwrap, warnings
 import pandas as pd
 
 # Display settings for this page: whole table cells, three decimals, wrapped warnings.
@@ -27,8 +28,6 @@ pd.set_option("display.max_colwidth", None)
 pd.set_option("display.float_format", "{:.3f}".format)
 warnings.formatwarning = lambda message, category, *args, **kwargs: textwrap.fill(
     f"{category.__name__}: {message}", 88, subsequent_indent="    ") + "\n"
-if "google.colab" not in sys.modules:
-    os.chdir(tempfile.mkdtemp())  # the files this page writes go to a scratch folder
 ```
 
 ```{code-cell} python

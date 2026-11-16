@@ -19,7 +19,7 @@ from petrophys.model.units import normalize_depth_unit
 
 
 #: Header parameters reported by :meth:`Well.describe` when present.
-_DESCRIBED_PARAMETERS = ("BHT", "RW", "RWT", "RMF", "RMFT", "RM", "RMT", "MUD", "DFD", "BS", "TD")
+_DESCRIBED_PARAMETERS = ("BHT", "RW", "RWT", "RMF", "RMFT", "CLFL", "RM", "RMT", "MUD", "DFD", "BS", "TD")
 
 
 def _raise_non_numeric_depth(series: pd.Series, depth_column: Any) -> None:
@@ -192,15 +192,15 @@ class Well:
 
     Examples
     --------
-    >>> from petrophys import Well
-    >>> well = Well.from_las("example.las")
+    >>> import petrophys as pp
+    >>> well = pp.Well.from_las(pp.sample("HW-3"))
     >>> print(well.curves)
-    ['GR', 'RHOB', 'NPHI', 'RT']
+    ['GR', 'RHOB', 'NPHI', 'DT', 'PHIE_CC', 'RT', 'SW_INPUT', 'PERM_CC']
 
     >>> # Access curves
     >>> gr = well["GR"]
-    >>> print(gr.mean())
-    65.3
+    >>> print(round(gr.mean(), 1))
+    12.3
 
     >>> # Add computed curve (arithmetic keeps the RHOB unit, so set the result's)
     >>> well["PHID"] = (2.65 - well["RHOB"]) / (2.65 - 1.0)
@@ -212,6 +212,9 @@ class Well:
         self._depth: Optional[np.ndarray] = None
         self._depth_unit: str = "ft"
         self._source_depth_unit_label: Optional[str] = None
+        #: Deepest log sample of the well these samples were selected from
+        #: (None for a well that is not a selection), in the depth unit.
+        self._logged_bottom: Optional[float] = None
         self.header = WellHeader()
         self.header.well_name = name
 
@@ -319,7 +322,10 @@ class Well:
 
     @property
     def step(self) -> Optional[float]:
-        """Return depth step (assuming uniform sampling)."""
+        """Return the depth step: the median spacing of the depth samples, in the well's depth unit.
+
+        None for a well with fewer than two finite depths.
+        """
         if self._depth is not None:
             finite = self._depth[np.isfinite(self._depth)]
             if len(finite) > 1:
@@ -418,12 +424,15 @@ class Well:
         """
         Add a new curve to the well.
 
+        A curve already stored under ``mnemonic`` is replaced.
+
         Parameters
         ----------
         mnemonic : str
-            Curve mnemonic
+            Curve mnemonic (stored in upper case)
         data : array-like
-            Curve data values
+            Curve data values, one per depth sample; another length raises
+            ValueError when the well has a depth
         unit : str, optional
             Unit of measurement
         description : str, optional
@@ -555,7 +564,8 @@ class Well:
         df: pd.DataFrame,
         depth_column: str = "DEPTH",
         depth_unit: Optional[str] = None,
-        name: str = ""
+        name: str = "",
+        header_units: bool = True,
     ) -> "Well":
         """
         Create Well from pandas DataFrame.
@@ -570,9 +580,14 @@ class Well:
             uses the index as depth.
         depth_unit : {"m", "ft"}
             Unit of ``depth_column``. Required when the frame has a depth
-            column; tabular data does not record it.
+            column, unless its header gives the unit (``DEPTH (m)``); when
+            both are given they must agree.
         name : str, optional
             Well name
+        header_units : bool, optional
+            Read a column header ``NAME (unit)`` or ``NAME [unit]`` as curve
+            ``NAME`` with that unit, as :func:`petrophys.io.read_csv` does
+            (default: True). False keeps each header as the curve name.
 
         Returns
         -------
@@ -584,12 +599,35 @@ class Well:
         Raises
         ------
         ValueError
-            If two columns differ only in case (curve names are upper case),
-            or the depth column is missing or has no numeric value.
+            If two columns become the same curve name (they differ only in
+            case or unit; curve names are upper case), the depth column is
+            missing or has no numeric value, or the depth header's unit
+            differs from ``depth_unit``.
         """
         well = cls(name=name)
 
         checked = not reproducing_benchmark()
+        units: Dict[str, str] = {}
+        if checked and header_units:
+            from petrophys.io.ascii_reader import _split_unit_header
+
+            split = [_split_unit_header(col) for col in df.columns]
+            if any(unit is not None for _, unit in split):
+                named: Dict[str, Any] = {}
+                for col, (curve_name, _) in zip(df.columns, split):
+                    if curve_name in named:
+                        raise ValueError(
+                            f"Columns {named[curve_name]!r} and {col!r} both become curve "
+                            f"{curve_name!r}; rename one of them."
+                        )
+                    named[curve_name] = col
+                df = df.rename(columns={
+                    col: curve_name for col, (curve_name, unit) in zip(df.columns, split) if unit is not None
+                })
+                units = {curve_name: unit for curve_name, unit in split if unit}
+                depth_name, depth_header_unit = _split_unit_header(depth_column)
+                if depth_header_unit is not None:
+                    depth_column = depth_name
         if checked:
             if depth_column not in df.columns:
                 matches = [col for col in df.columns if str(col).upper() == str(depth_column).upper()]
@@ -627,6 +665,12 @@ class Well:
                 seen[key] = col
 
         if depth_column in df.columns:
+            if units:
+                from petrophys.io.ascii_reader import _depth_unit_from_header
+
+                depth_unit = _depth_unit_from_header(
+                    units.get(str(depth_column).upper()), depth_unit, str(depth_column), "DataFrame"
+                )
             if depth_unit is None:
                 raise ValueError(
                     "Well.from_dataframe needs depth_unit='m' or depth_unit='ft' "
@@ -673,6 +717,9 @@ class Well:
             well.set_parameter("SKIPPED_NON_NUMERIC_VALUES", skipped_non_numeric)
         if coerced_non_numeric:
             well.set_parameter("COERCED_NON_NUMERIC_VALUES", coerced_non_numeric)
+        for mnemonic, unit in units.items():
+            if mnemonic in well._curves:
+                well._curves[mnemonic].unit = unit
 
         return well
 
@@ -706,7 +753,8 @@ class Well:
         filepath : str or Path
             Path to DLIS file
         **kwargs
-            Additional arguments
+            Options of :func:`petrophys.io.read_dlis` (``frame_name``,
+            ``channels``, ``standardize``, ...)
 
         Returns
         -------
@@ -725,7 +773,7 @@ class Well:
         filepath : str or Path
             Output file path
         **kwargs
-            Additional arguments
+            Options of :func:`petrophys.io.export_las` (e.g. ``curves=[...]``)
         """
         from petrophys.io.export import export_las
         export_las(self, filepath, **kwargs)
@@ -752,12 +800,15 @@ class Well:
         """
         Extract well data within depth range.
 
+        The header, parameters and results are copied, and the new well
+        remembers the deepest log sample of this one (see :meth:`select`).
+
         Parameters
         ----------
         top : float, optional
-            Top depth of interval
+            Top depth of interval, in the well's depth unit
         bottom : float, optional
-            Bottom depth of interval
+            Bottom depth of interval, in the well's depth unit
 
         Returns
         -------
@@ -780,7 +831,10 @@ class Well:
 
         Every curve is selected the same way (:meth:`Curve.select`); the
         header, parameters and results are copied. Use it for a set of samples
-        that is not one depth range, e.g. a lithology group.
+        that is not one depth range, e.g. a lithology group. The selection
+        remembers the deepest log sample of the well it came from, so an
+        interpretation of it places a bottom-hole temperature at the same
+        depth as an interpretation of the whole well.
 
         Parameters
         ----------
@@ -804,6 +858,7 @@ class Well:
         new_well = Well(name=self.name)
         new_well._depth = self._depth[index]
         new_well._depth_unit = self._depth_unit
+        new_well._logged_bottom = self._logged_bottom if self._logged_bottom is not None else self.bottom
         new_well.header = copy.deepcopy(self.header)
         new_well._parameters = copy.deepcopy(self._parameters)
         new_well._results = copy.deepcopy(self._results)
@@ -884,13 +939,22 @@ class Well:
         })
 
     def info(self) -> str:
-        """Return summary information about the well."""
+        """Return summary information about the well.
+
+        Depths are given to at most three decimals and the step (the median
+        sample spacing) to four significant figures, in the well's depth unit.
+        """
+        def number(value: Optional[float], spec: str) -> str:
+            if value is None:
+                return "None"
+            return format(value, spec).rstrip("0").rstrip(".") if spec.endswith("f") else format(value, spec)
+
         lines = [
             f"Well: {self.name}",
             f"UWI: {self.header.uwi}",
             f"Field: {self.header.field}",
-            f"Depth range: {self.top} - {self.bottom} {self._depth_unit}",
-            f"Step: {self.step} {self._depth_unit}",
+            f"Depth range: {number(self.top, '.3f')} - {number(self.bottom, '.3f')} {self._depth_unit}",
+            f"Step: {number(self.step, '.4g')} {self._depth_unit}",
             f"Number of curves: {self.n_curves}",
             f"Number of samples: {self.n_samples}",
             "",

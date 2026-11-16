@@ -155,11 +155,14 @@ run.plot(top=2841, bottom=2958, curves=["PHIE", "SW", "NET_PAY", "PHIH"],
          curve_styles={"PHIH": {"left": 0, "right": 0.3}})
 ```
 
-Summed over the pay of an interval, PHIH is its hydrocarbon pore thickness, the `HCPV` column of the formation summary: 3.1 m in the Brent Group.
+Summed over the pay of an interval and multiplied by the sample spacing, PHIH is its hydrocarbon pore thickness, the `HCPV` column of the formation summary: 3.1 m in the Brent Group.
 
 ```{code-cell} python
 run.formation_summary(rank="group")[["Formation", "Net Pay (m)", "HCPV"]]
 ```
+
+The 17 m flagged in the Nordland Group is not pay. It lies at 181-335 m, in the 26 in and 36 in top hole, where the density log reads a porosity near 0.5.
+`pp.interpret` leaves that section out as bad hole ({ref}`review-inputs`); this recipe has no bad-hole screen, so read its totals over the reservoir interval.
 
 :::{note}
 Saved workflows store a custom step by its import path (`module:function`).

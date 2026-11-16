@@ -130,13 +130,29 @@ def _formation_temperature_f(well: "Well", names: Sequence[str]) -> Union[float,
     temperature = temperature_curve_f(well, names)
     if temperature is not None:
         return temperature
+    from petrophys._internal.benchmark import reproducing_benchmark
+
     try:
-        return calculate_temperature_profile(well).temperature
+        result = calculate_temperature_profile(well)
     except Exception:
         # No depth for a profile: the header BHT itself, or a nominal 150 degF.
         if well.header.bht is None:
             return 150.0
         return temperature_to_fahrenheit(well.header.bht, well.header.bht_unit)
+    if result.source == "fallback_geothermal_gradient" and not reproducing_benchmark():
+        import warnings
+
+        from petrophys.exceptions import DataQualityWarning
+
+        warnings.warn(
+            "No temperature curve and no bottom-hole temperature: formation temperature is "
+            f"assumed, {DefaultParameters.SURFACE_TEMPERATURE_F:g} degF at the surface plus "
+            f"{DefaultParameters.GEOTHERMAL_GRADIENT_C_PER_KM:g} degC/km. Give a temperature, a "
+            "TEMP curve or a header BHT.",
+            DataQualityWarning,
+            stacklevel=3,
+        )
+    return result.temperature
 
 
 @dataclass
@@ -181,6 +197,15 @@ class TemperatureProfile:
         Unit of ``surface_temp``: "F", "C", "K" or a label such as "degC"
         (see :func:`petrophys.model.units.temperature_unit`); unknown labels
         raise ``ValueError``
+    source : str, optional
+        Label of how the gradient was obtained, reported with the result:
+        ``"specified_gradient"`` (default), or the label the
+        ``from_bht``, two-point and fallback constructors set.
+    reference_temperature : float, optional
+        Temperature the gradient was fitted to (degF), such as the BHT;
+        reported with the result and not used in the calculation.
+    reference_depth : float, optional
+        Depth of ``reference_temperature`` (ft); reported with the result.
 
     Examples
     --------
@@ -495,11 +520,33 @@ def calculate_temperature_profile(
     bht_unit : str, optional
         Unit of ``bht``: "F", "C", "K" or a label such as "degC"; unknown
         labels raise ``ValueError``
+    surface_temp_unit : str, optional
+        Unit of ``surface_temp``, as ``bht_unit``; default "F"
+    td : float, optional
+        Total depth at which ``bht`` applies. Default: the header's TD, else
+        the bottom of the logged interval.
+    td_unit : str, optional
+        Depth unit of ``td``; default ``depth_unit``
+    depth_unit : str, optional
+        Depth unit of the well's depths; default the well's depth unit
+    fallback_gradient_c_per_km : float, optional
+        Gradient used when neither ``gradient`` nor a BHT with a total depth
+        below the surface is available, degC/km (default: 30)
 
     Returns
     -------
     TemperatureResult
-        Temperature profile results
+        Temperature profile results. ``source`` says what the profile rests
+        on: ``"linear_gradient_from_BHT"``, ``"specified_gradient"`` or
+        ``"fallback_geothermal_gradient"``.
+
+    Notes
+    -----
+    Without ``gradient`` and without a BHT (argument or header) the profile is
+    an assumption: ``surface_temp`` (default 68 degF, 20 degC) at depth 0 plus
+    ``fallback_gradient_c_per_km`` (default 30 degC/km). No warning is issued
+    for it; check ``result.source`` for ``"fallback_geothermal_gradient"``, as
+    :func:`petrophys.interpret` does to report it.
 
     Examples
     --------

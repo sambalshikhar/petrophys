@@ -3,14 +3,14 @@ Tutorials
 
 Learn Petrophys through complete, browser-based lessons. Every tutorial is
 rendered directly into this documentation with its explanations, equations,
-Python code, tables, and saved figures. Jupyter is only needed when you want to
-rerun or modify a lesson locally.
+Python code, tables, and saved figures. To rerun or modify a lesson, open it in
+Google Colab from the button at its top, or in Jupyter on your own computer.
 
 The curriculum uses public well data bundled with the package: North Sea
 GeoLink wells (chiefly 30/6-5, with 15/9-14, 16/7-1 and 25/5-1), 17 wells from
 the COSTA carbonate benchmark (each file covers only the Kharaib-2 reservoir
-interval), and Daydream 1 NMR logs. The borehole-image lesson uses a larger
-Daydream 1 DLIS file that is available in source checkouts through Git LFS.
+interval), and Daydream 1 NMR logs. The borehole-image lesson uses a 112 MB
+Daydream 1 DLIS file that is downloaded on first use.
 
 Choose a path
 -------------
@@ -31,7 +31,7 @@ well, then your own files; the lessons below go deeper.
       calibration, sensitivity analysis and a gallery of every plot type.
 
       +++
-      One long notebook on four GeoLink wells
+      One long notebook on four GeoLink wells, with COSTA and Daydream 1 data
 
    .. grid-item-card:: Foundations
       :class-card: ph-card-amber
@@ -101,10 +101,11 @@ with the relevant optional extras and open the source lesson from the page
 toolbar. Saved outputs let the online lesson retain its plots and numerical
 results without executing code during the documentation build.
 
-Most lessons need only the base install and the bundled samples. Lesson 13
-(curve imputation) needs the ``ml`` extra, lesson 16 (borehole images) needs
-the ``dlis`` extra and the Git LFS files of a source checkout, and lesson 20
-needs the ``mcp`` extra; see :doc:`../installation`.
+Most lessons need only the base install and the bundled samples. Lessons 12
+(electrofacies) and 13 (curve imputation) and case study 4 need the ``ml``
+extra, lesson 16 (borehole images) needs the ``dlis`` extra and downloads its
+image file on first use, and lesson 20 needs the ``mcp`` extra (Python 3.10 or
+later); see :doc:`../installation`.
 
 .. note::
 

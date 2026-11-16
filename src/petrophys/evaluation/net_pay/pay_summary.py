@@ -15,7 +15,8 @@ from typing import Optional
 import numpy as np
 
 from petrophys._internal.analysis_helpers import cell_thickness, get_curve_data_depthwise
-from petrophys.evaluation.net_pay.cutoffs import standard_cutoffs
+from petrophys._internal.benchmark import reproducing_benchmark
+from petrophys.evaluation.net_pay.cutoffs import cutoff_fraction, standard_cutoffs
 from petrophys.evaluation.net_pay.flags import generate_net_flags
 
 VCL_CURVES = ("VCL", "VCLAY", "VSH")
@@ -28,8 +29,10 @@ class PaySummary:
     """Net-pay summary of one depth window.
 
     Thicknesses are in the well depth unit (``depth_unit``); porosity and
-    saturation averages are fractions (v/v). Averages are thickness-weighted
-    over the net-pay samples.
+    saturation averages are fractions (v/v). Over the net-pay samples,
+    porosity is weighted by thickness and water saturation by pore volume
+    (porosity times thickness), so ``avg_phie_pay * (1 - avg_sw_pay) *
+    net_pay_thickness`` is ``hcpt``.
 
     Attributes
     ----------
@@ -153,19 +156,19 @@ def resolve_windowed_inputs(well, depth, arrays, top=None, bottom=None, depth_un
 
 
 def resolve_cutoffs(vcl_cutoff, phie_cutoff, sw_cutoff, lithology):
-    """Fill unset cutoffs from the standard set for ``lithology`` (internal helper)."""
+    """Fill unset cutoffs from the standard set for ``lithology`` (internal helper).
+
+    The cutoffs come back as fractions: a value above 1 and up to 100 is
+    read as percent
+    (:func:`~petrophys.evaluation.net_pay.cutoffs.cutoff_fraction`).
+    """
     standard = standard_cutoffs(lithology)
     resolved = {
         "vcl_cutoff": standard["vcl_cutoff"] if vcl_cutoff is None else vcl_cutoff,
         "phie_cutoff": standard["phie_cutoff"] if phie_cutoff is None else phie_cutoff,
         "sw_cutoff": standard["sw_cutoff"] if sw_cutoff is None else sw_cutoff,
     }
-    for name, value in resolved.items():
-        value = float(value)
-        if not np.isfinite(value):
-            raise ValueError(f"{name} must be a finite number")
-        resolved[name] = value
-    return resolved
+    return {name: cutoff_fraction(value, name) for name, value in resolved.items()}
 
 
 def pay_summary_from_arrays(vcl, phie, sw, dz, cutoffs, depth_unit="") -> PaySummary:
@@ -184,7 +187,11 @@ def pay_summary_from_arrays(vcl, phie, sw, dz, cutoffs, depth_unit="") -> PaySum
     reservoir_thickness = float(np.sum(dz[net_reservoir]))
     if pay_thickness > 0:
         avg_phie = float(np.sum(phie[net_pay] * pay_dz) / pay_thickness)
-        avg_sw = float(np.sum(sw[net_pay] * pay_dz) / pay_thickness)
+        pore_thickness = float(np.sum(phie[net_pay] * pay_dz))
+        if reproducing_benchmark() or pore_thickness <= 0:
+            avg_sw = float(np.sum(sw[net_pay] * pay_dz) / pay_thickness)
+        else:
+            avg_sw = float(np.sum(sw[net_pay] * phie[net_pay] * pay_dz) / pore_thickness)
         hcpt = float(np.sum(phie[net_pay] * (1.0 - sw[net_pay]) * pay_dz))
     else:
         avg_phie = avg_sw = np.nan
@@ -254,8 +261,10 @@ def summarize_pay(
     depth : array-like, optional
         Sample depths. Defaults to ``well.depth``.
     vcl_cutoff, phie_cutoff, sw_cutoff : float, optional
-        Cutoffs (fractions). Unset ones come from the standard set for
-        ``lithology`` (:data:`~petrophys.evaluation.STANDARD_CUTOFFS`).
+        Cutoffs, fractions (v/v); a value above 1 and up to 100 is read as
+        percent (``sw_cutoff=60`` is 0.60). Unset ones come from the
+        standard set for ``lithology``
+        (:data:`~petrophys.evaluation.STANDARD_CUTOFFS`).
     lithology : str, default "clastic"
         Lithology family for the default cutoffs.
     top, bottom : float, optional
@@ -272,7 +281,8 @@ def summarize_pay(
     Raises
     ------
     ValueError
-        If inputs are missing, lengths differ, or the window holds no samples.
+        If inputs are missing, lengths differ, the window holds no samples,
+        or a cutoff is not a finite number between 0 and 100.
 
     Examples
     --------

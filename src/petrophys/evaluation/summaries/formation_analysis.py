@@ -78,8 +78,18 @@ class FormationAnalysisResult:
 
         ``N/G (reservoir)`` is net reservoir / gross and ``Pay/Gross`` is net
         pay / gross. ``Avg PHIE``, ``Avg Sw``, ``Avg VCL`` and ``Avg Perm
-        (mD)`` (geometric) are over the net-pay samples; ``DataFrame.attrs
-        ["curves"]`` names the curve each average is taken from.
+        (mD)`` are over the net-pay samples: porosity and clay volume
+        weighted by thickness, Sw by pore volume (porosity times thickness),
+        permeability a geometric mean. ``HCPV`` is the hydrocarbon pore
+        thickness in the depth unit of the thickness columns and ``BVW`` the
+        thickness-weighted bulk volume of water over net pay, v/v. ``Avg
+        GR``, ``Avg RHOB``, ``Avg NPHI``, ``Avg RDEP`` and ``Avg PHIT`` are
+        sample means over the whole formation. ``DataFrame.attrs["curves"]``
+        names the curve each pay average is taken from. Where that is a
+        core-corrected curve (``PHIE_CC``, ``PERM_CC``) that some pay
+        samples lack, those samples read the plain curve, and
+        ``DataFrame.attrs["plain_curve_pay_samples"]`` gives their number
+        per formation, e.g. ``{"Etive Fm.": {"PERM": 12}}``.
         """
         import pandas as pd
 
@@ -114,6 +124,13 @@ class FormationAnalysisResult:
 
         frame = pd.DataFrame(rows)
         frame.attrs["curves"] = dict(self.curves)
+        frame.attrs["plain_curve_pay_samples"] = {
+            s.formation.name: {key: count for key, count in (
+                ("PHIE", s.zone_summary.phie_plain_samples), ("PERM", s.zone_summary.perm_plain_samples),
+            ) if count}
+            for s in self.summaries
+            if s.zone_summary.phie_plain_samples or s.zone_summary.perm_plain_samples
+        }
         return frame
 
     def to_csv(self, filepath: Union[str, Path]) -> None:
@@ -209,6 +226,12 @@ def analyze_formations(
         Name of the net reservoir flag curve
     net_rock_curve : str
         Name of the net rock flag curve
+    terminal_depth : float, optional
+        Bottom of the last formation, in the well's depth unit; required
+        when the formations are tops without bottom depths
+    rank : str, optional
+        Stratigraphic level to analyze when the formations mix levels, e.g.
+        ``"formation"`` or ``"group"``
 
     Returns
     -------

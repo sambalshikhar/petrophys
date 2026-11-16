@@ -8,6 +8,7 @@ for various bad hole conditions.
 from typing import TYPE_CHECKING, Any, Optional, Union
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.constants import DefaultParameters
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 
@@ -196,9 +197,10 @@ def generate_bad_hole_flags(
     well : Well
         Well object with log curves
     bit_size : float or np.ndarray, optional
-        Bit size in inches. If not supplied, uses the header value when it is
-        a hole size in inches (3-36 in; a null such as -999.25 or a size in
-        mm is ignored), else the depth-by-depth BS curve when available.
+        Bit size in inches. If not supplied, uses the depth-by-depth BS curve
+        when the well has one, and the header value where the curve has no
+        value or is absent, when it is a hole size in inches (3-36 in; a
+        null such as -999.25 or a size in mm is ignored).
     cali_threshold : float, optional
         Caliper-BS washout threshold
     drho_threshold : float, optional
@@ -234,7 +236,17 @@ def generate_bad_hole_flags(
         "pef_exclusion": np.zeros(n_samples, dtype=bool),
     }
 
-    # Get bit size
+    # Get bit size: the BS curve depth by depth, the header bit size where the
+    # curve has no value (a well drilled with several bits has one header size).
+    if bit_size is None and not reproducing_benchmark():
+        header_size = _plausible_bit_size(well.header.bit_size)
+        bs_data, _, _ = get_curve_data_depthwise(well, ["BS"])
+        if bs_data is None:
+            bit_size = header_size
+        else:
+            bit_size = np.asarray(bs_data, dtype=float)
+            if header_size is not None:
+                bit_size = np.where(np.isfinite(bit_size), bit_size, header_size)
     if bit_size is None:
         bit_size = _plausible_bit_size(well.header.bit_size)
     if bit_size is None:

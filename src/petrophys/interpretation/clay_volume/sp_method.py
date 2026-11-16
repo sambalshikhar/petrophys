@@ -64,10 +64,13 @@ def vcl_from_sp(
         if reproducing_benchmark():
             return np.zeros_like(sp) if isinstance(sp, np.ndarray) else 0.0
         # Equal baselines leave the SP index undefined.
-        if isinstance(sp, np.ndarray):
-            return np.full(sp.shape, np.nan, dtype=float)
+        if np.ndim(sp):
+            return np.full(np.shape(sp), np.nan, dtype=float)
         return float("nan")
 
+    if np.ndim(sp) and not isinstance(sp, np.ndarray) and not reproducing_benchmark():
+        # A list or pandas Series is computed and returned as an array.
+        sp = np.asarray(sp, dtype=float)
     vcl = (sp_max - sp) / (sp_max - sp_min)
     return np.clip(vcl, 0, 1)
 

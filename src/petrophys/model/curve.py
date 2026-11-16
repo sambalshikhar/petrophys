@@ -282,7 +282,11 @@ class Curve:
 
     @classmethod
     def from_series(cls, series: pd.Series, unit: str = "") -> "Curve":
-        """Create Curve from pandas Series."""
+        """Create Curve from pandas Series.
+
+        The series name is the mnemonic (``UNKNOWN`` without one), and an
+        index other than the default 0, 1, 2, ... becomes the depth.
+        """
         depth = series.index.values if not series.index.equals(
             pd.RangeIndex(len(series))
         ) else None

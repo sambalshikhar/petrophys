@@ -8,7 +8,7 @@ import warnings
 import numpy as np
 
 from petrophys.model.constants import DefaultParameters
-from petrophys.evaluation.net_pay.cutoffs import cutoff_family
+from petrophys.evaluation.net_pay.cutoffs import cutoff_family, cutoff_fraction
 from petrophys.evaluation.net_pay.flags import generate_net_flags
 from petrophys._internal.analysis_helpers import cell_thickness, get_curve_data_depthwise
 from petrophys._internal.benchmark import reproducing_benchmark
@@ -251,6 +251,10 @@ def calculate_net_pay(
     sw_cutoff : float, optional
         Net pay adds ``Sw < sw_cutoff``. Default: 0.60 clastic or 0.70
         carbonate.
+
+        The three cutoffs are fractions (v/v); a value above 1 and up to
+        100 is read as percent (``sw_cutoff=60`` is 0.60), and one that is
+        negative, above 100 or not finite raises ValueError.
     lithology : str or np.ndarray
         'clastic' or 'carbonate', or per-depth array of lithology labels.
         The carbonate family (carbonate, limestone, chalk, dolomite, marl;
@@ -265,5 +269,10 @@ def calculate_net_pay(
     :class:`NetPayModule`). Summarize those flags with
     ``result.summary(top, bottom)``.
     """
-    module = NetPayModule(vcl_cutoff, phie_cutoff, sw_cutoff, lithology)
+    given = {"vcl_cutoff": vcl_cutoff, "phie_cutoff": phie_cutoff, "sw_cutoff": sw_cutoff}
+    cutoffs = {
+        name: cutoff_fraction(value, name) if value is not None and np.ndim(value) == 0 else value
+        for name, value in given.items()
+    }
+    module = NetPayModule(lithology=lithology, **cutoffs)
     return module.calculate(well, **kwargs)

@@ -107,10 +107,10 @@ class MultiWellResult:
         pandas.DataFrame
             ``Well``, ``Status``, ``Depth unit``, ``Net rock``, ``Net
             reservoir`` and ``Net pay`` (thickness in the well's depth unit),
-            the medians of VCL, PHIE, SW and PERM over the well (PHIE_CC
-            and PERM_CC where the interpretation produced them, as in the
-            formation summaries), and the
-            number of warnings.
+            ``Median VCL``, ``Median PHIE``, ``Median SW`` and ``Median
+            PERM`` over the well (PHIE_CC and PERM_CC where the
+            interpretation produced them, as in the formation summaries),
+            and ``Warnings``, the number of warnings.
         """
         import pandas as pd
 
@@ -132,7 +132,10 @@ class MultiWellResult:
 
             chosen = pay_average_curves(result.well)
             for name in ("VCL", "PHIE", "SW", "PERM"):
-                row[f"Median {name}"] = (key.get(chosen.get(name) or name) or {}).get("median")
+                # The "geolink" profile's summary holds the plain curves only.
+                row[f"Median {name}"] = (
+                    key.get(chosen.get(name) or name) or key.get(name) or {}
+                ).get("median")
             row["Warnings"] = len(summary["warnings"])
             rows.append(row)
         return pd.DataFrame(rows)
@@ -143,7 +146,7 @@ class MultiWellResult:
         Parameters are those of
         :meth:`DynamicWorkflowResult.formation_summary`. A well without
         formations, or whose formations give no table, is left out and named
-        in the warning.
+        in the warning. When no well gives a table, ValueError is raised.
         """
         import warnings
 
@@ -170,7 +173,11 @@ class MultiWellResult:
 
     def zone_summary(self, zones: Any = None) -> Any:
         """Per-zone table of every well, with a ``Well`` column first; see
-        :meth:`DynamicWorkflowResult.zone_summary`."""
+        :meth:`DynamicWorkflowResult.zone_summary`.
+
+        A well that no zone applies to is left out; when no zone applies to
+        any well, ValueError is raised.
+        """
         import pandas as pd
 
         tables = []
@@ -188,7 +195,8 @@ class MultiWellResult:
     def to_las(self, folder: Union[str, Path], **options: Any) -> List[Path]:
         """Write each interpreted well to ``folder/<well name>.las``; see
         :meth:`DynamicWorkflowResult.to_las`. A repeated well name gets _2,
-        _3, ... ("15/9-12" is written as 15_9-12.las)."""
+        _3, ... ("15/9-12" is written as 15_9-12.las). Returns the written
+        paths, in well order."""
         folder = Path(folder)
         folder.mkdir(parents=True, exist_ok=True)
         names = _unique_file_names(self.names)
@@ -199,7 +207,8 @@ class MultiWellResult:
 
         ``options`` are those of :func:`petrophys.plot` (``template``,
         ``top``, ``bottom``, ``tracks``, ...). Each figure is closed once
-        saved; a repeated well name gets _2, _3, ...
+        saved; a repeated well name gets _2, _3, ... Returns the written
+        paths, in well order.
         """
         from petrophys.api import plot
 

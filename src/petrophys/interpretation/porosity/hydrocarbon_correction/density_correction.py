@@ -18,6 +18,8 @@ from typing import Optional, Union
 
 import numpy as np
 
+from petrophys._internal.benchmark import reproducing_benchmark
+
 
 def correct_density_hc(
     rhob: Union[float, np.ndarray],
@@ -29,6 +31,7 @@ def correct_density_hc(
     rho_ma: float = 2.65,
     rho_cl: float = 2.45,
     rho_hc: Optional[float] = None,
+    floor_porosity: Optional[bool] = None,
 ) -> Union[float, np.ndarray]:
     """
     Correct bulk density for hydrocarbon effect.
@@ -59,6 +62,11 @@ def correct_density_hc(
     rho_hc : float, optional
         Hydrocarbon density in the flushed zone (g/cc). Default: 0.8 for oil,
         0.2 for gas.
+    floor_porosity : bool, optional
+        Count a negative porosity as 0, so that rock denser than its matrix
+        (a tight or heavy-mineral bed) gets no correction; a negative
+        porosity would lower RHOB there. Default (None): True, and False
+        while a benchmark package is reproduced.
 
     Returns
     -------
@@ -67,6 +75,8 @@ def correct_density_hc(
     """
     if rho_hc is None:
         rho_hc = 0.2 if hc_type.lower() == "gas" else 0.8
+    if floor_porosity is None:
+        floor_porosity = not reproducing_benchmark()
 
     if vcl is not None:
         numerator = rho_ma - rhob - vcl * (rho_ma - rho_cl)
@@ -78,8 +88,12 @@ def correct_density_hc(
             denominator = denominator if abs(denominator) > 1e-10 else 1e-10
 
         phi_d_prelim = numerator / denominator
+        if floor_porosity:
+            phi_d_prelim = np.clip(phi_d_prelim, 0.0, None)
         rhob_corrected = rhob + phi_d_prelim * (1.0 - sxo) * (rhob_fluid - rho_hc)
     else:
+        if floor_porosity:
+            phi = np.clip(phi, 0.0, None)
         rhob_corrected = rhob + phi * (1.0 - sxo) * (rhob_fluid - rho_hc)
 
     return rhob_corrected

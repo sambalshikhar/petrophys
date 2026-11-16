@@ -82,7 +82,7 @@ Give Rw (ohm.m) with the temperature it was measured at, `rw_meas_temp_f`
 that temperature, a given Rw, or a header RW without RWT or FMT, is taken at
 the well's median formation temperature, with a warning.
 
-CSV and TSV logs need their depth unit: `pp.read("logs.csv", depth_unit="m")`.
+CSV, TSV and Excel logs need their depth unit: `pp.read("logs.csv", depth_unit="m")`.
 Vendor mnemonics (`GR_EDTC`, `RHOZ`, `TNPH`, ...) and units (kg/m3, percent
 porosity) are standardized automatically, in plots and in interpretation.
 Physically implausible values are removed on the way, and a curve that is
@@ -141,9 +141,9 @@ formation-water salinity for the whole well, with Rw corrected only for
 temperature, while shallow formation waters are usually fresher; the clay
 indicators also disagree in undercompacted mudstones. Shallow Tertiary
 sections that no lithology log covers can therefore show marginal pay, with
-SW about 0.5. In the quick-start run on 30_6-5, 21.3 m of the 49.7 m of net
-pay lies in the overburden above 1500 m and 25.5 m in the oil column at
-2841-2907 m; a default run on 25_5-1 puts 259 m of its 310.4 m of net pay
+SW about 0.5. In the quick-start run on 30_6-5, 22.7 m of the 50.9 m of net
+pay lies in the overburden above 1500 m and 25.3 m in the oil column at
+2841-2907 m; a default run on 25_5-1 puts 199 m of its 251.0 m of net pay
 above its oil zones, which start at 2984 m. Attach formation tops and read
 `result.formation_summary()` (or pass `top` and `bottom` to `result.summary`),
 or give such a section its own Rw in a zoned run (header zones such as
@@ -352,7 +352,7 @@ quality = calculate_rock_quality(perm_k=100.0, phi_e=0.2)   # {"RQI", "phi_z", "
 | Package | Contents |
 |---------|----------|
 | `petrophys.model` | Wells, curves, core data, intervals, units, constants, class tables |
-| `petrophys.io` | LAS, DLIS, CSV/ASCII, and geology readers; LAS/CSV/Excel writers |
+| `petrophys.io` | LAS, DLIS, CSV, Excel, ASCII and geology readers; LAS/CSV/Excel writers |
 | `petrophys.preprocessing` | Standardization, quality control, curve imputation |
 | `petrophys.interpretation` | Scientific calculations by property and specialist domain |
 | `petrophys.evaluation` | Net pay, rock quality, diagnostics, formation summaries |

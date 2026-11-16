@@ -13,10 +13,8 @@ from petrophys._internal.analysis_helpers import (
     well_depth_array,
 )
 from petrophys._internal.benchmark import reproducing_benchmark
-from petrophys.evaluation.summaries.zone_summary import pay_average_curves
+from petrophys.evaluation.summaries.zone_summary import pay_average_curves, pay_average_data
 
-#: Core-corrected curves of the pay averages (see pay_average_curves).
-_CORE_CORRECTED = {"PHIE": "PHIE_CC", "PERM": "PERM_CC"}
 
 #: Curves averaged geometrically by default (permeability).
 _GEOMETRIC_DEFAULT = ["PERM", "PERM_CC", "K", "KLOG", "PERMEABILITY"]
@@ -128,6 +126,10 @@ def calculate_pay_averages(
     """
     Calculate averages over net pay intervals only.
 
+    Each sample counts with its thickness. Without the net-pay flag curve on
+    the well there is no pay to average over: a warning is given and every
+    average is NaN.
+
     Parameters
     ----------
     well : Well
@@ -140,12 +142,14 @@ def calculate_pay_averages(
         Name of net pay flag curve
     curves : list, optional
         Curves to average (default PHIE, SW, VCL, PERM, BVW). ``PHIE`` and
-        ``PERM`` are each averaged from one curve, the core-corrected
-        ``PHIE_CC`` / ``PERM_CC`` where the interpretation produced or used
-        it (see
-        :func:`~petrophys.evaluation.summaries.zone_summary.pay_average_curves`),
-        over the samples where that curve is defined; permeability (PERM,
-        PERM_CC, K, PERMEABILITY) is a geometric mean.
+        ``PERM`` are the core-corrected ``PHIE_CC`` / ``PERM_CC`` where the
+        interpretation produced or used them and the plain curve at the
+        samples those do not cover (see
+        :func:`~petrophys.evaluation.summaries.zone_summary.pay_average_data`);
+        permeability (PERM, PERM_CC, K, PERMEABILITY) is a geometric mean.
+        ``SW`` is weighted by thickness here;
+        :func:`calculate_pore_volume_weighted_sw` gives the
+        pore-volume-weighted value of the formation summaries.
 
     Returns
     -------
@@ -167,7 +171,20 @@ def calculate_pay_averages(
         curves = ["PHIE", "SW", "VCL", "PERM", "BVW"]
 
     results = {}
-    chosen = None if reproducing_benchmark() else pay_average_curves(well)
+    if reproducing_benchmark():
+        weights = np.ones(int(np.count_nonzero(mask)))
+        pay_values: Dict[str, np.ndarray] = {}
+    else:
+        if net_pay is None:
+            warnings.warn(
+                f"Net-pay flag curve {net_pay_curve!r} is not on the well, so there is no pay to "
+                "average over: the averages are NaN. Run the net-pay step, or use "
+                "calculate_zone_averages for averages over the whole interval.",
+                UserWarning, stacklevel=2,
+            )
+            return {name: np.nan for name in curves}
+        weights = cell_thickness(depth)[mask]
+        pay_values = pay_average_data(well)
 
     for curve_name in curves:
         curve = well.get(curve_name)
@@ -175,26 +192,21 @@ def calculate_pay_averages(
             results[curve_name] = np.nan
             continue
 
-        if chosen is not None and curve_name.upper() in _CORE_CORRECTED:
-            source = well.get(chosen[curve_name.upper()] or curve_name)
-            data = np.asarray(source.data, dtype=float)[mask]
+        if curve_name.upper() in pay_values:
+            data = pay_values[curve_name.upper()][mask]
         else:
-            data = curve.data[mask]
-        valid = data[~np.isnan(data)]
-
-        if len(valid) == 0:
+            data = np.asarray(curve.data, dtype=float)[mask]
+        geometric = curve_name.upper() in ["PERM", "PERM_CC", "K", "PERMEABILITY"]
+        valid = ~np.isnan(data) & (weights > 0)
+        if geometric:
+            valid &= data > 0
+        if not np.any(valid):
             results[curve_name] = np.nan
             continue
 
-        # Use geometric mean for permeability
-        if curve_name.upper() in ["PERM", "PERM_CC", "K", "PERMEABILITY"]:
-            pos = valid[valid > 0]
-            if len(pos) > 0:
-                results[curve_name] = float(np.exp(np.mean(np.log(pos))))
-            else:
-                results[curve_name] = np.nan
-        else:
-            results[curve_name] = float(np.mean(valid))
+        values = np.log(data[valid]) if geometric else data[valid]
+        average = float(np.sum(values * weights[valid]) / np.sum(weights[valid]))
+        results[curve_name] = float(np.exp(average)) if geometric else average
 
     return results
 
@@ -211,6 +223,8 @@ def calculate_weighted_averages(
     Calculate averages weighted by a curve (e.g. porosity-weighted).
 
     Each sample is weighted by ``weight_curve`` alone, not by its thickness.
+    When ``net_pay_curve`` is named and is not on the well, a warning is
+    given and every average is NaN.
 
     Parameters
     ----------
@@ -242,6 +256,14 @@ def calculate_weighted_averages(
         net_pay = well.get(net_pay_curve)
         if net_pay is not None:
             mask = mask & (net_pay.data > 0.5)
+        elif not reproducing_benchmark():
+            warnings.warn(
+                f"Net-pay flag curve {net_pay_curve!r} is not on the well, so there is no pay to "
+                "average over: the averages are NaN. Pass net_pay_curve=None to average every "
+                "sample of the interval.",
+                UserWarning, stacklevel=2,
+            )
+            return {name: np.nan for name in curves}
 
     # Get weights
     weight_c = well.get(weight_curve)
@@ -294,9 +316,9 @@ def calculate_pore_volume_weighted_sw(
     Sw_pv = sum(Sw * PHIE * h) / sum(PHIE * h), with h each sample's
     thickness, so the samples holding the most pore volume count most and
     ``(1 - Sw_pv) * sum(PHIE * h)`` is the hydrocarbon pore thickness.
-    Porosity is the one curve of the pay averages (PHIE_CC where the
-    interpretation produced or used it, else PHIE; see
-    :func:`~petrophys.evaluation.summaries.zone_summary.pay_average_curves`).
+    Porosity is that of the pay averages (PHIE_CC where the interpretation
+    produced or used it, PHIE at the samples it does not cover; see
+    :func:`~petrophys.evaluation.summaries.zone_summary.pay_average_data`).
     Samples without a finite SW and porosity are left out.
 
     Parameters
@@ -323,12 +345,10 @@ def calculate_pore_volume_weighted_sw(
         mask &= np.asarray(net_pay.data, dtype=float) > 0.5
 
     sw, _, _ = get_curve_data_depthwise(well, ["SW"])
-    phie_name = pay_average_curves(well)["PHIE"]
-    phie, _, _ = get_curve_data_depthwise(well, [phie_name] if phie_name else [])
-    if sw is None or phie is None:
+    if sw is None or pay_average_curves(well)["PHIE"] is None:
         return np.nan
     sw = np.asarray(sw, dtype=float)
-    phie = np.asarray(phie, dtype=float)
+    phie = pay_average_data(well)["PHIE"]
     valid = mask & np.isfinite(sw) & np.isfinite(phie) & (phie > 0)
     pore_volume = phie[valid] * cell_thickness(depth)[valid]
     total = float(np.sum(pore_volume))

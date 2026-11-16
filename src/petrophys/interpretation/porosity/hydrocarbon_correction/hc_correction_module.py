@@ -36,7 +36,11 @@ class HcCorrectionModule:
         rho_cl: float = 2.45,
         rho_hc: Optional[float] = None,
         hydrogen_index: Optional[float] = None,
+        floor_porosity: Optional[bool] = None,
     ):
+        #: Count a negative preliminary porosity as 0 in the density
+        #: correction (see :func:`correct_density_hc`).
+        self.floor_porosity = floor_porosity
         self.hc_type = hc_type
         self.rho_ma = rho_ma
         self.rho_fl = rho_fl
@@ -92,7 +96,8 @@ class HcCorrectionModule:
         )
         rhob_hc = correct_density_hc(
             rhob, phi, sxo, self.rho_fl, self.hc_type,
-            vcl=vcl, rho_ma=self.rho_ma, rho_cl=self.rho_cl, rho_hc=self.rho_hc
+            vcl=vcl, rho_ma=self.rho_ma, rho_cl=self.rho_cl, rho_hc=self.rho_hc,
+            floor_porosity=self.floor_porosity,
         )
 
         return HcCorrectionResult(nphi_hc=nphi_hc, rhob_hc=rhob_hc)

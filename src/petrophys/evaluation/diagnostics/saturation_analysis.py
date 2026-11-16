@@ -75,6 +75,34 @@ class SaturationAnalysis:
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
+        """Classify each sample's saturation and fluid indicators and summarize them by interval.
+
+        Parameters
+        ----------
+        well : Well
+            Interpreted well. Water saturation (SW), flushed-zone saturation
+            (SXO), porosity, BVW, MHI, the flushed-zone and deep
+            resistivities, the density and neutron porosities, DRHO and the
+            compressional slowness are read where present; a class that
+            needs an absent curve is undetermined.
+        add_curves : bool, default True
+            Add the derived curves that hold values to ``well``, replacing
+            curves of the same name: ``ND_SEPARATION`` (v/v) and
+            ``PHIT_GAS_CORR`` (v/v), computed where the density and neutron
+            porosities exist.
+
+        Returns
+        -------
+        CategoryAnalysisResult
+            Sections ``water_saturation_estimation_analysis``,
+            ``bulk_volume_water_porosity_integration``,
+            ``hydrocarbon_movability_invasion_characteristics``,
+            ``fluid_contact_detection_indicators``,
+            ``gas_indicator_analysis_methods`` and
+            ``integrated_saturation_interpretation``, each with its
+            description, method, thresholds and the depth intervals of every
+            class, and the derived curves in ``derived_curves``.
+        """
         benchmark = self.class_tables == "geolink"
         n_samples = well.n_samples
         sw, sw_source = get_curve_data(well, ["SWA", "SW", "SWT-LOG"])

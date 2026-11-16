@@ -5,7 +5,7 @@ This module provides the PorosityModule class for comprehensive
 porosity analysis.
 """
 
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Dict, Optional, Sequence, Union
 from dataclasses import dataclass
 import warnings
 import numpy as np
@@ -13,6 +13,7 @@ import numpy as np
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.constants import DefaultParameters, MatrixProperties
 from petrophys.interpretation.porosity.density_porosity import density_porosity
+from petrophys.interpretation.porosity.neutron_porosity import neutron_porosity
 from petrophys.interpretation.porosity.sonic_porosity import (
     secondary_porosity,
     wyllie_time_average,
@@ -23,6 +24,38 @@ from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
+
+
+def check_standard_units(well: "Well", curves: Dict[str, Sequence[str]]) -> None:
+    """Refuse log curves labelled with a unit other than the one the equations take.
+
+    ``curves`` maps a standard mnemonic (``"RHOB"``) to the mnemonics read for
+    it. A curve whose unit label has a known conversion to the standard unit
+    (kg/m3 for g/cm3, pu or % for v/v, us/m for us/ft) raises ``ValueError``.
+    A blank label, the standard unit under any spelling (g/cc, m3/m3) and a
+    label with no known conversion pass. :func:`petrophys.interpret` converts
+    units before it interprets; the interpretation modules do not.
+    """
+    from petrophys.preprocessing.standardization.alias_map import get_standard_unit
+    from petrophys.preprocessing.standardization.unit_converter import _conversion_factor
+
+    for standard, names in curves.items():
+        standard_unit = get_standard_unit(standard)
+        if standard_unit is None:
+            continue
+        for name in names:
+            curve = well.get(name)
+            unit = str(getattr(curve, "unit", "") or "").strip()
+            if curve is None or not unit:
+                continue
+            factor = _conversion_factor(unit, standard_unit, spellings=True)
+            if factor is not None and not np.isclose(factor, 1.0):
+                raise ValueError(
+                    f"{curve.mnemonic} is in {unit}, and the calculation takes {standard} in "
+                    f"{standard_unit}. Convert the well first with "
+                    "petrophys.preprocessing.standardization.standardize_curves(well, convert_units=True), "
+                    "or use petrophys.interpret, which converts units before it interprets."
+                )
 
 
 @dataclass
@@ -59,11 +92,22 @@ class PorosityModule:
     Parameters
     ----------
     matrix : str, optional
-        Matrix type (default: "sandstone")
+        Matrix type (default: "sandstone"). It gives the matrix density of
+        PHID, the matrix slowness of PHIS and the matrix neutron reading
+        (``nphi_matrix``, on the limestone scale: sandstone -0.02, limestone
+        0, dolomite 0.02) that NPHI is referred to, ``NPHI - nphi_matrix``,
+        before it is combined with PHID into PHIT, as
+        :func:`petrophys.interpret` does.
     rhob_fluid : float, optional
         Fluid density (default: 1.0 g/cc)
     phi_clay : float, optional
         Clay-bound porosity used in effective porosity (default: 0.15)
+
+    Notes
+    -----
+    The curves are read in g/cm3 (RHOB), v/v (NPHI) and us/ft (DTC), and are
+    not converted: a curve labelled in another unit raises ``ValueError``
+    (see :func:`check_standard_units`).
 
     Examples
     --------
@@ -92,6 +136,7 @@ class PorosityModule:
             ) from None
         self.rhob_matrix = MatrixProperties.get_log_density(matrix)
         self.dtc_matrix  = props.slowness
+        self.nphi_matrix = props.nphi
 
     def calculate(
         self,
@@ -113,7 +158,16 @@ class PorosityModule:
         Returns
         -------
         PorosityResult
+
+        Raises
+        ------
+        ValueError
+            Without RHOB, or when RHOB, NPHI or the sonic is labelled with
+            another unit than g/cm3, v/v and us/ft (kg/m3, pu, us/m ...):
+            the module does not convert units.
         """
+        if not reproducing_benchmark():
+            check_standard_units(well, {"RHOB": ["RHOB"], "NPHI": ["NPHI"], "DTC": ["DTC", "DT"]})
         rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
         nphi, _, _ = get_curve_data_depthwise(well, ["NPHI"])
         dtc, _, _ = get_curve_data_depthwise(well, ["DTC", "DT"])
@@ -140,6 +194,10 @@ class PorosityModule:
             )
 
         # --- Total porosity (N-D) ---
+        if nphi is not None and not reproducing_benchmark():
+            # NPHI is on the limestone scale: refer it to the matrix, as PHID
+            # is, before the two are combined.
+            nphi = neutron_porosity(nphi, nphi_matrix=self.nphi_matrix)
         phit = total_porosity(nphi, phid) if nphi is not None else phid
 
         # --- Effective porosity ---

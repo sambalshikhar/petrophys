@@ -84,7 +84,7 @@ gamma = interpret_spectral_gamma(well25, alias_overrides={"SGR": ["GR"]})
 gamma.output_curves
 ```
 
-The run ends at 3432 m with held readings (values repeated exactly, then zeros), so the plot stops at 3423 m. Between 2906 and 3423 m, 373 of the 3397 logged samples get at least half their gamma ray from uranium (`SGR_URANIUM_FRACTION` of 0.5 or more, flagged in `SGR_URANIUM_EXCESS_FLAG`); 350 of them lie in the uranium-rich shale above 2990 m, where uranium reaches 34 ppm:
+The run ends at 3432 m with held readings (values repeated exactly, then zeros), so the plot stops at 3423 m. Between 2906 and 3423 m, 371 of the 3395 logged samples get at least half their gamma ray from uranium (`SGR_URANIUM_FRACTION` of 0.5 or more, flagged in `SGR_URANIUM_EXCESS_FLAG`); 350 of them lie in the uranium-rich shale above 2990 m, where uranium reaches 34 ppm:
 
 ```{code-cell} python
 pp.plot(well25, curves=["GR", "THOR", "URAN", "SGR_URANIUM_FRACTION"], top=2900, bottom=3423,
@@ -103,7 +103,8 @@ from petrophys.interpretation.core_analysis import (
     calibrate_porosity, core_data_from_well, fit_poro_perm_transform,
 )
 
-result = pp.interpret(pp.sample("30_6-5"), rw=0.07, rw_meas_temp_f=230)
+result = pp.interpret(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"),
+                      rw=0.07, rw_meas_temp_f=230)
 core = core_data_from_well(result)
 core
 ```
@@ -132,7 +133,11 @@ plot_poro_perm(core, transform=transform, title="Core poro-perm and transform");
 
 `pp.interpret` applies a core calibration itself when the well has core: it writes
 core-corrected effective porosity `PHIE_CC` and, from it, permeability `PERM_CC` on
-the plugs' scale (left undefined in rock shalier than the plugs). Plot density
+the plugs' scale. Both are written over the whole well: with formation tops, as here,
+a formation with at least three plugs (the Brent Group, 2841-2958 m) gets a model of
+its own and the other formations the whole-well model, far from the rock the plugs
+sample. `PERM_CC` is written only where clay volume is at or below the net-rock clay
+cutoff (0.40 for sandstone); `PERM` holds elsewhere. Plot density
 porosity and `PERM_CC` with the plugs
 ({func}`~petrophys.interpretation.core_analysis.apply_poro_perm_transform` applies a
 transform of your own to any porosity curve):
@@ -202,8 +207,9 @@ fit.plot();
 The FWL is 8585.1 ft (95 % range 8574.0-8604.1 ft), with an RMS Sw misfit of 0.084:
 the model follows log Sw from the low-saturation column down through the transition
 zone. HW-24 has no TVD curve, so its depth index is taken as true vertical depth, which
-holds for a vertical well only; for a deviated well, pass `tvd_curve`. A well that logs
-no transition zone only bounds the FWL: for HW-3 the answer is "deeper than 8116.7 ft".
+holds for a vertical well only; for a deviated well, pass `tvd_curve`. Where the misfit
+keeps falling to the deep end of the search, the result is only a bound: for HW-3, whose
+log Sw stays low until the last 10 ft of the file, the answer is "deeper than 8116.7 ft".
 
 The water contact, where Sw first falls below 1, lies above the FWL by the height of the
 entry pressure. With the median oil-brine entry pressure of the plugs (1.54 psi), it is

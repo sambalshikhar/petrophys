@@ -13,17 +13,22 @@ the 112 MB borehole-image sample that the borehole-image tutorial fetches on
 first use.
 
 On a company computer you may not be allowed to install programs. Ask your IT
-department for Python 3.12 and permission to install Python packages with
+department for Python 3.13 and permission to install Python packages with
 `pip`, or for your company's package mirror.
 
 ## 1. Install Python
 
-Download Python 3.12 from [python.org/downloads](https://www.python.org/downloads/)
-(Petrophys runs on Python 3.9 to 3.13) and run the installer.
+Petrophys runs on Python 3.9 to 3.13. The main download button on python.org
+offers a later version, so take a Python 3.13 installer from the page for your
+system:
 
-- **Windows:** on the first installer screen, tick **Add python.exe to
-  PATH**, then click **Install Now**.
-- **macOS:** open the downloaded `.pkg` file and follow the steps.
+- **Windows:** open [python.org/downloads/windows](https://www.python.org/downloads/windows/),
+  find the newest **Python 3.13** release in the list of stable releases and
+  download its **Windows installer (64-bit)**. Run it: on the first screen,
+  tick **Add python.exe to PATH**, then click **Install Now**.
+- **macOS:** open [python.org/downloads/macos](https://www.python.org/downloads/macos/),
+  find the newest **Python 3.13** release and download its **macOS
+  installer**. Open the downloaded `.pkg` file and follow the steps.
 
 ## 2. Install Petrophys and JupyterLab
 
@@ -54,9 +59,9 @@ learning used to fill gaps in logs.
 
 Create a folder, for example `Documents\petrophys`, and copy your LAS files
 into it. To work through a tutorial, open its page on this site, click the
-source icon at the top of the page to see the notebook on GitHub, and use
-GitHub's **Download raw file** button to save the `.ipynb` file into the same
-folder.
+eye icon (**View this page**) at the top of the page to see the notebook on
+GitHub, and use GitHub's **Download raw file** button to save the `.ipynb`
+file into the same folder.
 
 ## 4. Start JupyterLab
 

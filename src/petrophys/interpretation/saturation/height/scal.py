@@ -76,8 +76,13 @@ def _bare(name: Any) -> str:
 
 
 def _header_unit(name: Any) -> str:
+    """The unit a header gives: in brackets (``Pc (kPa)``), else a pressure
+    unit as its last word (``Pc_kPa``, ``PC_BAR``); lower case, "" for none."""
     match = re.search(r"[\(\[]\s*([^\)\]]+?)\s*[\)\]]", str(name))
-    return match.group(1).strip().lower() if match else ""
+    if match:
+        return match.group(1).strip().lower()
+    words = re.findall(r"[a-z0-9]+", str(name).lower())
+    return words[-1] if len(words) > 1 and words[-1] in _PC_UNITS else ""
 
 
 def _nonwetting(name: Any) -> bool:
@@ -143,14 +148,24 @@ def fit_thomeer(pc_psi: Any, bv_percent: Any) -> Dict[str, float]:
     (porosity x non-wetting saturation x 100), at each injection pressure
     ``pc_psi``. Returns ``Pd`` (entry pressure, psi), ``G`` (pore geometrical
     factor), ``BV_INF`` (bulk volume at infinite pressure, %) and ``R2``. One
-    pore system; a bimodal curve is described by its dominant system.
+    pore system; a bimodal curve is described by its dominant system. Fewer
+    than 4 points with mercury entered, no point with a positive pressure and
+    a mercury volume, or the same mercury volume at every pressure (no curve
+    to fit) raise ValueError.
     """
     from scipy.optimize import least_squares
 
-    pc = np.asarray(pc_psi, dtype=float)
-    bv = np.asarray(bv_percent, dtype=float)
+    pc = np.asarray(pc_psi, dtype=float).reshape(-1)
+    bv = np.asarray(bv_percent, dtype=float).reshape(-1)
+    if pc.size != bv.size:
+        raise ValueError(f"pc_psi has {pc.size} values and bv_percent {bv.size}; they must match")
     ok = np.isfinite(pc) & np.isfinite(bv) & (pc > 0)
     pc, bv = pc[ok], bv[ok]
+    if pc.size == 0:
+        raise ValueError("no point with a positive pressure and a mercury volume to fit a Thomeer hyperbola")
+    if float(np.ptp(bv)) <= 1e-9 * max(abs(float(bv.max())), 1.0):
+        raise ValueError(f"the mercury volume is {float(bv.max()):.3g}% at every pressure, so there is "
+                         "no curve to fit a Thomeer hyperbola to")
     entered = bv > 0.01 * max(float(bv.max()), 1e-9)
     if np.count_nonzero(entered) < 4:
         raise ValueError("need at least 4 points with mercury entered to fit a Thomeer hyperbola")
@@ -194,6 +209,7 @@ class CapillaryPressureData:
 
     @property
     def n_samples(self) -> int:
+        """The number of plugs."""
         return int(self.table["SAMPLE"].nunique())
 
     @property
@@ -253,7 +269,11 @@ class CapillaryPressureData:
         return self.thomeer()["Pd"].rename("ENTRY_PRESSURE")
 
     def plot(self, ax: Any = None) -> Any:
-        """The curves, Pc (log) against Sw, coloured by permeability."""
+        """The curves, Pc (log) against Sw, coloured by permeability.
+
+        Drawn on ``ax`` when given, else on a figure of its own; returns the
+        figure.
+        """
         import matplotlib.pyplot as plt
         from matplotlib.colors import LogNorm
 
@@ -303,13 +323,24 @@ def read_capillary_pressure(
     unless named. Porosity and saturation in percent become v/v.
 
     ``pc_unit`` is the pressure unit (``psi``, ``kPa``, ``MPa``, ``bar``,
-    ``atm``); by default the unit in the header, else psi. ``saturation`` is
+    ``atm``); by default the unit in the header, in brackets (``Pc (kPa)``)
+    or as its last word (``Pc_kPa``, ``PC_BAR``), else psi. ``saturation`` is
     ``"wetting"`` (Sw) or ``"nonwetting"`` (mercury saturation, converted to
     Sw = 1 - SHg); by default a header naming mercury (``Hg Saturation``) is
     non-wetting. A saturation that rises with pressure in most plugs is not
-    Sw, and is refused with a pointer to ``saturation="nonwetting"``.
+    Sw, and is refused with a pointer to the other ``saturation`` setting.
     ``system`` names the laboratory fluids, which set the interfacial tension
-    and contact angle (``ift``, ``theta`` override them).
+    and contact angle (``ift``, ``theta`` override them). ``sheet_name`` is
+    the sheet of an Excel workbook (default: the first).
+
+    A plug named on its first row only (merged cells in a spreadsheet) owns
+    the rows down to the next plug, and those rows take its porosity,
+    permeability and depth where theirs are blank. Rows without a number for
+    Pc, saturation, porosity or permeability are dropped.
+
+    A named column that is absent, or a required column that cannot be
+    found, raises KeyError; an unknown ``system``, ``pc_unit`` or
+    ``saturation``, or a table with no usable row, raises ValueError.
     """
     import pandas as pd
 
@@ -321,6 +352,8 @@ def read_capillary_pressure(
             ".xlsx", ".xls", ".xlsm") else pd.read_csv(path)
     if system not in FLUID_SYSTEMS:
         raise ValueError(f"system must be one of {sorted(FLUID_SYSTEMS)}; got {system!r}")
+    if frame.empty:
+        raise ValueError("The capillary-pressure table has no rows")
     names = {
         "SAMPLE": _column(frame, sample, "sample"),
         "PC": _column(frame, pc, "pc"),
@@ -332,7 +365,20 @@ def read_capillary_pressure(
     table = pd.DataFrame({key: frame[name] for key, name in names.items() if name is not None})
     for key in ("PC", "SW", "POROSITY", "PERMEABILITY"):
         table[key] = pd.to_numeric(table[key], errors="coerce")
-    table = table.dropna(subset=["PC", "SW", "POROSITY", "PERMEABILITY"]).reset_index(drop=True)
+    # A plug named on its first row only (merged cells) owns the rows below it.
+    unnamed = table["SAMPLE"].isna() | (table["SAMPLE"].astype(str).str.strip() == "")
+    if unnamed.any():
+        table["SAMPLE"] = table["SAMPLE"].mask(unnamed).ffill()
+        for key in ("POROSITY", "PERMEABILITY", "DEPTH"):
+            if key in table:
+                table[key] = table[key].where(~unnamed | table[key].notna(),
+                                              table.groupby("SAMPLE")[key].ffill())
+    table = table.dropna(subset=["SAMPLE", "PC", "SW", "POROSITY", "PERMEABILITY"]).reset_index(drop=True)
+    if table.empty:
+        raise ValueError(
+            "No row of the table has a plug name and a number for Pc, saturation, porosity and "
+            f"permeability (columns read: {', '.join(str(name) for name in names.values() if name is not None)})"
+        )
     unit = (pc_unit or _header_unit(names["PC"]) or "psi").strip().lower()
     if unit not in _PC_UNITS:
         raise ValueError(f"Unknown pressure unit {unit!r}; give pc_unit= as one of {sorted(_PC_UNITS)}")
@@ -349,9 +395,17 @@ def read_capillary_pressure(
         for _, group in table.groupby("SAMPLE") if len(group) > 2 and group["SW"].std() > 0
     ]
     if rising and np.mean(rising) > 0.5:
+        count = f"{int(np.sum(rising))} of {len(rising)} plugs"
+        if kind == "nonwetting":
+            why = 'saturation="nonwetting" was given' if saturation else "its header names the non-wetting phase"
+            raise ValueError(
+                f"The saturation in {names['SW']!r} was read as non-wetting ({why}) and converted to "
+                f"Sw = 1 - S, which rises with capillary pressure in {count}: the column falls with "
+                'pressure, so it is the wetting-phase Sw already. Pass saturation="wetting".'
+            )
         raise ValueError(
             f"The saturation in {names['SW']!r} rises with capillary pressure in "
-            f"{int(np.sum(rising))} of {len(rising)} plugs, so it is not the wetting-phase Sw: "
+            f"{count}, so it is not the wetting-phase Sw: "
             'mercury (non-wetting) saturation? Pass saturation="nonwetting".'
         )
     lab_ift, lab_theta = FLUID_SYSTEMS[system]
@@ -374,8 +428,9 @@ def fit_j_function_from_core(
 ) -> JFunctionModel:
     """Fit one Leverett J-function to the plugs' capillary-pressure curves.
 
-    The curves are converted to reservoir ``fluids`` (``ift`` and ``theta``
-    override the table's values), each point's J is computed from its Pc,
+    The curves are converted to reservoir ``fluids`` (``ift``, dyne/cm, and
+    ``theta``, degrees, override that fluid system's interfacial tension and
+    contact angle), each point's J is computed from its Pc,
     permeability and porosity, and ``Sw = a * J^b`` is fitted (``form`` and
     ``swir`` as in :func:`fit_j_function`). Points where the non-wetting
     phase has not entered (Sw = 1) and points above ``max_height_ft`` of
@@ -413,12 +468,17 @@ def water_contact_from_fwl(
     ``h = Pd / (0.433 * (sg_water - sg_hc))`` ft. ``entry_pressure_psi`` is the
     entry pressure at reservoir conditions (``data.to_reservoir().entry_pressure()``,
     e.g. its median, or the value of the rock type at the contact). Depth
-    increases downwards, in ``depth_unit`` (``"ft"`` or ``"m"``).
+    increases downwards, in ``depth_unit``: feet or metres, as any spelling
+    of them (``"ft"``, ``"F"``, ``"m"``, ``"M"``, ``"metres"``). A
+    ``depth_unit`` that is neither raises ValueError.
     """
+    from petrophys.model.units import normalize_depth_unit
+
     if sg_water <= sg_hc:
         raise ValueError("sg_water must exceed sg_hc")
+    unit = normalize_depth_unit(depth_unit, strict=True)
     height_ft = float(entry_pressure_psi) / (WATER_GRADIENT_PSI_PER_FT * (sg_water - sg_hc))
-    return float(fwl_depth) - (height_ft * 0.3048 if depth_unit == "m" else height_ft)
+    return float(fwl_depth) - (height_ft * 0.3048 if unit == "m" else height_ft)
 
 
 @dataclass
@@ -426,12 +486,25 @@ class FWLFromLogs:
     """The free-water level that best explains the log water saturation.
 
     ``fwl`` is the best depth, ``low`` and ``high`` its 95% range, ``rms`` the
-    Sw misfit there, ``n`` the samples used, and ``profile`` the misfit at
-    each candidate depth. Where the logs do not reach the transition zone the
-    misfit keeps falling to the edge of the search: ``bound`` is then
-    ``"deeper"`` (the FWL lies below ``low``; a well entirely in the oil leg)
-    or ``"shallower"`` (above ``high``; a well in the water leg), and ``fwl``
-    is NaN.
+    Sw misfit there, ``r2`` the share of the log Sw variance the model
+    explains there, ``n`` the samples used, and ``profile`` the misfit at
+    each candidate depth (columns ``FWL`` and ``RMS``). Depths are in
+    ``depth_unit``. ``search`` is the shallowest and deepest candidate depth
+    and ``sample_depths`` the shallowest and deepest sample used.
+
+    Where the least misfit is at an edge of the search the FWL is not
+    resolved, ``fwl`` is NaN and ``bound`` says what is known. ``"deeper"``:
+    the misfit keeps falling to the bottom of the search, so the FWL lies
+    below ``low`` (``high`` is infinite); where the search reaches below the
+    deepest sample the samples are all above the transition zone.
+    ``"shallower"``: the least misfit is at the top of the search, so the FWL
+    is at or above that depth and above ``high`` (``low`` is minus infinity);
+    where the search starts at or above the shallowest sample the samples
+    are all in the water leg.
+
+    ``range_cut`` tells whether the 95% range of a resolved FWL is cut by the
+    search: ``"top"``, ``"bottom"`` or ``"both"`` where the range reaches
+    that edge of the search and may extend beyond it, else ``""``.
     """
 
     fwl: float
@@ -444,14 +517,25 @@ class FWLFromLogs:
     bound: Optional[str] = None
     r2: float = float("nan")
     _plot_data: Dict[str, Any] = field(default_factory=dict, repr=False)
+    search: Tuple[float, float] = (float("nan"), float("nan"))
+    sample_depths: Tuple[float, float] = (float("nan"), float("nan"))
+    range_cut: str = ""
 
     def __repr__(self) -> str:
+        unit = self.depth_unit
         if self.bound == "deeper":
-            where = f"FWL deeper than {self.low:.1f} {self.depth_unit} (no transition zone logged)"
+            where = f"FWL deeper than {self.low:.1f} {unit}"
+            if self.search[1] >= self.sample_depths[1]:
+                where += " (no transition zone logged)"
         elif self.bound == "shallower":
-            where = f"FWL shallower than {self.high:.1f} {self.depth_unit} (the well is in the water leg)"
+            where = f"FWL at or above the top of the search, {self.search[0]:.1f} {unit}"
+            if self.search[0] <= self.sample_depths[0]:
+                where += " (the samples used are in the water leg)"
         else:
-            where = f"FWL {self.fwl:.1f} {self.depth_unit}, 95% range {self.low:.1f}-{self.high:.1f}"
+            where = f"FWL {self.fwl:.1f} {unit}, 95% range {self.low:.1f}-{self.high:.1f}"
+            if self.range_cut:
+                edge = "top and bottom" if self.range_cut == "both" else self.range_cut
+                where += f" (cut by the {edge} of the search)"
         return f"FWLFromLogs({where}, RMS Sw misfit {self.rms:.3f}, R2 {self.r2:.2f}, n={self.n})"
 
     def plot(self) -> Any:
@@ -520,11 +604,30 @@ def estimate_fwl_from_logs(
     from the misfit profile (an F-test on the summed squared misfit, with the
     sample count reduced for the correlation of neighbouring log samples).
     ``top`` and ``bottom`` bound the samples used, ``search`` the candidate
-    depths (default: from the middle of the samples' depth span to one span
-    below the deepest). Depths are in the well's depth unit, or the
-    ``tvd_curve``'s. Takes a well or an interpretation result. ``r2`` is how
-    much of the log Sw the model explains at the best FWL. Compare the
-    estimate with a pressure FWL where one exists.
+    depths as ``(shallowest, deepest)`` (default: from the shallowest sample
+    used, less 1/400 of the samples' depth span, to one span below the
+    deepest). Takes a well
+    or an interpretation result. ``r2`` is how much of the log Sw the model
+    explains at the best FWL. Compare the estimate with a pressure FWL where
+    one exists.
+
+    ``sw_curve``, ``perm_curve`` and ``phi_curve`` each name a curve or
+    several in order of preference; at each depth the first of them with a
+    value is used. Height is measured along ``tvd_curve`` when one is named;
+    otherwise the depth index is taken as true vertical depth, with a
+    warning. ``search`` and the depths of the result are in the unit and on
+    the datum of that depth: the ``tvd_curve``'s when one is named, else the
+    well's depth index. ``top`` and ``bottom`` are always depths on the
+    well's depth index (measured depth), also when ``tvd_curve`` is named.
+
+    Where the least misfit is at the top or the bottom of the search the FWL
+    is not resolved and the result's ``bound`` says on which side it lies;
+    where the 95% range reaches an edge of the search its ``range_cut`` says
+    so (see :class:`FWLFromLogs`). Widen ``search`` in either case.
+
+    A well with none of the named curves, or fewer than 20 samples with Sw,
+    permeability and porosity, raises ValueError, as does a ``search`` that
+    is not two finite depths with the shallower first.
     """
     import pandas as pd
     from scipy.stats import f as f_dist
@@ -552,8 +655,19 @@ def estimate_fwl_from_logs(
         raise ValueError(f"{n} samples with Sw, permeability and porosity; at least 20 are needed")
     z, sw, perm, phi = depth[use], data["sw"][use], data["perm"][use], data["phi"][use]
     span = float(z.max() - z.min()) or 1.0
-    low_search, high_search = search if search is not None else (float(z.min()) + 0.5 * span, float(z.max()) + span)
-    candidates = np.linspace(low_search, high_search, 401)
+    if search is None:
+        # From just above the shallowest sample, in steps of 3/800 of the span.
+        low_search, high_search, count = float(z.min()) - span / 400.0, float(z.max()) + span, 535
+    else:
+        count = 401
+        try:
+            low_search, high_search = (float(value) for value in search)
+        except (TypeError, ValueError):
+            raise ValueError(f"search must be two depths, (shallowest, deepest); got {search!r}") from None
+        if not (np.isfinite(low_search) and np.isfinite(high_search) and low_search < high_search):
+            raise ValueError("search must be two finite depths with the shallower first, "
+                             f"(shallowest, deepest) in {unit}; got {search!r}")
+    candidates = np.linspace(low_search, high_search, count)
     to_ft = 1.0 / 0.3048 if unit == "m" else 1.0
     sse = np.empty(candidates.size)
     for i, fwl in enumerate(candidates):
@@ -571,15 +685,25 @@ def estimate_fwl_from_logs(
     threshold = sse[best] * (1.0 + f_dist.ppf(0.95, 1, n_eff - 1.0) / (n_eff - 1.0))
     inside = candidates[sse <= threshold]
     low, high, fwl, bound = float(inside.min()), float(inside.max()), float(candidates[best]), None
+    range_cut = ""
     if best == candidates.size - 1:
         bound, fwl, high = "deeper", float("nan"), float("inf")
     elif best == 0:
         bound, fwl, low = "shallower", float("nan"), float("-inf")
+    else:
+        cut_top, cut_bottom = bool(sse[0] <= threshold), bool(sse[-1] <= threshold)
+        range_cut = "both" if cut_top and cut_bottom else "top" if cut_top else "bottom" if cut_bottom else ""
+        if range_cut:
+            edge = "top and bottom" if range_cut == "both" else range_cut
+            warnings.warn(f"estimate_fwl_from_logs: the 95% range of the FWL reaches the {edge} of the "
+                          f"search ({low_search:.1f}-{high_search:.1f} {unit}) and may extend beyond it; "
+                          "widen search= to see the whole range.", UserWarning, stacklevel=2)
     ss_tot = float(np.sum((sw - sw.mean()) ** 2))
     r2 = 1.0 - float(sse[best]) / ss_tot if ss_tot > 0 else float("nan")
     profile = pd.DataFrame({"FWL": candidates, "RMS": np.sqrt(sse / n)})
     return FWLFromLogs(
         fwl=fwl, low=low, high=high, rms=float(np.sqrt(sse[best] / n)), n=n, depth_unit=unit, r2=r2,
-        profile=profile, bound=bound,
+        profile=profile, bound=bound, search=(float(low_search), float(high_search)),
+        sample_depths=(float(z.min()), float(z.max())), range_cut=range_cut,
         _plot_data={"depth": z, "log_sw": sw, "model_sw": predicted, "best": float(candidates[best])},
     )

@@ -67,6 +67,9 @@ class WashoutDetection:
         Maximum valid PEF (default: 7)
     pef_min : float, optional
         Minimum valid PEF (default: 0.5)
+    large_hole_threshold : float, optional
+        Bit size above which the hole is flagged as large (default: 17.5
+        inches)
 
     Examples
     --------

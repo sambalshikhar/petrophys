@@ -262,6 +262,16 @@ def export_context(
     ``pattern``, ``formations`` and ``lithology_codes`` apply. Context
     profiles apply only to the package layout, and only the context JSON is
     written to ``output_path``.
+
+    ``max_bytes`` (default 1,000,000) is the largest size of one JSON
+    document and ``max_total_bytes`` (default: no limit) that of a whole
+    package; a larger export raises ``ContextSizeError`` and writes nothing.
+    A well summary is not written over an existing file unless
+    ``overwrite=True``; a package always needs a folder that does not exist
+    yet. The well layout returns the summary (a dict) or the path of the
+    written file, and the package layout a list with one export result per
+    written context file (``source_file``, ``output_file``, ``success``,
+    ``warnings`` and ``errors``).
     """
     for name, internal in _INPUT_NAMES.items():
         if internal in options:

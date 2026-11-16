@@ -307,6 +307,33 @@ class FlowUnitModule:
         perm: Optional[np.ndarray] = None,
         phi_e: Optional[np.ndarray] = None,
     ) -> FlowUnitResult:
+        """Determine the well's hydraulic flow units.
+
+        Parameters
+        ----------
+        well : Well
+            Well whose permeability and porosity curves are read when
+            ``perm`` or ``phi_e`` is not given.
+        perm : array, optional
+            Permeability per depth sample, mD. By default, at each depth the
+            first of PERM_CC, PERM, PERM_CORE and PERM_TIMUR with a value.
+        phi_e : array, optional
+            Effective porosity per depth sample, v/v. By default, at each
+            depth the first of PHIE_CC, PHIE and PHIT with a value.
+
+        Returns
+        -------
+        FlowUnitResult
+            Per sample, the flow unit (``hfu``, 0 without data), RQI, phi_z,
+            FZI and the permeability predicted from its unit's mean FZI; and
+            the units' mean FZI and boundaries.
+
+        Raises
+        ------
+        ValueError
+            If the well has no permeability or no porosity curve with finite
+            samples and none is given.
+        """
         if perm is None:
             perm, _, _ = get_curve_data_depthwise(
                 well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"]
@@ -324,6 +351,23 @@ class FlowUnitModule:
         )
 
     def add_to_well(self, well: "Well", result: Optional[FlowUnitResult] = None) -> "Well":
+        """Add the flow-unit curves to the well.
+
+        Parameters
+        ----------
+        well : Well
+            Well to add the curves to.
+        result : FlowUnitResult, optional
+            Result of :meth:`calculate` for this well; calculated from the
+            well's curves when omitted.
+
+        Returns
+        -------
+        Well
+            ``well``, with ``RQI`` (microns), ``PHI_Z`` (v/v), ``FZI``
+            (microns), ``HFU`` (flow unit number, 0 without data) and
+            ``PERM_HFU`` (mD) added or replaced.
+        """
         if result is None:
             result = self.calculate(well)
         well.add_curve("RQI", result.rqi, "microns", "Reservoir Quality Index")

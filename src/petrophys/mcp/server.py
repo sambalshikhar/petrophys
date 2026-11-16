@@ -884,8 +884,8 @@ def create_server(
                 return reply({
                     "depth_unit": well.depth_unit,
                     "zones": [record],
-                    "averages_basis": "avg_phie/avg_sw/avg_vcl are means over net-pay samples; "
-                                      "avg_perm is a geometric mean",
+                    "averages_basis": "over net-pay samples: avg_phie and avg_vcl weighted by "
+                                      "thickness, avg_sw by pore volume; avg_perm is a geometric mean",
                 })
             source: Any = None
             note = None

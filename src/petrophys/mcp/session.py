@@ -82,6 +82,15 @@ class Session:
         Folders whose files may be read and written. Defaults to the
         folders in ``PETROPHYS_MCP_ROOTS`` or, when that is unset, the
         current working directory. Bundled sample data is always readable.
+    wells : dict, optional
+        Loaded wells by well id; empty by default and filled by
+        :meth:`add_well`.
+    sources : dict, optional
+        The source each loaded well was read from, by well id; filled by
+        :meth:`add_well`.
+    interpretations : dict, optional
+        Interpretation id to ``(well id, result)``; empty by default and
+        filled by :meth:`add_interpretation`.
 
     Notes
     -----
@@ -232,6 +241,13 @@ class Session:
         return identifier
 
     def well(self, well_id: str) -> "Well":
+        """Return the loaded well stored under ``well_id``.
+
+        Raises
+        ------
+        SessionError
+            If no well has that id; the message lists the loaded wells.
+        """
         try:
             return self.wells[well_id]
         except KeyError:
@@ -249,6 +265,14 @@ class Session:
         return identifier
 
     def interpretation(self, interpretation_id: str) -> Any:
+        """Return the interpretation or workflow run stored under ``interpretation_id``.
+
+        Raises
+        ------
+        SessionError
+            If no interpretation has that id; when the id is a well's, the
+            message says to interpret that well first.
+        """
         try:
             return self.interpretations[interpretation_id][1]
         except KeyError:

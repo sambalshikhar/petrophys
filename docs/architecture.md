@@ -20,7 +20,7 @@ packages are nouns that hold the individual methods behind them.
 
 | Function (verb) | Package (noun) | Contains |
 |---|---|---|
-| `pp.read` | `petrophys.io` | readers for LAS, DLIS, CSV and geology tables |
+| `pp.read` | `petrophys.io` | readers for LAS, DLIS, CSV, Excel and geology tables |
 | `pp.interpret` | `petrophys.interpretation` | clay volume, porosity, saturation, permeability, lithology, geochemistry, ... |
 | `pp.plot` | `petrophys.visualization` | log panels, crossplots, specialist displays |
 | `pp.impute` | `petrophys.preprocessing.imputation` | curve imputation |

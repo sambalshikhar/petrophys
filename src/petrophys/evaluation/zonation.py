@@ -44,6 +44,16 @@ class Zonation:
     penalty: float = float("nan")
 
     def to_dataframe(self):
+        """The zones as a table, one row per zone in depth order.
+
+        Returns
+        -------
+        DataFrame
+            ``zone`` (its number, from 1), ``top``, ``bottom`` and
+            ``thickness`` (in the unit of the zoned depths), ``samples`` and
+            the mean of each zoned curve in a ``<curve>_mean`` column (the
+            geometric mean for a curve zoned on its logarithm).
+        """
         import pandas as pd
 
         return pd.DataFrame(self.zones)

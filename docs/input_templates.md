@@ -310,8 +310,8 @@ GR_MIN.API 20 : Clean-rock gamma-ray endpoint
 GR_MAX.API 100 : Shale gamma-ray endpoint
 ```
 
-`GR_METHOD` accepts `linear`, `larionov_tertiary`, `larionov_older`, `steiber`
-and `clavier`; `linear` remains the default. The workflow trace and context
+`GR_METHOD` accepts `linear`, `larionov_tertiary`, `larionov_older`, `steiber` (the Stieber transform; `stieber` is read too)
+and `clavier`; `linear` is the default. The workflow trace and context
 notes record the equation and the endpoints actually applied. These settings
 are read per well, including when `--lithology-domain` is supplied. Explicit
 Python settings override the LAS values.

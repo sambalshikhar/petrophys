@@ -46,6 +46,40 @@ def _summary_curves(result: "DynamicWorkflowResult") -> tuple:
     return tuple(names)
 
 
+def depth_window(
+    well: "Well", top: Optional[float], bottom: Optional[float],
+) -> tuple:
+    """The samples of ``well`` between ``top`` and ``bottom`` (inclusive).
+
+    The two depths are read in either order (a top below the bottom is the
+    same window). A window that holds no sample of the well gives a
+    UserWarning naming the logged interval, since every statistic of it is
+    empty.
+
+    Returns
+    -------
+    tuple
+        ``(mask, top, bottom)``: the boolean sample mask and the two depths,
+        shallow first.
+    """
+    import warnings
+
+    if top is not None and bottom is not None and float(top) > float(bottom):
+        top, bottom = bottom, top
+    mask = depth_mask(well.depth, top, bottom)
+    if (top is not None or bottom is not None) and not mask.any() and well.top is not None:
+        unit = well.depth_unit or ""
+        window = " to ".join(
+            f"the {end} of the log" if value is None else f"{float(value):g}"
+            for value, end in ((top, "top"), (bottom, "bottom")))
+        warnings.warn(
+            f"No sample of {well.name} lies in the window {window} {unit}: the well is logged "
+            f"from {well.top:g} to {well.bottom:g} {unit}, so the window's statistics are empty.",
+            UserWarning, stacklevel=4,
+        )
+    return mask, top, bottom
+
+
 def statistics_table(well: "Well", curves: Any = None, top: Optional[float] = None,
                      bottom: Optional[float] = None, default: Iterable[str] = SUMMARY_CURVES) -> Any:
     """A row per curve of ``well`` over a depth window: unit, finite samples,
@@ -59,7 +93,7 @@ def statistics_table(well: "Well", curves: Any = None, top: Optional[float] = No
     missing = [name for name in names if well.get(name) is None]
     if missing:
         raise KeyError(f"No curve {', '.join(missing)} in the well")
-    window = depth_mask(well.depth, top, bottom)
+    window, top, bottom = depth_window(well, top, bottom)
     rows = {}
     for name in names:
         curve = well.get(name)
@@ -126,7 +160,7 @@ def summarize_result(
     from petrophys.workflow.dynamic_workflow import _BENCHMARK_PROFILES, DynamicWorkflowConfig
 
     well = result.well
-    mask = depth_mask(well.depth, top, bottom)
+    mask, top, bottom = depth_window(well, top, bottom)
     defaults = DynamicWorkflowConfig.__dataclass_fields__
     settings = {
         name: getattr(result.config, name)
@@ -182,9 +216,10 @@ def formation_table(well: "Well", formations: Any = None, *, rank: Optional[str]
     pandas.DataFrame
         One row per formation, as returned by
         :meth:`DynamicWorkflowResult.formation_summary`: ``N/G (reservoir)``
-        is net reservoir / gross and ``Pay/Gross`` net pay / gross; each pay
-        average comes from one curve, named in ``DataFrame.attrs["curves"]``
-        (PHIE_CC and PERM_CC where the interpretation produced or used them).
+        is net reservoir / gross and ``Pay/Gross`` net pay / gross; the curve
+        of each pay average is named in ``DataFrame.attrs["curves"]``
+        (PHIE_CC and PERM_CC where the interpretation produced or used them,
+        PHIE and PERM at the samples those do not cover).
 
     Raises
     ------

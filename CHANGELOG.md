@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Petrophys are documented here.
+Release notes for Petrophys: what each version of the library does.
 
 ## 3.0.0 (unreleased)
 
@@ -126,8 +126,8 @@ their raw logs.
   alias (NPHI as PHIN). Core grain density joins the density track, core oil
   saturation and a vendor SW_INPUT the saturation track.
 - The automatic layout scales SP to the well's own baseline (at least 100 mV
-  wide) instead of a fixed -160 to 40 mV, which missed SP curves with a
-  positive offset (30/6-5 reads 50-110 mV); FZI uses 0.01-1000 microns.
+  wide), so an SP curve with a positive offset stays on scale (30/6-5 reads
+  50-110 mV); FZI uses 0.01-1000 microns.
 - Log display conventions in the automatic layout: on a well without a
   bad-hole flag (a raw well), washout shading where the caliper exceeds bit
   size; a flagged well keeps the bad-hole band across all tracks as its only
@@ -137,7 +137,7 @@ their raw logs.
   in its own SONIC track (DTC, DTS); BVW on the porosity scale, so PHIE to
   BVW shows hydrocarbon and BVW to zero water; VCL drawn as a line (clay
   volume is shaded in the mineral volumes track). Header height follows the
-  number of curves, so labels no longer overlap on short figures, and
+  number of curves, so labels do not overlap on short figures, and
   generic-track scales are rounded (60-180, not 68.3032-170.051).
 - `pp.plot(..., curve_styles={"GR": {"color": "black", "right": 200}})`
   changes a curve's colour, scale, line, fill or marker without an XML
@@ -145,72 +145,71 @@ their raw logs.
 - Mineral solver, checked against synthetic mixtures, core grain density and
   vendor lithology logs:
   - Without PEF, the clastic solve (version 1) takes quartz, calcite and
-    dolomite from RHOB and NPHI instead of letting the sonic stand in for PEF.
-    The sonic stand-in called 84-97 % of the vendor-coded carbonates of
-    15/9-14 and 30/6-5 quartz; the new solve calls 74-89 % of them carbonate,
-    with sands and shales unchanged. Beside PEF the sonic row is kept.
+    dolomite from RHOB and NPHI; the sonic does not stand in for PEF, which
+    would read most carbonates as quartz. The solve calls 74-89 % of the
+    vendor-coded carbonates of 15/9-14 and 30/6-5 carbonate. Beside PEF the
+    sonic row is kept.
   - PEF is set aside for a well when it reads like barite-weighted mud: in
     most clean porous samples quartz-like apparent matrix density with
-    calcite-like apparent matrix U. On 30/6-5 the Brent Group sands now solve as
-    quartz (88 % agreement with the vendor log, from 2-7 %) and the solved
-    grain density is within 0.013 g/cm3 of core (was +0.027). The lithology
-    step says so and the result carries a warning.
+    calcite-like apparent matrix U. On 30/6-5 the Brent Group sands then solve
+    as quartz (88 % agreement with the vendor log) and the solved grain
+    density is within 0.013 g/cm3 of core. The lithology step says so and the
+    result carries a warning.
   - A sandstone-referenced neutron (NPSS, CNSS, NPHI_SS) is converted to the
     limestone scale the interpretation reads (first-order -0.04 v/v), with a
-    warning, instead of only being flagged.
+    warning.
   - Samples version 1 cannot solve for want of NPHI, where PEF is logged,
     are solved by version 2 (porosity solved jointly): 25/5-1, whose NPHI
-    covers a short interval, now has mineral volumes over 99 % of the well
-    (from 18 %), agreeing with its vendor log on 90 % of those samples. A
-    well with neither NPHI nor PEF still skips the step, now saying it needs
-    one of them.
-  - The COSTA notebooks' per-sample SLSQP carbonate solve is replaced by the
-    closed-form `solve_carbonate_minerals(..., "costa")`, which solves the
-    same equations: they agree to 1e-7 v/v wherever the optimizer converged,
-    and the closed form also solves the samples it did not (HW-3: 39 samples
-    instead of 20 under the "geolink" calculation profile). No published
-    package used it; the COSTA package keeps its own solve and rebuilds
-    byte for byte. `costa_carbonate` now holds the COSTA constants.
+    covers a short interval, has mineral volumes over 99 % of the well,
+    agreeing with its vendor log on 90 % of those samples. A well with
+    neither NPHI nor PEF skips the step and says it needs one of them.
+  - The COSTA calibration solves its carbonates in closed form,
+    `solve_carbonate_minerals(..., "costa")`, with the equations of the
+    per-sample SLSQP solve in the COSTA notebooks: the two agree to 1e-7 v/v
+    wherever the optimizer converges, and the closed form also solves the
+    samples where it does not (HW-3: 39 samples, against 20 under the
+    "geolink" calculation profile). The COSTA package keeps its own solve and
+    rebuilds byte for byte. `costa_carbonate` holds the COSTA constants.
   - The COSTA calibration's pore fluid is 1.1 g/cm3, the value Craig
     Phillips's notebooks use in their calcite-dolomite solve (their FD = 1.19
     is reset to 1.1 before it runs, as the saved execution order shows), not
-    1.19. At 20 % porosity the difference moved about 13 % of the matrix
+    1.19. At 20 % porosity the difference is worth about 13 % of the matrix
     between calcite and dolomite.
-  - `rho_fl` set by the user now reaches the COSTA calibration's solve,
-    which used 1.1 g/cm3 whatever was set. Left unset, `rho_fl` is the
+  - `rho_fl` set by the user reaches the COSTA calibration's solve. Left
+    unset, `rho_fl` is the
     COSTA brine (1.1) when `carbonate_calibration="costa"` is chosen and
     1.0 otherwise, so porosity and the mineral solve read the same fluid;
     `result.config.rho_fl` holds the value used. `rho_cl` likewise reaches
     the COSTA solve (unset: its 2.52 illite).
-  - The benchmark profiles keep the original solve.
+  - The benchmark profiles keep their packages' solve.
 - Values you set are used as given (normal runs; the benchmark profiles
   keep their calculations):
   - `rho_ma`, `dt_ma` and `nphi_ma` hold at every depth, also where a
-    lithology log sets matrix values per group (they filled only samples
-    outside the groups).
+    lithology log sets matrix values per group.
   - `salinity_ppm` wins over a header RW, and `rw_meas_temp_f` over a
-    header RWT; the Rmf step already ranked explicit settings first.
+    header RWT; the Rmf step ranks explicit settings first too.
   - `bht_f` and `surface_temp_f` win over an input TEMP log (kept as
     TEMP_LOG); zone runs place the BHT at the well's TD, not each zone's base.
   - The SP-derived Rw uses `sp_max` and `sp_min` as its clean and shale lines.
   - The clastic mineral solve uses `rho_fl` and `dt_fl` for its water
     point; core-matrix inference uses `rho_fl`. Waxman-Smits Qv takes the
-    grain density of `matrix_type` when `rho_ma` is unset (it took 2.65).
+    grain density of `matrix_type` when `rho_ma` is unset.
   - `apply_hc_correction=True` without an input SXO skips the step with a
-    warning: it ran before saturation with SXO = 1 and changed nothing.
+    warning: the step runs before saturation, where an assumed SXO of 1
+    would change nothing.
   - In zoned and batch runs a setting passed explicitly keeps its value over
     a LAS header value even when it equals the default.
   - GR baselines you set (`gr_min`/`gr_max`, header `GR_MIN`/`GR_MAX`, zone
-    `GR_MIN_Z1`) are used as given; the 20/100 bound now applies only to the
+    `GR_MIN_Z1`) are used as given; the 20/100 bound applies only to the
     baselines picked from the log (P5/P95 in the workflow, the log extremes in
     `VclModule`/`calculate_vcl`), as a guard against a nearly flat GR.
     `vcl_from_gr` uses the baselines it is given; `bounded_gr_baselines` is
     the bound. A clean pick above 30 API that the bound lowers warns (clean
-    rock may be radioactive): on Cheal-1 the P5 of 64.8 API became 20, and its
-    Mount Messenger sands, about 86 API, read 62 % clay. The "geolink"
-    profile bounds every baseline, as before.
+    rock may be radioactive): on Cheal-1 the bound lowers the P5 of 64.8 API
+    to 20, and its Mount Messenger sands, about 86 API, then read 62 % clay.
+    The "geolink" profile bounds every baseline.
   - `NMRData.from_las(t2_cutoff=...)` beats a T2CUTOFF curve in the file.
-  - `calculate_zone_averages(use_arithmetic=...)` is applied; it was ignored.
+  - `calculate_zone_averages(use_arithmetic=...)` is applied.
   - The reduced quartz-calcite fallback of the version 2 solve keeps the
     caller's `solver_options`.
   - `read_dlis` applies `standardize` to a single frame, and reads a frame
@@ -225,23 +224,24 @@ their raw logs.
     five sampling intervals).
   - `leverett_j`/`pc_from_j` use |IFT cos theta|, so a 140-degree
     air-mercury angle gives a positive J.
-  - Unknown choices raise instead of falling back: `PorosityModule` and
+  - Unknown choices raise an error, with no fallback: `PorosityModule` and
     `VclModule` matrix, `sonic_water_saturation` `hc_type`/`lithology`/
-    `kdry_method` (now case-insensitive), `assign_flow_units` method and
+    `kdry_method` (case-insensitive), `assign_flow_units` method and
     `fit_j_function` form. `n_units` above the distinct FZI values and a
     `min_thickness` under two samples warn.
 - The same settings reach the calculation on every route (normal runs):
   - `run_dynamic_workflow`, `DynamicWorkflow` runs and the batch processor
-    apply the LAS header settings (A/M/N, MATRIX, LITH, SAL, VSHE, ...) as
-    `pp.interpret` does; they used only RW, BHT, RMF and RM.
+    apply the LAS header settings (A/M/N, MATRIX, LITH, SAL, VSHE, ... as
+    well as RW, BHT, RMF and RM) as `pp.interpret` does.
   - `pp.interpret(well, config)` lets header values fill the settings the
-    config leaves at their defaults, as keyword settings already did.
+    config leaves at their defaults, as with keyword settings.
   - Changing `lithology_domain` on an existing config (`interpret(config=...,
     lithology_domain=...)`, a header LITH in zoned runs, `export_context`)
-    re-resolves a `matrix_type` left unset; it kept the clastic sandstone.
+    re-resolves a `matrix_type` left unset, so a carbonate run does not
+    keep the clastic sandstone.
   - `export_context` keeps the caller's explicit settings when
     `lithology_domain` or `lithology` is given.
-  - A header VSHE no longer switches `sw_model` to `north_sea` in zoned runs,
+  - A header VSHE does not switch `sw_model` to `north_sea`, in zoned runs
     as in `pp.interpret`.
   - Settings can differ by depth: `zones=` takes a list of intervals with
     their settings, or a table or CSV/Excel file (`top`, `bottom`, one column
@@ -256,10 +256,10 @@ their raw logs.
     settings, are refused before anything runs. Order: your zone values, your
     whole-well settings, LAS header zone values (`RW_Z1` ...), LAS header
     whole-well values, defaults; a header value yours override is named in
-    the warnings (a header zone value used to win over a setting you passed).
-    `pp.interpret`, `run_dynamic_workflow` and the batch processor now apply
-    every LAS header zone value (`M_Z1`, `GR_MIN_Z1`, ...), not only Rw, Rmf
-    and the shale point; the zoned runner takes the same path outside the
+    the warnings. `pp.interpret`, `run_dynamic_workflow` and the batch
+    processor apply every LAS header zone value (`M_Z1`, `GR_MIN_Z1`, ...,
+    as well as Rw, Rmf and the shale point); the zoned runner takes the same
+    path outside the
     "geolink" profile. The record of the settings you passed survives
     `dataclasses.replace`.
   - Zones can be your own segmentation of the well: a zone with only a name
@@ -271,7 +271,7 @@ their raw logs.
     `zone_info` and `zone_name`. Each formation or zone is split into
     lithology groups, or is one group with `split_by_lithology=False` (CLI
     `--no-lithology-split`).
-  - The workflow trace no longer lists the library's internal config records.
+  - The workflow trace leaves out the library's internal config records.
   - Archie `a`, `m`, `n` and the net-pay cutoffs also take one value per
     lithology, e.g. `m={"sandstone": 1.8, "carbonate": 2.3}` or
     `sw_cutoff={"clastic": 0.5}`: each sample takes its lithology's (Archie)
@@ -283,12 +283,12 @@ their raw logs.
     lithologies, two values for one cutoff family and out-of-range values are
     refused; not available under the "geolink" profile.
   - The COSTA brine and illite defaults apply only in the carbonate domain;
-    MCP no longer adds the COSTA calibration to a clastic run of a COSTA well.
+    MCP does not add the COSTA calibration to a clastic run of a COSTA well.
   - The porosity trace reports a set `rho_ma`/`dt_ma`/`nphi_ma` and the
     endpoints actually used.
-- Incomplete features completed:
+- Checks and fallbacks of the MCP server, the modules and the CLI:
   - MCP checks `lithology_codes` paths against the allowed folders like the
-    other file settings (a valid relative path failed; one outside was read).
+    other file settings.
   - MCP `run_workflow` returns table steps (`formation_summary`) as `tables`;
     `workflow_step_kinds` gives requires/produces for `formation_water` and
     `mud_filtrate`; `list_sample_wells` describes every collection and lists
@@ -305,12 +305,12 @@ their raw logs.
   for every route (settings reference, workflows guide); the header-parameter
   table lists every parameter read, with zone suffixes; reader override
   arguments and `MDTPickingConfig` are documented; lesson 10 shows a header
-  value against a setting and a real zone override. The porosity lesson no
-  longer runs the hydrocarbon correction on a made-up Sxo.
+  value against a setting and a real zone override. The porosity lesson
+  shows the hydrocarbon correction skipped for want of a measured Sxo.
 - Wording: messages, docs and tutorials say "lithology" for the general
   case and name GeoLink only for the GeoLink data, profile and packages. The
   built-in lithology code table (Kingdom nomenclature) is
-  `LITHOLOGY_CODE_LABELS` (`GEOLINK_LITHOLOGY_CODE_LABELS` remains as an
+  `LITHOLOGY_CODE_LABELS` (`GEOLINK_LITHOLOGY_CODE_LABELS` is an
   alias); a run without lithology input records "No lithology curve or
   lithology intervals were available"; a `LITHOLOGY_GEOLINK` curve is
   reported as `vendor_lithology_log[LITHOLOGY_GEOLINK]` like any other code
@@ -321,10 +321,10 @@ their raw logs.
   curve-name mapping and the alias tables; a crossover fill is kept only when
   its partner curve is selected too. `tracks=` and `curves=` together are
   refused with guidance; an empty or unknown selection says what the well has.
-- Plotting checks from emulating users: `curve_styles` rejects an unknown
+- Plotting checks: `curve_styles` rejects an unknown
   fill or colour before drawing and points `scale` to the track; a depth
   window outside the logged interval warns, a window of no height is
-  refused; choosing tracks no longer warns about the curves left out.
+  refused; choosing tracks gives no warning about the curves left out.
 - The automatic layout draws NMR porosity, free fluid and bound water
   (TCMR/CMRP_3MS, CMFF, BVI; converted from porosity units to v/v for the
   track) and NMR permeability (KSDR, KTIM), a second caliper (HD2, C2),
@@ -337,7 +337,9 @@ their raw logs.
   CSV/Excel table of curve and standard name), stored on the well so reading,
   interpretation and plotting all use it; a mapped curve outranks other
   candidates; a mapping to a known alias (`RT`) stands for its standard
-  curve (`RDEP`). `petrophys-context` takes `--curve-aliases FILE`.
+  curve (`RDEP`). `petrophys-context` takes `--curve-aliases FILE`. An
+  entry that names no curve of the well, or is written the other way round
+  (`{"GR": "GAMMA"}`), gives a warning with the likely correction.
 - `create_histogram_comparison` takes `value_range` and `histtype="step"`;
   the multi-well overlay labels its depth unit and draws legible legend
   lines. The NMR panel titles its first track "GR / Tension" (CDF and TENS
@@ -350,8 +352,7 @@ their raw logs.
   flag names such as PAY or RES are taken only for 0/1 curves. `LITH` is
   read as a lithology-code curve name.
 - Under the benchmark profiles the saturation step names the equations its
-  samples were routed to, with their counts, instead of a fixed "Canonical
-  Indonesia and Dual Water equations used".
+  samples are routed to, with their counts.
 
 - The published GeoLink, COSTA and Danish context packages are computed by
   context profiles, `geolink_v1`, `costa_v1` and `danish_v1` (aliases
@@ -400,7 +401,7 @@ their raw logs.
 
 ### Analysis tools
 
-New functions for analyses `pp.interpret` does not run; see the Analysis
+Functions for analyses `pp.interpret` does not run; see the Analysis
 tools page.
 
 - Th/K clay typing: `classify_clay_th_k` and `clay_typing_from_well` read the
@@ -443,7 +444,7 @@ tools page.
     name (`Depth (m)`, `Por (%)`, `Kh Kl. (mD)`, `KAIR`, ...), converting
     percent porosity (also when labelled as a fraction), darcy and kg/m3, and
     core depths to the well's unit; unused numeric columns are reported.
-    `CoreData.from_csv` now warns when none of its columns is found.
+    `CoreData.from_csv` warns when none of its columns is found.
   - `read_survey`, `minimum_curvature` and `attach_survey` (also
     `pp.read(path, survey=...)`, or `survey="vertical"`) add `TVD` and, with
     the depth reference's elevation, `TVDSS`; surveys come from CSV, Excel or
@@ -466,7 +467,7 @@ tools page.
   in brackets (`TVDSS (m)`, `Formation pressure (bar)`, `MD (ft)`); the unit
   becomes the depth or pressure unit. Spectral gamma recognises a potassium
   curve in v/v or frac under a generic name such as `K`.
-- Checks and messages from emulating users: Winland R35 refuses percent
+- Checks and messages: Winland R35 refuses percent
   porosity; Eaton refuses an offshore air gap of an onshore header and
   explains calibration points outside the logged interval; a poor normal
   compaction trend or saturation-height fit warns; Monte Carlo explains a
@@ -519,9 +520,31 @@ wherever the package used the function.
   `"auto"` within any other domain, and an `"auto"` matrix stays inside the
   domain's family. When the matrix evidence points elsewhere, the domain wins
   and a warning names the conflict.
-- Tabular readers (`io.read_csv`, `read_csv_wells`, `read_ascii` without a
-  units row, `Well.from_dataframe`) require `depth_unit`. `Well.depth_unit`
-  accepts only metre or foot labels.
+- Tabular readers (`io.read_csv`, `read_excel`, `read_csv_wells`,
+  `read_ascii` without a units row, `Well.from_dataframe`) require
+  `depth_unit` unless the depth header gives the unit (`DEPTH (m)`).
+  `Well.depth_unit` accepts only metre or foot labels.
+- `pp.read` reads Excel logs (`.xlsx`, `.xlsm`, `.xls`; `sheet_name=`) as it
+  reads a CSV of the same table, and detects a semicolon or tab separator
+  and a decimal comma. `Well.from_dataframe` reads `NAME (unit)` headers.
+- Reading several wells with one tops or lithology table matches each well
+  on its WELL header, else its file name; a well the table has no rows for
+  is read without them, with one warning naming those wells. A tops table
+  in the other depth unit, with no unit declared, raises ValueError when
+  the other unit fits every row.
+- `pp.read` messages say where a missing file was looked for and which
+  names there are close, and name stray quotation marks, a path without an
+  extension and a Windows path whose backslashes became control characters.
+  A folder holding LAS, CSV and Excel files reads with one `depth_unit`.
+- Settings are checked when the configuration is built: a value of the
+  wrong type, a lithology file that does not exist, `peer_wells` that are
+  not wells, a `lithology_curve` that does not hold lithology codes and
+  values outside physical ranges (`rho_cl`, `swirr=0`, `rw` above
+  100 ohm.m, sonic end points, `bht_f`) raise ValueError. A total depth
+  above the deepest log sample is not used for the temperature gradient. A
+  setting that has no effect in a run (peer core without its conditions,
+  `cec` without `b_coeff`, `rw_meas_temp_f` without an Rw, curve mappings
+  with standardization off) gives a warning saying why.
 
 #### Inputs
 
@@ -538,7 +561,7 @@ wherever the package used the function.
   resistivity capped at 100000 ohm.m where the conductivity reads zero, has
   those ceiling samples removed, with a `DataQualityWarning`. The
   normalization step records them under `ceiling_screening`.
-- More legacy mnemonics are recognized: the density and microlog calipers
+- Further vendor mnemonics are recognized: the density and microlog calipers
   CALD, DCAL and MCAL (CALI), the density correction CORR (DRHO), the medium
   induction RILM (RMED) and the shallow laterolog LL3/RLL3 (RSHA).
 - Every workflow step records every curve it created, changed or removed:
@@ -554,8 +577,8 @@ wherever the package used the function.
   (`petrophys.interpretation.lithology.labels.lithology_group_for_label`):
   abbreviations (Sst, SH, LST, DOL, ANH), modified names (shaly sandstone,
   argillaceous limestone, "Sandstone, calcareous"), carbonate textures, coal
-  and igneous rocks. Mixed names stay without a group, as before for
-  unrecognized names.
+  and igneous rocks. Mixed names stay without a group, as unrecognized
+  names do.
 - `DynamicWorkflowConfig.lithology_codes` takes the codebook of a lithology
   code curve whose codes are not those of the built-in lithology code table: a CSV or Excel
   codebook, a DataFrame or a code-to-name mapping. Its rock names give each
@@ -567,7 +590,7 @@ wherever the package used the function.
   name, facies, lith code, id, label, ...) and reads a table of two other
   columns as code, then rock name.
 - A BHT at a total depth at or above the surface (a well logged from 0 only)
-  no longer fails the temperature step: the default gradient is used, with a
+  does not fail the temperature step: the default gradient is used, with a
   warning.
 - A logged vendor density porosity (DPOR, DPHI, DPHZ, PORD) or sonic porosity
   (SPOR, SPHI, PORS) gives PHID or PHIS wherever its value, in v/v or
@@ -757,11 +780,21 @@ wherever the package used the function.
 
 #### Saturation
 
-- The salinity of the Rw the workflow uses (given with its temperature, or
-  from the header) chooses between the shaly-sand models when
-  `salinity_ppm` is not set: 30/6-5 with Rw 0.07 ohm.m at 230 degF routes to
-  Simandoux. A setting given by the caller (`rmf_chlorides_mg_l`, ...) is
-  used even when it equals the header value.
+- The salinity of the Rw the workflow uses (from `salinity_ppm`, or the NaCl
+  equivalent of an Rw given with its temperature or read from the header)
+  chooses between the shaly-sand models: 30/6-5 with Rw 0.07 ohm.m at
+  230 degF routes to Simandoux. A `salinity_ppm` set next to an `rw` of
+  another water is not used, with a warning. A setting given by the caller
+  (`rmf_chlorides_mg_l`, ...) is used even when it equals the header value.
+- The saturation exponent `n` may differ by lithology (`n={"sandstone": 1.8,
+  "shale": 2.2}`) under every saturation model; `simandoux`,
+  `modified_simandoux`, `waxman_smits` and `dual_water` take one `n` per
+  sample.
+- The Rw step compares the Rw in use with the apparent water resistivity of
+  the clean porous rock (Rwa = Rt x phi^m / a; Asquith and Krygowski, 2004)
+  and warns when the median Rwa is below half of it, which puts Archie Sw
+  above 1.4 in more than half of that rock; the trace records
+  `rwa_median_over_rw` and `rwa_p5_over_rw`.
 - `sw_model="modified_simandoux"` and `modified_simandoux()` add the modified
   Simandoux equation, 1/Rt = phi^m Sw^n/(a Rw (1 - Vcl)) + Vcl Sw/Rcl, the
   form many service-company reports use. `simandoux()` is documented as the
@@ -856,7 +889,9 @@ wherever the package used the function.
   permeability) from a CSV or Excel table. Columns are found by name with any
   unit in brackets ignored, the pressure unit comes from the header or
   `pc_unit=`, and a mercury saturation becomes Sw = 1 - SHg; a saturation
-  that rises with pressure is refused as not Sw. `.thomeer()` fits the Thomeer
+  that rises with pressure is refused as not Sw. A sample column filled on
+  each plug's first row only (merged cells) is carried down, and a pressure
+  unit written as a suffix (`Pc_kPa`, `PC_BAR`) is read. `.thomeer()` fits the Thomeer
   (1960) hyperbola to each plug (entry pressure Pd, pore geometrical factor
   G, Bv-infinity), `.to_reservoir(fluids)` converts lab Pc by the ratio of
   sigma cos(theta), and `fit_j_function_from_core` fits one Leverett
@@ -867,7 +902,16 @@ wherever the package used the function.
   logged interval when the logs miss the transition zone, and the R2 of the
   match), and
   `water_contact_from_fwl` places the water contact above the FWL by the
-  entry-pressure height.
+  entry-pressure height. The search for the FWL starts at the shallowest
+  sample used, and a 95% range cut by the edge of the search is flagged.
+- The volumetric functions (`calculate_ooip`, `calculate_ogip`,
+  `calculate_hcpv`) and the stand-alone net-pay functions read a porosity,
+  saturation or cutoff above 1, up to 100, as percent, and refuse negative
+  areas and thicknesses, values above 100 and non-positive formation volume
+  factors.
+- `cutoff_sensitivity(result)` starts from the cutoffs the run set, and
+  names its base in `attrs["base_cutoffs"]`; a run on the standard
+  per-lithology cutoffs is described in the docstring.
 - `swirr` takes one value per lithology, as Archie a, m and n do; other
   lithologies keep the automatic estimate.
 - Fraction settings (`swirr`, `vcl_cutoff`, `phie_cutoff`, `sw_cutoff`,
@@ -992,10 +1036,9 @@ wherever the package used the function.
 
 #### Context exports
 
-- A context export takes about 40% less time: each curve's statistics are
-  computed once per lithology group rather than once per category file,
-  lithology labels are resolved once per distinct value, and the written
-  files are not read back. The files are byte-for-byte the same.
+- A context export computes each curve's statistics once per lithology
+  group, for all six category files, resolves lithology labels once per
+  distinct value, and does not read the written files back.
 - After a context export's value-range QC, PHI_NORM, RQI and FZI are
   recomputed from the porosity (PHIE_CC, then PHIE, then PHIT) and
   permeability (PERM_CC, then PERM) the QC left, and are empty wherever
@@ -1044,9 +1087,12 @@ wherever the package used the function.
 - `pp.export_context(result)` without an output path returns the context as
   a dict; `layout="package"` (CLI `--layout package`) writes the context
   package of a folder of wells.
-- `calculate_pore_volume_weighted_sw` gives the pore-volume-weighted Sw over
-  net pay, sum(Sw PHIE h) / sum(PHIE h), with PHIE_CC preferred. The pay and
-  zone summaries keep their thickness-weighted Sw.
+- `calculate_pore_volume_weighted_sw`
+  (`petrophys.evaluation.summaries`) gives the pore-volume-weighted Sw over
+  net pay, sum(Sw PHIE h) / sum(PHIE h), with PHIE_CC preferred. The
+  formation and zone tables and `summarize_pay` (`avg_sw_pay`) report this
+  Sw, so average porosity x (1 - average Sw) x net pay is the hydrocarbon
+  pore thickness.
 - `well.curves["GR"]` returns the curve, as `well["GR"]` does; `well.curves`
   is the list of curve names.
 - `petrophys.datasets.integration_fixture` downloads a Daydream 1 DLIS or
@@ -1183,15 +1229,14 @@ wherever the package used the function.
   `config_schema()` entries carry the setting's `group`.
 - Short public API: `petrophys.read`, `petrophys.plot` and the
   copy-by-default `petrophys.interpret`, with full docstrings;
-  `DynamicWorkflowConfig`, `DynamicWorkflowResult` and `run_dynamic_workflow`
-  are exported at the top level.
-- `petrophys.DataQualityWarning` for implausible inputs: curves mostly outside
+  `DynamicWorkflowConfig` is exported at the top level, and
+  `DynamicWorkflowResult` and `run_dynamic_workflow` from
+  `petrophys.workflow`.
+- `petrophys.exceptions.DataQualityWarning` for implausible inputs: curves mostly outside
   their plausible range (with a unit hint such as "values look 1000x too
   large"), geology that does not overlap the logged interval, and
   unrecognized lithology labels. Warnings escalated to errors (for example
-  `warnings.simplefilter("error", DataQualityWarning)`, from
-  `petrophys.exceptions`) stop
-  `pp.interpret`.
+  `warnings.simplefilter("error", DataQualityWarning)`) stop `pp.interpret`.
 - `DynamicWorkflowResult.to_las()` writes the interpreted well with the
   settings used (`PP_*` parameters, including `PP_RW` and its temperature)
   and step reasons, without the clay-volume alias copies (VCLAY, VCLGR,
@@ -1270,8 +1315,11 @@ wherever the package used the function.
     range (shale) as it is; core-calibrated permeability (PERM_CC) comes
     from the corrected porosity, on the scale of the core porosity its
     transform was fitted on, and is not extrapolated outside the rock of
-    the core pairs: their porosity range and their clay volume (P95 of VCL
-    at the plugs).
+    the core pairs: their porosity range, their clay volume (P95 of VCL
+    at the plugs) and the net-rock clay cutoff of the run. A sample that a
+    formation's own transform leaves without permeability is not filled
+    from the whole-well transform. The "geolink" profile applies neither
+    clay limit.
   - A zone run's whole-well tallies (bad-hole pay) are not repeated under
     the zone's label.
   - Shale takes the grain endpoints of its solids for total porosity (clay
@@ -1288,12 +1336,25 @@ wherever the package used the function.
   - The temperature trace names the total depth `td` with its `td_unit`;
     Rcl is printed rounded.
 - Evaluation checked against the logs it summarises:
-  - Per-formation and per-zone tables average porosity and permeability
-    each from one curve over the whole table (the core-corrected one where
-    the run produced it, else the plain one), never filling one model's
-    gaps with another's; `df.attrs["curves"]` names them. Tables give
+  - Per-formation and per-zone tables average over net pay the porosity
+    and permeability the interpretation used at each sample: the
+    core-corrected curve where the run wrote it, the plain one at the other
+    samples (`pay_average_data`); `df.attrs["curves"]` names them and
+    `df.attrs["plain_curve_pay_samples"]` counts, per formation, the pay
+    samples read from the plain curve. Porosity
+    and clay volume are weighted by thickness, Sw by pore volume and
+    permeability is a geometric mean, so `Avg PHIE x (1 - Avg Sw) x Net Pay`
+    is the `HCPV` column (hydrocarbon pore thickness). Tables give
     `N/G (reservoir)` (net reservoir / gross) and `Pay/Gross` (net pay /
-    gross); permeability averages are geometric for PERM_CC too.
+    gross).
+  - `result.summary` and `result.statistics` read a depth window in either
+    order and warn when it holds no sample of the well.
+  - `pp.interpret` warns when a run ends as "failed" or without porosity or
+    saturation for lack of a log, naming the missing logs, the curves that
+    match no standard name and the `curve_aliases` setting that maps them.
+  - `well.depth_slice` and `well.select` keep the bottom-hole temperature of
+    a later interpretation at the deepest log sample of the well they were
+    cut from.
   - `run_formation_analysis` attaches the tops before interpreting, so it
     matches `pp.interpret`; `monte_carlo` reports `correlated_depths`
     inputs in `sensitivity`; `run_comprehensive_analysis` keeps curves the
@@ -1302,8 +1363,9 @@ wherever the package used the function.
     depth unit) and averages per-sample Sw over pore volume; FZI is NaN
     below 0.01 effective porosity.
   - Diagnostics: two of three clay indicators make a high clay class; the
-    carbonate check without PEF or RHOB is "undetermined"; water-bearing
-    and undetermined hydrocarbon labels replace a default "marginal"; BVW
+    carbonate check without PEF or RHOB is "undetermined"; hydrocarbon labels
+    say water-bearing or undetermined where that holds, with no default
+    "marginal"; BVW
     without effective porosity has its own class; trend classes scale by
     each curve's P10-P90 range; geometric and harmonic means are 0 with a
     zero value and NaN with a negative one. The benchmark profiles keep
@@ -1364,7 +1426,7 @@ wherever the package used the function.
   with `method="ols"` available and m fitted through log(a x Rw) when `rw=`
   is given, and `PickettPlot.add_trend_line` draws the same line.
 - Context export of a user's well clips permeability to the 0.0001 mD QC
-  floor instead of leaving tight rock out of the statistics; its
+  floor, so tight rock stays in the statistics; its
   methodology text names the porosity order it uses. `petrophys-context`
   takes `--setting NAME=VALUE` (repeatable) for interpretation settings.
   A custom `WorkflowRunResult` can be pickled.
@@ -1424,8 +1486,11 @@ wherever the package used the function.
   is predicted by a model that did not learn from its fifth of the well (five
   contiguous depth blocks), so its difference from the measured curve is the
   error to expect in a gap. The curve's description gives that error (mean
-  absolute error, bias, R2), and `pp.plot(well, curves=["RHOB",
-  "RHOB_PREDICTED"])` draws it over the measured curve.
+  absolute error, bias, R2) in the curve's unit, or in log10 of the curve
+  for resistivity and permeability, and `pp.plot(well, curves=["RHOB",
+  "RHOB_PREDICTED"])` draws it over the measured curve. A training well
+  that is the well itself is left out, with a warning, so the check does
+  not learn from the samples it predicts.
 - Plotting: `create_heatmap` centres each cell on its coordinate, draws
   unevenly and log-spaced bins such as NMR T2, and accepts cell edges; the
   core plotting helpers (`plot_calibration`, `plot_poro_perm`,
@@ -1437,7 +1502,8 @@ wherever the package used the function.
   `visualization`.
 - Documentation: an API reference with a landing page per area (front door,
   data model and I/O, preprocessing, interpretation, evaluation, workflows,
-  visualization, reporting and LLM agents, legacy), a page per section with
+  visualization, reporting and LLM agents, and the fixed-configuration
+  `StandardWorkflow`), a page per section with
   grouped summary tables, and one page per function and class, generated
   from each package's `__all__`. The user guide pages are executed at each
   documentation build: quickstart, own-data, input templates, data model,
@@ -1451,7 +1517,8 @@ wherever the package used the function.
   Colab, and "On your own computer" installs Python, Petrophys and
   JupyterLab step by step for data that must stay on the machine.
 - Tutorials: a complete-tour notebook covering the whole library on four
-  bundled GeoLink wells, foundations and advanced series, case studies, and a
+  bundled GeoLink wells, with COSTA and Daydream 1 data for the specialist
+  parts, foundations and advanced series, case studies, and a
   spectral-gamma geochemistry part and a second-well core calibration in
   tutorial 12. Each tutorial and the quickstart opens in Google Colab from an
   "Open in Colab" button, with a first cell that installs Petrophys there;
@@ -1468,7 +1535,7 @@ wherever the package used the function.
   salinity, although shallow formation waters are usually fresher, and the
   clay indicators disagree in undercompacted mudstones. Default runs can
   therefore flag marginal pay (SW about 0.5) in shallow Tertiary sections
-  that no lithology code log covers: on 25/5-1, 259 m of the 310.4 m of net
+  that no lithology code log covers: on 25/5-1, 199 m of the 251.0 m of net
   pay lies above 2984 m, nearly all of it uncoded. Read the results per
   formation (attach tops and use `result.formation_summary()`), or give the
   shallow interval its own Rw (a zoned header parameter such as `RW_Z1`

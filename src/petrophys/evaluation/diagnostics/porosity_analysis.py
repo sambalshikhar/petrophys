@@ -71,6 +71,32 @@ class PorosityAnalysis:
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
+        """Classify each sample's porosity and pore-system indicators and summarize them by interval.
+
+        Parameters
+        ----------
+        well : Well
+            Interpreted well. Total and effective porosity, the density,
+            sonic and neutron porosities (PHID, PHIS, PHIN), permeability,
+            clay volume, RQI and FZI are read where present; a class that
+            needs an absent curve is undetermined.
+        add_curves : bool, default True
+            Add the derived curves that hold values to ``well``, replacing
+            curves of the same name: ``PORO_QUALITY_INDEX``,
+            ``DS_SEPARATION`` (density minus sonic porosity, v/v) where both
+            exist, and ``RQI`` and ``FZI`` where the well has none.
+
+        Returns
+        -------
+        CategoryAnalysisResult
+            Sections ``total_porosity_quality_distribution``,
+            ``pore_system_architecture_classification``,
+            ``clay_content_impact_on_porosity_variation``,
+            ``porosity_quality_assessment_characteristics`` and
+            ``integrated_porosity_reservoir_assessment``, each with its
+            description, method, thresholds and the depth intervals of every
+            class, and the derived curves in ``derived_curves``.
+        """
         benchmark = self.class_tables == "geolink"
         n_samples = well.n_samples
         phit, phit_source = get_curve_data(well, ["PHIE_CC", "PHIT"])

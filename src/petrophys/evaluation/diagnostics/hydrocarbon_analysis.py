@@ -78,6 +78,30 @@ class HydrocarbonAnalysis:
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
+        """Classify each sample's hydrocarbon indicators and summarize them by interval.
+
+        Parameters
+        ----------
+        well : Well
+            Interpreted well. Water saturation (SW), MHI, clay volume,
+            porosity, permeability, the density and neutron porosities, the
+            bad-hole flag, the sonic slownesses and the net-pay flag are read
+            where present; a class that needs an absent curve is undetermined.
+        add_curves : bool, default True
+            Add the derived curves that hold values (``CROSSOVER_FLAG``,
+            ``VP_VS_RATIO``, ``PRIME_GAS_TARGET``, ``PRIME_OIL_TARGET``) to
+            ``well``, replacing curves of the same name.
+
+        Returns
+        -------
+        CategoryAnalysisResult
+            Sections ``petrophysical_hydrocarbon_indicators``,
+            ``geophysical_hydrocarbon_indicators``,
+            ``reservoir_quality_for_hydrocarbons`` and
+            ``integrated_hydrocarbon_potential``, each with its description,
+            method, thresholds and the depth intervals of every class, and
+            the derived curves in ``derived_curves``.
+        """
         benchmark = self.class_tables == "geolink"
         n_samples = well.n_samples
         sw, _ = get_curve_data(well, ["SWA", "SW", "SWT-LOG"])

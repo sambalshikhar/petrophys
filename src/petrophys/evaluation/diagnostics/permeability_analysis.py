@@ -77,6 +77,33 @@ class PermeabilityAnalysis:
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
+        """Classify each sample's permeability and flow-unit indicators and summarize them by interval.
+
+        Parameters
+        ----------
+        well : Well
+            Interpreted well. Permeability (the first of PERM_CC, PERM,
+            PERM_CORE, PERM_TIMUR), FZI, RQI, porosity, clay volume, the
+            flushed-zone and deep resistivities and MHI are read where
+            present; a class that needs an absent curve is undetermined.
+        add_curves : bool, default True
+            Add the derived curves that hold values to ``well``, replacing
+            curves of the same name: ``KH`` (flow capacity, mD times depth
+            unit), ``PERM_QUALITY_INDEX``, ``RXO_RDEP_RATIO`` where a
+            flushed-to-deep resistivity ratio can be formed, and ``RQI`` and
+            ``FZI`` where the well has none.
+
+        Returns
+        -------
+        CategoryAnalysisResult
+            Sections ``permeability_distribution_analysis``,
+            ``flow_unit_classification_system``,
+            ``permeability_variation_controls``,
+            ``invasion_profile_permeability_indicators`` and
+            ``overall_permeability_interpretation``, each with its
+            description, method, thresholds and the depth intervals of every
+            class, and the derived curves in ``derived_curves``.
+        """
         benchmark = self.class_tables == "geolink"
         n_samples = well.n_samples
         perm, perm_source = get_curve_data(well, ["PERM_CC", "PERM", "PERM_CORE", "PERM_TIMUR"])

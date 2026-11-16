@@ -701,6 +701,10 @@ class CurveStandardizer:
         Whether to convert to standard units (default: True)
     preserve_originals : bool, optional
         Keep original curves with _ORIG suffix (default: False)
+    relabel_equivalent_units : bool, optional
+        Write the standard unit label on a curve whose unit is another
+        spelling of it, with a conversion factor of 1, e.g. ``gAPI`` for
+        ``API`` (default: True). False leaves such labels as written.
     plausible_ranges : dict, optional
         ``{standard mnemonic: (low, high)}`` limits of the implausible-value
         screening, in the standard units; default
@@ -1114,6 +1118,9 @@ def standardize_curves(
         Convert to standard units (default: True)
     preserve_originals : bool, optional
         Keep original curves (default: False)
+    relabel_equivalent_units : bool, optional
+        Write the standard unit label on a curve whose unit is another
+        spelling of it, e.g. ``gAPI`` for ``API`` (default: True)
     plausible_ranges : dict, optional
         Limits of the implausible-value screening; default
         :data:`CURVE_PLAUSIBLE_RANGES`.

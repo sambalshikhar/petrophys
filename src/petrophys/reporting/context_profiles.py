@@ -184,6 +184,9 @@ def export_context_profile(
         Only these wells.
     pattern : str, default ``"*.las"``
         The delivery files to read; the packages were made from LAS files.
+    recursive : bool, default False
+        Not supported: a context profile reads one folder of LAS files, and
+        True raises ValueError.
     tops_file, lithology_mapping_file : str or Path, optional
         Required by the GeoLink, GeoLink training and Danish profiles: the
         formation tops workbook (the NPD picks for GeoLink and the training

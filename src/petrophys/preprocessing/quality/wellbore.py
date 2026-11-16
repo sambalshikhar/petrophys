@@ -50,6 +50,32 @@ class WellboreQC:
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
+        """Flag bad hole sample by sample and summarize it by interval.
+
+        A sample is bad hole where the caliper roughness exceeds
+        ``cali_variation_threshold`` or CALI - BS exceeds
+        ``washout_threshold``; the caliper is used when at least 5 samples
+        have CALI and BS. Where the caliper gives no flag, ``|DRHO|`` above
+        ``drho_threshold`` flags the sample.
+
+        Parameters
+        ----------
+        well : Well
+            Well with a caliper (CALI) and bit size (BS), or DRHO.
+        add_curves : bool, default True
+            Add the derived curves that hold values to ``well``, replacing
+            curves of the same name: ``CALI_SMOOTH`` (in), ``CALI_ROUGHNESS``
+            (in/m) and ``BAD_HOLE`` (1 bad hole, 0 good hole).
+
+        Returns
+        -------
+        CategoryAnalysisResult
+            Section ``bad_hole_detection`` with the depth intervals labelled
+            ``GOOD_HOLE``, ``BAD_HOLE`` and ``NO_QC_DATA``; the derived
+            curves in ``derived_curves``; and ``metadata["qc_summary"]`` with
+            ``bad_hole_percentage``, ``bad_hole_intervals``,
+            ``detection_method_counts`` and ``bit_size_exclusion_zones``.
+        """
         n_samples = well.n_samples
         depth = np.asarray(well.depth, dtype=float)
         # The benchmark context profiles keep the packages' original calculation.

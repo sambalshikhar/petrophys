@@ -5,7 +5,8 @@
 Key facts for code generation:
 
 - Front door: `import petrophys as pp`; `well = pp.read(path)`; `result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)`; `pp.plot(result, top=top, bottom=bottom)`. The top-level names are `read`, `interpret`, `plot`, `impute`, `export_context`, `read_formations`, `sample`, `list_samples`, `Well`, `DynamicWorkflowConfig` and `__version__`; everything else is imported from its package.
-- `pp.read(path, *, formations=None, lithology=None, **reader_options)` reads LAS/DLIS/CSV/TSV; CSV/TSV need `depth_unit="m"` or `"ft"` among the reader options.
+- `pp.read(path, *, formations=None, lithology=None, **reader_options)` reads LAS/DLIS/CSV/TSV/Excel; CSV, TSV and Excel logs need `depth_unit="m"` or `"ft"` among the reader options unless the depth header gives the unit (`DEPTH (m)`).
+- `pp.impute(well, "RHOB", train_wells=None, output=None)` rebuilds a curve's missing samples from the other logs (needs the `ml` extra): it adds `RHOB_IMPUTED` (measured values kept) and the check curve `RHOB_PREDICTED`, whose `description` gives the out-of-fold error.
 - `pp.interpret(well, config=None, *, formations=None, lithology=None, output=None, inplace=False, **settings)` returns `DynamicWorkflowResult` (`from petrophys.workflow import DynamicWorkflowResult`); it works on a copy, and `output=` writes the interpreted LAS. Settings are `pp.DynamicWorkflowConfig` fields (units in names: `bht_f` degF, `td_ft` feet; resistivities ohm.m). Invalid values raise `ValueError` listing accepted values.
 - Formation water resistivity `rw` (ohm.m) usually cannot be derived from logs: ask for it instead of assuming, and pass its temperature `rw_meas_temp_f` (degF); without it Rw is taken at the well's median formation temperature, with a warning in `result.warnings`.
 - Result: `result.status`, `result.well` (interpreted curves: VCL, PHIT, PHIE, SW, SXO, PERM, RQI, NET_ROCK, NET_RES, NET_PAY), `result.config` (settings used), `result.specific_steps_skipped` (reasons), `result.warnings`, `result.to_trace_dict()`, `result.to_json(path)`, `result.to_las(path)`, `result.raise_for_errors()`.
@@ -20,7 +21,7 @@ Key facts for code generation:
 - `pp.export_context(result)` returns a JSON-ready summary dict; `pp.export_context(result, path)` writes it. Context packages (`pp.export_context(folder, out_dir, layout="package", formations=..., lithology=...)`) write the six category contexts per well and group: each formation (or each zone, with `zones=`) split into lithology groups, or one group each with `split_by_lithology=False`; `formation_info.depth_unit` gives the unit of its depths, and PHI_NORM, RQI, FZI, BVW and PHI_Z are recomputed after the export's value-range QC.
 - `calculation_profile`: `"current"` (default) is the maintained interpretation; `"geolink"` keeps the calculations of the GeoLink eval context package so it can be regenerated exactly. Use `"geolink"` only for that.
 - `petrophys.workflow.config_schema()` lists every setting with type, default, description and accepted values; `petrophys.workflow.workflow_steps()` lists the steps.
-- Data problems raise `petrophys.exceptions.DataQualityWarning` (e.g. a curve in the wrong unit).
+- Data problems give a `petrophys.exceptions.DataQualityWarning` (e.g. a curve in the wrong unit).
 - Sample data: `pp.list_samples()`, `pp.sample("30_6-5")`.
 - Custom workflows: `from petrophys.workflow import Workflow, steps, workflow_step`; `wf = Workflow("name", [steps.clay_volume(method="gr"), steps.porosity(method="density"), steps.formation_water(rw=0.07, rw_temp_f=230), steps.saturation(model="archie"), steps.net_pay(vcl_cutoff=0.35, phie_cutoff=0.1, sw_cutoff=0.6)])` (`steps.net_pay` leaves evaporite, coal, halite and bad-hole samples out unless `exclude_non_reservoir=False`); `wf.check(well)`; `run = wf.run(well)` (strict; `strict=False` records `run.steps_skipped`); `wf.run_many(folder).summary_table()`; `wf.save(path)` / `Workflow.load(path)`. Own steps: `@workflow_step(requires=[...], produces={"X": "unit"})` on `def f(well, **params)` returning `{name: array}`.
 - `petrophys.evaluation.summarize_pay` and `calculate_net_pay` recompute flags with one cutoff set and no exclusions; summarize an interpretation's own flags with `result.summary()` or `result.formation_summary()`.
@@ -41,7 +42,7 @@ Key facts for code generation:
 - [LLM agents (MCP)](https://petrophys.netlify.app/mcp): MCP server setup, tools, resources and prompts
 - [Input templates](https://petrophys.netlify.app/input_templates): formation and lithology file formats
 - [Terms and curves](https://petrophys.netlify.app/glossary): terms and every output curve; argument names per interface
-- [Reproducing the benchmark packages](https://petrophys.netlify.app/benchmark_context): dataset context profiles for the GeoLink, COSTA and Danish packages
+- [Reproducing the benchmark packages](https://petrophys.netlify.app/benchmark_context): dataset context profiles for the GeoLink, GeoLink training, COSTA and Danish packages
 
 ## API
 

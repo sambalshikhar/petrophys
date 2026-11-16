@@ -91,6 +91,9 @@ contacts = stations.infer_contacts()
 contacts.status, contacts.fwl_depth, contacts.depth_unit, contacts.depth_reference
 ```
 
+Every station of the file is used here. Tutorial 15 keeps the 21 tests the file marks
+as good and finds the contact at 3113.2 m, against 3112.6 m in the well's report.
+
 **When your file is laid out differently.** Each reader finds columns and
 units by name, and every guess can be given instead; a value you give is used
 as is:
@@ -165,9 +168,10 @@ hw24 = pp.impute(pp.sample("HW-24"), "RHOB", train_wells=[pp.sample(name) for na
 hw24["RHOB_PREDICTED"].description
 ```
 
-Over the 433 measured samples the prediction is off by 0.035 g/cm3 on average, with
-almost no bias and R² 0.89. `pp.plot` draws it over the measured density, in black, in
-the density track:
+Over the 433 measured samples the mean absolute error is 0.0346 g/cm3, with almost no
+bias (+0.00016 g/cm3) and R² 0.89. The error is given in the curve's unit; for
+resistivity and permeability, which span decades, it is given in log10 of the curve.
+`pp.plot` draws the prediction over the measured density, in black, in the density track:
 
 ```{code-cell} python
 pp.plot(hw24, curves=["GR", "RHOB", "RHOB_PREDICTED"])
@@ -222,9 +226,11 @@ brent.assign(WYLLIE=wyllie_time_average(brent.DTC),
 ```
 
 Winland R35 is the pore-throat radius at 35 % mercury saturation, from core
-permeability and porosity; it sorts the Brent plugs into pore-throat classes:
+permeability and porosity; it sorts the Brent plugs into pore-throat classes
+(the three plugs without a permeability get no class, the blank row):
 
 ```{code-cell} python
+import pandas as pd
 from petrophys.evaluation.rock_quality import calculate_winland_r35, classify_pore_throat
 from petrophys.interpretation.core_analysis import core_data_from_well
 
@@ -252,7 +258,8 @@ thomas_stieber(brent.PHIT, brent.VCL, phi_sand, phi_shale)
 
 The thorium/potassium ratio of spectral gamma ray separates kaolinite,
 mixed-layer clays, illite, micas, glauconite and feldspar (chart bands,
-configurable). Here the Daydream 1 HNGS log.
+configurable). Here the Daydream 1 HNGS log, a 30 MB file that
+`integration_fixture` downloads on first use.
 
 ```{code-cell} python
 from petrophys.datasets import integration_fixture

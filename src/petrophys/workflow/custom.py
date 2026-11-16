@@ -60,7 +60,7 @@ from typing import (
 import numpy as np
 
 from petrophys._internal.analysis_helpers import curve_has_finite_data
-from petrophys._internal.serialization import curve_statistics, depth_mask, json_object, json_safe
+from petrophys._internal.serialization import curve_statistics, json_object, json_safe
 from petrophys.model.data_types import DataType
 from petrophys.model.well import Well
 from petrophys.workflow.dynamic_workflow import StepResult
@@ -1883,7 +1883,8 @@ class WorkflowRunResult:
 
     def step(self, name: str) -> StepResult:
         """The record of one step that ran: its ``method``, ``decisions``,
-        ``parameters``, ``input_curves`` and ``output_curves``."""
+        ``parameters``, ``input_curves`` and ``output_curves``. A step that
+        did not run raises KeyError, with the reason it was skipped."""
         for step in self.steps:
             if step.step == name:
                 return step
@@ -1977,7 +1978,8 @@ class WorkflowRunResult:
         Returns
         -------
         dict
-            ``workflow``, ``well``, ``status``, ``summary_interval``,
+            ``petrophys_version``, ``workflow``, ``well``, ``status``,
+            ``summary_interval``,
             ``key_results`` (statistics of the curves the steps declare they
             produce), ``net_thickness`` (net rock, reservoir and pay),
             ``executed_steps``, ``skipped_steps`` with reasons,
@@ -1992,9 +1994,9 @@ class WorkflowRunResult:
         ['VCL']
         """
         from petrophys.version import __version__
-        from petrophys.workflow.summary import curve_results, net_thickness
+        from petrophys.workflow.summary import curve_results, depth_window, net_thickness
 
-        mask = depth_mask(self.well.depth, top, bottom)
+        mask, top, bottom = depth_window(self.well, top, bottom)
         executed = self._executed()
         return json_object({
             "petrophys_version": __version__,
@@ -2128,8 +2130,9 @@ class WorkflowRunResult:
         Returns
         -------
         dict
-            ``schema``, ``workflow`` (the definition as run), ``well``,
-            ``status``, ``steps`` (every trace record with its warnings),
+            ``schema``, ``schema_version``, ``petrophys_version``,
+            ``workflow`` (the definition as run), ``well``,
+            ``status``, ``success``, ``steps`` (every trace record with its warnings),
             ``steps_skipped``, ``warnings``, ``errors``, ``artifacts`` (tables
             as records) and ``curve_summaries``.
         """

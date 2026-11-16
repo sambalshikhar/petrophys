@@ -5,12 +5,14 @@ This module provides functionality to read ASCII-formatted well log
 data files including CSV, tab-delimited, and space-delimited formats.
 """
 
-from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any, Tuple
+from typing import TYPE_CHECKING, Callable, Optional, Union, List, Dict, Any, Tuple
 from pathlib import Path
+import csv
 import re
 import warnings
 import numpy as np
 import pandas as pd
+from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.units import normalize_depth_unit
 
 if TYPE_CHECKING:
@@ -128,6 +130,199 @@ def _na_values(null_values: Any = None) -> List[str]:
     return values
 
 
+#: Suffixes of the Excel workbooks :func:`read_excel` reads.
+EXCEL_SUFFIXES = (".xlsx", ".xlsm", ".xls")
+
+#: A number written with a decimal comma ("2000,5") or a decimal point ("2000.5").
+_DECIMAL_COMMA = re.compile(r"^[+-]?\d+,\d+(?:[eE][+-]?\d+)?$")
+_DECIMAL_POINT = re.compile(r"^[+-]?\d*\.\d+(?:[eE][+-]?\d+)?$")
+
+
+def _detect_separator_and_decimal(filepath: Path, skiprows: Any, options: Dict[str, Any]) -> None:
+    """Add to ``options`` the separator and decimal mark a delimited text file uses, when not given.
+
+    Without ``sep`` or ``delimiter``, a header line that a semicolon or a
+    tab splits into more columns than a comma does gives that separator.
+    Without ``decimal`` or ``thousands``, a semicolon- or tab-separated file
+    whose first rows write numbers as ``2000,5`` and none as ``2000.5`` is
+    read with decimal commas.
+    """
+    if reproducing_benchmark() or not isinstance(skiprows, int) or options.get("delim_whitespace"):
+        return
+    lines: List[str] = []
+    try:
+        with filepath.open("r", encoding=options.get("encoding") or "utf-8", errors="replace") as stream:
+            for index, line in enumerate(stream):
+                if index >= skiprows and line.strip():
+                    lines.append(line.rstrip("\r\n"))
+                if len(lines) > 50:
+                    break
+    except (OSError, LookupError):
+        return
+    if not lines:
+        return
+    separator = options.get("sep", options.get("delimiter"))
+    if "sep" not in options and "delimiter" not in options:
+        counts = {mark: len(next(csv.reader([lines[0]], delimiter=mark))) for mark in (",", ";", "\t")}
+        best = max((";", "\t"), key=lambda mark: counts[mark])
+        if counts[best] > counts[","]:
+            separator = options["sep"] = best
+    if separator in (";", "\t") and "decimal" not in options and "thousands" not in options:
+        fields = [field.strip() for line in lines[1:] for field in line.split(separator)]
+        if any(_DECIMAL_COMMA.match(field) for field in fields) and not any(
+            _DECIMAL_POINT.match(field) for field in fields
+        ):
+            options["decimal"] = ","
+
+
+def _read_log_table(
+    read: Callable[..., pd.DataFrame], options: Dict[str, Any], source: str, well_column: Optional[str]
+) -> pd.DataFrame:
+    """Read a log table with ``read(**options)``, its well identifier column as text.
+
+    The identifier column (``well_column``, else WELL, WELLNAME, WELL_NAME,
+    UWI or API) is read as text, so a numeric UWI keeps its leading zeros.
+    """
+    header_options = {
+        key: value for key, value in options.items()
+        if key not in {"nrows", "dtype", "converters", "usecols", "chunksize", "iterator", "na_values"}
+    }
+    raw_columns = read(nrows=0, **header_options).columns
+    raw_names, _ = _header_names_and_units(raw_columns, source)
+    raw_by_upper = dict(zip(raw_names, raw_columns))
+    resolved = _resolve_well_column(pd.DataFrame(columns=raw_names), well_column)
+    if resolved is not None and not isinstance(options.get("dtype"), (str, type)):
+        options["dtype"] = {**(options.get("dtype") or {}), raw_by_upper[resolved]: str}
+    return read(**options)
+
+
+def _well_from_log_table(
+    df: pd.DataFrame,
+    kind: str,
+    filepath: Path,
+    depth_column: str,
+    depth_unit: Optional[str],
+    well_name: str,
+    well_column: Optional[str],
+) -> "Well":
+    """The well of a log table read from a ``kind`` ("CSV" or "Excel") file.
+
+    Column headers ``NAME (unit)`` or ``NAME [unit]`` give curve ``NAME``
+    with that unit, the depth column header's unit stands in for a missing
+    ``depth_unit``, and the well identifier column names the well.
+    """
+    from petrophys.model.well import Well
+
+    source = f"{kind} file {filepath.name!r}"
+    # Clean column names; "GR (gAPI)" and "GR [gAPI]" give curve GR in gAPI.
+    df.columns, units = _header_names_and_units(df.columns, source)
+    depth_column = _split_unit_header(depth_column)[0]
+    if depth_column not in df.columns:
+        hint = ""
+        if len(df.columns) == 1 and any(sep in str(df.columns[0]) for sep in (";", "\t", "|", " ")):
+            hint = f" The header was read as the single column {str(df.columns[0])!r}; " + (
+                "pass the separator the file uses (e.g. sep=';')." if kind == "CSV"
+                else "split the text into columns in Excel, or save the sheet as CSV."
+            )
+        raise ValueError(
+            f"Depth column {depth_column!r} not found. Available columns: "
+            f"{list(df.columns)}. Set depth_column explicitly.{hint}"
+        )
+
+    candidate_well_column = _resolve_well_column(df, well_column)
+    if candidate_well_column is not None:
+        identifiers = _well_identifiers(df[candidate_well_column])
+        if len(identifiers) > 1:
+            raise ValueError(
+                f"{kind} contains {len(identifiers)} wells in {candidate_well_column!r}; " + (
+                    "use read_csv_wells() to keep them separate." if kind == "CSV"
+                    else "save the sheet as CSV and use read_csv_wells() to keep them separate."
+                )
+            )
+        if not well_name and identifiers:
+            well_name = identifiers[0]
+
+    if not well_name:
+        well_name = filepath.stem
+
+    _warn_on_coerced_values(
+        df, [c for c in (candidate_well_column,) if c], source
+    )
+    if candidate_well_column is not None and candidate_well_column != depth_column:
+        df = df.drop(columns=[candidate_well_column])
+    depth_unit = _depth_unit_from_header(units.get(depth_column), depth_unit, depth_column, source)
+    well = Well.from_dataframe(
+        df,
+        depth_column=depth_column.upper(),
+        depth_unit=_require_depth_unit(depth_unit, source),
+        name=well_name,
+        header_units=False,
+    )
+    _set_header_units(well, units)
+    if candidate_well_column in ("UWI", "API") and len(identifiers) == 1:
+        setattr(well.header, candidate_well_column.lower(), identifiers[0])
+
+    return well
+
+
+def _excel_sheet(workbook: pd.ExcelFile, sheet_name: Any, depth_column: str, skiprows: int, source: str) -> Any:
+    """The sheet of ``workbook`` that holds the log table.
+
+    ``sheet_name`` (a name or position) when given, else the only sheet,
+    else the first sheet whose header row has ``depth_column`` (``Log Data``
+    in a workbook :func:`~petrophys.io.export_excel` wrote).
+    """
+    if sheet_name is not None:
+        return sheet_name
+    names = workbook.sheet_names
+    if len(names) == 1:
+        return names[0]
+    wanted = _split_unit_header(depth_column)[0]
+    for name in names:
+        columns = pd.read_excel(workbook, sheet_name=name, skiprows=skiprows, nrows=0).columns
+        if wanted in {_split_unit_header(column)[0] for column in columns}:
+            return name
+    raise ValueError(
+        f"{source}: no sheet has the depth column {wanted!r} (sheets: {names}); "
+        "pass sheet_name and depth_column."
+    )
+
+
+def _depth_header_unit(
+    filepath: Union[str, Path],
+    depth_column: str = "DEPTH",
+    skiprows: int = 0,
+    sheet_name: Any = None,
+    **kwargs: Any
+) -> Optional[str]:
+    """The depth unit ("m" or "ft") the depth column header of a log table states, or None.
+
+    ``filepath`` is a CSV, TSV or Excel file read with the options of
+    :func:`read_csv` or :func:`read_excel`; ``DEPTH (m)`` gives "m".
+    """
+    filepath = Path(filepath)
+    wanted = _split_unit_header(depth_column)[0]
+    try:
+        if filepath.suffix.lower() in EXCEL_SUFFIXES:
+            with pd.ExcelFile(filepath) as workbook:
+                sheet = _excel_sheet(workbook, sheet_name, depth_column, skiprows, filepath.name)
+                columns = pd.read_excel(workbook, sheet_name=sheet, skiprows=skiprows, nrows=0).columns
+        else:
+            options = {key: kwargs[key] for key in ("sep", "delimiter", "encoding") if key in kwargs}
+            _detect_separator_and_decimal(filepath, skiprows, options)
+            columns = pd.read_csv(filepath, skiprows=skiprows, nrows=0, **options).columns
+    except (ValueError, OSError, UnicodeDecodeError, ImportError):
+        return None
+    for column in columns:
+        name, unit = _split_unit_header(column)
+        if name == wanted and unit:
+            try:
+                return normalize_depth_unit(unit)
+            except ValueError:
+                return None
+    return None
+
+
 def read_csv(
     filepath: Union[str, Path],
     depth_column: str = "DEPTH",
@@ -164,8 +359,12 @@ def read_csv(
         keep their leading zeros, names the well and is not a curve; a UWI
         or API column also sets ``header.uwi`` or ``header.api``.
     **kwargs
-        Additional arguments passed to pd.read_csv (e.g. ``thousands=","``
-        or ``decimal=","``)
+        Additional arguments passed to pd.read_csv (e.g. ``sep=";"``,
+        ``decimal=","`` or ``thousands=","``). Without ``sep``, a header
+        line that a semicolon or a tab splits into more columns than a comma
+        does gives the separator; without ``decimal`` and ``thousands``, a
+        semicolon- or tab-separated file whose first rows write numbers as
+        ``2000,5`` and none as ``2000.5`` is read with decimal commas.
 
     Returns
     -------
@@ -186,83 +385,99 @@ def read_csv(
     >>> from petrophys.io import read_csv
     >>> well = read_csv("well_data.csv", depth_column="MD", depth_unit="m")
     """
-    from petrophys.model.well import Well
-
     filepath = Path(filepath)
     if not filepath.exists():
         raise FileNotFoundError(f"CSV file not found: {filepath}")
+    _detect_separator_and_decimal(filepath, skiprows, kwargs)
 
-    # Default null values
-    na_values = _na_values(null_values)
+    def read(**options: Any) -> pd.DataFrame:
+        return pd.read_csv(filepath, skiprows=skiprows, **options)
 
-    # Read the well identifier column as text, so a numeric UWI keeps its
-    # leading zeros.
-    header_options = {
-        key: value for key, value in kwargs.items()
-        if key not in {"nrows", "dtype", "converters", "usecols", "chunksize", "iterator"}
-    }
-    raw_columns = pd.read_csv(filepath, skiprows=skiprows, nrows=0, **header_options).columns
-    source = f"CSV file {filepath.name!r}"
-    raw_names, _ = _header_names_and_units(raw_columns, source)
-    raw_by_upper = dict(zip(raw_names, raw_columns))
-    resolved = _resolve_well_column(pd.DataFrame(columns=raw_names), well_column)
-    if resolved is not None and not isinstance(kwargs.get("dtype"), (str, type)):
-        kwargs["dtype"] = {**(kwargs.get("dtype") or {}), raw_by_upper[resolved]: str}
-
-    # Read CSV
-    df = pd.read_csv(
-        filepath,
-        skiprows=skiprows,
-        na_values=na_values,
-        **kwargs
+    df = _read_log_table(
+        read, {"na_values": _na_values(null_values), **kwargs}, f"CSV file {filepath.name!r}", well_column
     )
+    return _well_from_log_table(df, "CSV", filepath, depth_column, depth_unit, well_name, well_column)
 
-    # Clean column names; "GR (gAPI)" and "GR [gAPI]" give curve GR in gAPI.
-    df.columns, units = _header_names_and_units(df.columns, source)
-    depth_column = _split_unit_header(depth_column)[0]
-    if depth_column not in df.columns:
-        hint = ""
-        if len(df.columns) == 1 and any(sep in str(df.columns[0]) for sep in (";", "\t", "|", " ")):
-            hint = (
-                f" The header was read as the single column {str(df.columns[0])!r}; "
-                "pass the separator the file uses (e.g. sep=';')."
-            )
-        raise ValueError(
-            f"Depth column {depth_column!r} not found. Available columns: "
-            f"{list(df.columns)}. Set depth_column explicitly.{hint}"
-        )
 
-    candidate_well_column = _resolve_well_column(df, well_column)
-    if candidate_well_column is not None:
-        identifiers = _well_identifiers(df[candidate_well_column])
-        if len(identifiers) > 1:
-            raise ValueError(
-                f"CSV contains {len(identifiers)} wells in "
-                f"{candidate_well_column!r}; use read_csv_wells() to keep them separate."
-            )
-        if not well_name and identifiers:
-            well_name = identifiers[0]
+def read_excel(
+    filepath: Union[str, Path],
+    depth_column: str = "DEPTH",
+    depth_unit: Optional[str] = None,
+    well_name: str = "",
+    sheet_name: Any = None,
+    skiprows: int = 0,
+    null_values: Any = None,
+    well_column: Optional[str] = None,
+    **kwargs
+) -> "Well":
+    """
+    Read a log table from an Excel workbook and return Well object.
 
-    if not well_name:
-        well_name = filepath.stem
+    The sheet is read as :func:`read_csv` reads a CSV file with the same
+    table: one row per depth, a depth column and one column per curve.
 
-    _warn_on_coerced_values(
-        df, [c for c in (candidate_well_column,) if c], f"CSV file {filepath.name!r}"
-    )
-    if candidate_well_column is not None and candidate_well_column != depth_column:
-        df = df.drop(columns=[candidate_well_column])
-    depth_unit = _depth_unit_from_header(units.get(depth_column), depth_unit, depth_column, source)
-    well = Well.from_dataframe(
-        df,
-        depth_column=depth_column.upper(),
-        depth_unit=_require_depth_unit(depth_unit, f"CSV file {filepath.name!r}"),
-        name=well_name
-    )
-    _set_header_units(well, units)
-    if candidate_well_column in ("UWI", "API") and len(identifiers) == 1:
-        setattr(well.header, candidate_well_column.lower(), identifiers[0])
+    Parameters
+    ----------
+    filepath : str or Path
+        Path to the workbook (``.xlsx``, ``.xlsm`` or ``.xls``)
+    depth_column : str, optional
+        Name of depth column (default: "DEPTH"); a header with a unit,
+        ``DEPTH (m)`` or ``DEPTH [m]``, is found by its name
+    depth_unit : {"m", "ft"}
+        Unit of the depth column. Required unless the depth column header
+        gives it (``DEPTH (m)``); when both are given they must agree.
+    well_name : str, optional
+        Name for the well (default: the well identifier column's value,
+        else the file name without its suffix)
+    sheet_name : str or int, optional
+        Sheet name or position (0 is the first). Default: the only sheet,
+        or the first sheet whose header row has the depth column.
+    skiprows : int, optional
+        Number of rows to skip above the header row
+    null_values : scalar or list, optional
+        Further null values (e.g. ``-99999``) besides -999, -999.25, -9999,
+        -9999.25, "null", "NaN" and empty cells
+    well_column : str, optional
+        Column identifying the well (default: the first of WELL, WELLNAME,
+        WELL_NAME, UWI and API present). It is read as text, names the well
+        and is not a curve; a UWI or API column also sets ``header.uwi`` or
+        ``header.api``.
+    **kwargs
+        Additional arguments passed to pd.read_excel
 
-    return well
+    Returns
+    -------
+    Well
+        Well object with loaded data. A column header ``NAME (unit)`` or
+        ``NAME [unit]`` gives curve ``NAME`` with that unit.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the workbook does not exist.
+    ValueError
+        If no sheet has the depth column, the depth column has no numeric
+        value, two columns become the same curve name (they differ only in
+        case or unit), the sheet holds several wells, or the depth header's
+        unit differs from ``depth_unit``.
+
+    Examples
+    --------
+    >>> from petrophys.io import read_excel
+    >>> well = read_excel("well_logs.xlsx", depth_unit="m")  # doctest: +SKIP
+    """
+    filepath = Path(filepath)
+    if not filepath.exists():
+        raise FileNotFoundError(f"Excel file not found: {filepath}")
+    source = f"Excel file {filepath.name!r}"
+    with pd.ExcelFile(filepath) as workbook:
+        sheet = _excel_sheet(workbook, sheet_name, depth_column, skiprows, source)
+
+        def read(**options: Any) -> pd.DataFrame:
+            return pd.read_excel(workbook, sheet_name=sheet, skiprows=skiprows, **options)
+
+        df = _read_log_table(read, {"na_values": _na_values(null_values), **kwargs}, source, well_column)
+    return _well_from_log_table(df, "Excel", filepath, depth_column, depth_unit, well_name, well_column)
 
 
 def _resolve_well_column(
@@ -309,6 +524,7 @@ def read_csv_wells(
         raise ValueError("chunksize must be positive")
 
     na_values = _na_values(null_values)
+    _detect_separator_and_decimal(path, skiprows, kwargs)
 
     # Read the identifier column as text in every chunk, so a numeric UWI is
     # not parsed as int in one chunk and float in another ("1001" vs
@@ -370,6 +586,7 @@ def read_csv_wells(
             depth_column=depth_column.upper(),
             depth_unit=_require_depth_unit(depth_unit, f"CSV file {Path(filepath).name!r}"),
             name=name,
+            header_units=False,
         )
         _set_header_units(wells[name], units)
     return wells
@@ -547,6 +764,7 @@ def read_ascii(
         depth_column=depth_col,
         depth_unit=_require_depth_unit(file_depth_unit or depth_unit, source),
         name=requested_name,
+        header_units=False,
     )
     if not well.name:
         well.name = filepath.stem

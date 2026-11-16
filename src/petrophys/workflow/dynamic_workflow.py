@@ -837,13 +837,18 @@ class DynamicWorkflowConfig:
     #: follows it rather than an input TEMP log (kept as TEMP_LOG).
     bht_f: Optional[float] = None
     #: Total depth for the BHT, in feet. Defaults to the LAS header TD, else
-    #: the deepest sample.
+    #: the deepest sample. Under ``"current"`` a total depth above the deepest
+    #: log sample (a depth in metres, for instance) is not used, with a
+    #: warning: the BHT is placed at the header TD, else at the deepest sample.
     td_ft: Optional[float] = None
     #: Geothermal gradient, degF/100 ft (1 degC/100 m is 0.549 degF/100 ft),
     #: from ``surface_temp_f`` at depth 0. Defaults to the LAS header TGRAD,
     #: used only when there is no BHT: a BHT anchors the profile at TD. Set
     #: explicitly, it is used instead of the header BHT; set it or ``bht_f``,
-    #: not both.
+    #: not both. On a well with a TEMP log (half or more of its samples
+    #: finite) the log stays the temperature source and the gradient only
+    #: fills the log's gaps, whereas ``bht_f`` and ``surface_temp_f`` set
+    #: explicitly replace the log.
     gradient_f_per_100ft: Optional[float] = None
 
     # -- Mud properties ------------------------------------------------------
@@ -852,7 +857,8 @@ class DynamicWorkflowConfig:
     #: they need a conductive water-based filtrate (the "geolink" profile
     #: computes them).
     mud_type: str = "WBM"
-    #: The mud contains clay or KCl, which disables SP-based Rw estimation.
+    #: The mud contains clay or KCl, so the SP log is not used: Rw is not
+    #: estimated from the SP, and no VCL_SP is computed.
     mud_has_clay_or_kcl: bool = False
     #: Mud-filtrate resistivity Rmf at ``rmf_meas_temp_f``, ohm.m. Rmf comes
     #: from the first of: this setting; ``rmf_salinity_ppm``,
@@ -886,13 +892,20 @@ class DynamicWorkflowConfig:
     # -- Formation water -----------------------------------------------------
     #: Formation water resistivity Rw, ohm.m, at ``rw_meas_temp_f``.
     rw: Optional[float] = None
-    #: Temperature of ``rw``, degF. When omitted, Rw is taken at the median
-    #: formation temperature (no temperature correction), as recorded in the
-    #: trace. Set without ``rw`` under ``"current"``, it is the measurement
-    #: temperature of the LAS header RW, in place of the header RWT.
+    #: Temperature of ``rw``, degF. When omitted, ``rw`` is taken at the median
+    #: formation temperature, as recorded in the trace; either way the RW
+    #: curve follows the temperature profile from that point. Set without
+    #: ``rw`` under ``"current"``, it is the measurement temperature of the LAS
+    #: header RW, in place of the header RWT; with neither ``rw`` nor a header
+    #: RW it is not used, with a warning.
     rw_meas_temp_f: Optional[float] = None
-    #: Formation water salinity, ppm NaCl equivalent. Rw then follows it across
-    #: the temperature profile, ahead of a header RW; ``rw`` set wins over it.
+    #: Formation water salinity, ppm NaCl equivalent: another way to give the
+    #: formation water. Without ``rw``, Rw follows this salinity across the
+    #: temperature profile, ahead of a header RW. With ``rw`` set, ``rw`` gives
+    #: the RW curve and this salinity is not used: where saturation chooses its
+    #: equation by salinity (Simandoux at 20000 ppm or more), it takes the
+    #: salinity of the Rw the run uses. Above 350,000 ppm a warning notes that
+    #: a NaCl brine holds less; above 400,000 ppm the value is refused.
     salinity_ppm: Optional[float] = None
 
     # -- Matrix properties ---------------------------------------------------
@@ -900,7 +913,11 @@ class DynamicWorkflowConfig:
     #: ``"sandstone"``, ``"limestone"`` or ``"dolomite"``; see
     #: :meth:`petrophys.model.constants.MatrixProperties.names`. Default:
     #: ``"sandstone"`` in the clastic domain, otherwise ``"auto"`` within
-    #: ``lithology_domain``.
+    #: ``lithology_domain``. It gives the matrix endpoints of the porosity
+    #: logs where no lithology group is known, and the clean line of VCL_ND.
+    #: On a well with a lithology log or lithology intervals the group of each
+    #: depth sets the matrix there, so ``matrix_type`` changes the porosity of
+    #: few samples; ``rho_ma``, ``nphi_ma`` and ``dt_ma`` hold at every depth.
     matrix_type: Optional[str] = None
     #: Matrix density, g/cm3. Unset: the value for ``matrix_type``, or per
     #: depth that of each lithology-log group. Set, it holds at every depth.
@@ -944,12 +961,19 @@ class DynamicWorkflowConfig:
     #: ``lithology_domain`` is used (:func:`petrophys.interpret` refuses
     #: both together).
     lithology: Optional[str] = None
-    #: Lithology intervals CSV (``top,bottom,lithology``).
+    #: Lithology intervals CSV (``top,bottom,lithology``); the file must exist.
     lithology_csv: Optional[str] = None
-    #: Lithology intervals as a table or CSV/Excel path.
+    #: Lithology intervals as a table (DataFrame or list of rows) or the path
+    #: of an existing CSV/Excel file.
     lithology_intervals: Optional[Any] = None
-    #: Lithology source: ``"auto"``, ``"external"`` (intervals),
-    #: ``"vendor"`` (lithology curve), ``"computed"`` or ``"config"``.
+    #: Lithology source. ``"auto"`` (default) takes the lithology intervals
+    #: when there are any, else the lithology code curve, else ``"computed"``.
+    #: ``"external"`` requires intervals and ``"vendor"`` a lithology code
+    #: curve. ``"computed"`` and ``"config"`` both ignore the lithology log
+    #: and the intervals: every depth takes ``lithology_domain`` and
+    #: ``matrix_type``. With ``"computed"`` an ``"auto"`` domain or matrix is
+    #: resolved from the well's core and logs; ``"config"`` refuses ``"auto"``
+    #: for either.
     lithology_source: str = "auto"
     #: Mnemonic of the per-sample lithology code curve, e.g. ``"FACIES"``. The
     #: same curve is the vendor lithology that ``lithology_source`` selects,
@@ -962,7 +986,10 @@ class DynamicWorkflowConfig:
     #: ``ROCK_TYPE``, ...) whose curve holds lithology codes: 20 or more finite
     #: whole numbers from 0 to 99, at most 50 distinct, half or more of them
     #: codes of that table. A warning names a curve other than ``LITHOLOGY_GEOLINK``,
-    #: and a curve set here that has no finite samples. Unless this is set, the
+    #: and a curve set here that has no finite samples. Under ``"current"`` a
+    #: curve set here is held to the same checks (with ``lithology_codes``,
+    #: against its codes and without the 0-99 range), and one that fails them,
+    #: such as a GR log, raises ``ValueError``. Unless this is set, the
     #: "geolink" profile takes its per-depth lithology groups from
     #: ``LITHOLOGY_GEOLINK`` alone (see ``calculation_profile``).
     lithology_curve: Optional[str] = None
@@ -1085,13 +1112,20 @@ class DynamicWorkflowConfig:
     #: (a lithology name stands for its family; ``"*"`` for the others); a
     #: family left out takes the LAS header's value, else its standard. Unless
     #: ``sw_routing_vcl_cutoff`` is set, saturation switches to a shaly-sand
-    #: model above this clay volume, or above 0.3 when it is unset.
+    #: model above this clay volume, or above 0.3 when it is unset. The same
+    #: clay volume bounds the reservoir flag that picks the SWIRR_APP samples
+    #: (built when ``swirr`` is unset and the well has no SWIRR curve or NMR
+    #: Swirr), so ``vcl_cutoff`` also changes SW, PERM, RQI and FZI, not only
+    #: net pay.
     vcl_cutoff: Optional[Any] = None
     #: Maximum water saturation for net pay, v/v. Unset: 0.60 clastic, 0.70
     #: carbonate; 0.7 under the "geolink" profile.
     sw_cutoff: Optional[Any] = None
     #: Minimum effective porosity for net reservoir, v/v. Unset: 0.08 clastic,
-    #: 0.045 carbonate.
+    #: 0.045 carbonate. It is also the least porosity of the reservoir flag
+    #: that picks the SWIRR_APP samples (unset: 0.08 in every lithology under
+    #: ``"current"``), built when ``swirr`` is unset and the well has no SWIRR
+    #: curve or NMR Swirr, so it changes PERM, RQI and FZI, not only net pay.
     phie_cutoff: Optional[Any] = None
 
     # -- Gamma-ray clay volume ----------------------------------------------
@@ -1104,7 +1138,7 @@ class DynamicWorkflowConfig:
     #: log, raised to 100 API when lower.
     gr_max: Optional[float] = None
     #: Transform: ``"linear"``, ``"larionov_tertiary"``, ``"larionov_older"``,
-    #: ``"steiber"`` or ``"clavier"``.
+    #: ``"stieber"`` (stored as ``"steiber"``) or ``"clavier"``.
     gr_method: str = "linear"
 
     # -- SP clay volume (None: picked from the log) --------------------------
@@ -1149,9 +1183,19 @@ class DynamicWorkflowConfig:
     bad_hole: Optional[Dict[str, float]] = None
 
     # -- Permeability --------------------------------------------------------
-    #: ``"auto"``, ``"timur"``, ``"coates"``, ``"wyllie_rose"`` or ``"lith_vcl"``.
+    #: Permeability method. ``"auto"`` (default) writes PERM from the empirical
+    #: equation ``perm_fallback_method`` at every depth and, where the well's
+    #: core (or peer-well core) gives a core model, the core-calibrated
+    #: PERM_CC beside it. Naming an equation writes PERM from it and no
+    #: PERM_CC: ``"timur"``, ``"coates"`` (Coates-Denoo) and ``"wyllie_rose"``
+    #: from porosity and Swirr (``perm_coefficients`` gives the equations),
+    #: ``"lith_vcl"`` from total porosity, clay volume and lithology, without
+    #: Swirr.
     perm_method: str = "auto"
-    #: Empirical method tried when core calibration is unavailable.
+    #: Empirical equation of PERM under ``perm_method="auto"``: ``"coates"``
+    #: (default), ``"timur"``, ``"wyllie_rose"`` or ``"lith_vcl"``. It sets
+    #: PERM at every depth, also where a core model is fitted: the
+    #: core-calibrated permeability is PERM_CC.
     perm_fallback_method: str = "coates"
     #: Coefficients of the empirical permeability equation, any of ``a`` (the
     #: coefficient), ``b`` (the porosity exponent) and ``c`` (the Swirr
@@ -1167,6 +1211,7 @@ class DynamicWorkflowConfig:
     #: ``{"sandstone": 0.12, "limestone": 0.20}`` (SCAL or NMR values by rock
     #: type); a lithology not given takes the automatic estimate. Defaults to
     #: a SWIRR curve or NMR data, else the Buckles bulk-volume-water estimate.
+    #: Under ``"current"`` it must be above 0.
     swirr: Optional[Any] = None
     #: Clay porosity behind the PHIE that picks the SWIRR_APP samples, i.e. the
     #: reservoir flag built before permeability when the well has no RESFLAG or
@@ -1199,12 +1244,19 @@ class DynamicWorkflowConfig:
     #: another run's cutoffs into Swirr and permeability. True keeps a supplied
     #: flag, e.g. a vendor reservoir flag you mean to honour.
     reuse_input_resflag: bool = False
-    #: Offset wells (``Well`` objects) whose core data calibrate permeability.
+    #: Offset wells whose core data calibrate permeability: a list of
+    #: interpreted ``Well`` objects (``petrophys.interpret(peer).well``, which
+    #: has the PHIE or PHIT its core is fitted to). A peer is used only when
+    #: ``use_peer_core=True``, it has the same ``header.field`` as this well,
+    #: both wells have formation tops with a formation name in common, and it
+    #: is interpreted. Under ``"current"`` a warning names the condition a
+    #: peer fails.
     peer_wells: Optional[List[Any]] = None
     #: Formation intervals (``FormationTops``) for per-formation core
     #: calibration. Defaults to formations attached by ``petrophys.read``.
     formation_tops: Optional[Any] = None
-    #: Calibrate permeability with core data from ``peer_wells``.
+    #: Calibrate permeability with core data from ``peer_wells``, under the
+    #: conditions given there; without ``peer_wells`` it has no effect.
     use_peer_core: bool = False
 
     # -- Water saturation ----------------------------------------------------
@@ -1222,8 +1274,9 @@ class DynamicWorkflowConfig:
     #: every net-rock sample is evaluated with Archie. A lower value, e.g. 0.15,
     #: also applies the shaly-sand equations to moderately shaly reservoir rock.
     #: Under ``"current"`` the SWIRR_APP samples are picked below the same clay
-    #: volume.
-    sw_routing_vcl_cutoff: Optional[float] = None
+    #: volume. One value, or one per lithology family as for ``vcl_cutoff``,
+    #: e.g. ``{"clastic": 0.2, "carbonate": 0.3}``.
+    sw_routing_vcl_cutoff: Optional[Any] = None
     #: Shale resistivity, ohm.m. Defaults to the computed clay resistivity.
     rtsh: Optional[float] = None
     #: Shale exponent of the North Sea model.
@@ -1253,7 +1306,12 @@ class DynamicWorkflowConfig:
 
     # -- Step selection ------------------------------------------------------
     #: Workflow steps to skip, e.g. ``["permeability"]``; see
-    #: :class:`WorkflowStep` for the names.
+    #: :class:`WorkflowStep` for the names. A skipped step writes none of its
+    #: curves, and the steps that read them are not skipped with it: one that
+    #: finds its inputs missing is skipped with the reason, and one that runs
+    #: without them fails. Skipping ``"rw"`` leaves saturation without an Rw:
+    #: the saturation step fails and the run's status is ``"failed"``, so skip
+    #: the steps that depend on a skipped step as well.
     skip_steps: List[str] = field(default_factory=list)
     #: The settings the caller passed, which rank above LAS header values even
     #: when they equal the default (kept by ``dataclasses.replace``). Set by
@@ -1339,12 +1397,13 @@ def _per_lithology_values(config: "DynamicWorkflowConfig", errors: List[str]) ->
     from petrophys.model.constants import ArchieParameterDefaults
 
     known = set(ArchieParameterDefaults.names())
-    for name in (*_ARCHIE_FIELDS, "swirr", *_CUTOFF_FIELDS):
+    for name in (*_ARCHIE_FIELDS, "swirr", *_CUTOFF_FIELDS, "sw_routing_vcl_cutoff"):
         value = getattr(config, name)
         if not isinstance(value, Mapping):
             continue
         if config.calculation_profile in _BENCHMARK_PROFILES:
-            errors.append(f'{name} per lithology is not available under the "geolink" calculation profile')
+            if name != "sw_routing_vcl_cutoff":  # which the "geolink" profile takes as given
+                errors.append(f'{name} per lithology is not available under the "geolink" calculation profile')
             continue
         normalized: Dict[str, float] = {}
         sources: Dict[str, str] = {}
@@ -1913,6 +1972,7 @@ _FRACTION_FIELDS = (
 _FINITE_FIELDS = (
     "surface_temp_f", "bht_f", "rmf_meas_temp_f", "rm_meas_temp_f",
     "rw_meas_temp_f", "nphi_ma", "gr_min", "gr_max", "sp_min", "sp_max", "cec",
+    "gradient_f_per_100ft", "rho_hc", "hc_hydrogen_index",
 )
 
 
@@ -1962,10 +2022,34 @@ _NPHI_MA_RANGE = (-0.1, 0.5)
 #: Most dissolved salt a formation water holds, in ppm (halite saturation is
 #: about 260,000 ppm NaCl; CaCl2 brines reach about 400,000 ppm).
 _MAX_SALINITY_PPM = 400_000.0
+#: A salinity above this is used with a warning: NaCl brine holds about
+#: 260,000 ppm at surface temperature and up to about 350,000 ppm in the
+#: hottest reservoirs, and the resistivity-salinity conversions are NaCl charts.
+_USUAL_MAX_SALINITY_PPM = 350_000.0
+#: Limits of settings that are refused beyond them: a formation water above
+#: 100 ohm.m holds under about 50 ppm of salt at 75 degF (rain water), a
+#: bottom-hole temperature above 700 degF is beyond wireline logging (the
+#: limit the water-sample temperatures take) and no mean annual surface
+#: temperature is above 150 degF.
+_MAX_RW_OHMM = 100.0
+_MAX_FORMATION_TEMP_F = 700.0
+_MAX_SURFACE_TEMP_F = 150.0
+#: Matrix slowness lies between dolomite (38.5-43.5 us/ft) and coal (about
+#: 120 us/ft); pore fluids between a saturated brine under pressure (about
+#: 160 us/ft; water 189, oil about 240) and gas (several hundred us/ft). A
+#: sandstone matrix in us/m reads 182.
+_DT_MA_RANGE = (35.0, 130.0)
+_DT_FL_RANGE = (150.0, 1000.0)
 #: NaCl brine saturates near 260,000 ppm; apparent Rw implying more is not water.
 _SATURATED_BRINE_PPM = 260_000.0
 #: Rwa samples are compared at this temperature before the P5 is taken.
 _RWA_REFERENCE_TEMP_F = 75.0
+#: The Rw in use is questioned when the median Rwa of the clean porous rock
+#: is below this fraction of it: Archie Sw above 1.4 (n = 2) in more than
+#: half of that rock.
+_RWA_CHECK_RATIO = 0.5
+#: Fewest clean porous samples for that comparison.
+_RWA_CHECK_MIN_SAMPLES = 30
 
 
 #: Usual Archie ranges; a value outside is used, with a warning.
@@ -1973,11 +2057,21 @@ _ARCHIE_USUAL = {"a": (0.3, 3.0), "m": (1.0, 4.0), "n": (1.0, 5.0)}
 
 
 def _unusual_setting_notes(config: "DynamicWorkflowConfig") -> List[str]:
-    """Warnings for set Archie values outside their usual range ("current" runs)."""
+    """Warnings for set Archie values and salinities outside their usual range ("current" runs)."""
     from collections.abc import Mapping
 
     if config.calculation_profile != "current":
         return []
+    salinity_notes = []
+    for name in ("salinity_ppm", "rmf_salinity_ppm"):
+        value = getattr(config, name, None)
+        if isinstance(value, (int, float, np.integer, np.floating)) and value > _USUAL_MAX_SALINITY_PPM:
+            salinity_notes.append(
+                f"{name}={float(value):,.0f} ppm is more than a NaCl brine holds (about "
+                f"{_SATURATED_BRINE_PPM:,.0f} ppm at surface temperature, {_USUAL_MAX_SALINITY_PPM:,.0f} ppm in "
+                "the hottest reservoirs); used as given. Check the unit (mg/l reads higher than ppm in "
+                "dense brines)."
+            )
     sources = [("", {name: getattr(config, name, None) for name in _ARCHIE_USUAL})]
     sources += [
         (f"zone {zone['name']}: ", zone.get("settings") or {}) for zone in (config.zones or ())
@@ -1996,7 +2090,7 @@ def _unusual_setting_notes(config: "DynamicWorkflowConfig") -> List[str]:
                         f"{prefix}{label}={float(item):g} is outside the usual {low:g}-{high:g}; "
                         "used as given. Check it is not a typo."
                     )
-    return notes
+    return notes + salinity_notes
 
 
 def _physical_range_errors(config: "DynamicWorkflowConfig") -> List[str]:
@@ -2005,7 +2099,11 @@ def _physical_range_errors(config: "DynamicWorkflowConfig") -> List[str]:
     Temperatures below absolute zero, a bottom-hole temperature below the
     surface temperature, densities and matrix neutron values no rock has,
     a matrix lighter than its pore fluid and a salinity outside 0-400,000 ppm
-    are refused; most are a unit slip (kg/m3 for g/cm3, degC for degF).
+    are refused; most are a unit slip (kg/m3 for g/cm3, degC for degF). So are
+    a clay density outside the matrix range, an irreducible water saturation
+    of 0, an Rw above 100 ohm.m, a bottom-hole temperature above 700 degF, a
+    surface temperature above 150 degF and sonic slownesses outside the
+    matrix (35-130 us/ft) and pore-fluid (150-1000 us/ft) ranges.
     """
     def number(name: str) -> Optional[float]:
         value = getattr(config, name, None)
@@ -2063,9 +2161,47 @@ def _physical_range_errors(config: "DynamicWorkflowConfig") -> List[str]:
     hc_hi = number("hc_hydrogen_index")
     if hc_hi is not None and not 0.0 <= hc_hi <= 1.2:
         errors.append(f"hc_hydrogen_index must be between 0 and 1.2; got {hc_hi!r}")
-    salinity = number("salinity_ppm")
-    if salinity is not None and not 0.0 <= salinity <= _MAX_SALINITY_PPM:
-        errors.append(f"salinity_ppm must be between 0 and {_MAX_SALINITY_PPM:,.0f} ppm; got {salinity!r}")
+    for name in ("salinity_ppm", "rmf_salinity_ppm"):
+        salinity = number(name)
+        if salinity is not None and not 0.0 <= salinity <= _MAX_SALINITY_PPM:
+            errors.append(f"{name} must be between 0 and {_MAX_SALINITY_PPM:,.0f} ppm; got {salinity!r}")
+    rho_cl = number("rho_cl")
+    if rho_cl is not None and not _RHO_MA_RANGE[0] <= rho_cl <= _RHO_MA_RANGE[1]:
+        errors.append(
+            f"rho_cl must be a clay density of {_RHO_MA_RANGE[0]:g}-{_RHO_MA_RANGE[1]:g} g/cm3 "
+            f"(2450 kg/m3 is 2.45 g/cm3); got {rho_cl!r}"
+        )
+    if number("swirr") == 0.0:
+        errors.append(
+            "swirr must be above 0: the permeability equations divide by the irreducible water "
+            "saturation; got 0"
+        )
+    rw = number("rw")
+    if rw is not None and rw > _MAX_RW_OHMM:
+        errors.append(
+            f"rw must be a formation water resistivity of at most {_MAX_RW_OHMM:g} ohm.m (sea water is "
+            f"about 0.2 ohm.m and drinking water 10-50 ohm.m at 75 degF); got {rw!r}"
+        )
+    if bht is not None and bht > _MAX_FORMATION_TEMP_F:
+        errors.append(
+            f"bht_f must be a formation temperature of at most {_MAX_FORMATION_TEMP_F:g} degF; got {bht!r}"
+        )
+    if surface is not None and surface > _MAX_SURFACE_TEMP_F:
+        errors.append(
+            f"surface_temp_f must be a surface (mean annual) temperature of at most "
+            f"{_MAX_SURFACE_TEMP_F:g} degF; got {surface!r}"
+        )
+    dt_ma, dt_fl = number("dt_ma"), number("dt_fl")
+    if dt_ma is not None and not _DT_MA_RANGE[0] <= dt_ma <= _DT_MA_RANGE[1]:
+        errors.append(
+            f"dt_ma must be a matrix slowness of {_DT_MA_RANGE[0]:g}-{_DT_MA_RANGE[1]:g} us/ft (dolomite "
+            f"43.5, limestone 47.6, sandstone 55.5; 182 us/m is 55.5 us/ft); got {dt_ma!r}"
+        )
+    if dt_fl is not None and not _DT_FL_RANGE[0] <= dt_fl <= _DT_FL_RANGE[1]:
+        errors.append(
+            f"dt_fl must be a pore-fluid slowness of {_DT_FL_RANGE[0]:g}-{_DT_FL_RANGE[1]:g} us/ft, above "
+            f"the matrix slowness (water 189, oil about 240); got {dt_fl!r}"
+        )
     return errors
 
 
@@ -2385,6 +2521,42 @@ def _validate_parameter_mappings(config: "DynamicWorkflowConfig", errors: List[s
         config.mineral_endpoints = endpoints
 
 
+def _validate_input_tables(config: "DynamicWorkflowConfig", errors: List[str]) -> None:
+    """Check that the lithology tables are tables or files that exist, and ``peer_wells`` a list of wells."""
+    import os
+
+    accepted = {
+        "lithology_csv": "the path of a CSV or Excel file with top, bottom and lithology columns",
+        "lithology_intervals": "a DataFrame, a list of rows, or the path of a CSV or Excel file, "
+                               "with top, bottom and lithology columns",
+        "lithology_codes": "a mapping of code to rock name, a DataFrame, or the path of a CSV or Excel codebook",
+    }
+    for name, description in accepted.items():
+        value = getattr(config, name)
+        if value is None:
+            continue
+        if isinstance(value, (str, os.PathLike)):
+            if not Path(value).is_file():
+                errors.append(f"{name}: file not found: {str(value)!r}; give {description}")
+        elif isinstance(value, (bool, np.bool_)) or not isinstance(value, (pd.DataFrame, Mapping, list, tuple)):
+            errors.append(f"{name} takes {description}; got {type(value).__name__} {value!r}")
+    peers = config.peer_wells
+    if peers is None:
+        return
+    expected = (
+        "peer_wells takes a list of interpreted wells, e.g. [petrophys.interpret(peer).well]"
+    )
+    if isinstance(peers, Well):
+        errors.append(f"{expected}; got one well (put it in a list)")
+    elif not isinstance(peers, (list, tuple)):
+        errors.append(f"{expected}; got {type(peers).__name__}")
+    else:
+        for index, peer in enumerate(peers):
+            if peer is not None and not isinstance(peer, Well):
+                hint = " (pass its .well)" if isinstance(getattr(peer, "well", None), Well) else ""
+                errors.append(f"{expected}; item {index} is {type(peer).__name__}{hint}")
+
+
 def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     """Validate and normalize a :class:`DynamicWorkflowConfig` in place.
 
@@ -2393,7 +2565,7 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     ValueError
         Listing every invalid field, with the accepted values.
     """
-    from petrophys.interpretation.clay_volume.gr_method import GR_VCL_METHODS
+    from petrophys.interpretation.clay_volume.gr_method import GR_VCL_METHODS, gr_method_name
     from petrophys.interpretation.permeability.perm_module import (
         PERMEABILITY_METHOD_ALIASES,
         PERMEABILITY_METHODS,
@@ -2422,6 +2594,7 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
         config.mineral_solver_version = int(version)
     if config.carbonate_calibration is not None:
         _normalized_choice(config, "carbonate_calibration", _CARBONATE_CALIBRATIONS, errors)
+    config.gr_method = gr_method_name(config.gr_method)
     _normalized_choice(config, "gr_method", GR_VCL_METHODS, errors)
     _normalized_choice(
         config, "perm_method", PERMEABILITY_METHODS, errors,
@@ -2507,6 +2680,7 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
             )
     if config.lithology_csv is not None and config.lithology_intervals is not None:
         errors.append("Supply lithology_csv or lithology_intervals, not both.")
+    _validate_input_tables(config, errors)
     config.zones = _normalized_zones(config, errors)
     _validate_parameter_mappings(config, errors)
     if config.calculation_profile != "current" and config.gradient_f_per_100ft is not None:
@@ -2658,19 +2832,38 @@ def _curves_without_aliases(well: Well) -> List[str]:
 @dataclass
 class DynamicWorkflowResult:
     """Results from dynamic workflow execution."""
+    #: The interpreted well: the input curves and the calculated ones.
     well: "Well"
+    #: The settings the run used.
     config: DynamicWorkflowConfig
+    #: The record of each step that ran, in run order; a step that failed is
+    #: included with ``success`` False and the reason in ``message``.
     steps_executed: List[StepResult] = field(default_factory=list)
+    #: Names of the steps that did not run.
     steps_skipped: List[str] = field(default_factory=list)
+    #: Why each skipped step did not run, by step name.
     specific_steps_skipped: dict[str, str] = field(default_factory=dict)
+    #: What made the run fail: an input the workflow cannot use, or a failed
+    #: step as ``"<step>: <reason>"``. Empty for a run that succeeded.
     errors: List[str] = field(default_factory=list)
+    #: Assumed values and data-quality findings to check.
     warnings: List[str] = field(default_factory=list)
+    #: The lithology domain the run interpreted with, e.g. ``"clastic"`` or
+    #: ``"carbonate"``.
     lithology_domain: str = "auto"
 
     # Computed values
+
+    #: Formation water resistivity used (ohm.m): one value, or a value per
+    #: depth sample at formation temperature. None when no Rw was computed.
     rw_computed: Optional[Union[float, np.ndarray]] = None
+    #: Mud filtrate resistivity used (ohm.m), as ``rw_computed``; None when
+    #: no Rmf was computed.
     rmf_computed: Optional[Union[float, np.ndarray]] = None
+    #: Clay resistivity used (ohm.m); None when none was computed.
     rcl_computed: Optional[float] = None
+    #: Temperature gradient of the temperature step (degF per 100 ft); None
+    #: when the step did not run.
     temperature_gradient: Optional[float] = None
     # The eval package's calculations a "geolink" run gave the well, "main_run"
     # or "rerun" (None under "current"); the trace reports them.
@@ -2714,7 +2907,12 @@ class DynamicWorkflowResult:
 
     @property
     def status(self) -> str:
-        """Return a compact execution status for API and trace consumers."""
+        """Return the execution status.
+
+        ``"failed"`` when the run has errors or a failed step,
+        ``"interpreted"`` when it succeeded and an interpretive step wrote a
+        curve, and ``"no_interpretation"`` when it succeeded without one.
+        """
         if not self.success:
             return "failed"
         if self.has_usable_interpretation:
@@ -2723,6 +2921,7 @@ class DynamicWorkflowResult:
 
     @property
     def success(self) -> bool:
+        """Return True when ``errors`` is empty and no executed step failed."""
         # Success: no hard errors AND no executed step reported failure. Step
         # failures are recorded on the steps, not in `errors`.
         step_failed = any(
@@ -2732,7 +2931,7 @@ class DynamicWorkflowResult:
         return len(self.errors) == 0 and not step_failed
 
     def raise_for_errors(self) -> "DynamicWorkflowResult":
-        """Raise when execution failed; return this result for chaining."""
+        """Raise RuntimeError when execution failed; return this result for chaining."""
         if not self.success:
             details = self.errors or [
                 step.message or step.step
@@ -2803,7 +3002,10 @@ class DynamicWorkflowResult:
     def to_dataframe(self):
         """Return the step trace as a DataFrame, one row per executed step.
 
-        For the interpreted log curves use ``result.well.to_dataframe()``.
+        The columns are ``Step``, ``Status`` (``OK`` or ``FAIL``), ``Method``,
+        ``Input Curves``, ``Output Curves``, ``Parameters``, ``Decisions``
+        and ``Message``. For the interpreted log curves use
+        ``result.well.to_dataframe()``.
         """
         import pandas as pd
         rows = []
@@ -2954,8 +3156,25 @@ class DynamicWorkflowResult:
             reservoir and net pay thickness (in the well's depth unit),
             net reservoir / gross ("N/G (reservoir)") and net pay / gross
             ("Pay/Gross"), and PHIE, Sw, VCL and
-            permeability averaged over the net-pay samples only (geometric
-            mean for permeability; NaN where a formation has no pay).
+            permeability averaged over the net-pay samples only: porosity
+            and clay volume weighted by thickness, Sw by pore volume
+            (porosity x thickness), permeability a geometric mean (NaN
+            where a formation has no pay).
+            ``DataFrame.attrs["curves"]`` names the curve each pay average is
+            taken from (PHIE_CC and PERM_CC where the interpretation produced
+            or used them, PHIE and PERM at the samples those do not
+            cover). ``Avg GR``, ``Avg RHOB``, ``Avg NPHI``,
+            ``Avg RDEP`` and ``Avg PHIT`` are means over the whole formation.
+            ``HCPV`` is the hydrocarbon pore thickness, the sum of
+            PHIE x (1 - Sw) x thickness over net pay (depth unit), and
+            ``BVW`` the thickness-weighted mean of PHIE x Sw over net pay
+            (v/v). ``Samples`` and ``Pay Samples`` count the depth samples,
+            and ``Data Coverage %`` is the share of samples with RHOB.
+
+        Raises
+        ------
+        ValueError
+            If no formations are given or attached to the well.
 
         Examples
         --------
@@ -2983,7 +3202,13 @@ class DynamicWorkflowResult:
         Returns
         -------
         pandas.DataFrame
-            One row per zone, with the columns of :meth:`formation_summary`.
+            One row per zone, with the columns of :meth:`formation_summary`;
+            the first column is ``Zone``.
+
+        Raises
+        ------
+        ValueError
+            If no zones are given and the interpretation had none.
 
         Examples
         --------
@@ -3015,10 +3240,15 @@ class DynamicWorkflowResult:
         Returns
         -------
         dict
-            ``status``, ``resolved`` matrix and lithology, ``settings_used``
-            (non-default settings), ``key_results`` (statistics of VCL, PHIT,
-            PHIE, SW, PERM), ``net_thickness``, ``executed_steps``,
-            ``skipped_steps`` with reasons, ``warnings`` and ``errors``.
+            ``petrophys_version``, ``well`` (its name), ``status``,
+            ``lithology_domain``, ``resolved`` matrix and lithology,
+            ``settings_used`` (non-default settings), ``summary_interval``
+            (``top``, ``bottom`` and ``depth_unit``), ``key_results``
+            (statistics of VCL, PHIT, PHIE, SW and PERM, and of PHIE_CC and
+            PERM_CC where the pay averages use them), ``net_thickness``
+            (``net_rock``, ``net_res`` and ``net_pay`` in ``depth_unit``),
+            ``executed_steps``, ``skipped_steps`` with reasons, ``warnings``
+            and ``errors``.
             Use :meth:`to_trace_dict` for every step's full record.
 
         Examples
@@ -3035,6 +3265,9 @@ class DynamicWorkflowResult:
     def step(self, name: str) -> "StepResult":
         """The record of one executed step: its ``method``, ``decisions``,
         ``parameters``, ``input_curves`` and ``output_curves``.
+
+        A step that did not run raises KeyError, with the reason it was
+        skipped and the names of the steps that ran.
 
         >>> result.step("rw").decisions  # doctest: +SKIP
         """
@@ -3068,6 +3301,11 @@ class DynamicWorkflowResult:
         pandas.DataFrame
             A row per curve: ``unit``, ``samples`` (finite), ``mean``,
             ``p10``, ``median`` and ``p90``.
+
+        Raises
+        ------
+        KeyError
+            If a named curve is not in the well.
         """
         from petrophys.workflow.summary import statistics_table
 
@@ -3334,6 +3572,7 @@ class DynamicWorkflow:
             del context[CODE_CURVE_RECORD]
             well.set_parameter("_geology_context", dict(context))
         self._code_curve_well = None
+        self._check_lithology_curve(well)
         code_curve = self._lithology_code_curve(well)
         source = self.config.lithology_intervals
         if source is None:
@@ -3467,6 +3706,102 @@ class DynamicWorkflow:
             self._code_curve = found[0] if found else None
             self._code_curve_well = well
         return self._code_curve
+
+    def _unused_setting_notes(self, well: "Well") -> List[str]:
+        """Warnings for settings that are given but that this run cannot use (``"current"``).
+
+        Waxman-Smits needs ``cec`` and ``b_coeff`` together; ``rw_meas_temp_f``
+        is the temperature of ``rw`` or of the LAS header RW;
+        ``rename_input_curves`` and a curve-name mapping act in the
+        standardization step; peer wells calibrate core only with
+        ``use_peer_core`` (:meth:`_core_peer_wells` reports each peer).
+        """
+        if self._historical:
+            return []
+        from petrophys.preprocessing.standardization.user_aliases import curve_aliases_of
+
+        config = self.config
+        zones = [zone.get("settings") or {} for zone in (config.zones or ())]
+
+        def given(name: str) -> bool:
+            return getattr(config, name) is not None or any(zone.get(name) is not None for zone in zones)
+
+        notes = []
+        for name, other in (("cec", "b_coeff"), ("b_coeff", "cec")):
+            if given(name) and not given(other):
+                notes.append(
+                    f"{name} is set without {other}: Waxman-Smits needs both (neither is estimated), so "
+                    f"{name} is not used and saturation is routed as without it."
+                )
+        header_rw = any(
+            isinstance(key, str) and re.fullmatch(r"RW(_Z\d+)?", key.upper())
+            for key in (getattr(well, "_parameters", None) or {})
+        )
+        if config.rw_meas_temp_f is not None and not given("rw") and (not header_rw or given("salinity_ppm")):
+            notes.append(
+                f"rw_meas_temp_f = {float(config.rw_meas_temp_f):g} degF is not used: it is the temperature "
+                "of rw or of the LAS header RW, and this run takes Rw from neither."
+            )
+        if not self._setting("standardize_input") or WorkflowStep.NORMALIZATION.value in config.skip_steps:
+            if config.rename_input_curves:
+                notes.append(
+                    "rename_input_curves=True has no effect: curves are renamed by the standardization "
+                    "step, which is off (standardize_input=False or 'normalization' in skip_steps)."
+                )
+            if curve_aliases_of(well):
+                notes.append(
+                    "The curve-name mapping (curve_aliases) is not applied: it is read by the "
+                    "standardization step, which is off (standardize_input=False or 'normalization' in "
+                    "skip_steps)."
+                )
+        if config.use_peer_core and not config.peer_wells:
+            notes.append("use_peer_core=True has no effect: no peer_wells are given.")
+        if config.peer_wells and not config.use_peer_core:
+            notes.append(
+                "peer_wells are not used: their core calibrates this well only with use_peer_core=True."
+            )
+        return notes
+
+    def _check_lithology_curve(self, well: "Well") -> None:
+        """Refuse a ``lithology_curve`` whose curve does not hold lithology codes (``"current"``).
+
+        The curve named is held to the checks of the automatic detection
+        (:func:`~petrophys.interpretation.lithology.matrix_inference.lithology_code_curve`),
+        so a log such as GR is not decoded as codes. A curve the well lacks, or
+        one without finite samples, is left to the warning of :meth:`_warn_code_curve`.
+        """
+        name = self.config.lithology_curve
+        if name is None or self._historical:
+            return
+        from petrophys.interpretation.lithology.matrix_inference import (
+            LITHOLOGY_CODE_CLASS,
+            _finite_curve,
+            _validate_lithology_codes,
+        )
+
+        curve = _finite_curve(well, name)
+        if curve is None:
+            return
+        user_groups = self._user_code_groups()
+        known = None if user_groups is None else {code for code in user_groups if isinstance(code, int)}
+        if _validate_lithology_codes(well, name, known) is not None:
+            return
+        data = np.asarray(curve.data, dtype=float)
+        data = data[np.isfinite(data)]
+        whole = bool(np.allclose(data, np.round(data), atol=1e-6))
+        table = "lithology_codes" if known is not None else "the built-in lithology code table"
+        codes = LITHOLOGY_CODE_CLASS if known is None else known
+        decoded = float(np.mean([float(value).is_integer() and int(value) in codes for value in data]))
+        raise ValueError(
+            f"lithology_curve={name!r} does not look like lithology codes: the curve has {data.size} finite "
+            f"samples and {np.unique(data).size} distinct values from {data.min():g} to {data.max():g}"
+            f"{'' if whole else ', not whole numbers'}, {decoded:.0%} of them codes of {table}. "
+            "A lithology code curve holds 20 or more finite "
+            "samples, all whole numbers"
+            + ("" if known is not None else " from 0 to 99")
+            + f", at most 50 distinct, half or more of them codes of {table}. Name the well's lithology "
+            "code curve, give its codebook as lithology_codes, or leave lithology_curve unset."
+        )
 
     def _user_code_groups(self) -> Optional[Dict[Any, Optional[str]]]:
         """Lithology group of each code of ``lithology_codes``, or None when it is not set.
@@ -3756,7 +4091,7 @@ class DynamicWorkflow:
         names = ["PERM"] if self._benchmark else ["PERM_CC", "PERM"]
         return [*names, *extra]
 
-    def _core_calibration_options(self) -> Dict[str, Any]:
+    def _core_calibration_options(self, well: "Well") -> Dict[str, Any]:
         """PermeabilityModule options for the same-well core porosity correction.
 
         Under "current" core porosity is fitted to the log PHIT: helium porosity
@@ -3764,14 +4099,38 @@ class DynamicWorkflow:
         water (API RP 40, 1998; Bush and Jenkins, 1970), so it is total
         porosity. A fit that rests on few pairs, has a slope that is not
         positive or an r^2 below ``_CORE_POROSITY_MIN_R_SQUARED`` is not used.
-        The "geolink" profile fits core porosity to PHIE and uses every fit.
+        The core model is applied over the whole well; its permeability is
+        written only where clay volume is at or below the net-rock clay
+        cutoff, since a porosity-permeability transform describes reservoir
+        rock, not shale.
+        The "geolink" profile fits core porosity to PHIE, uses every fit and
+        applies each model over its whole interval.
         """
         if self._reproducing_benchmark:
-            return {}
+            return {"bound_core_rock": False}
         return {
             "core_porosity_curve": "PHIT",
             "min_porosity_r_squared": _CORE_POROSITY_MIN_R_SQUARED,
+            "core_vcl_max": self._net_rock_vcl_cutoff(well),
         }
+
+    def _net_rock_vcl_cutoff(self, well: "Well") -> np.ndarray:
+        """Each sample's net-rock clay cutoff (v/v): the setting, else its lithology family's standard."""
+        from collections.abc import Mapping
+
+        from petrophys.evaluation.net_pay.cutoffs import standard_cutoffs
+
+        value = self.config.vcl_cutoff
+        if value is not None and not isinstance(value, Mapping):
+            return np.full(well.n_samples, float(value))
+        families = np.broadcast_to(
+            np.asarray(self._cutoff_families(self._build_lithology_log(well)), dtype=str), (well.n_samples,))
+        cutoff = np.empty(well.n_samples, dtype=float)
+        for family in np.unique(families):
+            name = str(family)
+            cutoff[families == family] = _lithology_value(
+                value, name, name, standard_cutoffs(name)["vcl_cutoff"])
+        return cutoff
 
     def _effective_core_porosity(self, well: "Well", phit_cc: np.ndarray) -> np.ndarray:
         """PHIE_CC from core-corrected total porosity (``"current"``).
@@ -3903,6 +4262,35 @@ class DynamicWorkflow:
                             "are used for formation-matched core calibration"
                         )
             prepared.append(peer)
+            # Peer core applies within one field and one formation: say which
+            # of these conditions leaves this peer unused.
+            field = str(getattr(well.header, "field", None) or "").strip()
+            peer_field = str(getattr(peer.header, "field", None) or "").strip()
+            target_tops = self.config.formation_tops
+            if target_tops is None:
+                target_tops = well.get_parameter("formation_tops")
+            peer_tops = peer.get_parameter("formation_tops")
+            reason = None
+            if not field:
+                reason = "this well's header has no field name (FLD) to match the peer's field"
+            elif peer_field.lower() != field.lower():
+                reason = (
+                    f"its field ({peer_field or 'none in its header'}) is not this well's field ({field}); "
+                    "peer core is used within one field (header FLD)"
+                )
+            elif target_tops is None:
+                reason = (
+                    "this well has no formation tops (formations= in petrophys.read or "
+                    "petrophys.interpret) to match the peer's formations"
+                )
+            elif peer_tops is None:
+                reason = "it has no formation tops (formations= in petrophys.read) to match this well's formations"
+            elif not any(peer_tops.get_by_name(interval.name) is not None for interval in target_tops.intervals):
+                reason = "its formation tops share no formation name with this well's"
+            if reason is not None:
+                message = f"Peer well {name} was not used for core calibration: {reason}."
+                decisions.append(message)
+                self._warn_assumed(message)
         return prepared
 
     def _core_porosity_decisions(self, metadata: Dict[str, Any], phie_cc_written: bool) -> List[str]:
@@ -4212,6 +4600,16 @@ class DynamicWorkflow:
         return a_out, m_out, n_out, summary
 
     def get_pipeline(self):
+        """Return the workflow's steps in pipeline order.
+
+        Returns
+        -------
+        list of tuple
+            One ``(step, run, can_run)`` per step: the :class:`WorkflowStep`,
+            the method that runs it on a well and returns its
+            :class:`StepResult`, and the method that tells whether the well
+            and settings allow it.
+        """
         return [
             (WorkflowStep.NORMALIZATION, self._step_normalization, self._can_normalization),
             (WorkflowStep.TEMPERATURE, self._step_temperature, self._can_temperature),
@@ -4390,6 +4788,8 @@ class DynamicWorkflow:
         """
         notes = list(getattr(self.config, "_header_notes", ()) or ())
         notes += _unusual_setting_notes(self.config)
+        notes += self._unused_setting_notes(well)
+        self._check_lithology_curve(well)
         if self.config.zones or getattr(self.config, "_header_zones", None):
             result = self._run_zones(well)
         else:
@@ -5316,6 +5716,11 @@ class DynamicWorkflow:
             td_unit = well.depth_unit
         if td_ft is None and well.bottom is not None:
             td_ft = float(well.bottom)
+            # A depth slice of a well keeps the BHT at the deepest log sample
+            # of the well it was cut from.
+            logged_bottom = getattr(well, "_logged_bottom", None)
+            if logged_bottom is not None and not self._historical:
+                td_ft = max(td_ft, float(logged_bottom))
             td_unit = well.depth_unit
 
         gradient = self.config.gradient_f_per_100ft
@@ -5332,6 +5737,49 @@ class DynamicWorkflow:
                     f"Header TGRAD ({gradient:g} degF/100 ft) not used: the BHT anchors the profile at TD"
                 )
                 gradient = None
+
+        if bht_f is not None and not self._historical and well.bottom is not None:
+            # A total depth above the deepest log sample is not where the BHT
+            # was measured (often metres given as feet), and the gradient to
+            # it would be far too steep: the step falls back as without it.
+            from petrophys.model.units import normalize_depth_unit
+
+            def in_well_unit(value: float, unit: Optional[str]) -> float:
+                given = normalize_depth_unit(str(unit or ""), strict=False)
+                logged = normalize_depth_unit(str(well.depth_unit or ""), strict=False)
+                if given == "ft" and logged == "m":
+                    return UnitConverter.feet_to_meters(value)
+                if given == "m" and logged == "ft":
+                    return UnitConverter.meters_to_feet(value)
+                return value
+
+            bottom, unit = float(well.bottom), well.depth_unit or ""
+            user_td = "td_ft" in _explicit(self.config) and self.config.td_ft is not None
+            candidates = [(td_ft, td_unit, "td_ft" if user_td else "the LAS header TD")]
+            if user_td and well.header.td is not None:
+                candidates.append((float(well.header.td), well.depth_unit, "the LAS header TD"))
+            rejected = []
+            # (of the well a depth slice was cut from, as above)
+            deepest = max(bottom, float(getattr(well, "_logged_bottom", None) or bottom))
+            td_label = (
+                f"the deepest log sample{'' if deepest == bottom else ' of the whole well'} ({deepest:g} {unit})"
+            )
+            td_ft, td_unit = deepest, well.depth_unit
+            for value, value_unit, label in candidates:
+                # (within the rounding of a unit conversion)
+                if in_well_unit(float(value), value_unit) >= bottom * (1.0 - 1e-6):
+                    td_ft, td_unit, td_label = value, value_unit, f"{label} ({value:g} {value_unit or unit})"
+                    break
+                rejected.append(f"{label} = {value:g} {value_unit or unit}")
+            if rejected:
+                message = (
+                    f"{' and '.join(rejected)} is above the deepest log sample ({bottom:g} {unit}), so it is "
+                    "not the total depth of the bottom-hole temperature and is not used"
+                    + (" (td_ft is in feet)" if user_td else "")
+                    + f". The BHT ({bht_f:g} degF) is placed at {td_label}."
+                )
+                self._warn_assumed(message)
+                trace.decisions.append(message)
 
         trace.parameters = {
             "surface_temp_f": surface_temp_f,
@@ -5432,6 +5880,12 @@ class DynamicWorkflow:
             self._warn_assumed(
                 "No bottom-hole temperature (bht_f or header BHT): temperatures follow an assumed "
                 "30 C/km gradient, which sets the Rw and Rmf temperature corrections."
+            )
+        elif result.source == "specified_gradient":
+            given = "set" if "gradient_f_per_100ft" in _explicit(self.config) else "LAS header TGRAD"
+            trace.decisions.append(
+                f"Temperature profile from the geothermal gradient ({given}) and the surface temperature "
+                f"{surface_temp_f:g} degF at depth 0; no BHT is used"
             )
         else:
             trace.decisions.append("Temperature profile anchored to BHT metadata/input")
@@ -6026,6 +6480,7 @@ class DynamicWorkflow:
             sp_fallback_only=not sp_in_vcl,
             nd_triangle_only=not self._reproducing_benchmark,
             gr_curves=train_gr,
+            check_units=False,  # the normalization step converts units
         )
         curve_mapping = {"gr": gr_curve_name} if gr_curve_name else None
         result = vcl_module.calculate(well, curves=curve_mapping)
@@ -6061,6 +6516,25 @@ class DynamicWorkflow:
         if result.gr_min_used is not None:
             decisions.append(
                 f"Applied GR endpoints: {result.gr_min_used:g} to {result.gr_max_used:g} API"
+            )
+        if (
+            not self._reproducing_benchmark
+            and result.gr_min_used is not None
+            and gr_min_source != gr_max_source
+            and result.gr_min_used >= result.gr_max_used
+        ):
+            # One baseline set, the other picked from the log, in the wrong order.
+            given, picked = ("gr_min", "gr_max") if gr_min_source == "user" else ("gr_max", "gr_min")
+            used = {"gr_min": result.gr_min_used, "gr_max": result.gr_max_used}
+            how = (
+                "P5 of the GR log, lowered to 20 API when higher" if picked == "gr_min"
+                else "P95 of the GR log, raised to 100 API when lower"
+            )
+            self._result.warnings.append(
+                f"vclay: {given} = {used[given]:g} API (set) is {'at or above' if given == 'gr_min' else 'at or below'} "
+                f"the {picked} picked automatically, {used[picked]:g} API ({how}), so VCL_GR is 0 or 1 at "
+                f"almost every depth and is not a clay volume. Set {picked} as well, or check {given} "
+                "(gr_min is the clean-rock GR, gr_max the shale GR)."
             )
         if result.gr_bounded and not self._reproducing_benchmark:
             moved = []
@@ -6391,6 +6865,12 @@ class DynamicWorkflow:
                 solve_carbonate_minerals,
             )
 
+            if self.config.mineral_endpoints:
+                self._warn_assumed(
+                    "mineral_endpoints is not used in the carbonate domain: its calcite-dolomite solve "
+                    "takes rho_fl, rho_cl and carbonate_calibration; the endpoints apply to the clastic "
+                    "mineral solve."
+                )
             if costa_carbonate:
                 # The "geolink" profile keeps the calibration's own brine and illite.
                 result = solve_carbonate_minerals(
@@ -7066,6 +7546,55 @@ class DynamicWorkflow:
             self._warn_assumed(message)
         return zone["value"], zone_temp_f
 
+    def _check_rw_against_rwa(self, well: "Well", rw_curve: np.ndarray, trace: StepResult) -> None:
+        """Warn when clean porous rock implies a water resistivity well below the Rw in use.
+
+        The apparent water resistivity ``Rwa = Rt * phi^m / a`` equals Rw in
+        clean water-bearing rock and exceeds it where hydrocarbon is present,
+        so the lowest Rwa of a well marks its Rw (the Rwa method; Asquith and
+        Krygowski, 2004, Basic Well Log Analysis). Rwa is taken over the
+        clean porous samples (VCL < 0.3, effective porosity > 0.05), each
+        against the Rw of its own depth. Where its median is below
+        ``_RWA_CHECK_RATIO`` of the Rw in use, Archie gives Sw above 1.4 in
+        more than half of that rock, which scatter in the logs does not
+        explain: the Rw is too high for that rock (water saltier than the Rw
+        implies), or ``a`` and ``m`` do not fit it. The median and 5th
+        percentile of Rwa / Rw are recorded in the trace
+        (``rwa_median_over_rw``, ``rwa_p5_over_rw``).
+        """
+        rt_curve = get_curve(well, ["RDEP", "RT"])
+        vcl_curve = get_curve(well, ["VCL", "VCLAY"])
+        phie, _, _ = get_curve_data_depthwise(well, self._phie_names(include_phit=False))
+        if rt_curve is None or vcl_curve is None or phie is None:
+            return
+        rdep = np.asarray(rt_curve.data, dtype=float)
+        vcl = np.asarray(vcl_curve.data, dtype=float)
+        phie = np.asarray(phie, dtype=float)
+        archie_a, archie_m, _, _ = self._archie_coefficients_for_lithology(
+            self._build_lithology_log(well), well.n_samples)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = rdep * np.power(phie, archie_m) / archie_a / np.asarray(rw_curve, dtype=float)
+        clean = np.isfinite(ratio) & (ratio > 0) & (vcl < 0.3) & (phie > 0.05)
+        if int(np.count_nonzero(clean)) < _RWA_CHECK_MIN_SAMPLES:
+            return
+        median = float(np.median(ratio[clean]))
+        trace.parameters["rwa_median_over_rw"] = median
+        trace.parameters["rwa_p5_over_rw"] = float(np.percentile(ratio[clean], 5))
+        trace.parameters["rwa_check_samples"] = int(np.count_nonzero(clean))
+        if median >= _RWA_CHECK_RATIO:
+            return
+        above_one = float(np.mean(ratio[clean] < 1.0))
+        message = (
+            f"The Rw in use looks too high for this well: over its clean porous rock (VCL < 0.3, porosity "
+            f"> 0.05, {int(np.count_nonzero(clean))} samples) the median apparent water resistivity "
+            f"Rwa = Rt x phi^m / a is {median:.2f} of it, and Archie gives Sw above 1 at "
+            f"{100.0 * above_one:.0f}% of those samples, where SW is held at 1. Rwa is not below Rw in "
+            "water-bearing rock, so the formation water is saltier than this Rw implies, or a and m do "
+            "not fit the rock. Check rw (or salinity_ppm) against a water sample or the water leg."
+        )
+        trace.decisions.append(message)
+        self._warn_assumed(message)
+
     @staticmethod
     def _train_rw_curve(
         estimates: np.ndarray,
@@ -7147,6 +7676,8 @@ class DynamicWorkflow:
             trace.input_curves = inputs or []
             trace.output_curves = ["RW"]
             trace.decisions = decisions
+            if not self._historical and method != "rwa_clean_wet_p5":
+                self._check_rw_against_rwa(well, rw_curve, trace)
             return trace
 
         if self._dataset is not None:
@@ -7674,6 +8205,7 @@ class DynamicWorkflow:
             rho_fl=self.config.rho_fl, phi_cl=self._phi_cl_setting,
             rho_cl=self.config.rho_cl, rho_hc=self.config.rho_hc,
             hydrogen_index=self.config.hc_hydrogen_index,
+            floor_porosity=not self._historical,
         )
         result = hc_module.calculate(well)
         hc_module.add_to_well(well, result)
@@ -8636,7 +9168,7 @@ class DynamicWorkflow:
             use_peer_core=self.config.use_peer_core,
             porosity_curves=["PHIE"] if self._benchmark else None,
             coefficients=self.config.perm_coefficients,
-            **self._core_calibration_options(),
+            **self._core_calibration_options(well),
         )
         result = perm_module.calculate_core_correction(
             well,
@@ -8696,11 +9228,17 @@ class DynamicWorkflow:
         if not self._reproducing_benchmark:
             # Core porosity is fitted to PHIT, and PHIT - PHIE is taken off again.
             trace.input_curves = [name for name in ("PHIT", "PHIE") if get_curve(well, [name]) is not None]
+            cutoff = self._net_rock_vcl_cutoff(well)
+            cutoff_text = (
+                f"{float(cutoff[0]):.2f}" if np.ptp(cutoff) == 0
+                else f"{float(np.min(cutoff)):.2f}-{float(np.max(cutoff)):.2f} by lithology"
+            )
             for model in result.metadata.get("core_models", []):
                 if model.get("vcl_max") is not None:
                     decisions.append(
                         f"PERM_CC from the {model.get('source_formation') or 'whole-well'} transform only "
-                        f"where VCL <= {model['vcl_max']:.2f}, the clay volume its core plugs span (P95)"
+                        f"where VCL is at or below the net-rock clay cutoff ({cutoff_text}) and the clay "
+                        f"volume its core plugs span (P95 {model['vcl_max']:.2f})"
                     )
             trace.parameters["core_porosity_fits"] = result.metadata.get("core_porosity_fits")
             trace.parameters["core_porosity_min_r_squared"] = _CORE_POROSITY_MIN_R_SQUARED
@@ -8770,19 +9308,31 @@ class DynamicWorkflow:
         return cec / 100.0
 
     def _routing_salinity(self) -> Optional[float]:
-        """Formation-water salinity for the saturation model choice: the
-        ``salinity_ppm`` setting, else the salinity of the Rw the rw step used
-        (a given or header Rw at its temperature), so a saline water routes to
-        Simandoux whichever way it was given."""
-        if self.config.salinity_ppm is not None or self._reproducing_benchmark or self._historical:
+        """Formation-water salinity for the saturation model choice: that of
+        the Rw the rw step used (``salinity_ppm`` where Rw came from it, else
+        the NaCl equivalent of a given or header Rw at its temperature), so a
+        saline water routes to Simandoux whichever way it was given. A
+        ``salinity_ppm`` set next to an Rw from another source is not the
+        water the saturation is computed with; the warning says so."""
+        if self._reproducing_benchmark or self._historical:
             return self.config.salinity_ppm
         for step in self._result.steps_executed:
             if step.step == "rw":
                 for key in ("salinity_ppm", "salinity_ppm_estimated"):
                     value = step.parameters.get(key)
                     if isinstance(value, (int, float)) and np.isfinite(value) and value > 0:
+                        given = self.config.salinity_ppm
+                        if given is not None and key == "salinity_ppm_estimated" and not (
+                            0.5 <= float(value) / float(given) <= 2.0
+                        ):
+                            source = "the rw setting" if self.config.rw is not None else "another source"
+                            self._warn_assumed(
+                                f"salinity_ppm = {float(given):,.0f} is not used: the Rw of this run comes "
+                                f"from {source}, a water of about {float(value):,.0f} ppm NaCl, and the "
+                                "saturation model is chosen for that water. Set either rw or salinity_ppm."
+                            )
                         return float(value)
-        return None
+        return self.config.salinity_ppm
 
     def _step_saturation(self, well: "Well") -> StepResult:
         from petrophys.interpretation.saturation.sw_module import SaturationModule
@@ -9171,7 +9721,7 @@ class DynamicWorkflow:
             porosity_curves=["PHIE"] if self._benchmark else None,
             lithology_curve=code_curve or "LITHOLOGY_GEOLINK",
             coefficients=self.config.perm_coefficients,
-            **self._core_calibration_options(),
+            **self._core_calibration_options(well),
         )
         lithology = None
         if code_curve is not None and self._user_code_groups() is not None:
@@ -9257,7 +9807,9 @@ class DynamicWorkflow:
                 "SWIRR_APP",
                 swirr_app,
                 "v/v",
-                "Apparent irreducible water saturation from hydrocarbon-mask P5 method",
+                "Apparent irreducible water saturation from hydrocarbon-mask P5 method"
+                if self._historical or result.swi_source != "buckles_bvw_irr"
+                else "Apparent irreducible water saturation, Buckles: BVWirr / PHIE",
             )
             outputs.append("SWIRR_APP")
         method_metadata = result.metadata.get("method_metadata") or {}

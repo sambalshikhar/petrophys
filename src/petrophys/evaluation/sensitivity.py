@@ -25,6 +25,7 @@ import numpy as np
 
 from petrophys._internal.analysis_helpers import as_well as _as_well
 
+from petrophys.evaluation.net_pay.cutoffs import cutoff_fraction
 from petrophys.evaluation.net_pay.pay_summary import (
     PHIE_CURVES,
     SW_CURVES,
@@ -76,7 +77,25 @@ def _cutoff_values(values, default: float, name: str) -> list:
     array = np.atleast_1d(np.asarray(values, dtype=float)).reshape(-1)
     if array.size == 0 or not np.all(np.isfinite(array)):
         raise ValueError(f"{name} must be finite numbers")
-    return [float(value) for value in array]
+    return [cutoff_fraction(value, name) for value in array]
+
+
+def _base_cutoffs(source: Any, lithology: str) -> Tuple[Dict[str, float], Dict[str, str]]:
+    """The cutoffs a sweep starts from, and where each comes from.
+
+    A cutoff set as one number in the settings of an interpretation result
+    (``source.config``) is that run's; any other is the standard of the
+    ``lithology`` family.
+    """
+    base = resolve_cutoffs(None, None, None, lithology)
+    origin = {name: f"standard, {lithology}" for name in base}
+    config = getattr(source, "config", None) if hasattr(source, "steps_executed") else None
+    for name in base:
+        value = getattr(config, name, None)
+        if isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, bool):
+            base[name] = cutoff_fraction(value, name)
+            origin[name] = "interpretation setting"
+    return base, origin
 
 
 def cutoff_sensitivity(
@@ -102,16 +121,21 @@ def cutoff_sensitivity(
 
     Parameters
     ----------
-    well : Well, optional
+    well : Well or interpretation result, optional
         Source of the depth and of any curve not passed as an array (curve
         lookup as in :func:`~petrophys.evaluation.calculate_net_pay`).
     vcl_cutoffs, phie_cutoffs, sw_cutoffs : float or sequence of float, optional
-        Cutoff values to combine (fractions). A single value holds that
-        cutoff fixed; unset cutoffs use the standard value for ``lithology``.
+        Cutoff values to combine, fractions (v/v); a value above 1 and up to
+        100 is read as percent. A single value holds that cutoff fixed. An
+        unset cutoff stays at its base value: the cutoff the interpretation
+        was run with when an interpretation result is passed and that
+        cutoff was set as one number in its settings
+        (``pp.interpret(well, sw_cutoff=0.5)``), else the standard value for
+        ``lithology``.
     vcl, phie, sw, depth : array-like, optional
         Explicit curves and depths, one value per sample.
     lithology : str, default "clastic"
-        Lithology family for unset cutoffs.
+        Lithology family for the standard cutoffs.
     top, bottom : float, optional
         Depth window (inclusive), in depth units, for example the reservoir.
     depth_unit : str, optional
@@ -124,13 +148,26 @@ def cutoff_sensitivity(
         ``sw_cutoff``, the gross, net rock, net reservoir and net pay
         thicknesses, ``ntg_reservoir``, ``ntg_pay``, ``avg_phie_pay``,
         ``avg_sw_pay``, ``hcpt`` and ``n_pay_samples``. ``attrs`` records the
-        depth unit and window. Pivot it for a heat map, e.g.
+        depth unit and window, the base cutoffs (``base_cutoffs``) and
+        where each comes from (``base_cutoff_source``: ``"interpretation
+        setting"`` or ``"standard, <lithology>"``). Pivot it for a heat map,
+        e.g.
         ``grid.pivot(index="vcl_cutoff", columns="sw_cutoff", values="ntg_pay")``.
 
     Raises
     ------
     ValueError
-        If inputs are missing or inconsistent, or a cutoff is not finite.
+        If inputs are missing or inconsistent, or a cutoff is not a finite
+        number between 0 and 100.
+
+    Notes
+    -----
+    Every row applies one cutoff set to every sample and leaves no sample
+    out. An interpretation run without cutoffs in its settings takes each
+    sample's lithology-family standards, and every run leaves evaporite,
+    coal, halite recognised on the logs and bad-hole samples out of net
+    reservoir and net pay, so the base row can differ from the run's own
+    ``NET_PAY`` (``result.summary(top, bottom)``).
 
     See Also
     --------
@@ -153,6 +190,7 @@ def cutoff_sensitivity(
     The cutoffs are strict, so the samples at VCL = 0.2 and at Sw = 0.5 or
     0.7 fail the matching cutoff.
     """
+    base, base_source = _base_cutoffs(well, lithology)
     well = _as_well(well)
     import pandas as pd
 
@@ -161,11 +199,10 @@ def cutoff_sensitivity(
         {"vcl": (vcl, VCL_CURVES), "phie": (phie, PHIE_CURVES), "sw": (sw, SW_CURVES)},
         top=top, bottom=bottom, depth_unit=depth_unit,
     )
-    standard = resolve_cutoffs(None, None, None, lithology)
     grid = itertools.product(
-        _cutoff_values(vcl_cutoffs, standard["vcl_cutoff"], "vcl_cutoffs"),
-        _cutoff_values(phie_cutoffs, standard["phie_cutoff"], "phie_cutoffs"),
-        _cutoff_values(sw_cutoffs, standard["sw_cutoff"], "sw_cutoffs"),
+        _cutoff_values(vcl_cutoffs, base["vcl_cutoff"], "vcl_cutoffs"),
+        _cutoff_values(phie_cutoffs, base["phie_cutoff"], "phie_cutoffs"),
+        _cutoff_values(sw_cutoffs, base["sw_cutoff"], "sw_cutoffs"),
     )
     rows = []
     for vcl_cut, phie_cut, sw_cut in grid:
@@ -177,7 +214,8 @@ def cutoff_sensitivity(
         row.update({name: getattr(summary, name) for name in _PAY_COLUMNS})
         rows.append(row)
     table = pd.DataFrame(rows, columns=["vcl_cutoff", "phie_cutoff", "sw_cutoff", *_PAY_COLUMNS])
-    table.attrs.update({"depth_unit": unit, "top": top, "bottom": bottom})
+    table.attrs.update({"depth_unit": unit, "top": top, "bottom": bottom,
+                        "base_cutoffs": base, "base_cutoff_source": base_source})
     return table
 
 

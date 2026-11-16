@@ -372,6 +372,10 @@ class DLISReader:
         depth_unit : str, optional
             Target depth unit. DLIS ``0.1 in`` tool depth is converted to metres
             by default.
+        include_vector_channels : bool, optional
+            Keep channels with several values per depth (spectra, arrays) as
+            one curve per element, named ``<channel>_<index>`` (default:
+            True). False reads scalar channels only.
 
         Returns
         -------

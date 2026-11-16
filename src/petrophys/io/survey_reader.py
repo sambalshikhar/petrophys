@@ -56,6 +56,15 @@ class Survey:
                 f"TVD at end {self.tvd[-1]:.1f}, max inclination {np.max(self.inclination):.1f} deg)")
 
     def to_dataframe(self) -> pd.DataFrame:
+        """The survey as a table, one row per station.
+
+        Returns
+        -------
+        DataFrame
+            ``md``, ``tvd``, ``north`` and ``east`` in ``depth_unit``,
+            ``inclination`` and ``azimuth`` in degrees, and ``dogleg``
+            (degrees per 30 m, or per 100 ft for a survey in feet).
+        """
         return pd.DataFrame({
             "md": self.md, "inclination": self.inclination, "azimuth": self.azimuth,
             "tvd": self.tvd, "north": self.north, "east": self.east, "dogleg": self.dogleg,
@@ -369,6 +378,11 @@ def attach_survey(
         well's depth unit; read from the header
         (:func:`depth_reference_elevation`) when not given. Without one,
         only ``TVD`` is added.
+    columns : dict, optional
+        Explicit ``{"md": ..., "inclination": ..., "azimuth": ...}`` headers
+        of a survey table, as for :func:`read_survey`.
+    sheet_name : optional
+        Sheet of an Excel survey workbook, as for :func:`read_survey`.
 
     Returns
     -------

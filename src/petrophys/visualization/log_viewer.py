@@ -2025,6 +2025,9 @@ class LogViewer:
     strict : bool
         If True, missing curves listed by the template raise ``ValueError``.
         If False, they are skipped and recorded in ``warnings``.
+    figsize : (float, float), optional
+        Figure size in inches. By default the width follows the tracks (at
+        least 11 in) and the height is 14.5 in.
     interpreted : bool
         True for an interpretation's well: units are converted for display but
         values are not screened again, so the plot shows what the
@@ -2041,12 +2044,30 @@ class LogViewer:
     formation_tops : mapping, sequence, DataFrame, or path, optional
         Formation tops to annotate. Accepts mappings of name to depth,
         ``(name, depth)`` pairs, CSV/Excel paths, or tabular objects.
+        Defaults to the formations attached to the well by
+        :func:`petrophys.read`.
+    formation_tops_df : DataFrame, optional
+        Formation tops as a table; when given, it is used in place of
+        ``formation_tops``.
     formation_name : str, optional
         Formation or interval name to show in the top title beside the well name.
     lithology_intervals : path or DataFrame, optional
         Single-well CSV/XLSX/table with ``top,bottom,lithology`` columns, in the
         same depth units and datum as the well. Overrides embedded lithology
         for display only, preserving interval boundaries and unfilled gaps.
+    tracks : sequence of str, optional
+        Names of the tracks to draw, in that order; the other tracks are
+        left out. An unknown or repeated name raises ``ValueError``.
+    curves : sequence of str, optional
+        Draw only these curves (the well's own names or standard names such
+        as ``"GR"``), each in its track; curves no track takes go to tracks
+        titled by their names. A name not on the well raises ``ValueError``.
+        Give ``tracks`` or ``curves``, not both.
+    curve_styles : mapping, optional
+        Style changes per curve, keyed by standard or the well's own name,
+        e.g. ``{"GR": {"color": "black", "right": 200}}``; the keys are those
+        listed for :func:`petrophys.plot`. A name no track draws is recorded
+        in ``warnings``.
     """
 
     def __init__(
@@ -2410,7 +2431,15 @@ class LogViewer:
         top: Optional[float] = None,
         height: Optional[float] = None,
     ) -> Tuple[Figure, List[Axes]]:
-        """Create and return ``(figure, axes)``."""
+        """Create and return ``(figure, axes)``.
+
+        ``depth_range`` is the ``(top, bottom)`` of the plot window, in the
+        well's depth unit; alternatively ``top`` and ``height`` give its top
+        and its length. Without either, the window is the template's, else
+        the logged interval. Giving ``depth_range`` with ``top`` or
+        ``height``, or a window without height, raises ``ValueError``. A
+        window outside the logged interval is drawn empty, with a warning.
+        """
         self._window = (depth_range, top, height)
         depth = self._depth()
         plot_top, plot_bottom = self._resolve_depth_window(depth, depth_range, top, height)
@@ -4326,6 +4355,7 @@ class LogViewer:
     def _warn_missing(self, curve_name: str) -> None:
         message = f"Curve '{curve_name}' not available for log viewer template"
         if self.strict:
+            self.close()  # no half-drawn figure is left open
             raise ValueError(message)
         if message not in self.warnings:
             self.warnings.append(message)

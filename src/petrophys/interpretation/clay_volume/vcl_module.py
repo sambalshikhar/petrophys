@@ -90,6 +90,21 @@ class VclModule:
         de-trending, :func:`~petrophys.interpretation.clay_volume.sp_method.sp_polarity`),
         the SP is reversed and the two picks are swapped, with a
         ``UserWarning``.
+    matrix : str, optional
+        Matrix of the N-D clean line: ``"sandstone"``, ``"limestone"`` or
+        ``"dolomite"`` (aliases such as ``"quartz"`` and ``"calcite"`` are
+        accepted; another name raises ``ValueError``). Default (None):
+        limestone.
+    combine : {"min", "auto"}, optional
+        How the methods are combined at each depth. ``"min"`` (default)
+        takes the minimum of the methods with a value. ``"auto"`` takes N-D
+        where it has a value and there is no gas crossover, GR where gas
+        crossover affects N-D or N-D has no value, and SP only where
+        neither has a value.
+    rho_fl : float, optional
+        Fluid density, g/cm3 (default 1.0), of the density porosity that
+        flags gas crossover (density porosity more than 0.05 above NPHI)
+        under ``combine="auto"``.
     sp_fallback_only : bool, optional
         Keep VCL_SP out of the minimum (default: True, as in ``pp.interpret``).
         It is still computed and returned, and fills only depths where neither
@@ -112,6 +127,12 @@ class VclModule:
         Gamma-ray mnemonics read depth by depth, in order. Default: the
         ``curves`` mapping's GR curve, or for ``"GR"`` the GR family (GR,
         then CGR, SGR, HSGR, HCGR and GAMMA where GR has no value).
+    check_units : bool, optional
+        Refuse an NPHI or RHOB curve labelled in another unit than v/v and
+        g/cm3 (pu, %, kg/m3 ...) with a ``ValueError`` (default: True): the
+        N-D method reads the values as they are, and such samples fall
+        outside its triangle. False reads the values whatever the label, as
+        :func:`petrophys.interpret` does after it has converted the units.
 
     Examples
     --------
@@ -139,7 +160,9 @@ class VclModule:
         nd_triangle_only: bool = True,
         gr_curves: Optional[Sequence[str]] = None,
         bound_gr: Optional[Sequence[str]] = None,
+        check_units: bool = True,
     ):
+        self.check_units = bool(check_units)
         self.gr_min = gr_min
         self.gr_max = gr_max
         self.gr_method = gr_method
@@ -292,6 +315,10 @@ class VclModule:
         sp_name = curves.get("sp", "SP")
         nphi_name = curves.get("nphi", "NPHI")
         rhob_name = curves.get("rhob", "RHOB")
+        if self.check_units and self.use_nd and not reproducing_benchmark():
+            from petrophys.interpretation.porosity.porosity_module import check_standard_units
+
+            check_standard_units(well, {"NPHI": [nphi_name, "PHIN"], "RHOB": [rhob_name]})
 
         # Initialize results
         vcl_methods = []
@@ -498,8 +525,11 @@ def calculate_vcl(
         Use SP method
     use_nd : bool, optional
         Use N-D method
+    matrix : str, optional
+        Matrix of the N-D clean line (``"sandstone"``, ``"limestone"`` or
+        ``"dolomite"``); default (None) as :class:`VclModule`.
     **kwargs
-        Additional arguments
+        Other options of :class:`VclModule`
 
     Returns
     -------

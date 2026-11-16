@@ -27,6 +27,17 @@ import numpy as np
 GR_VCL_METHODS = ("linear", "larionov_tertiary", "larionov_older", "steiber", "clavier")
 
 
+def gr_method_name(method):
+    """The name of a GR transform as the library stores it.
+
+    The Stieber (1970) transform is stored as ``"steiber"``; ``"stieber"``
+    names the same transform. Anything else is returned as given.
+    """
+    if isinstance(method, str) and method.strip().lower() == "stieber":
+        return "steiber"
+    return method
+
+
 def vcl_linear(
     gr: Union[float, np.ndarray],
     gr_min: float,
@@ -205,7 +216,7 @@ def vcl_from_gr(
         - "linear": Linear IGR
         - "larionov_tertiary": Larionov for tertiary rocks
         - "larionov_older": Larionov for older rocks
-        - "steiber": Stieber equation
+        - "stieber" (also read as "steiber"): Stieber equation
         - "clavier": Clavier equation
 
     Returns
@@ -227,7 +238,7 @@ def vcl_from_gr(
     igr = vcl_linear(gr, gr_min, gr_max)
 
     # Apply non-linear transform if requested
-    method = method.lower()
+    method = gr_method_name(method).lower()
     if method == "linear":
         return igr
     elif method == "larionov_tertiary":

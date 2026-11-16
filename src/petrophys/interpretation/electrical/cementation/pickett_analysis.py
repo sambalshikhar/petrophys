@@ -48,7 +48,8 @@ def fit_pickett_line(
         for scatter in both variables (Sokal and Rohlf 1995); its slope is
         ``sign(r) * sd(log Rt) / sd(log phi)``. ``"ols"``: least squares of
         log Rt on log phi, which treats porosity as exact; porosity scatter
-        then flattens the slope by the factor r**2 relative to RMA.
+        then flattens the slope by the factor ``|r|`` relative to RMA (the
+        least-squares slope is ``r * sd(log Rt) / sd(log phi)``).
     intercept : float, optional
         Fixed intercept log10(a * Rw): the line is fitted through it and
         only m is estimated.
@@ -134,7 +135,7 @@ def pickett_analysis(
     Both log Rt and log φ carry measurement scatter, so the default fit is
     the reduced major axis (``method="rma"``). Least squares of log Rt on
     log φ (``method="ols"``) treats porosity as exact; its slope is the RMA
-    slope times r², so porosity noise flattens it and m comes out low.
+    slope times ``|r|``, so porosity noise flattens it and m comes out low.
 
     With ``rw`` given, the intercept is fixed at log10(a × Rw) and only m is
     fitted (the line through the known water point at φ = 1).

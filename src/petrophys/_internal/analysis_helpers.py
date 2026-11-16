@@ -5,6 +5,7 @@ Shared helpers for interval-based analysis outputs.
 from __future__ import annotations
 
 import re
+import sys
 import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional, Sequence
@@ -502,7 +503,17 @@ def classification_code(labels: np.ndarray, mapping: dict[str, int]) -> np.ndarr
 
 
 def as_well(value):
-    """The interpreted well of an interpretation result; anything else as it is."""
+    """The interpreted well of a run result; anything else as it is.
+
+    A run result is what ``pp.interpret`` returns (it has ``steps_executed``)
+    or what a custom ``Workflow`` run returns
+    (:class:`~petrophys.workflow.custom.WorkflowRunResult`). Other objects
+    that hold a well (viewers, plots, modules) are returned as they are.
+    """
     if hasattr(value, "steps_executed") and hasattr(value, "well"):
+        return value.well
+    # A custom run result exists only once its module is imported.
+    custom = sys.modules.get("petrophys.workflow.custom")
+    if custom is not None and isinstance(value, custom.WorkflowRunResult):
         return value.well
     return value

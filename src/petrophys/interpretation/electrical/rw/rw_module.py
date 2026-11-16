@@ -63,7 +63,18 @@ class RwModule:
     Parameters
     ----------
     method : str, optional
-        Preferred method (default: "auto")
+        Preferred method (default: "auto"): ``"given"`` (needs ``rw_given``),
+        ``"salinity"`` (needs ``salinity``), ``"sp"``, ``"rxo_rt"``, or
+        ``"auto"``, which takes the first of a given Rw, a given salinity,
+        the header RW, the SP and Rxo/Rt.
+
+    Notes
+    -----
+    An SP-derived Rw below the resistivity of NaCl-saturated brine
+    (260,000 ppm) at the same temperature is not a water resistivity. It is
+    not returned: a :class:`~petrophys.exceptions.DataQualityWarning` gives
+    the value, ``"auto"`` goes on to Rxo/Rt, and ``"sp"`` returns NaN with
+    the value in ``metadata["rw_rejected"]``.
 
     Examples
     --------
@@ -184,6 +195,16 @@ class RwModule:
             if header_rmf is not None:
                 rmf, _ = header_rmf
 
+        if method == "given" and rw_given is None:
+            raise ValueError(
+                "RwModule(method='given') needs the water resistivity: calculate(well, rw_given=...), "
+                "in ohm.m at formation temperature"
+            )
+        if method == "salinity" and salinity is None:
+            raise ValueError(
+                "RwModule(method='salinity') needs the water salinity: calculate(well, salinity=...), "
+                "in ppm NaCl equivalent"
+            )
         if method == "given" or (method == "auto" and rw_given is not None):
             if header_note:
                 return RwResult(rw=rw_given, method="header", temperature=temperature, metadata=header_note)
@@ -197,6 +218,7 @@ class RwModule:
             rw = rw_from_salinity(salinity, temperature)
             return RwResult(rw=rw, method="salinity", temperature=temperature)
 
+        sp_rejected: Optional[str] = None
         sp_data, _, sp_meta = get_curve_data_depthwise(well, ["SP"])
         sp_present = bool(sp_meta.get("existing_curves"))
         if method == "sp" or (method == "auto" and sp_present and sp_data is not None and rmf is not None):
@@ -232,18 +254,31 @@ class RwModule:
                 eff_temp = (
                     float(np.nanmedian(temp_arr)) if temp_arr.ndim else float(temp_arr)
                 )
-                return RwResult(
-                    rw=float(np.nanmedian(np.asarray(rw, dtype=float))),
-                    method="sp_clean_water",
-                    temperature=temperature,
-                    n_points=int(clean_sp.size),
-                    metadata={
-                        "sp_clean_mv": float(sp_clean),
-                        "sp_shale_mv": float(sp_shale),
-                        "ssp_mv": float(ssp),
-                        "rw_temperature_f": eff_temp,
-                    },
-                )
+                rw_sp = float(np.nanmedian(np.asarray(rw, dtype=float)))
+                metadata = {
+                    "sp_clean_mv": float(sp_clean),
+                    "sp_shale_mv": float(sp_shale),
+                    "ssp_mv": float(ssp),
+                    "rw_temperature_f": eff_temp,
+                }
+                sp_rejected = _below_saturated_brine(rw_sp, eff_temp, float(ssp))
+                if sp_rejected is None:
+                    return RwResult(
+                        rw=rw_sp,
+                        method="sp_clean_water",
+                        temperature=temperature,
+                        n_points=int(clean_sp.size),
+                        metadata=metadata,
+                    )
+                if method == "sp":
+                    # The value is reported, not returned as a water resistivity.
+                    return RwResult(
+                        rw=float("nan"),
+                        method="sp_clean_water",
+                        temperature=temperature,
+                        n_points=int(clean_sp.size),
+                        metadata={**metadata, "rw_rejected": rw_sp, "rejected": sp_rejected},
+                    )
 
         if method == "rxo_rt" or method == "auto":
             # The flushed-zone RXO first; the benchmark packages read the
@@ -270,11 +305,53 @@ class RwModule:
                         n_points=int(np.count_nonzero(valid)),
                     )
 
+        if sp_rejected is not None:
+            raise ValueError(
+                f"Could not calculate Rw: {sp_rejected}, and the Rxo/Rt method found no clean water "
+                "zone with RXO and RT. Pass rw_given= or salinity=."
+            )
         raise ValueError(
             "Could not calculate Rw: the header has no RW, and the SP and Rxo/Rt methods need "
             "an Rmf (pass rmf=, or a header RMF). Pass rw_given= or salinity= otherwise; "
             "petrophys.interpret estimates Rmf from the mud data."
         )
+
+
+#: NaCl brine saturates near 260,000 ppm; a water cannot be more conductive
+#: than that brine at the same temperature.
+SATURATED_NACL_PPM = 260_000.0
+
+
+def _below_saturated_brine(rw: float, temperature_f: float, ssp: float) -> Optional[str]:
+    """Why an SP-derived Rw is not a water resistivity, or None when it can be one.
+
+    An Rw below that of NaCl-saturated brine at the same temperature (about
+    0.017 ohm.m at 168 degF) comes from SP baselines or an Rmf that do not
+    describe the water, not from a saltier water. The reason is also issued as
+    a :class:`~petrophys.exceptions.DataQualityWarning`. The benchmark
+    packages returned every SP value.
+    """
+    if reproducing_benchmark() or not (np.isfinite(rw) and np.isfinite(temperature_f)):
+        return None
+    saturated = float(rw_from_salinity(SATURATED_NACL_PPM, temperature_f))
+    if rw >= saturated:
+        return None
+    import warnings
+
+    from petrophys.exceptions import DataQualityWarning
+
+    reason = (
+        f"the SP gives Rw = {rw:.3g} ohm.m at {temperature_f:.0f} degF (SSP {ssp:.0f} mV), below the "
+        f"{saturated:.3g} ohm.m of NaCl-saturated brine at that temperature, which no formation "
+        "water reaches"
+    )
+    warnings.warn(
+        f"Rw from the SP is not used: {reason}. Check the SP baselines and Rmf, or give the water "
+        "resistivity or salinity.",
+        DataQualityWarning,
+        stacklevel=3,
+    )
+    return reason
 
 
 def _header_resistivity(
@@ -341,7 +418,10 @@ def calculate_rw(
     rmf : float, optional
         Mud filtrate resistivity
     temperature : float or np.ndarray, optional
-        Formation temperature
+        Formation temperature, degF. Without it the well's temperature is
+        used (TEMP curve, else a profile from the header BHT); without a
+        well either, ``method="salinity"`` computes Rw at an assumed
+        150 degF, with a ``DataQualityWarning``.
     **kwargs
         Additional arguments
 
@@ -355,6 +435,20 @@ def calculate_rw(
     >>> rw = calculate_rw(method="salinity", salinity=50000, temperature=150)
     """
     if method == "salinity" and salinity is not None:
+        if temperature is None and well is not None and not reproducing_benchmark():
+            # The well's temperature (TEMP curve, else a BHT profile).
+            return RwModule(method="salinity").calculate(well, salinity=salinity).rw
+        if temperature is None and not reproducing_benchmark():
+            import warnings
+
+            from petrophys.exceptions import DataQualityWarning
+
+            warnings.warn(
+                "calculate_rw(method='salinity') was given no temperature: Rw is computed at an "
+                "assumed 150 degF. Pass temperature= (degF), or a well.",
+                DataQualityWarning,
+                stacklevel=2,
+            )
         return rw_from_salinity(salinity, 150.0 if temperature is None else temperature)
 
     if method == "given" and rw_given is not None:

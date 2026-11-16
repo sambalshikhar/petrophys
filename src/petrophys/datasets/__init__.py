@@ -118,6 +118,12 @@ def list_samples(kind: Optional[str] = None) -> List[str]:
         dataset folder such as ``"costa"`` or ``"geolink"``. Optional
         repository fixtures are never included. Case does not matter.
 
+    Returns
+    -------
+    list of str
+        The sorted sample names, each accepted by :func:`sample`; every
+        bundled sample when ``kind`` is omitted.
+
     Raises
     ------
     ValueError
@@ -155,6 +161,11 @@ def sample(name: str) -> Path:
     Repository-only
     fixtures are deliberately excluded; use :func:`integration_fixture` for
     those.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no bundled sample has that name; the message suggests close names.
     """
     key = str(name).strip()
     if key.lower().endswith(_SAMPLE_EXTS):

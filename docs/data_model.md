@@ -148,6 +148,7 @@ UnitConverter.depth(brent.depth[[0, -1]], "m", "ft")
 | LAS | {func}`~petrophys.io.read_las` | Scalar curves, header, parameters and the file's depth index |
 | DLIS (`dlis` extra) | {func}`~petrophys.io.read_dlis` | Compatible scalar channels from the selected frames, on one depth grid |
 | CSV, TSV | {func}`~petrophys.io.read_csv` | One well from a wide table sharing a depth column |
+| Excel | {func}`~petrophys.io.read_excel` | The same, from a sheet of a workbook |
 | Multiwell CSV | {func}`~petrophys.io.read_csv_wells` | One well per identifier in a long table |
 | Delimited ASCII | {func}`~petrophys.io.read_ascii` | A table with a chosen separator, header row, depth column and null value |
 

@@ -30,7 +30,10 @@ if TYPE_CHECKING:
 
 PathLike = Union[str, Path]
 
-_WELL_FORMATS = {".las": "LAS", ".dlis": "DLIS", ".csv": "CSV", ".tsv": "TSV"}
+_WELL_FORMATS = {
+    ".las": "LAS", ".dlis": "DLIS", ".csv": "CSV", ".tsv": "TSV",
+    ".xlsx": "Excel", ".xlsm": "Excel", ".xls": "Excel",
+}
 
 
 def read(
@@ -47,17 +50,21 @@ def read(
     elevation: Optional[float] = None,
     **reader_options: Any,
 ) -> Any:
-    """Read a well from LAS, DLIS, CSV, or TSV and optionally attach geology.
+    """Read a well from LAS, DLIS, CSV, TSV or Excel and optionally attach geology.
 
     A folder, a file pattern (``"logs/*.las"``) or a list of files reads every
     well into a :class:`~petrophys.workflow.multi_well.WellList`, which
     :func:`interpret` takes as it is. A multi-well formations or lithology
-    table is read once and each well keeps its own rows; a file that cannot be
+    table is read once and each well keeps its own rows, found by the well's
+    name, UWI or API, else by its file name; a well the table has no rows for
+    is read without them and named in a warning. Each file is read with the
+    reader options its format takes (``depth_unit`` is for the CSV, TSV and
+    Excel files of a folder that also holds LAS files). A file that cannot be
     read is named in ``wells.failed`` and in a warning.
 
     Reading never calculates interpretation curves; use :func:`interpret` for
-    that. Curves of LAS, CSV and TSV files keep the names and units found in
-    the file. A DLIS file is read as :func:`petrophys.io.read_dlis` reads it:
+    that. Curves of LAS, CSV, TSV and Excel files keep the names and units
+    found in the file. A DLIS file is read as :func:`petrophys.io.read_dlis` reads it:
     without ``frame_name``, its frames are merged onto one depth index in
     metres and curve names and units are standardized (``standardize=False``
     keeps them).
@@ -66,9 +73,10 @@ def read(
     ----------
     path : str, Path or list
         Well file. The format is chosen from the extension (``.las``,
-        ``.dlis``, ``.csv`` or ``.tsv``). A folder (its LAS and DLIS files,
-        and its CSV and TSV files when ``depth_unit`` is given), a file
-        pattern or a list of files reads several wells.
+        ``.dlis``, ``.csv``, ``.tsv``, ``.xlsx``, ``.xlsm`` or ``.xls``). A
+        folder (its LAS and DLIS files, and its CSV, TSV and Excel files when
+        ``depth_unit`` is given), a file pattern or a list of files reads
+        several wells.
     formations : path, DataFrame, mapping, or sequence, optional
         Formation tops or intervals (see :func:`petrophys.read_formations`).
         They annotate plots and calibrate core permeability per formation in
@@ -100,6 +108,8 @@ def read(
         "DEEP_RES": "RDEP"}`` or a CSV/Excel table of curve name and standard
         name (see :func:`petrophys.preprocessing.standardization.user_aliases.read_curve_aliases`).
         It is stored on the well, so interpretation and plots use it.
+        Entries that name no curve of the well (of any well, for several)
+        are named in a warning with their likely fix.
     survey : path, DataFrame or "vertical", optional
         Deviation survey (MD, inclination, azimuth; CSV, Excel or LAS) or
         ``"vertical"``. Adds ``TVD`` below the log depth reference and, when
@@ -109,10 +119,15 @@ def read(
         Elevation of the log's depth reference above sea level, in the well's
         depth unit, for ``TVDSS`` in place of the header's; needs ``survey``.
     **reader_options
-        Options for the format reader. CSV and TSV files require
-        ``depth_unit="m"`` or ``depth_unit="ft"``; other options (e.g.
-        ``depth_column="MD"``) are passed to :func:`petrophys.io.read_csv`,
-        :func:`petrophys.io.read_las` or :func:`petrophys.io.read_dlis`.
+        Options for the format reader. CSV, TSV and Excel files need
+        ``depth_unit="m"`` or ``depth_unit="ft"`` unless the depth column
+        header states the unit (``DEPTH (m)``); other options (e.g.
+        ``depth_column="MD"``, or ``sheet_name="Logs"`` for an Excel sheet)
+        are passed to :func:`petrophys.io.read_csv`,
+        :func:`petrophys.io.read_excel`, :func:`petrophys.io.read_las` or
+        :func:`petrophys.io.read_dlis`. A CSV file's separator (comma,
+        semicolon or tab) and decimal comma are found from the file unless
+        ``sep`` and ``decimal`` are given.
 
     Returns
     -------
@@ -123,10 +138,18 @@ def read(
     Raises
     ------
     FileNotFoundError
-        If ``path`` does not exist.
+        If ``path`` does not exist; the message names the folder searched.
     ValueError
-        If the format is unsupported, a CSV/TSV file has no ``depth_unit``,
-        or attached geology is invalid for this well.
+        If the extension names an unsupported format (whether or not the file
+        exists) or an existing file has no extension, the
+        path holds its quotation marks or control characters (a backslash
+        read as an escape), the depth unit of a CSV, TSV or Excel file is
+        neither given nor in its depth column header, a folder holds no well
+        file or a pattern matches none, attached geology is invalid for this
+        well (a single well the formations or lithology table has no rows
+        for; depths that fit the logged interval in the other depth unit
+        only), ``elevation`` is given without ``survey``, or a survey file is
+        given for several wells.
 
     Examples
     --------
@@ -135,11 +158,16 @@ def read(
     >>> well = pp.read("my_well.csv", depth_unit="m", formations="tops.csv")  # doctest: +SKIP
     >>> wells = pp.read("logs/", formations="tops.xlsx")                      # doctest: +SKIP
     """
-    from petrophys.io import read_csv, read_dlis, read_las
+    from petrophys.io import read_csv, read_dlis, read_excel, read_las
+    from petrophys.io.ascii_reader import EXCEL_SUFFIXES, _depth_header_unit
     from petrophys.model.units import normalize_depth_unit
 
+    # _read_many's record of what its tables and curve mapping lack for each well.
+    unmatched = reader_options.pop("_unmatched", None)
     if elevation is not None and survey is None:
         raise ValueError("elevation sets the TVDSS datum of a survey; pass survey= (a file or 'vertical') with it.")
+    if isinstance(path, (str, Path)):
+        _check_path_text(path)
     files = _well_files(path, reader_options.get("depth_unit"))
     if files is not None:
         if survey is not None and not (isinstance(survey, str) and survey.strip().lower() == "vertical"):
@@ -151,8 +179,13 @@ def read(
         )
     path = Path(cast(PathLike, path))
     extension = path.suffix.lower()
-    if extension not in _WELL_FORMATS:
-        if not extension and not path.exists():
+    if extension and extension not in _WELL_FORMATS:
+        supported = ", ".join(sorted(set(_WELL_FORMATS.values())))
+        raise ValueError(
+            f"Unsupported well format {extension!r}; use {supported}."
+        )
+    if not path.exists():
+        if not extension:
             from petrophys.datasets import list_samples
 
             if path.name.lower() in {name.lower() for name in list_samples()}:
@@ -160,9 +193,11 @@ def read(
                     f"{path.name!r} is a bundled sample, not a file path; read it with "
                     f"petrophys.read(petrophys.sample({path.name!r}))."
                 )
-        supported = ", ".join(sorted(_WELL_FORMATS.values()))
+        raise FileNotFoundError(_missing_path_message(path))
+    if not extension:
         raise ValueError(
-            f"Unsupported well format {extension or path.name!r}; use {supported}."
+            f"{path.name!r} has no file extension, so its format is unknown; name the file with "
+            f"its extension ({', '.join(_WELL_FORMATS)})."
         )
     if not path.is_file():
         raise FileNotFoundError(f"Well file not found: {path}")
@@ -173,8 +208,10 @@ def read(
     elif extension == ".dlis":
         well = read_dlis(path, **reader_options)
     else:
+        if extension == ".tsv":
+            reader_options.setdefault("sep", "\t")
         if reader_options.get("depth_unit") is None:
-            header_unit = _csv_depth_header_unit(path, extension, reader_options)
+            header_unit = _depth_header_unit(path, **reader_options)
             if header_unit is None:
                 raise ValueError(
                     f"{_WELL_FORMATS[extension]} logs do not record their depth unit; read the file "
@@ -183,19 +220,22 @@ def read(
                 )
             reader_options["depth_unit"] = header_unit
         reader_options["depth_unit"] = normalize_depth_unit(reader_options["depth_unit"])
-        if extension == ".tsv":
-            reader_options.setdefault("sep", "\t")
-        well = read_csv(path, **reader_options)
+        if extension in EXCEL_SUFFIXES:
+            well = read_excel(path, **reader_options)
+        else:
+            well = read_csv(path, **reader_options)
 
     for key, value in (("depth_reference", depth_reference), ("datum", datum)):
         if value is not None:
             well.set_parameter(key, value)
     _attach_geology(well, formations=formations, lithology=lithology,
-                    formation_options=formation_options, lithology_options=lithology_options)
+                    formation_options=formation_options, lithology_options=lithology_options,
+                    file_stem=path.stem, unmatched=unmatched)
     if curve_aliases is not None:
         from petrophys.preprocessing.standardization.user_aliases import attach_curve_aliases
 
-        attach_curve_aliases(well, curve_aliases)
+        attach_curve_aliases(
+            well, curve_aliases, unused=None if unmatched is None else unmatched["curve_aliases"])
     if survey is not None:
         from petrophys.io.survey_reader import attach_survey
 
@@ -203,27 +243,64 @@ def read(
     return well
 
 
-def _csv_depth_header_unit(path: Path, extension: str, options: Mapping[str, Any]) -> Optional[str]:
-    """The depth unit a CSV/TSV depth column header states (``DEPTH (m)``), or None."""
-    import pandas as pd
+#: Characters a backslash and a letter become in a string that is not raw, as typed.
+_ESCAPES = {"\a": "\\a", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t", "\v": "\\v", "\0": "\\0"}
 
-    from petrophys.io.ascii_reader import _split_unit_header
-    from petrophys.model.units import normalize_depth_unit
 
-    sep = options.get("sep", "	" if extension == ".tsv" else ",")
+def _check_path_text(path: PathLike) -> None:
+    """Raise ValueError for a path given with its quotation marks, or with backslashes read as escapes.
+
+    A path that exists is left alone.
+    """
+    text = str(path)
+    bare = text.strip().strip("'\"").strip()
+    controls = [character for character in text if ord(character) < 32]
+    if bare == text.strip() and not controls:
+        return
     try:
-        columns = pd.read_csv(path, sep=sep, nrows=0, skiprows=options.get("skiprows", 0)).columns
-    except (ValueError, OSError, UnicodeDecodeError):
-        return None
-    wanted = str(options.get("depth_column", "DEPTH")).strip().upper()
-    for column in columns:
-        name, unit = _split_unit_header(column)
-        if name == wanted and unit:
-            try:
-                return normalize_depth_unit(unit)
-            except ValueError:
-                return None
-    return None
+        if Path(text).exists():
+            return
+    except (OSError, ValueError):
+        pass
+    if controls:
+        typed = "".join(_ESCAPES.get(character, character) for character in text)
+        found = ", ".join(sorted({_ESCAPES.get(character, repr(character)) for character in controls}))
+        raise ValueError(
+            f"The path {text!r} holds control characters: a backslash and the letter after it ({found}) "
+            f"were read as one character. Write the path with forward slashes ('{typed.replace(chr(92), '/')}') "
+            f"or as a raw string (r'{typed}')."
+        )
+    raise ValueError(
+        f"The path {text!r} includes quotation marks, which are not part of a file name; pass it without them: "
+        f"petrophys.read({bare!r})."
+    )
+
+
+def _missing_path_message(path: Path) -> str:
+    """Why ``path`` does not exist: the folder searched and the names there it may stand for."""
+    import os
+
+    folder = Path(os.path.normpath(Path.cwd() / path)).parent
+    where = str(folder) + (" (the current working folder)" if folder == Path.cwd() else "")
+    what = "Well file" if path.suffix else "File or folder"
+    if not folder.is_dir():
+        return f"{what} not found: {path}. The folder {where} does not exist."
+    message = f"{what} not found: {path}. Looked in {where}."
+    try:
+        names = sorted(item.name for item in folder.iterdir())
+    except OSError:
+        names = []
+    if not path.suffix:
+        named = [
+            name for name in names
+            if Path(name).stem.lower() == path.name.lower() and Path(name).suffix.lower() in _WELL_FORMATS
+        ]
+        return (
+            f"{message} A well file is named with its extension ({', '.join(_WELL_FORMATS)})"
+            + (f"; did you mean {named[0]!r}?" if named else ".")
+        )
+    close = difflib.get_close_matches(path.name, names, n=3)
+    return message + (f" Similar names there: {', '.join(close)}." if close else "")
 
 
 def _plot_items(source: Any) -> Optional[list]:
@@ -248,12 +325,13 @@ def _well_files(source: Any, depth_unit: Optional[str] = None) -> Optional[list]
         return None
     path = Path(source)
     if path.is_dir():
-        suffixes = {".las", ".dlis"} | ({".csv", ".tsv"} if depth_unit is not None else set())
+        tables = {".csv", ".tsv", ".xlsx", ".xlsm", ".xls"}
+        suffixes = {".las", ".dlis"} | (tables if depth_unit is not None else set())
         files = sorted(item for item in path.iterdir() if item.is_file() and item.suffix.lower() in suffixes)
         if not files:
             raise ValueError(
                 f"No well files in {path}: it holds no " + ", ".join(sorted(suffixes))
-                + " file" + ("" if depth_unit is not None else " (CSV and TSV files are read with depth_unit=)")
+                + " file" + ("" if depth_unit is not None else " (CSV, TSV and Excel files are read with depth_unit=)")
             )
         return files
     text = str(source)
@@ -281,21 +359,50 @@ def _shared_table(source: Any, options: Optional[Mapping[str, Any]]) -> Tuple[An
 
 
 def _read_many(files: list, **options: Any) -> Any:
-    """Read each of ``files`` with :func:`read`; files that fail are named in ``failed``."""
+    """Read each of ``files`` with :func:`read`; files that fail are named in ``failed``.
+
+    A LAS or DLIS file is read without the reader options its reader does not
+    take when another file of the read takes them, and a LAS file, which
+    states its depth unit, without ``depth_unit`` (the unit of the CSV, TSV
+    and Excel files of the read). Wells a formations or lithology table
+    has no rows for are read without them, and curve mapping entries that
+    name no curve of any well are reported, each in one warning.
+    """
+    import inspect
     import warnings
 
+    from petrophys.io import read_dlis, read_las
+    from petrophys.preprocessing.standardization.user_aliases import unused_curve_aliases_message
     from petrophys.workflow.multi_well import WellList
 
     options["formations"], options["formation_options"] = _shared_table(
         options.get("formations"), options.get("formation_options"))
     options["lithology"], options["lithology_options"] = _shared_table(
         options.get("lithology"), options.get("lithology_options"))
+    # The options each reader names; CSV, TSV and Excel readers pass others on to pandas.
+    named = {
+        suffix: set(inspect.signature(reader).parameters) - {"filepath", "kwargs"}
+        for suffix, reader in ((".las", read_las), (".dlis", read_dlis))
+    }
+    shared = set(inspect.signature(read).parameters)
+    suffixes = {Path(file).suffix.lower() for file in files if isinstance(file, (str, Path))}
+
+    def takes(suffix: str, key: str) -> bool:
+        return key in shared or suffix not in named or key in named[suffix]
+
+    unmatched: dict = {"formations": [], "lithology": [], "curve_aliases": []}
     wells = WellList()
     for file in files:
         if not isinstance(file, (str, Path)):
             raise TypeError(f"petrophys.read takes file paths; got {type(file).__name__}")
+        suffix = Path(file).suffix.lower()
+        file_options = {
+            key: value for key, value in options.items()
+            if takes(suffix, key)
+            or not (key == "depth_unit" or any(takes(other, key) for other in suffixes))
+        }
         try:
-            wells.append(read(file, **options))
+            wells.append(read(file, _unmatched=unmatched, **file_options))
         except (OSError, ValueError, KeyError, IndexError) as exc:
             wells.failed[Path(file).name] = f"{type(exc).__name__}: {exc}"
     if wells.failed:
@@ -304,6 +411,26 @@ def _read_many(files: list, **options: Any) -> Any:
             + "; ".join(f"{name} ({reason})" for name, reason in wells.failed.items()),
             UserWarning, stacklevel=3,
         )
+    for table in ("formations", "lithology"):
+        if unmatched[table]:
+            available = unmatched[table][0][1]
+            warnings.warn(
+                f"The {table} table has no rows for {len(unmatched[table])} of {len(wells)} wells, which "
+                f"are read without {table}: " + ", ".join(name for name, _ in unmatched[table])
+                + ". Wells in the table: " + ", ".join(map(str, available[:30]))
+                + (", ..." if len(available) > 30 else "") + ".",
+                UserWarning, stacklevel=3,
+            )
+    unused = unmatched["curve_aliases"]
+    if unused and len(unused) == len(wells):
+        nowhere = {entry: fix for entry, fix in unused[0].items() if all(entry in other for other in unused)}
+        for other in unused:
+            nowhere.update({entry: fix for entry, fix in other.items() if entry in nowhere and fix and not nowhere[entry]})
+        if nowhere:
+            warnings.warn(
+                unused_curve_aliases_message(nowhere, f"the {len(wells)} wells read"),
+                UserWarning, stacklevel=3,
+            )
     return wells
 
 
@@ -314,9 +441,20 @@ def _attach_geology(
     lithology: Optional[Any] = None,
     formation_options: Optional[Mapping[str, Any]] = None,
     lithology_options: Optional[Mapping[str, Any]] = None,
+    file_stem: Optional[str] = None,
+    unmatched: Optional[Mapping[str, list]] = None,
 ) -> None:
-    """Store formation tops and lithology intervals on ``well`` for plots and interpretation."""
+    """Store formation tops and lithology intervals on ``well`` for plots and interpretation.
+
+    A table of several wells that has no rows under the well's name, UWI or
+    API is searched for ``file_stem``, the well's file name without its
+    extension. With ``unmatched`` (lists by ``"formations"`` and
+    ``"lithology"``), a well the table has no rows for keeps no such geology
+    and is added to the list with the table's well names; without it the
+    reader's ValueError is raised.
+    """
     from petrophys.io import read_formations, read_lithology_intervals
+    from petrophys.io.geology_reader import WellNotInTable
 
     context = dict(well.get_parameter("_geology_context") or {})
     for name, source, reader, options in (
@@ -324,7 +462,21 @@ def _attach_geology(
         ("lithology", lithology, read_lithology_intervals, lithology_options),
     ):
         if source is not None:
-            table = reader(source, well=well, **dict(options or {}))
+            options = dict(options or {})
+            table = None
+            try:
+                table = reader(source, well=well, **options)
+            except WellNotInTable as error:
+                if file_stem and "well_name" not in options:
+                    try:
+                        table = reader(source, well=well, well_name=file_stem, **options)
+                    except WellNotInTable:
+                        pass
+                if table is None:
+                    if unmatched is None:
+                        raise error
+                    unmatched[name].append((well.name or file_stem, error.available))
+                    continue
             # Persist normalized metadata with records, so later reads cannot
             # accidentally reinterpret converted depths in their source units.
             for key in ("depth_unit", "depth_reference", "datum"):
@@ -389,8 +541,11 @@ def plot(
         stay as the lithology column.
     tracks : str or sequence of str, optional
         Track names to show, in order (e.g. ``["GAMMA / HOLE", "RESISTIVITY"]``;
-        ``viewer.template.tracks`` lists a template's track names).
-        Defaults to every track the template can fill.
+        ``[track.display_name for track in viewer.template.tracks]`` lists
+        the names of a plot's tracks). Defaults to every track the template
+        can fill, apart from the ``"auto"`` layout's optional tracks of
+        computed profiles (``TEMPERATURE``, ``RW / RMF``), which are listed
+        in ``viewer.optional_tracks`` and drawn when named here.
     template : str, default "auto"
         Built-in layout. ``"auto"`` builds tracks from the curves present;
         ``"raw"``, ``"petrophysics"``, ``"minerals"`` and ``"comprehensive"``
@@ -411,10 +566,11 @@ def plot(
     figsize : (float, float), optional
         Figure size in inches.
     strict : bool, default False
-        If True, curves required by a fixed template must exist; otherwise
-        missing curves are skipped and listed in ``viewer.warnings`` (the
-        ``"auto"`` template also lists tracks it left out in
-        ``viewer.omitted_tracks``).
+        If True, curves required by a fixed template must exist (a missing
+        one raises ValueError); otherwise missing curves are skipped and
+        listed in ``viewer.warnings``. Tracks left out because the well has
+        none of their curves, or no data in the depth window, are listed in
+        ``viewer.omitted_tracks``.
     curve_aliases : mapping, path or DataFrame, optional
         Your names for standard curves (``{"GAMMA_RAY_1": "GR"}`` or a
         CSV/Excel table), so they fill the right tracks; as for :func:`read`.
@@ -424,7 +580,10 @@ def plot(
         Keys: ``color``, ``left``, ``right``, ``line_width``, ``line_style``,
         ``alpha``, ``fill`` (``"left"``/``"right"``), ``fill_color``,
         ``fill_alpha``, ``marker``, ``marker_size``, ``display_name``,
-        ``left_crossover``, ``right_crossover``. XML templates
+        ``left_crossover``, ``right_crossover``, and the template fill
+        fields ``fill_color_map``, ``left_color_value``,
+        ``right_color_value``, ``left_cutoff_fill`` and
+        ``right_cutoff_fill``. XML templates
         (``template_xml_path``) remain the way to define whole layouts.
 
     Returns
@@ -435,6 +594,20 @@ def plot(
         or ``.close()``; ``.fig`` and ``.axes`` are the figure and its
         tracks, and ``.warnings`` lists anything that could not be drawn as
         requested.
+
+    Raises
+    ------
+    TypeError
+        If ``well`` is not a well, an interpretation result, a well file or
+        several of them, or a comparison (several wells with ``curves``) is
+        given an option of a single-well plot (``tracks``, ``template``,
+        ``formations``, ``lithology``, ``lithology_codes``,
+        ``formation_name``, ``curve_styles`` or ``template_xml_path``).
+    ValueError
+        If a name in ``curves`` or ``tracks`` is not on the plot, both
+        ``curves`` and ``tracks`` are given for one well, ``template`` is not
+        a built-in layout, a ``curve_styles`` key is unknown, or the list of
+        wells is empty.
 
     Examples
     --------
@@ -616,8 +789,8 @@ def interpret(
         If False, the well is copied and the caller's well is left unchanged.
         If True, calculated curves are added to ``well`` itself.
     depth_unit : {"m", "ft"}, optional
-        Depth unit of a CSV/TSV file given as ``well``. Only used when
-        reading a file.
+        Depth unit of a CSV/TSV file given as ``well``. It applies only when
+        a file is read; given with a Well it raises ValueError.
     context_profile : str, optional
         ``"geolink"``, ``"geolink_train"``, ``"costa"`` or ``"danish"``:
         interpret a well of that context package exactly as its context does
@@ -649,10 +822,13 @@ def interpret(
     Raises
     ------
     TypeError
-        If an option is not a DynamicWorkflowConfig setting, or ``well`` is
-        neither a Well nor a file path.
+        If an option is not a DynamicWorkflowConfig setting, a setting is
+        given both in a ``config`` dict and as a keyword, ``well`` is
+        neither a Well nor a file path, or ``context_profile`` is combined
+        with a Well, ``config``, ``lithology``, ``output`` or other settings.
     ValueError
-        If a setting has an invalid value.
+        If a setting has an invalid value, the list of wells is empty, or
+        ``depth_unit`` is given with a Well.
 
     Examples
     --------
@@ -721,7 +897,7 @@ def interpret(
     if unknown:
         hints = []
         for name in unknown:
-            close = difflib.get_close_matches(name, sorted(known), n=1)
+            close = difflib.get_close_matches(name.lower(), sorted(known), n=1)
             hints.append(f"{name!r}" + (f" (did you mean {close[0]!r}?)" if close else ""))
         raise TypeError(
             "Unknown interpretation setting(s): " + ", ".join(hints)
@@ -762,10 +938,82 @@ def interpret(
     from petrophys.workflow.dynamic_workflow import _config_with_header_settings
 
     config = _config_with_header_settings(well, config, options)
+    input_curves = list(well.curves)
     result = run_dynamic_workflow(well, config=config, _header_settings=False)
+    _warn_not_interpreted(result, input_curves)
     if output is not None:
         result.to_las(output)
     return result
+
+
+#: The logs an interpretation rests on, by standard name.
+_REQUIRED_LOGS = (
+    ("deep resistivity", ("RDEP",)),
+    ("a porosity log (density, neutron or sonic)", ("RHOB", "NPHI", "DTC")),
+    ("gamma ray or SP", ("GR", "SP")),
+)
+
+
+def _warn_not_interpreted(result: Any, input_curves: Sequence[str]) -> None:
+    """Warn when a run did not end as "interpreted", or ended without
+    porosity or water saturation for lack of an input log.
+
+    The message gives the run's errors or the steps left out and the logs
+    the well has no curve for. When such a log is missing, it also lists the
+    input curves that match no standard log name (the usual cause: a log
+    under a name the library does not know, fixed with ``curve_aliases``).
+    """
+    import warnings
+
+    from petrophys._internal.benchmark import reproducing_benchmark
+    from petrophys.preprocessing.standardization.alias_map import ALIAS_MAP, get_standard_mnemonic
+    from petrophys.preprocessing.standardization.user_aliases import curve_aliases_of
+
+    if reproducing_benchmark():
+        return
+    # Porosity or saturation left out for lack of an input (not by skip_steps).
+    left_out = {
+        step: str(reason) for step, reason in (getattr(result, "specific_steps_skipped", None) or {}).items()
+        if step in ("porosity", "saturation") and str(reason).startswith(("Missing", "Needs"))
+    }
+    if result.status == "interpreted" and not left_out:
+        return
+    aliases = {str(key).upper(): str(value).upper() for key, value in curve_aliases_of(result.well).items()}
+
+    def standard(name: str) -> str:
+        return aliases.get(str(name).upper()) or get_standard_mnemonic(name)
+
+    present = {standard(name) for name in input_curves}
+    missing = [label for label, names in _REQUIRED_LOGS if not present.intersection(names)]
+    unknown = [name for name in input_curves if standard(name) not in ALIAS_MAP]
+    problems = list(result.errors) or [
+        step.message or step.step for step in result.steps_executed if not step.success
+    ]
+    if result.status == "interpreted":
+        parts = [
+            f"{result.well.name}: the interpretation is partial: "
+            + "; ".join(f"no {step} ({reason[0].lower()}{reason[1:]})" for step, reason in left_out.items())
+            + "."
+        ]
+    else:
+        parts = [
+            f"{result.well.name}: the interpretation did not complete (status {result.status!r})"
+            + (f": {'; '.join(str(problem).rstrip('. ') for problem in problems[:3])}" if problems
+               else ": no interpretive step wrote a curve")
+            + "."
+        ]
+    if missing:
+        parts.append(f"No curve of the well was read as {', '.join(missing)}.")
+    if unknown and missing:
+        shown = ", ".join(unknown[:12]) + (f" and {len(unknown) - 12} more" if len(unknown) > 12 else "")
+        wanted = next((names[0] for label, names in _REQUIRED_LOGS if label in missing), "RDEP")
+        parts.append(
+            f"Curves that match no standard log name: {shown}. If one of them is a standard log under "
+            f"another name, say so with curve_aliases={{'ITS NAME': {wanted!r}}} "
+            "(the name in your file: the standard name)."
+        )
+    parts.append("result.errors, result.warnings and result.specific_steps_skipped hold the details.")
+    warnings.warn(" ".join(parts), UserWarning, stacklevel=3)
 
 
 def _interpret_many(items: list, config: Any, *, output: Optional[PathLike] = None, **options: Any) -> Any:
@@ -790,7 +1038,7 @@ def _interpret_many(items: list, config: Any, *, output: Optional[PathLike] = No
         if unknown:
             hints = []
             for name in unknown:
-                close = difflib.get_close_matches(name, sorted(known), n=1)
+                close = difflib.get_close_matches(name.lower(), sorted(known), n=1)
                 hints.append(f"{name!r}" + (f" (did you mean {close[0]!r}?)" if close else ""))
             raise TypeError(
                 "Unknown interpretation setting(s): " + ", ".join(hints)

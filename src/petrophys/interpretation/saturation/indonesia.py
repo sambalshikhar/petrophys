@@ -47,7 +47,7 @@ def indonesia(
     phi : float or np.ndarray
         Effective porosity (v/v)
     vcl : float or np.ndarray
-        Clay volume (v/v)
+        Clay volume (v/v); clipped to 0-0.99
     rcl : float
         Clay resistivity (ohm.m)
     a : float, optional

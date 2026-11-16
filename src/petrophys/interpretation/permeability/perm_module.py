@@ -146,7 +146,10 @@ class CorePermModel:
             return self.perm_transform.n_points
         return self.porosity_correction.n_points
 
-    def predict(self, porosity: np.ndarray, vcl: Optional[np.ndarray] = None) -> tuple[np.ndarray, np.ndarray]:
+    def predict(
+        self, porosity: np.ndarray, vcl: Optional[np.ndarray] = None,
+        vcl_cap: Optional[Union[float, np.ndarray]] = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Predict corrected porosity and permeability for a log curve.
 
         Permeability comes from the corrected porosity, on the scale of the
@@ -155,7 +158,9 @@ class CorePermModel:
         outside the rock of the core pairs: corrected porosity outside their
         porosity range (shale, or shallow unconsolidated rock far more porous
         than the cored reservoir), or clay volume ``vcl`` above
-        :attr:`vcl_max`. The exponential transform is not extrapolated.
+        :attr:`vcl_max` or above ``vcl_cap`` (v/v, one value or one per
+        sample; the net-rock clay cutoff of a run). The exponential transform
+        is not extrapolated.
         """
         phi_corr = self.porosity_correction.predict(porosity)
         phi_flow = np.asarray(phi_corr, dtype=float)
@@ -167,9 +172,11 @@ class CorePermModel:
             if not reproducing_benchmark() and np.isfinite(low) and np.isfinite(high):
                 with np.errstate(invalid="ignore"):
                     perm = np.where((phi_flow < low) | (phi_flow > high), np.nan, perm)
-            if not reproducing_benchmark() and vcl is not None and self.vcl_max is not None:
+            if not reproducing_benchmark() and vcl is not None:
+                limits = [limit for limit in (self.vcl_max, vcl_cap) if limit is not None]
                 with np.errstate(invalid="ignore"):
-                    perm = np.where(np.asarray(vcl, dtype=float) > self.vcl_max, np.nan, perm)
+                    for limit in limits:
+                        perm = np.where(np.asarray(vcl, dtype=float) > limit, np.nan, perm)
         return phi_corr, perm
 
 
@@ -850,13 +857,21 @@ def _plug_vcl_max(well: "Well", core: Any) -> Optional[float]:
     return float(np.percentile(values, 95)) if values.size else None
 
 
-def _vcl_for_perm(well: "Well") -> Optional[np.ndarray]:
+def _vcl_for_perm(well: "Well", bound: bool = True) -> Optional[np.ndarray]:
     """The clay volume that bounds core-transform permeability, or None without
-    VCL (and under benchmark reproduction, whose packages had no such bound)."""
-    if reproducing_benchmark():
+    VCL, with ``bound`` off, and under benchmark reproduction (whose packages
+    had no such bound)."""
+    if reproducing_benchmark() or not bound:
         return None
     curve = get_curve(well, ["VCL"])
     return None if curve is None else np.asarray(curve.data, dtype=float)
+
+
+def _masked(values: Optional[Union[float, np.ndarray]], mask: np.ndarray) -> Optional[Union[float, np.ndarray]]:
+    """``values`` at ``mask`` when it holds one value per sample, else as given."""
+    if values is None or np.ndim(values) == 0:
+        return values
+    return np.asarray(values, dtype=float)[mask]
 
 
 def _apply_core_model(
@@ -866,13 +881,23 @@ def _apply_core_model(
     phi_corecal: np.ndarray,
     perm_core: np.ndarray,
     vcl: Optional[np.ndarray] = None,
+    vcl_cap: Optional[Union[float, np.ndarray]] = None,
+    declined: Optional[np.ndarray] = None,
 ):
-    """Apply a fitted core model into masked portions of full-length arrays."""
+    """Apply a fitted core model into masked portions of full-length arrays.
+
+    ``declined``, when given, records the samples where a model with a
+    poro-perm transform predicted no permeability (outside its plugs'
+    porosity range or clay bound); another model does not fill them.
+    """
     if not np.any(mask):
         return
-    phi_corr, perm = model.predict(phi_input[mask], None if vcl is None else vcl[mask])
+    phi_corr, perm = model.predict(
+        phi_input[mask], None if vcl is None else vcl[mask], _masked(vcl_cap, mask))
     phi_corecal[mask] = phi_corr
     perm_core[mask] = perm
+    if declined is not None and model.perm_transform is not None:
+        declined[mask] = ~np.isfinite(perm)
 
 
 def _build_same_well_core_prediction(
@@ -883,11 +908,19 @@ def _build_same_well_core_prediction(
     rejected_models: Optional[List[Dict[str, Any]]] = None,
     porosity_curve: Optional[str] = None,
     min_porosity_r_squared: Optional[float] = None,
+    bound: bool = True,
+    vcl_cap: Optional[Union[float, np.ndarray]] = None,
+    declined: Optional[np.ndarray] = None,
 ) -> tuple[np.ndarray, np.ndarray, List[CorePermModel]]:
-    """Build same-well core-calibrated porosity and permeability."""
+    """Build same-well core-calibrated porosity and permeability.
+
+    ``bound``, ``vcl_cap`` and ``declined`` are those of
+    :class:`PermeabilityModule` (``bound_core_rock``, ``core_vcl_max``) and
+    :func:`_apply_core_model`.
+    """
     porosity_curve = _core_porosity_curve_name(well, porosity_curve)
     phi_input = np.asarray(well.get(porosity_curve).data, dtype=float)
-    vcl = _vcl_for_perm(well)
+    vcl = _vcl_for_perm(well, bound)
     depth = np.asarray(well.depth, dtype=float)
 
     phi_corecal = np.full_like(phi_input, np.nan, dtype=float)
@@ -910,10 +943,12 @@ def _build_same_well_core_prediction(
                 continue
 
             mask = interval.contains(depth)
-            _apply_core_model(phi_input, mask, model, phi_corecal, perm_core, vcl)
+            _apply_core_model(phi_input, mask, model, phi_corecal, perm_core, vcl, vcl_cap, declined)
             models.append(model)
 
     unresolved = ~np.isfinite(perm_core)
+    if bound and not reproducing_benchmark() and declined is not None:
+        unresolved &= ~declined
     if include_global and np.any(unresolved):
         model = _fit_core_perm_model(
             well,
@@ -925,7 +960,7 @@ def _build_same_well_core_prediction(
             min_porosity_r_squared=min_porosity_r_squared,
         )
         if model is not None:
-            _apply_core_model(phi_input, unresolved, model, phi_corecal, perm_core, vcl)
+            _apply_core_model(phi_input, unresolved, model, phi_corecal, perm_core, vcl, vcl_cap)
             models.append(model)
 
     return phi_corecal, perm_core, models
@@ -939,15 +974,20 @@ def _build_peer_core_prediction(
     rejected_models: Optional[List[Dict[str, Any]]] = None,
     porosity_curve: Optional[str] = None,
     min_porosity_r_squared: Optional[float] = None,
+    bound: bool = True,
+    vcl_cap: Optional[Union[float, np.ndarray]] = None,
+    declined: Optional[np.ndarray] = None,
 ) -> tuple[np.ndarray, np.ndarray, List[CorePermModel]]:
     """
     Build permeability from peer wells in the same field and formation.
 
     This requires ``FormationTops`` on the target well and on candidate peer
     wells (stored on each well as ``well.set_parameter("formation_tops", tops)``).
+    ``bound``, ``vcl_cap`` and ``declined`` are those of
+    :func:`_build_same_well_core_prediction`.
     """
     phi_input = np.asarray(well.get(_core_porosity_curve_name(well, porosity_curve)).data, dtype=float)
-    vcl = _vcl_for_perm(well)
+    vcl = _vcl_for_perm(well, bound)
     depth = np.asarray(well.depth, dtype=float)
     phi_corecal = np.full_like(phi_input, np.nan, dtype=float)
     perm_core = np.full_like(phi_input, np.nan, dtype=float)
@@ -995,7 +1035,7 @@ def _build_peer_core_prediction(
             continue
 
         mask = interval.contains(depth)
-        _apply_core_model(phi_input, mask, best_model, phi_corecal, perm_core, vcl)
+        _apply_core_model(phi_input, mask, best_model, phi_corecal, perm_core, vcl, vcl_cap, declined)
         models.append(best_model)
 
     return phi_corecal, perm_core, models
@@ -1087,8 +1127,19 @@ class PermeabilityModule:
         min_porosity_r_squared: Optional[float] = None,
         lithology_curve: Optional[str] = None,
         coefficients: Optional[Dict[str, float]] = None,
+        bound_core_rock: bool = True,
+        core_vcl_max: Optional[Union[float, np.ndarray]] = None,
     ):
         self.method = _normalize_perm_method(method)
+        #: Keep the core permeability to rock like its plugs: a sample a
+        #: formation's transform leaves without permeability is not filled by
+        #: another model, and no core permeability is predicted above the
+        #: plugs' clay volume. The core model itself is applied over the
+        #: whole well.
+        self.bound_core_rock = bool(bound_core_rock)
+        #: Clay volume (v/v; one value or one per sample) above which no core
+        #: permeability is predicted, e.g. the net-rock clay cutoff.
+        self.core_vcl_max = core_vcl_max
         self.fallback_method = _normalize_perm_method(fallback_method)
         self.min_core_points = int(min_core_points)
         self.use_peer_core = bool(use_peer_core)
@@ -1113,6 +1164,15 @@ class PermeabilityModule:
             "porosity_curve": porosity_curve if porosity_curve is not None else self.core_porosity_curve,
             "min_porosity_r_squared": self.min_porosity_r_squared,
         }
+
+    @property
+    def _bounded(self) -> bool:
+        """Whether core predictions are kept to the rock of the plugs."""
+        return self.bound_core_rock and not reproducing_benchmark()
+
+    def _bound_options(self) -> Dict[str, Any]:
+        """Clay bound of the core permeability, for the core prediction builders."""
+        return {"bound": self.bound_core_rock, "vcl_cap": self.core_vcl_max if self._bounded else None}
 
     def _core_porosity_for(self, well: "Well", phi: np.ndarray, phi_given: bool) -> Optional[str]:
         """Log porosity curve the core model is fitted to and applied on.
@@ -1277,13 +1337,16 @@ class PermeabilityModule:
         perm_core = np.full_like(phi, np.nan, dtype=float)
         core_rejected_models: List[Dict[str, Any]] = []
         core_curve = self._core_porosity_for(well, phi, phi_given)
+        declined = np.zeros(phi.shape, dtype=bool) if self._bounded else None
 
         same_well_phi, same_well_perm, same_well_models = _build_same_well_core_prediction(
             well,
             formation_tops=formation_tops,
             include_global=False,
             rejected_models=core_rejected_models,
+            declined=declined,
             **self._core_options(core_curve),
+            **self._bound_options(),
         )
         # Porosity and permeability resolve independently: a model with no
         # usable core permeability still supplies PHIE_CC, so a later stage
@@ -1305,7 +1368,9 @@ class PermeabilityModule:
                 peer_wells=peer_wells,
                 formation_tops=formation_tops,
                 rejected_models=core_rejected_models,
+                declined=declined,
                 **self._core_options(core_curve),
+                **self._bound_options(),
             )
             peer_phi_mask = phi_unresolved & np.isfinite(peer_phi)
             if np.any(peer_phi_mask):
@@ -1316,7 +1381,10 @@ class PermeabilityModule:
             phi_unresolved = ~np.isfinite(phi_corecal)
             perm_unresolved = ~np.isfinite(perm_core)
 
-        if np.any(phi_unresolved | perm_unresolved):
+        if declined is not None:
+            perm_unresolved &= ~declined
+        need_mask = phi_unresolved | perm_unresolved
+        if np.any(need_mask):
             same_well_global = _fit_core_perm_model(
                 well,
                 formation_tops=None,
@@ -1326,10 +1394,10 @@ class PermeabilityModule:
             )
             if same_well_global is not None:
                 core_phi = self._core_input_porosity(well, phi, core_curve)
-                need_mask = phi_unresolved | perm_unresolved
-                vcl = _vcl_for_perm(well)
+                vcl = _vcl_for_perm(well, self.bound_core_rock)
                 phi_global, perm_global = same_well_global.predict(
-                    core_phi[need_mask], None if vcl is None else vcl[need_mask])
+                    core_phi[need_mask], None if vcl is None else vcl[need_mask],
+                    _masked(self._bound_options()["vcl_cap"], need_mask))
                 global_phi = np.full_like(phi_corecal, np.nan)
                 global_perm = np.full_like(perm_core, np.nan)
                 global_phi[need_mask] = phi_global
@@ -1407,6 +1475,7 @@ class PermeabilityModule:
 
         empirical_methods = _auto_empirical_methods(self.fallback_method)
         core_curve = self._core_porosity_for(well, phi, phi_given)
+        declined = np.zeros(phi.shape, dtype=bool) if self._bounded else None
 
         empirical_errors: List[str] = []
         empirical_attempted_methods: List[str] = []
@@ -1431,7 +1500,9 @@ class PermeabilityModule:
             formation_tops=formation_tops,
             include_global=False,
             rejected_models=core_rejected_models,
+            declined=declined,
             **self._core_options(core_curve),
+            **self._bound_options(),
         )
         same_mask = np.isfinite(same_well_perm)
         same_phi_mask = np.isfinite(same_well_phi)
@@ -1450,7 +1521,9 @@ class PermeabilityModule:
                 peer_wells=peer_wells,
                 formation_tops=formation_tops,
                 rejected_models=core_rejected_models,
+                declined=declined,
                 **self._core_options(core_curve),
+                **self._bound_options(),
             )
             peer_mask = unresolved & np.isfinite(peer_perm)
             peer_phi_mask = ~np.isfinite(phi_corecal) & np.isfinite(peer_phi)
@@ -1460,7 +1533,9 @@ class PermeabilityModule:
                 perm_core[peer_mask] = peer_perm[peer_mask]
                 unresolved = ~np.isfinite(perm)
 
-        if np.any(unresolved | ~np.isfinite(phi_corecal)):
+        core_unresolved = unresolved if declined is None else unresolved & ~declined
+        needed = core_unresolved | ~np.isfinite(phi_corecal)
+        if np.any(needed):
             same_well_global = _fit_core_perm_model(
                 well,
                 formation_tops=None,
@@ -1470,17 +1545,17 @@ class PermeabilityModule:
             )
             if same_well_global is not None:
                 core_phi = self._core_input_porosity(well, phi, core_curve)
-                needed = unresolved | ~np.isfinite(phi_corecal)
-                vcl = _vcl_for_perm(well)
+                vcl = _vcl_for_perm(well, self.bound_core_rock)
                 phi_global, perm_global = same_well_global.predict(
-                    core_phi[needed], None if vcl is None else vcl[needed])
+                    core_phi[needed], None if vcl is None else vcl[needed],
+                    _masked(self._bound_options()["vcl_cap"], needed))
                 global_phi = np.full_like(phi_corecal, np.nan)
                 global_perm = np.full_like(perm_core, np.nan)
                 global_phi[needed] = phi_global
                 global_perm[needed] = perm_global
                 phi_mask = ~np.isfinite(phi_corecal) & np.isfinite(global_phi)
                 phi_corecal[phi_mask] = global_phi[phi_mask]
-                perm_mask = unresolved & np.isfinite(global_perm)
+                perm_mask = core_unresolved & np.isfinite(global_perm)
                 perm_core[perm_mask] = global_perm[perm_mask]
                 perm[perm_mask] = global_perm[perm_mask]
                 same_well_models.append(same_well_global)

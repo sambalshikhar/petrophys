@@ -7,6 +7,8 @@ This module provides neutron porosity standardization and processing.
 from typing import Union
 import numpy as np
 
+from petrophys.model.constants import MatrixProperties
+
 
 def neutron_porosity(
     nphi: Union[float, np.ndarray],
@@ -56,16 +58,37 @@ def standardize_nphi(
     -------
     float or np.ndarray
         Neutron porosity in target matrix
+
+    Notes
+    -----
+    The offset is the difference of the two matrix neutron readings on the
+    limestone scale in :class:`~petrophys.model.constants.MatrixProperties`
+    (sandstone -0.02, limestone 0, dolomite 0.02), the readings
+    :func:`neutron_porosity` and :func:`petrophys.interpret` subtract, so a
+    log converted here and then referred to its matrix comes back unchanged.
+    It is a first-order constant: the chart offset grows with porosity
+    (about 0.04 between limestone and sandstone at 0.15-0.20).
     """
-    # Matrix corrections (approximate)
-    corrections = {
-        ("limestone", "sandstone"): 0.04,
-        ("limestone", "dolomite"): -0.02,
-        ("sandstone", "limestone"): -0.04,
-        ("sandstone", "dolomite"): -0.06,
-        ("dolomite", "limestone"): 0.02,
-        ("dolomite", "sandstone"): 0.06,
-    }
+    from petrophys.preprocessing.standardization.unit_converter import _benchmark_units
+
+    if _benchmark_units():
+        # The benchmark packages converted with the mid-porosity chart offsets.
+        corrections = {
+            ("limestone", "sandstone"): 0.04,
+            ("limestone", "dolomite"): -0.02,
+            ("sandstone", "limestone"): -0.04,
+            ("sandstone", "dolomite"): -0.06,
+            ("dolomite", "limestone"): 0.02,
+            ("dolomite", "sandstone"): 0.06,
+        }
+    else:
+        matrix_reading = {
+            name: MatrixProperties.get(name).nphi for name in ("limestone", "sandstone", "dolomite")
+        }
+        corrections = {
+            (current, target): matrix_reading[current] - matrix_reading[target]
+            for current in matrix_reading for target in matrix_reading if current != target
+        }
 
     aliases = {"calcite": "limestone", "lime": "limestone",
                "quartz": "sandstone", "sand": "sandstone"}

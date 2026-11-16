@@ -64,7 +64,9 @@ pd.read_csv("my_logs.csv").head(3)
 
 ## Read them
 
-A CSV does not record its depth unit, so `depth_unit` is required.
+A CSV or Excel table does not record its depth unit, so give `depth_unit`, or write the unit in the
+depth header (`DEPTH (m)`). The separator and a decimal comma are detected, so a semicolon file
+exported in a European locale reads as it is.
 
 ```{code-cell} python
 well = pp.read("my_logs.csv", depth_column="MD", depth_unit="m", well_name="30/6-5")
@@ -73,19 +75,21 @@ well
 
 | Option of `pp.read` | Applies to | What it does |
 | --- | --- | --- |
-| `depth_unit` | CSV, TSV (required) | `"m"` or `"ft"` |
-| `depth_column` | CSV, TSV | Depth column name; default `"DEPTH"`. Headers written `NAME (unit)` or `NAME [unit]`, as {func}`~petrophys.io.export_csv` writes them, give the curve `NAME` in that unit; a depth header's unit must agree with `depth_unit` |
-| `well_name` | CSV, TSV | Name of the well |
-| `null_values`, `skiprows`, `sep`, other `pandas.read_csv` options | CSV, TSV | Passed to {func}`petrophys.io.read_csv` |
-| `encoding` | LAS | Text encoding of the file |
+| `depth_unit` | CSV, TSV, Excel (required unless the depth header gives the unit) | `"m"` or `"ft"` |
+| `depth_column` | CSV, TSV, Excel | Depth column name; default `"DEPTH"`. Headers written `NAME (unit)` or `NAME [unit]`, as {func}`~petrophys.io.export_csv` writes them, give the curve `NAME` in that unit; a depth header's unit must agree with `depth_unit` |
+| `well_name` | CSV, TSV, Excel | Name of the well |
+| `sheet_name` | Excel | Sheet holding the logs; default the only sheet, else the first with the depth column |
+| `null_values`, `skiprows` | CSV, TSV, Excel | Values to read as missing, such as `[-999.25]`, and the number of title rows above the header row |
+| `sep`, other `pandas.read_csv` options | CSV, TSV | Passed to {func}`petrophys.io.read_csv` |
+| `encoding` | LAS, CSV, TSV | Text encoding of the file, for example `"latin-1"` |
 | `frame_name`, `channels`, `step` | DLIS (`dlis` extra) | Frame, channels and grid step; see {func}`petrophys.io.read_dlis` |
 | `formations`, `lithology` | all | Geology table: a path or a DataFrame |
 | `formation_options`, `lithology_options` | all | `columns`, `rank`, `well_name`, `sheet_name`, `depth_unit`, `depth_reference`, `datum` |
 | `depth_reference`, `datum` | all | The well's depth reference and datum, e.g. `"MD"`, `"RKB"` |
 
-Excel logs: read them with pandas, then use {meth}`Well.from_dataframe
-<petrophys.model.Well.from_dataframe>`. Several wells in one table:
-{func}`petrophys.io.read_csv_wells`.
+Excel logs read the same way: `pp.read("my_logs.xlsx", depth_unit="m")`. A table already
+in pandas becomes a well with {meth}`Well.from_dataframe <petrophys.model.Well.from_dataframe>`.
+Several wells in one table: {func}`petrophys.io.read_csv_wells`.
 
 ## Attach formations and lithology
 
@@ -156,7 +160,7 @@ tops.tail(3)
 | No `depth_unit` given | Assumes the well's unit and notes it in the report |
 | No `depth_reference` or `datum` given | Assumes they match the well and notes the assumption in the report |
 | A `depth_ref` column | Read by its values: a datum (KB, RKB, DF, RT, GL, MSL, SL, LAT) as `datum`, a reference (MD, TVD, TVDSS) as `depth_reference`, `MD RKB` as both |
-| A datum the well does not declare | Compared with the datum of the LAS `LMF` (log measured from) item; without one, assumed to match and noted in the report. An MD reference the well does not declare is assumed to match too; TVD or TVDSS raises `ValueError` |
+| A datum the well does not declare | Compared with the datum of the `LMF` (log measured from) item in the LAS `~Well` section; without one there, assumed to match and noted in the report. An MD reference the well does not declare is assumed to match too; TVD or TVDSS raises `ValueError` |
 | Different reference (MD, TVD, TVDSS) or datum | Raises `ValueError`: a survey or datum transformation is needed |
 | Some rows outside the logged interval | Counts them in the report |
 | No row overlaps the logs | Warns with {class}`~petrophys.exceptions.DataQualityWarning`, suggesting the other unit if it fits |
@@ -248,7 +252,11 @@ result.step("input_context").decisions
 ```
 
 Attached formations organize the answer. Averages are over net-pay samples, so
-a formation without pay shows no averages.
+a formation without pay shows no averages: porosity and clay volume are
+weighted by thickness, water saturation by pore volume (porosity times
+thickness), and permeability is a geometric mean, so that average porosity
+times (1 - average Sw) times net pay is the `HCPV` column, the hydrocarbon
+pore thickness in the well's depth unit.
 
 ```{code-cell} python
 result.formation_summary()

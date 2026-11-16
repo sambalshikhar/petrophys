@@ -143,10 +143,21 @@ class NMRData:
     t2lm_stored : np.ndarray, optional
         Pre-computed T2 log mean (ms) loaded directly from the LAS file.
         Used by ``t2_lm()`` when bin data are not available.
+    t2_cutoff_curve : np.ndarray, optional
+        T2 cutoff at each depth (ms). When set, the bin-based BVI and FFI
+        use it in place of ``t2_cutoff`` unless a cutoff is passed to them.
     t2_centers : np.ndarray
         T2 bin centre times (ms).  Default: [4, 8, 16, 32, 64, 128, 256, 512] ms.
     t2_cutoff : float
         T2 cutoff separating MBVI from MFFI (ms).  Default: 33 ms.
+    stored_permeability : dict, optional
+        Permeability curves delivered with the log (mD), keyed ``"KSDR"``
+        and ``"KTIM"``. ``permeability_sdr()`` and ``permeability_coates()``
+        return them when called with their default coefficients and
+        ``prefer_stored``.
+    extra_curves : dict, optional
+        Other curves of the source file, by mnemonic, one value per depth;
+        kept with the data and included in its table.
     metadata : dict
         Source file info, well name, etc.
 
@@ -430,6 +441,11 @@ class NMRData:
         t2lm_mnemonic : str, optional
             Mnemonic for a pre-computed T2 log mean curve (e.g. ``"T2LM"``
             from Halliburton MRIL output).  Used when bin curves are absent.
+        t2_cutoff_mnemonic : str, optional
+            Mnemonic of a T2 cutoff curve (ms); None reads no such curve.
+        ksdr_mnemonic, ktim_mnemonic : str, optional
+            Mnemonics of delivered SDR and Timur-Coates permeability curves
+            (mD), kept in ``stored_permeability``; None reads no such curve.
         bin_mnemonics : list of str, optional
             Ordered T2 bin curve mnemonics (e.g. ``["T2B01",…,"T2B08"]``).
         t2_centers : np.ndarray, optional
@@ -439,6 +455,10 @@ class NMRData:
             curve where the file has one (its median as the scalar cutoff),
             else 33 ms (clastic).
         null_value : float
+        derive_mbvi : bool, default True
+            When the file has no bound-fluid curve but has a free-fluid
+            curve, take MBVI as MPHI - MFFI (NaN where that is negative).
+            False leaves MBVI unset.
         """
         if not HAS_LASIO:
             raise ImportError("lasio is required: pip install lasio")
@@ -678,6 +698,9 @@ class NMRData:
         ----------
         cutoff_ms : float, optional
             T2 cutoff (ms).  Defaults to ``self.t2_cutoff``.
+        min_bin_coverage : float
+            Share of the summed bins that must have a value at a depth, 0 to
+            1 (default 1: all of them); below it the result is NaN there.
         partial_bins : bool
             ``False`` counts whole bins with centre < cutoff, the split some
             vendor summaries use.
@@ -703,6 +726,11 @@ class NMRData:
         ----------
         cutoff_ms : float, optional
             T2 cutoff (ms).  Defaults to ``self.t2_cutoff``.
+        min_bin_coverage : float
+            Share of the summed bins that must have a value at a depth, 0 to
+            1 (default 1: all of them); below it the result is NaN there.
+        partial_bins : bool
+            ``False`` counts whole bins with centre >= cutoff.
         """
         if not self.has_bins:
             raise ValueError("T2 bin data required for ffi_from_bins()")

@@ -25,14 +25,15 @@ By default, recognized curve aliases and units are standardized and
 implausible values screened before interpretation; every executed, skipped, or
 warning-producing step is recorded in the result.
 
-.. figure:: _static/petrophys-heimdal-formation.png
-   :alt: Multi-track Petrophys interpretation of the 15/9-17 Heimdal Formation
+.. figure:: _static/petrophys-brent-group.png
+   :alt: Multi-track Petrophys interpretation of the Brent Group in well 30/6-5
    :width: 100%
    :class: ph-log-figure
 
-   Formation-scale interpretation of 15/9-17 in the Heimdal Formation,
-   showing lithology, conventional logs, porosity, saturation, permeability,
-   mineral volumes, core points, and reservoir flags.
+   Interpretation of the bundled well 30/6-5 across the Brent Group, showing
+   lithology, conventional logs, porosity, saturation, permeability, mineral
+   volumes, core points and reservoir flags. ``pp.plot(result, top=2800,
+   bottom=2980)`` draws it.
 
 From first well to LLM agents
 =============================

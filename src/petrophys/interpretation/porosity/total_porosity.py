@@ -66,6 +66,8 @@ def total_porosity(
 
     Where only one of the two has a value, the adaptive method takes it. The
     adaptive result is limited to 0-0.5; "average" and "rms" are not limited.
+    "rms" counts a negative neutron or density porosity as 0, so squaring
+    cannot turn it into porosity.
 
     Parameters
     ----------
@@ -101,8 +103,8 @@ def total_porosity(
         return (nphi + phi_d) / 2
 
     elif method == "rms":
-        # RMS average; a negative neutron porosity counts as 0
-        return np.sqrt((np.clip(nphi, 0.0, None) ** 2 + phi_d ** 2) / 2)
+        # RMS average; a negative neutron or density porosity counts as 0
+        return np.sqrt((np.clip(nphi, 0.0, None) ** 2 + np.clip(phi_d, 0.0, None) ** 2) / 2)
 
     else:  # adaptive
         if isinstance(nphi, np.ndarray) or isinstance(phi_d, np.ndarray):

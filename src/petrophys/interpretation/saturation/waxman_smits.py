@@ -137,8 +137,8 @@ def waxman_smits(
         measured or temperature-corrected value when you have one.
     m_star : float
         Intrinsic cementation exponent from SCAL (default: 2.0)
-    n : float
-        Saturation exponent (default: 2.0)
+    n : float or np.ndarray
+        Saturation exponent (default: 2.0); one value, or one per sample
     max_iter : int
         Maximum iterations (default: 10)
     tol : float
@@ -184,10 +184,12 @@ def waxman_smits(
     qv     = cec * rho_ma * (1.0 - phi_safe) / phi_safe
     ct     = 1.0 / rt_safe
 
+    # One exponent for every sample, or one per sample (n by lithology).
+    n_values = None if np.ndim(n) == 0 else np.broadcast_to(np.asarray(n, dtype=float), phi_safe.shape)
     sw = np.array([
         _waxman_smits_scalar(
             phi_safe[i], ct[i], float(cw[i]), qv[i], f_star[i],
-            float(b_values[i]), n, max_iter, tol
+            float(b_values[i]), n if n_values is None else float(n_values[i]), max_iter, tol
         )
         for i in range(len(phi_t))
     ])

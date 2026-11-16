@@ -33,7 +33,10 @@ class ZoneSummary:
     net_pay: float
     ntg: float  # Pay/gross: net pay thickness / gross thickness
 
-    # Average properties (over net pay)
+    # Average properties (over net pay): porosity and clay volume weighted
+    # by sample thickness, water saturation by pore volume (porosity times
+    # thickness), permeability a thickness-weighted geometric mean. The
+    # benchmark reproduction keeps plain sample means.
     avg_phie: float = np.nan
     avg_sw: float = np.nan
     avg_vcl: float = np.nan
@@ -43,8 +46,9 @@ class ZoneSummary:
     # NOTE: hcpv here is a hydrocarbon pore THICKNESS, the sum of
     # PHIE*(1-SW)*thickness over the net-pay samples (units of depth/length,
     # per unit area), NOT a volume. For volumetric OOIP/OGIP in acre-ft/bbl/m3
-    # use volumetrics.hydrocarbon_pore_volume.calculate_hcpv. The benchmark
-    # reproduction keeps the index avg_phie*(1-avg_sw)*net_pay.
+    # use volumetrics.hydrocarbon_pore_volume.calculate_hcpv. It equals
+    # avg_phie*(1-avg_sw)*net_pay where porosity and SW are defined at every
+    # pay sample.
     hcpv: float = np.nan  # Hydrocarbon pore thickness (length, per unit area)
     # Bulk volume water (fraction): thickness-weighted mean of PHIE*SW over
     # net pay (avg_phie*avg_sw in the benchmark reproduction)
@@ -55,9 +59,14 @@ class ZoneSummary:
     n_pay_samples: int = 0
 
     #: Curves the porosity (avg_phie, hcpv, bvw) and permeability averages
-    #: are taken from; None when the well has neither.
+    #: are taken from (see pay_average_data); None when the well has neither.
     phie_curve: Optional[str] = None
     perm_curve: Optional[str] = None
+    #: Net-pay samples whose porosity and permeability were read from the
+    #: plain curve (PHIE, PERM) because the core-corrected one is undefined
+    #: there; 0 when the average rests on one curve.
+    phie_plain_samples: int = 0
+    perm_plain_samples: int = 0
 
     @property
     def reservoir_ntg(self) -> float:
@@ -89,7 +98,7 @@ def _one_pay_gap_warning():
         for name, zones in by_curve.items():
             warnings.warn(
                 f"{name} is undefined at some net-pay samples ({'; '.join(zones)}); "
-                "each average covers the other pay samples.",
+                "its average covers the other pay samples.",
                 UserWarning, stacklevel=4,
             )
 
@@ -100,12 +109,12 @@ def _written_by_workflow_step(curve) -> bool:
 
 
 def pay_average_curves(well: "Well") -> Dict[str, Optional[str]]:
-    """The one porosity and one permeability curve the pay averages are taken from.
+    """The porosity and the permeability curve the pay averages are taken from.
 
-    Each average is taken from a single curve over the whole zone, never
-    filled sample by sample from another model. The core-corrected curve
-    (``PHIE_CC``, ``PERM_CC``) is used when the interpretation produced or
-    used it, else the plain one (``PHIE``, ``PERM``):
+    The core-corrected curve (``PHIE_CC``, ``PERM_CC``) is used when the
+    interpretation produced or used it, else the plain one (``PHIE``,
+    ``PERM``). A core-corrected curve covers the depths its core model
+    applies to; :func:`pay_average_data` gives the values per sample.
 
     - :func:`petrophys.interpret` reads ``PHIE_CC``/``PERM_CC`` wherever they
       are on the well (its own core model, or input curves used as they
@@ -135,6 +144,45 @@ def pay_average_curves(well: "Well") -> Dict[str, Optional[str]]:
             name = plain
         chosen[plain] = name
     return chosen
+
+
+_PLAIN_CURVE = {"PHIE_CC": "PHIE", "PERM_CC": "PERM"}
+
+
+def pay_average_data(
+    well: "Well", phie_curve: Optional[str] = None, perm_curve: Optional[str] = None,
+) -> Dict[str, np.ndarray]:
+    """Porosity and permeability of the pay averages at every sample.
+
+    The curves of :func:`pay_average_curves` unless named. Where the curve is
+    the core-corrected one (``PHIE_CC``, ``PERM_CC``) and it is undefined at
+    a sample, the plain curve (``PHIE``, ``PERM``) is read there: the same
+    per-sample choice the saturation, net-pay and flow-unit calculations of
+    :func:`petrophys.interpret` make, so every net-pay sample carries the
+    porosity its water saturation was computed with.
+
+    Returns
+    -------
+    dict
+        ``{"PHIE": array, "PERM": array}``, v/v and mD, NaN where no curve
+        has a value.
+    """
+    if phie_curve is None or perm_curve is None:
+        chosen = pay_average_curves(well)
+        phie_curve = phie_curve or chosen["PHIE"]
+        perm_curve = perm_curve or chosen["PERM"]
+    data = {}
+    for key, name in (("PHIE", phie_curve), ("PERM", perm_curve)):
+        names = [name, _PLAIN_CURVE[name]] if name in _PLAIN_CURVE else [name] if name else []
+        data[key] = _pay_data(well, names)
+    return data
+
+
+def _weighted_mean(data: np.ndarray, weight: np.ndarray) -> float:
+    """Mean of ``data`` weighted by ``weight`` over the samples where both are finite."""
+    valid = np.isfinite(data) & np.isfinite(weight) & (weight > 0)
+    total = float(np.sum(weight[valid]))
+    return float(np.sum(data[valid] * weight[valid]) / total) if total > 0 else np.nan
 
 
 def calculate_zone_summary(
@@ -173,15 +221,22 @@ def calculate_zone_summary(
         Count a sample at ``bottom_depth``
     phie_curve, perm_curve : str, optional
         Porosity and permeability curves of the pay averages; by default
-        those of :func:`pay_average_curves`. Each average, HCPV and BVW come
-        from that one curve over the net-pay samples where it is defined.
+        those of :func:`pay_average_curves`, read per sample as
+        :func:`pay_average_data` describes.
 
     Returns
     -------
     ZoneSummary
-        Zone summary results; a net thickness (and pay/gross ``ntg``) whose
-        flag curve is not on the well is NaN. ``avg_perm`` is the geometric
-        mean of the positive permeability samples.
+        Zone summary results, thicknesses in the well's depth unit; a net
+        thickness (and pay/gross ``ntg``) whose flag curve is not on the
+        well is NaN. Over the net-pay samples: ``avg_phie`` and ``avg_vcl``
+        are weighted by sample thickness, ``avg_sw`` by pore volume
+        (porosity times thickness), and ``avg_perm`` is the
+        thickness-weighted geometric mean of the positive permeability
+        samples. ``hcpv`` is the hydrocarbon pore thickness, the sum of
+        porosity * (1 - SW) * thickness over net pay, in the well's depth
+        unit; ``bvw`` is the thickness-weighted mean of porosity * SW.
+        A window without samples gives NaN averages and zero thicknesses.
     """
     depth = well_depth_array(well)
     # Get depth mask
@@ -199,7 +254,7 @@ def calculate_zone_summary(
             net_rock=0,
             net_reservoir=0,
             net_pay=0,
-            ntg=0,
+            ntg=0 if reproducing_benchmark() else np.nan,
             n_samples=0,
             n_pay_samples=0
         )
@@ -245,20 +300,34 @@ def calculate_zone_summary(
         hcpv = avg_phie * (1 - avg_sw) * net_pay_thick if not np.isnan(avg_phie) else np.nan
         bvw = avg_phie * avg_sw if not np.isnan(avg_phie) else np.nan
     else:
-        # One porosity and one permeability curve for the whole zone: the
-        # core-corrected one where the interpretation produced or used it.
+        # The core-corrected porosity and permeability where the
+        # interpretation produced or used them, the plain curve at the
+        # samples they do not cover (pay_average_data).
         if phie_curve is None or perm_curve is None:
             chosen = pay_average_curves(well)
             phie_curve = phie_curve or chosen["PHIE"]
             perm_curve = perm_curve or chosen["PERM"]
-        phie = _pay_data(well, [phie_curve] if phie_curve else [])
+        pay_values = pay_average_data(well, phie_curve, perm_curve)
+        phie, perm = pay_values["PHIE"], pay_values["PERM"]
+        plain_samples = {}
+        for key, name in (("PHIE", phie_curve), ("PERM", perm_curve)):
+            corrected = _pay_data(well, [name]) if name in _PLAIN_CURVE else pay_values[key]
+            plain_samples[key] = int(np.count_nonzero(
+                pay_mask & np.isfinite(pay_values[key]) & ~np.isfinite(corrected)))
         sw = _pay_data(well, ["SW"])
-        perm = _pay_data(well, [perm_curve] if perm_curve else [])
-        avg_phie = _mean(phie[pay_mask])
-        avg_sw = _mean(sw[pay_mask])
-        avg_vcl = _get_average(well, "VCL", pay_mask)
-        avg_perm = _geometric_mean(perm[pay_mask])
+        h = np.where(pay_mask, sample_thickness, np.nan)
+        # Porosity and clay volume by thickness, Sw by pore volume, so that
+        # avg_phie * (1 - avg_sw) * net pay is the hydrocarbon pore thickness.
+        avg_phie = _weighted_mean(phie, h)
+        avg_sw = _weighted_mean(sw, phie * h)
+        if np.isnan(avg_sw):
+            avg_sw = _weighted_mean(sw, h)
+        avg_vcl = _weighted_mean(_pay_data(well, ["VCL"]), h)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_perm = np.where(perm > 0, np.log(perm), np.nan)
+        avg_perm = float(np.exp(_weighted_mean(log_perm, h)))
         for name, data in ((phie_curve, phie), (perm_curve, perm)):
+            name = f"{name}/{_PLAIN_CURVE[name]}" if name in _PLAIN_CURVE else name
             missing = int(np.count_nonzero(pay_mask & ~np.isfinite(data)))
             if name and n_pay_samples and missing and _PAY_GAPS.get() is not None:
                 _PAY_GAPS.get().append((name, zone_name, missing, n_pay_samples))
@@ -270,13 +339,13 @@ def calculate_zone_summary(
                 )
 
         # HCPV sums PHIE*(1-SW)*thickness over pay; BVW is the thickness-weighted
-        # mean of PHIE*SW over pay, so hcpv = (avg_phie - bvw)*net_pay when the
-        # pay samples share one thickness.
+        # mean of PHIE*SW over pay, so hcpv = (avg_phie - bvw)*net_pay.
         hc_valid = pay_mask & np.isfinite(phie) & np.isfinite(sw)
         if np.any(hc_valid):
-            h = sample_thickness[hc_valid]
-            hcpv = float(np.sum(phie[hc_valid] * (1.0 - sw[hc_valid]) * h))
-            bvw = float(np.sum(phie[hc_valid] * sw[hc_valid] * h) / np.sum(h)) if np.sum(h) > 0 else np.nan
+            h_valid = sample_thickness[hc_valid]
+            hcpv = float(np.sum(phie[hc_valid] * (1.0 - sw[hc_valid]) * h_valid))
+            bvw = (float(np.sum(phie[hc_valid] * sw[hc_valid] * h_valid) / np.sum(h_valid))
+                   if np.sum(h_valid) > 0 else np.nan)
         else:
             hcpv = np.nan
             bvw = np.nan
@@ -300,6 +369,8 @@ def calculate_zone_summary(
         n_pay_samples=n_pay_samples,
         phie_curve=None if reproducing_benchmark() else phie_curve,
         perm_curve=None if reproducing_benchmark() else perm_curve,
+        phie_plain_samples=0 if reproducing_benchmark() else plain_samples["PHIE"],
+        perm_plain_samples=0 if reproducing_benchmark() else plain_samples["PERM"],
     )
 
 
@@ -309,16 +380,6 @@ def _pay_data(well: "Well", names: List[str]) -> np.ndarray:
     if data is None:
         return np.full(well.n_samples, np.nan, dtype=float)
     return np.asarray(data, dtype=float)
-
-
-def _mean(data: np.ndarray) -> float:
-    valid = data[np.isfinite(data)]
-    return float(np.mean(valid)) if len(valid) else np.nan
-
-
-def _geometric_mean(data: np.ndarray) -> float:
-    valid = data[np.isfinite(data) & (data > 0)]
-    return float(np.exp(np.mean(np.log(valid)))) if len(valid) else np.nan
 
 
 def _get_average(well: "Well", curve_name: str, mask: np.ndarray) -> float:

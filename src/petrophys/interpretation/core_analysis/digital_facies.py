@@ -132,6 +132,21 @@ class FaciesResult:
         return pd.DataFrame({"DEPTH": self.depth, "FACIES": self.facies})
 
     def filter_by_depth(self, top: float, bottom: float) -> "FaciesResult":
+        """Return the samples within a depth interval.
+
+        Parameters
+        ----------
+        top, bottom : float
+            Top and bottom of the interval, in the unit of ``depth``;
+            samples at the limits are kept.
+
+        Returns
+        -------
+        FaciesResult
+            Result holding the depths and facies labels inside the interval,
+            with the same number of facies, features, weights, cluster
+            centres and inertia.
+        """
         mask = (self.depth >= top) & (self.depth <= bottom)
         return FaciesResult(
             depth=self.depth[mask],

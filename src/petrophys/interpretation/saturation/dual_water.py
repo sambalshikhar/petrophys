@@ -91,8 +91,8 @@ def dual_water(
         Tortuosity factor (default: 1.0)
     m : float
         Cementation exponent (default: 2.0)
-    n : float
-        Saturation exponent (default: 2.0)
+    n : float or np.ndarray
+        Saturation exponent (default: 2.0); one value, or one per sample
 
     Returns
     -------
@@ -156,26 +156,28 @@ def dual_water(
     with np.errstate(invalid="ignore"):
         # n = 2: Cw Swt^2 + B Swt - K = 0, the positive root.
         swt = (-b + np.sqrt(b * b + 4.0 * cw * k)) / (2.0 * cw)
-        if float(n) != 2.0:
+        if np.any(np.asarray(n, dtype=float) != 2.0):
             # Other n: solve Cw Swt^n + B Swt^(n-1) = K by bisection on
             # [Swb, 1]. There Cw Swt + B = Cw (Swt - Swb) + Swb Cwb > 0, so the
             # left side rises with Swt and the root is unique; a root below
-            # Swb gives Swe = 0 and one above 1 gives Swe = 1 after clipping.
+            # Swb leaves Swe undefined (NaN, as for n = 2) and one above 1
+            # gives Swe = 1 after clipping.
             k_b, b_b, cw_b, swb_b = np.broadcast_arrays(k, b, cw, swb_safe)
 
             def excess(s):
                 return cw_b * s ** n + b_b * s ** (n - 1.0) - k_b
 
             low, high = swb_b.astype(float).copy(), np.ones_like(swb_b, dtype=float)
-            below, above = excess(low) >= 0.0, excess(high) <= 0.0
+            below, above = excess(low) > 0.0, excess(high) <= 0.0
             for _ in range(60):
                 middle = 0.5 * (low + high)
                 rising = excess(middle) < 0.0
                 low = np.where(rising, middle, low)
                 high = np.where(rising, high, middle)
-            swt = np.where(below, swb_b, np.where(above, 1.0, 0.5 * (low + high)))
+            bisected = np.where(below, np.nan, np.where(above, 1.0, 0.5 * (low + high)))
             solvable = np.isfinite(k_b) & np.isfinite(b_b) & np.isfinite(cw_b) & np.isfinite(swb_b)
-            swt = np.where(solvable, swt, np.nan)
+            # With one n per sample, the samples at n = 2 keep the exact root.
+            swt = np.where(np.asarray(n, dtype=float) == 2.0, swt, np.where(solvable, bisected, np.nan))
 
     # Convert to effective Sw
     swe = (swt - swb_safe) / (1.0 - swb_safe)

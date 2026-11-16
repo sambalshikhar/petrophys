@@ -124,6 +124,17 @@ class SaturationModule:
         Force specific model (default: "auto")
     vcl_cutoff : float, optional
         VCL threshold for clean vs shaly (default: 0.3)
+    sxo_quicklook_fallback : {"per_sample", "whole_curve"}, optional
+        How the quick-look relation ``SXO = SW**0.2`` stands in for the
+        invaded-zone Archie SXO. ``"per_sample"`` (default) fills every
+        sample whose Archie SXO is not finite; ``"whole_curve"`` uses it only
+        where the invaded-zone inputs are missing altogether, leaving single
+        non-finite Archie samples NaN.
+    depthwise_curve_merge : bool, optional
+        Fill the missing samples of the invaded-zone resistivity from the
+        next candidate curve (RXO, RSHA, RESS), depth by depth (default:
+        True). When False the first of them on the well is used as it
+        stands.
     rwb_fallback : float or None, optional
         Bound-water resistivity Dual Water takes when no ``rwb`` is given, as
         a multiple of Rw. Default None: Rwb is not estimated, so Dual Water
@@ -237,11 +248,15 @@ class SaturationModule:
         lithology : str or np.ndarray, optional
             'clastic' or 'carbonate' globally, or per-depth array
         cec : float, optional
-            Cation exchange capacity (for Waxman-Smits, meq/g)
+            Cation exchange capacity (for Waxman-Smits, meq/g). With
+            ``model="auto"`` Waxman-Smits is chosen only where both ``cec``
+            and ``b_coeff`` are given; with ``cec`` alone, name the model
+            (``model="waxman_smits"``).
         b_coeff : float, optional
             Equivalent counter-ion conductance B (for Waxman-Smits),
-            (S/m)/(meq/cm3); default: the Waxman and Smits (1968) relation
-            in Rw
+            (S/m)/(meq/cm3). With ``model="waxman_smits"`` the default is
+            the Waxman and Smits (1968) relation in Rw; ``model="auto"``
+            does not choose Waxman-Smits without it.
         rho_ma : float, optional
             Matrix density (for Waxman-Smits, default: 2.65)
         m_star : float, optional
@@ -251,6 +266,16 @@ class SaturationModule:
             ``rwb_fallback`` for what happens without it
         phi_cl : float, optional
             Clay porosity (for Dual Water, default from constants)
+        rtsh : float, optional
+            Shale resistivity, ohm.m, used in place of ``rcl`` by the North
+            Sea, Nigeria/Schlumberger, Simandoux, modified Simandoux and
+            Indonesia models. Default (None): ``rcl``.
+        vsh_exp : float, optional
+            Shale-volume exponent of the North Sea shaly-sand model
+            (default: 1.6)
+        shale_exp : float, optional
+            Shale-volume exponent of the Nigeria/Schlumberger model
+            (default: 1.6)
 
         Returns
         -------

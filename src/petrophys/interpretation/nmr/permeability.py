@@ -112,6 +112,9 @@ def t2lm_from_bins(
         Shape (n_depth, n_bins) — porosity (pu) in each T2 bin.
     t2_centers : np.ndarray
         Shape (n_bins,) — T2 centre times (ms).
+    min_bin_coverage : float
+        Share of the bins that must have a value at a depth, 0 to 1
+        (default 1: all of them); below it T2lm is NaN there.
 
     Returns
     -------
@@ -204,6 +207,9 @@ def bvi_from_bins(
     cutoff_ms : float
         T2 cutoff (ms).  Default 33 ms, the sandstone value (Coates, Xiao and
         Prammer, 1999).
+    min_bin_coverage : float
+        Share of the summed bins that must have a value at a depth, 0 to 1
+        (default 1: all of them); below it BVI is NaN there.
     partial_bins : bool
         ``False`` counts whole bins with centre **< cutoff_ms**, the split
         some vendor summaries use.

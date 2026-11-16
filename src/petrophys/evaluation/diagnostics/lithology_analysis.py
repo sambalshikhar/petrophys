@@ -195,6 +195,34 @@ class LithologyAnalysis:
         well: "Well",
         add_curves: bool = True,
     ) -> CategoryAnalysisResult:
+        """Classify each sample's lithology indicators and summarize them by interval.
+
+        Parameters
+        ----------
+        well : Well
+            Well with a lithology code curve or a computed ``LITHO`` curve,
+            and the logs the indicators read where present: PEF, RHOB, NPHI,
+            GR, porosity, clay volume and permeability. A class that needs an
+            absent curve is undetermined.
+        add_curves : bool, default True
+            Add the derived curves that hold values to ``well``, replacing
+            curves of the same name: ``GT_LITHOLOGY_GROUP_CODE``,
+            ``LIMESTONE_INDICATOR``, ``DOLOMITE_INDICATOR``,
+            ``CARBONATE_INDICATOR``, ``GR_CLAY_INDICATOR``,
+            ``NPHI_CLAY_INDICATOR``, ``PEF_CLAY_INDICATOR``,
+            ``COMPOSITE_CLAY`` and ``CONSISTENCY_SCORE``.
+
+        Returns
+        -------
+        CategoryAnalysisResult
+            Sections ``lithology_distribution_classification``,
+            ``carbonate_analysis``, ``clay_content_indicators``,
+            ``lithology_petrophysics_relationships``,
+            ``lithology_log_consistency`` and ``overall_interpretation``,
+            each with its description, method, thresholds and the depth
+            intervals of every class; the derived curves in
+            ``derived_curves``; and ``metadata["formation_level_summary"]``.
+        """
         benchmark = self.class_tables == "geolink"
         n_samples = well.n_samples
         gt_codes, _ = get_curve_data(well, [interpreted_lithology_code_curve(well)])

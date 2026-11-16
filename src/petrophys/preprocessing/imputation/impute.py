@@ -125,6 +125,27 @@ def _as_well(source: Any) -> "Well":
     return read(source)
 
 
+def _is_same_well(well: "Well", other: "Well") -> bool:
+    """Whether a training well is the well itself: the same object, the same
+    name, or the same depths with the same values in every curve they share."""
+    if other is well:
+        return True
+    name = str(well.name or "").strip().upper()
+    if name and name not in ("UNKNOWN", "WELL") and name == str(other.name or "").strip().upper():
+        return True
+    if other.n_samples != well.n_samples or not np.array_equal(
+            np.asarray(well.depth, dtype=float), np.asarray(other.depth, dtype=float)):
+        return False
+    shared = [name for name in well.curves if other.has_curve(name)]
+    try:
+        return bool(shared) and all(
+            np.array_equal(np.asarray(well[name].data, dtype=float),
+                           np.asarray(other[name].data, dtype=float), equal_nan=True)
+            for name in shared)
+    except (TypeError, ValueError):  # a curve that is not numeric
+        return False
+
+
 def _store_result(well: "Well", base: str, values: np.ndarray, unit: str,
                   output: Optional[PathLike]) -> "Well":
     name = f"{base}_IMPUTED"
@@ -161,7 +182,9 @@ def impute(
     blocks, each predicted by a model trained on the other four and the
     training wells), so its difference from the measured curve is the error
     to expect in a gap. The curve's description gives that error (mean
-    absolute error, bias and R2), and
+    absolute error, bias and R2) in the unit the curve is stored in; for the
+    curves modelled as log10 (resistivity, permeability) it is the error of
+    log10 of the curve, so a mean absolute error of 0.3 is a factor of 2.
     ``pp.plot(well, curves=["RHOB", "RHOB_PREDICTED"])`` overlays the two.
     In the gaps it holds the imputed values.
 
@@ -176,7 +199,11 @@ def impute(
     train_wells : Well, DynamicWorkflowResult or path, or a sequence of them, optional
         Other wells to learn from, typically from the same field. Needed when
         the well lacks the curve altogether, and useful when its measured
-        part is short.
+        part is short. Where the well has measured samples of the curve,
+        the well itself among them (the same name, or the same depths and
+        curve values) is left out, with a warning: its samples are learned
+        from once, and the check of ``<CURVE>_PREDICTED`` must not see the
+        samples it holds back.
     output : path, optional
         Write the well, with the new curve, to this LAS file.
 
@@ -232,6 +259,19 @@ def impute(
     if isinstance(train_wells, (str, Path)) or hasattr(train_wells, "n_samples") or hasattr(train_wells, "well"):
         train_wells = [train_wells]  # one well, file or result
     others = [_as_well(source) for source in (train_wells or [])]
+    # A copy of the well among the training wells would show the out-of-fold
+    # check the samples it holds back; without measured samples there is no check.
+    same = [other for other in others if _is_same_well(well, other)] if np.any(~missing) else []
+    if same:
+        others = [other for other in others if not any(other is one for one in same)]
+        warnings.warn(
+            f"{well.name}: {len(same)} of the {len(same) + len(others)} training wells left out because "
+            f"{'it is' if len(same) == 1 else 'they are'} this well "
+            f"({', '.join(str(other.name) for other in same)}). The well's own samples are learned "
+            f"from already, and the error given with {target_mnemonic or str(curve).strip().upper()}"
+            "_PREDICTED is honest only if no training well repeats the samples it holds back.",
+            stacklevel=2,
+        )
     if target_mnemonic is None and not any(_find_curve(other, target) is not None for other in others):
         raise ValueError(
             f"{well.name} has no {curve} curve; pass train_wells= with wells that have it"
@@ -315,10 +355,7 @@ def impute(
         has_input = np.any(np.isfinite(x_gap), axis=1)
         predictable[np.flatnonzero(missing)[has_input]] = True
         if np.any(has_input):
-            model = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05,
-                                                  early_stopping=False, random_state=0)
-            model.fit(x_train, y_train)
-            predicted = model.predict(x_gap[has_input])
+            predicted = _fit_predict(x_train, y_train, x_gap[has_input])
             imputed[predictable] = 10.0 ** predicted if log_target else predicted
             low = np.nanpercentile(x_train, 1, axis=0)
             high = np.nanpercentile(x_train, 99, axis=0)
@@ -337,7 +374,7 @@ def impute(
     base = target_mnemonic or str(curve).strip().upper()
     values = np.where(missing, imputed / factor, recorded)
     predicted, check = _out_of_fold(well, own, features, x_train, y_train, own_index,
-                                    log_target, measured, unit)
+                                    log_target, measured, unit, factor)
     predicted = np.where(missing, imputed, predicted)
     _store_check(well, base, predicted / factor, unit, check, curve)
     if not np.any(missing):
@@ -350,17 +387,27 @@ def impute(
 def _fit_predict(x_fit: np.ndarray, y_fit: np.ndarray, x_new: np.ndarray) -> np.ndarray:
     from sklearn.ensemble import HistGradientBoostingRegressor
 
+    # A log with no values in this training set teaches nothing, and newer
+    # scikit-learn versions refuse an all-missing column.
+    learned = np.any(np.isfinite(x_fit), axis=0)
+    if not learned.any():
+        return np.full(x_new.shape[0], np.nan)
     model = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05,
                                           early_stopping=False, random_state=0)
-    model.fit(x_fit, y_fit)
-    return model.predict(x_new)
+    model.fit(x_fit[:, learned], y_fit)
+    return model.predict(x_new[:, learned])
 
 
 def _out_of_fold(well: "Well", own: Dict[str, np.ndarray], features: List[str], x_train: np.ndarray,
                  y_train: np.ndarray, own_index: np.ndarray, log_target: bool, measured: np.ndarray,
-                 unit: str) -> Tuple[np.ndarray, Optional[str]]:
+                 unit: str, factor: float = 1.0) -> Tuple[np.ndarray, Optional[str]]:
     """A prediction at each measured depth of the well from a model that did not
-    learn from that depth's block, and its error against the measured values."""
+    learn from that depth's block, and its error against the measured values.
+
+    The error is in ``unit``, the unit the curve is stored in (``factor``
+    converts that unit to the standard unit of ``measured``); for a curve
+    modelled as log10 it is the error of log10 of the curve.
+    """
     n = well.n_samples
     predicted = np.full(n, np.nan)
     own_rows = np.flatnonzero(own_index >= 0)
@@ -379,10 +426,20 @@ def _out_of_fold(well: "Well", own: Dict[str, np.ndarray], features: List[str], 
     both = np.isfinite(predicted) & np.isfinite(truth)
     if np.count_nonzero(both) < 2:
         return predicted, None
-    error = predicted[both] - truth[both]
-    ss_tot = float(np.sum((truth[both] - truth[both].mean()) ** 2))
+    if log_target:
+        estimate, actual = np.log10(predicted[both]), np.log10(truth[both])
+    else:
+        estimate, actual = predicted[both] / factor, truth[both] / factor
+    error = estimate - actual
+    ss_tot = float(np.sum((actual - actual.mean()) ** 2))
     r2 = 1.0 - float(np.sum(error ** 2)) / ss_tot if ss_tot > 0 else float("nan")
-    return predicted, (f"mean absolute error {np.mean(np.abs(error)):.3g}, bias {np.mean(error):+.3g}, "
+    mae = float(np.mean(np.abs(error)))
+    if log_target:
+        of = f"log10 of the curve ({unit})" if unit else "log10 of the curve"
+        return predicted, (f"in {of}, mean absolute error {mae:.3g} (a factor of {10.0 ** mae:.3g}), "
+                           f"bias {np.mean(error):+.3g}, R2 {r2:.2f} against {int(both.sum())} measured samples")
+    label = f" {unit}" if unit else ""
+    return predicted, (f"mean absolute error {mae:.3g}{label}, bias {np.mean(error):+.3g}{label}, "
                        f"R2 {r2:.2f} against {int(both.sum())} measured samples")
 
 
