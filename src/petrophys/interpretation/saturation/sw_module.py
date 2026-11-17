@@ -583,7 +583,7 @@ class SaturationModule:
             )
 
         # A given shale resistivity replaces the computed Rcl in Simandoux and
-        # Indonesia as well; the benchmark packages used Rcl there.
+        # Indonesia as well; benchmark context profiles use Rcl there.
         rsh = rcl if rtsh is None or reproducing_benchmark() else rtsh
 
         if model == SwModel.SIMANDOUX:

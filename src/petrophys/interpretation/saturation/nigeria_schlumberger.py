@@ -12,8 +12,8 @@ Rearranging:
 
 with Sw = NaN where the shale term alone exceeds 1 / sqrt(Rt): the equation
 has no solution there. The textbook Nigeria equation applies Sw^(n/2) to the
-shale term as well; this form leaves the shale conductance independent of Sw. The benchmark context profiles keep the packages'
-original calculation.
+shale term as well; this form leaves the shale conductance independent of Sw.
+Benchmark context profiles clip a negative conductivity residual to zero.
 
 References
 ----------

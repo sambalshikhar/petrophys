@@ -242,10 +242,10 @@ _BENCHMARK_MISSING_ALIASES: Dict[str, tuple] = {
     "RSHA": ("LL3", "RLL3", "AHT10", "AHO10", "AHT20", "AHO20", "HLLS"),
 }
 
-#: Alias lists the benchmark context packages were computed with, where they
-#: differ from :data:`ALIAS_MAP`: RDEP ranked AT60 before AT90, HCGR was
-#: a GR alias, and NPHI had no NPHI_LS or sandstone-referenced aliases. Used
-#: inside ``historical_benchmark()``.
+#: Alias priorities for benchmark context profiles: RDEP ranks AT60 before
+#: AT90, HCGR is a GR alias, and NPHI excludes NPHI_LS and
+#: sandstone-referenced aliases. These priorities override :data:`ALIAS_MAP`
+#: within the benchmark calculation context.
 _BENCHMARK_ALIAS_MAP: Dict[str, List[str]] = {
     "PERM_CC": ["PERM_CC"],
     "RDEP": [
@@ -315,8 +315,7 @@ def get_aliases(standard_mnemonic: str) -> List[str]:
     Returns
     -------
     list of str
-        List of aliases, in ranking order (the benchmark packages' order
-        inside ``historical_benchmark()``)
+        List of aliases in priority order for the active calculation profile
     """
     standard = standard_mnemonic.upper()
     if reproducing_benchmark() and standard in _BENCHMARK_ALIAS_MAP:

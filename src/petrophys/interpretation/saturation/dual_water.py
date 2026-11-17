@@ -48,7 +48,7 @@ def dual_water(
     mixed in the proportions of the water actually in the pores, Swb/Swt
     bound and 1 - Swb/Swt free, so the conductivity equation is solved for
     Swt (a quadratic for n = 2, solved by bisection otherwise) and the bound water is
-    removed to give Swe. The benchmark packages used the wet-zone (Ro) form
+    removed to give Swe. Benchmark context profiles use the wet-zone (Ro) form
     of Crain's Petrophysical Handbook, which mixes the waters in the
     proportions Swb and 1 - Swb of water-filled rock; the two agree in wet
     rock (Swt = 1). In hydrocarbon-bearing rock, where the bound water is a

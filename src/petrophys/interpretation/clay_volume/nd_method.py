@@ -112,7 +112,7 @@ def vcl_from_nd(
     # Handle degenerate configuration (denominator == 0)
     if np.isclose(den, 0.0):
         # The clay point lies on the clean line: the ratio is undefined (NaN).
-        # The benchmark context profiles keep the packages' original calculation.
+        # Apply the selected benchmark context profile's calculation rules.
         if reproducing_benchmark():
             out = np.zeros_like(nphi_arr)
         else:

@@ -1218,8 +1218,8 @@ class DynamicWorkflowConfig:
     #: NET_RES curve. ``"workflow"`` uses the reported PHIE. ``"all_shale_phit"``
     #: recomputes PHIE for that flag only, as ``clip(PHIT - VCL * phi_cl, 0, PHIT)``
     #: with ``phi_cl`` the mean PHIT of all shale-lithology samples, the rule
-    #: behind SWIRR_APP in the GeoLink benchmark context generated on
-    #: 2026-05-01. The reported PHIE and SW are unchanged.
+    #: used to select SWIRR_APP samples for the GeoLink benchmark context.
+    #: This flag calculation does not alter the reported PHIE or SW.
     swirr_flag_phi_cl: str = "workflow"
     # -- Calculation profile -------------------------------------------------
     #: Interpretation configuration. ``"current"`` is the default;
@@ -6892,7 +6892,7 @@ class DynamicWorkflow:
             solver_version = self.config.mineral_solver_version
             # The "geolink" profile solves the version 1 rows unweighted.
             unweighted = solver_version == 1 and self._reproducing_benchmark
-            # The benchmark profiles keep the original solve: unweighted rows,
+            # Benchmark profiles use unweighted solver rows,
             # sonic standing in for PEF, PEF always used.
             litho_module = LithologyModule(
                 lithology="auto",

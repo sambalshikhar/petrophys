@@ -68,7 +68,7 @@ def _code_parameters(lith_code: float) -> tuple[float, float, str]:
 
 
 def _benchmark_parameters(lith_code: float) -> tuple[float, float, str]:
-    """The code groups the benchmark packages were computed with."""
+    """Lithology code groups used by benchmark context profiles."""
     if 11.0 <= lith_code <= 15.0:
         return 20.0, -3.0, "limestone"
     if lith_code == 17.0:

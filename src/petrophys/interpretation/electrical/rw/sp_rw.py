@@ -90,7 +90,7 @@ def rw_from_ssp(
     rw = rmf / np.power(10, -ssp / k)
 
     if reproducing_benchmark():
-        # The benchmark context profiles keep the packages' original calculation.
+        # Apply the selected benchmark context profile's calculation rules.
         if isinstance(rw, np.ndarray):
             return np.clip(rw, 0.01, 10.0)
         return max(0.01, min(rw, 10.0))
@@ -177,8 +177,8 @@ def rw_from_rxo_rt(
     where Sw = Sxo = 1.0
     """
     if not reproducing_benchmark():
-        # A zero or negative Rxo has no Rw. The benchmark context profiles
-        # keep the packages' original calculation.
+        # A zero or negative Rxo has no Rw. Benchmark context profiles
+        # evaluate the equation without this input mask.
         rxo_arr = np.asarray(rxo, dtype=float)
         rxo_arr = np.where(rxo_arr > 0, rxo_arr, np.nan)
         rxo = rxo_arr if rxo_arr.ndim else float(rxo_arr)

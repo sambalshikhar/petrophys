@@ -30,7 +30,7 @@ M3_PER_BBL = 0.1589873
 
 
 def _m3_per_bbl() -> float:
-    # The benchmark packages were computed with the rounded 0.159.
+    # Benchmark context profiles use 0.159 cubic metres per barrel.
     return 0.159 if reproducing_benchmark() else M3_PER_BBL
 
 

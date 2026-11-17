@@ -386,8 +386,8 @@ class XRFData:
         """0.5 wt% of sulphur in the unit of the S concentrations.
 
         A unit the table does not know, or none, is read as weight percent.
-        The benchmark context profiles keep the packages' original
-        threshold of 0.5 (``historical_benchmark()``).
+        Benchmark context profiles use a threshold of 0.5 in the table's
+        concentration unit.
         """
         from petrophys._internal.benchmark import reproducing_benchmark
 

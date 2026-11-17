@@ -62,9 +62,8 @@ def calculate_elastic_properties(
     negative, which logged rocks practically never show (it points to a bad
     DTC or DTS pick), so Poisson's ratio, the bulk modulus and Young's modulus
     are NaN there; the shear modulus, from Vs alone, is kept. Where Vp <= Vs
-    every Vs-dependent property is NaN. Inside
-    ``historical_benchmark()`` Poisson's ratio is clipped to [0, 0.49] and the
-    moduli at 0 instead, as the benchmark packages were computed.
+    every Vs-dependent property is NaN. Benchmark context profiles clip
+    Poisson's ratio to [0, 0.49] and the moduli to a minimum of 0.
     """
     from petrophys._internal.benchmark import reproducing_benchmark
 

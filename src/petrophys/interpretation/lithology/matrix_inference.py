@@ -377,10 +377,9 @@ def resolve_from_core_matrix(
 
     Classification is done over clean (low-GR) samples. The nearest-matrix
     vote decides only when at least 80% of the samples agree; otherwise None
-    is returned and the later sources (solver, default) decide. Inside
-    ``historical_benchmark()`` the vote is ungated, PHIE_CC counts as core
-    porosity and the grain density is not read, as the benchmark packages
-    were computed.
+    is returned and the later sources (solver, default) decide. Benchmark
+    context profiles use an ungated vote, count PHIE_CC as core porosity
+    and do not read grain density.
     """
     from petrophys._internal.benchmark import reproducing_benchmark
 
@@ -460,7 +459,7 @@ def resolve_from_minerals(well, warn: bool = True) -> Optional[LithologyResoluti
     from petrophys._internal.benchmark import reproducing_benchmark
 
     # VCAL is the calcite curve MultiMineralSolver.add_to_well writes; the
-    # benchmark packages were computed without it.
+    # benchmark context profiles exclude this alias.
     calcite_names = ["VCALC", "VLIM"] if reproducing_benchmark() else ["VCALC", "VCAL", "VLIM"]
     vc, _, _ = get_curve_data_depthwise(well, calcite_names)
     vd, _, _ = get_curve_data_depthwise(well, ["VDOLO", "VDOL"])

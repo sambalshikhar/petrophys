@@ -74,7 +74,7 @@ def _as_fraction_if_percent(values: np.ndarray) -> np.ndarray:
     if not finite.size:
         return arr
     if reproducing_benchmark():
-        # The benchmark context profiles keep the packages' original calculation.
+        # Apply the selected benchmark context profile's calculation rules.
         level = np.nanmax(np.abs(finite))
         if level > 1.5 and level <= 100.0:
             arr = arr / 100.0

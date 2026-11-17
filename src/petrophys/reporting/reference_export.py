@@ -808,7 +808,7 @@ def _convert_temperature_to_fahrenheit(data: np.ndarray, unit: str) -> np.ndarra
 def _fraction_data(curve) -> np.ndarray:
     """A volume or saturation curve in v/v; percent-labelled data is divided by 100.
 
-    The benchmark context profiles keep the packages' original calculation.
+    Apply the selected benchmark context profile's calculation rules.
     """
     numeric = _normalize_numeric_array(curve.data)
     unit = str(curve.unit or "").strip().lower().replace(" ", "")

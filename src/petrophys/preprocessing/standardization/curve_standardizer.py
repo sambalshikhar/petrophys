@@ -887,7 +887,7 @@ class CurveStandardizer:
                     and new_curve.valid_count() > existing.valid_count()
                 )
                 if historical:
-                    # The benchmark context profiles keep the packages' original calculation.
+                    # Apply the selected benchmark context profile's calculation rules.
                     if wins:
                         new_curves[mnemonic] = existing
                         new_curves[standard_name] = new_curve

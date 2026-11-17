@@ -78,7 +78,7 @@ class WellboreQC:
         """
         n_samples = well.n_samples
         depth = np.asarray(well.depth, dtype=float)
-        # The benchmark context profiles keep the packages' original calculation.
+        # Apply the selected benchmark context profile's calculation rules.
         benchmark = reproducing_benchmark()
         depth_in_ft = str(getattr(well, "depth_unit", "m") or "m").lower().startswith("f")
         cali, _, _ = get_curve_data_depthwise(well, ["CALI", "CAL"])

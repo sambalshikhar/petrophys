@@ -11,8 +11,7 @@ solved as
     Sw^n = (1 / Rt - Vsh^exp / Rtsh) * a * Rw / phi^m
 
 with Sw = NaN where the shale term alone exceeds 1 / Rt: the equation has
-no solution there. The benchmark context profiles keep the packages' original
-calculation.
+no solution there. Benchmark context profiles clip a negative conductivity residual to zero.
 
 References
 ----------

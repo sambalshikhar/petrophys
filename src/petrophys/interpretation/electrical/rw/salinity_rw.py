@@ -136,8 +136,8 @@ def rw_from_salinity(
     if temperature_unit(temp_unit, strict=True) != "F":
         temperature = UnitConverter.temperature(temperature, temp_unit, "F")
 
-    # Zero or negative salinity has no Rw. The benchmark context profiles keep
-    # the packages' original calculation.
+    # Zero or negative salinity has no Rw. Benchmark context profiles
+    # evaluate the salinity equation without this input mask.
     if not reproducing_benchmark():
         salinity_ppm = np.asarray(salinity_ppm, dtype=float)
         salinity_ppm = np.where(salinity_ppm > 0, salinity_ppm, np.nan)
@@ -198,8 +198,8 @@ def salinity_from_rw(
     # salinity = (3647.5 / (Rw75 - 0.0123))^(1/0.955)
 
     if not reproducing_benchmark():
-        # Rw at or below 0.0123 ohm.m (75 F) has no salinity. The benchmark
-        # context profiles keep the packages' original calculation.
+        # Rw at or below 0.0123 ohm.m (75 F) has no salinity. Benchmark
+        # context profiles evaluate the equation without this input mask.
         rw_75 = np.asarray(rw_75, dtype=float)
         with np.errstate(invalid="ignore"):
             denominator = np.where(rw_75 > 0.0123, rw_75 - 0.0123, np.nan)

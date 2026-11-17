@@ -175,7 +175,7 @@ def rule_for_curve(
         return ("SXO", table["SXO"]) if "SXO" in table else None
     if rules is None:
         if upper == "DCAL" and reproducing_benchmark():
-            # The benchmark context profiles keep the packages' original calculation.
+            # Apply the selected benchmark context profile's calculation rules.
             return ("CALI", table["CALI"])
         return _RULE_LOOKUP.get(upper)
     for canonical, rule in rules.items():
@@ -194,7 +194,7 @@ def _qc_curve_data(
     above = finite & (arr > high)
     if not reproducing_benchmark():
         # +/-inf is outside every range and becomes NaN under clip rules too.
-        # The benchmark context profiles keep the packages' original calculation.
+        # Apply the selected benchmark context profile's calculation rules.
         below |= np.isneginf(arr)
         above |= np.isposinf(arr)
     changed = below | above

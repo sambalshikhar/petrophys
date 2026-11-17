@@ -157,8 +157,8 @@ def get_log_density(mineral: str) -> float:
     The apparent log density where one is tabulated (the evaporites of
     :class:`~petrophys.model.constants.MatrixProperties`, e.g. halite 2.032),
     otherwise the grain density. This is the RHOB endpoint of the N-D
-    crossplot and the multi-mineral solver; the benchmark packages used the
-    grain density, kept inside ``historical_benchmark()``.
+    crossplot and the multi-mineral solver. Benchmark context profiles use
+    grain density as the RHOB endpoint.
     """
     from petrophys._internal.benchmark import reproducing_benchmark
 

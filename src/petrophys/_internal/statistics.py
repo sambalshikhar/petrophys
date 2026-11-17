@@ -16,9 +16,8 @@ def _positive_values(
     Returns the positive values and their weights, and whether a zero with a
     positive weight was present: a zero makes the harmonic or geometric mean 0
     (a zero-permeability barrier), as ``scipy.stats.hmean`` gives. Negative
-    values have no such mean and are excluded with a warning. The benchmark
-    context profiles keep the packages' original calculation
-    (``historical_benchmark()``).
+    values have no such mean and are excluded with a warning. Benchmark context profiles use positive values only when computing
+    these means.
     """
     from petrophys._internal.benchmark import reproducing_benchmark
 
