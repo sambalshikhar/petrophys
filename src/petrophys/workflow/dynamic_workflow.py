@@ -9389,10 +9389,11 @@ class DynamicWorkflow:
         sat_phit, sat_phit_basis = None, "PHIT"
         if not self._reproducing_benchmark:
             sat_phit, sat_phit_basis = self._paired_total_porosity(well, sat_phie)
+        routing_salinity = self._routing_salinity()
         result = sw_module.calculate(
             well, phie=sat_phie, phit=sat_phit,
             rw=self._result.rw_computed, rcl=self._result.rcl_computed,
-            salinity=self._routing_salinity(),
+            salinity=routing_salinity,
             rmf=self._result.rmf_computed if flushed_zone else None,
             lithology=lithology, cec=cec, b_coeff=self.config.b_coeff,
             rho_ma=self._grain_density_setting(), m_star=self.config.m_star,
@@ -9453,7 +9454,7 @@ class DynamicWorkflow:
                 else None
             ),
             "rcl": self._result.rcl_computed,
-            "salinity_ppm": self.config.salinity_ppm,
+            "salinity_ppm": routing_salinity,
             "cec": self.config.cec,
             "cec_present": self.config.cec is not None,
             "b_coeff": self.config.b_coeff,
@@ -9541,6 +9542,13 @@ class DynamicWorkflow:
                     )
         if self.config.sw_model == "auto":
             trace.decisions.append("Auto-routing: depth-by-depth model selection based on VCLAY and lithology")
+            if (not self._reproducing_benchmark and not self._historical
+                    and routing_salinity is not None
+                    and (result.model_counts or {}).get("simandoux", 0)):
+                trace.decisions.append(
+                    f"Simandoux selected for shaly samples at routing salinity "
+                    f"{routing_salinity:,.0f} ppm (>= 20,000 ppm)"
+                )
             if result.model_counts:
                 trace.decisions.append(
                     "Depth routing counts: "
