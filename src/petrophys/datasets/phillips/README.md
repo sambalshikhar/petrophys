@@ -7,7 +7,7 @@ They ship with the package and are available through `petrophys.sample()`.
 
 `source_manifest.json` pins the upstream repository, commit, original path,
 Git blob hash and SHA-256 of each copy. The two upstream MIT notices are retained
-as `LICENSE-Craig-2020.txt` and `LICENSE-Craig-2022.txt`. Underlying COSTA data
+as `LICENSE-Craig-2021.txt` and `LICENSE-Craig-2022.txt`. Underlying COSTA data
 also retain the creators' attribution and terms in `THIRD_PARTY_DATA.md`.
 Repository licensing does not establish missing acquisition provenance.
 

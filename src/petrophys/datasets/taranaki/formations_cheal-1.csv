@@ -1,5 +1,5 @@
-formation_name,top_depth,bottom_depth,depth_unit
-Urenui,1240.0788,1756.8672,m
-Mount Messenger,1757.0196,1813.8648,m
-Manganui,1814.0172,2335.9872,m
-Moki,2336.1396,2847.8988,m
+formation_name,top_depth,bottom_depth,depth_unit,data_notice
+Urenui,1240.0788,1756.8672,m,"Modified by Petrophys: formation intervals extracted from FORMATION; source: IBM Taranaki Basin Curated Well Logs, https://doi.org/10.5281/zenodo.3832955; CDLA-Sharing-1.0, https://cdla.dev/sharing-1-0/"
+Mount Messenger,1757.0196,1813.8648,m,"Modified by Petrophys: formation intervals extracted from FORMATION; source: IBM Taranaki Basin Curated Well Logs, https://doi.org/10.5281/zenodo.3832955; CDLA-Sharing-1.0, https://cdla.dev/sharing-1-0/"
+Manganui,1814.0172,2335.9872,m,"Modified by Petrophys: formation intervals extracted from FORMATION; source: IBM Taranaki Basin Curated Well Logs, https://doi.org/10.5281/zenodo.3832955; CDLA-Sharing-1.0, https://cdla.dev/sharing-1-0/"
+Moki,2336.1396,2847.8988,m,"Modified by Petrophys: formation intervals extracted from FORMATION; source: IBM Taranaki Basin Curated Well Logs, https://doi.org/10.5281/zenodo.3832955; CDLA-Sharing-1.0, https://cdla.dev/sharing-1-0/"

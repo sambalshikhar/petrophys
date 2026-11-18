@@ -39,7 +39,7 @@ COLLECTIONS: Dict[str, str] = {
         "35/11-10; depth-indexed) and raw pretest records (IODP C0009A DLIS "
         "and LAS copies; time-indexed, read with read_mdt_pretest)"
     ),
-    "epslog": "15/12-20 S core-scanner data (XRF, grain size, strength), not log suites",
+    "epslog": "EDE-01 core-scanner data (XRF, grain size, strength, probe permeability) and matching composite well logs",
 }
 
 #: Notes on individual sample wells.

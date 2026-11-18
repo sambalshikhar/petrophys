@@ -13,13 +13,13 @@
       "repository": "https://github.com/Philliec459/Estimate-Core-Permeability-from-NMR-data-using-either-Map-Inversion-or-kNN",
       "commit": "1907883c8b721005f7cd0a617d2e0a50eab09621",
       "repository_license": "MIT",
-      "license_file": "phillips/LICENSE-Craig-2020.txt"
+      "license_file": "phillips/LICENSE-Craig-2021.txt"
     },
     "gulfcoast": {
       "repository": "https://github.com/Philliec459/NEW-Shaley-Sand-Log-Analysis-Tutorial-using-Combined-NMR-and-Conventional-Logs",
       "commit": "63599cf47aa28ad348ddabb9a09381170a3d304d",
       "repository_license": "MIT",
-      "license_file": "phillips/LICENSE-Craig-2020.txt"
+      "license_file": "phillips/LICENSE-Craig-2021.txt"
     },
     "costa": {
       "repository": "https://github.com/Philliec459/Jupyter-Notebooks_for-Characterization-of-a-New-Open-Source-Carbonate-Reservoir-Benchmarking-Case-St",
@@ -100,7 +100,7 @@
       "purpose": "Unmodified upstream MIT notice."
     },
     {
-      "path": "phillips/LICENSE-Craig-2020.txt",
+      "path": "phillips/LICENSE-Craig-2021.txt",
       "source": "nmr_core",
       "upstream_path": "LICENSE",
       "upstream_git_blob_sha1": "350ed0b7d47351718b96686989a6286cf3801cd1",

@@ -281,4 +281,5 @@ Continue with the :doc:`installation guide <installation>` and the
 
    architecture
    benchmark_context
+   acknowledgements
    changelog

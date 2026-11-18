@@ -102,6 +102,8 @@ def sample_kind(name: str) -> str:
         return "pressure"
     if folder == "daydream" or stem in _NMR_SAMPLES:
         return "nmr"
+    if stem == "ede_01_composite":
+        return "logs"
     if folder in {"epslog", "phillips"}:
         return "core"
     return "logs"

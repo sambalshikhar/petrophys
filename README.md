@@ -381,14 +381,19 @@ development setup, verification commands, and pull-request checklist.
 ## License
 
 The Petrophys source code is available under the MIT License; see
-[LICENSE](LICENSE). Bundled third-party data and trained artifacts retain their
+[LICENSE](LICENSE). Bundled third-party data retain their
 source terms and attribution requirements; see
 [THIRD_PARTY_DATA.md](THIRD_PARTY_DATA.md) and
 [`petrophys.datasets`](src/petrophys/datasets/README.md).
 
+See [Acknowledgements](ACKNOWLEDGEMENTS.md) for method, data-provider and
+dependency credits. Cite the source datasets and method papers relevant to
+your work in addition to the software citation below.
+
 ## Citation
 
-If you use Petrophys in your research, please cite:
+If you use Petrophys in your research, please cite the software and record the
+version or commit used. Machine-readable metadata is in [CITATION.cff](CITATION.cff).
 
 ```bibtex
 @software{petrophys,

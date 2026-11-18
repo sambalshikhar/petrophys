@@ -3,8 +3,10 @@
 The MIT licence in `LICENSE` applies to Petrophys software. It does not replace
 the terms of third-party well data or grant rights that their suppliers do not
 grant. Preserve source attributions when redistributing data and derived files.
-Source records below were checked in September and October 2026; none implies
-supplier endorsement of Petrophys or its interpretations.
+Source records below identify the available terms and provenance; none implies
+supplier endorsement of Petrophys or its interpretations. Attribution and a
+public download location do not establish a redistribution grant for material
+whose rights are not documented.
 
 ## COSTA
 
@@ -59,7 +61,7 @@ Six data files are copied without content changes from E. Craig Phillips
   `Thomeer_results_final.xlsx`; underlying COSTA attribution remains applicable.
 
 Each source repository publishes an MIT notice. Copies of the original notices
-(copyright 2021 and 2022) are included as `LICENSE-Craig-2020.txt` and
+(copyright 2021 and 2022) are included as `LICENSE-Craig-2021.txt` and
 `LICENSE-Craig-2022.txt`, including in Python distributions. Exact source commits,
 paths, hashes and modifications are in `source_manifest.json`.
 Petrophys does not claim authorship of these data or supplier endorsement.
@@ -71,25 +73,22 @@ for that bin example or Daydream. COSTA pressure/fluid metadata and plug-to-well
 mapping are incomplete in the selected tables. See the collection README before
 using these examples as field validation.
 
-## Epslog and matching RealPore core measurements
+## EpsLog: EDE-01
 
 Files: `src/petrophys/datasets/epslog/`.
 
-The user supplied an EpsLog delivery for client **Stratum Reservoir**, project
-**P001W**, well **15/12-20 S**, cores C01 and C02 (April 2024). Eight selected
-LAS files retain their original contents and supplier headers. Only filenames
-are normalized. Source filenames and SHA-256 hashes are in
-`epslog/source_manifest.json`; the original photographs and large PDF reports
-are not copied.
+Source: **NLOG.NL**, downloaded per well through the
+[NLOG map viewer](https://www.nlog.nl/nlog-mapviewer/) by the project maintainer.
+The EpsLog scanner delivery identifies client **EBN**, project **P005W**,
+well **EDE 01**. The companion EDE-01 composite contains conventional well logs.
+Credit NLOG.NL, EBN, EpsLog and the acquisition providers identified in the
+original file headers. Filenames are normalized; LAS contents are unchanged.
+Original filenames and SHA-256 checksums are in `epslog/source_manifest.json`.
 
-The accompanying 356-row routine-core CSV is a selected-column extract from
-*RealPore Por Perm Lithology data 1240 Wells Norway public.xlsx*, sheet
-*Combined all wells*. Its records identify the underlying source as
-`15_12-20_S__ROCK_AND_CORE__CORE_CONV_RAW_1.SPWLA`. Excel row numbers, column
-mapping and the workbook hash are retained. This table is from the RealPore
-compilation, not an EpsLog measurement or a Craig Phillips dataset.
-
-These measurements are not relicensed as MIT software.
+[NLOG's reuse terms](https://www.nlog.nl/en/disclaimer) permit copying,
+distribution and processing of website information with NLOG.NL attribution.
+These are third-party data under the source terms, not MIT-licensed software.
+The terms do not automatically cover external websites linked from NLOG.
 
 ## Formation pressure: 35/11-13 and 35/11-10
 
@@ -130,6 +129,20 @@ This attribution must accompany GeoLink samples and adaptations; they must not
 be described as MIT-licensed data. The Petrophys examples contain curated LAS
 headers, selected curves, and interpreted/core-related additions.
 
+The maintainer identifies [Norwegian Offshore Directorate FactPages](https://factpages.sodir.no/en)
+as the source of additional webpage data and reports used to expand GeoLink.
+Contains data under the Norwegian Licence for Open Government Data (NLOD)
+distributed by the Norwegian Offshore Directorate. Petrophys selects, combines
+and derives information from these sources; its interpreted additions are not
+unchanged supplier measurements. See the [NLOD terms](https://data.norge.no/nlod/en/2.0)
+and the Directorate's [open-data information](https://www.sodir.no/en/facts/data-and-analyses/open-data/).
+
+FactPages' own use-of-content notice explicitly distinguishes information
+subject to third-party rights, including reports, core images and logs. Retain
+the relevant originator/report attribution and any applicable asset-specific
+terms. The GeoLink CC BY-SA notice and the NLOD attribution describe different
+contributions to the combined examples; neither replaces the other's terms.
+
 ## Daydream 1
 
 Files: `src/petrophys/datasets/daydream/` (bundled LAS samples and repository-only
@@ -166,10 +179,15 @@ intervals). Source: Taranaki Basin Curated Well Logs Dataset, IBM Developer Data
 Asset eXchange, curated from the New Zealand Petroleum & Minerals Online
 Exploration Database and Petlab (GNS Science). Licence: Community Data License
 Agreement - Sharing 1.0, included as `LICENSE-CDLA-Sharing-1.0.txt`; these files
-and data derived from them remain under that licence. The files are a modified
+and redistributed Enhanced Data remain under that licence. Section 3.5 exempts
+qualifying computational Results as defined in section 1.11; outputs containing
+substantial source data do not qualify for that exception. The files are a modified
 extract (two wells, four columns removed, written as LAS 2.0 with the dataset's
 documented units, formation intervals derived); log values are unchanged. See
 the collection README.
+
+Dataset citation: W.S.R. de Carvalho et al. (2020), *Taranaki Basin Curated Well
+Logs*, version 1.0, [DOI 10.5281/zenodo.3832955](https://doi.org/10.5281/zenodo.3832955).
 
 ## Teapot Dome (NPR-3)
 

@@ -1,133 +1,84 @@
-# Epslog: 15/12-20 S core-scanner data
+# EpsLog: EDE-01 core scanner and matching well logs
 
-Eight LAS files from the user-provided EpsLog delivery for Stratum Reservoir,
-project P001W, cores C01/C02, plus a matching routine-core table from the
-RealPore Norway compilation. The files are available through `petrophys.sample`
-and `petrophys.list_samples("epslog")` in source checkouts and Python packages.
+Source: **NLOG.NL**, downloaded per well through the
+[NLOG map viewer](https://www.nlog.nl/nlog-mapviewer/) by the project maintainer.
+Credit **NLOG.NL, EBN, EpsLog** and the acquisition providers named in the
+original headers. The scanner delivery identifies EBN project P005W, EDE 01.
+[NLOG reuse terms](https://www.nlog.nl/en/disclaimer) permit copying,
+distribution and processing of website information with NLOG.NL attribution.
+These data are separate from the software's MIT licence.
 
-The LAS contents are unchanged; filenames are normalized. See
-`source_manifest.json` for original filenames, SHA-256 hashes and the core-table
-extraction provenance. The original high-resolution photographs, large PDF
-reports, RGB curves, facies labels and alternative AI classification are not
-needed for the XRF, grain-size or strength/sonic exercises and are not copied.
+Two LAS files are bundled. Contents are unchanged; filenames are normalized.
+`source_manifest.json` records original filenames and SHA-256 hashes.
+Tutorial 12 executes the examples without external downloads.
 
-These are third-party measurements and derived products, not MIT-licensed
-software. See `THIRD_PARTY_DATA.md` for attribution and the recorded terms.
+| Sample | Contents | Coverage |
+| --- | --- | --- |
+| `epslog_ede_01_scanner` | XRF concentrations, merged grain-size P50, scanner strength, probe permeability, colour indices and clustering | 7,607 rows, 1031.01-1217.79 m |
+| `ede_01_composite` | GR, RHOB, resistivity, DTC/DTS, cased-hole neutron and spectral gamma, caliper, bit size and acquisition flags | 17,162 rows, approximately 8.26-1315.92 m |
 
-## Inventory
+Scanner finite counts: 6,848 per concentration channel; 4,512 merged P50;
+4,477 probe permeability; 6,263 strength. Missing measurements are preserved.
 
-All LAS depth indices are in metres. Counts below are finite measurements,
-not the total number of rows on the depth grid.
-
-| Sample name (without extension) | Contents | Valid C01 / C02 counts |
-|---|---|---|
-| `epslog_15_12_20_s_c01_xrf`, `epslog_15_12_20_s_c02_xrf` | 40 concentration channels including LE, 40 error channels, 6 ratios, 10 oxide equivalents | 582 / 1,117 depth samples |
-| `epslog_15_12_20_s_c01_grain_segmentation`, `epslog_15_12_20_s_c02_grain_segmentation` | Area-weighted grain diameters from image segmentation: P20/P50/P80 in micrometres | 1,527 / 2,836 P50 estimates |
-| `epslog_15_12_20_s_c01_grain_laser`, `epslog_15_12_20_s_c02_grain_laser` | Laser-derived grain-size proxy, `E_2DLAS_P50MSTD`, in micrometres | 1,673 / 3,174 estimates |
-| `epslog_15_12_20_s_c01_strength_sonic`, `epslog_15_12_20_s_c02_strength_sonic` | Scanner strength at several scales, core ultrasonic Vp/Vs, dynamic Poisson ratio and confidence curves | 1,532 / 2,845 strength values at 1 cm; 277 / 200 paired Vp/Vs rows at 5 cm |
-| `epslog_15_12_20_s_core` | CSV: RealPore same-well routine-core records, with source Excel rows | 356 records, 345 porosity, 243 horizontal and 66 vertical Klinkenberg permeability values, 306 grain-density values |
-
-XRF covers 3815.02-3841.17 m and 3843.11-3897.74 m. The routine-core table
-covers 3815.00-3897.75 m. The strength/sonic grids include padded intervals;
-grid coverage does not mean all curves have valid measurements there.
-
-## Loading the scanner files
+## Load and interpret
 
 ```python
+import lasio
+import numpy as np
 import petrophys as pp
 from petrophys.interpretation.geochemistry import XRFData
-from petrophys.interpretation.core_analysis import GrainSizeData, CoreMechanical
-from petrophys.visualization import create_xrf_panel
+from petrophys.interpretation.core_analysis import GrainSizeData
 
-print(pp.list_samples("epslog"))
-prefix = "epslog_15_12_20_s_c01"  # use c02 for the second core
-
-# lasio uppercases the delivered *_Er mnemonics to *_ER.
-xrf = XRFData.from_las(pp.sample(prefix + "_xrf"), error_suffix="_ER")
+path = pp.sample("epslog_ede_01_scanner")
+las = lasio.read(path)
+symbols = ["Al", "Ca", "Fe", "K", "Mn", "Rb", "S", "Si", "Ti"]
+elements = {}
+for symbol in symbols:
+    curve = las.curves[f"{symbol.upper()} CONCENTRATION"]
+    values = np.asarray(curve.data, dtype=float).copy()
+    if curve.unit == "ppm":
+        values /= 10000.0
+    elif curve.unit != "%":
+        raise ValueError(f"Unexpected XRF unit: {curve.unit}")
+    elements[symbol] = values
+xrf = XRFData(depth=las.index, elements=elements,
+              units={symbol: "%" for symbol in symbols})
 ratios = xrf.elemental_ratios()
 proxies = xrf.mineral_proxies()
-fig = create_xrf_panel(xrf)
-
-grain = GrainSizeData.from_las(
-    pp.sample(prefix + "_grain_segmentation"),
-    d50_mnemonic="P50GSDDML", d13_mnemonic=None, d87_mnemonic=None,
-)
+grain = GrainSizeData.from_las(path, d50_mnemonic="GS_P50___MERGED3",
+                              d13_mnemonic=None, d87_mnemonic=None)
 classes = grain.wentworth()
-
-mechanics = CoreMechanical.from_las(
-    pp.sample(prefix + "_strength_sonic"),
-    ucs_mnemonic="E_STR001", vp_mnemonic="E_UVELP005",
-    vs_mnemonic="E_UVELS005", poisson_mnemonic="E_PR005",
-)
-dynamic_nu = mechanics.computed_poisson()
+well = pp.read(pp.sample("ede_01_composite"))
 ```
 
-The `ucs_mnemonic` argument places the delivered scanner-strength curve into
-the existing reader; it does not establish that these are direct plug UCS
-tests. The supplied Poisson ratio is dynamic. No static Young's modulus,
-static Poisson ratio, or independent plug-test protocol is supplied.
+Select XRF channels explicitly rather than passing the mixed scanner file
+directly to `XRFData.from_las`, which treats every non-error curve as an element.
+LE is an aggregate and is excluded. Convert Rb/Ti from ppm to percent before
+calculating mass ratios. Proxies are relative indicators, not XRD fractions.
+Mg is absent, so Mg-dependent ratios remain missing.
 
-XRF caveats:
+## Measurement limits
 
-- Use `error_suffix="_ER"`: the default `_ERR` would treat error channels as
-  concentration channels. The remaining dictionary also contains delivered
-  ratios and oxide equivalents; it is not a list of 56 measured elements.
-- Concentrations and errors are declared as percent in the LAS, including
-  Rb. Convert percent to ppm by multiplying by 10,000 when needed for a ppm
-  display. Source report plots may use different display units.
-- A zero can mean below detection limit. Mineral proxies are relative indices;
-  oxide equivalents are not XRD mineral fractions. No XRD dataset is included.
+- Probe permeability is in mD, not laboratory plug Klinkenberg permeability.
+- Merged P50 is in micrometres and combines laser and segmentation products.
+  The delivered description includes `if(x1<2600;x1;x0*6/5)`.
+  P13/P87 are absent; do not invent sorting percentiles.
+- No measured core porosity is supplied, so a measured-porosity Kozeny-Carman
+  calibration is not demonstrated. GeoLink plug calibration remains in Tutorial 12.
+- Strength is a scanner product in MPa, not an independently documented plug
+  UCS test. The report lists core VP/VS, but these are absent from the scanner
+  LAS. Static Young's modulus and static Poisson ratio are absent.
+- Composite RHOB is g/cm3, DTC/DTS are us/ft. Use the library's
+  `calculate_elastic_properties` for dynamic well-log properties.
+  Missing DTS must not be replaced with invented shear measurements.
+- `NPHI_CH` and spectral curves suffixed `_CH` are cased-hole products.
+  Preserve `CH_FLAG-DTC` and `CH_FLAG-DTS`; a missing flag does not establish
+  open-hole acquisition. Sonic headers warn about washout effects on DTC/DTS.
+- Depth indices are metres. Overlap does not establish core-to-log alignment;
+  verify a depth tie before pointwise calibration or merging curves.
+- Delivered cluster labels are processed classifications, not geological truth.
 
-Grain and mechanics caveats:
-
-- P20/P80 are not P13/P87. Do not substitute them into the reader's sorting or
-  skewness formulas. Both segmentation and laser curves are estimates, not
-  sieve measurements. The laser description calls its result a mean grain-size
-  estimate with a shale correction/scaling factor of 0.700, despite the P50
-  mnemonic. The segmentation filename says V7 but its Other header says V5;
-  the original metadata are preserved without resolving that version mismatch.
-- Repeated `E_CONF005` mnemonics become `E_CONF005:1`, `:2`, `:3` in lasio;
-  select the strength/P/S confidence series by its description. Sparse sonic
-  values and nonphysical velocity combinations need QC; some computed Poisson
-  ratios are outside the delivered valid range.
-- Dynamic E/G/K additionally need bulk density. RealPore grain density cannot
-  replace bulk density. Conventional wireline logs for this well were not found
-  in the local collections inspected during this import.
-
-## Matching routine core
-
-```python
-import pandas as pd
-import petrophys as pp
-
-core = pd.read_csv(pp.sample("epslog_15_12_20_s_core"))
-core1 = core.loc[core["core"] == "CORE 1"].copy()
-```
-
-The CSV preserves the reported numeric values and missing entries. Column
-`excel_row` is one-based including the header, and `source_file` identifies
-`15_12-20_S__ROCK_AND_CORE__CORE_CONV_RAW_1.SPWLA`. The manifest records the
-source workbook SHA-256, sheet and zero-based column mapping.
-
-`phi_reported` is the workbook's "porosity best of available" column (2.265-29.6);
-the verification example interprets it as percent and divides by 100 for the
-Kozeny-Carman API. `kh_klinkenberg_reported` and `kv_klinkenberg_reported` retain
-the original values because the selected workbook headers do not state their
-units. Establish the units from the source SPWLA file before quantitative
-calibration.
-`grain_density_gcc` comes from the explicitly labelled grain-density column.
-
-There are 354 distinct depths among 356 records; repeated depths are preserved.
-Joining within the same core to the nearest finite image P50 within 0.05 m
-produces 214 complete P50/porosity/horizontal-permeability records. This is
-nominal depth matching only: no independently verified depth correction or
-gap interpolation is applied. The subset has not established permeability
-prediction accuracy.
-
-## Tutorial scope
-
-Tutorial 12 points to these inputs; the full notebook exercises and
-the calibration checks described above are not part of it.
-
-These files add no NMR T2 distributions, capillary-pressure curves, formation
-pressure measurements, static elastic moduli or wireline logs.
+Large waveform DLIS files, the empty waveform LAS, density-image export,
+duplicate grain-size export and alternate clustering files are not needed by
+this tutorial. Reference reports are recorded by filename in the manifest;
+figures are produced from LAS measurements rather than copied from PDFs.

@@ -253,16 +253,15 @@ with `image.filter_by_depth(top, bottom)` before orienting.
 
 ## Core-scanner, NMR and capillary-pressure data
 
-The Epslog collection supplies core-scanner inputs for 15/12-20 S and a
-same-well RealPore core extract (`petrophys.list_samples("epslog")`); its README
-records the curve mappings, units and depth-matching limits. What each bundled
-dataset supports, and what it does not contain:
+The EpsLog EDE-01 collection includes core-scanner measurements and matching
+composite well logs from NLOG.NL (`petrophys.list_samples("epslog")`). Its
+README records the curve mappings, units and depth-matching limits.
 
 | Data | API | Bundled data | Not included | Tutorial |
 | --- | --- | --- | --- | --- |
-| XRF concentrations and mineral proxies | `XRFData`, `create_xrf_panel` | Epslog XRF scans | same-well wireline logs | 12 |
-| Grain size and Kozeny-Carman | `GrainSizeData` | Epslog P50 and routine core | P13/P87 percentiles | 12 |
-| Scanner strength and dynamic mechanics | `CoreMechanical` | Epslog Vp/Vs | static moduli, plug tests, same-well wireline logs | 12 |
+| XRF concentrations and mineral proxies | `XRFData`, `create_xrf_panel` | EDE-01 concentrations and matching well logs | XRD mineral fractions | 12 |
+| Grain size and permeability comparison | `GrainSizeData` | EDE-01 merged P50 and probe permeability | P13/P87 and measured core porosity for Kozeny-Carman calibration | 12 |
+| Scanner strength and dynamic mechanics | `calculate_elastic_properties` | EDE-01 scanner strength and density/sonic well logs | core VP/VS LAS, static moduli and plug UCS tests | 12 |
 | NMR T2 distributions and SDR | `NMRData` with bins | Phillips teaching example | a field T2 distribution with matching core | 14 |
 | Laboratory capillary pressure | `read_capillary_pressure` (`.thomeer()`, `.to_reservoir()`, `.entry_pressure()`), `fit_j_function_from_core`, `estimate_fwl_from_logs`, `water_contact_from_fwl` | COSTA mercury-injection curves | fluid properties and the well and depth of each plug | 15 |
 

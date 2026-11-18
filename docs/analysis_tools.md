@@ -61,13 +61,13 @@ brent = logs.query("2841 <= DEPTH <= 2958")
 **Core.** `read_core` finds the columns by name (``Depth (m)``, ``Por (%)``,
 ``Kh Kl. (mD)``, ``KAIR``, ``Grain density``), converts percent and
 percent-labelled-as-fraction porosity, darcy and kg/m3, and converts depths
-to the well's unit. Here the bundled 15/12-20 S plug table, which reports
-porosity in percent; `CPOR` holds it as a fraction:
+to the well's unit. Here a Phillips teaching core table is read with its
+depth unit stated explicitly (feet); porosity is supplied as a fraction:
 
 ```{code-cell} python
 from petrophys.io import read_core
 
-core = read_core(pp.sample("epslog_15_12_20_s_core"))
+core = read_core(pp.sample("phillips_cmr_core"), depth_unit="ft", porosity_unit="v/v", permeability_unit="mD")
 core.to_dataframe().head()
 ```
 

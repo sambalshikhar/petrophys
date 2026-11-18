@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: >-
+  Please cite Petrophys and the source datasets and method papers relevant
+  to your analysis. Record the software version or commit used.
+type: software
+title: "Petrophys: A Python Library for Petrophysical Analysis"
+authors:
+  - name: Petrophys Contributors
+repository-code: https://github.com/sambalshikhar/petrophys
+url: https://petrophys.netlify.app
+# This identifies the software licence; third-party data have separate terms.
+license: MIT

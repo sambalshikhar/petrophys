@@ -11,6 +11,7 @@ license = "MIT"
 license-files = [
     "LICENSE",
     "THIRD_PARTY_DATA.md",
+    "ACKNOWLEDGEMENTS.md",
     "src/petrophys/datasets/phillips/LICENSE-*.txt",
     "src/petrophys/datasets/taranaki/LICENSE-*.txt",
 ]

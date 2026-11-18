@@ -30,11 +30,19 @@ curated from the New Zealand Petroleum & Minerals Online Exploration Database
 
 Licensed under the Community Data License Agreement - Sharing, Version 1.0
 (CDLA-Sharing-1.0); the full text is in `LICENSE-CDLA-Sharing-1.0.txt` and at
-<https://cdla.dev/sharing-1-0/>. Redistribution of these files and of data
-derived from them must remain under the same licence.
+<https://cdla.dev/sharing-1-0/>. Redistributed data and Enhanced Data must
+follow the same licence. Section 3.5
+does not impose obligations on qualifying computational Results as defined
+in section 1.11; an output containing substantial source data is not covered
+by that exception.
+
+Dataset citation: W.S.R. de Carvalho et al. (2020), *Taranaki Basin Curated
+Well Logs*, version 1.0, [DOI 10.5281/zenodo.3832955](https://doi.org/10.5281/zenodo.3832955).
 
 **Modifications** (CDLA-Sharing section 3.1(b)): these files are an extract of
 the dataset's `logs.csv`. Two wells were selected; the columns `X`, `Y`, `Z` and
 `TENS` were removed; each well was written as LAS 2.0 with the units listed
 above and the coordinates from `coords.csv`; the formation intervals were
-derived from the `FORMATION` column. Log values are unchanged.
+derived from the `FORMATION` column. Log values are unchanged. The interval
+CSVs include a `data_notice` column carrying their source, licence and
+modification notice; `pp.read_formations` ignores that descriptive column.

@@ -10,6 +10,7 @@ References
 Clavier, C., Coates, G. and Dumanoir, J. (1984). Theoretical and
 experimental bases for the dual-water model for interpretation of shaly
 sands. *SPE Journal* 24(2), 153-168.
+https://doi.org/10.2118/6859-PA
 
 Crain, E.R. *Crain's Petrophysical Handbook*.
 """
