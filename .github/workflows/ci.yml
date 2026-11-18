@@ -32,6 +32,9 @@ jobs:
           flake8 src/petrophys --count --select=E9,F63,F7,F82 --builtins=Well,Curve --show-source --statistics
           flake8 src/petrophys --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
 
+      - name: Check the declared parameters of the public functions
+        run: python scripts/check_function_schema.py
+
       - name: Type-check the public API modules with mypy
         # numpy's stubs need a Python 3.12+ interpreter; the files are listed
         # in pyproject.toml ([tool.mypy] files).

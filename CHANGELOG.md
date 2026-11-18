@@ -476,6 +476,22 @@ tools page.
   `fit_normal_compaction_trend`, `eaton_pore_pressure` (sonic and
   resistivity) and `pressure_gradient`, in m/ft and bar/psi/kPa/MPa.
 
+### Function schema
+
+- `petrophys.function_schema` describes, as data, what every parameter of the
+  public functions of `petrophys.interpretation`, `petrophys.evaluation`,
+  `petrophys.preprocessing` and `petrophys.visualization` takes: a curve
+  (one value per depth sample, and which standard curve), the name of a curve
+  on the well, one number and its unit, several numbers, one of named
+  choices, one value per zone, a mask, depths, a depth window, the well, text
+  or a structured object. `describe(function)` returns it with each
+  parameter's default and documentation, so an agent, a user interface or an
+  MCP client can call a function from its description alone; functions that
+  compute one depth sample from single values are marked `samplewise`.
+- `check()` (run in CI by `scripts/check_function_schema.py`) requires every
+  public function to declare every parameter, standard curve names, and a
+  declared curve name equal to the one the function's default uses.
+
 ### Interpretation
 
 The default profile, `"current"`, computes the interpretation described

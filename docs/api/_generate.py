@@ -993,6 +993,12 @@ The rest of the reference documents what these calls are built from.""",
         items=[
             Section("petrophys.reporting.context", title="Context for LLMs"),
             Section(
+                "petrophys.function_schema",
+                title="Function schema",
+                description="What each parameter of the analysis functions takes, "
+                "as data: for agents, user interfaces and MCP clients.",
+            ),
+            Section(
                 "petrophys.reporting",
                 title="Exports and delivery packages",
                 groups=[
@@ -1071,6 +1077,10 @@ SAME_AS = {
 
 #: One-line descriptions of constants that have no ``#:`` doc comment.
 CONSTANT_DOCS = {
+    "petrophys.function_schema.KINDS": "The parameter kinds, each with what it "
+    "takes.",
+    "petrophys.function_schema.SCOPE": "The packages whose public functions are "
+    "declared.",
     "petrophys.datasets.DATA_DIR": "Folder of the bundled sample data.",
     f"{INTERP}.saturation.height.SATURATION_HEIGHT_MODELS": "Empirical "
     "saturation-height forms :func:`fit_saturation_height` fits.",
