@@ -326,6 +326,41 @@ def find_lithology_code_curve(well) -> Optional[str]:
     return found[0] if found else None
 
 
+def interpreted_lithology_labels(well) -> Tuple[Optional[np.ndarray], Optional[str]]:
+    """The per-sample lithology the interpretation of ``well`` used, and the curve it comes from.
+
+    The lithology code curve it read (:func:`find_lithology_code_curve`), each
+    code as its lithology group (the curve's ``category_groups``, else the
+    current code table); else the lithology the interpretation computed
+    (``LITHO``), each code by its ``category_labels``. An unclassified sample
+    (no code, or code 0 of ``LITHO``) is None. ``(None, None)`` when the well
+    has neither curve.
+    """
+    code_curve = find_lithology_code_curve(well)
+    curve = well.get(code_curve) if code_curve is not None else None
+    if curve is not None:
+        from petrophys.workflow.dynamic_workflow import (
+            _CURRENT_GROUND_TRUTH_CODE_TO_GROUP,
+            _group_array_from_numeric_codes,
+        )
+
+        mapping = curve.metadata.custom.get("category_groups") or _CURRENT_GROUND_TRUTH_CODE_TO_GROUP
+        groups = _group_array_from_numeric_codes(np.asarray(curve.data, dtype=float), mapping)
+        labels = np.array([str(g).lower() if g is not None and str(g) not in ("", "nan", "None") else None
+                           for g in groups], dtype=object)
+        return labels, code_curve
+    curve = well.get("LITHO")
+    if curve is None:
+        return None, None
+    names = {int(k): str(v) for k, v in (curve.metadata.custom.get("category_labels") or {}).items()}
+    if not names:
+        from petrophys.interpretation.lithology.lithology_module import LithologyModule
+        names = {int(code): str(name) for name, code in LithologyModule.LITHOLOGY_CODES.items()}
+    labels = np.array([names.get(int(round(v))) if np.isfinite(v) and int(round(v)) != 0 else None
+                       for v in np.asarray(curve.data, dtype=float)], dtype=object)
+    return labels, "LITHO"
+
+
 def resolve_from_lithology_log(
     well, warn: bool = True, code_curve: Optional[str] = None,
 ) -> Optional[LithologyResolution]:

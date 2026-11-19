@@ -1243,6 +1243,9 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
     "petrophys.interpretation.lithology.matrix_inference.interpreted_lithology_code_curve": fn(
         well=well(),
     ),
+    "petrophys.interpretation.lithology.matrix_inference.interpreted_lithology_labels": fn(
+        well=well(),
+    ),
     "petrophys.interpretation.lithology.matrix_inference.lithology_code_curve": fn(
         well=well(),
         explicit=curve_name(),
