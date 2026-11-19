@@ -553,13 +553,17 @@ def _net_flags_by_family(
 
     excluded: Dict[str, Dict[str, int]] = {}
     usable = np.ones(well.n_samples, dtype=bool)
-    for kind, mask in excluded_masks.items():
+    exclusion = np.zeros(well.n_samples, dtype=float)    # per sample: the kind that left it out (0: none)
+    exclusion_codes = {0: "not excluded"}
+    for code, (kind, mask) in enumerate(excluded_masks.items(), start=1):
         removed = mask & usable
         excluded[kind] = {
             "samples": int(np.count_nonzero(mask)),
             "net_reservoir_samples_removed": int(np.count_nonzero(result.net_reservoir & removed)),
             "net_pay_samples_removed": int(np.count_nonzero(result.net_pay & removed)),
         }
+        exclusion[removed] = code
+        exclusion_codes[code] = kind
         usable &= ~mask
     if excluded:
         result = module.calculate(well, vcl=vcl, phie=phie, sw=sw, quality_mask=usable)
@@ -568,8 +572,22 @@ def _net_flags_by_family(
         "cutoff_source": source,
         "cutoffs_by_family": by_family,
         "excluded": excluded,
+        "exclusion": (exclusion, exclusion_codes) if excluded else None,
     }
     return module, result, details
+
+
+def add_exclusion_curve(well: "Well", details: Dict[str, Any]) -> bool:
+    """NET_EXCLUSION: per sample, which exclusion of :func:`_non_reservoir_samples` left it out of net reservoir and
+    net pay (0: none; the codes name the kinds, the first that applies wins, as they were applied), from the details
+    of :func:`_net_flags_by_family`. True when it was written (the step excluded any sample)."""
+    got = (details or {}).get("exclusion")
+    if not got:
+        return False
+    values, codes = got
+    well.add_curve("NET_EXCLUSION", values, "",
+                   "Net-pay exclusion: the kind that left the sample out of NET_RES and NET_PAY (0: none)", codes=codes)
+    return True
 
 
 def _interval_text(well: "Well", mask: np.ndarray, limit: int = 3) -> str:
@@ -2723,6 +2741,10 @@ class StepResult:
         Human-readable trace of decisions/logic branches taken.
     data : dict, optional
         Extra step output for custom steps; the built-in steps leave it None.
+    parameter_notes : dict
+        What a parameter is, where its name alone misleads (``{name: note}``):
+        the rw step's ``rwa_median_over_rw`` is a check of the Rw in use on any
+        route, not an Rw from Rwa.
     """
     step: str
     success: bool
@@ -2739,6 +2761,7 @@ class StepResult:
     also_written: List[str] = field(default_factory=list)
     #: Curves the step removed from the well.
     curves_removed: List[str] = field(default_factory=list)
+    parameter_notes: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-safe representation of this workflow step trace."""
@@ -2757,6 +2780,8 @@ class StepResult:
             payload["also_written"] = list(self.also_written)
         if self.curves_removed:
             payload["curves_removed"] = list(self.curves_removed)
+        if self.parameter_notes:
+            payload["parameter_notes"] = dict(self.parameter_notes)
         return payload
 
 
@@ -6678,6 +6703,7 @@ class DynamicWorkflow:
         }
         if not self._reproducing_benchmark:
             trace.parameters.update({
+                "vcl_rule": rule,
                 "sp_in_vcl": sp_in_vcl if use_sp else None,
                 "sp_polarity": polarity,
                 **nd_clay_info,
@@ -6956,11 +6982,14 @@ class DynamicWorkflow:
                 if self._dataset == "geolink_train"
                 else result.lithology_code
             )
+            from petrophys.interpretation.lithology.lithology_module import LithologyModule
+
             well.add_curve(
                 "LITHO",
                 codes.astype(float),
                 "",
                 "Lithology Code",
+                codes={code: name for name, code in LithologyModule.LITHOLOGY_CODES.items()},
             )
         if write_lithology_code:
             self._lithology_log = None
@@ -7581,6 +7610,12 @@ class DynamicWorkflow:
         trace.parameters["rwa_median_over_rw"] = median
         trace.parameters["rwa_p5_over_rw"] = float(np.percentile(ratio[clean], 5))
         trace.parameters["rwa_check_samples"] = int(np.count_nonzero(clean))
+        trace.parameter_notes.update({
+            "rwa_median_over_rw": "a check of the Rw in use, on any Rw route: the median apparent water resistivity "
+                                  "Rwa = Rt x phi^m / a of the clean porous rock, over Rw (Rwa is not written as a curve)",
+            "rwa_p5_over_rw": "the same check: the 5th percentile of Rwa over Rw",
+            "rwa_check_samples": "the clean porous samples of that check",
+        })
         if median >= _RWA_CHECK_RATIO:
             return
         above_one = float(np.mean(ratio[clean] < 1.0))
@@ -10259,6 +10294,8 @@ class DynamicWorkflow:
 
         trace.input_curves = [source for source in (vcl_source, phie_source, sw_source) if source]
         trace.output_curves = ["NET_ROCK", "NET_RES", "NET_PAY", "RESFLAG", "SEALFLAG"]
+        if details is not None and add_exclusion_curve(well, details):
+            trace.output_curves.append("NET_EXCLUSION")
         if well.get("CROSSOVER_FLAG") is not None:
             trace.output_curves.append("CROSSOVER_FLAG")
         if details is None:

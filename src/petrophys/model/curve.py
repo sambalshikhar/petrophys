@@ -34,6 +34,9 @@ class CurveMetadata:
         Run number for the log
     data_type : DataType
         Classification of data type
+    codes : dict
+        A class curve's labels, ``{code: label}`` (the lithology step's LITHO:
+        ``{1: "sandstone", ...}``); empty for a curve of values
     """
 
     description: str = ""
@@ -43,6 +46,7 @@ class CurveMetadata:
     run_number: int = 1
     data_type: DataType = DataType.CURVE
     custom: Dict[str, Any] = field(default_factory=dict)
+    codes: Dict[int, str] = field(default_factory=dict)
 
 
 class Curve:

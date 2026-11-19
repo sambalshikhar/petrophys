@@ -1820,6 +1820,8 @@ def _run_net_pay(ctx: _StepContext, *, vcl_cutoff: Optional[float], phie_cutoff:
         ctx.trace.parameters["excluded_from_net_reservoir_and_pay"] = removed
         for line in workflow._net_pay_detail_decisions({}, by_family, removed):
             ctx.decide(line)
+        if workflow.add_exclusion_curve(well, details):
+            ctx.trace.output_curves.append("NET_EXCLUSION")
 
 
 # --------------------------------------------------------------------------
