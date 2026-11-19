@@ -8,8 +8,10 @@ matrix, which identifies minerals independently of porosity:
 - ``Umaa = (PEF * rho_e - phi * U_f) / (1 - phi)`` with the electron density
   ``rho_e = (RHOB + 0.1883) / 1.0704``
 
-``phi`` is normally the apparent total porosity from the neutron-density
-crossplot (:func:`apparent_total_porosity`). Quartz reads about 2.65 g/cc,
+Supply independently determined total porosity, or the linear clean-model
+estimate from :func:`nd_crossplot_porosity`. The limestone-reference mean
+in :func:`apparent_total_porosity` is approximate for other minerals.
+Quartz reads about 2.65 g/cc,
 55.5 us/ft and 4.8 b/cc; calcite 2.71, 47.6, 13.8; dolomite 2.87, 43.5, 9.0
 (Schlumberger chartbook). These transforms underlie the MID (DTmaa-RHOmaa)
 and RHOmaa-Umaa plots.
@@ -26,6 +28,7 @@ from __future__ import annotations
 from typing import Union
 
 import numpy as np
+from petrophys._internal.validation import broadcast_inputs, numeric_array, warn_invalid
 
 ArrayLike = Union[float, np.ndarray]
 
@@ -74,6 +77,46 @@ def apparent_matrix_density(rhob: ArrayLike, phi: ArrayLike, rho_fluid: float = 
     return _remove_fluid(rhob, phi, rho_fluid)
 
 
+def nd_crossplot_porosity(rhob, nphi, *, rho_fluid=1.0, nphi_fluid=1.0):
+    """Total porosity from linear clean-mineral neutron-density triangles.
+
+    Uses quartz/calcite/water and calcite/dolomite/water volume balance,
+    with limestone-referenced neutron endpoints -0.02, 0, 0.02 and matrix
+    densities 2.65, 2.71, 2.87 g/cm3. This is a linear clean binary-mineral
+    model, not a vendor neutron-tool calibration. Gas, clay and samples
+    outside these triangles need another porosity estimate. Such samples
+    return NaN and warn. Independently determined total porosity is preferred
+    for matrix identification in complex lithologies.
+    """
+    rhob, nphi = broadcast_inputs(rhob=rhob, nphi=nphi)
+    rho_fluid = numeric_array(rho_fluid, "rho_fluid")
+    nphi_fluid = numeric_array(nphi_fluid, "nphi_fluid")
+    if rho_fluid.ndim != 0 or not np.isfinite(rho_fluid) or rho_fluid <= 0:
+        raise ValueError("rho_fluid must be a finite positive density (g/cm3)")
+    if nphi_fluid.ndim != 0 or not np.isfinite(nphi_fluid):
+        raise ValueError("nphi_fluid must be a finite neutron endpoint (v/v)")
+    observations = np.stack([nphi - nphi_fluid, rhob - rho_fluid]).reshape(2, -1)
+    out = np.full(rhob.size, np.nan)
+    minerals = [(-.02, 2.65), (0., 2.71), (.02, 2.87)]
+    for first, second in zip(minerals[:-1], minerals[1:]):
+        matrix = np.array([[first[0]-nphi_fluid, second[0]-nphi_fluid],
+                           [first[1]-rho_fluid, second[1]-rho_fluid]])
+        if abs(np.linalg.det(matrix)) < 1e-12:
+            raise ValueError("Fluid endpoints must not be collinear with the clean mineral endpoints")
+        weights = np.linalg.solve(matrix, observations)
+        phi = 1.0 - weights.sum(axis=0)
+        valid = (np.isfinite(observations).all(axis=0) & (weights >= -1e-9).all(axis=0)
+                 & (phi >= -1e-9) & (phi < .95) & ~np.isfinite(out))
+        out[valid] = np.maximum(phi[valid], 0.)
+    out = out.reshape(rhob.shape)
+    warn_invalid(
+        np.isfinite(rhob) & np.isfinite(nphi) & ~np.isfinite(out),
+        "Neutron-density crossplot porosity", "fall outside the clean binary-mineral model",
+        "These porosities are NaN. Supply independently determined total porosity for complex lithology, gas or clay.",
+    )
+    return _out(out)
+
+
 def apparent_matrix_slowness(dt: ArrayLike, phi: ArrayLike, dt_fluid: float = WATER_SLOWNESS) -> ArrayLike:
     """DTmaa (us/ft): compressional slowness with the pore fluid removed (time-average mixing)."""
     return _remove_fluid(dt, phi, dt_fluid)
@@ -107,6 +150,7 @@ __all__ = [
     "apparent_matrix_slowness",
     "apparent_matrix_volumetric_pe",
     "apparent_total_porosity",
+    "nd_crossplot_porosity",
     "electron_density",
     "volumetric_photoelectric",
 ]

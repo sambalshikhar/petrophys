@@ -1,7 +1,8 @@
 """Industry lithology crossplots: density-neutron (with matrix lines), M-N, MID.
 
-These overlay the standard mineral reference lines/points so lithology can be read
-straight off the plot, the way Techlog / Interactive Petrophysics / Geolog show them.
+The mineral overlays use a linear fresh-water response model and
+limestone-referenced neutron endpoints. Tool-specific charts require their
+own calibration; the overlays are not vendor response charts.
 """
 
 from __future__ import annotations
@@ -19,11 +20,10 @@ try:
 except Exception:  # pragma: no cover
     HAS_MPL = False
 
-from petrophys._internal.analysis_helpers import (
-    curve_source_mnemonic,
-    get_curve_data_depthwise,
+from petrophys.visualization._data import (
+    curve_values, porosity_label, note_outside_axes, archie_parameters, chart_limits,
 )
-from petrophys.preprocessing.standardization.unit_converter import get_conversion_factor
+from petrophys._internal.validation import warn_invalid
 
 
 # zero-porosity matrix points (neutron v/v, density g/cc, sonic us/ft)
@@ -39,30 +39,11 @@ def _xy(well, names, depth_range, unit=None):
     """Depth-wise curve data; with ``unit`` each source curve is converted to it.
 
     The chart constants assume v/v porosity, g/cc density and us/ft slowness,
-    so curves read in %, kg/m3 or us/m are converted (unknown labels are kept).
+    so curves read in %, kg/m3 or us/m are converted. Incompatible units
+    are rejected rather than labelled with the chart's expected unit.
     """
-    data, _, meta = get_curve_data_depthwise(well, names)
-    if data is None:
-        return None, None
-    arr = np.array(data, dtype=float)
-    if unit is not None:
-        sources = meta["source_per_sample"]
-        seen = set()
-        for name in names:
-            curve = well.get(name)
-            source = (curve_source_mnemonic(curve) or curve.mnemonic) if curve is not None else None
-            if curve is None or source in seen or not curve.unit:
-                continue
-            seen.add(source)
-            factor = get_conversion_factor(str(curve.unit), unit)
-            if factor is not None and factor != 1.0:
-                arr[sources == source] *= factor
-    depth = np.asarray(getattr(well, "depth", None), dtype=float)
-    if depth_range is not None and depth.shape == arr.shape:
-        lo, hi = depth_range
-        m = (depth >= lo) & (depth <= hi)
-        arr = np.where(m, arr, np.nan)
-    return arr, depth
+    values, depth, _ = curve_values(well, names, depth_range, unit)
+    return values, depth
 
 
 def _color(well, color_curve, depth_range):
@@ -76,18 +57,7 @@ def _color(well, color_curve, depth_range):
 
 def _note_outside_axes(ax, x, y):
     """State how many plottable points fall outside the fixed chart limits."""
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    finite = np.isfinite(x) & np.isfinite(y)
-    (x0, x1), (y0, y1) = sorted(ax.get_xlim()), sorted(ax.get_ylim())
-    outside = finite & ((x < x0) | (x > x1) | (y < y0) | (y > y1))
-    count = int(np.count_nonzero(outside))
-    if count:
-        ax.text(
-            0.01, 0.01,
-            f"{count} of {int(np.count_nonzero(finite))} points outside the plotted range",
-            transform=ax.transAxes, fontsize=7, color="0.35", ha="left", va="bottom",
-        )
+    note_outside_axes(ax, x, y)
 
 
 def _scatter(ax, x, y, c, clabel, fig, cmap="viridis", norm=None):
@@ -173,7 +143,8 @@ def create_mn_plot(
     for name, (n, m) in pts.items():
         ax.scatter(n, m, s=80, marker="^", color="firebrick", zorder=6)
         ax.annotate(name, (n, m), fontsize=9, fontweight="bold",
-                    xytext=(5, 5), textcoords="offset points")
+                    xytext=(-5 if name == "Quartz" else 5, 5), textcoords="offset points",
+                    ha="right" if name == "Quartz" else "left")
 
     ax.set_xlabel("N  =  (1 - NPHI) / (RHOB - 1)")
     ax.set_ylabel("M  =  (189 - DT) / (RHOB - 1) x 0.01")
@@ -186,22 +157,40 @@ def create_mn_plot(
 def create_mid_plot(
     well, color_curve: str = "GR", depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
+    *, porosity_curve: Optional[str] = None,
 ):
-    """MID plot: apparent matrix density vs apparent matrix sonic, with the
-    quartz/calcite/dolomite points (porosity-independent lithology)."""
-    nphi, _ = _xy(well, ["NPHI", "PHIN"], depth_range, "v/v")
+    """Apparent matrix density vs sonic with clean mineral reference points.
+
+    Uses PHIT by default, or ``porosity_curve`` when given (total porosity,
+    converted to v/v). Without PHIT, a linear clean binary-mineral N-D model
+    estimates porosity and flags unsupported samples. Fluid endpoints are
+    fresh water, and the neutron reference is limestone.
+    """
+    from petrophys.interpretation.lithology.apparent_matrix import (
+        nd_crossplot_porosity, apparent_matrix_density, apparent_matrix_slowness,
+    )
     rhob, _ = _xy(well, ["RHOB"], depth_range, "g/cm3")
     dt, _ = _xy(well, ["DTC", "DT"], depth_range, "us/ft")
-    if nphi is None or rhob is None or dt is None:
-        raise ValueError("MID plot needs NPHI, RHOB and DTC")
+    if rhob is None or dt is None:
+        raise ValueError("MID plot needs RHOB and DTC")
     c, clabel = _color(well, color_curve, depth_range)
-
-    # density porosity (limestone matrix) and neutron averaged for apparent matrix
-    phi_d = (2.71 - rhob) / (2.71 - _RHO_FL)
-    phi = np.clip((phi_d + nphi) / 2.0, 0.001, 0.5)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        rho_maa = (rhob - phi * _RHO_FL) / (1.0 - phi)
-        dt_maa = (dt - phi * _DT_FL) / (1.0 - phi)
+    phi, _, sources = curve_values(well, [porosity_curve or "PHIT"], depth_range, "v/v")
+    method = "total porosity: " + "+".join(sources)
+    if phi is None or not np.isfinite(phi).any():
+        if porosity_curve is not None:
+            raise ValueError(f"MID total-porosity curve {porosity_curve!r} has no finite data in the requested window")
+        nphi, _ = _xy(well, ["NPHI", "PHIN"], depth_range, "v/v")
+        if nphi is None:
+            raise ValueError("MID needs PHIT, porosity_curve=, or NPHI for the clean neutron-density estimate")
+        phi = nd_crossplot_porosity(rhob, nphi)
+        method = "linear clean neutron-density porosity estimate"
+    warn_invalid(
+        np.isinf(phi) | (phi < 0) | (phi >= .95), "MID total porosity",
+        "must be finite and in [0,0.95) for matrix removal",
+        "Invalid porosity samples give NaN matrix coordinates.",
+    )
+    rho_maa = apparent_matrix_density(rhob, phi, _RHO_FL)
+    dt_maa = apparent_matrix_slowness(dt, phi, _DT_FL)
     rho_maa = np.where(np.isfinite(rho_maa), rho_maa, np.nan)
     dt_maa = np.where(np.isfinite(dt_maa), dt_maa, np.nan)
 
@@ -217,7 +206,7 @@ def create_mid_plot(
     ax.set_ylabel("Apparent matrix density  RHOmaa (g/cc)")
     ax.set_xlim(35, 65); ax.set_ylim(3.0, 2.5)
     _note_outside_axes(ax, dt_maa, rho_maa)
-    ax.set_title(f"MID Plot — {well.header.well_name or ''}")
+    ax.set_title(f"MID Plot — {well.header.well_name or ''}\n{method}", fontsize=10)
     ax.grid(alpha=0.3); fig.tight_layout()
     return fig
 
@@ -227,11 +216,15 @@ def create_buckles_plot(
     well, phie_curve: str = "PHIE", sw_curve: str = "SW",
     color_curve: str = "PERM", depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
+    *, xlim: Tuple[float, float] = (0, .40), ylim: Tuple[float, float] = (0, 1),
 ):
     """Buckles plot: porosity vs water saturation with constant-BVW hyperbolas.
-    Points on the same BVW = phi*Sw hyperbola are at irreducible water (a single
-    well-defined hyperbola implies uniform grain size / Swirr)."""
-    phie, _ = _xy(well, [phie_curve, "PHIT"], depth_range, "v/v")
+    A constant-BVW trend is a diagnostic of consistent pore properties;
+    irreducible saturation additionally needs geological and fluid evidence.
+    PHIT is the fallback when the requested effective porosity is missing.
+    """
+    xlim, ylim = chart_limits(xlim, "xlim"), chart_limits(ylim, "ylim")
+    phie, _, sources = curve_values(well, [phie_curve, "PHIT"], depth_range, "v/v")
     sw, _ = _xy(well, [sw_curve, "SWA", "SWT-LOG"], depth_range, "v/v")
     if phie is None or sw is None:
         raise ValueError("Buckles plot needs PHIE and SW")
@@ -253,17 +246,21 @@ def create_buckles_plot(
     fig, ax = plt.subplots(figsize=figsize)
     _scatter(ax, phie, sw, c, clabel, fig, cmap="viridis", norm=norm)
 
-    phi_line = np.linspace(0.01, 0.40, 200)
+    phi_range = np.linspace(max(.0001, xlim[0]), xlim[1], 300)
     for bvw in (0.02, 0.04, 0.06, 0.08, 0.10, 0.15):
-        sw_line = np.clip(bvw / phi_line, 0, 1)
+        phi_line = phi_range[phi_range >= bvw]
+        if not phi_line.size:
+            continue
+        sw_line = bvw / phi_line
         ax.plot(phi_line, sw_line, color="0.5", lw=0.8, alpha=0.7)
         # Label each hyperbola where it meets the right edge (Sw = BVW / 0.40),
         # so the labels are spread out instead of stacked near the top.
-        ax.annotate(f"BVW={bvw:g}", (0.40, bvw / 0.40), xytext=(-3, 2),
+        ax.annotate(f"BVW={bvw:g}", (phi_line[-1], sw_line[-1]), xytext=(-3, 2),
                     textcoords="offset points", ha="right", fontsize=7, color="0.4")
 
-    ax.set_xlabel("Effective porosity (v/v)"); ax.set_ylabel("Water saturation (v/v)")
-    ax.set_xlim(0, 0.40); ax.set_ylim(0, 1.0)
+    ax.set_xlabel(porosity_label(sources)); ax.set_ylabel("Water saturation (v/v)")
+    ax.set_xlim(xlim); ax.set_ylim(ylim)
+    _note_outside_axes(ax, phie, sw)
     ax.set_title(f"Buckles Plot — {well.header.well_name or ''}")
     ax.grid(alpha=0.3); fig.tight_layout()
     return fig
@@ -275,37 +272,46 @@ def create_hingle_plot(
     phie_curve: str = "PHIE", rt_curve: str = "RDEP", color_curve: str = "VCL",
     a: float = 1.0, depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
+    *, xlim: Tuple[float, float] = (0, .40), ylim: Optional[Tuple[float, float]] = None,
 ):
     """Hingle plot: porosity vs Rt^(-1/m) on linear axes, with iso-Sw lines through
     the origin (the linear-axis counterpart of the Pickett plot). Water-bearing
     points fall on the Sw=1 line, whose slope is (a*Rw)^(-1/m), so
     a*Rw = slope^(-m)."""
-    if not m:
-        raise ValueError("Hingle plot requires a non-zero cementation exponent m")
-    phie, _ = _xy(well, [phie_curve, "PHIT"], depth_range, "v/v")
-    rt, _ = _xy(well, [rt_curve, "RT", "RDEP"], depth_range)
+    rw, a, m, n = archie_parameters(rw, a, m, n)
+    xlim = chart_limits(xlim, "xlim")
+    if ylim is not None:
+        ylim = chart_limits(ylim, "ylim")
+    phie, _, sources = curve_values(well, [phie_curve, "PHIT"], depth_range, "v/v")
+    rt, _ = _xy(well, [rt_curve, "RT", "RDEP"], depth_range, "ohm.m")
     if phie is None or rt is None:
         raise ValueError("Hingle plot needs PHIE and Rt")
     c, clabel = _color(well, color_curve, depth_range)
 
+    invalid = (np.isfinite(phie) & ((phie <= 0) | (phie > 1))) | (np.isfinite(rt) & (rt <= 0))
+    warn_invalid(invalid, "Hingle input", "require porosity in (0,1] and positive resistivity",
+                 "Invalid points are omitted from this plot.")
     with np.errstate(divide="ignore", invalid="ignore"):
         y = np.power(rt, -1.0 / m)        # Rt^(-1/m); water line is linear in phi
-    y = np.where(np.isfinite(y) & (rt > 0), y, np.nan)
+    y = np.where(np.isfinite(y) & np.isfinite(rt) & ~invalid, y, np.nan)
 
     fig, ax = plt.subplots(figsize=figsize)
     _scatter(ax, phie, y, c, clabel, fig, cmap="viridis")
 
-    phi_line = np.linspace(0.0, 0.40, 50)
+    phi_line = np.linspace(max(0., xlim[0]), xlim[1], 50)
     for sw in (1.0, 0.75, 0.5, 0.25):
         # Sw^n = a*Rw / (phi^m * Rt)  ->  Rt^(-1/m) = phi * Sw^(n/m) / (a*Rw)^(1/m)
         y_line = phi_line * sw ** (n / m) / (a * rw) ** (1.0 / m)
         ax.plot(phi_line, y_line, color="0.5", lw=0.9, alpha=0.7)
-        ax.annotate(f"Sw={int(sw*100)}%", (0.40, y_line[-1]), xytext=(-3, 2),
+        ax.annotate(f"Sw={int(sw*100)}%", (phi_line[-1], y_line[-1]), xytext=(-3, 2),
                     textcoords="offset points", ha="right", fontsize=7, color="0.4")
 
-    ax.set_xlabel("Effective porosity (v/v)")
-    ax.set_ylabel(f"Rt^(-1/{m:g})")
-    ax.set_xlim(0, 0.40)
-    ax.set_title(f"Hingle Plot — {well.header.well_name or ''}  (Rw={rw})")
+    ax.set_xlabel(porosity_label(sources))
+    ax.set_ylabel(f"Rt^(-1/{m:g})  [(ohm.m)^(-1/{m:g})]")
+    ax.set_xlim(xlim)
+    if ylim is not None:
+        ax.set_ylim(ylim)
+    _note_outside_axes(ax, phie, y)
+    ax.set_title(f"Hingle Plot — {well.header.well_name or ''}  (Rw={rw:g} ohm.m)")
     ax.grid(alpha=0.3); fig.tight_layout()
     return fig

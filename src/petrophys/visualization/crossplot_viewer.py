@@ -20,6 +20,8 @@ except ImportError:
     HAS_MATPLOTLIB = False
 
 import numpy as np
+from petrophys._internal.validation import warn_invalid
+from petrophys.visualization._data import paired_values, note_outside_axes
 
 
 class CrossPlot:
@@ -97,10 +99,18 @@ class CrossPlot:
         tuple
             (Figure, Axes)
         """
+        x_data, y_data, color_data = paired_values(x_data, y_data, color_data)
         self.fig, self.ax = plt.subplots(figsize=self.figsize)
 
         # Remove NaN values; points without a colour value are drawn grey.
-        mask = ~np.isnan(x_data) & ~np.isnan(y_data)
+        invalid = np.isinf(x_data) | np.isinf(y_data)
+        if x_log:
+            invalid |= np.isfinite(x_data) & (x_data <= 0)
+        if y_log:
+            invalid |= np.isfinite(y_data) & (y_data <= 0)
+        warn_invalid(invalid, "Crossplot input", "cannot be represented on the selected axes",
+                     "Nonfinite and nonpositive logarithmic-axis points are omitted.")
+        mask = np.isfinite(x_data) & np.isfinite(y_data) & ~invalid
 
         x = x_data[mask]
         y = y_data[mask]
@@ -130,6 +140,7 @@ class CrossPlot:
         self.ax.set_ylabel(y_label)
         self.ax.set_title(title)
         self.ax.grid(True, alpha=0.3)
+        note_outside_axes(self.ax, x, y)
 
         return self.fig, self.ax
 
@@ -301,24 +312,9 @@ def create_density_neutron_crossplot(
     CrossPlot
         The crossplot
     """
-    plot = create_crossplot(
-        well,
-        x_curve="NPHI",
-        y_curve="RHOB",
-        color_curve="GR",
-        depth_range=depth_range,
-        title="Density-Neutron Crossplot",
-        figsize=figsize,
-        xlim=(-0.05, 0.45),
-        ylim=(2.95, 1.95)  # Inverted for standard display
-    )
+    from petrophys.visualization.lithology_crossplots import create_nd_crossplot
 
-    # Add matrix lines
-    matrix_points = {
-        "Sandstone": (0.0, 2.65),
-        "Limestone": (0.0, 2.71),
-        "Dolomite": (0.02, 2.87),
-    }
-    plot.add_matrix_points(matrix_points)
-
+    plot = CrossPlot(figsize=figsize)
+    plot.fig = create_nd_crossplot(well, depth_range=depth_range, figsize=figsize)
+    plot.ax = plot.fig.axes[0]
     return plot
