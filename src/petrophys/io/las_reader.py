@@ -352,6 +352,15 @@ HEADER_SYNONYMS: Dict[str, str] = {
 }
 
 
+def curve_description(las_curve) -> str:
+    """A LAS curve's description as its provider wrote it: the description field without a format in braces (LAS
+    writes "{F13.4}" there); where that is empty, a name written in the value field instead ("MI.  Micro Inverse:"),
+    not an API code there."""
+    descr = re.sub(r"\s*\{[^{}]*\}", "", str(getattr(las_curve, "descr", "") or "")).strip()
+    value = str(getattr(las_curve, "value", "") or "").strip()
+    return descr or (value if re.search(r"[A-Za-z]{2}", value) else "")
+
+
 class LASReader:
     """
     Reader for LAS (Log ASCII Standard) files.
@@ -577,7 +586,7 @@ class LASReader:
                 continue
 
             metadata = CurveMetadata(
-                description=las_curve.descr or "",
+                description=(las_curve.descr or "") if historical else curve_description(las_curve),
                 source="LAS",
                 data_type=DataType.CURVE
             )
