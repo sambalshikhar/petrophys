@@ -98,4 +98,49 @@ def lithology_group_for_label(label: object, known: Optional[Collection[str]] = 
     return group
 
 
-__all__ = ["ROCK_PHRASES", "ROCK_TERMS", "lithology_group_for_label"]
+def lithology_choice(lithology: object, options: Collection[str]) -> Optional[str]:
+    """The option of a lithology parameter (a function's choices declared with role ``lithology``) that a rock
+    takes, or None when no option names it.
+
+    ``lithology`` is a rock name or a lithology group (:func:`lithology_group_for_label` reads it). The rock takes,
+    in order: the option its name is ("shaly sandstone" is ``shaly_sandstone`` where that is an option); its own
+    group, when that is an option; the matrix the workflow's porosity step uses for the group
+    (``silt`` and ``shale`` take ``sandstone`` grains, ``calcareous_shale`` ``limestone``, ``chert`` ``quartz``),
+    when that is an option; ``evaporite`` for an evaporite group (halite, anhydrite, gypsum and the potash salts),
+    when that is an option. A name that is no recognized rock, or a rock no option names, is None: the caller says
+    so and leaves the parameter at its default.
+
+    Examples
+    --------
+    >>> m = ("limestone", "sandstone", "dolomite", "quartz")
+    >>> [lithology_choice(x, m) for x in ("Sst", "SILT", "shaly sandstone", "calcareous_shale", "chert", "halite")]
+    ['sandstone', 'sandstone', 'sandstone', 'limestone', 'quartz', None]
+    >>> lithology_choice("ANHYDRITE", ("sandstone", "shale", "evaporite"))
+    'evaporite'
+    >>> lithology_choice("CALCAREOUS SHALE", ("sandstone", "shale", "calcareous_shale"))
+    'calcareous_shale'
+    >>> [lithology_choice("Shaly Sandstone", o) for o in (("sandstone", "shaly_sandstone"), m)]
+    ['shaly_sandstone', 'sandstone']
+    >>> lithology_choice("sand/shale", m) is None
+    True
+    """
+    opts = {str(o).lower() for o in options}
+    name = re.sub(r"[\s-]+", "_", str(lithology if lithology is not None else "").strip().lower())
+    if name in opts:
+        return name
+    group = lithology_group_for_label(lithology)
+    if group is None:
+        return None
+    if group in opts:
+        return group
+    from petrophys.workflow.dynamic_workflow import (_CURRENT_LITHOLOGY_GROUP_TO_MATRIX,
+                                                     EVAPORITE_LITHOLOGY_GROUPS)
+    matrix = _CURRENT_LITHOLOGY_GROUP_TO_MATRIX.get(group)
+    if matrix in opts:
+        return matrix
+    if group in EVAPORITE_LITHOLOGY_GROUPS and "evaporite" in opts:
+        return "evaporite"
+    return None
+
+
+__all__ = ["ROCK_PHRASES", "ROCK_TERMS", "lithology_choice", "lithology_group_for_label"]

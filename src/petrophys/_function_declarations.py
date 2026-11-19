@@ -1222,6 +1222,10 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         label=text(),
         known=text(many=True),
     ),
+    "petrophys.interpretation.lithology.labels.lithology_choice": fn(
+        lithology=text(),
+        options=text(many=True),
+    ),
     "petrophys.interpretation.lithology.lithology_log.build_lithology_log": fn(
         depth=depth(),
         intervals=object_(),
