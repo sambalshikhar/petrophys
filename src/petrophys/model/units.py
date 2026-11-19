@@ -6,6 +6,7 @@ petrophysical measurements including depth, porosity, resistivity,
 temperature, and sonic measurements.
 """
 
+from petrophys._internal.advice import Advice
 import re
 from typing import Union, Optional
 from enum import Enum
@@ -584,8 +585,8 @@ def core_saturation_to_fraction(
     unknown_label = label not in known and (historical or not _is_fraction_label(label))
     if unknown_label and (historical or source_unit is not None):
         raise ValueError(
-            f"{mnemonic}: unknown core {'saturation' if historical else quantity} unit {label!r}; "
-            "specify source_unit='%' or source_unit='v/v'."
+            Advice(f"{mnemonic}: unknown core {'saturation' if historical else quantity} unit {label!r}; "
+            "specify source_unit='%' or source_unit='v/v'.", ('source_unit',))
         )
 
     data = np.array(values, dtype=float, copy=True)

@@ -8,6 +8,7 @@ returns compact JSON summaries; plots are returned as PNG images.
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 import copy
 import io
 import json
@@ -697,7 +698,7 @@ def create_server(
                 raise ToolError("At most 30 wells per call.")
             base = prepare_settings(settings)
             if rw_from_header and "rw" in base:
-                raise ToolError("Give rw in settings or rw_from_header=true, not both.")
+                raise ToolError(Advice("Give rw in settings or rw_from_header=true, not both.", ('rw_from_header',)))
             rows: List[Dict[str, Any]] = []
             units = set()
             for name in wells:

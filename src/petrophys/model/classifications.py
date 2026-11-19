@@ -13,6 +13,7 @@ members, and a value that is not finite gives ``None``. Values are fractions;
 porosity and water saturation take ``percent=True`` for percent values.
 """
 
+from petrophys._internal.advice import Advice
 import warnings
 from enum import Enum
 from typing import Dict, Union
@@ -51,8 +52,8 @@ def _as_fraction(values, percent: bool, quantity: str, fraction_limit: float):
     finite = x[np.isfinite(x)]
     if finite.size and float(np.max(finite)) > fraction_limit:
         warnings.warn(
-            f"{quantity} values above {fraction_limit:g} were classified as fractions; "
-            "pass percent=True if they are percent",
+            Advice(f"{quantity} values above {fraction_limit:g} were classified as fractions; "
+            "pass percent=True if they are percent", ('percent',)),
             DataQualityWarning,
             stacklevel=3,
         )

@@ -24,6 +24,7 @@ and Applications*. Halliburton Energy Services, Houston.
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -373,10 +374,12 @@ class NMRData:
         columns = ", ".join(map(str, df.columns))
         depth = _col(depth_col)
         if depth is None:
-            raise ValueError(f"Depth column {depth_col!r} not found; pass depth_col= one of: {columns}")
+            raise ValueError(Advice(f"Depth column {depth_col!r} not found; pass depth_col= one of: {columns}",
+                ('depth_col',)))
         mphi = _col(mphi_col)
         if mphi is None:
-            raise ValueError(f"Total NMR porosity column {mphi_col!r} not found; pass mphi_col= one of: {columns}")
+            raise ValueError(Advice(f"Total NMR porosity column {mphi_col!r} not found; pass mphi_col= one of: {columns}",
+                ('mphi_col',)))
 
         bins = None
         if bin_cols:
@@ -386,8 +389,9 @@ class NMRData:
         unit = porosity_unit.strip().lower() if porosity_unit else None
         if unit is None and _looks_fractional(mphi):
             warnings.warn(
-                f"NMR porosity {mphi_col!r} is at most 1.5 everywhere, so it is read as v/v and "
+                Advice(f"NMR porosity {mphi_col!r} is at most 1.5 everywhere, so it is read as v/v and "
                 "multiplied by 100 to porosity units (pu); pass porosity_unit='pu' if it is already in pu.",
+                    ('porosity_unit',)),
                 UserWarning, stacklevel=2,
             )
             unit = "v/v"
@@ -678,8 +682,8 @@ class NMRData:
             return self.t2lm_stored.copy()
 
         raise ValueError(
-            "T2lm requires either T2 bin data (P1–P8) or a T2LM curve "
-            "loaded from the LAS file (pass t2lm_mnemonic='T2LM' to from_las)."
+            Advice("T2lm requires either T2 bin data (P1–P8) or a T2LM curve "
+            "loaded from the LAS file (pass t2lm_mnemonic='T2LM' to from_las).", ('t2lm_mnemonic',))
         )
 
     def bvi_from_bins(

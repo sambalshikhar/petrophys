@@ -18,6 +18,7 @@ floor or ground level). This module closes that gap:
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 import re
 import warnings
 from dataclasses import dataclass, field
@@ -439,7 +440,8 @@ def attach_survey(
     well.set_parameter("tvd_source", source)
     if elevation is None:
         warnings.warn(
-            "No depth-reference elevation (EKB/EDF/APD in the header, or elevation=): only TVD was added, not TVDSS",
+            Advice("No depth-reference elevation (EKB/EDF/APD in the header, or elevation=): only TVD was added, not TVDSS",
+                ('elevation',)),
             UserWarning, stacklevel=2,
         )
     return trajectory

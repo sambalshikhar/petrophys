@@ -449,8 +449,8 @@ class PorePressureResult:
             import warnings
 
             warnings.warn(
-                "Calibrating on the log value at the measurement depths, which are usually reservoir rather "
-                "than shale; pass shale= to eaton_from_well to calibrate against the shale trend",
+                Advice("Calibrating on the log value at the measurement depths, which are usually reservoir rather "
+                "than shale; pass shale= to eaton_from_well to calibrate against the shale trend", ('shale',)),
                 UserWarning, stacklevel=2,
             )
             observed = values["observed"]
@@ -544,13 +544,15 @@ def eaton_from_well(
         elevation = float(air_gap)
     if air_gap is None:
         if elevation is None:
-            raise ValueError("The header has no depth-reference elevation (EKB/EDF/APD); pass air_gap=")
+            raise ValueError(Advice("The header has no depth-reference elevation (EKB/EDF/APD); pass air_gap=",
+                ('air_gap',)))
         if water_depth > 0:
             limit = 150.0 if unit == "m" else 492.0
             if elevation > limit:
                 raise ValueError(
-                    f"The header puts the depth reference {elevation:g} {unit} above sea level ({source['source']}), "
-                    "too high for an offshore air gap: is the well onshore (water_depth=0)? Otherwise pass air_gap="
+                    Advice(f"The header puts the depth reference {elevation:g} {unit} above sea level ({source['source']}), "
+                    "too high for an offshore air gap: is the well onshore (water_depth=0)? Otherwise pass air_gap=",
+                        ('water_depth', 'air_gap'))
                 )
             air_gap = elevation
             notes.append(f"Air gap {air_gap:g} {unit} from {source['source']} (offshore)")
@@ -558,7 +560,8 @@ def eaton_from_well(
             ground_value, ground_unit = _item(well, "EGL")
             ground = _number(ground_value)
             if ground is None:
-                raise ValueError("Onshore, the air gap needs the ground elevation (EGL) in the header, or air_gap=")
+                raise ValueError(Advice("Onshore, the air gap needs the ground elevation (EGL) in the header, or air_gap=",
+                    ('air_gap',)))
             gl_unit = _depth_unit_from(ground_unit) or unit
             if gl_unit != unit:
                 ground = ground / 0.3048 if (gl_unit, unit) == ("m", "ft") else ground * 0.3048
@@ -568,7 +571,7 @@ def eaton_from_well(
         names = ("DTC", "DT", "DTCO") if nct.kind == "sonic" else ("RDEP", "RT", "ILD", "LLD")
         curve = next((n for n in names if well.get(n) is not None), None)
         if curve is None:
-            raise ValueError(f"No {nct.kind} curve among {names}; pass curve=")
+            raise ValueError(Advice(f"No {nct.kind} curve among {names}; pass curve=", ('curve',)))
     observed = np.asarray(well.get(curve).data, dtype=float)
     density = well.get(density_curve)
     if density is None:
@@ -587,7 +590,8 @@ def eaton_from_well(
     shale_mask = None
     evaluated = observed
     if shale is None:
-        notes.append("No shale mask: Eaton evaluated on every sample; read it in shales only (pass shale=)")
+        notes.append(Advice("No shale mask: Eaton evaluated on every sample; read it in shales only (pass shale=)",
+            ('shale',)))
     else:
         shale_mask = np.asarray(shale, dtype=bool).reshape(-1)
         if shale_mask.shape != depth.shape:
@@ -602,7 +606,8 @@ def eaton_from_well(
                    f"{'faster' if nct.kind == 'sonic' else 'more resistive'} than the shale trend there")
         notes.append(message)
         warnings.warn(message + ("" if shale_mask is not None else
-                                 "; Eaton applies to shale, pass shale= to evaluate shale samples only"),
+                                 Advice("; Eaton applies to shale, pass shale= to evaluate shale samples only",
+                                     ('shale',))),
                       UserWarning, stacklevel=2)
     emw = pressure_gradient(pp, tvd, air_gap=air_gap, depth_unit=unit, pressure_unit=pressure_unit)
     result = PorePressureResult(

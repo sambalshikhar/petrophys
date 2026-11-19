@@ -585,11 +585,11 @@ def label_depths(
         for index in order[1:]:
             if tops[index] < running_bottom:
                 raise ValueError(
-                    f"Intervals overlap ({labels[running_index]!r} "
+                    Advice(f"Intervals overlap ({labels[running_index]!r} "
                     f"{tops[running_index]:g}-{bottoms[running_index]:g} and "
                     f"{labels[index]!r} {tops[index]:g}-{bottoms[index]:g}). Pick one level "
                     "(e.g. read_formations(..., rank='formation')) or pass "
-                    "overlap='thinnest' or 'thickest'."
+                    "overlap='thinnest' or 'thickest'.", ('rank', 'overlap'))
                 )
             if bottoms[index] > running_bottom:
                 running_bottom, running_index = bottoms[index], index

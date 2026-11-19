@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice, restated
 from copy import deepcopy
 import json
 import os
@@ -133,8 +134,8 @@ def _write_bytes(path: Path, data: bytes, overwrite: bool) -> None:
     path = _filesystem_path(path)
     if path.exists() and not overwrite:
         raise FileExistsError(
-            f"Output already exists: {shown}; pass overwrite=True "
-            "(--overwrite on the command line) to replace it"
+            Advice(f"Output already exists: {shown}; pass overwrite=True "
+            "(--overwrite on the command line) to replace it", ('overwrite',))
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     if not overwrite:
@@ -395,7 +396,7 @@ def export_context(
         failures = [item for item in results if not item.success]
         if failures:
             errors = [error for item in failures for error in item.errors]
-            raise ValueError("Context export failed: " + "; ".join(errors))
+            raise ValueError(restated("Context export failed: " + "; ".join(errors), *errors))
 
         if not (staged / "curve_name_mapping.json").exists():
             reference.write_reference_curve_name_mapping(staged)

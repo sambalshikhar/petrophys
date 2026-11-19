@@ -5,6 +5,7 @@ This module provides functionality to read DLIS (Digital Log Interchange Standar
 files and convert them to Well objects.
 """
 
+from petrophys._internal.advice import Advice
 from typing import TYPE_CHECKING, Optional, Union, Dict, Any, List, Iterable, Mapping, Tuple
 from pathlib import Path
 import warnings
@@ -694,9 +695,9 @@ class DLISReader:
             gigabytes = target_depth.size * n_curves * 8 / 1e9
             if gigabytes > 0.5:
                 warnings.warn(
-                    f"Merging {n_curves} DLIS channels onto a {step:g} {depth_unit} grid "
+                    Advice(f"Merging {n_curves} DLIS channels onto a {step:g} {depth_unit} grid "
                     f"({target_depth.size:,} samples) takes about {gigabytes:.1f} GB; pass step= "
-                    "(e.g. 0.1524 m) or step_strategy='median' for a log-resolution well.",
+                    "(e.g. 0.1524 m) or step_strategy='median' for a log-resolution well.", ('step', 'step_strategy')),
                     stacklevel=3,
                 )
         else:

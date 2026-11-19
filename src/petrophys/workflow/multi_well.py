@@ -169,7 +169,8 @@ class MultiWellResult:
                 stacklevel=2,
             )
         if not tables:
-            raise ValueError("No well has a formation table; pass formations= to petrophys.read or interpret.")
+            raise ValueError(Advice("No well has a formation table; pass formations= to petrophys.read or interpret.",
+                ('formations',)))
         return pd.concat(tables, ignore_index=True)
 
     def zone_summary(self, zones: Any = None) -> Any:

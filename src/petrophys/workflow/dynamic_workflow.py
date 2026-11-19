@@ -51,7 +51,7 @@ from petrophys.preprocessing.quality.bad_hole.flag_generator import (
 )
 import pandas as pd
 from petrophys.io import ascii_reader, las_reader
-from petrophys._internal.advice import Advice
+from petrophys._internal.advice import Advice, joined, restated
 
 DEFAULT_RESISTIVITY_REFERENCE_TEMP_F = 75.0
 APPARENT_POROSITY_METHODS = {
@@ -1677,7 +1677,7 @@ def _zone_intervals_for_well(well: "Well", zones: Any) -> List[Dict[str, Any]]:
     errors: List[str] = []
     normalized = _normalized_zones(DynamicWorkflowConfig(), errors, zones) or ()
     if errors:
-        raise ValueError("; ".join(errors))
+        raise ValueError(joined(errors))
     names = (well.name, getattr(getattr(well, "header", None), "well_name", ""))
     intervals = []
     for zone in _zones_for_well(normalized, *names):
@@ -2713,9 +2713,8 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
         errors.extend(_physical_range_errors(config))
 
     if errors:
-        raise ValueError(
-            "Invalid DynamicWorkflowConfig:\n  - " + "\n  - ".join(errors)
-        )
+        raise ValueError(restated(
+            "Invalid DynamicWorkflowConfig:\n  - " + "\n  - ".join(errors), *errors))
 
 
 @dataclass
@@ -3792,9 +3791,9 @@ class DynamicWorkflow:
         if config.use_peer_core and not config.peer_wells:
             notes.append(Advice("use_peer_core=True has no effect: no peer_wells are given.", ("peer_wells",)))
         if config.peer_wells and not config.use_peer_core:
-            notes.append(
-                "peer_wells are not used: their core calibrates this well only with use_peer_core=True."
-            )
+            notes.append(Advice(
+                "peer_wells are not used: their core calibrates this well only with use_peer_core=True.",
+                ("use_peer_core",)))
         return notes
 
     def _check_lithology_curve(self, well: "Well") -> None:
@@ -3882,8 +3881,8 @@ class DynamicWorkflow:
         user_groups = self._user_code_groups()
         if code_curve is None and user_groups is not None:
             self._result.warnings.append(
-                "lithology_codes is not used: no lithology code curve of the well holds its codes; "
-                "name the curve with lithology_curve=."
+                Advice("lithology_codes is not used: no lithology code curve of the well holds its codes; "
+                "name the curve with lithology_curve=.", ('lithology_curve',))
             )
         if code_curve is not None and user_groups is not None:
             unmapped = sorted(
@@ -9344,11 +9343,10 @@ class DynamicWorkflow:
         """
         model = self.config.sw_model
         if model == "dual_water" and self.config.rwb is None:
-            raise ValueError(
+            raise ValueError(Advice(
                 "sw_model='dual_water' needs the bound-water resistivity rwb (ohm.m), from "
                 "lab data or an RWB LAS header parameter; it is not estimated. "
-                "sw_model='auto' uses Dual Water only where rwb is given."
-            )
+                "sw_model='auto' uses Dual Water only where rwb is given.", ("rwb",)))
         if model == "waxman_smits" and (self.config.cec is None or self.config.b_coeff is None):
             raise ValueError(
                 "sw_model='waxman_smits' needs cec (meq/100 g) and b_coeff, from lab data or "

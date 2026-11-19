@@ -8,6 +8,7 @@ viewer pages. This module only adds specialist panels for NMR and FMI data.
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 from petrophys.visualization.style import _styled_plot
 
 import warnings
@@ -207,10 +208,10 @@ def _prepared_fmi_image(
         if get_navigation(data):
             return orient_to_azimuth(data)
         warnings.warn(
-            "create_fmi_panel: orientation requested but no navigation curve "
+            Advice("create_fmi_panel: orientation requested but no navigation curve "
             "(P1AZ/HAZI/RB) was found; plotting the raw un-oriented image "
             "(x-axis is borehole sample, not azimuth). Provide navigation or "
-            "pass orient=False to silence this.",
+            "pass orient=False to silence this.", ('orient',)),
             stacklevel=3,
         )
     return data

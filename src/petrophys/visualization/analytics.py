@@ -12,6 +12,7 @@ arrays so notebooks never need to hand-roll matplotlib.
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 from petrophys.visualization.style import _styled_plot
 
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -421,8 +422,8 @@ def create_histogram_comparison(
     elif not isinstance(datasets, Mapping) or any(
             hasattr(getattr(value, "well", value), "curves") for value in datasets.values()):
         raise ValueError(
-            "Without curve=, datasets must map a label to an array. To compare wells or "
-            'interpretation results, name the curve: create_histogram_comparison(wells, curve="GR")'
+            Advice("Without curve=, datasets must map a label to an array. To compare wells or "
+            'interpretation results, name the curve: create_histogram_comparison(wells, curve="GR")', ('curve',))
         )
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)

@@ -14,6 +14,7 @@ Everything they do is also available through the lower-level modules
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 import dataclasses
 import difflib
 from copy import deepcopy
@@ -165,7 +166,8 @@ def read(
     # _read_many's record of what its tables and curve mapping lack for each well.
     unmatched = reader_options.pop("_unmatched", None)
     if elevation is not None and survey is None:
-        raise ValueError("elevation sets the TVDSS datum of a survey; pass survey= (a file or 'vertical') with it.")
+        raise ValueError(Advice("elevation sets the TVDSS datum of a survey; pass survey= (a file or 'vertical') with it.",
+            ('survey',)))
     if isinstance(path, (str, Path)):
         _check_path_text(path)
     files = _well_files(path, reader_options.get("depth_unit"))
@@ -214,9 +216,9 @@ def read(
             header_unit = _depth_header_unit(path, **reader_options)
             if header_unit is None:
                 raise ValueError(
-                    f"{_WELL_FORMATS[extension]} logs do not record their depth unit; read the file "
+                    Advice(f"{_WELL_FORMATS[extension]} logs do not record their depth unit; read the file "
                     "with petrophys.read(path, depth_unit='m') or depth_unit='ft', or give the depth "
-                    "column header its unit, e.g. 'DEPTH (m)'."
+                    "column header its unit, e.g. 'DEPTH (m)'.", ('depth_unit',))
                 )
             reader_options["depth_unit"] = header_unit
         reader_options["depth_unit"] = normalize_depth_unit(reader_options["depth_unit"])
@@ -331,7 +333,8 @@ def _well_files(source: Any, depth_unit: Optional[str] = None) -> Optional[list]
         if not files:
             raise ValueError(
                 f"No well files in {path}: it holds no " + ", ".join(sorted(suffixes))
-                + " file" + ("" if depth_unit is not None else " (CSV, TSV and Excel files are read with depth_unit=)")
+                + " file" + ("" if depth_unit is not None else Advice(" (CSV, TSV and Excel files are read with depth_unit=)",
+                    ('depth_unit',)))
             )
         return files
     text = str(source)
@@ -637,8 +640,8 @@ def plot(
             ) if value is not None] + (["template"] if template != "auto" else [])
             if unused:
                 raise TypeError(
-                    f"A comparison of wells (curves=) takes top, bottom, figsize and curve_aliases; "
-                    f"{', '.join(unused)} apply to each well's own plot (leave out curves=)."
+                    Advice(f"A comparison of wells (curves=) takes top, bottom, figsize and curve_aliases; "
+                    f"{', '.join(unused)} apply to each well's own plot (leave out curves=).", ('curves',))
                 )
             if curve_aliases is not None:
                 from petrophys.preprocessing.standardization.user_aliases import attach_curve_aliases
@@ -888,8 +891,8 @@ def interpret(
         "geolink_train", "geolink_train_v1", "costa", "costa_v1", "danish", "danish_v1", "geolink_v1",
     }:
         raise ValueError(
-            f"{requested_profile!r} is a context profile: pass context_profile={requested_profile!r} with the "
-            "well's raw LAS file. calculation_profile is 'current' or 'geolink'."
+            Advice(f"{requested_profile!r} is a context profile: pass context_profile={requested_profile!r} with the "
+            "well's raw LAS file. calculation_profile is 'current' or 'geolink'.", ('context_profile',))
         )
 
     known = {item.name for item in dataclasses.fields(DynamicWorkflowConfig) if not item.name.startswith("_")}

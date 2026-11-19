@@ -11,6 +11,7 @@ and converts depths to the well's unit. What it decided is in
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 import re
 import warnings
 from typing import Any, Dict, Optional
@@ -132,8 +133,8 @@ def read_core(
         )
     if not any(role in found for role in ("porosity", "permeability", "grain_density", "sw", "so")):
         raise ValueError(
-            f"No core property column recognised among {list(table.columns)}; "
-            "name them with columns={'porosity': ..., 'permeability': ...}."
+            Advice(f"No core property column recognised among {list(table.columns)}; "
+            "name them with columns={'porosity': ..., 'permeability': ...}.", ('columns',))
         )
     report: Dict[str, Any] = {"columns": {role: str(found[role]) for role in found}, "warnings": []}
     unused_numeric = [
@@ -143,7 +144,8 @@ def read_core(
     if unused_numeric:
         report["unused_columns"] = unused_numeric
         report["warnings"].append(
-            f"Numeric columns not used: {unused_numeric}; map any core property with columns={{role: header}}"
+            Advice(f"Numeric columns not used: {unused_numeric}; map any core property with columns={{role: header}}",
+                ('columns',))
         )
 
     def numbers(role: str) -> Optional[np.ndarray]:

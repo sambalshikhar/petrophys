@@ -21,6 +21,7 @@ the stronger test.
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 import dataclasses
 import warnings
 from dataclasses import dataclass
@@ -292,7 +293,7 @@ def find_core_depth_shift(
             increments = np.abs(np.diff(log_depth[np.isfinite(log_depth)]))
             increments = increments[increments > 0]
             if increments.size == 0:
-                raise ValueError("Cannot infer the log sample step; pass step=")
+                raise ValueError(Advice("Cannot infer the log sample step; pass step=", ('step',)))
             step = float(np.median(increments))
         step = float(step)
         if not np.isfinite(step) or step <= 0:

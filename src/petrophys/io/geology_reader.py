@@ -1,5 +1,6 @@
 """Shared, explicit table import for formation and lithology context."""
 
+from petrophys._internal.advice import Advice
 from collections.abc import Mapping
 from pathlib import Path
 import re
@@ -381,13 +382,14 @@ def _check_depth_coverage(table, fields, well, unit, *, unit_assumed):
                 # most miss it in the assumed one: the few rows that fall
                 # inside would be formations at the wrong depths.
                 raise ValueError(
-                    f"The geology depths are in {other}, not {unit}: {int(outside.sum())} of "
+                    Advice(f"The geology depths are in {other}, not {unit}: {int(outside.sum())} of "
                     f"{len(table)} rows lie outside the logged interval {log_top:g}-{log_base:g} {unit} "
                     f"when read in {unit} (assumed, as no geology depth_unit is given), and all "
                     f"{len(table)} lie inside it when read in {other}. Declare the unit: "
                     f"depth_unit={other!r} for the reader (formation_options={{'depth_unit': {other!r}}} "
                     f"or lithology_options= in petrophys.read), a depth_unit column, or a depth header "
-                    f"such as 'top_depth ({other})'. If the depths are in {unit}, pass depth_unit={unit!r}."
+                    f"such as 'top_depth ({other})'. If the depths are in {unit}, pass depth_unit={unit!r}.",
+                        ('depth_unit', 'formation_options', 'lithology_options'))
                 )
             if outside_other.sum() < outside.sum():
                 warnings.warn(

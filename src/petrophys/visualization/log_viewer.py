@@ -10,6 +10,7 @@ turns those into errors.
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 from petrophys.visualization.style import _styled_plot, save_figure
 
 from dataclasses import dataclass, field, fields, replace
@@ -2136,8 +2137,8 @@ class LogViewer:
             )
         if tracks is not None and curves is not None:
             raise ValueError(
-                "Pass tracks= or curves=, not both: tracks= keeps whole tracks, curves= keeps single curves "
-                "(each in its track). To add a track's curves, list them in curves=."
+                Advice("Pass tracks= or curves=, not both: tracks= keeps whole tracks, curves= keeps single curves "
+                "(each in its track). To add a track's curves, list them in curves=.", ('tracks', 'curves'))
             )
         if tracks is not None:
             requested = [str(name).strip().upper() for name in tracks]

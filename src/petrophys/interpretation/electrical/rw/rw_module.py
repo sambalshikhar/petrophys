@@ -308,13 +308,13 @@ class RwModule:
 
         if sp_rejected is not None:
             raise ValueError(
-                f"Could not calculate Rw: {sp_rejected}, and the Rxo/Rt method found no clean water "
-                "zone with RXO and RT. Pass rw_given= or salinity=."
+                Advice(f"Could not calculate Rw: {sp_rejected}, and the Rxo/Rt method found no clean water "
+                "zone with RXO and RT. Pass rw_given= or salinity=.", ('rw_given', 'salinity'))
             )
         raise ValueError(
-            "Could not calculate Rw: the header has no RW, and the SP and Rxo/Rt methods need "
+            Advice("Could not calculate Rw: the header has no RW, and the SP and Rxo/Rt methods need "
             "an Rmf (pass rmf=, or a header RMF). Pass rw_given= or salinity= otherwise; "
-            "petrophys.interpret estimates Rmf from the mud data."
+            "petrophys.interpret estimates Rmf from the mud data.", ('rmf', 'rw_given', 'salinity'))
         )
 
 

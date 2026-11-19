@@ -8,6 +8,7 @@ does not need to read raw curve values.
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 import copy
 import difflib
 import warnings
@@ -601,9 +602,9 @@ def zone_table(
         records = (well.get_parameter("_geology_context") or {}).get("formations") or []
         if not records:
             raise ValueError(
-                "No formations are attached to this well. Load it with formations (load_well "
+                Advice("No formations are attached to this well. Load it with formations (load_well "
                 "formations=<file>, or load_sample_well, which attaches bundled tops), pass "
-                "formations=<tops file>, or give top and bottom for one zone."
+                "formations=<tops file>, or give top and bottom for one zone.", ('formations',))
             )
         ranks = {str(row.get("formation_name")): row.get("rank") or "" for row in records}
     else:

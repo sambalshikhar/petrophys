@@ -231,22 +231,24 @@ def recorded_arguments(kind: str, steps: Mapping[str, Mapping[str, Any]]) -> Dic
     return out
 
 #: The built-in step that makes each standard curve, for "how to fix" hints.
+#: The built-in step that makes each standard curve, for "how to fix" hints: (step, its fixed arguments, the inputs
+#: the call asks for). The hint (``steps.formation_water(rw=..., rw_temp_f=...)``) and its inputs are read from it.
 _PRODUCERS = {
-    "TEMP": "steps.temperature()",
-    "VCL": "steps.clay_volume()",
-    "PHIT": "steps.porosity()",
-    "PHIE": "steps.porosity()",
-    "PHID": "steps.porosity(method='density')",
-    "PHIN": "steps.porosity(method='neutron')",
-    "PHIS": "steps.porosity(method='sonic')",
-    "RW": "steps.formation_water(rw=..., rw_temp_f=...)",
-    "RMF": "steps.mud_filtrate(rmf=..., rmf_temp_f=...)",
-    "SW": "steps.saturation()",
-    "SXO": "steps.saturation()",
-    "PERM": "steps.permeability()",
-    "NET_ROCK": "steps.net_pay()",
-    "NET_RES": "steps.net_pay()",
-    "NET_PAY": "steps.net_pay()",
+    "TEMP": ("temperature", {}, ("bht_f",)),
+    "VCL": ("clay_volume", {}, ()),
+    "PHIT": ("porosity", {}, ()),
+    "PHIE": ("porosity", {}, ()),
+    "PHID": ("porosity", {"method": "density"}, ()),
+    "PHIN": ("porosity", {"method": "neutron"}, ()),
+    "PHIS": ("porosity", {"method": "sonic"}, ()),
+    "RW": ("formation_water", {}, ("rw", "rw_temp_f")),
+    "RMF": ("mud_filtrate", {}, ("rmf", "rmf_temp_f")),
+    "SW": ("saturation", {}, ()),
+    "SXO": ("saturation", {}, ()),
+    "PERM": ("permeability", {}, ()),
+    "NET_ROCK": ("net_pay", {}, ()),
+    "NET_RES": ("net_pay", {}, ()),
+    "NET_PAY": ("net_pay", {}, ()),
 }
 
 _GR_FAMILY = ("GR", "CGR", "SGR", "HSGR", "HCGR", "CGR_CALC")
@@ -254,16 +256,19 @@ _RT_CURVES = ("RDEP", "RT")
 _RXO_CURVES = ("RSHA", "RXO", "RESS")
 
 
-#: The inputs a producer's call above asks for (its ``name=...`` arguments), as data.
-_PRODUCER_INPUTS = {"RW": ("rw", "rw_temp_f"), "RMF": ("rmf", "rmf_temp_f"), "TEMP": ("bht_f",)}
-
-
 def _producer_hint(curve: str) -> str:
-    return _PRODUCERS.get(curve.upper(), "")
+    """The call that makes a standard curve (``steps.porosity(method='density')``), "" for another curve."""
+    found = _PRODUCERS.get(curve.upper())
+    if found is None:
+        return ""
+    step, fixed, inputs = found
+    args = [f"{k}={v!r}" for k, v in fixed.items()] + [f"{name}=..." for name in inputs]
+    return f"steps.{step}({', '.join(args)})"
 
 
 def _producer_inputs(curve: str) -> tuple:
-    return _PRODUCER_INPUTS.get(curve.upper(), ())
+    """The inputs the call that makes a standard curve asks for (its ``name=...`` arguments)."""
+    return (_PRODUCERS.get(curve.upper()) or ("", {}, ()))[2]
 
 
 def _builtin(func: Callable[..., Step]) -> Callable[..., Step]:
@@ -727,8 +732,8 @@ def _run_clay_volume(ctx: _StepContext, *, method: str, gr_clean: Optional[float
         clean = gr_clean if gr_clean is not None else _percentile(gr, 5)
         shale = gr_shale if gr_shale is not None else _percentile(gr, 95)
         if clean >= shale:
-            raise ValueError(f"GR clean endpoint {clean:.1f} must be below the shale endpoint "
-                             f"{shale:.1f}; pass gr_clean= and gr_shale=")
+            raise ValueError(Advice(f"GR clean endpoint {clean:.1f} must be below the shale endpoint "
+                             f"{shale:.1f}; pass gr_clean= and gr_shale=", ('gr_clean', 'gr_shale')))
         indicators["GR"] = _gr_transform(gr_transform)(np.asarray(vcl_linear(gr, clean, shale)))
         parameters.update({"gr_clean_used": clean, "gr_shale_used": shale})
         ctx.decide(f"GR clean = {clean:.1f} API ({'given' if gr_clean is not None else 'P5 of ' + source}), "
@@ -1100,8 +1105,8 @@ def formation_water(rw: Any = None, rw_temp_f: Optional[float] = None, *,
                                      maximum=400000),
     }
     if rw is None and salinity_ppm is None:
-        check.add("give rw= (ohm.m, with rw_temp_f=), salinity_ppm=, or rw='header' to read "
-                  "RW and RWT from each well's LAS header")
+        check.add(Advice("give rw= (ohm.m, with rw_temp_f=), salinity_ppm=, or rw='header' to read "
+                  "RW and RWT from each well's LAS header", ('rw', 'rw_temp_f', 'salinity_ppm')))
     if rw is not None and salinity_ppm is not None:
         check.add("give rw or salinity_ppm, not both")
     if isinstance(value, float) and rw_temp_f is None:
@@ -1189,7 +1194,7 @@ def mud_filtrate(rmf: Any = None, rmf_temp_f: Optional[float] = None, *,
     values = {"rmf": value,
               "rmf_temp_f": check.number("rmf_temp_f", rmf_temp_f, minimum=-60, maximum=800)}
     if rmf is None:
-        check.add("give rmf= (ohm.m, with rmf_temp_f=) or rmf='header'")
+        check.add(Advice("give rmf= (ohm.m, with rmf_temp_f=) or rmf='header'", ('rmf', 'rmf_temp_f')))
     elif isinstance(value, float) and rmf_temp_f is None:
         check.add("rmf_temp_f is required with rmf: the temperature (degF) at which rmf was "
                   "measured, e.g. rmf=0.3, rmf_temp_f=75")
@@ -1387,7 +1392,7 @@ def saturation(model: str = "archie", *, a: float = 1.0, m: float = 2.0, n: floa
     if model in _SW_MODEL_OPTIONS:
         _unused(check, f"model={model!r}", options, _SW_MODEL_OPTIONS[model])
     if model == "waxman_smits" and (cec is None or b_coeff is None):
-        check.add("model='waxman_smits' needs cec= (meq/100 g) and b_coeff=")
+        check.add(Advice("model='waxman_smits' needs cec= (meq/100 g) and b_coeff=", ('cec', 'b_coeff')))
     if model == "dual_water" and rwb is None:
         check.add("model='dual_water' needs rwb= (bound-water resistivity, ohm.m); "
                   "it is not estimated")
@@ -1438,8 +1443,8 @@ def _run_saturation(ctx: _StepContext, *, model: str, a: float, m: float, n: flo
         rcl_used = RclModule().calculate(well, vcl=vcl)
         shale = np.isfinite(vcl) & (vcl > 0.9)
         if not np.any(shale):
-            ctx.warn("No samples with VCL > 0.9 to estimate clay resistivity; Rcl = 5 ohm.m "
-                     "(pass rcl=)")
+            ctx.warn(Advice("No samples with VCL > 0.9 to estimate clay resistivity; Rcl = 5 ohm.m "
+                     "(pass rcl=)", ('rcl',)))
         else:
             ctx.decide(f"Rcl = {rcl_used:.2f} ohm.m (median RT where VCL > 0.9)")
     rmf = ctx.optional("RMF")
@@ -1611,8 +1616,8 @@ def _run_permeability(ctx: _StepContext, *, method: str, swirr: Optional[float],
         ctx.trace.parameters["swirr_used"] = swi
         ctx.decide(f"Swirr = {swi:.3f} ({result.swi_source})")
         if result.swi_source == "default_0.20":
-            ctx.warn("Swirr could not be estimated from the logs and defaulted to 0.20; "
-                     "pass swirr=")
+            ctx.warn(Advice("Swirr could not be estimated from the logs and defaulted to 0.20; "
+                     "pass swirr=", ('swirr',)))
         elif swirr is None and swi < 0.05:
             ctx.warn(f"Swirr estimated from the logs as {swi:.3f}; values this low "
                      "inflate permeability. Pass swirr= from core or NMR data.")
@@ -2188,8 +2193,8 @@ def _formations_present(well: Well, settings: Mapping[str, Any]) -> Optional[str
 def _formations_requirement() -> _Requirement:
     return _Requirement(
         label="formation tops",
-        hint="read the well with petrophys.read(path, formations=...), pass "
-             "run_many(..., formations=...), or give formations= to the step",
+        hint=Advice("read the well with petrophys.read(path, formations=...), pass "
+             "run_many(..., formations=...), or give formations= to the step", ('formations',)),
         predicate=_formations_present,
         inputs=("formations",),
     )

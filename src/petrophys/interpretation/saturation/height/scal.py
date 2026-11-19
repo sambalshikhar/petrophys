@@ -29,6 +29,7 @@ integrated reservoir description. AAPG Methods in Exploration 13.
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 import re
 import warnings
 from dataclasses import dataclass, field, replace
@@ -381,7 +382,8 @@ def read_capillary_pressure(
         )
     unit = (pc_unit or _header_unit(names["PC"]) or "psi").strip().lower()
     if unit not in _PC_UNITS:
-        raise ValueError(f"Unknown pressure unit {unit!r}; give pc_unit= as one of {sorted(_PC_UNITS)}")
+        raise ValueError(Advice(f"Unknown pressure unit {unit!r}; give pc_unit= as one of {sorted(_PC_UNITS)}",
+            ('pc_unit',)))
     table["PC"] = table["PC"] * _PC_UNITS[unit]
     kind = saturation or ("nonwetting" if _nonwetting(names["SW"]) else "wetting")
     if kind not in ("wetting", "nonwetting"):

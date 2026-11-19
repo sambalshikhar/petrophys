@@ -5,6 +5,7 @@ Export helpers for writing delivery LAS files and paired JSON summaries.
 from __future__ import annotations
 
 
+from petrophys._internal.advice import joined
 from collections import OrderedDict
 import copy
 from dataclasses import dataclass, field
@@ -8680,7 +8681,7 @@ def _context_zone_table(zones: Any, files: Sequence[Path], workflow_config: Any)
     errors: list[str] = []
     rows = _normalized_zones(DynamicWorkflowConfig(calculation_profile=profile), errors, zones) or ()
     if errors:
-        raise ValueError("; ".join(errors))
+        raise ValueError(joined(errors))
     if len(files) > 1 and any(not row.get("well") for row in rows):
         raise ValueError(
             "The zones table has rows without a well; add a well column before running a multiwell export."

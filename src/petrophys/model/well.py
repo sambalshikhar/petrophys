@@ -5,6 +5,7 @@ This module provides the Well class which serves as the primary
 container for well log data, header information, and computed results.
 """
 
+from petrophys._internal.advice import Advice
 from typing import Optional, Union, Dict, List, Any, Iterator, Tuple
 import copy
 import warnings
@@ -673,8 +674,8 @@ class Well:
                 )
             if depth_unit is None:
                 raise ValueError(
-                    "Well.from_dataframe needs depth_unit='m' or depth_unit='ft' "
-                    f"for depth column {depth_column!r}."
+                    Advice("Well.from_dataframe needs depth_unit='m' or depth_unit='ft' "
+                    f"for depth column {depth_column!r}.", ('depth_unit',))
                 )
             well._depth = pd.to_numeric(
                 df[depth_column],

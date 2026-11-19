@@ -5,6 +5,7 @@ This module provides functionality to read ASCII-formatted well log
 data files including CSV, tab-delimited, and space-delimited formats.
 """
 
+from petrophys._internal.advice import Advice
 from typing import TYPE_CHECKING, Callable, Optional, Union, List, Dict, Any, Tuple
 from pathlib import Path
 import csv
@@ -24,7 +25,7 @@ def _require_depth_unit(depth_unit: Optional[str], source: str) -> str:
     """Return the validated depth unit, or explain that one is required."""
     if depth_unit is None or not str(depth_unit).strip():
         raise ValueError(
-            f"{source} does not record its depth unit; pass depth_unit='m' or depth_unit='ft'."
+            Advice(f"{source} does not record its depth unit; pass depth_unit='m' or depth_unit='ft'.", ('depth_unit',))
         )
     return normalize_depth_unit(depth_unit)
 

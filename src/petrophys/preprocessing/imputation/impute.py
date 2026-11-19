@@ -9,6 +9,7 @@ it is missing. Nothing is stored between calls.
 
 from __future__ import annotations
 
+from petrophys._internal.advice import Advice
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -274,7 +275,7 @@ def impute(
         )
     if target_mnemonic is None and not any(_find_curve(other, target) is not None for other in others):
         raise ValueError(
-            f"{well.name} has no {curve} curve; pass train_wells= with wells that have it"
+            Advice(f"{well.name} has no {curve} curve; pass train_wells= with wells that have it", ('train_wells',))
         )
 
     try:
@@ -332,8 +333,8 @@ def impute(
         )
     if y_train.size < MIN_TRAINING_SAMPLES:
         raise ValueError(
-            f"{curve}: {y_train.size} measured samples to learn from, at least "
-            f"{MIN_TRAINING_SAMPLES} are needed; pass train_wells= with more data"
+            Advice(f"{curve}: {y_train.size} measured samples to learn from, at least "
+            f"{MIN_TRAINING_SAMPLES} are needed; pass train_wells= with more data", ('train_wells',))
         )
     if y_train.size > _MAX_TRAINING_ROWS:
         # Keep every sample of the well itself; subsample the training wells.

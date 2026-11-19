@@ -64,7 +64,7 @@ from petrophys._internal.serialization import curve_statistics, json_object, jso
 from petrophys.model.data_types import DataType
 from petrophys.model.well import Well
 from petrophys.workflow.dynamic_workflow import StepResult
-from petrophys._internal.advice import Advice, joined, restated
+from petrophys._internal.advice import Advice, inputs_of, joined, restated
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -264,7 +264,8 @@ class _Params:
 
     def raise_if_any(self) -> None:
         if self.errors:
-            raise ValueError(f"Invalid {self.label} parameters:\n  - " + "\n  - ".join(self.errors))
+            raise ValueError(restated(f"Invalid {self.label} parameters:\n  - " + "\n  - ".join(self.errors),
+                                      *self.errors))      # the inputs each error asks for kept
 
 
 def _parameter_hint(name: str, value: Any, valid: Sequence[str]) -> str:
@@ -949,10 +950,9 @@ def _validate_order(steps: Sequence[Step]) -> None:
                     f"(wf.insert(step, before='{step.name}'))"
                 )
     if problems:
-        raise WorkflowValidationError(
+        raise WorkflowValidationError(restated(
             "Steps run in order, so these inputs would never be available:\n  - "
-            + "\n  - ".join(problems)
-        )
+            + "\n  - ".join(problems), *problems))
 
 
 def _resolve_at_run(step: Step, well: Well, failed: Mapping[str, str]) -> Tuple[Dict[str, str], List[str]]:
@@ -1175,7 +1175,8 @@ class Workflow:
         ['temperature', 'clay_volume', 'porosity']
         """
         if (before is None) == (after is None):
-            raise TypeError("insert() needs exactly one of before='step name' or after='step name'")
+            raise TypeError(Advice("insert() needs exactly one of before='step name' or after='step name'",
+                ('before', 'after')))
         if before is not None:
             index = self._index(before)
         else:
@@ -1430,10 +1431,11 @@ class Workflow:
             unmet = [row for row in rows if not row.met]
             lines = [f"  - {row.step}: {row.note}" for row in unmet]
             raise WorkflowValidationError(
-                f"Workflow {workflow.name!r} cannot run on well {well.name or 'unnamed'!r}:\n"
+                Advice(f"Workflow {workflow.name!r} cannot run on well {well.name or 'unnamed'!r}:\n"
                 + "\n".join(lines)
                 + "\nRun wf.check(well) for the full table, or pass strict=False to skip "
                 "these steps and run the rest.",
+                    tuple(i for row in unmet for i in inputs_of(row.note)) + ('strict',)),
                 problems=[{"step": row.step, "requires": row.requires, "reason": row.note}
                           for row in unmet],
             )
@@ -1448,10 +1450,10 @@ class Workflow:
                 continue
             sources, missing = _resolve_at_run(step, well, failed)
             if missing:
-                reason = "; ".join(missing)
+                reason = joined(missing)                       # the inputs each requirement asks for kept
                 if strict:
                     raise WorkflowStepError(
-                        f"Step {step.name!r} cannot run on well {well.name or 'unnamed'!r}: {reason}",
+                        restated(f"Step {step.name!r} cannot run on well {well.name or 'unnamed'!r}: {reason}", reason),
                         step=step.name,
                     )
                 result._skip(step, reason)
@@ -1471,8 +1473,8 @@ class Workflow:
                         step=step.name,
                     ) from exc
                 trace.success = False
-                trace.message = f"{type(exc).__name__}: {exc}"
-                result.errors.append(f"{step.name}: {exc}")
+                trace.message = restated(f"{type(exc).__name__}: {exc}", exc)    # the inputs its advice asks for kept
+                result.errors.append(restated(f"{step.name}: {exc}", exc))
             for curve in step._produces:
                 if curve not in trace.output_curves:
                     failed.setdefault(curve, step.name)
@@ -1792,8 +1794,8 @@ def _factory_for(kind: Any, label: str) -> Callable[..., Step]:
         ) from exc
     if not isinstance(target, _StepFactory):
         raise ValueError(
-            f"{label}: {kind!r} is not a workflow step; decorate it with "
-            "@petrophys.workflow.workflow_step(requires=..., produces=...)"
+            Advice(f"{label}: {kind!r} is not a workflow step; decorate it with "
+            "@petrophys.workflow.workflow_step(requires=..., produces=...)", ('requires', 'produces'))
         )
     return target
 
@@ -1950,7 +1952,8 @@ class WorkflowRunResult:
     def raise_for_errors(self) -> "WorkflowRunResult":
         """Raise ``RuntimeError`` if a step failed; otherwise return this result."""
         if self.errors:
-            raise RuntimeError(f"Workflow {self.workflow.name!r} failed: " + "; ".join(self.errors))
+            raise RuntimeError(restated(f"Workflow {self.workflow.name!r} failed: " + "; ".join(self.errors),
+                                        *self.errors))
         return self
 
     def _executed(self) -> Dict[str, StepResult]:
