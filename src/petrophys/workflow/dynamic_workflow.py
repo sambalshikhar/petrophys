@@ -2764,6 +2764,9 @@ class StepResult:
     #: Curves the step removed from the well.
     curves_removed: List[str] = field(default_factory=list)
     parameter_notes: Dict[str, str] = field(default_factory=dict)
+    #: The output curves an analysis the step ran wrote, and which (``{curve: analysis}``): the net-pay step's
+    #: hydrocarbon analysis writes VP_VS_RATIO and CROSSOVER_FLAG, which are its, not the cutoffs'.
+    written_by: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-safe representation of this workflow step trace."""
@@ -2784,6 +2787,8 @@ class StepResult:
             payload["curves_removed"] = list(self.curves_removed)
         if self.parameter_notes:
             payload["parameter_notes"] = dict(self.parameter_notes)
+        if self.written_by:
+            payload["written_by"] = dict(self.written_by)
         return payload
 
 
@@ -10312,6 +10317,8 @@ class DynamicWorkflow:
             # family, as its net-pay cutoffs do.
             lithology_family=None if self._reproducing_benchmark else self._cutoff_families(lithology),
         ).analyze(well, add_curves=True)
+        trace.written_by.update({name: "hydrocarbon analysis" for name in getattr(hc_result, "derived_curves", {}) or {}
+                                 if well.get(name) is not None})
 
         trace.input_curves = [source for source in (vcl_source, phie_source, sw_source) if source]
         trace.output_curves = ["NET_ROCK", "NET_RES", "NET_PAY", "RESFLAG", "SEALFLAG"]
