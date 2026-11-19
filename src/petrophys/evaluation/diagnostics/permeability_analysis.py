@@ -181,6 +181,7 @@ class PermeabilityAnalysis:
                     ratio,
                     "",
                     f"Flushed-to-deep resistivity ratio ({invasion_source_text})",
+                    basis=invasion_source_text,
                 )
 
         if benchmark:
@@ -195,7 +196,8 @@ class PermeabilityAnalysis:
 
         if perm is not None:
             kh = np.clip(perm * depth_step_array(well.depth), 0.001, None)
-            derived_curves["KH"] = DerivedCurve(kh, "mD*depth", f"Flow capacity ({perm_source_text} * dz)")
+            derived_curves["KH"] = DerivedCurve(kh, "mD*depth", f"Flow capacity ({perm_source_text} * dz)",
+                                                basis=f"{perm_source_text} * dz")
 
         if perm is not None or rqi is not None or fzi is not None:
             perm_qi = np.full(n_samples, np.nan, dtype=float)

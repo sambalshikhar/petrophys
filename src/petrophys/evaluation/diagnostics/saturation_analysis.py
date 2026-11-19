@@ -187,6 +187,7 @@ class SaturationAnalysis:
                     invasion_ratio,
                     "",
                     f"Invasion separation ratio ({ratio_source_text})",
+                    basis=ratio_source_text,
                 )
 
         contact_labels = np.full(n_samples, "NO_CONTACT_INDICATORS", dtype=object)

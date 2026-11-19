@@ -283,24 +283,24 @@ class NumericalStatisticalAnalysis:
         sh_min[valid_sh] = ((poisson_ratio[valid_sh] / (1.0 - poisson_ratio[valid_sh])) * (sv[valid_sh] - pp[valid_sh])) + pp[valid_sh]
         if benchmark:
             derived_curves["S_V"] = DerivedCurve(
-                sv, "MPa", "Overburden stress increment from the top of the analysed interval"
+                sv, "MPa", "Overburden stress increment from the top of the analysed interval",
+                basis="an increment from the top of the analysed interval, not absolute",
             )
             derived_curves["PP_HYDROSTATIC"] = DerivedCurve(pp, "MPa", "Hydrostatic pore pressure")
             derived_curves["SH_MIN"] = DerivedCurve(
-                sh_min, "MPa", "Minimum horizontal stress from the S_V increment, not absolute"
+                sh_min, "MPa", "Minimum horizontal stress from the S_V increment, not absolute",
+                basis="from the S_V increment, not absolute",
             )
         else:
-            derived_curves["S_V"] = DerivedCurve(
-                sv,
-                "MPa",
-                f"Overburden stress from the datum ({rho_overburden:g} g/cc above the density log, "
-                f"{float(water_depth_m):g} m of water)",
-            )
-            derived_curves["PP_HYDROSTATIC"] = DerivedCurve(
-                pp, "MPa", f"Hydrostatic pore pressure from the datum ({float(water_depth_m):g} m of water)"
-            )
+            datum = (f"from the datum ({rho_overburden:g} g/cc above the density log, "
+                     f"{float(water_depth_m):g} m of water)")
+            derived_curves["S_V"] = DerivedCurve(sv, "MPa", f"Overburden stress {datum}", basis=datum)
+            water = f"from the datum ({float(water_depth_m):g} m of water)"
+            derived_curves["PP_HYDROSTATIC"] = DerivedCurve(pp, "MPa", f"Hydrostatic pore pressure {water}",
+                                                            basis=water)
             derived_curves["SH_MIN"] = DerivedCurve(
-                sh_min, "MPa", "Minimum horizontal stress from Poisson ratio with absolute S_V and PP"
+                sh_min, "MPa", "Minimum horizontal stress from Poisson ratio with absolute S_V and PP",
+                basis="from Poisson ratio with absolute S_V and PP",
             )
 
         geomech_labels = np.full(n_samples, "NO_GEOMECH_DATA", dtype=object)

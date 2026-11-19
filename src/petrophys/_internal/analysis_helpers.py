@@ -35,6 +35,10 @@ class DerivedCurve:
     data: np.ndarray
     unit: str = ""
     description: str = ""
+    #: How this run made the curve, where the run chose it (a datum, the curves a ratio read); the description
+    #: includes it. Empty where the curve is made the same way in every run. Kept in the written curve's
+    #: ``metadata.custom["basis"]``.
+    basis: str = ""
 
 
 @dataclass
@@ -81,6 +85,8 @@ class CategoryAnalysisResult:
                 curve.description,
                 data_type=DataType.COMPUTED,
             )
+            if curve.basis:
+                well[mnemonic].metadata.custom["basis"] = curve.basis
         return well
 
     def to_dict(self) -> dict[str, Any]:
