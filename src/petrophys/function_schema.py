@@ -115,7 +115,10 @@ class ParameterDeclaration:
     many : bool
         A ``curve_name``, ``text`` or ``choice`` parameter that takes a list.
     role : str, optional
-        ``top`` or ``bottom``, for a ``window`` parameter.
+        ``top`` or ``bottom``, for a ``window`` parameter; ``lithology`` for a
+        ``choice`` that takes the rock's lithology or matrix (a caller may fill
+        it sample by sample from the interpreted lithology,
+        :func:`petrophys.interpretation.lithology.matrix_inference.interpreted_lithology_labels`).
     """
 
     kind: str
@@ -319,7 +322,7 @@ def _parameter_problems(where: str, d: ParameterDeclaration, default: Any) -> Li
     if d.kind == "curve_name" and d.curve and named and d.curve.upper() not in named:
         uses = ", ".join(named)
         problems.append(f"{where}: declares {d.curve!r}, the code uses {uses}")
-    if (d.kind == "window") != (d.role in _ROLES):
+    if (d.kind == "window") != (d.role in _ROLES) and not (d.kind == "choice" and d.role == "lithology"):
         problems.append(f"{where}: role {d.role!r} on a {d.kind}")
     return problems
 

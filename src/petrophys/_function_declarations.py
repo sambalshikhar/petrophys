@@ -45,6 +45,12 @@ def choice(*options: str, many: bool = False) -> ParameterDeclaration:
     return ParameterDeclaration("choice", choices=tuple(options), many=many)
 
 
+def lithology(*options: str, many: bool = False) -> ParameterDeclaration:
+    """A choice of the rock's lithology or matrix (role ``lithology``): a caller may fill it per sample from the
+    interpreted lithology."""
+    return ParameterDeclaration("choice", choices=tuple(options), many=many, role="lithology")
+
+
 def window(role: str) -> ParameterDeclaration:
     return ParameterDeclaration("window", role=role)
 
@@ -629,7 +635,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
     "petrophys.interpretation.clay_volume.nd_method.nd_clay_separation": fn(
         den_clay=value(unit="g/cm3", curve="RHOB"),
         neu_clay=value(unit="v/v", curve="NPHI"),
-        matrix=choice(
+        matrix=lithology(
             "limestone",
             "sandstone",
             "dolomite",
@@ -651,7 +657,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         ),
     ),
     "petrophys.interpretation.clay_volume.nd_method.nd_clean_line": fn(
-        matrix=choice(
+        matrix=lithology(
             "limestone",
             "sandstone",
             "dolomite",
@@ -676,7 +682,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         nphi=curve("NPHI", unit="v/v"),
         rhob=curve("RHOB", unit="g/cm3"),
         shale=mask(),
-        matrix=choice(
+        matrix=lithology(
             "limestone",
             "sandstone",
             "dolomite",
@@ -760,7 +766,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         ),
         use_sp=switch(),
         use_nd=switch(),
-        matrix=choice(
+        matrix=lithology(
             "sandstone",
             "limestone",
             "dolomite",
@@ -893,7 +899,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         d_um=curve(unit="um"),
     ),
     "petrophys.interpretation.electrical.cementation.archie_parameters.default_archie_params": fn(
-        formation_type=choice(
+        formation_type=lithology(
             "sandstone",
             "unconsolidated_sand",
             "shaly_sandstone",
@@ -1975,7 +1981,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
     ),
     "petrophys.interpretation.saturation.sonic.rock_physics.vs_from_vp_greenberg_castagna": fn(
         vp_ms=curve("VP", unit="m/s"),
-        lithology=choice("sandstone", "limestone", "dolomite", "shale"),
+        lithology=lithology("sandstone", "limestone", "dolomite", "shale"),
     ),
     "petrophys.interpretation.saturation.sonic.rock_physics.wood_fluid_modulus": fn(
         sw=curve("SW"),
@@ -1985,7 +1991,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
     "petrophys.interpretation.saturation.sonic.sonic_saturation_module.sonic_water_saturation": fn(
         well=well(),
         hc_type=choice("gas", "oil"),
-        lithology=choice("sandstone", "limestone", "dolomite", "shale"),
+        lithology=lithology("sandstone", "limestone", "dolomite", "shale"),
         k_brine=value(unit="GPa"),
         k_hc=value(unit="GPa"),
         kdry_method=choice("calibrated", "model"),
