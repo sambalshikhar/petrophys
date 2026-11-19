@@ -419,8 +419,7 @@ class Well:
         data: Union[np.ndarray, List[float]],
         unit: str = "",
         description: str = "",
-        data_type: DataType = DataType.CURVE,
-        codes: Optional[Dict[int, str]] = None,
+        data_type: DataType = DataType.CURVE
     ) -> Curve:
         """
         Add a new curve to the well.
@@ -440,9 +439,6 @@ class Well:
             Curve description
         data_type : DataType, optional
             Data type classification
-        codes : dict, optional
-            A class curve's labels, ``{code: label}``, kept in its metadata
-            (:attr:`CurveMetadata.codes`)
 
         Returns
         -------
@@ -451,8 +447,7 @@ class Well:
         """
         metadata = CurveMetadata(
             description=description,
-            data_type=data_type,
-            codes={int(k): str(v) for k, v in (codes or {}).items()},
+            data_type=data_type
         )
         curve = Curve(
             mnemonic=mnemonic,

@@ -586,7 +586,8 @@ def add_exclusion_curve(well: "Well", details: Dict[str, Any]) -> bool:
         return False
     values, codes = got
     well.add_curve("NET_EXCLUSION", values, "",
-                   "Net-pay exclusion: the kind that left the sample out of NET_RES and NET_PAY (0: none)", codes=codes)
+                   "Net-pay exclusion: the kind that left the sample out of NET_RES and NET_PAY (0: none)")
+    well["NET_EXCLUSION"].metadata.custom["category_labels"] = {int(k): str(v) for k, v in codes.items()}
     return True
 
 
@@ -2063,8 +2064,9 @@ _SATURATED_BRINE_PPM = 260_000.0
 #: Rwa samples are compared at this temperature before the P5 is taken.
 _RWA_REFERENCE_TEMP_F = 75.0
 #: The Rw in use is questioned when the median Rwa of the clean porous rock
-#: is below this fraction of it: Archie Sw above 1.4 (n = 2) in more than
-#: half of that rock.
+#: is below this fraction of it (Archie Sw above 1.4, n = 2, in more than
+#: half of that rock), or when even its 5th percentile is above the inverse
+#: (Sw below 0.71 in 95% of it: no clean porous rock reads as water).
 _RWA_CHECK_RATIO = 0.5
 #: Fewest clean porous samples for that comparison.
 _RWA_CHECK_MIN_SAMPLES = 30
@@ -6984,13 +6986,9 @@ class DynamicWorkflow:
             )
             from petrophys.interpretation.lithology.lithology_module import LithologyModule
 
-            well.add_curve(
-                "LITHO",
-                codes.astype(float),
-                "",
-                "Lithology Code",
-                codes={code: name for name, code in LithologyModule.LITHOLOGY_CODES.items()},
-            )
+            well.add_curve("LITHO", codes.astype(float), "", "Lithology Code")
+            well["LITHO"].metadata.custom["category_labels"] = {
+                int(code): str(name) for name, code in LithologyModule.LITHOLOGY_CODES.items()}
         if write_lithology_code:
             self._lithology_log = None
             self._lithology_source = "config"
@@ -7576,7 +7574,7 @@ class DynamicWorkflow:
         return zone["value"], zone_temp_f
 
     def _check_rw_against_rwa(self, well: "Well", rw_curve: np.ndarray, trace: StepResult) -> None:
-        """Warn when clean porous rock implies a water resistivity well below the Rw in use.
+        """Warn when clean porous rock implies a water resistivity far from the Rw in use, either way.
 
         The apparent water resistivity ``Rwa = Rt * phi^m / a`` equals Rw in
         clean water-bearing rock and exceeds it where hydrocarbon is present,
@@ -7587,9 +7585,14 @@ class DynamicWorkflow:
         ``_RWA_CHECK_RATIO`` of the Rw in use, Archie gives Sw above 1.4 in
         more than half of that rock, which scatter in the logs does not
         explain: the Rw is too high for that rock (water saltier than the Rw
-        implies), or ``a`` and ``m`` do not fit it. The median and 5th
-        percentile of Rwa / Rw are recorded in the trace
-        (``rwa_median_over_rw``, ``rwa_p5_over_rw``).
+        implies), or ``a`` and ``m`` do not fit it. Where even the 5th
+        percentile is above ``1 / _RWA_CHECK_RATIO``, no clean porous sample
+        reads as water: that rock holds hydrocarbon throughout, or the Rw is
+        too low for it (water fresher than the Rw implies), or ``a`` and
+        ``m`` do not fit it; the log alone does not tell these apart. The
+        median and 5th percentile of Rwa / Rw are recorded in the trace
+        (``rwa_median_over_rw``, ``rwa_p5_over_rw``), and the warning names
+        which side failed.
         """
         rt_curve = get_curve(well, ["RDEP", "RT"])
         vcl_curve = get_curve(well, ["VCL", "VCLAY"])
@@ -7599,34 +7602,52 @@ class DynamicWorkflow:
         rdep = np.asarray(rt_curve.data, dtype=float)
         vcl = np.asarray(vcl_curve.data, dtype=float)
         phie = np.asarray(phie, dtype=float)
-        archie_a, archie_m, _, _ = self._archie_coefficients_for_lithology(
+        archie_a, archie_m, archie_n, _ = self._archie_coefficients_for_lithology(
             self._build_lithology_log(well), well.n_samples)
         with np.errstate(divide="ignore", invalid="ignore"):
             ratio = rdep * np.power(phie, archie_m) / archie_a / np.asarray(rw_curve, dtype=float)
         clean = np.isfinite(ratio) & (ratio > 0) & (vcl < 0.3) & (phie > 0.05)
-        if int(np.count_nonzero(clean)) < _RWA_CHECK_MIN_SAMPLES:
+        count = int(np.count_nonzero(clean))
+        if count < _RWA_CHECK_MIN_SAMPLES:
             return
         median = float(np.median(ratio[clean]))
+        p5 = float(np.percentile(ratio[clean], 5))
+        low, high = _RWA_CHECK_RATIO, 1.0 / _RWA_CHECK_RATIO
         trace.parameters["rwa_median_over_rw"] = median
-        trace.parameters["rwa_p5_over_rw"] = float(np.percentile(ratio[clean], 5))
-        trace.parameters["rwa_check_samples"] = int(np.count_nonzero(clean))
+        trace.parameters["rwa_p5_over_rw"] = p5
+        trace.parameters["rwa_check_samples"] = count
         trace.parameter_notes.update({
             "rwa_median_over_rw": "a check of the Rw in use, on any Rw route: the median apparent water resistivity "
-                                  "Rwa = Rt x phi^m / a of the clean porous rock, over Rw (Rwa is not written as a curve)",
-            "rwa_p5_over_rw": "the same check: the 5th percentile of Rwa over Rw",
+                                  "Rwa = Rt x phi^m / a of the clean porous rock, over Rw (Rwa is not written as a "
+                                  f"curve); the Rw is questioned when this is below {low:g}",
+            "rwa_p5_over_rw": "the same check: the 5th percentile of Rwa over Rw; the Rw is questioned when this is "
+                              f"above {high:g} (no clean porous rock reads as water)",
             "rwa_check_samples": "the clean porous samples of that check",
         })
-        if median >= _RWA_CHECK_RATIO:
+        rock = f"over its clean porous rock (VCL < 0.3, porosity > 0.05, {count} samples)"
+        check = "Check rw (or salinity_ppm) against a water sample or the water leg."
+        if median < low:
+            above_one = float(np.mean(ratio[clean] < 1.0))
+            message = (
+                f"The Rw in use looks too high for this well: {rock} the median apparent water resistivity "
+                f"Rwa = Rt x phi^m / a is {median:.2f} of it, and Archie gives Sw above 1 at "
+                f"{100.0 * above_one:.0f}% of those samples, where SW is held at 1. Rwa is not below Rw in "
+                "water-bearing rock, so the formation water is saltier than this Rw implies, or a and m do "
+                f"not fit the rock. {check}"
+            )
+        elif p5 > high:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                sw = np.power(1.0 / ratio, 1.0 / np.asarray(archie_n, dtype=float))
+            message = (
+                f"No clean porous rock reads as water at the Rw in use: {rock} even the 5th percentile of the "
+                f"apparent water resistivity Rwa = Rt x phi^m / a is {p5:.2f} times it (median {median:.2f}), "
+                f"so Archie gives Sw below {float(np.percentile(sw[clean], 95)):.2f} at 95% of those samples. "
+                "Rwa equals Rw in water-bearing rock, so either that rock holds hydrocarbon throughout, or the "
+                "formation water is fresher than this Rw implies, or a and m do not fit the rock; the logs "
+                f"alone do not tell these apart. {check}"
+            )
+        else:
             return
-        above_one = float(np.mean(ratio[clean] < 1.0))
-        message = (
-            f"The Rw in use looks too high for this well: over its clean porous rock (VCL < 0.3, porosity "
-            f"> 0.05, {int(np.count_nonzero(clean))} samples) the median apparent water resistivity "
-            f"Rwa = Rt x phi^m / a is {median:.2f} of it, and Archie gives Sw above 1 at "
-            f"{100.0 * above_one:.0f}% of those samples, where SW is held at 1. Rwa is not below Rw in "
-            "water-bearing rock, so the formation water is saltier than this Rw implies, or a and m do "
-            "not fit the rock. Check rw (or salinity_ppm) against a water sample or the water leg."
-        )
         trace.decisions.append(message)
         self._warn_assumed(message)
 
