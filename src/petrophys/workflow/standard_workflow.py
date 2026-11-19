@@ -9,6 +9,7 @@ import re
 import warnings
 
 from petrophys._internal.analysis_helpers import get_curve, get_curve_data_depthwise
+from petrophys._internal.advice import Advice
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -122,10 +123,10 @@ class WorkflowConfig:
                 setattr(self, name, value)
         models = ("archie", "simandoux", "indonesia", "north_sea", "nigeria_schlumberger", "dual_water")
         if str(self.saturation_model).strip().lower() not in models:
-            raise ValueError(
+            raise ValueError(Advice(
                 f"saturation_model must be one of {list(models)}; got {self.saturation_model!r}. "
-                "Waxman-Smits needs CEC: use petrophys.interpret(..., sw_model='waxman_smits', cec=...)."
-            )
+                "Waxman-Smits needs CEC: use petrophys.interpret(..., sw_model='waxman_smits', cec=...).",
+                ("sw_model", "cec")))
 
 
 @dataclass

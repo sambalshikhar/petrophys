@@ -17,6 +17,7 @@ from petrophys.reporting._costa_context import COSTA_WELLS
 from petrophys.reporting._danish_context import DANISH_WELLS
 from petrophys.reporting._geolink_context import GEOLINK_WELLS
 from petrophys.reporting._geolink_train_context import GEOLINK_TRAIN_WELLS
+from petrophys._internal.advice import Advice
 
 
 @dataclass(frozen=True)
@@ -619,7 +620,8 @@ def context_group_record(
 
     run = getattr(result, "_context_run", None)
     if run is None or getattr(result, "context_profile", None) is None:
-        raise ValueError("context_group_record needs the result of petrophys.interpret(..., context_profile=...)")
+        raise ValueError(Advice("context_group_record needs the result of petrophys.interpret(..., "
+                                "context_profile=...)", ("context_profile",)))
     depth = np.asarray(run.well.depth, dtype=float)
     mask = (depth >= float(top) - tolerance) & (depth <= float(bottom) + tolerance)
     if not mask.any():
@@ -885,7 +887,8 @@ def context_group_statistics(result, top: float, bottom: float, *, tolerance: fl
 
     run = getattr(result, "_context_run", None)
     if run is None or getattr(result, "context_profile", None) is None:
-        raise ValueError("context_group_statistics needs the result of petrophys.interpret(..., context_profile=...)")
+        raise ValueError(Advice("context_group_statistics needs the result of petrophys.interpret(..., "
+                                "context_profile=...)", ("context_profile",)))
     depth = np.asarray(run.well.depth, dtype=float)
     mask = (depth >= float(top) - tolerance) & (depth <= float(bottom) + tolerance)
     if not mask.any():

@@ -87,6 +87,7 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, S
 
 import numpy as np
 
+from petrophys._internal.advice import Advice
 from petrophys.model.well import Well
 from petrophys.workflow.custom import (
     Step,
@@ -145,8 +146,16 @@ _RT_CURVES = ("RDEP", "RT")
 _RXO_CURVES = ("RSHA", "RXO", "RESS")
 
 
+#: The inputs a producer's call above asks for (its ``name=...`` arguments), as data.
+_PRODUCER_INPUTS = {"RW": ("rw", "rw_temp_f"), "RMF": ("rmf", "rmf_temp_f"), "TEMP": ("bht_f",)}
+
+
 def _producer_hint(curve: str) -> str:
     return _PRODUCERS.get(curve.upper(), "")
+
+
+def _producer_inputs(curve: str) -> tuple:
+    return _PRODUCER_INPUTS.get(curve.upper(), ())
 
 
 def _builtin(func: Callable[..., Step]) -> Callable[..., Step]:
@@ -916,8 +925,8 @@ def _formation_temperature(ctx: _StepContext) -> np.ndarray:
         return values
     result = calculate_temperature_profile(ctx.well)
     if result.source == "fallback_geothermal_gradient":
-        ctx.warn("No TEMP curve or bottom-hole temperature; formation temperature from the "
-                 "default 30 degC/km gradient. Add steps.temperature(bht_f=...) first.")
+        ctx.warn(Advice("No TEMP curve or bottom-hole temperature; formation temperature from the "
+                        "default 30 degC/km gradient. Add steps.temperature(bht_f=...) first.", ("bht_f",)))
     ctx.decide(f"No TEMP curve; formation temperature from {result.source.replace('_', ' ')}")
     return np.asarray(result.temperature, dtype=float)
 
@@ -1327,8 +1336,8 @@ def _run_saturation(ctx: _StepContext, *, model: str, a: float, m: float, n: flo
             ctx.decide(f"Rcl = {rcl_used:.2f} ohm.m (median RT where VCL > 0.9)")
     rmf = ctx.optional("RMF")
     if cec is not None and 0.0 < cec < 1.0:
-        ctx.warn(f"cec={cec:g} meq/100 g is a clean-sand value; a meq/g value must be "
-                 "multiplied by 100")
+        ctx.warn(Advice(f"cec={cec:g} meq/100 g is a clean-sand value; a meq/g value must be "
+                        "multiplied by 100", ("cec",)))
     module = SaturationModule(a=a, m=m, n=n, model=model,
                               vcl_cutoff=vcl_cutoff if vcl_cutoff is not None else 0.3,
                               rwb_fallback=None, effective_waxman_smits=True)
@@ -2074,6 +2083,7 @@ def _formations_requirement() -> _Requirement:
         hint="read the well with petrophys.read(path, formations=...), pass "
              "run_many(..., formations=...), or give formations= to the step",
         predicate=_formations_present,
+        inputs=("formations",),
     )
 
 

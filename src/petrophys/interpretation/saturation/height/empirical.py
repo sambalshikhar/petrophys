@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Sequence
 
 import numpy as np
+from petrophys._internal.advice import Advice
 
 SATURATION_HEIGHT_MODELS = ("power", "cuddy", "skelt_harrison")
 
@@ -255,16 +256,17 @@ def fit_saturation_height_from_well(
         fwl = float(fwl.fwl_depth)
         if tvd_curve is None and not vertical:
             if well.get(reference) is None:
-                raise ValueError(
+                raise ValueError(Advice(
                     f"The FWL is on {reference}; the well has no {reference} curve. Read it with "
-                    "pp.read(..., survey=...) (or attach_survey) so TVDSS is computed, or pass tvd_curve."
-                )
+                    "pp.read(..., survey=...) (or attach_survey) so TVDSS is computed, or pass tvd_curve.",
+                    ("survey", "tvd_curve")
+                ))
             tvd_curve = reference
     if tvd_curve is None and not vertical:
-        raise ValueError(
+        raise ValueError(Advice(
             "Height above the FWL is vertical: pass tvd_curve (e.g. 'TVDSS' from pp.read(..., survey=...)), "
-            "or vertical=True for a vertical well"
-        )
+            "or vertical=True for a vertical well", ("tvd_curve", "survey", "vertical")
+        ))
     depth = np.asarray(well.depth, dtype=float)
     if tvd_curve is not None:
         curve = well.get(tvd_curve)

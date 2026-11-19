@@ -64,6 +64,7 @@ from petrophys._internal.serialization import curve_statistics, json_object, jso
 from petrophys.model.data_types import DataType
 from petrophys.model.well import Well
 from petrophys.workflow.dynamic_workflow import StepResult
+from petrophys._internal.advice import Advice, joined, restated
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -317,6 +318,8 @@ class _Requirement:
     what: str = ""
     hint: str = ""
     predicate: Optional[Callable[[Well, Mapping[str, Any]], Optional[str]]] = None
+    #: The inputs the hint asks for (its ``name=...`` arguments), as data (:class:`petrophys._internal.advice.Advice`).
+    inputs: Tuple[str, ...] = ()
 
     @property
     def text(self) -> str:
@@ -325,10 +328,11 @@ class _Requirement:
 
 def _curve_requirement(label: str, curves: Sequence[str] = (), what: str = "") -> _Requirement:
     """Requirement satisfied by the first of ``curves`` with data (default: ``label``)."""
-    from petrophys.workflow.steps import _producer_hint
+    from petrophys.workflow.steps import _producer_hint, _producer_inputs
 
     names = tuple(name.upper() for name in (curves or (label,)))
-    return _Requirement(label=label, curves=names, what=what, hint=_producer_hint(names[0]))
+    return _Requirement(label=label, curves=names, what=what, hint=_producer_hint(names[0]),
+                        inputs=_producer_inputs(names[0]))
 
 
 class Step:
@@ -875,6 +879,7 @@ def _plan(steps: Sequence[Step], well: Well) -> Tuple[List[_Check], Dict[str, st
                     note = f"needs {requirement.text}" + (
                         f"; {requirement.hint}" if requirement.hint else ""
                     )
+                    note = Advice(note, requirement.inputs) if requirement.hint and requirement.inputs else note
             else:
                 for curve in requirement.curves:
                     if curve in produced:
@@ -898,6 +903,7 @@ def _plan(steps: Sequence[Step], well: Well) -> Tuple[List[_Check], Dict[str, st
                         note = f"needs {requirement.text}, which is not on this well"
                         if requirement.hint:
                             note += f"; add {requirement.hint} before '{step.name}'"
+                            note = Advice(note, requirement.inputs) if requirement.inputs else note
             rows.append(_Check(step.name, requirement.label, source is not None,
                                source or "missing", note))
             if source is None:
@@ -906,7 +912,7 @@ def _plan(steps: Sequence[Step], well: Well) -> Tuple[List[_Check], Dict[str, st
             rows.append(_Check(step.name, "(nothing)", True, "", ""))
         outputs = step._planned_outputs(well, available | set(produced))
         if problems:
-            cannot_run[step.name] = "; ".join(problems)
+            cannot_run[step.name] = joined(problems)          # an Advice keeps the inputs its notes ask for
             for curve in outputs:
                 if curve not in produced:
                     blocked[curve] = step.name
@@ -1904,13 +1910,13 @@ class WorkflowRunResult:
         return statistics_table(self.well, curves, top, bottom, default=("VCL", "PHIT", "PHIE", "SW", "PERM"))
 
     def _skip(self, step: Step, reason: str) -> None:
-        self.steps_skipped[step.name] = reason[:1].upper() + reason[1:]
+        self.steps_skipped[step.name] = restated(reason[:1].upper() + reason[1:], reason)
 
     def _record(self, step: Step, trace: StepResult, context: _StepContext) -> None:
         self.steps.append(trace)
         if context.warnings:
             self._step_warnings[step.name] = list(context.warnings)
-            self.warnings.extend(f"{step.name}: {text}" for text in context.warnings)
+            self.warnings.extend(restated(f"{step.name}: {text}", text) for text in context.warnings)
         if context.artifact is not _MISSING:
             self.artifacts[step.name] = context.artifact
 

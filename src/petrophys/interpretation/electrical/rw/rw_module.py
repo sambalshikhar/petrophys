@@ -15,6 +15,7 @@ from petrophys.interpretation.electrical.rw.salinity_rw import rw_from_salinity
 from petrophys.interpretation.electrical.rw.temp_correction import correct_rw_temperature
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 from petrophys._internal.benchmark import reproducing_benchmark
+from petrophys._internal.advice import Advice
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -196,15 +197,15 @@ class RwModule:
                 rmf, _ = header_rmf
 
         if method == "given" and rw_given is None:
-            raise ValueError(
+            raise ValueError(Advice(
                 "RwModule(method='given') needs the water resistivity: calculate(well, rw_given=...), "
-                "in ohm.m at formation temperature"
-            )
+                "in ohm.m at formation temperature", ("rw_given",)
+            ))
         if method == "salinity" and salinity is None:
-            raise ValueError(
+            raise ValueError(Advice(
                 "RwModule(method='salinity') needs the water salinity: calculate(well, salinity=...), "
-                "in ppm NaCl equivalent"
-            )
+                "in ppm NaCl equivalent", ("salinity",)
+            ))
         if method == "given" or (method == "auto" and rw_given is not None):
             if header_note:
                 return RwResult(rw=rw_given, method="header", temperature=temperature, metadata=header_note)

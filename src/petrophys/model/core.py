@@ -11,6 +11,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import numpy as np
 
+from petrophys._internal.advice import Advice
 from petrophys._internal.statistics import finite_min_max
 
 try:
@@ -183,8 +184,8 @@ class CoreData:
             for message in messages:
                 # No unit label is involved here; drop the label clause of the shared message.
                 message = message.replace(" despite unit ''", "")
-                warnings.warn(f"CoreData: {message} (porosity_unit=/saturation_unit= state it)",
-                              UserWarning, stacklevel=2)
+                warnings.warn(Advice(f"CoreData: {message} (porosity_unit=/saturation_unit= state it)",
+                                     ("porosity_unit", "saturation_unit")), UserWarning, stacklevel=2)
 
         lithology = _get_col(lithology_col)
         if porosity is None and perm is None and gd is None and sw is None and so is None:

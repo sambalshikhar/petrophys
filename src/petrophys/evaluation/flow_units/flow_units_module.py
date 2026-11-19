@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, List, Optional, Sequence, Union
 
 import numpy as np
 
+from petrophys._internal.advice import Advice
 from petrophys.evaluation.rock_quality.rock_quality_module import (
     calculate_rqi,
     calculate_phi_z,
@@ -183,7 +184,7 @@ def assign_flow_units(
 
     if fzi_cutoffs is not None or method == "cutoffs":
         if fzi_cutoffs is None:
-            raise ValueError("method='cutoffs' requires fzi_cutoffs")
+            raise ValueError(Advice("method='cutoffs' requires fzi_cutoffs", ("fzi_cutoffs",)))
         bounds = np.sort(np.asarray(fzi_cutoffs, dtype=float))
         unit_idx = np.digitize(fzi[valid], bounds)  # 0..len(bounds)
         labels[valid] = unit_idx + 1

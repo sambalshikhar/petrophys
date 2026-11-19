@@ -51,6 +51,7 @@ from petrophys.preprocessing.quality.bad_hole.flag_generator import (
 )
 import pandas as pd
 from petrophys.io import ascii_reader, las_reader
+from petrophys._internal.advice import Advice
 
 DEFAULT_RESISTIVITY_REFERENCE_TEMP_F = 75.0
 APPARENT_POROSITY_METHODS = {
@@ -3619,19 +3620,21 @@ class DynamicWorkflow:
         if policy == "auto":
             selected = "external" if source is not None else ("vendor" if vendor_available else "computed")
         if selected == "external" and source is None:
-            raise ValueError("lithology_source='external' requires lithology_intervals or lithology_csv.")
+            raise ValueError(Advice("lithology_source='external' requires lithology_intervals or lithology_csv.",
+                                    ("lithology_intervals", "lithology_csv")))
         if selected == "vendor" and not vendor_available:
             if self._eval_lithology_detection:
                 raise ValueError("lithology_source='vendor' requires a recognized vendor lithology curve.")
-            raise ValueError(
+            raise ValueError(Advice(
                 "lithology_source='vendor' requires a recognized vendor lithology curve: "
                 "LITHOLOGY_GEOLINK, a lithology-code mnemonic such as LITHOLOGY or FACIES "
-                "that holds lithology codes, or the curve named by lithology_curve."
-            )
+                "that holds lithology codes, or the curve named by lithology_curve.", ("lithology_curve",)
+            ))
         if selected == "config" and (
             self.config.matrix_type == "auto" or self.config.lithology_domain == "auto"
         ):
-            raise ValueError("lithology_source='config' requires explicit matrix_type and lithology.")
+            raise ValueError(Advice("lithology_source='config' requires explicit matrix_type and lithology.",
+                                    ("matrix_type", "lithology")))
         self._selected_lithology_source = selected
         self._external_lithology = None
         report = {"requested_source": policy, "selected_source": selected,
@@ -3787,7 +3790,7 @@ class DynamicWorkflow:
                     "skip_steps)."
                 )
         if config.use_peer_core and not config.peer_wells:
-            notes.append("use_peer_core=True has no effect: no peer_wells are given.")
+            notes.append(Advice("use_peer_core=True has no effect: no peer_wells are given.", ("peer_wells",)))
         if config.peer_wells and not config.use_peer_core:
             notes.append(
                 "peer_wells are not used: their core calibrates this well only with use_peer_core=True."
@@ -4398,11 +4401,11 @@ class DynamicWorkflow:
             if not reason.endswith("."):
                 reason += "."
             report["formations"] = {"source": "attached", "used": False, "reason": reason}
-            return [
+            return [Advice(
                 "Attached formations are used for plotting and reporting only: "
                 f"{reason} Pass one stratigraphic level as "
                 "DynamicWorkflowConfig(formation_tops=...) to calibrate core "
-                "permeability per formation."
+                "permeability per formation.", ("formation_tops",))
             ]
         self.config.formation_tops = tops
         names = [interval.name for interval in tops.intervals]
@@ -5075,7 +5078,8 @@ class DynamicWorkflow:
             if res is not None:
                 self._apply_lithology_resolution(res)
             elif self._selected_lithology_source == "config":
-                raise ValueError("lithology_source='config' requires explicit lithology and matrix_type, not 'auto'.")
+                raise ValueError(Advice("lithology_source='config' requires explicit lithology and matrix_type, "
+                                        "not 'auto'.", ("lithology", "matrix_type")))
 
         # Detect available curves
         available = self._detect_available_curves(well)

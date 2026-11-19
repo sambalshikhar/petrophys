@@ -15,6 +15,7 @@ import numpy as np
 
 from petrophys._internal.analysis_helpers import cell_thickness
 from petrophys._internal.serialization import curve_statistics, depth_mask, json_object
+from petrophys._internal.advice import Advice
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -236,10 +237,10 @@ def formation_table(well: "Well", formations: Any = None, *, rank: Optional[str]
     if formations is None:
         records = (well.get_parameter("_geology_context") or {}).get("formations")
         if not records:
-            raise ValueError(
+            raise ValueError(Advice(
                 "No formations are attached to this well. Pass formations=<file or table>, "
-                "or attach them with petrophys.read(path, formations=...)."
-            )
+                "or attach them with petrophys.read(path, formations=...).", ("formations",)
+            ))
         table = pd.DataFrame(records)
     else:
         table = read_formations(formations, well=well)
@@ -281,10 +282,10 @@ def summarize_zones(result: "DynamicWorkflowResult", zones: Any = None) -> Any:
     well = result.well
     intervals = result.zone_intervals if zones is None else _zone_intervals_for_well(well, zones)
     if not intervals:
-        raise ValueError(
+        raise ValueError(Advice(
             "No zones apply to this well. Pass zones=<file or table>, or interpret "
-            "with petrophys.interpret(well, zones=...)."
-        )
+            "with petrophys.interpret(well, zones=...).", ("zones",)
+        ))
     formations = [Formation(zone["name"], zone["top"], zone["bottom"]) for zone in intervals]
     return analyze_formations(well, formations).to_dataframe().rename(columns={"Formation": "Zone"})
 

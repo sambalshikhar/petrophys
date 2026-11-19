@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
+from petrophys._internal.advice import Advice
 
 #: Pressure (in the unit) per g/cc of density per depth unit.
 _GRADIENT = {
@@ -525,7 +526,8 @@ def eaton_from_well(
     depth = np.asarray(well.depth, dtype=float)
     if tvd_curve is None and not vertical:
         if well.get("TVD") is None:
-            raise ValueError("Pore pressure needs TVD: read the well with survey=..., pass tvd_curve, or vertical=True")
+            raise ValueError(Advice("Pore pressure needs TVD: read the well with survey=..., pass tvd_curve, or "
+                                    "vertical=True", ("survey", "tvd_curve", "vertical")))
         tvd_curve = "TVD"
     tvd = depth
     if tvd_curve is not None:

@@ -9,6 +9,7 @@ from typing import Optional, List, Dict, Union, Any
 from pathlib import Path
 import numpy as np
 
+from petrophys._internal.advice import Advice
 from petrophys.model.intervals import (
     IntervalKind,
     Interval,
@@ -110,7 +111,7 @@ class FormationTops:
                 if "rank" in table:
                     ranks = ", ".join(repr(str(value)) for value in table["rank"].dropna().unique())
                     message += f" Select one level with rank=..., e.g. one of: {ranks}."
-                raise ValueError(message)
+                raise ValueError(Advice(message, ("rank",) if "rank" in table else ()))
             table = table.copy()
             table["bottom_depth"] = table["top_depth"].shift(-1).fillna(terminal_depth)
         klass = _KIND_CLASS.get(interval_kind, ManualInterval)

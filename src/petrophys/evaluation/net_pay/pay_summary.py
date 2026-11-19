@@ -14,6 +14,7 @@ from typing import Optional
 
 import numpy as np
 
+from petrophys._internal.advice import Advice
 from petrophys._internal.analysis_helpers import cell_thickness, get_curve_data_depthwise
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.evaluation.net_pay.cutoffs import cutoff_fraction, standard_cutoffs
@@ -129,7 +130,7 @@ def resolve_windowed_inputs(well, depth, arrays, top=None, bottom=None, depth_un
     """
     if depth is None:
         if well is None or well.depth is None:
-            raise ValueError("Pass a well with depth data, or depth=")
+            raise ValueError(Advice("Pass a well with depth data, or depth=", ("depth",)))
         depth = well.depth
     depth = np.asarray(getattr(depth, "data", depth), dtype=float).reshape(-1)
     if depth.size == 0:

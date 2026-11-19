@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Union
+from petrophys._internal.advice import Advice
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -189,7 +190,7 @@ class MultiWellResult:
             table.insert(0, "Well", result.well.name)
             tables.append(table)
         if not tables:
-            raise ValueError("No zones apply to any well. Pass zones=<file or table>.")
+            raise ValueError(Advice("No zones apply to any well. Pass zones=<file or table>.", ("zones",)))
         return pd.concat(tables, ignore_index=True)
 
     def to_las(self, folder: Union[str, Path], **options: Any) -> List[Path]:
