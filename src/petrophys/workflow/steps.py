@@ -127,14 +127,16 @@ _LITHOLOGY_DOMAINS = ("clastic", "carbonate")
 
 
 def _matrices() -> Tuple[str, ...]:
-    """The matrix names steps.porosity takes (every mineral of MatrixProperties and its aliases)."""
+    """The matrices steps.porosity offers: the minerals of MatrixProperties (it also takes their aliases, ``ss``,
+    ``lime``, ...)."""
     from petrophys.model.constants import MatrixProperties
 
-    return tuple(MatrixProperties.names())
+    return tuple(MatrixProperties.list_minerals())
 
 
 def step_choices() -> Dict[str, Tuple[str, ...]]:
-    """The words each built-in step argument takes, as ``"<kind>.<argument>"``: the tuples its factory checks.
+    """The words each built-in step argument takes, as ``"<kind>.<argument>"``: the tuples its factory checks (a
+    factory may also take other spellings of them: a mineral's aliases for the porosity matrix).
 
     Examples
     --------
