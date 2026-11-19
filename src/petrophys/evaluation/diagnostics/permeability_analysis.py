@@ -133,6 +133,7 @@ class PermeabilityAnalysis:
                         rqi,
                         "microns",
                         f"Reservoir Quality Index from {perm_source_text} and {phie_source_text}",
+                        basis=f"from {perm_source_text} and {phie_source_text}",
                     )
                 if fzi is None:
                     fzi = rq_result.fzi
@@ -140,6 +141,7 @@ class PermeabilityAnalysis:
                         fzi,
                         "microns",
                         f"Flow Zone Indicator from {perm_source_text} and {phie_source_text}",
+                        basis=f"from {perm_source_text} and {phie_source_text}",
                     )
             except Exception:
                 pass
