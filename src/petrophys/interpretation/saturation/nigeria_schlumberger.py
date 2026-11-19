@@ -28,6 +28,7 @@ import numpy as np
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.interpretation.saturation._inputs import (
     check_resistivity_parameters,
+    check_saturation_fractions,
     nonpositive_resistivity,
 )
 
@@ -80,6 +81,7 @@ def nigeria_schlumberger(
         If a scalar ``rw`` or ``rsh`` is at or below zero.
     """
     check_resistivity_parameters(rw=rw, rsh=rsh)
+    check_saturation_fractions(phi=phi, vcl=vcl)
     scalar = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vcl)
 
     rt = np.atleast_1d(np.asarray(rt, dtype=float))

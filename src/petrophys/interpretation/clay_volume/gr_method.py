@@ -21,6 +21,7 @@ AAPG Methods in Exploration 16.
 
 from typing import Tuple, Union
 import numpy as np
+from petrophys._internal.validation import broadcast_inputs, warn_invalid
 
 
 #: Gamma-ray clay-volume transforms accepted by :func:`vcl_from_gr`.
@@ -63,11 +64,18 @@ def vcl_linear(
         Linear clay volume indicator (IGR). Equal baselines leave the
         indicator undefined and return NaN, including for missing GR.
     """
-    if gr_max == gr_min:
+    gr, gr_min, gr_max = broadcast_inputs(gr=gr, gr_min=gr_min, gr_max=gr_max)
+    warn_invalid(
+        ~np.isfinite(gr_min) | ~np.isfinite(gr_max) | (gr_max <= gr_min),
+        "GR clay-volume baselines", "require finite shale GR greater than clean GR (API)",
+        "Equal baselines give NaN; reversed baselines are retained and can give misleading clipped clay volumes.",
+    )
+    if np.all(gr_max == gr_min):
         result = np.full_like(np.asarray(gr, dtype=float), np.nan)
         return float(result) if result.ndim == 0 else result
 
-    igr = (gr - gr_min) / (gr_max - gr_min)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        igr = np.where(gr_max == gr_min, np.nan, (gr - gr_min) / (gr_max - gr_min))
     return np.clip(igr, 0, 1)
 
 

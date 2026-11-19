@@ -140,15 +140,33 @@ def gassmann_kfl(k_sat: ArrayLike, k_dry: ArrayLike, k_min: float, phi: ArrayLik
 
 def wood_fluid_modulus(sw: ArrayLike, k_brine: float, k_hc: float) -> ArrayLike:
     """Effective fluid bulk modulus (GPa) for a brine/HC mix (Wood/Reuss average)."""
+    k_brine, k_hc = _check_fluid_moduli(k_brine, k_hc)
     sw = np.clip(np.asarray(sw, dtype=float), 0.0, 1.0)
     return 1.0 / (sw / k_brine + (1.0 - sw) / k_hc)
 
 
 def sw_from_fluid_modulus(k_fl: ArrayLike, k_brine: float, k_hc: float) -> ArrayLike:
     """Water saturation from the in-situ fluid modulus (inverse of Wood mixing)."""
+    from petrophys._internal.validation import warn_range
+
+    k_brine, k_hc = _check_fluid_moduli(k_brine, k_hc, distinct=True)
     k_fl = np.asarray(k_fl, dtype=float)
+    warn_range(k_fl, "Sonic fluid bulk modulus (GPa)", 0, open_lower=True,
+               action="Values are retained and saturation is clipped to 0-1; review the fluid modulus.")
     sw = (1.0 / k_fl - 1.0 / k_hc) / (1.0 / k_brine - 1.0 / k_hc)
     return np.clip(sw, 0.0, 1.0)
+
+
+def _check_fluid_moduli(k_brine, k_hc, *, distinct=False):
+    from petrophys._internal.validation import broadcast_inputs
+
+    k_brine, k_hc = broadcast_inputs(k_brine=k_brine, k_hc=k_hc)
+    for name, value in (("k_brine", k_brine), ("k_hc", k_hc)):
+        if np.any(~np.isfinite(value) | (value <= 0)):
+            raise ValueError(f"{name} must be a finite positive fluid bulk modulus (GPa)")
+    if distinct and np.any(k_brine == k_hc):
+        raise ValueError("k_brine and k_hc must differ to infer water saturation from fluid modulus")
+    return tuple(float(value) if value.ndim == 0 else value for value in (k_brine, k_hc))
 
 
 def fluid_substitution_dtc_swing(

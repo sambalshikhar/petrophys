@@ -22,6 +22,7 @@ from scipy.optimize import brentq
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.interpretation.saturation._inputs import (
     check_resistivity_parameters,
+    check_saturation_fractions,
     nonpositive_resistivity,
 )
 
@@ -86,6 +87,7 @@ def simandoux(
         If a scalar ``rw`` or ``rcl`` is at or below zero.
     """
     check_resistivity_parameters(rw=rw, rcl=rcl)
+    check_saturation_fractions(phi=phi, vcl=vcl)
     scalar = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vcl)
 
     rt, phi, vcl = np.broadcast_arrays(

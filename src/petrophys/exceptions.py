@@ -12,9 +12,11 @@ __all__ = ["DataQualityWarning"]
 
 
 class DataQualityWarning(UserWarning):
-    """Input data looks wrong and was changed or ignored.
+    """An input or calculated result is outside its expected physical domain.
 
     Raised, for example, when most samples of a curve fall outside the
     physically plausible range for its declared unit and are removed, which
-    usually means the unit label is wrong.
+    usually means the unit label is wrong. The message states whether values
+    were removed, replaced or retained. Ordinary missing NaN samples do not
+    by themselves trigger this warning.
     """

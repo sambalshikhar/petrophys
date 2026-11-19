@@ -16,6 +16,7 @@ import numpy as np
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.interpretation.saturation._inputs import (
     check_resistivity_parameters,
+    check_saturation_fractions,
     nonpositive_resistivity,
 )
 
@@ -69,6 +70,7 @@ def indonesia(
         If a scalar ``rw`` or ``rcl`` is at or below zero.
     """
     check_resistivity_parameters(rw=rw, rcl=rcl)
+    check_saturation_fractions(phi=phi, vcl=vcl)
     # Track whether the caller passed scalars so we return a scalar
     scalar_input = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vcl)
 

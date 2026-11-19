@@ -45,6 +45,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "AHO60",
         "HLLD",
         "HDRS",
+        "IDPH",
     ],
     # Medium Resistivity (RMED)
     # NOTE: AT10 (10in array induction) and RLLS (laterolog shallow) belong to RSHA,
@@ -62,6 +63,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RESMED",
         "AHT30",
         "AHO30",
+        "IMPH",
     ],
     # Shallow Resistivity (RSHA)
     # AT30 is not here: it is the medium array-induction spacing (RMED).
@@ -119,7 +121,7 @@ ALIAS_MAP: Dict[str, List[str]] = {
         "RHOI",
     ],
     # Density Correction (DRHO)
-    "DRHO": ["DRHO", "DCOR", "HDRA", "DENC", "RHOC", "CORR"],
+    "DRHO": ["DRHO", "DCOR", "HDRA", "DENC", "RHOC", "CORR", "DRH"],
     # Neutron Porosity (NPHI)
     "NPHI": [
         "NPHI",
@@ -161,7 +163,11 @@ ALIAS_MAP: Dict[str, List[str]] = {
     # Photoelectric Factor (PEF)
     "PEF": ["PE", "PEF", "PEFZ", "PEFL", "PEF8", "PHOTO"],
     # Caliper (CALI)
-    "CALI": ["CALI", "HCAL", "CAL", "CALIPER", "C1", "C2", "HD1_PPC1", "HD2_PPC1", "CALD", "DCAL", "MCAL", "CALX"],
+    "CALI": [
+        "CALI", "HCAL", "CAL", "CALIPER", "C1", "C2", "HD1_PPC1", "HD2_PPC1",
+        "CALD", "DCAL", "MCAL", "CALX", "CALA", "LCAL",
+        "CAL1", "CAL2", "CAL3", "CAL4", "CAL5", "CAL6", "CAL7", "CAL8",
+    ],
     # Gamma Ray (GR)
     "GR": [
         "GR",
@@ -231,14 +237,15 @@ NEUTRON_MATRIX_REFERENCE: Dict[str, str] = {
 #: NPHI aliases the benchmark context packages did not have.
 _BENCHMARK_MISSING_NPHI_ALIASES = ("NPHI_LS", "NPSS", "CNSS", "NPHI_SS", "CNC")
 #: Deep-resistivity aliases the benchmark context packages did not have.
-_BENCHMARK_MISSING_RDEP_ALIASES = ("AHT90", "AHO90", "AHF90", "AHT60", "AHO60", "HLLD", "HDRS")
+_BENCHMARK_MISSING_RDEP_ALIASES = ("AHT90", "AHO90", "AHF90", "AHT60", "AHO60", "HLLD", "HDRS", "IDPH")
 #: Other aliases the benchmark context packages did not have: the density and
 #: microlog calipers, the density correction CORR, the medium induction RILM,
 #: the shallow laterolog-3 and the AIT-H/M and HRLA/HALS curves.
 _BENCHMARK_MISSING_ALIASES: Dict[str, tuple] = {
-    "CALI": ("CALD", "DCAL", "MCAL", "CALX"),
-    "DRHO": ("CORR",),
-    "RMED": ("RILM", "AHT30", "AHO30"),
+    "CALI": ("CALD", "DCAL", "MCAL", "CALX", "CALA", "LCAL",
+             "CAL1", "CAL2", "CAL3", "CAL4", "CAL5", "CAL6", "CAL7", "CAL8"),
+    "DRHO": ("CORR", "DRH"),
+    "RMED": ("RILM", "AHT30", "AHO30", "IMPH"),
     "RSHA": ("LL3", "RLL3", "AHT10", "AHO10", "AHT20", "AHO20", "HLLS"),
 }
 

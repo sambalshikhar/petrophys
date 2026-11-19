@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from petrophys._internal.statistics import finite_min_max
+from petrophys._internal.validation import broadcast_inputs, warn_invalid, warn_range
 
 try:
     import pandas as pd
@@ -261,9 +262,16 @@ class CoreMechanical:
         if self.vp is None or self.vs is None:
             raise ValueError("Both Vp and Vs are required for dynamic moduli")
 
-        rho = np.asarray(density_gcm3, dtype=float) * 1000.0  # kg/m³
-        vp = self.vp
-        vs = self.vs
+        density, vp, vs = broadcast_inputs(density_gcm3=density_gcm3, vp=self.vp, vs=self.vs)
+        warn_range(density, "Core mechanics bulk density (g/cm3)", 0, open_lower=True)
+        warn_range(vp, "Core mechanics Vp (m/s)", 0, open_lower=True)
+        warn_range(vs, "Core mechanics Vs (m/s)", 0, open_lower=True)
+        warn_invalid(
+            np.isfinite(vp) & np.isfinite(vs) & (vs >= vp),
+            "Core mechanics Vp/Vs", "require Vp greater than Vs for this elastic model",
+            "Velocities are retained; the resulting moduli are not physically reliable.",
+        )
+        rho = density * 1000.0  # kg/m³
 
         vp2 = vp ** 2
         vs2 = vs ** 2
@@ -274,6 +282,14 @@ class CoreMechanical:
         g = rho * vs2 / 1e9         # GPa
         k = rho * (vp2 - 4/3 * vs2) / 1e9  # GPa
         e = 2 * g * (1 + nu)        # GPa
+
+        warn_invalid(
+            np.isinf(nu) | (nu <= -1) | (nu >= 0.5),
+            "Core mechanics Poisson ratio output", "must be finite and between -1 and 0.5 (exclusive)",
+            "The calculated values are retained; check velocities and their units.",
+        )
+        for name, values in (("shear", g), ("bulk", k), ("Young's", e)):
+            warn_range(values, f"Core mechanics {name} modulus output (GPa)", 0)
 
         return {
             "poisson_ratio": nu,

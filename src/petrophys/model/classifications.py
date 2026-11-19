@@ -21,6 +21,7 @@ import numpy as np
 
 from petrophys.exceptions import DataQualityWarning
 from petrophys.model.class_tables import CLASS_TABLES
+from petrophys._internal.validation import warn_range
 
 
 def _classify(table: str, values, members: Dict[str, Enum]):
@@ -336,6 +337,8 @@ class MhiClassification(Enum):
         MhiClassification or np.ndarray
             Classification result(s); ``None`` where the value is not finite
         """
+        warn_range(mhi, "MHI classification input", 0, 1,
+                   action="Values retain their threshold-based labels; an out-of-range label is not a reliable interpretation.")
         return _classify("MHI", mhi, _MHI_MEMBERS)
 
 
