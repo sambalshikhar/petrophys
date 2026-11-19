@@ -312,18 +312,16 @@ def _param_docs(func: Any) -> Dict[str, str]:
 
 
 def _step_choices() -> Dict[str, Sequence[str]]:
-    from petrophys.interpretation.permeability.perm_module import PERMEABILITY_METHODS
+    """Every step argument's words (steps.step_choices: the tuples its factory checks), a model with the options it
+    takes."""
     from petrophys.workflow import steps
 
     return {
-        "clay_volume.method": steps._CLAY_METHODS,
-        "clay_volume.nd_matrix": steps._ND_MATRICES,
-        "porosity.method": steps._POROSITY_METHODS,
+        **steps.step_choices(),
         "saturation.model": tuple(
             f"{model} (options: {', '.join(options)})" if options else model
             for model, options in steps._SW_MODEL_OPTIONS.items()
         ),
-        "permeability.method": tuple(PERMEABILITY_METHODS),
     }
 
 

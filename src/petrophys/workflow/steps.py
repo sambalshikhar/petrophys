@@ -83,7 +83,7 @@ from __future__ import annotations
 
 import functools
 import inspect
-from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Set
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
 
@@ -121,6 +121,114 @@ __all__ = [
 
 #: Built-in step factories by kind; used to rebuild saved workflows.
 _REGISTRY: Dict[str, Callable[..., Step]] = {}
+
+_HC_TYPES = ("oil", "gas")
+_LITHOLOGY_DOMAINS = ("clastic", "carbonate")
+
+
+def _matrices() -> Tuple[str, ...]:
+    """The matrix names steps.porosity takes (every mineral of MatrixProperties and its aliases)."""
+    from petrophys.model.constants import MatrixProperties
+
+    return tuple(MatrixProperties.names())
+
+
+def step_choices() -> Dict[str, Tuple[str, ...]]:
+    """The words each built-in step argument takes, as ``"<kind>.<argument>"``: the tuples its factory checks.
+
+    Examples
+    --------
+    >>> step_choices()["clay_volume.nd_matrix"]
+    ('sandstone', 'limestone', 'dolomite')
+    >>> "sandstone" in step_choices()["porosity.matrix"]
+    True
+    """
+    from petrophys.interpretation.clay_volume.gr_method import GR_VCL_METHODS
+    from petrophys.interpretation.permeability.perm_module import PERMEABILITY_METHODS
+
+    return {
+        "clay_volume.method": _CLAY_METHODS,
+        "clay_volume.gr_transform": tuple(GR_VCL_METHODS),
+        "clay_volume.nd_matrix": _ND_MATRICES,
+        "porosity.method": _POROSITY_METHODS,
+        "porosity.matrix": _matrices(),
+        "porosity.hc_type": _HC_TYPES,
+        "saturation.model": _SW_MODELS,
+        "saturation.lithology": _LITHOLOGY_DOMAINS,
+        "permeability.method": tuple(PERMEABILITY_METHODS),
+        "permeability.fallback_method": tuple(m for m in PERMEABILITY_METHODS if m != "auto"),
+        "net_pay.lithology": _LITHOLOGY_DOMAINS,
+    }
+
+
+#: The workflow record's name of a step kind, where it differs (``interpret_well`` records the clay-volume step
+#: as ``vclay``).
+RECORD_STEP = {"clay_volume": "vclay", "formation_water": "rw"}
+
+#: The workflow record's names of a step argument, where it records the value it used under its own name.
+RECORDED_AS = {"gr_clean": ("gr_min_used", "gr_min"), "gr_shale": ("gr_max_used", "gr_max"),
+               "sp_clean": ("sp_max",), "sp_shale": ("sp_min",), "matrix_density": ("rho_ma",),
+               "matrix_neutron": ("nphi_ma",), "matrix_slowness": ("dt_ma",), "fluid_density": ("rho_fl",),
+               "fluid_slowness": ("dt_fl",), "clay_porosity": ("phi_cl",), "rw": ("rw", "rw_at_measured_temp"),
+               "rw_temp_f": ("reference_temp_f", "measured_temp_f"),
+               "vcl_cutoff": ("vcl_cutoff_for_routing", "vcl_cutoff"), "matrix": ("matrix_type",),
+               "gr_transform": ("gr_method",)}
+
+
+def recorded_arguments(kind: str, steps: Mapping[str, Mapping[str, Any]]) -> Dict[str, Any]:
+    """The arguments of ``steps.<kind>`` the workflow record of that step states: the step run with them again
+    starts from the record's run.
+
+    ``steps`` is the record's steps (``{name: StepResult.to_dict()}``; the step under :data:`RECORD_STEP`'s name
+    where it differs). Each argument the record states, under its name or its recorded name (:data:`RECORDED_AS`):
+    a number, or a range whose two ends agree (``<name>_min``, ``<name>_max``); a word that is one of the argument's
+    choices (:func:`step_choices`; a recorded ``"per-depth"`` is a fact, no argument). The method or model: the
+    record's where the step takes it, else ``"auto"`` where it does; else left to the step's default. An Rw is
+    stated only with its temperature. Empty when the record has no such step.
+
+    Examples
+    --------
+    >>> recorded_arguments("clay_volume", {"vclay": {"method": "min(GR, ND)", "parameters": {
+    ...     "gr_min_used": 20.5, "gr_max_used": 120.0, "nd_matrix": "sandstone", "gr_method": "linear"}}})
+    {'gr_clean': 20.5, 'gr_shale': 120.0, 'gr_transform': 'linear', 'nd_matrix': 'sandstone'}
+    >>> recorded_arguments("net_pay", {"net_pay": {"parameters": {"vcl_cutoff": 0.3, "lithology": "per-depth"}}})
+    {'vcl_cutoff': 0.3}
+    """
+    factory = _REGISTRY.get(kind)
+    record = (steps or {}).get(RECORD_STEP.get(kind, kind)) or {}
+    if factory is None or not record:
+        return {}
+    rec = {str(k): v for k, v in (record.get("parameters") or {}).items()}
+    words = step_choices()
+    number = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and bool(np.isfinite(float(v)))
+    out: Dict[str, Any] = {}
+    for p in inspect.signature(factory).parameters:
+        if p in ("name", "method", "model"):
+            continue
+        takes = {str(w).lower() for w in words.get(f"{kind}.{p}", ())}
+        for key in (p, *RECORDED_AS.get(p, ())):
+            v = rec.get(key)
+            if number(v) and not takes:
+                out[p] = float(v)
+                break
+            if isinstance(v, str) and v.strip().lower() in takes:
+                out[p] = v.strip().lower()
+                break
+            lo, hi = rec.get(f"{key}_min"), rec.get(f"{key}_max")
+            if number(lo) and number(hi) and float(lo) == float(hi) and not takes:
+                out[p] = float(lo)
+                break
+    for p in ("method", "model"):
+        takes = {str(w).lower() for w in words.get(f"{kind}.{p}", ())}
+        if takes:
+            said = str(record.get("method") or "").strip().lower()
+            if said in takes:
+                out[p] = said
+            elif "auto" in takes:
+                out[p] = "auto"
+    if kind == "formation_water" and "rw" in out and "rw_temp_f" not in out:
+        out.pop("rw")                                      # an Rw without its temperature is not a stated Rw
+    return out
 
 #: The built-in step that makes each standard curve, for "how to fix" hints.
 _PRODUCERS = {
@@ -764,7 +872,7 @@ def porosity(method: str = "neutron_density", *, matrix: str = "sandstone",
         "clay_porosity": check.number("clay_porosity", clay_porosity, optional=False,
                                       fraction=True),
         "vcl_curve": check.curve("vcl_curve", vcl_curve, optional=True),
-        "hc_type": check.choice("hc_type", hc_type, ("oil", "gas")),
+        "hc_type": check.choice("hc_type", hc_type, _HC_TYPES),
     }
     uses = {"density": ("matrix_density",), "neutron": ("matrix_neutron",),
             "neutron_density": ("matrix_density", "matrix_neutron"),
@@ -1264,7 +1372,7 @@ def saturation(model: str = "archie", *, a: float = 1.0, m: float = 2.0, n: floa
         "matrix_density": check.number("matrix_density", matrix_density, minimum=1.5, maximum=4.0),
         "salinity_ppm": check.number("salinity_ppm", salinity_ppm, positive=True),
         "vcl_cutoff": check.number("vcl_cutoff", vcl_cutoff, fraction=True),
-        "lithology": check.choice("lithology", lithology, ("clastic", "carbonate"), optional=True),
+        "lithology": check.choice("lithology", lithology, _LITHOLOGY_DOMAINS, optional=True),
     }
     values = {
         "model": model,
@@ -1746,7 +1854,7 @@ def net_pay(*, vcl_cutoff: Optional[float] = None, phie_cutoff: Optional[float] 
         "vcl_cutoff": check.number("vcl_cutoff", vcl_cutoff, fraction=True),
         "phie_cutoff": check.number("phie_cutoff", phie_cutoff, fraction=True),
         "sw_cutoff": check.number("sw_cutoff", sw_cutoff, fraction=True),
-        "lithology": check.choice("lithology", lithology, ("clastic", "carbonate")),
+        "lithology": check.choice("lithology", lithology, _LITHOLOGY_DOMAINS),
         "vcl_curve": check.curve("vcl_curve", vcl_curve, optional=True),
         "phie_curve": check.required_curve("phie_curve", phie_curve),
         "sw_curve": check.required_curve("sw_curve", sw_curve),
