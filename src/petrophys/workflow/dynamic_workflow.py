@@ -1353,6 +1353,26 @@ class DynamicWorkflowConfig:
         self.lithology = self.lithology_domain
 
 
+
+def _fill_from_log(depth, measured, profile, finite):
+    """A measured temperature log with its gaps filled by the modelled profile, shifted to meet the log: inside a gap
+    the profile's change with depth, offset by the log-minus-profile difference at the gap's ends (linear between
+    them; the nearest reading's at the log's ends). The log is continuous across every gap; an unshifted profile
+    (a 30 C/km gradient from the surface) can sit tens of degrees off a mud-temperature log."""
+    measured = np.asarray(measured, dtype=float)
+    profile = np.asarray(profile, dtype=float)
+    finite = np.asarray(finite, dtype=bool)
+    if finite.all() or not finite.any():
+        return np.where(finite, measured, profile)
+    d = np.asarray(depth, dtype=float) if depth is not None else np.arange(measured.size, dtype=float)
+    ok = finite & np.isfinite(d) & np.isfinite(profile)
+    if not ok.any():
+        return np.where(finite, measured, profile)
+    order = np.argsort(d[ok], kind="stable")
+    offset = np.interp(d, d[ok][order], (measured - profile)[ok][order])
+    return np.where(finite, measured, profile + offset)
+
+
 def _explicit(config: Any) -> frozenset:
     """The settings the caller passed (``_explicit_settings``), empty when unknown."""
     return getattr(config, "_explicit_settings", None) or frozenset()
@@ -5875,11 +5895,12 @@ class DynamicWorkflow:
                 )
             elif coverage >= 0.5:
                 gaps = int(np.count_nonzero(~finite))
-                temperature = np.where(finite, measured_f, temperature)
+                temperature = _fill_from_log(well.depth, measured_f, temperature, finite)
                 source = "measured_temperature_log"
                 message = (
                     f"The input TEMP curve ({coverage:.0%} finite) is the temperature source, "
-                    f"kept as TEMP_LOG; the modelled {result.source} profile fills its {gaps} gaps."
+                    f"kept as TEMP_LOG; the modelled {result.source} profile, shifted to meet the log "
+                    f"at each gap's ends, fills its {gaps} gaps."
                 )
                 trace.parameters["temp_log_coverage"] = coverage
                 trace.parameters["temp_log_gap_samples"] = gaps
