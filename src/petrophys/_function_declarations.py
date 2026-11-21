@@ -1171,6 +1171,12 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         rho_matrix=value(unit="g/cc"),
         rho_fluid=value(unit="g/cc"),
     ),
+    "petrophys.interpretation.lithology.apparent_matrix.nd_crossplot_porosity": fn(
+        rhob=curve("RHOB", unit="g/cc"),
+        nphi=curve("NPHI"),
+        rho_fluid=value(unit="g/cc"),
+        nphi_fluid=value(unit="v/v"),
+    ),
     "petrophys.interpretation.lithology.apparent_matrix.electron_density": fn(
         rhob=curve("RHOB", unit="g/cc"),
     ),
@@ -2503,6 +2509,8 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         color_curve=curve_name(),
         depth_range=values(),
         figsize=values(unit="in"),
+        xlim=values(unit="v/v"),
+        ylim=values(unit="v/v"),
     ),
     "petrophys.visualization.lithology_crossplots.create_hingle_plot": fn(
         well=well(),
@@ -2515,12 +2523,15 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         a=value(),
         depth_range=values(),
         figsize=values(unit="in"),
+        xlim=values(unit="v/v"),
+        ylim=values(),
     ),
     "petrophys.visualization.lithology_crossplots.create_mid_plot": fn(
         well=well(),
         color_curve=curve_name(),
         depth_range=values(),
         figsize=values(unit="in"),
+        porosity_curve=curve_name("PHIT"),
     ),
     "petrophys.visualization.lithology_crossplots.create_mn_plot": fn(
         well=well(),
@@ -2621,6 +2632,8 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         m=value(),
         n=value(),
         figsize=values(unit="in"),
+        xlim=values(unit="v/v"),
+        ylim=values(unit="ohm.m"),
     ),
     "petrophys.visualization.saturation_height_plot.create_saturation_height_plot": fn(
         model=object_(),
@@ -2677,6 +2690,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         xrf=object_(),
         depth_range=values(),
         figsize=values(unit="in"),
+        concentration_unit=choice("%", "ppm"),
     ),
     "petrophys.visualization.zone_flags.add_zone_shading": fn(
         ax=object_(),
