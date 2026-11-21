@@ -27,6 +27,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from petrophys._internal.validation import numeric_array
 
 _FT_PER_M = 1.0 / 0.3048
 
@@ -114,9 +115,24 @@ def minimum_curvature(md: Any, inclination: Any, azimuth: Any,
     >>> float(traj["tvd"][-1])
     1000.0
     """
-    md = np.asarray(md, dtype=float)
-    inc = np.radians(np.asarray(inclination, dtype=float))
-    azi = np.radians(np.asarray(azimuth, dtype=float))
+    md = numeric_array(md, "Survey MD")
+    inclination = numeric_array(inclination, "Survey inclination")
+    azimuth = numeric_array(azimuth, "Survey azimuth")
+    if any(a.ndim != 1 for a in (md, inclination, azimuth)):
+        raise ValueError("Survey MD, inclination and azimuth must be one-dimensional arrays")
+    if not (len(md) == len(inclination) == len(azimuth)):
+        raise ValueError("Survey MD, inclination and azimuth must have the same number of stations")
+    if not all(np.isfinite(a).all() for a in (md, inclination, azimuth)):
+        raise ValueError("Survey MD, inclination and azimuth must contain finite values")
+    if np.any(np.diff(md) <= 0):
+        raise ValueError("Survey MD must be strictly increasing, without duplicate stations")
+    if np.any((inclination < 0) | (inclination > 180)):
+        raise ValueError("Survey inclination must be between 0 and 180 degrees")
+    course_length = numeric_array(course_length, "Survey course_length")
+    if course_length.ndim != 0 or not np.isfinite(course_length) or course_length <= 0:
+        raise ValueError("Survey course_length must be finite and greater than zero")
+    inc = np.radians(inclination)
+    azi = np.radians(azimuth)
     n = md.size
     tvd = np.zeros(n)
     north = np.zeros(n)

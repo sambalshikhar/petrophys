@@ -33,6 +33,7 @@ from petrophys.interpretation.lithology.apparent_matrix import (
     apparent_matrix_slowness,
     apparent_matrix_volumetric_pe,
     apparent_total_porosity,
+    nd_crossplot_porosity,
     electron_density,
     volumetric_photoelectric,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "apparent_matrix_slowness",
     "apparent_matrix_volumetric_pe",
     "apparent_total_porosity",
+    "nd_crossplot_porosity",
     "electron_density",
     "volumetric_photoelectric",
 ]

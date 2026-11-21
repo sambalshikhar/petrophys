@@ -41,6 +41,13 @@ jobs:
         if: matrix.python-version == '3.12'
         run: mypy
 
+      - name: Check scientific inputs and diagnostic plots
+        env:
+          MPLBACKEND: Agg
+        run: |
+          python scripts/check_input_validation.py
+          python scripts/check_diagnostic_plots.py
+
   tutorials:
     runs-on: ${{ matrix.os }}
     strategy:

@@ -21,6 +21,7 @@ import numpy as np
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.interpretation.saturation._inputs import (
     check_resistivity_parameters,
+    check_saturation_fractions,
     nonpositive_resistivity,
 )
 
@@ -111,6 +112,7 @@ def dual_water(
         If a scalar ``rw`` or ``rwb`` is at or below zero.
     """
     check_resistivity_parameters(rw=rw, rwb=rwb)
+    check_saturation_fractions(phi_t=phi_t, vcl=vcl)
     scalar_input = all(np.ndim(value) == 0 for value in (phi_t, rt, rw, rwb, vcl, phi_cl))
     phi_t, rt, rw, rwb, vcl = (np.asarray(value, dtype=float) for value in (phi_t, rt, rw, rwb, vcl))
     invalid = nonpositive_resistivity(rt, rw, rwb)

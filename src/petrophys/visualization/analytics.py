@@ -366,10 +366,13 @@ def _curve_by_well(wells: Any, curve: str) -> Tuple[Dict[str, np.ndarray], str]:
     ``"30/6-5"``, ``"30/6-5 (2)"``.
     """
     from petrophys.visualization.log_viewer import _resolve_curve_name_for_well
+    from petrophys.visualization._data import convert_values
+    from petrophys.preprocessing.standardization.alias_map import get_standard_unit
 
     items = list(wells.items()) if isinstance(wells, Mapping) else [(None, well) for well in wells]
     data: Dict[str, np.ndarray] = {}
-    units = set()
+    selected = []
+    target_unit = get_standard_unit(curve) or ""
     for label, item in items:
         well = getattr(item, "well", item)
         name = _resolve_curve_name_for_well(well, curve)
@@ -381,10 +384,13 @@ def _curve_by_well(wells: Any, curve: str) -> Tuple[Dict[str, np.ndarray], str]:
         while key in data:
             count += 1
             key = f"{base} ({count})"
-        data[key] = np.asarray(values.data, dtype=float)
-        units.add(str(values.unit or "").strip())
-    units.discard("")
-    return data, (units.pop() if len(units) == 1 else "")
+        selected.append((key, values))
+        if not target_unit and values.unit:
+            target_unit = str(values.unit).strip()
+        data[key] = None
+    for key, values in selected:
+        data[key] = convert_values(values.data, values.unit, target_unit, f"{key}: {curve}")
+    return data, target_unit
 
 
 @_styled_plot

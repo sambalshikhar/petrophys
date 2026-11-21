@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import numpy as np
 from typing import Union
+from petrophys._internal.validation import broadcast_inputs, warn_range
 
 Array = Union[float, np.ndarray]
 
@@ -48,10 +49,14 @@ def sdr_permeability(
     np.ndarray
         Permeability (mD).
     """
-    phi  = np.asarray(phi_frac, dtype=float)
-    t2lm = np.asarray(t2lm_ms,  dtype=float)
-    with np.errstate(invalid="ignore"):
-        return c * phi ** 4 * t2lm ** 2
+    phi, t2lm, c = broadcast_inputs(phi_frac=phi_frac, t2lm_ms=t2lm_ms, c=c)
+    warn_range(phi, "SDR porosity (fraction)", 0, 1)
+    warn_range(t2lm, "SDR T2 log mean (ms)", 0, open_lower=True)
+    warn_range(c, "SDR coefficient", 0, open_lower=True)
+    with np.errstate(invalid="ignore", over="ignore"):
+        result = c * phi ** 4 * t2lm ** 2
+    warn_range(result, "SDR permeability output (mD)", 0)
+    return result
 
 
 def coates_permeability(
@@ -89,13 +94,17 @@ def coates_permeability(
     np.ndarray
         Permeability (mD).  NaN where BVI = 0.
     """
-    phi = np.asarray(phi_pu, dtype=float)
-    ffi = np.asarray(ffi_pu, dtype=float)
-    bvi = np.asarray(bvi_pu, dtype=float)
+    phi, ffi, bvi, c = broadcast_inputs(phi_pu=phi_pu, ffi_pu=ffi_pu, bvi_pu=bvi_pu, c=c)
+    for name, values in (("porosity", phi), ("FFI", ffi), ("BVI", bvi)):
+        warn_range(values, f"Coates {name} (pu)", 0, 100,
+                   action="Values are retained; BVI at or below zero gives NaN permeability.")
+    warn_range(c, "Coates coefficient", 0, open_lower=True)
 
     with np.errstate(divide="ignore", invalid="ignore"):
         ratio = np.where(bvi > 0, ffi / bvi, np.nan)
-        return (phi / c) ** a * ratio ** b
+        result = (phi / c) ** a * ratio ** b
+    warn_range(result, "Coates permeability output (mD)", 0)
+    return result
 
 
 def t2lm_from_bins(

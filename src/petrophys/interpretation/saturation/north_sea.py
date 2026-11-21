@@ -26,6 +26,7 @@ import numpy as np
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.interpretation.saturation._inputs import (
     check_resistivity_parameters,
+    check_saturation_fractions,
     nonpositive_resistivity,
 )
 
@@ -77,6 +78,7 @@ def north_sea_shaly_sand(
         If a scalar ``rw`` or ``rtsh`` is at or below zero.
     """
     check_resistivity_parameters(rw=rw, rtsh=rtsh)
+    check_saturation_fractions(phi=phi, vsh=vsh)
     scalar = np.isscalar(rt) and np.isscalar(phi) and np.isscalar(vsh)
 
     rt = np.atleast_1d(np.asarray(rt, dtype=float))

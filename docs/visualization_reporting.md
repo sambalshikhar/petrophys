@@ -86,12 +86,16 @@ pp.plot(well, top=2830, bottom=2970)
 
 ## Crossplots
 
+Crossplots convert declared compatible units before plotting and leave the source well unchanged. Unknown or incompatible units raise a named error; missing units warn before assuming the chart unit. Pickett, Hingle and Buckles accept `xlim=` and `ylim=`; a note counts finite points outside the displayed range.
+
 Each crossplot answers one question. The lithology plots use the interval where PEF
 and sonic are both logged (2784-3176 m); the resistivity plots use the Statfjord water
 leg (3223-3556 m), where the clean sands plot near the water line (Sw 80-100 %).
 
 **Neutron-density** shows lithology and gas against the sandstone, limestone and
-dolomite lines:
+dolomite lines. The neutron-density and M-N references assume freshwater and
+limestone-referenced neutron response with linear mineral endpoints; they are not
+vendor-specific tool calibration charts:
 
 ```{code-cell} python
 from petrophys.visualization import (
@@ -108,14 +112,20 @@ create_nd_crossplot(result, depth_range=(2784, 3176));
 create_mn_plot(result, depth_range=(2784, 3176));
 ```
 
-**MID plot**: apparent matrix density against apparent matrix slowness:
+**MID plot**: apparent matrix density against apparent matrix slowness. It removes
+the freshwater contribution using `PHIT`, or an explicit total-porosity curve
+selected with `porosity_curve="MY_PHIT"`. Without total porosity it estimates
+porosity from linear quartz/calcite/water and calcite/dolomite/water triangles.
+Samples outside that clean binary-mineral model warn and are omitted. For gas,
+clay or complex mineral mixtures, supply independently determined total porosity:
 
 ```{code-cell} python
 create_mid_plot(result, depth_range=(2784, 3176));
 ```
 
 **Pickett plot**: log Rt against log porosity. Water-bearing rock falls on a straight
-line whose slope is -m and whose intercept gives Rw; lines of constant Sw lie
+line whose slope is -m and whose intercept at porosity 1 is a * Rw; with a known,
+Rw can be recovered. Rw must be at formation temperature. Lines of constant Sw lie
 above it. Here with the operator's Archie constants (a 0.8, m and n 2):
 
 ```{code-cell} python
@@ -130,7 +140,11 @@ the matrix point at zero porosity:
 create_hingle_plot(result, rw=0.07, a=0.8, depth_range=(3223, 3556));
 ```
 
-**Buckles plot**: points on one PHIE × Sw hyperbola are at irreducible water. HW-3,
+**Buckles plot**: each hyperbola represents constant bulk-volume water (porosity * Sw).
+Clustering along one hyperbola can support an irreducible-water interpretation,
+but constant BVW alone does not establish irreducible saturation. Only the
+physical segment with Sw <= 1 is drawn. The axis identifies total porosity when
+PHIT supplies the fallback. HW-3,
 a COSTA carbonate whose header carries Rw:
 
 ```{code-cell} python
@@ -180,8 +194,9 @@ costa = pp.read([pp.sample(name) for name in ["HW-3", "HW-4", "HW-5", "HW-6", "H
 create_multiwell_overlay(costa, "GR", normalize=True, title="Normalized GR, five COSTA wells");
 ```
 
-**Histogram comparison**: distributions on common bins, for example before
-normalization:
+**Histogram comparison**: distributions on common bins after conversion to a
+shared unit. Equivalent percent and fraction porosities share a distribution;
+incompatible declared units raise an error. For example:
 
 ```{code-cell} python
 create_histogram_comparison(costa, "GR", density=True, xlabel="GR (API)", title="GR by well");
@@ -223,6 +238,9 @@ create_heatmap(ntg, x=ntg.columns, y=ntg.index, cmap="RdYlGn", invert_yaxis=Fals
 ```
 
 Specialist displays (NMR panel, borehole images, XRF, saturation-height, core plots) are shown in {doc}`specialist_data`.
+The XRF panel converts all elements to one mass-concentration unit (`concentration_unit="%"`
+by default, or `"ppm"`) before drawing shared axes and calculating proxies.
+Missing element units warn and assume percent; unknown units raise an error.
 
 ## Controlling the log viewer
 

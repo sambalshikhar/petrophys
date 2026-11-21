@@ -124,6 +124,77 @@ your names or the standard ones. The visualization masterclass (tutorial 17) and
 the visualization guide show both on the Teapot Dome well, whose `SPR` curve no
 alias table knows.
 
+### Common service-company curve names
+
+The interpretation workflow recognizes these names and retains the source
+curves alongside its canonical working curves by default:
+
+| Measurement | Standard | Examples of recognized names |
+| --- | --- | --- |
+| Caliper | `CALI` | `HCAL`, `CAL`, `C1`, `C2`, `LCAL`, `CAL1`–`CAL8`, `CALA` (length units required) |
+| Density correction | `DRHO` | `HDRA`, `DCOR`, `DRH` |
+| Bulk density | `RHOB` | `RHOZ`, `ZDEN`, `RHOM`, `DEN` |
+| Neutron porosity | `NPHI` | `TNPH`, `CNL`, `APLC`, `NPHI_LS` |
+| Compressional sonic | `DTC` | `DT`, `DTCO`, `AC` |
+| Shear sonic | `DTS` | `DTSM`, `DT4S`, `DTRS` |
+| Deep resistivity | `RDEP` | `RD`, `ILD`, `IDPH`, `LLD`, `AT90` |
+| Medium resistivity | `RMED` | `RM`, `ILM`, `IMPH`, `AT30` |
+| Shallow resistivity | `RSHA` | `RS`, `LLS`, `SFLU`, `AT10` |
+| Photoelectric factor | `PEF` | `PE`, `PEFZ`, `PEFL` |
+
+Definitions can be checked against the service-company-supplied
+[Energistics PWLS catalogue](https://curves.energistics.org/catalog/SLB/curves/)
+and the [IODP logging-tool table](https://iodp.tamu.edu/publications/203_IR/chap_02/c2_t4.htm).
+Names are not universal: EDE-01 uses `CALA` in inches for ultrasonic caliper,
+whereas SLB also defines `CALA` as calibration waveform amplitude. Automatic
+caliper selection therefore requires a recognized length unit for `CALA`;
+a voltage or missing unit leaves it under its original name. Check the header
+before correcting a missing unit. Differential `DCAL` remains subject to the
+existing differential-caliper check.
+
+Orthogonal calipers remain separate source curves; selecting a working `CALI`
+does not average them. Stoneley `DTST` is not shear `DTS`, and acquisition
+suffixes such as EDE-01's `_CH` are not stripped automatically. Verify the
+tool, units, neutron matrix reference and acquisition conditions before using
+an explicit mapping for a specialized curve.
+
+## Warnings and invalid measurements
+
+Petrophys uses `DataQualityWarning` for suspect numerical inputs and impossible
+calculated results. Messages identify the quantity, affected sample count and
+up to five zero-based array positions. They say whether values were retained,
+replaced, clipped or converted to missing values.
+
+These checks include saturation fractions and resistivity, BVW, NMR permeability,
+Timur fallback inputs, core elastic properties, GR baseline ordering, density
+contrast and MHI classification. A warning does not repair a retained value:
+review the input before using that result. Ordinary missing `NaN` samples alone
+do not trigger these numerical range warnings.
+
+Capture warnings in a user interface or automated job:
+
+```python
+import warnings
+from petrophys.exceptions import DataQualityWarning
+
+with warnings.catch_warnings(record=True) as notices:
+    warnings.simplefilter("always", DataQualityWarning)
+    result = pp.interpret(well)
+messages = [str(item.message) for item in notices]
+```
+
+To turn data-quality warnings into exceptions, use
+`warnings.simplefilter("error", DataQualityWarning)`. A workflow can record an
+exception as a failed step; call `result.raise_for_errors()` when a job must
+fail if any step failed. Invalid types, incompatible
+survey arrays and unusable scalar parameters raise descriptive `ValueError`
+exceptions instead of continuing an undefined calculation.
+
+The core-table reader also records nonnumeric cells converted to `NaN` in
+`core.metadata["import_report"]["invalid_numeric_cells"]`, with the source
+column, count and zero-based data row positions. Empty cells and recognized
+missing-value tokens are distinguished from malformed text.
+
 ## Read the import report
 
 Every geology reader returns a table plus a report of what it accepted, mapped

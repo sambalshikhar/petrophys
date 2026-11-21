@@ -12,6 +12,10 @@ from petrophys.visualization.style import _styled_plot
 from typing import Optional, Tuple
 
 import numpy as np
+import warnings
+from petrophys.exceptions import DataQualityWarning
+from petrophys.visualization._data import depth_window
+from petrophys._internal.validation import numeric_array
 
 try:
     import matplotlib.pyplot as plt
@@ -40,22 +44,49 @@ def create_xrf_panel(
     xrf,
     depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (14, 11),
+    *, concentration_unit: str = "%",
 ):
-    """Build an XRF geochemistry panel from an :class:`XRFData` object."""
+    """Plot concentrations in one mass unit (% by default, or ppm).
+
+    A display copy is converted before curves and proxies are calculated;
+    source measurements and their units are retained on the input object.
+    Missing units warn and assume percent; unrecognized units are rejected.
+    """
+    from petrophys.interpretation.geochemistry.xrf import XRFData
+
+    factors = {"%": .01, "percent": .01, "pct": .01, "wt%": .01, "wt.%": .01,
+               "wt_pct": .01, "wtpct": .01, "ppm": 1e-6, "mg/kg": 1e-6, "ppb": 1e-9,
+               "fraction": 1., "frac": 1., "g/g": 1., "w/w": 1., "wt_frac": 1.,
+               "wtfrac": 1., "dec": 1., "decimal": 1.}
+    if concentration_unit not in ("%", "ppm"):
+        raise ValueError("concentration_unit must be '%' or 'ppm'")
+    elements = {}
+    units = getattr(xrf, "units", {}) or {}
+    depth = numeric_array(xrf.depth, "XRF depth")
+    if depth.ndim != 1:
+        raise ValueError("XRF depth must be one-dimensional")
+    for name, values in xrf.elements.items():
+        unit = next((str(v).strip().lower() for k, v in units.items() if str(k).casefold() == str(name).casefold()), "")
+        if not unit:
+            warnings.warn(f"XRF {name}: missing concentration unit; assuming % for display and proxies.",
+                          DataQualityWarning, stacklevel=2)
+            unit = "%"
+        if unit not in factors:
+            raise ValueError(f"XRF {name}: unsupported concentration unit {unit!r}; declare a mass concentration such as % or ppm")
+        values = numeric_array(values, f"XRF {name}")
+        if values.shape != depth.shape:
+            raise ValueError(f"XRF {name} values must match the depth array")
+        elements[name] = values * (factors[unit] / factors[concentration_unit])
+    xrf = XRFData(depth=depth, elements=elements,
+                  units={name: concentration_unit for name in elements}, metadata=getattr(xrf, "metadata", {}))
     depth = np.asarray(xrf.depth, dtype=float)
+    window = depth_window(depth, depth_range)
 
     def _sel(arr):
         arr = np.asarray(arr, dtype=float)
-        if depth_range is not None:
-            lo, hi = depth_range
-            return np.where((depth >= lo) & (depth <= hi), arr, np.nan)
-        return arr
+        return np.where(window, arr, np.nan)
 
-    proxies = {}
-    try:
-        proxies = xrf.mineral_proxies()
-    except Exception:
-        proxies = {}
+    proxies = xrf.mineral_proxies()
 
     n_tracks = len(_ELEMENT_GROUPS) + (1 if proxies else 0)
     fig, axes = plt.subplots(1, n_tracks, sharey=True, figsize=figsize)
@@ -92,7 +123,7 @@ def create_xrf_panel(
 
     axes[0].invert_yaxis()
     axes[0].set_ylabel("Depth")
-    name = getattr(getattr(xrf, "header", None), "well_name", None)
+    name = (xrf.metadata or {}).get("well")
     fig.suptitle(f"XRF geochemistry{(' — ' + name) if name else ''}", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     return fig

@@ -24,6 +24,7 @@ import numpy as np
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.interpretation.saturation._inputs import (
     check_resistivity_parameters,
+    check_saturation_fractions,
     nonpositive_resistivity,
 )
 
@@ -157,6 +158,7 @@ def waxman_smits(
         If a scalar ``rw`` is at or below zero.
     """
     check_resistivity_parameters(rw=rw)
+    check_saturation_fractions(phi_t=phi_t)
     scalar_input = np.isscalar(phi_t) and np.isscalar(rt) and np.isscalar(rw)
 
     phi_t, rt = np.broadcast_arrays(

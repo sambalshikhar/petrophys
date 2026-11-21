@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
+from petrophys.exceptions import DataQualityWarning
 
 from petrophys.io.survey_reader import _depth_unit_from, _name_and_unit
 
@@ -151,7 +152,22 @@ def read_core(
     def numbers(role: str) -> Optional[np.ndarray]:
         if role not in found:
             return None
-        values = pd.to_numeric(table[found[role]], errors="coerce").to_numpy(dtype=float, copy=True)
+        column = found[role]
+        raw = table[column]
+        converted = pd.to_numeric(raw, errors="coerce")
+        text = raw.astype(str).str.strip().str.lower()
+        present = raw.notna() & ~text.isin(("", "nan", "na", "n/a", "null", "none"))
+        invalid = present & converted.isna()
+        if invalid.any():
+            positions = np.flatnonzero(invalid.to_numpy()).tolist()
+            report.setdefault("invalid_numeric_cells", {})[str(column)] = {
+                "count": len(positions), "row_positions": positions,
+            }
+            report["warnings"].append(
+                f"Column {column!r}: {len(positions)} nonnumeric value(s) replaced by NaN "
+                f"at zero-based data row positions {positions[:5]}"
+            )
+        values = converted.to_numpy(dtype=float, copy=True)
         values[values <= -999.0] = np.nan
         return values
 
@@ -203,7 +219,7 @@ def read_core(
         metadata["kv"] = pick(kv)
     metadata["import_report"] = report
     for message in report["warnings"]:
-        warnings.warn(f"Core table: {message}", UserWarning, stacklevel=2)
+        warnings.warn(f"Core table: {message}", DataQualityWarning, stacklevel=2)
     lithology = table[found["lithology"]].to_numpy()[keep][order] if "lithology" in found else None
     return CoreData(
         depth=depth[keep][order], porosity=pick(converted["porosity"]), permeability=pick(perm),

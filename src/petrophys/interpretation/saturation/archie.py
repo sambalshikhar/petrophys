@@ -19,6 +19,7 @@ import numpy as np
 
 from petrophys.interpretation.saturation._inputs import (
     check_resistivity_parameters,
+    check_saturation_fractions,
     nonpositive_resistivity,
 )
 
@@ -69,6 +70,7 @@ def archie(
     Sw = 0.35
     """
     check_resistivity_parameters(rw=rw)
+    check_saturation_fractions(phi=phi)
     rt = np.asarray(rt, dtype=float)
     rw = np.asarray(rw, dtype=float)
     phi = np.asarray(phi, dtype=float)

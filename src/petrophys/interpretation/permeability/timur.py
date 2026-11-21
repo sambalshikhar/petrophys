@@ -11,6 +11,7 @@ water saturation relationships for sandstone reservoirs. *The Log Analyst*
 from typing import Union
 
 import numpy as np
+from petrophys._internal.validation import broadcast_inputs, warn_range
 
 
 def timur(
@@ -50,11 +51,17 @@ def timur(
     """
     # Apply the same nonpositive-input fallback for scalars and arrays.
     # Positive values, including small fractions, retain their measured value.
-    swi = np.asarray(swi, dtype=float)
-    phi = np.asarray(phi, dtype=float)
+    phi, swi = broadcast_inputs(phi=phi, swi=swi)
+    warn_range(phi, "Timur porosity (fraction)", 0, 1, open_lower=True,
+               action="Nonpositive porosity is replaced by 0.001; other values are retained.")
+    warn_range(swi, "Timur irreducible water saturation (fraction)", 0, 1, open_lower=True,
+               action="Nonpositive Swirr is replaced by 0.01; other values are retained.")
     swi = np.where(swi <= 0, 0.01, swi)
     phi = np.where(phi <= 0, 0.001, phi)
 
     phi_pct = phi * 100.0
     swi_pct = swi * 100.0
-    return a * np.power(phi_pct, b) / np.power(swi_pct, c)
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        result = a * np.power(phi_pct, b) / np.power(swi_pct, c)
+    warn_range(result, "Timur permeability output (mD)", 0)
+    return result

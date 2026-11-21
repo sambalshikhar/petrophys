@@ -119,6 +119,18 @@ def _curve_standardization_priority(curve: "Curve") -> int:
 _SHALLOWER_ARRAY_DEEP_ALIASES = {"AT60": "AT90", "AO60": "AO90"}
 
 
+def _unconfirmed_cala(mnemonic: str, curve: "Curve") -> bool:
+    """CALA is also a voltage channel; require length units for a caliper alias.
+
+    EDE-01 uses CALA in inches for its ultrasonic caliper. SLB's PWLS
+    catalogue also uses CALA for calibration waveform amplitude.
+    """
+    return (
+        base_curve_mnemonic(mnemonic) == "CALA"
+        and get_conversion_factor(str(curve.unit or "").strip(), "in") is None
+    )
+
+
 def _differential_caliper(mnemonic: str, curve: "Curve") -> bool:
     """True for a DCAL holding a differential caliper (caliper minus bit size).
 
@@ -198,7 +210,9 @@ def add_standard_curve_aliases(
                 continue
             if base not in alias_rank:
                 continue
-            if standard == "CALI" and _differential_caliper(mnemonic, curve):
+            if standard == "CALI" and (
+                _differential_caliper(mnemonic, curve) or _unconfirmed_cala(mnemonic, curve)
+            ):
                 continue
             shallower_array = (
                 prefer_deepest_array
@@ -807,8 +821,11 @@ class CurveStandardizer:
             # Get standard name
             user_named = user_standard_name(well, mnemonic)
             standard_name = user_named or self.get_standard_name(mnemonic)
+            if standard_name == "CALI" and _unconfirmed_cala(mnemonic, curve):
+                new_curves[mnemonic] = curve.copy()
+                continue
             if standard_name == "CALI" and _differential_caliper(mnemonic, curve):
-                # DCAL holding caliper minus bit size is not a hole diameter.
+                # Differential or unconfirmed calipers must keep their own names.
                 standard_name = mnemonic
             source_priority = _curve_standardization_priority(curve)
             eligible_for_standard_slot = source_priority >= 0
@@ -957,10 +974,13 @@ class CurveStandardizer:
 
         new_curve = curve.copy()
 
+        if _unconfirmed_cala(curve.mnemonic, curve):
+            return new_curve
+
         if rename:
             standard_name = self.get_standard_name(curve.mnemonic)
             if standard_name == "CALI" and _differential_caliper(curve.mnemonic, curve):
-                # DCAL holding caliper minus bit size is not a hole diameter.
+                # Differential or unconfirmed calipers must keep their own names.
                 standard_name = curve.mnemonic
             new_curve.mnemonic = standard_name
         else:
@@ -1016,7 +1036,12 @@ class CurveStandardizer:
         aliases = get_aliases(curve_type)
         for alias in aliases:
             if alias in well._curves:
-                return well._curves[alias]
+                curve = well._curves[alias]
+                if curve_type == "CALI" and (
+                    _unconfirmed_cala(alias, curve) or _differential_caliper(alias, curve)
+                ):
+                    continue
+                return curve
 
         # Search custom aliases
         custom = self._custom_aliases.get(curve_type, [])
@@ -1053,6 +1078,9 @@ class CurveStandardizer:
 
         for mnemonic in well.curves:
             standard = self.get_standard_name(mnemonic)
+            if standard == "CALI" and _unconfirmed_cala(mnemonic, well._curves[mnemonic]):
+                report["unrecognized"].append(mnemonic)
+                continue
 
             if standard != mnemonic:
                 report["recognized"].append({

@@ -20,6 +20,10 @@ except ImportError:
     HAS_MATPLOTLIB = False
 
 import numpy as np
+from petrophys._internal.validation import numeric_array, warn_invalid
+from petrophys.visualization._data import (
+    archie_parameters, paired_values, chart_limits, note_outside_axes, curve_values, porosity_label,
+)
 
 
 class PickettPlot:
@@ -47,9 +51,12 @@ class PickettPlot:
         a: float = 1.0,
         m: float = 2.0,
         n: float = 2.0,
-        sw_lines: list = [0.2, 0.4, 0.6, 0.8, 1.0],
+        sw_lines: Optional[list] = None,
         title: str = "Pickett Plot",
-        color_label: str = "Depth"
+        color_label: str = "Depth",
+        xlim: Tuple[float, float] = (.01, .5),
+        ylim: Tuple[float, float] = (.1, 1000.),
+        x_label: str = "Effective porosity (v/v)",
     ) -> Tuple[Figure, Axes]:
         """
         Create the Pickett plot.
@@ -82,10 +89,19 @@ class PickettPlot:
         tuple
             (Figure, Axes)
         """
+        rw, a, m, n = archie_parameters(rw, a, m, n)
+        xlim, ylim = chart_limits(xlim, "xlim", logarithmic=True), chart_limits(ylim, "ylim", logarithmic=True)
+        sw_lines = numeric_array([.2, .4, .6, .8, 1.] if sw_lines is None else sw_lines, "sw_lines")
+        if sw_lines.ndim != 1 or not sw_lines.size or np.any(~np.isfinite(sw_lines) | (sw_lines <= 0) | (sw_lines > 1)):
+            raise ValueError("sw_lines must be a nonempty one-dimensional array of saturations in (0,1]")
+        phie, rt, color_data = paired_values(phie, rt, color_data)
         self.fig, self.ax = plt.subplots(figsize=self.figsize)
 
         # Remove NaN and invalid values
-        mask = ~np.isnan(phie) & ~np.isnan(rt) & (phie > 0) & (rt > 0)
+        invalid = (np.isfinite(phie) & ((phie <= 0) | (phie > 1))) | (np.isfinite(rt) & (rt <= 0)) | np.isinf(phie) | np.isinf(rt)
+        warn_invalid(invalid, "Pickett input", "require porosity in (0,1] and finite positive resistivity",
+                     "Invalid points are omitted from this plot.")
+        mask = np.isfinite(phie) & np.isfinite(rt) & ~invalid
         phie_valid = phie[mask]
         rt_valid = rt[mask]
 
@@ -105,7 +121,7 @@ class PickettPlot:
             self.ax.scatter(phie_valid, rt_valid, s=5, alpha=0.7, edgecolors='none')
 
         # Add Sw isolines
-        phie_range = np.logspace(-2, 0, 100)  # 0.01 to 1.0
+        phie_range = np.geomspace(*xlim, 120)
 
         for i, sw in enumerate(sorted(sw_lines)):
             # Archie equation: Rt = a * Rw / (PHIE^m * Sw^n)
@@ -113,7 +129,11 @@ class PickettPlot:
             self.ax.plot(phie_range, rt_line, 'k--', linewidth=0.5, alpha=0.7)
             # Each label sits further along its line than the one before, so
             # the labels of closely spaced lines step apart instead of stacking.
-            label_idx = min(len(phie_range) // 3 + 8 * i, len(phie_range) - 1)
+            visible = np.flatnonzero((rt_line > ylim[0]*1.2) & (rt_line < ylim[1]/1.3)
+                                     & (phie_range > xlim[0]*1.15) & (phie_range < xlim[1]/1.1))
+            if not visible.size:
+                continue
+            label_idx = visible[min(int(len(visible)*(.15 + .14*i)), len(visible)-1)]
             self.ax.annotate(
                 f'Sw={sw:.0%}',
                 (phie_range[label_idx], rt_line[label_idx]),
@@ -127,16 +147,18 @@ class PickettPlot:
 
         # Set limits. The porosity axis spans less than two decades, so
         # matplotlib would label minor ticks and the labels would collide.
-        self.ax.set_xlim(0.01, 0.5)
-        self.ax.set_ylim(0.1, 1000)
-        self.ax.set_xticks([0.01, 0.02, 0.05, 0.1, 0.2, 0.5])
+        self.ax.set_xlim(xlim)
+        self.ax.set_ylim(ylim)
+        if xlim == (.01, .5):
+            self.ax.set_xticks([0.01, 0.02, 0.05, 0.1, 0.2, 0.5])
         self.ax.xaxis.set_major_formatter(FormatStrFormatter("%g"))
         self.ax.xaxis.set_minor_formatter(NullFormatter())
 
         # Labels
-        self.ax.set_xlabel('Effective Porosity (PHIE)')
+        self.ax.set_xlabel(x_label)
         self.ax.set_ylabel('True Resistivity (Rt) [ohm.m]')
-        self.ax.set_title(f'{title}\na={a}, m={m}, n={n}, Rw={rw:.3f}')
+        self.ax.set_title(f'{title}\na={a:g}, m={m:g}, n={n:g}, Rw={rw:.3f} ohm.m')
+        note_outside_axes(self.ax, phie_valid, rt_valid)
         self.ax.grid(True, alpha=0.3, which='both')
 
         return self.fig, self.ax
@@ -230,7 +252,8 @@ def create_pickett_plot(
     a: float = 1.0,
     m: float = 2.0,
     n: float = 2.0,
-    figsize: Tuple[float, float] = (10, 8)
+    figsize: Tuple[float, float] = (10, 8),
+    *, xlim: Tuple[float, float] = (.01, .5), ylim: Tuple[float, float] = (.1, 1000.),
 ) -> PickettPlot:
     """
     Create a Pickett plot from well data.
@@ -263,25 +286,22 @@ def create_pickett_plot(
     PickettPlot
         The created plot
     """
-    phie_c = well.get(phie_curve)
+    phie, _, phi_sources = curve_values(well, [phie_curve], depth_range, "v/v")
     rt_names = [rt_curve] if rt_curve is not None else ["RT", "RDEP"]
-    rt_c = next((well.get(name) for name in rt_names if well.get(name) is not None), None)
+    rt, _, _ = curve_values(well, rt_names, depth_range, "ohm.m")
 
-    if phie_c is None:
+    if phie is None:
         raise ValueError(f"Curve '{phie_curve}' not found")
-    if rt_c is None:
+    if rt is None:
         raise ValueError(f"Curve {' or '.join(repr(name) for name in rt_names)} not found")
-
-    phie = phie_c.data
-    rt = rt_c.data
 
     color_data = None
     color_label = "Value"
     if color_curve:
-        c_c = well.get(color_curve)
-        if c_c is not None:
-            color_data = c_c.data
-            color_label = f"{color_curve} [{c_c.unit}]"
+        color_data, _, _ = curve_values(well, [color_curve], depth_range)
+        if color_data is not None:
+            c_c = well.get(color_curve)
+            color_label = f"{color_curve} [{getattr(c_c, 'unit', '')}]"
         else:
             warnings.warn(
                 f"Colour curve '{color_curve}' not found; plotting without colour.",
@@ -294,18 +314,9 @@ def create_pickett_plot(
         depth_unit = getattr(well, "depth_unit", "") or ""
         color_label = f"Depth [{depth_unit}]" if depth_unit else "Depth"
 
-    # Apply depth range
-    if depth_range:
-        depth = well.depth
-        mask = (depth >= depth_range[0]) & (depth <= depth_range[1])
-        phie = phie[mask]
-        rt = rt[mask]
-        if color_data is not None:
-            color_data = color_data[mask]
-
     well_name = well.name or "Unknown Well"
     title = f"Pickett Plot - {well_name}"
-    if depth_range:
+    if depth_range is not None:
         # Name the window, so a water-leg check reads as one.
         unit = f" {well.depth_unit}" if getattr(well, "depth_unit", None) else ""
         title += f" ({min(depth_range):g}-{max(depth_range):g}{unit})"
@@ -316,7 +327,8 @@ def create_pickett_plot(
         color_data=color_data,
         a=a, m=m, n=n,
         title=title,
-        color_label=color_label
+        color_label=color_label,
+        xlim=xlim, ylim=ylim, x_label=porosity_label(phi_sources),
     )
 
     return plot

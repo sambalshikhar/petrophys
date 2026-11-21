@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 
 from petrophys._internal.benchmark import reproducing_benchmark
+from petrophys._internal.validation import warn_range
 
 
 def check_resistivity_parameters(**parameters: Any) -> None:
@@ -27,8 +28,16 @@ def check_resistivity_parameters(**parameters: Any) -> None:
         if value is None or np.ndim(value) != 0:
             continue
         value = float(np.asarray(value, dtype=float))
-        if value <= 0.0:
-            raise ValueError(f"{name} must be a positive resistivity (ohm.m); got {value:g}")
+        if not np.isfinite(value) or value <= 0.0:
+            raise ValueError(f"{name} must be a finite positive resistivity (ohm.m); got {value:g}")
+
+
+def check_saturation_fractions(**fractions: Any) -> None:
+    """Warn before fraction inputs are floored or clipped by a saturation model."""
+    for name, value in fractions.items():
+        warn_range(value, f"Saturation {name} (fraction)", 0, 1,
+                   open_lower=name in {"phi", "phi_t"},
+                   action="The model's existing floors and clipping are applied; review the input and result.")
 
 
 def nonpositive_resistivity(*values: Any) -> np.ndarray:
@@ -40,6 +49,8 @@ def nonpositive_resistivity(*values: Any) -> np.ndarray:
     if reproducing_benchmark():
         return mask
     for value in values:
+        warn_range(value, "Saturation resistivity (ohm.m)", 0, open_lower=True,
+                   action="Nonpositive samples give NaN saturation; review nonfinite resistivity measurements.")
         with np.errstate(invalid="ignore"):
             mask = mask | (np.asarray(value, dtype=float) <= 0.0)
     return mask

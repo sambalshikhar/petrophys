@@ -14,6 +14,7 @@ AAPG Methods in Exploration 16.
 
 from typing import Union
 import numpy as np
+from petrophys._internal.validation import broadcast_inputs, warn_invalid, warn_range
 
 
 def density_porosity(
@@ -47,10 +48,17 @@ def density_porosity(
     >>> print(f"PHID = {phid:.3f}")
     PHID = 0.182
     """
-    rhob_arr = np.asarray(rhob, dtype=float)
-    rhob_matrix_arr = np.asarray(rhob_matrix, dtype=float)
-    rhob_fluid_arr = np.asarray(rhob_fluid, dtype=float)
+    rhob_arr, rhob_matrix_arr, rhob_fluid_arr = broadcast_inputs(
+        rhob=rhob, rhob_matrix=rhob_matrix, rhob_fluid=rhob_fluid)
+    for name, values in (("bulk", rhob_arr), ("matrix", rhob_matrix_arr), ("fluid", rhob_fluid_arr)):
+        warn_range(values, f"Density porosity {name} density (g/cm3)", 0, open_lower=True,
+                   action="Values are retained; porosity is clipped to 0-0.5 or returned as NaN.")
     denominator = rhob_matrix_arr - rhob_fluid_arr
+    warn_invalid(
+        np.isfinite(denominator) & (denominator <= 0),
+        "Density porosity matrix-fluid density contrast", "require matrix density greater than fluid density",
+        "Zero contrast gives NaN; a negative contrast is retained and can give misleading clipped porosity.",
+    )
 
     with np.errstate(divide="ignore", invalid="ignore"):
         phid = np.where(
