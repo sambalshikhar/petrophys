@@ -23,6 +23,7 @@ except Exception:  # pragma: no cover
 from petrophys.visualization._data import (
     curve_values, porosity_label, note_outside_axes, archie_parameters, chart_limits,
 )
+from petrophys._internal.advice import Advice
 from petrophys._internal.validation import warn_invalid
 
 
@@ -181,7 +182,8 @@ def create_mid_plot(
             raise ValueError(f"MID total-porosity curve {porosity_curve!r} has no finite data in the requested window")
         nphi, _ = _xy(well, ["NPHI", "PHIN"], depth_range, "v/v")
         if nphi is None:
-            raise ValueError("MID needs PHIT, porosity_curve=, or NPHI for the clean neutron-density estimate")
+            raise ValueError(Advice("MID needs PHIT, porosity_curve=, or NPHI for the clean neutron-density estimate",
+                                    ("porosity_curve",)))
         phi = nd_crossplot_porosity(rhob, nphi)
         method = "linear clean neutron-density porosity estimate"
     warn_invalid(
