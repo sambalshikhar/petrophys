@@ -1118,6 +1118,9 @@ class LogCurveSpec:
     #: For an imputed curve beside the curve it rebuilds: that curve's mnemonic.
     #: The imputed curve is drawn only where that curve has no value.
     gaps_of: Optional[str] = None
+    #: Drawn when asked for by name (``curves=``), not in the automatic layout:
+    #: intermediate curves such as PHID or MHI that would crowd the track.
+    on_request: bool = False
 
 
 @dataclass
@@ -1314,14 +1317,16 @@ def _imputed_curve_for(well: "Well", spec: "LogCurveSpec", resolved: Optional[st
 
 
 def _imputed_spec(spec: "LogCurveSpec", imputed: str, measured: Optional[str] = None) -> "LogCurveSpec":
-    """``spec`` for its imputed curve: the same track and scale, dashed, labelled as imputed.
+    """``spec`` for its imputed curve: the same track and scale, solid grey, labelled
+    with the curve's own name as imputed.
 
     Beside the ``measured`` curve it rebuilds, it is drawn only in that curve's gaps.
     """
+    base = imputed[: -len(IMPUTED_SUFFIX)] if imputed.upper().endswith(IMPUTED_SUFFIX) else imputed
     return replace(
-        spec, curve_name=imputed, candidates=[], line_style="--", fill=None,
-        left_crossover=None, right_crossover=None, gaps_of=measured,
-        display_name=f"{spec.display_name or spec.curve_name} imputed",
+        spec, curve_name=imputed, candidates=[], line_style="-", color="#636363", line_width=1.0,
+        fill=None, left_crossover=None, right_crossover=None, gaps_of=measured,
+        display_name=f"{base} imputed",
     )
 
 
@@ -1433,6 +1438,7 @@ def create_adaptive_log_viewer_template(
     well: "Well",
     max_generic_tracks: int = 0,
     generic_curves_per_track: int = 3,
+    include_on_request: bool = False,
 ) -> LogViewerTemplate:
     """
     Build a plotting template from the curves actually present on a well.
@@ -1483,6 +1489,8 @@ def create_adaptive_log_viewer_template(
         track_specs: List[LogCurveSpec] = []
         track_resolved = set()
         for spec in specs:
+            if spec.on_request and not include_on_request:
+                continue
             resolved = _resolve_curve_name_for_well(well, spec.curve_name, spec.candidates)
             if resolved is None:
                 # A curve rebuilt by imputation takes the place of the one it rebuilds.
@@ -1551,6 +1559,10 @@ def create_adaptive_log_viewer_template(
             _adaptive_spec("GR", "GR", 0, 150, "#1b7837", fill="left", fill_color="#d9f0d3"),
             # VCL is a line here; clay volume is shaded in the mineral volumes track.
             _adaptive_spec("VCL", "VCL", 0, 1, "#8c510a"),
+            # The clay volume of each method, for comparing them by name.
+            replace(_adaptive_spec("VCL_GR", "VCL_GR", 0, 1, "#1b7837", line_style="--"), on_request=True),
+            replace(_adaptive_spec("VCL_ND", "VCL_ND", 0, 1, "#7b3294", line_style="--"), on_request=True),
+            replace(_adaptive_spec("VCL_SP", "VCL_SP", 0, 1, "#4d4d4d", line_style="-."), on_request=True),
             # Washout: caliper larger than bit size.
             replace(_adaptive_spec("CALI", "CALI", 6, 16, "#d73027", fill_color="#f4a582", fill_alpha=0.45),
                     left_crossover=washout),
@@ -1612,13 +1624,15 @@ def create_adaptive_log_viewer_template(
     add_track(
         "POROSITY",
         [
-            _adaptive_spec("PHIT", "PHIT", 0.45, 0, "#253494"),
+            # PHIT to PHIE is the clay-bound water (grey).
+            replace(_adaptive_spec("PHIT", "PHIT", 0.45, 0, "#000000", fill_color="#bdbdbd", fill_alpha=0.5),
+                    right_crossover="PHIE"),
             _adaptive_spec("PHIT_GAS_CORR", "PHIT Gas", 0.45, 0, "#313695", line_style="--"),
             _adaptive_spec("PHIE", "PHIE", 0.45, 0, "#d73027", fill="right", fill_color="#fee08b"),
             _adaptive_spec("PHIE_CC", "PHIE_CC", 0.45, 0, "#7b3294", line_style="--"),
-            _adaptive_spec("PHID", "PHID", 0.45, 0, "#ef8a62"),
-            _adaptive_spec("PHIS", "PHIS", 0.45, 0, "#1a9850"),
-            _adaptive_spec("PHIN", "PHIN", 0.45, 0, "#0571b0"),
+            replace(_adaptive_spec("PHID", "PHID", 0.45, 0, "#ef8a62"), on_request=True),
+            replace(_adaptive_spec("PHIS", "PHIS", 0.45, 0, "#1a9850"), on_request=True),
+            replace(_adaptive_spec("PHIN", "PHIN", 0.45, 0, "#0571b0"), on_request=True),
             _adaptive_spec("PHIC", "PHIC", 0.45, 0, "#000000", marker="x"),
             # NMR total porosity, free fluid and bound water (CMR, MRIL).
             replace(_adaptive_spec("NMR_PHIT", "NMR total", 0.45, 0, "#4d4d4d", line_style="-."),
@@ -1628,7 +1642,7 @@ def create_adaptive_log_viewer_template(
             replace(_adaptive_spec("NMR_BVI", "NMR bound", 0.45, 0, "#b15928", line_style=":"),
                     candidates=["MBVI", "CBVI", "NMR_BVI", "CMR_BVI", "BVI"]),
             # Bulk volume water on the porosity scale: PHIE to BVW is hydrocarbon (yellow), BVW to 0 water.
-            _adaptive_spec("BVW", "BVW", 0.45, 0, "#08519c", fill="right", fill_color="#6baed6", fill_alpha=0.6),
+            _adaptive_spec("BVW", "BVW", 0.45, 0, "#08519c", fill="right", fill_color="#6baed6", fill_alpha=0.9),
         ],
         width=1.35,
     )
@@ -1637,8 +1651,9 @@ def create_adaptive_log_viewer_template(
         [
             _adaptive_spec("SW", "Sw", 1, 0, "#0571b0", fill="right", fill_color="#9ecae1"),
             _adaptive_spec("SXO", "Sxo", 1, 0, "#41b6c4", line_style="--"),
-            _adaptive_spec("MHI", "MHI", 1, 0, "#d73027"),
-            _adaptive_spec("SWIRR_APP", "Swirr", 1, 0, "#762a83"),
+            # MHI is a ratio, not a saturation: by name only, on its own scale.
+            replace(_adaptive_spec("MHI", "MHI", 0, 1.5, "#d73027"), on_request=True),
+            replace(_adaptive_spec("SWIRR_APP", "Swirr", 1, 0, "#762a83"), on_request=True),
             _adaptive_spec("SWC", "Sw Core", 1, 0, "#08519c", marker="x"),
             _adaptive_spec("SW_INPUT", "Sw input", 1, 0, "#4d4d4d", line_style="--"),
             _adaptive_spec("SOC", "So Core", 0, 1, "#b35806", marker="o"),
@@ -2122,7 +2137,8 @@ class LogViewer:
             # A raw well shows every logged curve: those no named track takes
             # go to generic tracks. An interpretation's plot keeps its tracks.
             self.template = create_adaptive_log_viewer_template(
-                self.well, max_generic_tracks=0 if interpreted else _RAW_GENERIC_TRACKS
+                self.well, max_generic_tracks=0 if interpreted else _RAW_GENERIC_TRACKS,
+                include_on_request=curves is not None,
             )
             self._adaptive_template = True
         else:
@@ -2305,6 +2321,14 @@ class LogViewer:
                         satisfied.add(spec.curve_name.upper())
                         placed.add(targets[spec.curve_name.upper()])
             if specs:
+                # A track that kept neither its first curve nor its namesakes is
+                # named after what it holds (no "GAMMA / HOLE" over VCL alone).
+                if track.curves and specs[0] is not track.curves[0] and track.curves[0] not in specs:
+                    shown = [str(spec.display_name or spec.curve_name) for spec in specs]
+                    if all(name.upper().startswith("VCL") for name in shown):
+                        track.display_name = "CLAY VOLUME"
+                    else:
+                        track.display_name = " / ".join(shown[:3]).upper()
                 # A crossover fill needs its partner curve in the same track.
                 names = {spec.curve_name.upper() for spec in specs}
                 track.curves = [
@@ -2335,7 +2359,7 @@ class LogViewer:
                         spec, curve_name=available[key], candidates=[], line_style="-", fill=None,
                         color="#000000", line_width=1.0,  # stands out from the measured curve
                         left_crossover=None, right_crossover=None, gaps_of=None,
-                        display_name=f"{spec.display_name or spec.curve_name} predicted"))
+                        display_name=f"{available[key][: -len(PREDICTED_SUFFIX)]} predicted"))
                     satisfied.add(name)
                     placed.add(key)
                     break
@@ -2803,6 +2827,11 @@ class LogViewer:
             if not np.any(finite):
                 self._warn_missing(f"{spec.curve_name} (no finite values after scaling)")
                 continue
+            if spec.gaps_of:
+                # An imputed curve with no gap to fill in the plotted window is left out.
+                low, high = sorted(ax.get_ylim())
+                if not np.any(finite & (depth >= low) & (depth <= high)):
+                    continue
 
             label = self._curve_label(self._display_label(spec, curve), curve)
             self._warn_off_scale(ax, curve, data, x, depth, finite, left, right)
@@ -4285,7 +4314,9 @@ class LogViewer:
         # Labels wider than the first track run over the next tracks instead
         # of being cut off beneath them.
         label_ax.set_zorder(max(ax.get_zorder() for ax in self.axes) + 1)
-        for depth, names in grouped.items():
+        ordered = sorted(grouped)
+        for position, depth in enumerate(ordered):
+            names = grouped[depth]
             for ax in self.axes:
                 ax.axhline(depth, linewidth=0.7, color="black", alpha=0.85, zorder=7)
             if depth >= hi:
@@ -4294,21 +4325,25 @@ class LogViewer:
                     {"name": name, "depth": depth, "reason": "at the bottom of the window"} for name in names
                 )
                 continue
-            if depth < next_label_depth:
+            # A label crowded by the one above moves down inside its own interval;
+            # it is left out only when it would reach the next top.
+            place = max(depth, next_label_depth)
+            limit = ordered[position + 1] if position + 1 < len(ordered) else hi
+            if place > depth and place + span * 0.035 * len(names) > limit:
                 self.suppressed_formation_labels.extend(
                     {"name": name, "depth": depth, "reason": "label spacing"} for name in names
                 )
                 continue
             # A label that would hang below the window sits above its top line.
-            above = depth + span * 0.035 * len(names) > hi
+            above = place + span * 0.035 * len(names) > hi
             label_ax.annotate(
-                "\n".join(names), xy=(0.02, depth), xycoords=("axes fraction", "data"),
+                "\n".join(names), xy=(0.02, place), xycoords=("axes fraction", "data"),
                 xytext=(2, 2 if above else -2), textcoords="offset points", fontsize=8.0,
                 fontweight="bold", color="black", ha="left", va="bottom" if above else "top",
                 bbox={"boxstyle": "square,pad=0.12", "facecolor": "white",
                       "edgecolor": "none", "alpha": 0.72}, zorder=8,
             )
-            next_label_depth = depth + span * 0.035 * len(names)
+            next_label_depth = place + span * 0.035 * len(names)
 
     @property
     def diagnostics(self) -> Dict[str, Any]:

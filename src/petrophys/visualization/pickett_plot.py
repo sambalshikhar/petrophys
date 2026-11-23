@@ -116,6 +116,8 @@ class PickettPlot:
                 cmap=colormap, edgecolors='none', plotnonfinite=True
             )
             cbar = self.fig.colorbar(scatter, ax=self.ax)
+            if cbar.solids is not None:  # opaque, whatever the points' transparency
+                cbar.solids.set_alpha(1.0)
             cbar.set_label(color_label)
         else:
             self.ax.scatter(phie_valid, rt_valid, s=5, alpha=0.7, edgecolors='none')
@@ -133,7 +135,9 @@ class PickettPlot:
                                      & (phie_range > xlim[0]*1.15) & (phie_range < xlim[1]/1.1))
             if not visible.size:
                 continue
-            label_idx = visible[min(int(len(visible)*(.15 + .14*i)), len(visible)-1)]
+            # Labels near the upper-left end of their lines, away from the points
+            # (water-bearing rock sits on the Sw=100% line), stepped apart.
+            label_idx = visible[min(int(len(visible)*(.04 + .05*i)), len(visible)-1)]
             self.ax.annotate(
                 f'Sw={sw:.0%}',
                 (phie_range[label_idx], rt_line[label_idx]),
@@ -244,7 +248,7 @@ class PickettPlot:
 @_styled_plot
 def create_pickett_plot(
     well: "Well",
-    rw: float,
+    rw: Optional[float] = None,
     phie_curve: str = "PHIE",
     rt_curve: Optional[str] = None,
     color_curve: Optional[str] = None,
@@ -254,6 +258,7 @@ def create_pickett_plot(
     n: float = 2.0,
     figsize: Tuple[float, float] = (10, 8),
     *, xlim: Tuple[float, float] = (.01, .5), ylim: Tuple[float, float] = (.1, 1000.),
+    vcl_max: Optional[float] = 0.15,
 ) -> PickettPlot:
     """
     Create a Pickett plot from well data.
@@ -262,8 +267,10 @@ def create_pickett_plot(
     ----------
     well : Well
         Well object
-    rw : float
-        Formation water resistivity
+    rw : float, optional
+        Formation water resistivity, ohm.m, at the temperature of the plotted
+        samples. Default: the median of the well's ``RW`` curve (the
+        temperature-corrected Rw of an interpretation) over those samples.
     phie_curve : str
         Name of porosity curve
     rt_curve : str, optional
@@ -280,6 +287,13 @@ def create_pickett_plot(
         Saturation exponent
     figsize : tuple
         Figure size
+    vcl_max : float, optional
+        Plot only samples with ``VCL`` at or below this clay volume (default
+        0.15, clean rock): the Pickett plot is an Archie chart read on clean
+        rock (Pickett, 1966; Asquith and Krygowski, 2004), and shaly samples
+        plot off its lines whatever their saturation. The number left out is
+        noted on the plot.
+        ``None`` plots every sample; a well without ``VCL`` is plotted whole.
 
     Returns
     -------
@@ -294,6 +308,28 @@ def create_pickett_plot(
         raise ValueError(f"Curve '{phie_curve}' not found")
     if rt is None:
         raise ValueError(f"Curve {' or '.join(repr(name) for name in rt_names)} not found")
+
+    shaly_left_out = 0
+    if vcl_max is not None:
+        vcl_max = float(vcl_max)
+        if not 0.0 <= vcl_max <= 1.0:
+            raise ValueError(f"vcl_max must be a clay volume between 0 and 1; got {vcl_max:g}")
+        vcl, _, _ = curve_values(well, ["VCL"], depth_range, "v/v")
+        if vcl is not None:
+            plotted = np.isfinite(phie) & np.isfinite(rt)
+            with np.errstate(invalid="ignore"):
+                shaly = plotted & ~(vcl <= vcl_max)
+            shaly_left_out = int(shaly.sum())
+            phie, rt = np.where(shaly, np.nan, phie), np.where(shaly, np.nan, rt)
+
+    if rw is None:
+        rw_curve, _, _ = curve_values(well, ["RW"], depth_range, "ohm.m")
+        used = np.isfinite(phie) & np.isfinite(rt)
+        values = rw_curve[used] if rw_curve is not None else np.array([])
+        values = values[np.isfinite(values) & (values > 0)]
+        if not values.size:
+            raise ValueError("rw is needed: the well has no RW curve over the plotted samples; pass rw=")
+        rw = float(np.median(values))
 
     color_data = None
     color_label = "Value"
@@ -330,5 +366,8 @@ def create_pickett_plot(
         color_label=color_label,
         xlim=xlim, ylim=ylim, x_label=porosity_label(phi_sources),
     )
+    if shaly_left_out and plot.ax is not None:
+        plot.ax.text(0.99, 0.01, f"{shaly_left_out} samples with VCL > {vcl_max:g} left out",
+                     transform=plot.ax.transAxes, ha="right", va="bottom", fontsize=8, color="0.35")
 
     return plot

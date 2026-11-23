@@ -47,7 +47,7 @@ class DiagnosticPlotChecks(unittest.TestCase):
             phi, rt = line.get_data()
             np.testing.assert_allclose((a*rw/(phi**m*rt))**(1/n), sw)
         h = create_hingle_plot(control(), rw, a=a, m=m, n=n)
-        for line, sw in zip(h.axes[0].lines, [1., .75, .5, .25]):
+        for line, sw in zip(h.axes[0].lines, [1., .8, .6, .4, .2]):
             phi, transformed = line.get_data(); ok = phi > 0
             rt = transformed[ok]**(-m)
             np.testing.assert_allclose((a*rw/(phi[ok]**m*rt))**(1/n), sw)

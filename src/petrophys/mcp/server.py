@@ -958,9 +958,9 @@ def create_server(
                 description="Track layout and its track names. auto (from the curves present): "
                 "LITHOLOGY, GAMMA / HOLE, RESISTIVITY, DENSITY / NEUTRON, SONIC, POROSITY, "
                 "SATURATION, PERMEABILITY, ROCK QUALITY, MINERAL VOLUMES, FLAGS. "
-                "raw: GR / SP / CALI, RESISTIVITY, "
-                "NEUTRON / DENSITY. petrophysics: LITHOLOGY, GR / VCL / HOLE, RESISTIVITY, "
-                "NEUTRON / DENSITY / SONIC, POROSITY, SATURATION, PERMEABILITY, FLAGS. "
+                "raw: GAMMA / HOLE, RESISTIVITY, "
+                "DENSITY / NEUTRON. petrophysics: LITHOLOGY, GAMMA / HOLE, RESISTIVITY, "
+                "DENSITY / NEUTRON / SONIC, POROSITY, SATURATION, PERMEABILITY, FLAGS. "
                 "minerals: MINERAL VOLUMES, POROSITY / SW. comprehensive: all."
             ),
         ] = "auto",
@@ -996,13 +996,17 @@ def create_server(
                 depth_range = (float(first), float(last))
             selected = None
             with _captured_warnings():
+                # An interpretation is drawn as pp.plot draws a result: its own
+                # tracks, without generic tracks for internal flag curves.
+                interpretation = state.interpretations.get(target_id)
+                plotted = interpretation[1] if interpretation is not None else well
                 if tracks:
-                    layout = LogViewer(well, template_defaults=template)
+                    layout = LogViewer(well, template_defaults=template, interpreted=interpretation is not None)
                     available = [track.display_name for track in layout.template.tracks]
                     selected = reports.resolve_tracks(tracks, available)
                     if "DEPTH" in available and "DEPTH" not in selected:
                         selected.insert(0, "DEPTH")
-                viewer = pp.plot(well, top=depth_range[0] if depth_range else None,
+                viewer = pp.plot(plotted, top=depth_range[0] if depth_range else None,
                                  bottom=depth_range[1] if depth_range else None, tracks=selected,
                                  template=template)
             try:

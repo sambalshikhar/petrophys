@@ -72,6 +72,8 @@ def _scatter(ax, x, y, c, clabel, fig, cmap="viridis", norm=None):
             below, above = bool(np.any(finite < norm.vmin)), bool(np.any(finite > norm.vmax))
             extend = {(True, True): "both", (True, False): "min", (False, True): "max"}.get((below, above), "neither")
         cb = fig.colorbar(sc, ax=ax, pad=0.02, extend=extend)
+        if cb.solids is not None:  # opaque, whatever the points' transparency
+            cb.solids.set_alpha(1.0)
         cb.set_label(clabel, fontsize=8)
     else:
         ax.scatter(x, y, s=6, alpha=0.6, color="0.3")
@@ -104,10 +106,10 @@ def create_nd_crossplot(
             ax.annotate(f"{int(phi*100)}", (xn, yr), fontsize=6,
                         color=p["color"], xytext=(2, 2), textcoords="offset points")
 
-    ax.set_xlabel("NPHI (v/v, limestone)"); ax.set_ylabel("RHOB (g/cc)")
+    ax.set_xlabel("NPHI [v/v, limestone]"); ax.set_ylabel("RHOB [g/cc]")
     ax.set_xlim(-0.05, 0.45); ax.set_ylim(3.0, 1.8)   # density inverted
     _note_outside_axes(ax, nphi, rhob)
-    ax.set_title(f"Density-Neutron — {well.header.well_name or ''}")
+    ax.set_title(f"Density-Neutron - {well.header.well_name or ''}")
     ax.grid(alpha=0.3); ax.legend(fontsize=8, loc="upper right")
     fig.tight_layout()
     return fig
@@ -149,7 +151,7 @@ def create_mn_plot(
 
     ax.set_xlabel("N  =  (1 - NPHI) / (RHOB - 1)")
     ax.set_ylabel("M  =  (189 - DT) / (RHOB - 1) x 0.01")
-    ax.set_title(f"M-N Plot — {well.header.well_name or ''}")
+    ax.set_title(f"M-N Plot - {well.header.well_name or ''}")
     ax.grid(alpha=0.3); fig.tight_layout()
     return fig
 
@@ -204,11 +206,11 @@ def create_mid_plot(
         ax.annotate(name, (p["dt"], p["rhob"]), fontsize=9, fontweight="bold",
                     xytext=(5, 5), textcoords="offset points")
 
-    ax.set_xlabel("Apparent matrix sonic  DTmaa (us/ft)")
-    ax.set_ylabel("Apparent matrix density  RHOmaa (g/cc)")
-    ax.set_xlim(35, 65); ax.set_ylim(3.0, 2.5)
+    ax.set_xlabel("Apparent matrix slowness DTmaa [us/ft]")
+    ax.set_ylabel("Apparent matrix density RHOmaa [g/cc]")
+    ax.set_xlim(35, 100); ax.set_ylim(3.0, 2.3)
     _note_outside_axes(ax, dt_maa, rho_maa)
-    ax.set_title(f"MID Plot — {well.header.well_name or ''}\n{method}", fontsize=10)
+    ax.set_title(f"MID Plot - {well.header.well_name or ''}\n{method}", fontsize=10)
     ax.grid(alpha=0.3); fig.tight_layout()
     return fig
 
@@ -260,10 +262,10 @@ def create_buckles_plot(
         ax.annotate(f"BVW={bvw:g}", (phi_line[-1], sw_line[-1]), xytext=(-3, 2),
                     textcoords="offset points", ha="right", fontsize=7, color="0.4")
 
-    ax.set_xlabel(porosity_label(sources)); ax.set_ylabel("Water saturation (v/v)")
+    ax.set_xlabel(porosity_label(sources)); ax.set_ylabel("Water saturation [v/v]")
     ax.set_xlim(xlim); ax.set_ylim(ylim)
     _note_outside_axes(ax, phie, sw)
-    ax.set_title(f"Buckles Plot — {well.header.well_name or ''}")
+    ax.set_title(f"Buckles Plot - {well.header.well_name or ''}")
     ax.grid(alpha=0.3); fig.tight_layout()
     return fig
 
@@ -301,7 +303,7 @@ def create_hingle_plot(
     _scatter(ax, phie, y, c, clabel, fig, cmap="viridis")
 
     phi_line = np.linspace(max(0., xlim[0]), xlim[1], 50)
-    for sw in (1.0, 0.75, 0.5, 0.25):
+    for sw in (1.0, 0.8, 0.6, 0.4, 0.2):  # the Pickett plot's steps
         # Sw^n = a*Rw / (phi^m * Rt)  ->  Rt^(-1/m) = phi * Sw^(n/m) / (a*Rw)^(1/m)
         y_line = phi_line * sw ** (n / m) / (a * rw) ** (1.0 / m)
         ax.plot(phi_line, y_line, color="0.5", lw=0.9, alpha=0.7)
@@ -314,6 +316,6 @@ def create_hingle_plot(
     if ylim is not None:
         ax.set_ylim(ylim)
     _note_outside_axes(ax, phie, y)
-    ax.set_title(f"Hingle Plot — {well.header.well_name or ''}  (Rw={rw:g} ohm.m)")
+    ax.set_title(f"Hingle Plot - {well.header.well_name or ''}  (Rw={rw:g} ohm.m)")
     ax.grid(alpha=0.3); fig.tight_layout()
     return fig

@@ -122,6 +122,8 @@ class CrossPlot:
                                      cmap=colormap, edgecolors='none',
                                      plotnonfinite=True)
             cbar = self.fig.colorbar(scatter, ax=self.ax)
+            if cbar.solids is not None:  # opaque, whatever the points' transparency
+                cbar.solids.set_alpha(1.0)
             cbar.set_label(color_label)
         else:
             self.ax.scatter(x, y, s=marker_size, alpha=alpha, edgecolors='none')

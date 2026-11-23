@@ -206,6 +206,8 @@ def plot_poro_perm(
     # Use this call's own scatter handle: ax.collections[0] would grab a
     # previous dataset's points when the caller reuses the axes.
     cbar = fig.colorbar(scatter, ax=ax)
+    if cbar.solids is not None:  # opaque, whatever the points' transparency
+        cbar.solids.set_alpha(1.0)
     cbar.set_label("Depth")
 
     return fig, ax
