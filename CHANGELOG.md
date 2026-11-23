@@ -897,6 +897,12 @@ wherever the package used the function.
   mineral selection.
 - `LithologyModule(solver_options=...)` passes options such as
   `row_uncertainty` to its solver.
+- Both solvers reach the least-squares optimum on every scipy version.
+  `scipy.optimize.nnls` in some releases (1.15.3 among those tested) stops
+  short of it on these small systems, at nearly half the samples of 25/5-1,
+  whose mean dolomite volume read 0.034 instead of 0.079; its answer
+  is kept where it meets the optimality conditions, and the system is solved
+  exactly where it does not.
 
 #### Permeability, saturation height and NMR
 

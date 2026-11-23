@@ -15,7 +15,7 @@ Prentice-Hall.
 
 from typing import Dict, Mapping, Optional, Sequence, Tuple, Union
 import numpy as np
-from scipy.optimize import nnls
+from petrophys._internal.nnls import nnls
 from petrophys.model.well import Well
 
 from petrophys.interpretation.lithology.matrix_properties import (

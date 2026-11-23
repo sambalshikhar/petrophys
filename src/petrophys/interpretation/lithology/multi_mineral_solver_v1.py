@@ -40,7 +40,7 @@ from types import MappingProxyType
 from typing import Dict, Mapping, Optional, Tuple, Union
 
 import numpy as np
-from scipy.optimize import nnls
+from petrophys._internal.nnls import nnls
 
 from petrophys.interpretation.lithology.matrix_properties import get_log_density, get_mineral_properties
 
