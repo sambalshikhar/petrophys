@@ -115,7 +115,7 @@ Check Rw and the Archie exponents against the 30/6-5 Statfjord water leg.
 
 `create_pickett_plot(result, rw=0.07)`
 +++
-{doc}`Tutorial 06: formation water <tutorials/part_a/06_formation_water_and_environment>`
+{doc}`Tutorial 06: formation water <tutorials/part_a/06_formation_water_and_environment>` · {doc}`Tutorial 07: the Pickett plot <tutorials/part_a/07_water_saturation>`
 :::
 
 :::{grid-item-card} Water-saturation models

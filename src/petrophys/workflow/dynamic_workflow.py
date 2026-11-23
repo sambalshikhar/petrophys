@@ -3463,9 +3463,9 @@ class DynamicWorkflowResult:
             {"mnemonic": "PP_VERSION", "value": __version__, "descr": "petrophys version"},
             {"mnemonic": "PP_STATUS", "value": self.status, "descr": "Interpretation status"},
             {"mnemonic": "PP_DOMAIN", "value": self.lithology_domain,
-             "descr": "Lithology interpretation domain"},
-            {"mnemonic": "PP_MATRIX", "value": self.config.matrix_type, "descr": "Matrix used"},
-            {"mnemonic": "PP_LITH", "value": self.config.lithology_domain, "descr": "Lithology family used"},
+             "descr": "Lithology domain of the run (clastic, carbonate or evaporite)"},
+            {"mnemonic": "PP_MATRIX", "value": self.config.matrix_type,
+             "descr": "Matrix of the porosity calculation"},
         ]
         rw_step = steps.get(WorkflowStep.RW.value)
         if rw_step is not None:
@@ -3479,8 +3479,8 @@ class DynamicWorkflowResult:
                     descr = f"Rw input at {reference:g} degF ({rw_step.method})"
                 items.append({"mnemonic": "PP_RW", "value": rw_input, "unit": "ohm.m", "descr": descr})
             for key, mnemonic, descr in (
-                ("rw_min", "PP_RWTMIN", "Minimum Rw at formation temperature"),
-                ("rw_max", "PP_RWTMAX", "Maximum Rw at formation temperature"),
+                ("rw_min", "PP_RWTMIN", "Lowest Rw at formation temperature over the well (Rw falls as temperature rises)"),
+                ("rw_max", "PP_RWTMAX", "Highest Rw at formation temperature over the well"),
             ):
                 if parameters.get(key) is not None:
                     items.append({"mnemonic": mnemonic, "value": float(f"{parameters[key]:.4g}"),
@@ -3493,12 +3493,14 @@ class DynamicWorkflowResult:
                 value = parameters.get(key)
                 if value is None:
                     continue
+                as_set = parameters.get(f"archie_{key}_source") == "config_or_las"
+                source = "as set" if as_set else "from the lithology table"
                 if isinstance(value, (int, float)):
-                    items.append({"mnemonic": f"PP_{key.upper()}", "value": value,
-                                  "descr": f"Archie {key}"})
+                    descr = f"Archie {key}, {source}" + ("" if as_set else ", the same for every lithology here")
+                    items.append({"mnemonic": f"PP_{key.upper()}", "value": value, "descr": descr})
                 else:
                     items.append({"mnemonic": f"PP_{key.upper()}", "value": "per lithology",
-                                  "descr": f"Archie {key} from the lithology table"})
+                                  "descr": f"Archie {key} by lithology, {source} (see the trace)"})
         return items
 
     def to_las(self, path: Union[str, Path], **options: Any) -> Path:

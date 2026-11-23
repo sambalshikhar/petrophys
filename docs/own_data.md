@@ -26,6 +26,7 @@ pd.set_option("display.precision", 3)
 warnings.formatwarning = lambda message, category, *args, **kwargs: textwrap.fill(
     f"{category.__name__}: {message}", 88, subsequent_indent="    ") + "\n"
 os.chdir(tempfile.mkdtemp())  # the stand-in files and the exports go to a scratch folder
+get_ipython().run_line_magic("xmode", "Minimal")  # errors show their message, not the call stack
 
 # Stand-ins for your files, from the bundled 30/6-5 data.
 curves = ["GR", "CALI", "BS", "RHOB", "NPHI", "DTC", "RDEP", "RMED", "SP", "PEF", "DRHO"]
@@ -95,14 +96,14 @@ Several wells in one table: {func}`petrophys.io.read_csv_wells`.
 
 Pass your tables as `formations=` and `lithology=`. Copy a template's columns
 and fill in your picks; {doc}`input_templates` lists every template. Here the
-bundled 30/6-5 tops and lithology intervals stand in for yours.
+bundled 30/6-5 tops and lithology intervals stand in for yours. `pp.plot` then
+draws them beside the logs, as in the {doc}`quickstart`, and the import report
+below says what was read.
 
 ```{code-cell} python
 well = pp.read("my_logs.csv", depth_column="MD", depth_unit="m", well_name="30/6-5",
                formations=pp.sample("formations_30_6-5"),
                lithology=pp.sample("lithology_30_6-5"))
-pp.plot(well, top=2800, bottom=3000,
-        tracks=["LITHOLOGY", "GAMMA / HOLE", "RESISTIVITY", "DENSITY / NEUTRON"])
 ```
 
 ## Curve names no alias table knows
@@ -271,28 +272,36 @@ keep vendor comment columns out, and the report lists them.
 
 ## Errors you will meet
 
-Petrophys stops with a message that says what to fix. Each message below is a
-real error raised by the call next to it.
+Petrophys stops with a message that says what to fix. Each call below is a
+common mistake, run as it stands.
+
+A CSV without its depth unit:
 
 ```{code-cell} python
-mistakes = {
-    "A CSV without a depth unit": lambda: pp.read("my_logs.csv", depth_column="MD"),
-    "Tops on another depth reference": lambda: pp.read_formations(
-        "formations_ft.csv", well=well, depth_unit="ft", depth_reference="TVDSS"),
-    "A misspelt setting": lambda: pp.interpret(well, rw=0.07, rw_temp_f=230),
-}
-for mistake, call in mistakes.items():
-    try:
-        call()
-    except (ValueError, TypeError) as error:
-        print(f"{mistake}:\n    {type(error).__name__}: {error}\n")
+:tags: [raises-exception]
+pp.read("my_logs.csv", depth_column="MD")
 ```
 
-## Interpret, summarize, export
+Tops on another depth reference than the well's:
 
-A CSV has no header, so there is no bottom-hole temperature or mud-filtrate
-resistivity. `result.warnings` and the skipped steps say what was assumed or
-left out.
+```{code-cell} python
+:tags: [raises-exception]
+pp.read_formations("formations_ft.csv", well=well, depth_unit="ft", depth_reference="TVDSS")
+```
+
+A misspelt setting:
+
+```{code-cell} python
+:tags: [raises-exception]
+pp.interpret(well, rw=0.07, rw_temp_f=230)
+```
+
+## Interpret
+
+Interpreting, summarizing and exporting work as in the {doc}`quickstart`. What
+differs is what your files leave out. A CSV has no header, so there is no
+bottom-hole temperature or mud-filtrate resistivity; `result.warnings` and the
+skipped steps say what was assumed or left out.
 
 ```{code-cell} python
 well = pp.read("my_logs.csv", depth_column="MD", depth_unit="m", well_name="30/6-5",
@@ -323,22 +332,8 @@ that is missing fails the run. Here the attached intervals were selected:
 result.step("input_context").decisions
 ```
 
-Attached formations organize the answer. Averages are over net-pay samples, so
-a formation without pay shows no averages: porosity and clay volume are
-weighted by thickness, water saturation by pore volume (porosity times
-thickness), and permeability is a geometric mean, so that average porosity
-times (1 - average Sw) times net pay is the `HCPV` column, the hydrocarbon
-pore thickness in the well's depth unit.
-
-```{code-cell} python
-result.formation_summary()
-```
-
-```{code-cell} python
-result.to_las("my_well_interpreted.las")       # curves and the settings used
-result.to_json("my_well_trace.json")           # the complete trace
-result.well.to_csv("my_well_interpreted.csv")  # curves only
-```
+`result.formation_summary()`, `result.to_las(...)` and `result.to_json(...)`
+then give the per-formation answer and the files, as in the {doc}`quickstart`.
 
 ## Next
 
