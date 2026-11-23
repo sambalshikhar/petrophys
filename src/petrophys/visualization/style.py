@@ -123,3 +123,37 @@ def save_figure(figure, filename, dpi=EXPORT_DPI, **kwargs):
     options.update(kwargs)
     with plot_style():
         figure.savefig(filename, **options)
+
+
+#: Most distinct values a colour curve may hold to be drawn as categories.
+_MAX_CATEGORIES = 10
+
+
+def draw_categories(ax, x, y, values, label, *, size=6.0, alpha=0.7) -> bool:
+    """Scatter coloured by category when ``values`` hold a few whole numbers
+    (hydraulic flow units, facies, a 0/1 flag): one colour and legend entry each,
+    not a continuous colour bar. Returns False, drawing nothing, otherwise."""
+    import numpy as np
+    from matplotlib import colormaps
+
+    values = np.asarray(values, dtype=float)
+    finite = values[np.isfinite(values)]
+    if not finite.size or np.any(finite != np.round(finite)):
+        return False
+    categories = np.unique(finite)
+    if categories.size > _MAX_CATEGORIES:
+        return False
+    import re
+
+    label = re.sub(r"\s*[\[(]\s*[\])]\s*$", "", str(label or ""))  # "HFU []" -> "HFU"
+    palette = colormaps["tab10"]
+    for index, category in enumerate(categories):
+        chosen = values == category
+        ax.scatter(np.asarray(x)[chosen], np.asarray(y)[chosen], s=size, alpha=alpha, edgecolors="none",
+                   color=palette(index % 10), label=f"{label} {category:g}".strip())
+    missing = ~np.isfinite(values)
+    if missing.any():
+        ax.scatter(np.asarray(x)[missing], np.asarray(y)[missing], s=size, alpha=alpha, edgecolors="none",
+                   color="0.6", label="no value")
+    ax.legend(fontsize=8, markerscale=2, loc="best", frameon=True, framealpha=0.85)
+    return True

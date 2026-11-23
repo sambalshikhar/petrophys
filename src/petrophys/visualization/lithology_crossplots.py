@@ -62,6 +62,10 @@ def _note_outside_axes(ax, x, y):
 
 
 def _scatter(ax, x, y, c, clabel, fig, cmap="viridis", norm=None):
+    from petrophys.visualization.style import draw_categories
+
+    if c is not None and norm is None and draw_categories(ax, x, y, c, clabel, size=6, alpha=0.6):
+        return
     if c is not None and np.any(np.isfinite(c)):
         # Points without a colour value are drawn grey, not dropped.
         cmap = plt.get_cmap(cmap).with_extremes(bad="0.6")

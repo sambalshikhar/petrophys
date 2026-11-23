@@ -208,7 +208,9 @@ def plot_poro_perm(
     cbar = fig.colorbar(scatter, ax=ax)
     if cbar.solids is not None:  # opaque, whatever the points' transparency
         cbar.solids.set_alpha(1.0)
-    cbar.set_label("Depth")
+    unit = getattr(core, "depth_unit", None) or (core.metadata.get("depth_unit") if isinstance(
+        getattr(core, "metadata", None), dict) else None)
+    cbar.set_label(f"Depth [{unit}]" if unit else "Depth")
 
     return fig, ax
 
@@ -271,9 +273,12 @@ def plot_core_on_logs(
         raise ImportError("matplotlib is required")
     import warnings
 
+    from matplotlib.ticker import NullFormatter
+
     from petrophys.visualization.log_viewer import (
         _display_well,
         _resolve_curve_name_for_well,
+        create_adaptive_log_viewer_template,
         DEFAULT_CURVE_DISPLAY_UNITS,
     )
 
@@ -309,6 +314,13 @@ def plot_core_on_logs(
         depth_range = (core.top - 50, core.bottom + 50)
     d_mask = (depth >= depth_range[0]) & (depth <= depth_range[1])
     missing = []
+    # Each curve's colour, line and scale as the log plot draws it.
+    layout = {}
+    for track in create_adaptive_log_viewer_template(shown, include_on_request=True).tracks:
+        for spec in track.curves:
+            found = _resolve_curve_name_for_well(shown, spec.curve_name, spec.candidates)
+            if found is not None:
+                layout.setdefault(found.upper(), (spec, str(track.scale).lower()))
 
     for i, curve_name in enumerate(curves):
         ax = axes[i]
@@ -319,14 +331,18 @@ def plot_core_on_logs(
         if is_perm:
             ax.set_xscale("log")
 
+        spec, scale = layout.get(str(resolved or "").upper(), (None, "linear"))
         if curve is not None:
             values = np.asarray(curve.data, dtype=float)[d_mask]
             if is_perm:
                 values = np.where(values > 0, values, np.nan)
             label = curve_name if resolved.upper() == curve_name.upper() else f"{resolved} ({curve_name})"
-            ax.plot(values, depth[d_mask], "b", linewidth=0.8, label=label)
+            ax.plot(values, depth[d_mask], color=spec.color if spec is not None else "#000000",
+                    linestyle=spec.line_style if spec is not None else "-", linewidth=0.8, label=label)
         else:
             missing.append(curve_name)
+        if scale == "log" and not is_perm:
+            ax.set_xscale("log")
 
         if match is not None:
             attr, label = match
@@ -335,16 +351,8 @@ def plot_core_on_logs(
                 c_mask = (core.depth >= depth_range[0]) & (core.depth <= depth_range[1])
                 if is_perm:
                     c_mask &= np.asarray(core_vals, dtype=float) > 0
-                ax.scatter(
-                    core_vals[c_mask],
-                    core.depth[c_mask],
-                    c="red",
-                    s=20,
-                    zorder=5,
-                    label=label,
-                    edgecolors="black",
-                    linewidths=0.5,
-                )
+                ax.scatter(core_vals[c_mask], core.depth[c_mask], marker="x", color="#000000",
+                           s=18, linewidths=0.8, zorder=5, label=label)
 
         unit = str(getattr(curve, "unit", "") or "").strip() if curve is not None else ""
         if not unit:
@@ -357,11 +365,20 @@ def plot_core_on_logs(
         xlabel = f"{name} [{unit}]" if unit else name
         if curve is None:
             xlabel += " (no log curve)"
-        ax.set_xlabel(xlabel)
+        # The header of a log-plot track: name and unit at the top, with the scale ends.
+        ax.xaxis.tick_top()
+        ax.xaxis.set_label_position("top")
+        if spec is not None and spec.left is not None and spec.right is not None:
+            left, right = float(spec.left), float(spec.right)
+            ax.set_xlim(left, right)
+            ax.set_xticks([left, right])
+            ax.set_xticklabels([f"{left:g}", f"{right:g}"], fontsize=8)
+        ax.xaxis.set_minor_formatter(NullFormatter())
+        ax.set_xlabel(xlabel, fontsize=9, fontweight="bold")
         if i == 0:
             ax.set_ylabel(f"Depth [{well.depth_unit}]" if well.depth_unit else "Depth")
         if ax.get_legend_handles_labels()[0]:
-            ax.legend(fontsize=8)
+            ax.legend(fontsize=8, loc="lower right", framealpha=0.85)
         ax.grid(True, alpha=0.3, which="both" if is_perm else "major")
 
     if missing:

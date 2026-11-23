@@ -115,7 +115,12 @@ class CrossPlot:
         x = x_data[mask]
         y = y_data[mask]
 
-        if color_data is not None and np.any(np.isfinite(color_data[mask])):
+        from petrophys.visualization.style import draw_categories
+
+        if color_data is not None and draw_categories(self.ax, x_data[mask], y_data[mask], color_data[mask],
+                                                       color_label, size=marker_size, alpha=alpha):
+            pass
+        elif color_data is not None and np.any(np.isfinite(color_data[mask])):
             c = color_data[mask]
             colormap = plt.get_cmap(cmap).with_extremes(bad="0.6")
             scatter = self.ax.scatter(x, y, c=c, s=marker_size, alpha=alpha,
