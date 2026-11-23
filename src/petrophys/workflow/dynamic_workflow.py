@@ -78,6 +78,62 @@ def _apparent_porosity_info(phit_method: Optional[str]) -> Optional[Dict[str, st
     return APPARENT_POROSITY_METHODS.get(str(phit_method or "").strip().lower())
 
 
+# Plain wording of identifiers that trace sentences report.
+_PHIT_SOURCE_TEXT = {
+    "weighted_nd": "both logs",
+    "density_from_missing_phin": "density where neutron is missing",
+    "density_from_gas_crossover": "density at gas crossover",
+    "neutron_from_missing_phid": "neutron where density is missing",
+    "nan": "neither log",
+}
+_SXO_METHOD_TEXT = {"archie_rxo_rmf": "invaded-zone Archie", "fifth_root_quicklook": "SW^(1/5)"}
+_CORE_SOURCE_TEXT = {
+    "same_well_core": "this well's plugs",
+    "same_well_core_formation": "this well's plugs in the formation",
+    "peer_core": "peer-well plugs",
+}
+_TEMPERATURE_SOURCE_TEXT = {"fallback_geothermal_gradient": "30 C/km gradient"}
+_EQUATION_TEXT = {
+    "archie": "Archie", "simandoux": "Simandoux", "modified_simandoux": "modified Simandoux",
+    "indonesia": "Indonesia", "waxman_smits": "Waxman-Smits", "dual_water": "Dual Water",
+    "nigeria": "Nigeria", "north_sea_shaly_sand": "North Sea shaly sand",
+    "nigeria_schlumberger": "Nigeria (Schlumberger)",
+}
+_PERM_TEXT = {
+    "same_well_core": "this well's core model", "peer_core": "peer-well core model",
+    "timur": "Timur", "coates": "Coates", "coates_denoo": "Coates-Denoo", "wyllie_rose": "Wyllie-Rose",
+}
+
+
+def _samples(count) -> str:
+    return f"{count} sample{'' if count == 1 else 's'}"
+
+
+def _equation_names(model) -> str:
+    """'archie+simandoux' as 'Archie + Simandoux'."""
+    return " + ".join(_EQUATION_TEXT.get(part, part.replace("_", " ")) for part in str(model).split("+"))
+
+
+def _perm_method_text(method) -> str:
+    """'same_well_core+coates' as "this well's core model, Coates elsewhere"."""
+    parts = [_PERM_TEXT.get(part, part.replace("_", " ")) for part in str(method).split("+")]
+    return parts[0] if len(parts) == 1 else f"{parts[0]}, {' then '.join(parts[1:])} elsewhere"
+
+
+def _priority_text(name) -> str:
+    """'PHIE_CC+PHIE' (first available per sample) as 'PHIE_CC (PHIE where it is missing)'."""
+    parts = [part for part in str(name).split("+") if part]
+    return parts[0] if len(parts) <= 1 else f"{parts[0]} ({', then '.join(parts[1:])} where it is missing)"
+
+
+def _lithology_source_text(source) -> str:
+    """Where the lithology came from, in words."""
+    source = str(source)
+    if source.startswith("vendor_lithology_log[") and source.endswith("]"):
+        return f"the lithology curve {source[len('vendor_lithology_log['):-1]}"
+    return {"config": "the lithology setting"}.get(source, source.replace("_", " "))
+
+
 class _SpRwRejected(Exception):
     """The SP estimate of Rw sat at the method's limits; the next Rw route is tried."""
 
@@ -5524,11 +5580,11 @@ class DynamicWorkflow:
                 **({"ceiling_screening": ceiling_screening} if ceiling_screening else {}),
             },
             decisions=[
-                "Standardized curve units, nulls, and plausible ranges before routing",
+                "Curve units, null values and plausible ranges standardized before interpretation",
                 (
-                    "Added canonical working aliases while retaining vendor mnemonics"
+                    "Standard curve names added beside the vendor mnemonics, which are kept"
                     if working_aliases
-                    else "No canonical working aliases were required"
+                    else "No standard curve names needed adding: the logs use them already"
                 ),
             ],
         )
@@ -5899,7 +5955,7 @@ class DynamicWorkflow:
                 source = "measured_temperature_log"
                 message = (
                     f"The input TEMP curve ({coverage:.0%} finite) is the temperature source, "
-                    f"kept as TEMP_LOG; the modelled {result.source} profile, shifted to meet the log "
+                    f"kept as TEMP_LOG; the modelled {_TEMPERATURE_SOURCE_TEXT.get(result.source, str(result.source).replace('_', ' '))} profile, shifted to meet the log "
                     f"at each gap's ends, fills its {gaps} gaps."
                 )
                 trace.parameters["temp_log_coverage"] = coverage
@@ -5929,10 +5985,10 @@ class DynamicWorkflow:
         if source == "measured_temperature_log":
             if result.source == "fallback_geothermal_gradient":
                 trace.decisions.append(
-                    "No BHT temperature anchor found: the 30 C/km gradient fills only the TEMP log's gaps"
+                    "No bottom-hole temperature: an assumed 30 C/km gradient fills only the TEMP log's gaps"
                 )
         elif result.source == "fallback_geothermal_gradient":
-            trace.decisions.append("No BHT temperature anchor found -> using fallback 30 C/km geothermal gradient")
+            trace.decisions.append("No bottom-hole temperature: temperatures follow an assumed 30 C/km gradient")
             self._warn_assumed(
                 "No bottom-hole temperature (bht_f or header BHT): temperatures follow an assumed "
                 "30 C/km gradient, which sets the Rw and Rmf temperature corrections."
@@ -6598,7 +6654,7 @@ class DynamicWorkflow:
                 label = "clean" if name == "gr_min" else "shale"
                 moved.append(f"the {label} GR pick {picked:.1f} API was {'lowered' if used < picked else 'raised'} to {used:g}")
             note = "; ".join(moved)
-            decisions.append(f"GR bound (nearly flat GR guard): {note}")
+            decisions.append(f"GR baseline bound on automatic picks (clean at most 20 API, shale at least 100 API): {note}")
             # Clean rock reads about 15-30 API (Crain); a clean pick above 30
             # suggests radioactive clean rock, which the bound reads as clay.
             if result.gr_bounded.get("gr_min", (0.0,))[0] > 30.0:
@@ -7052,7 +7108,7 @@ class DynamicWorkflow:
                 )
         else:
             trace.decisions.append(
-                "Input lithology was available -> mineral volumes computed, LITHO not inferred or overwritten"
+                "Mineral volumes computed; the input lithology is kept, and LITHO is not inferred"
             )
         if not carbonate:
             # The clastic solvers read PEF and DTC.
@@ -7068,7 +7124,7 @@ class DynamicWorkflow:
             )
         if not carbonate:
             trace.decisions.append(
-                "Canonical clastic inversion uses the preserved equation set and closure gate"
+                "Clastic minerals solved per sample from the logs, with a check that minerals, clay and porosity add up to one"
             )
         if weighted_rows is not None:
             units = {"unity": "v/v", "rhob": "g/cm3", "nphi": "v/v", "u": "b/cm3", "dt": "us/ft"}
@@ -7906,7 +7962,7 @@ class DynamicWorkflow:
             if rmf_curve.ndim == 0:
                 rmf_curve = np.full(well.n_samples, float(rmf_curve), dtype=float)
             decisions.append(
-                "Rw direct source unavailable -> using available RMF curve for heuristic estimation"
+                "No Rw given: Rw estimated from the logs with the RMF curve"
             )
 
             if self._has_curve(well, "SP"):
@@ -8060,7 +8116,7 @@ class DynamicWorkflow:
                 self._result.warnings.append(message)
                 decisions.append(message)
         else:
-            decisions.append("Rw heuristic methods skipped because Rmf is unavailable")
+            decisions.append("Rw not estimated from SP or Rxo/Rt: no Rmf")
 
         rt_curve = get_curve(well, ["RDEP", "RT"])
         phie_curve = get_curve(well, self._phie_names(include_phit=False))
@@ -8137,7 +8193,7 @@ class DynamicWorkflow:
                         "rwa_implausible_samples": rejected,
                     }
                 decisions.append(
-                    "Rw from Rwa clean-wet fallback: "
+                    "Rw estimated from the apparent water resistivity of clean porous rock (no Rw given): "
                     + "P5 of "
                     + f"{rt_curve.mnemonic} * {phie_curve.mnemonic}^m / a "
                     f"where VCL < 0.3 and {phie_curve.mnemonic} > 0.05 (n={int(np.count_nonzero(valid))}), "
@@ -8250,7 +8306,7 @@ class DynamicWorkflow:
         total = int(result.statistics.get("total_samples") or len(result.ratio))
         if result.statistics.get("fallback_proxy_used"):
             trace.decisions.append(
-                "INVASION_RATIO fallback medium/deep proxy = RMED/RDEP because RXO/RSHA/RESS were unavailable or non-finite at those samples"
+                "INVASION_RATIO from RMED/RDEP where no shallow resistivity (RXO, RSHA or RESS) was read"
             )
         if rejected:
             trace.decisions.append(
@@ -8817,11 +8873,11 @@ class DynamicWorkflow:
             )
         elif matrix_info["matrix_mode"] == "lithology_dependent" and matrix_info["lithology_log"]:
             decisions.append(
-                "Initial porosity pass used an available lithology log for matrix endpoints"
+                "Porosity matrix endpoints from the lithology log"
             )
         else:
             decisions.append(
-                "Initial porosity pass used configured matrix endpoints; it will be refined if the workflow infers LITHO"
+                "Porosity matrix endpoints from the settings"
                 if self._historical
                 else "Porosity used the configured matrix endpoints; it is computed once and "
                 "is not recomputed if the workflow later infers LITHO"
@@ -8951,8 +9007,9 @@ class DynamicWorkflow:
                 "nan": int(np.count_nonzero(~np.isfinite(phit_arr))),
             }
             decisions.append(
-                "PHIT = adaptive(PHIN, PHID) with per-sample fallback: "
-                + ", ".join(f"{name}={count}" for name, count in phit_source_counts.items())
+                "PHIT from neutron and density: "
+                + ", ".join(f"{_PHIT_SOURCE_TEXT.get(name, name)} at {_samples(count)}"
+                            for name, count in phit_source_counts.items() if count)
             )
         elif phid is not None:
             phit = phid
@@ -9149,7 +9206,7 @@ class DynamicWorkflow:
                 )
             if phi_cl_info.get("phi_cl_source") == "config_or_default" and phi_cl_info.get("phi_cl_fallback_reason"):
                 decisions.append(
-                    "phi_cl fallback used because "
+                    "Clay porosity phi_cl from the setting or its default, because "
                     + str(phi_cl_info["phi_cl_fallback_reason"])
                 )
             point = phi_cl_info.get("phi_cl_shale_point")
@@ -9242,7 +9299,7 @@ class DynamicWorkflow:
             for curve_name in stale_core_curves:
                 well.remove_curve(curve_name)
             decisions.append(
-                "Existing core-corrected curves cleared before pre-saturation core correction"
+                "PHIE_CC and PERM_CC of the input replaced by this run's core correction"
             )
         elif stale_core_curves:
             decisions.append(self._keep_input_core_curves(well, stale_core_curves))
@@ -9305,10 +9362,10 @@ class DynamicWorkflow:
             decisions.append("No PHIE_CC/PERM_CC written because no same-well core model was fitted")
         for model in result.metadata.get("core_models", []):
             decisions.append(
-                "Core model fitted "
-                f"(source={model.get('source_type')}, n={model.get('n_core_points')}, "
-                f"core_phi={model.get('core_porosity_curve') or 'unknown'}, "
-                f"core_perm={model.get('core_permeability_curve') or 'unknown'})"
+                f"Core model fitted to {model.get('n_core_points')} plugs "
+                f"({_CORE_SOURCE_TEXT.get(model.get('source_type'), model.get('source_type'))}): "
+                f"{model.get('core_porosity_curve') or 'core porosity'} and "
+                f"{model.get('core_permeability_curve') or 'core permeability'}"
             )
         if not self._reproducing_benchmark:
             # Core porosity is fitted to PHIT, and PHIT - PHIE is taken off again.
@@ -9583,7 +9640,7 @@ class DynamicWorkflow:
                 "total_porosity_basis": sat_phit_basis,
                 "waxman_smits_clipped_to_zero": result.waxman_smits_clipped_to_zero,
             })
-        trace.decisions.append(f"Model selected: {result.model}")
+        trace.decisions.append(f"Saturation equations: {_equation_names(result.model)}")
         if self._reproducing_benchmark:
             # The equations this well's samples were routed to, with their sample counts.
             names = {
@@ -9625,7 +9682,7 @@ class DynamicWorkflow:
                         "gives tight rock a large Qv)"
                     )
         if self.config.sw_model == "auto":
-            trace.decisions.append("Auto-routing: depth-by-depth model selection based on VCLAY and lithology")
+            trace.decisions.append("Saturation equation chosen at each depth from the clay volume and lithology (sw_model='auto')")
             if (not self._reproducing_benchmark and not self._historical
                     and routing_salinity is not None
                     and (result.model_counts or {}).get("simandoux", 0)):
@@ -9635,8 +9692,8 @@ class DynamicWorkflow:
                 )
             if result.model_counts:
                 trace.decisions.append(
-                    "Depth routing counts: "
-                    + ", ".join(f"{model}={count}" for model, count in result.model_counts.items())
+                    "Samples per equation: "
+                    + ", ".join(f"{_equation_names(model)} {count}" for model, count in result.model_counts.items())
                 )
             if fallbacks:
                 names = {"indonesia": "Indonesia", "simandoux": "Simandoux", "waxman_smits": "Waxman-Smits"}
@@ -9650,7 +9707,7 @@ class DynamicWorkflow:
                 )
         trace.decisions.append(
             "Archie coefficients from lithology"
-            + (f" ({self._lithology_source})" if self._lithology_source else "")
+            + (f" ({_lithology_source_text(self._lithology_source)})" if self._lithology_source else "")
         )
         if np.any(source_sw_mask):
             trace.decisions.append(
@@ -9658,14 +9715,14 @@ class DynamicWorkflow:
                 "Archie fills remaining samples where inputs are finite"
             )
         elif self._reproducing_benchmark or set(result.model_counts or {}) <= {"archie"}:
-            trace.decisions.append("No finite source SW input was available; SW is Archie-computed where inputs are finite")
+            trace.decisions.append("SW from Archie wherever its inputs are present (no input SW curve)")
         if self._reproducing_benchmark or "dual_water" in (result.model_counts or {}):
             trace.decisions.append(
                 f"Dual Water phi_cl = {phi_cl:.3f} from {phi_cl_info['phi_cl_source']}"
             )
             if phi_cl_info.get("phi_cl_source") == "config_or_default" and phi_cl_info.get("phi_cl_fallback_reason"):
                 trace.decisions.append(
-                    "Dual Water phi_cl fallback used because "
+                    "Dual Water clay porosity phi_cl from the setting or its default, because "
                     + str(phi_cl_info["phi_cl_fallback_reason"])
                 )
         rcl_text = f"Rcl = {self._result.rcl_computed}"
@@ -9690,7 +9747,8 @@ class DynamicWorkflow:
             counts = sxo_method_counts
             count_text = (
                 " ("
-                + ", ".join(f"{method}={count}" for method, count in counts.items())
+                + ", ".join(f"{_SXO_METHOD_TEXT.get(method, method)} at {_samples(count)}"
+                            for method, count in counts.items())
                 + ")"
                 if counts else ""
             )
@@ -9701,7 +9759,7 @@ class DynamicWorkflow:
             )
         elif sxo_method == "fifth_root_quicklook":
             trace.decisions.append(
-                f"SXO fallback: SXO = SW^(1/5) because {sxo_reason}"
+                f"SXO = SW^(1/5), the quick-look estimate, because {sxo_reason}"
             )
         elif not flushed_zone:
             trace.decisions.append(f"SXO not computed: {sxo_reason}")
@@ -9760,9 +9818,9 @@ class DynamicWorkflow:
                     )
                 else:
                     decisions.append(
-                        "RESFLAG created before permeability from NetPayModule net_reservoir "
-                        f"using {resflag_info['vcl_curve']}, {resflag_info['phie_curve']}, "
-                        f"and {resflag_info['sw_curve']} ({resflag_info['reservoir_samples']} samples)"
+                        "RESFLAG, the net-reservoir flag from "
+                        f"{resflag_info['vcl_curve']}, {resflag_info['phie_curve']} "
+                        f"and {resflag_info['sw_curve']}, set before permeability ({resflag_info['reservoir_samples']} samples)"
                     )
             else:
                 decisions.append(
@@ -9799,11 +9857,11 @@ class DynamicWorkflow:
             for curve_name in stale_core_curves:
                 well.remove_curve(curve_name)
             decisions.append(
-                "Existing core-corrected curves cleared before permeability; "
-                "PHIE_CC/PERM_CC are rewritten only when the current same-well core model is fitted"
+                "PHIE_CC and PERM_CC of the input removed: this run writes them only from a core model "
+                "fitted to this well"
             )
         if core_phi_generated:
-            decisions.append("Porosity calibration from the core-correction step retained independently of permeability")
+            decisions.append("PHIE_CC of the core-correction step kept")
 
         code_curve = self._lithology_code_curve(well)
         perm_module = PermeabilityModule(
@@ -9958,12 +10016,11 @@ class DynamicWorkflow:
         for model in result.metadata.get("core_models", []):
             source = model.get("source_well") or "unknown"
             formation = model.get("source_formation") or "all_depths"
-            source_type = model.get("source_type") or "core"
             decisions.append(
-                f"{source_type}: {source} / {formation} "
-                f"(n={model.get('n_core_points')}, "
-                f"core_phi={model.get('core_porosity_curve') or 'unknown'}, "
-                f"core_perm={model.get('core_permeability_curve') or 'unknown'})"
+                f"Core model of {'all depths' if formation == 'all_depths' else formation} from {source} "
+                f"({model.get('n_core_points')} plugs, "
+                f"{model.get('core_porosity_curve') or 'core porosity'} and "
+                f"{model.get('core_permeability_curve') or 'core permeability'})"
             )
         if not self._reproducing_benchmark:
             trace.parameters["core_porosity_fits"] = result.metadata.get("core_porosity_fits")
@@ -9980,9 +10037,9 @@ class DynamicWorkflow:
                 n_samples = swirr_metadata.get("hc_mask_samples")
                 reason = swirr_metadata.get("reason")
                 if n_samples is not None:
-                    decisions.append(f"SWIRR_APP = 0.200 fallback because hydrocarbon mask had {n_samples} samples")
+                    decisions.append(f"SWIRR_APP = 0.200 (default): only {n_samples} hydrocarbon samples to estimate it from")
                 elif reason:
-                    decisions.append(f"SWIRR_APP = 0.200 fallback because {reason}")
+                    decisions.append(f"SWIRR_APP = 0.200 (default) because {reason}")
                 else:
                     decisions.append("SWIRR_APP = 0.200 fallback")
                 self._warn_assumed(
@@ -10039,7 +10096,7 @@ class DynamicWorkflow:
         decisions.append(f"Empirical permeability curve stored as PERM ({perm_desc})")
         if perm_core is not None:
             decisions.append("Core-corrected permeability stored as PERM_CC")
-        decisions.append(f"Permeability strategy: {result.method}")
+        decisions.append(f"Permeability: {_perm_method_text(result.method)}")
         decisions.append(f"Perm range: {np.nanmin(perm_output):.3f} - {np.nanmax(perm_output):.1f} mD")
         trace.decisions = decisions
         return trace
@@ -10215,8 +10272,8 @@ class DynamicWorkflow:
         trace.input_curves = [source for source in (perm_source, phie_source) if source]
         trace.output_curves = ["RQI", "FZI", "PHI_Z"]
         trace.decisions.append(
-            f"RQI = 0.0314*sqrt({perm_source}/{phie_source}); "
-            f"PHI_Z = {phie_source}/(1-{phie_source}); FZI = RQI/PHI_Z"
+            f"RQI = 0.0314*sqrt(k/phi), PHI_Z = phi/(1-phi), FZI = RQI/PHI_Z, with k = "
+            f"{_priority_text(perm_source)} and phi = {_priority_text(phie_source)}"
         )
         return trace
 
@@ -10264,7 +10321,7 @@ class DynamicWorkflow:
             well.remove_curve("MHI")
             trace.output_curves = []
             trace.decisions.append(
-                "MHI not computed because SXO was only SW^(1/5) fallback or lacked invaded-zone support"
+                "MHI not computed: SXO here is only the SW^(1/5) estimate, without invaded-zone resistivity"
             )
             return trace
 
@@ -10280,8 +10337,8 @@ class DynamicWorkflow:
 
         trace.output_curves = ["MHI"]
         trace.decisions.append(
-            f"MHI = {sw_curve.mnemonic} / {sxo_curve.mnemonic} for {diagnostic_samples}/{well.n_samples} "
-            "samples with diagnostic SXO; fallback-SXO rows were set to NaN"
+            f"MHI = {sw_curve.mnemonic} / {sxo_curve.mnemonic} at {diagnostic_samples} of {well.n_samples} "
+            "samples, where SXO comes from invaded-zone resistivity; NaN where SXO is only SW^(1/5)"
         )
         return trace
 
@@ -10390,8 +10447,8 @@ class DynamicWorkflow:
                 for key in ("vcl_cutoff", "phie_cutoff", "sw_cutoff")
             )
         trace.decisions.append(f"NET_ROCK: VCL < {vcl_cutoff_text} -> {n_rock} samples ({n_rock*step_len:.1f} {unit})")
-        trace.decisions.append(f"NET_RES:  + {phie_source} > {phie_cutoff_text} -> {n_res} samples ({n_res*step_len:.1f} {unit})")
-        trace.decisions.append(f"NET_PAY:  + {sw_source} < {sw_cutoff_text} -> {n_pay} samples ({n_pay*step_len:.1f} {unit})")
+        trace.decisions.append(f"NET_RES: NET_ROCK and {_priority_text(phie_source)} > {phie_cutoff_text} -> {n_res} samples ({n_res*step_len:.1f} {unit})")
+        trace.decisions.append(f"NET_PAY: NET_RES and {_priority_text(sw_source)} < {sw_cutoff_text} -> {n_pay} samples ({n_pay*step_len:.1f} {unit})")
         if details is not None:
             excluded = {
                 kind: {
@@ -10420,10 +10477,11 @@ class DynamicWorkflow:
             trace.decisions.append(
                 f"CROSSOVER_FLAG from hydrocarbon analysis -> {n_crossover} samples ({n_crossover*step_len:.1f} {unit})"
             )
-        trace.decisions.extend(
-            f"Hydrocarbon analysis: {section_name}"
-            for section_name in hc_result.sections.keys()
-        )
+        if hc_result.sections:
+            trace.decisions.append(
+                "Hydrocarbon indicators computed: "
+                + ", ".join(str(name).replace("_", " ") for name in hc_result.sections.keys())
+            )
         return trace
 
     # ---- Helpers ----

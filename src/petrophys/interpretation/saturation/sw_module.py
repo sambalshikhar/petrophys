@@ -401,7 +401,7 @@ class SaturationModule:
                 sxo_method_counts["fifth_root_quicklook"] = int(np.count_nonzero(use_fallback))
             if np.any(finite_archie) and np.any(use_fallback):
                 sxo_method = "archie_rxo_rmf+fifth_root_quicklook"
-                sxo_reason = "invaded-zone Archie used where finite; fifth-root fallback used where RSHA/RXO/RESS/RMF were non-finite"
+                sxo_reason = "invaded-zone Archie where RSHA/RXO/RESS and RMF were read; SW^(1/5) where they were not"
             elif np.any(finite_archie):
                 sxo_method = "archie_rxo_rmf"
                 sxo_reason = "RSHA/RXO/RESS and RMF available"

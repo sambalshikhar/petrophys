@@ -3218,7 +3218,7 @@ def _rw_route_reason_text(rw_steps: Sequence[Any], selected_method: str) -> str:
     if selected in direct_methods:
         return ""
 
-    if any("Rw direct source unavailable" in decision for decision in decisions):
+    if any(decision.startswith("No Rw given: Rw estimated from the logs with the RMF curve") for decision in decisions):
         reasons.append("direct RW route skipped because no usable config/LAS RW value was found")
     elif selected != "salinity_conversion":
         reasons.append("direct RW route did not supply the selected RW curve")
@@ -5979,7 +5979,7 @@ def _build_delivery_computation_notes(
             if dt_fl and "lithology_dependent" not in matrix_modes and not dt_ma:
                 detail += f" with dt_fl={dt_fl}"
             details.append(detail + ".")
-        if phit_methods == ["adaptive_nd"] or any("PHIT = adaptive(PHIN, PHID)" in decision for decision in decisions):
+        if phit_methods == ["adaptive_nd"] or any(decision.startswith("PHIT from neutron and density: ") for decision in decisions):
             counts_text = _phit_source_counts_text(porosity_steps[0].parameters if porosity_steps else {})
             details.append(
                 "PHIT from the library's adaptive neutron-density combination: "
