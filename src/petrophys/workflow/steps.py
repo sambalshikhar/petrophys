@@ -209,14 +209,15 @@ def recorded_arguments(kind: str, steps: Mapping[str, Mapping[str, Any]]) -> Dic
             continue
         takes = {str(w).lower() for w in words.get(f"{kind}.{p}", ())}
         for key in (p, *RECORDED_AS.get(p, ())):
-            v = rec.get(key)
+            v: Any = rec.get(key)
             if number(v) and not takes:
                 out[p] = float(v)
                 break
             if isinstance(v, str) and v.strip().lower() in takes:
                 out[p] = v.strip().lower()
                 break
-            lo, hi = rec.get(f"{key}_min"), rec.get(f"{key}_max")
+            lo: Any = rec.get(f"{key}_min")
+            hi: Any = rec.get(f"{key}_max")
             if number(lo) and number(hi) and float(lo) == float(hi) and not takes:
                 out[p] = float(lo)
                 break

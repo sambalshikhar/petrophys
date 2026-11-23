@@ -300,7 +300,7 @@ class Curve:
     # Statistical methods
     def _non_nan_data(self) -> np.ndarray:
         """Return values that are not NaN."""
-        return self._data[~np.isnan(self._data)]
+        return np.asarray(self._data[~np.isnan(self._data)])
 
     @staticmethod
     def _check_reduction_args(axis=None, out=None) -> None:
