@@ -34,11 +34,11 @@ def _cell_fill(depth: np.ndarray, mask: np.ndarray):
     return _sample_cell_fill(depth, mask)
 
 
-@_styled_plot
 #: Flag names as the log plot's FLAGS track shows them.
 _FLAG_NAMES = {"NET_ROCK": "Clean Rock", "NET_RES": "Res", "NET_PAY": "Pay", "SEALFLAG": "Seal"}
 
 
+@_styled_plot
 def plot_zone_flags(
     well: "Well",
     flag_curves: List[str],
