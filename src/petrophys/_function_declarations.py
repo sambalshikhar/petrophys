@@ -2662,6 +2662,15 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
     "petrophys.visualization.specialist_panels.has_nmr_curves": fn(
         well=well(),
     ),
+    "petrophys.visualization.style.draw_categories": fn(
+        ax=object_(),
+        x=values(),
+        y=values(),
+        values=values(),
+        label=text(),
+        size=value(),
+        alpha=value(),
+    ),
     "petrophys.visualization.style.plot_style": fn(
         overrides=object_(),
     ),

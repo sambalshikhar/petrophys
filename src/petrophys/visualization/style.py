@@ -141,7 +141,9 @@ def draw_categories(ax, x, y, values, label, *, size=6.0, alpha=0.7) -> bool:
     if not finite.size or np.any(finite != np.round(finite)):
         return False
     categories = np.unique(finite)
-    if categories.size > _MAX_CATEGORIES:
+    # Class codes are small numbers (flags, flow units, facies); a log that
+    # happens to hold few whole values (GR 20, 40, 60) keeps its colour bar.
+    if categories.size > _MAX_CATEGORIES or categories.min() < -1 or categories.max() > 20:
         return False
     import re
 
