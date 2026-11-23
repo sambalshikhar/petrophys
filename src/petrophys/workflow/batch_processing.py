@@ -10,45 +10,11 @@ if TYPE_CHECKING:
     from petrophys.model.well import Well
 
 
-_LEGACY_CONFIG_NAMES = {
-    "saturation_model": "sw_model",
-    "matrix_density": "rho_ma",
-    "fluid_density": "rho_fl",
-    "matrix_dt": "dt_ma",
-    "fluid_dt": "dt_fl",
-}
-
-_LEGACY_STEP_FLAGS = {
-    "calculate_vcl": ("vclay", "rcl"),
-    "calculate_porosity": ("porosity", "porosity_refinement"),
-    "calculate_sw": ("saturation",),
-    "calculate_perm": ("permeability", "rock_quality"),
-    "calculate_net_pay": ("net_pay",),
-}
-
-
 def _dynamic_config_from_batch_config(config: Dict[str, Any]):
-    """Translate batch options (``WorkflowConfig`` names such as ``saturation_model``
-    and ``calculate_*`` flags) into ``DynamicWorkflowConfig`` fields."""
+    """The batch settings as a ``DynamicWorkflowConfig`` (the names ``pp.interpret`` takes)."""
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
 
-    values = dict(config)
-    for old_name, new_name in _LEGACY_CONFIG_NAMES.items():
-        if old_name in values:
-            if new_name in values:
-                raise TypeError(
-                    f"Batch config cannot contain both {old_name!r} and {new_name!r}"
-                )
-            values[new_name] = values.pop(old_name)
-
-    skip_steps = list(values.pop("skip_steps", []))
-    for option, steps in _LEGACY_STEP_FLAGS.items():
-        enabled = values.pop(option, True)
-        if not enabled:
-            skip_steps.extend(steps)
-    values["skip_steps"] = list(dict.fromkeys(skip_steps))
-
-    return DynamicWorkflowConfig(**values)
+    return DynamicWorkflowConfig(**dict(config))
 
 
 @dataclass

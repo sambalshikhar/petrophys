@@ -297,9 +297,6 @@ their raw logs.
     header RMF; unknown methods raise.
   - `create_pickett_plot` falls back to RDEP when there is no RT.
   - `total_porosity` rejects unknown methods.
-  - `StandardWorkflow`: unset cutoffs follow `lithology` (carbonate 0.3/0.045/
-    0.7), failed steps appear in `result.errors`, and an unsupported
-    `saturation_model` is refused with a pointer to `pp.interpret`.
   - `petrophys-context` given a file says a folder is needed.
 - Docs: the precedence of settings, header values and defaults is stated once
   for every route (settings reference, workflows guide); the header-parameter
@@ -862,7 +859,7 @@ wherever the package used the function.
   Sw on the effective basis. `SaturationResult` has `fallback_counts` (for
   example `{"dual_water->indonesia": 12}`) and
   `waxman_smits_clipped_to_zero`. `calculate_sw` warns with the number of
-  fallback samples, and `StandardWorkflow` takes `WorkflowConfig.rwb`.
+  fallback samples.
 
 #### Mineral solvers
 
@@ -1152,8 +1149,7 @@ wherever the package used the function.
   - saturation: `SaturationModule(rwb_fallback=..., effective_waxman_smits=...)`,
     `SaturationResult.fallback_counts` and
     `SaturationResult.waxman_smits_clipped_to_zero`, `MAX_CEC_MEQ_PER_100G`
-    in `petrophys.interpretation.saturation.waxman_smits`, and `rwb` in the
-    `WorkflowConfig` of `StandardWorkflow`;
+    in `petrophys.interpretation.saturation.waxman_smits`;
   - water and temperature: `brine_density`, `salinity_mg_per_l_to_ppm`,
     `chlorides_to_nacl_ppm` and `NACL_PER_CHLORIDE` in
     `petrophys.interpretation.electrical.rw.salinity_rw`,
@@ -1524,8 +1520,7 @@ wherever the package used the function.
   `visualization`.
 - Documentation: an API reference with a landing page per area (front door,
   data model and I/O, preprocessing, interpretation, evaluation, workflows,
-  visualization, reporting and LLM agents, and the fixed-configuration
-  `StandardWorkflow`), a page per section with
+  visualization, and reporting and LLM agents), a page per section with
   grouped summary tables, and one page per function and class, generated
   from each package's `__all__`. The user guide pages are executed at each
   documentation build: quickstart, own-data, input templates, data model,

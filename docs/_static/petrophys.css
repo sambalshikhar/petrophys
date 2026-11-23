@@ -943,12 +943,6 @@ table.autosummary td:last-child {
   font-variant-numeric: tabular-nums;
 }
 
-.ph-api-cards .sd-card.ph-api-card-legacy {
-  border-top-color: var(--color-foreground-muted) !important;
-  border-style: dashed !important;
-  border-top-style: solid !important;
-}
-
 body[data-theme="dark"] .ph-api-card .sd-card-title {
   color: inherit;
 }
@@ -1103,43 +1097,6 @@ dl.py.exception > dd > p.rubric.ph-api-members:first-of-type {
 dl.py.class > dd > .table-wrapper.autosummary td:first-child,
 dl.py.exception > dd > .table-wrapper.autosummary td:first-child {
   width: 34%;
-}
-
-/* -- Deprecation ------------------------------------------------------------ */
-
-.ph-api-deprecated,
-div.deprecated {
-  margin: 0.8rem 0 1.2rem;
-  padding: 0.55rem 0.9rem;
-  border-left: 3px solid var(--ph-api-amber-line);
-  border-radius: 0 4px 4px 0;
-  background: var(--ph-api-amber-bg);
-  color: var(--ph-api-amber-ink);
-}
-
-div.deprecated p {
-  margin: 0.15rem 0;
-}
-
-span.versionmodified.deprecated {
-  font-weight: 700;
-}
-
-.ph-api-card-legacy .sd-card-title a {
-  color: var(--color-foreground-secondary);
-}
-
-table.ph-api-compat {
-  width: 100%;
-  box-shadow: none;
-  font-size: 0.86rem;
-}
-
-table.ph-api-compat td,
-table.ph-api-compat th {
-  padding: 0.3rem 0.5rem;
-  border-left: 0;
-  border-right: 0;
 }
 
 /* -- Narrow screens ------------------------------------------------------- */

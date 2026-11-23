@@ -2,13 +2,6 @@
 Interpretation workflows: the dynamic workflow behind pp.interpret, custom workflows and batch runs.
 """
 
-from petrophys.workflow.standard_workflow import (
-    StandardWorkflow,
-    WorkflowConfig,
-    WorkflowResult,
-    StepTrace,
-    run_standard_workflow,
-)
 from petrophys.workflow.dynamic_workflow import (
     DynamicWorkflow,
     DynamicWorkflowConfig,
@@ -52,12 +45,6 @@ from petrophys.workflow.custom import (
 from petrophys.workflow import steps
 
 __all__ = [
-    # Standard workflow
-    "StandardWorkflow",
-    "WorkflowConfig",
-    "WorkflowResult",
-    "StepTrace",
-    "run_standard_workflow",
     # Dynamic workflow
     "DynamicWorkflow",
     "DynamicWorkflowConfig",

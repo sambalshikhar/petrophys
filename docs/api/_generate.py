@@ -79,7 +79,6 @@ class Area:
     intro: str
     key: str
     items: Sequence[Union[Section, Page, Topic]]
-    legacy: bool = False
     flat: bool = False
 
 
@@ -1036,19 +1035,6 @@ The rest of the reference documents what these calls are built from.""",
             ),
         ],
     ),
-    Area(
-        slug="legacy",
-        title="Legacy",
-        card="The fixed-configuration StandardWorkflow and old import paths, "
-        "kept for existing code and scheduled for removal.",
-        intro="Deprecated: kept for existing code and scheduled for removal. "
-        "Use ``pp.interpret`` or :class:`~petrophys.workflow.DynamicWorkflow` "
-        "instead.",
-        key="petrophys.workflow.standard_workflow.StandardWorkflow "
-        "petrophys.workflow.standard_workflow.run_standard_workflow",
-        legacy=True,
-        items=[Section("petrophys.workflow.standard_workflow", title="StandardWorkflow")],
-    ),
 ]
 
 def _wrap_sections(items: Sequence[Any]) -> list[Any]:
@@ -1148,7 +1134,7 @@ petrophys.evaluation.intervals petrophys.evaluation.summaries petrophys.evaluati
 petrophys.evaluation.sensitivity petrophys.evaluation.diagnostics petrophys.workflow
 petrophys.workflow.custom petrophys.workflow.steps petrophys.workflow.schema
 petrophys.reporting petrophys.reporting.context petrophys.visualization petrophys.mcp
-petrophys.mcp.server petrophys.workflow.standard_workflow
+petrophys.mcp.server
 """.split()
 
 #: Generated pages, relative to the docs folder.
@@ -1629,8 +1615,7 @@ class _Writer:
             canonical = self.exports.get(path)
             if canonical and canonical != path and self.documented[canonical].kind != CONSTANT:
                 result.append(self.documented[canonical])
-        legacy = {s.module for area, s, _ in all_sections() if area.legacy}
-        return sorted(result, key=lambda doc: doc.module in legacy)
+        return result
 
     def groups(self, section: Section, own: list[Documented]):
         by_name = {doc.name: doc for doc in own}
@@ -1800,7 +1785,7 @@ class _Writer:
 
     def area(self, area: Area) -> str:
         docname = (OUTPUT / area.slug).as_posix()
-        lead = "ph-api-deprecated" if area.legacy else "ph-api-lead"
+        lead = "ph-api-lead"
         lines = [f".. _api-{area.slug}:", ""] + _heading(area.title, 1)
         lines += [f".. rst-class:: {lead}", "", area.intro, ""]
         area_docs: list[Documented] = []
@@ -1810,8 +1795,6 @@ class _Writer:
             lines += self.section(section, 2, docname, merged=True)
         else:
             lines += self.items(area.items, 2, docname, area_docs)
-        if area.legacy:
-            lines += self.compat_paths()
         self.counts[area.slug] = self.counts_of(area_docs)
         pages_by_module: dict[str, set[str]] = {}
         for section, page in iter_sections(area.items):
@@ -1841,26 +1824,12 @@ class _Writer:
                 lines += self.section(section, 2, docname, merged=False)
         return "\n".join(lines).rstrip() + "\n"
 
-    def compat_paths(self) -> list[str]:
-        compat = getattr(_import("petrophys.io"), "_COMPAT_EXPORTS", {})
-        if not compat:
-            return []
-        lines = _heading("Deprecated import paths", 2)
-        lines += ["These names import from ``petrophys.io`` with a "
-                  "``DeprecationWarning``. Import them from the module listed.", "",
-                  ".. list-table::", "   :header-rows: 1", "   :class: ph-api-compat", "",
-                  "   * - Deprecated", "     - Use instead"]
-        for name, (module, attr) in sorted(compat.items()):
-            target = self.exports.get(f"{module}.{attr}", f"{module}.{attr}")
-            lines += [f"   * - ``petrophys.io.{name}``", f"     - :py:obj:`{target}`"]
-        return lines + [""]
-
     def cards(self) -> str:
         lines = [".. grid:: 1 1 2 2", "   :gutter: 3", "   :class-container: ph-api-cards", ""]
         for area in AREAS:
             if area.card is None:
                 continue
-            classes = "ph-api-card ph-api-card-legacy" if area.legacy else "ph-api-card"
+            classes = "ph-api-card"
             keys = " ".join(f":py:obj:`~{key}`" for key in _split(area.key))
             lines += [
                 f"   .. grid-item-card:: :doc:`{area.title} <reference/{area.slug}>`",

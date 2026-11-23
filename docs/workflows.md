@@ -359,8 +359,6 @@ partial = workflow.run_selected_steps(pp.read(pp.sample("30_6-5")),
 partial.to_dataframe()[["Step", "Method", "Output Curves"]]
 ```
 
-{class}`~petrophys.workflow.standard_workflow.StandardWorkflow` is deprecated: it raises a `DeprecationWarning`; use `pp.interpret` or `DynamicWorkflow`.
-
 (review-interpretation)=
 ## Review an interpretation
 
