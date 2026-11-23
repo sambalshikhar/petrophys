@@ -3254,11 +3254,11 @@ def _rw_route_reason_text(rw_steps: Sequence[Any], selected_method: str) -> str:
 
     if selected == "default_fallback_profile":
         rwa_skip = next(
-            (decision for decision in decisions if decision.startswith("Rwa clean-wet fallback skipped")),
+            (decision for decision in decisions if decision.startswith("Rw not estimated from clean porous rock: ")),
             "",
         )
         if rwa_skip:
-            reasons.append("RWA clean-wet route skipped because " + rwa_skip.split("because", 1)[1].strip())
+            reasons.append("RWA clean-wet route skipped: " + rwa_skip.split(": ", 1)[1].strip())
 
     return "; ".join(_ordered_unique(reasons))
 

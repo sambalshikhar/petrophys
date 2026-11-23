@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import difflib
 import json
 import os
 import sys
@@ -71,7 +70,7 @@ def _interpretation_settings(items) -> dict:
     """The ``--setting NAME=VALUE`` items as interpretation settings."""
     import dataclasses
 
-    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, setting_suggestion
 
     settings: dict = {}
     for item in items or []:
@@ -87,8 +86,8 @@ def _interpretation_settings(items) -> dict:
     if unknown:
         hints = []
         for name in unknown:
-            close = difflib.get_close_matches(name, sorted(known), n=1)
-            hints.append(f"{name!r}" + (f" (did you mean {close[0]!r}?)" if close else ""))
+            hint = setting_suggestion(name, known)
+            hints.append(f"{name!r}" + (f" (did you mean {hint!r}?)" if hint else ""))
         raise ValueError(
             "Unknown interpretation setting(s): " + ", ".join(hints)
             + ". See petrophys.DynamicWorkflowConfig for the available settings."

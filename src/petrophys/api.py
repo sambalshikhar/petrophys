@@ -844,7 +844,7 @@ def interpret(
     >>> results = pp.interpret("logs/", formations="tops.xlsx")         # doctest: +SKIP
     >>> table = results.formation_summary()                              # doctest: +SKIP
     """
-    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, run_dynamic_workflow
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, run_dynamic_workflow, setting_suggestion
 
     from petrophys.workflow.multi_well import WellList
 
@@ -900,8 +900,8 @@ def interpret(
     if unknown:
         hints = []
         for name in unknown:
-            close = difflib.get_close_matches(name.lower(), sorted(known), n=1)
-            hints.append(f"{name!r}" + (f" (did you mean {close[0]!r}?)" if close else ""))
+            hint = setting_suggestion(name, known)
+            hints.append(f"{name!r}" + (f" (did you mean {hint!r}?)" if hint else ""))
         raise TypeError(
             "Unknown interpretation setting(s): " + ", ".join(hints)
             + ". See petrophys.DynamicWorkflowConfig for the available settings."
@@ -1023,7 +1023,7 @@ def _interpret_many(items: list, config: Any, *, output: Optional[PathLike] = No
     """Interpret each of ``items`` with :func:`interpret`; see its several-wells form."""
     import warnings
 
-    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
+    from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig, setting_suggestion
     from petrophys.workflow.multi_well import MultiWellResult
 
     if not items:
@@ -1041,8 +1041,8 @@ def _interpret_many(items: list, config: Any, *, output: Optional[PathLike] = No
         if unknown:
             hints = []
             for name in unknown:
-                close = difflib.get_close_matches(name.lower(), sorted(known), n=1)
-                hints.append(f"{name!r}" + (f" (did you mean {close[0]!r}?)" if close else ""))
+                hint = setting_suggestion(name, known)
+                hints.append(f"{name!r}" + (f" (did you mean {hint!r}?)" if hint else ""))
             raise TypeError(
                 "Unknown interpretation setting(s): " + ", ".join(hints)
                 + ". See petrophys.DynamicWorkflowConfig for the available settings."

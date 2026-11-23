@@ -24,7 +24,7 @@ are not run by :meth:`DynamicWorkflow.run`;
 :meth:`DynamicWorkflow.run_selected_steps` runs them when asked.
 """
 
-from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 import dataclasses
@@ -121,9 +121,14 @@ def _perm_method_text(method) -> str:
 
 
 def _priority_text(name) -> str:
-    """'PHIE_CC+PHIE' (first available per sample) as 'PHIE_CC (PHIE where it is missing)'."""
+    """A per-sample choice of curves, 'PHIE_CC+PHIE' (the first with a value at each
+    sample), as 'PHIE_CC, and PHIE at samples without PHIE_CC'."""
     parts = [part for part in str(name).split("+") if part]
-    return parts[0] if len(parts) <= 1 else f"{parts[0]} ({', then '.join(parts[1:])} where it is missing)"
+    text = parts[0] if parts else ""
+    for index, part in enumerate(parts[1:], start=1):
+        before = parts[0] if index == 1 else ", ".join(parts[:index - 1]) + " or " + parts[index - 1]
+        text += f", and {part} at samples without {before}"
+    return text
 
 
 def _lithology_source_text(source) -> str:
@@ -1353,7 +1358,9 @@ class DynamicWorkflowConfig:
     #: volume. One value, or one per lithology family as for ``vcl_cutoff``,
     #: e.g. ``{"clastic": 0.2, "carbonate": 0.3}``.
     sw_routing_vcl_cutoff: Optional[Any] = None
-    #: Shale resistivity, ohm.m. Defaults to the computed clay resistivity.
+    #: Shale resistivity Rsh, ohm.m, of the shaly-sand equations (Simandoux,
+    #: modified Simandoux, Indonesia, North Sea, Nigeria). Unset, it is the
+    #: clay resistivity Rcl the workflow computes from the well's shale.
     rtsh: Optional[float] = None
     #: Shale exponent of the North Sea model.
     vsh_exp: float = 1.6
@@ -1620,7 +1627,6 @@ def _normalized_zones(config: "DynamicWorkflowConfig", errors: List[str], raw: A
     Depths stay in their own unit (``depth_unit``, else the well's) until a
     run converts them; settings are checked as a config would check them.
     """
-    import difflib
     from collections.abc import Mapping
 
     import pandas as pd
@@ -1688,10 +1694,7 @@ def _normalized_zones(config: "DynamicWorkflowConfig", errors: List[str], raw: A
             else:
                 from petrophys.workflow.zoned_batch import PARAMETER_ALIASES
 
-                hint = PARAMETER_ALIASES.get(name.upper())
-                if hint is None:
-                    close = difflib.get_close_matches(name, sorted(fields), n=1)
-                    hint = close[0] if close else None
+                hint = PARAMETER_ALIASES.get(name.upper()) or setting_suggestion(name, fields)
                 errors.append(
                     f"zones: zone {label}: unknown setting {name!r}"
                     + (f" (did you mean {hint!r}?)" if hint else "")
@@ -2300,6 +2303,29 @@ def _physical_range_errors(config: "DynamicWorkflowConfig") -> List[str]:
             f"the matrix slowness (water 189, oil about 240); got {dt_fl!r}"
         )
     return errors
+
+
+#: Names petrophysicists use for a setting, offered when one is given that is not a setting.
+_SETTING_SYNONYMS = {
+    "rcl": "rtsh", "rsh": "rtsh", "r_sh": "rtsh", "rshale": "rtsh", "shale_resistivity": "rtsh",
+    "clay_resistivity": "rtsh", "rw_temp_f": "rw_meas_temp_f", "rwt": "rw_meas_temp_f",
+    "salinity": "salinity_ppm", "bht": "bht_f", "phi_sh": "phi_cl", "phish": "phi_cl",
+}
+
+
+def setting_suggestion(name: str, known: Iterable[str]) -> Optional[str]:
+    """The setting a mistyped or differently named one most likely means, or None."""
+    import difflib
+
+    from petrophys.workflow.zoned_batch import PARAMETER_ALIASES
+
+    key = str(name).strip()
+    known = sorted(known)
+    for candidate in (_SETTING_SYNONYMS.get(key.lower()), PARAMETER_ALIASES.get(key.upper())):
+        if candidate in known:
+            return candidate
+    close = difflib.get_close_matches(key.lower(), known, n=1)
+    return close[0] if close else None
 
 
 def _choice_error(name: str, value: Any, choices: Sequence[str]) -> str:
@@ -8228,9 +8254,9 @@ class DynamicWorkflow:
                     },
                     [rt_curve.mnemonic, phie_curve.mnemonic, vcl_curve.mnemonic],
                 )
-            decisions.append("Rwa clean-wet fallback skipped because no valid VCL < 0.3 and effective porosity > 0.05 samples were available")
+            decisions.append("Rw not estimated from clean porous rock: no samples with VCL < 0.3 and effective porosity > 0.05")
         else:
-            decisions.append("Rwa clean-wet fallback skipped because RDEP/RT, effective porosity, or VCL is unavailable")
+            decisions.append("Rw not estimated from clean porous rock: RDEP/RT, effective porosity or VCL is missing")
 
         if not self.config.allow_default_rw:
             message = (
@@ -10272,8 +10298,8 @@ class DynamicWorkflow:
         trace.input_curves = [source for source in (perm_source, phie_source) if source]
         trace.output_curves = ["RQI", "FZI", "PHI_Z"]
         trace.decisions.append(
-            f"RQI = 0.0314*sqrt(k/phi), PHI_Z = phi/(1-phi), FZI = RQI/PHI_Z, with k = "
-            f"{_priority_text(perm_source)} and phi = {_priority_text(phie_source)}"
+            f"RQI = 0.0314*sqrt(k/phi), PHI_Z = phi/(1-phi), FZI = RQI/PHI_Z; "
+            f"k is {_priority_text(perm_source)}; phi is {_priority_text(phie_source)}"
         )
         return trace
 
@@ -10447,8 +10473,14 @@ class DynamicWorkflow:
                 for key in ("vcl_cutoff", "phie_cutoff", "sw_cutoff")
             )
         trace.decisions.append(f"NET_ROCK: VCL < {vcl_cutoff_text} -> {n_rock} samples ({n_rock*step_len:.1f} {unit})")
-        trace.decisions.append(f"NET_RES: NET_ROCK and {_priority_text(phie_source)} > {phie_cutoff_text} -> {n_res} samples ({n_res*step_len:.1f} {unit})")
-        trace.decisions.append(f"NET_PAY: NET_RES and {_priority_text(sw_source)} < {sw_cutoff_text} -> {n_pay} samples ({n_pay*step_len:.1f} {unit})")
+        trace.decisions.append(
+            f"NET_RES: NET_ROCK and porosity > {phie_cutoff_text} -> {n_res} samples ({n_res*step_len:.1f} {unit}); "
+            f"porosity is {_priority_text(phie_source)}"
+        )
+        trace.decisions.append(
+            f"NET_PAY: NET_RES and SW < {sw_cutoff_text} -> {n_pay} samples ({n_pay*step_len:.1f} {unit})"
+            + (f"; SW is {_priority_text(sw_source)}" if str(sw_source) != "SW" else "")
+        )
         if details is not None:
             excluded = {
                 kind: {
