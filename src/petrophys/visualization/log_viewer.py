@@ -1294,6 +1294,8 @@ def _adaptive_curve_range(well: "Well", curve_name: str) -> Tuple[float, float]:
 
 
 #: Suffix of a curve rebuilt by :func:`petrophys.impute` (measured values plus predictions in the gaps).
+#: Tracks named after the logs they hold, renamed when ``curves=`` keeps none of those logs.
+_TRACKS_NAMED_FOR_LOGS = {"GAMMA / HOLE", "DENSITY / NEUTRON", "DENSITY / NEUTRON / SONIC", "SONIC"}
 IMPUTED_SUFFIX = "_IMPUTED"
 #: Suffix of the out-of-fold check curve of an imputation (``RHOB_PREDICTED``).
 PREDICTED_SUFFIX = "_PREDICTED"
@@ -1710,8 +1712,11 @@ def create_adaptive_log_viewer_template(
         [
             replace(_adaptive_spec("POTA", "K", 0, 5, "#e41a1c"), candidates=["POTA", "HFK", "POTASSIUM", "KC", "K40"]),
             replace(_adaptive_spec("THOR", "Th", 0, 25, "#377eb8"), candidates=["THOR", "HTHO", "THORIUM", "THC", "TH232"]),
-            replace(_adaptive_spec("URAN", "U", 0, 10, "#4daf4a", line_style="--"),
+            replace(_adaptive_spec("URAN", "U", 0, 10, "#ff7f00", line_style="--"),
                     candidates=["URAN", "HURA", "URANIUM", "UC", "U238"]),
+            # Share of the gamma ray from uranium, from interpret_spectral_gamma.
+            replace(_adaptive_spec("SGR_URANIUM_FRACTION", "U fraction", 0, 1, "#984ea3", line_style=":"),
+                    on_request=True),
         ],
         width=1.15,
     )
@@ -2301,6 +2306,14 @@ class LogViewer:
             specs = []
             for spec in track.curves:
                 resolved = _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates)
+                # A requested curve that is another of this curve's names (THORIUM
+                # beside a raw THOR) is drawn here, in this curve's style and scale.
+                aliases = {spec.curve_name.upper(), *(str(c).upper() for c in spec.candidates)}
+                wanted = [key for key in target_set if key in aliases and key not in placed
+                          and key != str(resolved or "").upper() and key in available]
+                if wanted and (resolved is None or str(resolved).upper() not in target_set):
+                    resolved = available[sorted(wanted)[0]]
+                    spec = replace(spec, curve_name=resolved, candidates=[])
                 if resolved is None:
                     continue
                 key = resolved.upper()
@@ -2323,7 +2336,8 @@ class LogViewer:
             if specs:
                 # A track that kept neither its first curve nor its namesakes is
                 # named after what it holds (no "GAMMA / HOLE" over VCL alone).
-                if track.curves and specs[0] is not track.curves[0] and track.curves[0] not in specs:
+                if (track.display_name in _TRACKS_NAMED_FOR_LOGS and track.curves
+                        and specs[0] is not track.curves[0] and track.curves[0] not in specs):
                     shown = [str(spec.display_name or spec.curve_name) for spec in specs]
                     if all(name.upper().startswith("VCL") for name in shown):
                         track.display_name = "CLAY VOLUME"
