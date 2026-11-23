@@ -169,7 +169,8 @@ These checks include saturation fractions and resistivity, BVW, NMR permeability
 Timur fallback inputs, core elastic properties, GR baseline ordering, density
 contrast and MHI classification. A warning does not repair a retained value:
 review the input before using that result. Ordinary missing `NaN` samples alone
-do not trigger these numerical range warnings.
+do not trigger these numerical range warnings, nor does a porosity of zero,
+the effective porosity of shale.
 
 Capture warnings in a user interface or automated job:
 

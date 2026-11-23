@@ -104,6 +104,12 @@ class InputValidationChecks(unittest.TestCase):
             with self.subTest(function=function.__name__):
                 self.warns(function, rt=[10., 20.], rw=.1, phi=[1.1, 2.],
                            contains="Saturation phi", **extra)
+        self.warns(archie, rt=[10., 20.], rw=.1, phi=[-.05, .25], contains="Saturation phi")
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            archie([10., 20.], .1, [0., .25])
+        self.assertFalse([w for w in captured if "Saturation phi" in str(w.message)],
+                         "zero effective porosity (shale) must not warn")
         self.warns(archie, rt=[-1., 20.], rw=.1, phi=[.2, .25], contains="resistivity")
         with self.assertRaisesRegex(ValueError, "finite positive resistivity"):
             archie(10., np.nan, .2)
@@ -143,6 +149,11 @@ class InputValidationChecks(unittest.TestCase):
 
         _, messages = self.warns(timur, [.2], -.2, contains="replaced by 0.01")
         self.assertTrue(any("irreducible water saturation" in m for m in messages))
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            timur([0., .2], .2)
+        self.assertFalse([w for w in captured if "Timur porosity" in str(w.message)],
+                         "zero porosity (shale) must not warn")
         self.warns(classify_mhi, np.array([-1., np.nan]), contains="MHI classification")
 
     def test_explicit_survey_shape_and_type_errors(self):

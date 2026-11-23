@@ -52,7 +52,9 @@ def timur(
     # Apply the same nonpositive-input fallback for scalars and arrays.
     # Positive values, including small fractions, retain their measured value.
     phi, swi = broadcast_inputs(phi=phi, swi=swi)
-    warn_range(phi, "Timur porosity (fraction)", 0, 1, open_lower=True,
+    # Zero porosity (shale) is expected and not warned about; it is replaced
+    # by 0.001 like negative porosity.
+    warn_range(phi, "Timur porosity (fraction)", 0, 1,
                action="Nonpositive porosity is replaced by 0.001; other values are retained.")
     warn_range(swi, "Timur irreducible water saturation (fraction)", 0, 1, open_lower=True,
                action="Nonpositive Swirr is replaced by 0.01; other values are retained.")

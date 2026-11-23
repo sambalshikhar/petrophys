@@ -33,10 +33,14 @@ def check_resistivity_parameters(**parameters: Any) -> None:
 
 
 def check_saturation_fractions(**fractions: Any) -> None:
-    """Warn before fraction inputs are floored or clipped by a saturation model."""
+    """Warn before fraction inputs outside 0-1 are floored or clipped by a saturation model.
+
+    A porosity of exactly 0 is not warned about: effective porosity is zero in
+    shale by definition (PHIE = PHIT (1 - Swb), Swb = 1; Clavier et al., 1984),
+    and the models' porosity floor gives Sw = 1 there.
+    """
     for name, value in fractions.items():
         warn_range(value, f"Saturation {name} (fraction)", 0, 1,
-                   open_lower=name in {"phi", "phi_t"},
                    action="The model's existing floors and clipping are applied; review the input and result.")
 
 
