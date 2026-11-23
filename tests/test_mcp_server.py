@@ -40,7 +40,7 @@ class McpServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(well.is_error, well.content)
         self.assertEqual(well.structured_content["well_id"], "30_6-5")
 
-        run = await self.call("interpret_well", well_id="30_6-5", settings={"rw": 0.07, "rw_meas_temp_f": 230},
+        run = await self.call("interpret_well", well_id="30_6-5", settings={"rw": 0.07, "rw_meas_temp": "230 degF"},
                               summary_top=2841, summary_bottom=2958)
         self.assertFalse(run.is_error, run.content)
         result = run.structured_content

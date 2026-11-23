@@ -49,7 +49,7 @@ import json
 import petrophys as pp
 
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)  # Rw 0.07 ohm.m at 230 degF
+result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")  # Rw 0.07 ohm.m at 230 degF
 context = pp.export_context(result)
 ```
 
@@ -193,7 +193,7 @@ default; `reader_options={"depth_column": "MD"}` names another). They record
 no depth unit, so give it: `pattern="*.csv", reader_options={"depth_unit": "m"}`
 (CLI: `--pattern "*.csv" --depth-unit m`). They record no curve units or
 header parameters either: give the curves in the library's standard units and
-pass values such as `rw`, `rw_meas_temp_f` and `bht_f` as settings, which LAS
+pass values such as `rw`, `rw_meas_temp` and `bht` as settings, which LAS
 files would carry in their headers. The published-package profiles
 read LAS only.
 
@@ -241,7 +241,7 @@ petrophys-context logs outputs/context_run_01 --layout package \
 | `--well WELL` | export only these wells (repeatable) |
 | `--recursive`, `--pattern` | search nested folders; choose which files to read |
 | `--min-thickness` | override the grouping threshold |
-| `--setting NAME=VALUE` | an interpretation setting of `petrophys.interpret`, e.g. `--setting rw=0.07 --setting rw_meas_temp_f=230` (repeatable; the value is read as JSON, else as text); not with `--profile` |
+| `--setting NAME=VALUE` | an interpretation setting of `petrophys.interpret`, e.g. `--setting rw=0.07 --setting rw_meas_temp="230 degF"` (repeatable; the value is read as JSON, else as text); not with `--profile` |
 | `--profile` | compute the published `geolink`, `geolink_train`, `costa` or `danish` package from its raw LAS (geolink, geolink_train and danish also need `--formations` and `--lithology-codes`); omit it to interpret with your supplied settings |
 | `--tops-rank`, `--tops-sheet` | pick the formation level (`group`, `formation`, `member`) and the Excel sheet |
 | `--lithology-domain` | broad mineral-solving domain: `clastic`, `carbonate`, `evaporite` or `auto` |

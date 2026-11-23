@@ -186,9 +186,9 @@ their raw logs.
   keep their calculations):
   - `rho_ma`, `dt_ma` and `nphi_ma` hold at every depth, also where a
     lithology log sets matrix values per group.
-  - `salinity_ppm` wins over a header RW, and `rw_meas_temp_f` over a
+  - `salinity_ppm` wins over a header RW, and `rw_meas_temp` over a
     header RWT; the Rmf step ranks explicit settings first too.
-  - `bht_f` and `surface_temp_f` win over an input TEMP log (kept as
+  - `bht` and `surface_temp` win over an input TEMP log (kept as
     TEMP_LOG); zone runs place the BHT at the well's TD, not each zone's base.
   - The SP-derived Rw uses `sp_max` and `sp_min` as its clean and shale lines.
   - The clastic mineral solve uses `rho_fl` and `dt_fl` for its water
@@ -553,10 +553,10 @@ wherever the package used the function.
   wrong type, a lithology file that does not exist, `peer_wells` that are
   not wells, a `lithology_curve` that does not hold lithology codes and
   values outside physical ranges (`rho_cl`, `swirr=0`, `rw` above
-  100 ohm.m, sonic end points, `bht_f`) raise ValueError. A total depth
+  100 ohm.m, sonic end points, `bht`) raise ValueError. A total depth
   above the deepest log sample is not used for the temperature gradient. A
   setting that has no effect in a run (peer core without its conditions,
-  `cec` without `b_coeff`, `rw_meas_temp_f` without an Rw, curve mappings
+  `cec` without `b_coeff`, `rw_meas_temp` without an Rw, curve mappings
   with standardization off) gives a warning saying why.
 
 #### Inputs
@@ -759,11 +759,17 @@ wherever the package used the function.
   when there is one. The header OBM flag sets `mud_type`, WTSAL the water
   salinity (not used when the header gives RW) and FLSAL the mud-filtrate
   salinity; the "geolink" profile reads none of them.
-- `gradient_f_per_100ft` sets a geothermal gradient, defaulting to the header
+- `temperature_gradient` sets a geothermal gradient, defaulting to the header
   TGRAD (degC/100 m, degC/km or degF/100 ft). A BHT anchors the profile at TD
   and is used ahead of a header gradient; a gradient you set is used instead
-  of the header BHT. `rw_meas_temp_f`, `rmf_meas_temp_f` and `rm_meas_temp_f`
+  of the header BHT. `rw_meas_temp`, `rmf_meas_temp` and `rm_meas_temp`
   must be 0-700 degF.
+- Temperature, gradient and depth settings carry their unit:
+  `rw_meas_temp="230 degF"` or `"110 degC"`, `bht`, `surface_temp`,
+  `rmf_meas_temp` and `rm_meas_temp` the same, `temperature_gradient="30
+  degC/km"` (or degC/100m, degF/100ft) and `td="2650 m"`; a `(value, unit)`
+  pair works too. A bare temperature or gradient is read as degF
+  (degF/100 ft), with a warning; a bare `td` is in the well's depth unit.
 - With `mud_type="OBM"` no SXO or MHI is computed, and Rw is not estimated
   from the SP or from Rxo/Rt: they need a conductive, water-based filtrate,
   and the 200 ohm.m Rmf written for oil-based mud is a placeholder. Rw then

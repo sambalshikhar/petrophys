@@ -5,7 +5,7 @@ These functions are the front door to Petrophys::
     import petrophys as pp
 
     well = pp.read(pp.sample("30_6-5"))
-    result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)   # Rw (ohm.m) at 230 degF
+    result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")   # Rw (ohm.m) at 230 degF
     pp.plot(result, top=2800, bottom=3000).save("interpretation.png")
 
 Everything they do is also available through the lower-level modules
@@ -811,7 +811,7 @@ def interpret(
         already carries.
     **options
         Individual :class:`~petrophys.workflow.DynamicWorkflowConfig` settings,
-        e.g. ``rw=0.07, rw_meas_temp_f=230`` or ``sw_model="indonesia"``. With ``config``, they
+        e.g. ``rw=0.07, rw_meas_temp="230 degF"`` or ``sw_model="indonesia"``. With ``config``, they
         override the corresponding fields of a copy of ``config``.
 
     Returns
@@ -836,7 +836,7 @@ def interpret(
     Examples
     --------
     >>> import petrophys as pp
-    >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230)
+    >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp="230 degF")
     >>> result.raise_for_errors().status
     'interpreted'
     >>> result = pp.interpret("well.las", formations="tops.csv", lithology="FACIES",

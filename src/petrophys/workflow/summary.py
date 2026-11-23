@@ -163,8 +163,14 @@ def summarize_result(
     well = result.well
     mask, top, bottom = depth_window(well, top, bottom)
     defaults = DynamicWorkflowConfig.__dataclass_fields__
+    def shown(value: Any) -> Any:
+        # A setting with its unit, as text: "251 degF".
+        if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], str):
+            return f"{float(value[0]):g} {value[1]}"
+        return value
+
     settings = {
-        name: getattr(result.config, name)
+        name: shown(getattr(result.config, name))
         for name, spec in defaults.items()
         if name != "lithology" and not name.startswith("_")
         and spec.default is not dataclasses.MISSING

@@ -34,6 +34,7 @@ import json
 import numpy as np
 from pathlib import Path
 import re
+import warnings
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.well import Well
 from petrophys.model.class_tables import Bands
@@ -892,6 +893,136 @@ def _curve_summaries_for_trace(
     return summaries
 
 
+#: The settings that carry a unit, by the name the workflow computes them under:
+#: (setting, kind, unit of the computed value).
+_UNIT_SETTINGS = {
+    "surface_temp_f": ("surface_temp", "temperature", "degF"),
+    "bht_f": ("bht", "temperature", "degF"),
+    "rmf_meas_temp_f": ("rmf_meas_temp", "temperature", "degF"),
+    "rm_meas_temp_f": ("rm_meas_temp", "temperature", "degF"),
+    "rw_meas_temp_f": ("rw_meas_temp", "temperature", "degF"),
+    "gradient_f_per_100ft": ("temperature_gradient", "gradient", "degF/100ft"),
+    "td_ft": ("td", "depth", "ft"),
+}
+#: The setting a computed name stands for, for messages.
+_SETTING_NAME = {computed: setting for computed, (setting, _, _) in _UNIT_SETTINGS.items()}
+_QUANTITY = re.compile(r"\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*(.*?)\s*")
+
+
+def _split_quantity(name: str, value: Any, example: str) -> Tuple[float, Optional[str]]:
+    """A setting's number and unit: from ``"230 degF"``, ``(230, "degF")`` or a bare number."""
+    if isinstance(value, tuple) and len(value) == 2:
+        number, unit = value
+    elif isinstance(value, str):
+        match = _QUANTITY.fullmatch(value)
+        if match is None:
+            raise ValueError(f"{name}={value!r}: give a number with its unit, e.g. {name}={example!r}")
+        number, unit = match.group(1), match.group(2) or None
+    elif isinstance(value, (bool, np.bool_)):
+        raise TypeError(f"{name} must be a number with its unit, e.g. {name}={example!r}; got {value!r}")
+    else:
+        number, unit = value, None
+    try:
+        number = float(number)
+    except (TypeError, ValueError):
+        raise TypeError(f"{name} must be a number with its unit, e.g. {name}={example!r}; got {value!r}") from None
+    return number, (str(unit).strip() or None) if unit is not None else None
+
+
+def _computed_value(computed: str, value: Any) -> Tuple[Optional[float], Optional[str]]:
+    """``value`` of a unit setting in the unit the workflow computes in, and the unit it was given in.
+
+    A bare temperature or gradient is read as degF (degF/100 ft), with a
+    warning; a bare TD is in the well's depth unit (returned with unit None).
+    """
+    from petrophys.model.units import normalize_depth_unit, temperature_to_fahrenheit, temperature_unit
+    from petrophys.workflow.zoned_batch import _gradient_to_f_per_100ft
+
+    setting, kind, unit_out = _UNIT_SETTINGS[computed]
+    example = {"temperature": "230 degF", "gradient": "30 degC/km", "depth": "2650 m"}[kind]
+    number, unit = _split_quantity(setting, value, example)
+    if kind == "depth":
+        if unit is None:
+            return number, None
+        given = normalize_depth_unit(unit, strict=False)
+        if given not in ("m", "ft"):
+            raise ValueError(f"{setting}={value!r}: the depth unit must be m or ft")
+        return (number / 0.3048 if given == "m" else number), "ft"
+    if unit is None:
+        warnings.warn(
+            f"{setting}={number:g} has no unit: it is read as {number:g} {unit_out}. Give the unit, "
+            f"e.g. {setting}=\"{number:g} {unit_out}\".",
+            UserWarning, stacklevel=5,
+        )
+        return number, unit_out
+    if kind == "temperature":
+        try:
+            temperature_unit(unit, strict=True)
+        except ValueError:
+            raise ValueError(f"{setting}={value!r}: the unit must be degF, degC or K") from None
+        return float(temperature_to_fahrenheit(number, unit)), unit
+    gradient = _gradient_to_f_per_100ft(number, unit)
+    if gradient is None:
+        raise ValueError(f"{setting}={value!r}: the unit must be degF/100ft, degC/100m or degC/km")
+    return float(gradient), unit
+
+
+class _InComputedUnit:
+    """A unit setting's value in degF, degF/100 ft or feet (``bht_f`` for ``bht``).
+
+    Setting it (as the workflow does from a header value) also sets the
+    public setting, with its unit, so copies of the config carry it.
+    """
+
+    def __init__(self, default: Optional[float] = None):
+        self.default = default
+
+    def __set_name__(self, owner: Any, name: str) -> None:
+        self.name = name
+        self.setting, _, self.unit = _UNIT_SETTINGS[name]
+
+    def __get__(self, obj: Any, owner: Any = None) -> Any:
+        if obj is None:
+            return self
+        value = obj.__dict__.get("_" + self.name)
+        return self.default if value is None else value
+
+    def __set__(self, obj: Any, value: Optional[float]) -> None:
+        obj.__dict__["_" + self.name] = None if value is None else float(value)
+        obj.__dict__[self.setting] = None if value is None else (float(value), self.unit)
+
+
+def _read_unit_settings(config: Any) -> None:
+    """Fill the computed values (``bht_f``, ...) from the unit settings (``bht``, ...)."""
+    config.__dict__["_td_in_well_unit"] = None
+    for computed, (setting, kind, unit_out) in _UNIT_SETTINGS.items():
+        value = config.__dict__.get(setting)
+        config.__dict__["_" + computed] = None
+        if value is None:
+            continue
+        number, unit = _computed_value(computed, value)
+        if kind == "depth" and unit is None:
+            # A bare TD is in the well's depth unit, known when the run starts.
+            config.__dict__["_td_in_well_unit"] = number
+            continue
+        config.__dict__["_" + computed] = number
+        if unit == unit_out and not isinstance(value, (str, tuple)):
+            # The bare number, now with its unit: a copy of the config does not warn again.
+            config.__dict__[setting] = (number, unit_out)
+
+
+def _public_settings(options: Mapping[str, Any]) -> Dict[str, Any]:
+    """Settings keyed by the computed names (``bht_f``, from a LAS header) under their setting names, with units."""
+    out: Dict[str, Any] = {}
+    for name, value in options.items():
+        if name in _UNIT_SETTINGS:
+            setting, _, unit = _UNIT_SETTINGS[name]
+            out[setting] = None if value is None else (float(value), unit)
+        else:
+            out[name] = value
+    return out
+
+
 @dataclass
 class DynamicWorkflowConfig:
     """
@@ -911,7 +1042,7 @@ class DynamicWorkflowConfig:
     Examples
     --------
     >>> from petrophys import DynamicWorkflowConfig
-    >>> config = DynamicWorkflowConfig(rw=0.05, bht_f=220, sw_model="indonesia")
+    >>> config = DynamicWorkflowConfig(rw=0.05, bht="220 degF", sw_model="indonesia")
     >>> config.matrix_type
     'sandstone'
     """
@@ -929,30 +1060,34 @@ class DynamicWorkflowConfig:
     #: say so). When False, saturation is not computed without an Rw source.
     allow_default_rw: bool = True
     # -- Temperature ---------------------------------------------------------
-    #: Surface (mean annual) temperature, degF, at depth 0 of the linear
-    #: temperature profile (offshore, the sea surface rather than the seabed).
-    #: Set explicitly, it (like ``bht_f``) puts the profile ahead of an input
-    #: TEMP log, which is kept as TEMP_LOG.
-    surface_temp_f: float = 68.0
-    #: Bottom-hole temperature, degF. Defaults to the LAS header BHT. It is
-    #: taken as the static formation temperature at TD, with no correction for
-    #: mud circulation (such as a Horner plot). Set, the temperature profile
-    #: follows it rather than an input TEMP log (kept as TEMP_LOG).
-    bht_f: Optional[float] = None
-    #: Total depth for the BHT, in feet. Defaults to the LAS header TD, else
-    #: the deepest sample. Under ``"current"`` a total depth above the deepest
-    #: log sample (a depth in metres, for instance) is not used, with a
-    #: warning: the BHT is placed at the header TD, else at the deepest sample.
-    td_ft: Optional[float] = None
-    #: Geothermal gradient, degF/100 ft (1 degC/100 m is 0.549 degF/100 ft),
-    #: from ``surface_temp_f`` at depth 0. Defaults to the LAS header TGRAD,
-    #: used only when there is no BHT: a BHT anchors the profile at TD. Set
-    #: explicitly, it is used instead of the header BHT; set it or ``bht_f``,
-    #: not both. On a well with a TEMP log (half or more of its samples
-    #: finite) the log stays the temperature source and the gradient only
-    #: fills the log's gaps, whereas ``bht_f`` and ``surface_temp_f`` set
-    #: explicitly replace the log.
-    gradient_f_per_100ft: Optional[float] = None
+    # Temperatures are given with their unit: "230 degF", "110 degC", "383 K"
+    # or (110, "degC"); a bare number is read as degF, with a warning.
+    #: Surface (mean annual) temperature at depth 0 of the linear temperature
+    #: profile (offshore, the sea surface rather than the seabed); default
+    #: 68 degF. Set explicitly, it (like ``bht``) puts the profile ahead of an
+    #: input TEMP log, which is kept as TEMP_LOG.
+    surface_temp: Optional[Any] = None
+    #: Bottom-hole temperature, e.g. "230 degF" or "110 degC". Defaults to the
+    #: LAS header BHT. It is taken as the static formation temperature at TD,
+    #: with no correction for mud circulation (such as a Horner plot). Set,
+    #: the temperature profile follows it rather than an input TEMP log (kept
+    #: as TEMP_LOG).
+    bht: Optional[Any] = None
+    #: Total depth of the BHT, e.g. "2650 m" or "8700 ft"; a bare number is in
+    #: the well's depth unit. Defaults to the LAS header TD, else the deepest
+    #: sample. Under ``"current"`` a total depth above the deepest log sample
+    #: is not used, with a warning: the BHT is placed at the header TD, else
+    #: at the deepest sample.
+    td: Optional[Any] = None
+    #: Geothermal gradient from ``surface_temp`` at depth 0, e.g. "30 degC/km",
+    #: "3 degC/100m" or "1.65 degF/100ft"; a bare number is read as
+    #: degF/100 ft, with a warning. Defaults to the LAS header TGRAD, used only
+    #: when there is no BHT: a BHT anchors the profile at TD. Set explicitly,
+    #: it is used instead of the header BHT; set it or ``bht``, not both. On a
+    #: well with a TEMP log (half or more of its samples finite) the log stays
+    #: the temperature source and the gradient only fills the log's gaps,
+    #: whereas ``bht`` and ``surface_temp`` set explicitly replace the log.
+    temperature_gradient: Optional[Any] = None
 
     # -- Mud properties ------------------------------------------------------
     #: ``"WBM"`` (water-based) or ``"OBM"`` (oil-based) mud. With oil-based mud
@@ -963,18 +1098,19 @@ class DynamicWorkflowConfig:
     #: The mud contains clay or KCl, so the SP log is not used: Rw is not
     #: estimated from the SP, and no VCL_SP is computed.
     mud_has_clay_or_kcl: bool = False
-    #: Mud-filtrate resistivity Rmf at ``rmf_meas_temp_f``, ohm.m. Rmf comes
+    #: Mud-filtrate resistivity Rmf at ``rmf_meas_temp``, ohm.m. Rmf comes
     #: from the first of: this setting; ``rmf_salinity_ppm``,
     #: ``rmf_chlorides_mg_l`` or ``rm`` set by you; the LAS header RMF; then
     #: the header's filtrate salinity (FLSAL), chlorides (CLFL) or RM. The
     #: "geolink" profile takes the header RMF before ``rmf_salinity_ppm``,
     #: ``rmf_chlorides_mg_l`` and ``rm``.
     rmf_at_meas_temp: Optional[float] = None
-    #: Temperature at which ``rmf_at_meas_temp`` was measured, degF. Unset
-    #: (None), the LAS header RMFT is used, or else MFST (mud filtrate sample
-    #: temperature), which the "geolink" profile does not read, and otherwise
-    #: 75 degF. An explicit value, 75 included, is used as it stands.
-    rmf_meas_temp_f: Optional[float] = None
+    #: Temperature at which ``rmf_at_meas_temp`` was measured, e.g. "75 degF"
+    #: or "24 degC". Unset (None), the LAS header RMFT is used, or else MFST
+    #: (mud filtrate sample temperature), which the "geolink" profile does not
+    #: read, and otherwise 75 degF. An explicit value, 75 degF included, is
+    #: used as it stands.
+    rmf_meas_temp: Optional[Any] = None
     #: Mud-filtrate salinity, ppm NaCl equivalent (alternative to Rmf).
     rmf_salinity_ppm: Optional[float] = None
     #: Mud-filtrate chlorides (Cl-), mg/l, as on the mud report and the LAS
@@ -982,26 +1118,26 @@ class DynamicWorkflowConfig:
     #: equivalent: Cl x 58.44/35.45, divided by the brine density to give ppm
     #: by weight. The "geolink" profile reads CLFL as ``rmf_salinity_ppm``.
     rmf_chlorides_mg_l: Optional[float] = None
-    #: Mud resistivity Rm at ``rm_meas_temp_f``, ohm.m (Rmf is derived from it).
+    #: Mud resistivity Rm at ``rm_meas_temp``, ohm.m (Rmf is derived from it).
     rm: Optional[float] = None
-    #: Temperature at which ``rm`` was measured, degF. Unset (None), the LAS
-    #: header RMT is used, or else MST (mud sample temperature), which the
-    #: "geolink" profile does not read, and otherwise 75 degF. An explicit
-    #: value, 75 included, is used as it stands.
-    rm_meas_temp_f: Optional[float] = None
+    #: Temperature at which ``rm`` was measured, e.g. "75 degF" or "24 degC".
+    #: Unset (None), the LAS header RMT is used, or else MST (mud sample
+    #: temperature), which the "geolink" profile does not read, and otherwise
+    #: 75 degF. An explicit value, 75 degF included, is used as it stands.
+    rm_meas_temp: Optional[Any] = None
     #: ``"fresh"`` or ``"salt"`` mud, which sets the Rm-to-Rmf factor.
     mud_water: str = "fresh"
 
     # -- Formation water -----------------------------------------------------
-    #: Formation water resistivity Rw, ohm.m, at ``rw_meas_temp_f``.
+    #: Formation water resistivity Rw, ohm.m, at ``rw_meas_temp``.
     rw: Optional[float] = None
-    #: Temperature of ``rw``, degF. When omitted, ``rw`` is taken at the median
+    #: Temperature of ``rw``, e.g. "230 degF" or "110 degC". When omitted, ``rw`` is taken at the median
     #: formation temperature, as recorded in the trace; either way the RW
     #: curve follows the temperature profile from that point. Set without
     #: ``rw`` under ``"current"``, it is the measurement temperature of the LAS
     #: header RW, in place of the header RWT; with neither ``rw`` nor a header
     #: RW it is not used, with a warning.
-    rw_meas_temp_f: Optional[float] = None
+    rw_meas_temp: Optional[Any] = None
     #: Formation water salinity, ppm NaCl equivalent: another way to give the
     #: formation water. Without ``rw``, Rw follows this salinity across the
     #: temperature profile, ahead of a header RW. With ``rw`` set, ``rw`` gives
@@ -1394,7 +1530,7 @@ class DynamicWorkflowConfig:
     #: ``top``, ``bottom`` and the settings for that interval (any setting
     #: but the whole-run ones, such as ``calculation_profile`` or
     #: ``skip_steps``), e.g. ``[{"top": 176, "bottom": 1908, "rw": 0.5,
-    #: "rw_meas_temp_f": 60}]``; or a table or CSV/Excel file with those
+    #: "rw_meas_temp": "60 degF"}]``; or a table or CSV/Excel file with those
     #: columns (an empty cell sets nothing). Depths are in the well's depth
     #: unit unless a ``depth_unit`` is given; zones may not overlap. Each zone
     #: is interpreted with its settings over the rest and merged into the
@@ -1423,7 +1559,17 @@ class DynamicWorkflowConfig:
     #: the library; not a setting.
     _explicit_settings: Optional[frozenset] = field(default=None, repr=False, compare=False)
 
+    # The unit settings in the units the workflow computes in.
+    surface_temp_f = _InComputedUnit(default=68.0)
+    bht_f = _InComputedUnit()
+    td_ft = _InComputedUnit()
+    gradient_f_per_100ft = _InComputedUnit()
+    rmf_meas_temp_f = _InComputedUnit()
+    rm_meas_temp_f = _InComputedUnit()
+    rw_meas_temp_f = _InComputedUnit()
+
     def __post_init__(self) -> None:
+        _read_unit_settings(self)
         if self.lithology is not None:
             # The ``lithology`` alias fills an unset domain and is not mirrored
             # back, so dataclasses.replace(config, lithology_domain=...) works.
@@ -1852,8 +1998,10 @@ def _config_with_header_settings(
     # profile read it from the well header instead).
     historical = profile in _BENCHMARK_PROFILES or reproducing_benchmark()
     native = {name: metadata_options.pop(name) for name in _NATIVE_HEADER_FIELDS if name in metadata_options}
+    native = _public_settings(native)
     if historical:
         metadata_options.pop("td_ft", None)
+    metadata_options = _public_settings(metadata_options)
     # Your values of a mapping setting, then the header's for the keys you leave out.
     yours = {
         name: options[name] if name in options
@@ -2238,29 +2386,28 @@ def _physical_range_errors(config: "DynamicWorkflowConfig") -> List[str]:
         value = number(name)
         if value is not None and value < _ABSOLUTE_ZERO_F:
             errors.append(
-                f"{name} must be a temperature in degF, at or above absolute zero ({_ABSOLUTE_ZERO_F} degF); "
+                f"{_SETTING_NAME[name]} must be a temperature at or above absolute zero ({_ABSOLUTE_ZERO_F} degF); "
                 f"got {value!r}"
             )
     for name in ("rw_meas_temp_f", "rmf_meas_temp_f", "rm_meas_temp_f"):
         value = number(name)
         if value is not None and _ABSOLUTE_ZERO_F <= value and not 0.0 <= value <= 700.0:
             errors.append(
-                f"{name} must be the temperature of a water sample, 0-700 degF; got {value!r}"
-                + (" (a degC value? 25 degC is 77 degF)" if value < 0 else "")
+                f"{_SETTING_NAME[name]} must be the temperature of a water sample, 0-700 degF; got {value:g} degF"
             )
     gradient = number("gradient_f_per_100ft")
     if gradient is not None and not 0.0 < gradient <= 10.0:
         errors.append(
-            "gradient_f_per_100ft must be a geothermal gradient above 0 and at most 10 degF/100 ft "
-            f"(3 degC/100 m is 1.65 degF/100 ft); got {gradient!r}"
+            "temperature_gradient must be a geothermal gradient above 0 and at most 10 degF/100 ft "
+            f"(18 degC/100 m); got {gradient:g} degF/100 ft"
         )
-    if gradient is not None and number("bht_f") is not None and {"bht_f", "gradient_f_per_100ft"} <= _explicit(config):
-        errors.append("set bht_f or gradient_f_per_100ft, not both")
+    if gradient is not None and number("bht_f") is not None and {"bht", "temperature_gradient"} <= _explicit(config):
+        errors.append("set bht or temperature_gradient, not both")
     bht, surface = number("bht_f"), number("surface_temp_f")
     if bht is not None and surface is not None and _ABSOLUTE_ZERO_F <= bht < surface:
         errors.append(
-            f"bht_f ({bht:g} degF) must not be below surface_temp_f ({surface:g} degF): temperature "
-            "rises with depth (set surface_temp_f for a cold surface or seabed)"
+            f"bht ({bht:g} degF) must not be below surface_temp ({surface:g} degF): temperature "
+            "rises with depth (set surface_temp for a cold surface or seabed)"
         )
     rho_ma, rho_fl, nphi_ma = number("rho_ma"), number("rho_fl"), number("nphi_ma")
     if rho_ma is not None and not _RHO_MA_RANGE[0] <= rho_ma <= _RHO_MA_RANGE[1]:
@@ -2330,8 +2477,11 @@ def _physical_range_errors(config: "DynamicWorkflowConfig") -> List[str]:
 #: Names petrophysicists use for a setting, offered when one is given that is not a setting.
 _SETTING_SYNONYMS = {
     "rcl": "rtsh", "rsh": "rtsh", "r_sh": "rtsh", "rshale": "rtsh", "shale_resistivity": "rtsh",
-    "clay_resistivity": "rtsh", "rw_temp_f": "rw_meas_temp_f", "rwt": "rw_meas_temp_f",
-    "salinity": "salinity_ppm", "bht": "bht_f", "phi_sh": "phi_cl", "phish": "phi_cl",
+    "clay_resistivity": "rtsh", "rw_temp_f": "rw_meas_temp", "rwt": "rw_meas_temp",
+    "salinity": "salinity_ppm", "phi_sh": "phi_cl", "phish": "phi_cl",
+    "rw_meas_temp_f": "rw_meas_temp", "rmf_meas_temp_f": "rmf_meas_temp", "rm_meas_temp_f": "rm_meas_temp",
+    "bht_f": "bht", "surface_temp_f": "surface_temp", "td_ft": "td", "gradient_f_per_100ft": "temperature_gradient",
+    "gradient": "temperature_gradient", "geothermal_gradient": "temperature_gradient",
 }
 
 
@@ -2829,7 +2979,7 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     config.zones = _normalized_zones(config, errors)
     _validate_parameter_mappings(config, errors)
     if config.calculation_profile != "current" and config.gradient_f_per_100ft is not None:
-        errors.append('gradient_f_per_100ft is not available under the "geolink" calculation profile')
+        errors.append('temperature_gradient is not available under the "geolink" calculation profile')
     if config.calculation_profile == "current":
         cec_error = _cec_range_error(config.cec)
         if cec_error:
@@ -3336,7 +3486,7 @@ class DynamicWorkflowResult:
         --------
         >>> import petrophys as pp
         >>> well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
-        >>> result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
+        >>> result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")
         >>> table = result.formation_summary()  # doctest: +SKIP
         """
         from petrophys.workflow.summary import summarize_formations
@@ -3371,7 +3521,7 @@ class DynamicWorkflowResult:
         >>> import petrophys as pp
         >>> zones = [{"zone": "Upper", "top": 2841, "bottom": 2900},
         ...          {"zone": "Lower", "top": 2900, "bottom": 2958}]
-        >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230, zones=zones)
+        >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp="230 degF", zones=zones)
         >>> list(result.zone_summary()["Zone"])  # doctest: +SKIP
         ['Upper', 'Lower']
         """
@@ -3410,7 +3560,7 @@ class DynamicWorkflowResult:
         Examples
         --------
         >>> import petrophys as pp
-        >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230)
+        >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp="230 degF")
         >>> result.summary(top=2841, bottom=2958)["status"]
         'interpreted'
         """
@@ -3657,7 +3807,7 @@ class DynamicWorkflow:
     Examples
     --------
     >>> config = DynamicWorkflowConfig(
-    ...     bht_f=220, td_ft=8500, rw=0.05,
+    ...     bht="220 degF", td="8500 ft", rw=0.05,
     ...     lithology_domain='clastic', salinity_ppm=25000
     ... )
     >>> workflow = DynamicWorkflow(config)
@@ -3870,7 +4020,7 @@ class DynamicWorkflow:
     def _unused_setting_notes(self, well: "Well") -> List[str]:
         """Warnings for settings that are given but that this run cannot use (``"current"``).
 
-        Waxman-Smits needs ``cec`` and ``b_coeff`` together; ``rw_meas_temp_f``
+        Waxman-Smits needs ``cec`` and ``b_coeff`` together; ``rw_meas_temp``
         is the temperature of ``rw`` or of the LAS header RW;
         ``rename_input_curves`` and a curve-name mapping act in the
         standardization step; peer wells calibrate core only with
@@ -3899,7 +4049,7 @@ class DynamicWorkflow:
         )
         if config.rw_meas_temp_f is not None and not given("rw") and (not header_rw or given("salinity_ppm")):
             notes.append(
-                f"rw_meas_temp_f = {float(config.rw_meas_temp_f):g} degF is not used: it is the temperature "
+                f"rw_meas_temp = {float(config.rw_meas_temp_f):g} degF is not used: it is the temperature "
                 "of rw or of the LAS header RW, and this run takes Rw from neither."
             )
         if not self._setting("standardize_input") or WorkflowStep.NORMALIZATION.value in config.skip_steps:
@@ -4131,7 +4281,7 @@ class DynamicWorkflow:
         return float(self.config.phi_cl)
 
     def _measurement_temp_f(self, name: str) -> Optional[float]:
-        """An explicit ``rmf_meas_temp_f`` or ``rm_meas_temp_f``, else None.
+        """An explicit ``rmf_meas_temp`` or ``rm_meas_temp`` (in degF), else None.
 
         The "geolink" profile read a value equal to the 75 degF default as
         left at the default; the current calculations use any explicit value.
@@ -5868,6 +6018,9 @@ class DynamicWorkflow:
         bht_f = self.config.bht_f
         td_ft = self.config.td_ft
         td_unit = "ft" if td_ft is not None else None
+        if td_ft is None and self.config.__dict__.get("_td_in_well_unit") is not None:
+            # A TD given without a unit is in the well's depth unit.
+            td_ft, td_unit = float(self.config.__dict__["_td_in_well_unit"]), well.depth_unit
 
         if bht_f is None:
             bht_f = _metadata_bht_f(well)
@@ -5886,11 +6039,11 @@ class DynamicWorkflow:
 
         gradient = self.config.gradient_f_per_100ft
         if gradient is not None:
-            if "gradient_f_per_100ft" in _explicit(self.config):
+            if "temperature_gradient" in _explicit(self.config):
                 if bht_f is not None:
                     self._warn_assumed(
                         f"The LAS header BHT ({bht_f:.1f} degF) is not used: "
-                        f"gradient_f_per_100ft = {gradient:g} is set"
+                        f"temperature_gradient = {gradient:g} degF/100 ft is set"
                     )
                 bht_f = None
             elif bht_f is not None:
@@ -5915,8 +6068,8 @@ class DynamicWorkflow:
                 return value
 
             bottom, unit = float(well.bottom), well.depth_unit or ""
-            user_td = "td_ft" in _explicit(self.config) and self.config.td_ft is not None
-            candidates = [(td_ft, td_unit, "td_ft" if user_td else "the LAS header TD")]
+            user_td = "td" in _explicit(self.config) and self.config.td is not None
+            candidates = [(td_ft, td_unit, "td" if user_td else "the LAS header TD")]
             if user_td and well.header.td is not None:
                 candidates.append((float(well.header.td), well.depth_unit, "the LAS header TD"))
             rejected = []
@@ -5936,7 +6089,7 @@ class DynamicWorkflow:
                 message = (
                     f"{' and '.join(rejected)} is above the deepest log sample ({bottom:g} {unit}), so it is "
                     "not the total depth of the bottom-hole temperature and is not used"
-                    + (" (td_ft is in feet)" if user_td else "")
+                    + (" (check the unit of td)" if user_td else "")
                     + f". The BHT ({bht_f:g} degF) is placed at {td_label}."
                 )
                 self._warn_assumed(message)
@@ -5989,7 +6142,7 @@ class DynamicWorkflow:
             user_anchor = [
                 name for name, given in (
                     ("bht_f", self.config.bht_f is not None),
-                    ("surface_temp_f", "surface_temp_f" in _explicit(self.config)),
+                    ("surface_temp_f", "surface_temp" in _explicit(self.config)),
                 ) if given
             ]
             if user_anchor:
@@ -6040,11 +6193,11 @@ class DynamicWorkflow:
         elif result.source == "fallback_geothermal_gradient":
             trace.decisions.append("No bottom-hole temperature: temperatures follow an assumed 30 C/km gradient")
             self._warn_assumed(
-                "No bottom-hole temperature (bht_f or header BHT): temperatures follow an assumed "
+                "No bottom-hole temperature (bht or header BHT): temperatures follow an assumed "
                 "30 C/km gradient, which sets the Rw and Rmf temperature corrections."
             )
         elif result.source == "specified_gradient":
-            given = "set" if "gradient_f_per_100ft" in _explicit(self.config) else "LAS header TGRAD"
+            given = "set" if "temperature_gradient" in _explicit(self.config) else "LAS header TGRAD"
             trace.decisions.append(
                 f"Temperature profile from the geothermal gradient ({given}) and the surface temperature "
                 f"{surface_temp_f:g} degF at depth 0; no BHT is used"
@@ -7900,7 +8053,7 @@ class DynamicWorkflow:
                 f"Rw input {self.config.rw:.4f} ohm.m used assumed reference temperature {reference_temp:.1f}F and was corrected along the temperature profile"
             )
             self._warn_assumed(
-                f"Rw {self.config.rw:g} ohm.m was given without rw_meas_temp_f: it is taken at the "
+                f"Rw {self.config.rw:g} ohm.m was given without rw_meas_temp: it is taken at the "
                 f"median formation temperature, {reference_temp:.1f} degF."
             )
             return _finalize_rw(
@@ -7928,15 +8081,15 @@ class DynamicWorkflow:
             )
             las_rw = None
         if las_rw is not None and self.config.rw_meas_temp_f is not None and not self._historical:
-            # rw_meas_temp_f without rw is the measurement temperature of the header Rw.
+            # rw_meas_temp without rw is the measurement temperature of the header Rw.
             if las_rw_temp_f is None:
                 decisions.append(
-                    f"Header Rw has no RWT: rw_meas_temp_f = {self.config.rw_meas_temp_f:g} degF "
+                    f"Header Rw has no RWT: rw_meas_temp = {self.config.rw_meas_temp_f:g} degF "
                     "is its measurement temperature"
                 )
             elif float(las_rw_temp_f) != float(self.config.rw_meas_temp_f):
                 decisions.append(
-                    f"rw_meas_temp_f = {self.config.rw_meas_temp_f:g} degF replaces the header RWT "
+                    f"rw_meas_temp = {self.config.rw_meas_temp_f:g} degF replaces the header RWT "
                     f"{float(las_rw_temp_f):g} degF as the header Rw's measurement temperature"
                 )
             las_rw_temp_f = float(self.config.rw_meas_temp_f)
@@ -7973,7 +8126,7 @@ class DynamicWorkflow:
             )
             self._warn_assumed(
                 f"Header RW {float(las_rw):g} ohm.m has no RWT: it is taken at the median formation "
-                f"temperature, {reference_temp:.1f} degF. Pass rw and rw_meas_temp_f to use another value."
+                f"temperature, {reference_temp:.1f} degF. Pass rw and rw_meas_temp to use another value."
             )
             return _finalize_rw(
                 "las_metadata_assumed_reference_temperature",
@@ -8257,7 +8410,7 @@ class DynamicWorkflow:
                     f"({estimate.get('salinity_ppm_estimated', float('nan')):,.0f} ppm) is estimated "
                     "from the apparent Rw of clean samples, which assumes some of them are "
                     "water-bearing, and holds one water for the whole well. Pass rw and "
-                    "rw_meas_temp_f if Rw is known, or zones= where the water changes."
+                    "rw_meas_temp if Rw is known, or zones= where the water changes."
                 )
                 return _finalize_rw(
                     "rwa_clean_wet_p5",
@@ -9835,7 +9988,7 @@ class DynamicWorkflow:
         if empty(["RW"]):
             return (
                 "Rw is NaN everywhere, so the Rw inputs give no valid water resistivity "
-                "(check rw, rw_meas_temp_f, salinity_ppm and the temperature settings)."
+                "(check rw, rw_meas_temp, salinity_ppm and the temperature settings)."
             )
         if empty(["RDEP", "RT"]):
             return "the deep resistivity has no valid values."

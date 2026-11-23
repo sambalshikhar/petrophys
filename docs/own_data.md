@@ -293,7 +293,7 @@ A misspelt setting:
 
 ```{code-cell} python
 :tags: [raises-exception]
-pp.interpret(well, rw=0.07, rw_temp_f=230)
+pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")
 ```
 
 ## Interpret
@@ -307,7 +307,7 @@ skipped steps say what was assumed or left out.
 well = pp.read("my_logs.csv", depth_column="MD", depth_unit="m", well_name="30/6-5",
                formations=pp.sample("formations_30_6-5"),
                lithology=pp.sample("lithology_30_6-5"))
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
+result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")
 result.warnings
 ```
 
@@ -318,7 +318,7 @@ sets the Rw and Rmf temperature corrections. The `rmf` step did not run:
 result.specific_steps_skipped["rmf"]
 ```
 
-Supply the values with `bht_f` and `rmf_at_meas_temp` (or the mud report's
+Supply the values with `bht` and `rmf_at_meas_temp` (or the mud report's
 filtrate chlorides, `rmf_chlorides_mg_l`), or write the CSV well to LAS with
 those values in its header ({doc}`input_templates` lists the parameters).
 

@@ -170,7 +170,7 @@ def header_notes(well: "Well") -> List[str]:
         rwt_f = _temperature_f(rwt, _describe_unit(well, "RWT"))
         notes.append(
             f"Header RW = {rw:g} ohm.m at RWT {rwt_f:g} degF; interpret_well uses it when no "
-            f"rw setting is given (explicitly: rw={rw:g}, rw_meas_temp_f={rwt_f:g})."
+            f"rw setting is given (explicitly: rw={rw:g}, rw_meas_temp='{rwt_f:g} degF')."
         )
     if rw is not None and rmf is not None and rw > rmf:
         notes.append(

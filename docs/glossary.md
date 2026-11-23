@@ -34,7 +34,7 @@ warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core sat
 | Lithology intervals | Optional per-depth rock labels from a table. They override labels in the LAS and from the mineral solve. |
 | Lithology code curve | A per-sample curve of lithology codes in the LAS: the curve named by `lithology_curve`, else `LITHOLOGY_GEOLINK`, else a curve under another lithology-code name such as `LITHOLOGY` or `FACIES`. Its codes are decoded with the built-in lithology code table (Kingdom nomenclature), or with a user codebook passed as `lithology_codes`; see {doc}`input_templates`. |
 | Formations | Optional named depth intervals (groups, formations, members) for summaries, plots and core calibration. |
-| Rw | Formation-water resistivity in ohm.m, at a stated temperature (`rw_meas_temp_f`). The workflow corrects it to formation temperature. |
+| Rw | Formation-water resistivity in ohm.m, at a stated temperature (`rw_meas_temp`). The workflow corrects it to formation temperature. |
 | Cutoffs | Limits on clay volume, porosity and water saturation (`vcl_cutoff`, `phie_cutoff`, `sw_cutoff`). Left unset, each sample takes the standard of its lithology family, clastic or carbonate. |
 | Net rock, reservoir, pay | Samples passing the clay cutoff; then also the porosity cutoff; then also the saturation cutoff. Evaporite, coal, halite recognized on the logs and bad-hole samples are never net reservoir or pay. |
 | Bad hole | `BAD_HOLE` = 1: the caliper reads more than 1.5 in over the bit size, the bit is larger than 17.5 in, or the absolute density correction DRHO is above 0.15 g/cm3. The caliper and bit-size tests run only where a bit size is known; see {ref}`review-inputs`. |
@@ -72,7 +72,7 @@ import pandas as pd
 import petrophys as pp
 
 well = pp.read(pp.sample("30_6-5"))
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
+result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")
 curves = pd.DataFrame(result.well.describe()["curves"])
 curves[~curves["mnemonic"].isin(well.curves)]
 ```

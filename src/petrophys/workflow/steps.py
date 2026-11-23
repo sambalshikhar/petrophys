@@ -172,9 +172,16 @@ RECORDED_AS = {"gr_clean": ("gr_min_used", "gr_min"), "gr_shale": ("gr_max_used"
                "sp_clean": ("sp_max",), "sp_shale": ("sp_min",), "matrix_density": ("rho_ma",),
                "matrix_neutron": ("nphi_ma",), "matrix_slowness": ("dt_ma",), "fluid_density": ("rho_fl",),
                "fluid_slowness": ("dt_fl",), "clay_porosity": ("phi_cl",), "rw": ("rw", "rw_at_measured_temp"),
-               "rw_temp_f": ("reference_temp_f", "measured_temp_f"),
+               "rw_meas_temp": ("reference_temp_f", "measured_temp_f"),
+               "bht": ("bht_f",), "surface_temp": ("surface_temp_f",),
+               "temperature_gradient": ("gradient_f_per_100ft",),
                "vcl_cutoff": ("vcl_cutoff_for_routing", "vcl_cutoff"), "matrix": ("matrix_type",),
                "gr_transform": ("gr_method",)}
+
+
+#: Units of the recorded values of step arguments that carry a unit.
+_RECORDED_UNITS = {"rw_meas_temp": "degF", "rmf_meas_temp": "degF", "bht": "degF", "surface_temp": "degF",
+                   "temperature_gradient": "degF/100ft"}
 
 
 def recorded_arguments(kind: str, steps: Mapping[str, Mapping[str, Any]]) -> Dict[str, Any]:
@@ -211,7 +218,8 @@ def recorded_arguments(kind: str, steps: Mapping[str, Mapping[str, Any]]) -> Dic
         for key in (p, *RECORDED_AS.get(p, ())):
             v: Any = rec.get(key)
             if number(v) and not takes:
-                out[p] = float(v)
+                # A recorded temperature or gradient keeps the unit it was computed in.
+                out[p] = (float(v), _RECORDED_UNITS[p]) if p in _RECORDED_UNITS else float(v)
                 break
             if isinstance(v, str) and v.strip().lower() in takes:
                 out[p] = v.strip().lower()
@@ -229,23 +237,23 @@ def recorded_arguments(kind: str, steps: Mapping[str, Mapping[str, Any]]) -> Dic
                 out[p] = said
             elif "auto" in takes:
                 out[p] = "auto"
-    if kind == "formation_water" and "rw" in out and "rw_temp_f" not in out:
+    if kind == "formation_water" and "rw" in out and "rw_meas_temp" not in out:
         out.pop("rw")                                      # an Rw without its temperature is not a stated Rw
     return out
 
 #: The built-in step that makes each standard curve, for "how to fix" hints.
 #: The built-in step that makes each standard curve, for "how to fix" hints: (step, its fixed arguments, the inputs
-#: the call asks for). The hint (``steps.formation_water(rw=..., rw_temp_f=...)``) and its inputs are read from it.
+#: the call asks for). The hint (``steps.formation_water(rw=..., rw_meas_temp=...)``) and its inputs are read from it.
 _PRODUCERS = {
-    "TEMP": ("temperature", {}, ("bht_f",)),
+    "TEMP": ("temperature", {}, ("bht",)),
     "VCL": ("clay_volume", {}, ()),
     "PHIT": ("porosity", {}, ()),
     "PHIE": ("porosity", {}, ()),
     "PHID": ("porosity", {"method": "density"}, ()),
     "PHIN": ("porosity", {"method": "neutron"}, ()),
     "PHIS": ("porosity", {"method": "sonic"}, ()),
-    "RW": ("formation_water", {}, ("rw", "rw_temp_f")),
-    "RMF": ("mud_filtrate", {}, ("rmf", "rmf_temp_f")),
+    "RW": ("formation_water", {}, ("rw", "rw_meas_temp")),
+    "RMF": ("mud_filtrate", {}, ("rmf", "rmf_meas_temp")),
     "SW": ("saturation", {}, ()),
     "SXO": ("saturation", {}, ()),
     "PERM": ("permeability", {}, ()),
@@ -487,8 +495,8 @@ def _run_standardize(ctx: _StepContext, *, rename: bool, convert_units: bool) ->
 
 
 @_builtin
-def temperature(*, bht_f: Optional[float] = None, td_ft: Optional[float] = None,
-                surface_temp_f: float = 68.0, gradient_f_per_100ft: Optional[float] = None,
+def temperature(*, bht: Optional[Any] = None, td: Optional[Any] = None,
+                surface_temp: Optional[Any] = None, temperature_gradient: Optional[Any] = None,
                 name: Optional[str] = None) -> Step:
     """Formation temperature profile (``TEMP``, degF).
 
@@ -504,15 +512,18 @@ def temperature(*, bht_f: Optional[float] = None, td_ft: Optional[float] = None,
 
     Parameters
     ----------
-    bht_f : float, optional
-        Bottom-hole temperature, degF. Defaults to the LAS header BHT.
-    td_ft : float, optional
-        Depth of ``bht_f`` in feet. Defaults to the header TD, then the
-        deepest sample.
-    surface_temp_f : float, default 68.0
-        Surface (mean annual) temperature, degF.
-    gradient_f_per_100ft : float, optional
-        Geothermal gradient, degF/100 ft, instead of a BHT.
+    bht : str, tuple or float, optional
+        Bottom-hole temperature with its unit, e.g. ``"230 degF"`` or
+        ``"110 degC"``; a bare number is read as degF, with a warning.
+        Defaults to the LAS header BHT.
+    td : str, tuple or float, optional
+        Depth of ``bht``, e.g. ``"2650 m"``; a bare number is in feet.
+        Defaults to the header TD, then the deepest sample.
+    surface_temp : str, tuple or float, optional
+        Surface (mean annual) temperature with its unit; default 68 degF.
+    temperature_gradient : str, tuple or float, optional
+        Geothermal gradient instead of a BHT, e.g. ``"30 degC/km"`` or
+        ``"1.65 degF/100ft"``.
     name : str, optional
         Step name; defaults to ``"temperature"``.
 
@@ -524,20 +535,36 @@ def temperature(*, bht_f: Optional[float] = None, td_ft: Optional[float] = None,
     Examples
     --------
     >>> from petrophys.workflow import steps
-    >>> steps.temperature(bht_f=230).produces
+    >>> steps.temperature(bht="230 degF").produces
     {'TEMP': 'degF'}
     """
+    from petrophys.workflow.dynamic_workflow import _computed_value
+
     check = _Params("steps.temperature()")
+
+    def computed(internal: str, value: Any, kind_default: Optional[float] = None) -> Optional[float]:
+        if value is None:
+            return kind_default
+        try:
+            number, unit = _computed_value(internal, value)
+        except (TypeError, ValueError) as error:
+            check.add(str(error))
+            return None
+        if internal == "td_ft" and unit is None:
+            return number  # a bare TD is in feet here, as the workflow's record keeps it
+        return number
+
+    bht_f = computed("bht_f", bht)
+    gradient = computed("gradient_f_per_100ft", temperature_gradient)
     values = {
-        "bht_f": check.number("bht_f", bht_f, minimum=-60, maximum=800),
-        "td_ft": check.number("td_ft", td_ft, positive=True),
-        "surface_temp_f": check.number("surface_temp_f", surface_temp_f, optional=False,
-                                       minimum=-60, maximum=200),
-        "gradient_f_per_100ft": check.number("gradient_f_per_100ft", gradient_f_per_100ft,
-                                             positive=True),
+        "bht_f": check.number("bht", bht_f, minimum=-60, maximum=800),
+        "td_ft": check.number("td", computed("td_ft", td), positive=True),
+        "surface_temp_f": check.number("surface_temp", computed("surface_temp_f", surface_temp, 68.0),
+                                       optional=False, minimum=-60, maximum=200),
+        "gradient_f_per_100ft": check.number("temperature_gradient", gradient, positive=True),
     }
-    if bht_f is not None and gradient_f_per_100ft is not None:
-        check.add("give bht_f or gradient_f_per_100ft, not both")
+    if bht is not None and temperature_gradient is not None:
+        check.add("give bht or temperature_gradient, not both")
     check.raise_if_any()
     return _make(
         "temperature", name, values,
@@ -572,7 +599,7 @@ def _run_temperature(ctx: _StepContext, *, bht_f: Optional[float], td_ft: Option
     })
     if result.source == "fallback_geothermal_gradient":
         ctx.warn("No bottom-hole temperature was found; used the default 30 degC/km gradient. "
-                 "Pass bht_f= for a calibrated profile.")
+                 "Pass bht= for a calibrated profile.")
     elif result.reference_temperature is not None:
         ctx.decide(f"Anchored to BHT {result.reference_temperature:.1f} degF at "
                    f"{result.reference_depth:.0f} ft")
@@ -1042,7 +1069,7 @@ def _formation_temperature(ctx: _StepContext) -> np.ndarray:
     result = calculate_temperature_profile(ctx.well)
     if result.source == "fallback_geothermal_gradient":
         ctx.warn(Advice("No TEMP curve or bottom-hole temperature; formation temperature from the "
-                        "default 30 degC/km gradient. Add steps.temperature(bht_f=...) first.", ("bht_f",)))
+                        "default 30 degC/km gradient. Add steps.temperature(bht=...) first.", ("bht",)))
     ctx.decide(f"No TEMP curve; formation temperature from {result.source.replace('_', ' ')}")
     return np.asarray(result.temperature, dtype=float)
 
@@ -1058,8 +1085,21 @@ def _resistivity(check: _Params, label: str, value: Any, header: str) -> Any:
     return check.number(label, value, positive=True)
 
 
+def _in_degf(check: "_Params", internal: str, value: Any) -> Optional[float]:
+    """A temperature setting in degF, its errors added to ``check``."""
+    from petrophys.workflow.dynamic_workflow import _computed_value
+
+    if value is None:
+        return None
+    try:
+        return _computed_value(internal, value)[0]
+    except (TypeError, ValueError) as error:
+        check.add(str(error))
+        return None
+
+
 @_builtin
-def formation_water(rw: Any = None, rw_temp_f: Optional[float] = None, *,
+def formation_water(rw: Any = None, rw_meas_temp: Optional[Any] = None, *,
                     salinity_ppm: Optional[float] = None, name: Optional[str] = None) -> Step:
     """Formation water resistivity at formation temperature (``RW``).
 
@@ -1074,10 +1114,12 @@ def formation_water(rw: Any = None, rw_temp_f: Optional[float] = None, *,
     Parameters
     ----------
     rw : float or "header", optional
-        Formation water resistivity, ohm.m, at ``rw_temp_f``.
-    rw_temp_f : float, optional
-        Temperature at which ``rw`` was measured, degF. Required with a
-        numeric ``rw``; with ``rw="header"`` it overrides the header RWT.
+        Formation water resistivity, ohm.m, at ``rw_meas_temp``.
+    rw_meas_temp : str, tuple or float, optional
+        Temperature at which ``rw`` was measured, with its unit, e.g.
+        ``"230 degF"`` or ``"110 degC"``; a bare number is read as degF, with
+        a warning. Required with a numeric ``rw``; with ``rw="header"`` it
+        overrides the header RWT.
     salinity_ppm : float, optional
         Formation water salinity, ppm NaCl equivalent, instead of ``rw``.
     name : str, optional
@@ -1091,32 +1133,33 @@ def formation_water(rw: Any = None, rw_temp_f: Optional[float] = None, *,
     Examples
     --------
     >>> from petrophys.workflow import steps
-    >>> steps.formation_water(rw=0.07, rw_temp_f=230)
-    steps.formation_water(rw=0.07, rw_temp_f=230)
+    >>> steps.formation_water(rw=0.07, rw_meas_temp="230 degF")
+    steps.formation_water(rw=0.07, rw_meas_temp='230 degF')
     >>> steps.formation_water(rw=0.07)
     Traceback (most recent call last):
     ...
     ValueError: Invalid steps.formation_water() parameters:
-      - rw_temp_f is required with rw: the temperature (degF) at which rw was measured, e.g. rw=0.07, rw_temp_f=230
+      - rw_meas_temp is required with rw: the temperature at which rw was measured, e.g. rw=0.07, rw_meas_temp='230 degF'
     """
     check = _Params("steps.formation_water()")
     value = _resistivity(check, "rw", rw, "RW and RWT")
     values = {
         "rw": value,
-        "rw_temp_f": check.number("rw_temp_f", rw_temp_f, minimum=-60, maximum=800),
+        "rw_temp_f": check.number("rw_meas_temp", _in_degf(check, "rw_meas_temp_f", rw_meas_temp),
+                                  minimum=-60, maximum=800),
         "salinity_ppm": check.number("salinity_ppm", salinity_ppm, positive=True,
                                      maximum=400000),
     }
     if rw is None and salinity_ppm is None:
-        check.add(Advice("give rw= (ohm.m, with rw_temp_f=), salinity_ppm=, or rw='header' to read "
-                  "RW and RWT from each well's LAS header", ('rw', 'rw_temp_f', 'salinity_ppm')))
+        check.add(Advice("give rw= (ohm.m, with rw_meas_temp=), salinity_ppm=, or rw='header' to read "
+                  "RW and RWT from each well's LAS header", ('rw', 'rw_meas_temp', 'salinity_ppm')))
     if rw is not None and salinity_ppm is not None:
         check.add("give rw or salinity_ppm, not both")
-    if isinstance(value, float) and rw_temp_f is None:
-        check.add("rw_temp_f is required with rw: the temperature (degF) at which rw was "
-                  "measured, e.g. rw=0.07, rw_temp_f=230")
-    if salinity_ppm is not None and rw_temp_f is not None:
-        check.add("rw_temp_f is only used with rw")
+    if isinstance(value, float) and rw_meas_temp is None:
+        check.add("rw_meas_temp is required with rw: the temperature at which rw was "
+                  "measured, e.g. rw=0.07, rw_meas_temp='230 degF'")
+    if salinity_ppm is not None and rw_meas_temp is not None:
+        check.add("rw_meas_temp is only used with rw")
     check.raise_if_any()
     requirements = []
     if value == "header":
@@ -1161,7 +1204,7 @@ def _run_formation_water(ctx: _StepContext, *, rw: Any, rw_temp_f: Optional[floa
 
 
 @_builtin
-def mud_filtrate(rmf: Any = None, rmf_temp_f: Optional[float] = None, *,
+def mud_filtrate(rmf: Any = None, rmf_meas_temp: Optional[Any] = None, *,
                  name: Optional[str] = None) -> Step:
     """Mud-filtrate resistivity at formation temperature (``RMF``).
 
@@ -1174,8 +1217,8 @@ def mud_filtrate(rmf: Any = None, rmf_temp_f: Optional[float] = None, *,
     Parameters
     ----------
     rmf : float or "header"
-        Mud-filtrate resistivity, ohm.m, at ``rmf_temp_f``.
-    rmf_temp_f : float, optional
+        Mud-filtrate resistivity, ohm.m, at ``rmf_meas_temp``.
+    rmf_meas_temp : str, tuple or float, optional
         Temperature at which ``rmf`` was measured, degF. Required with a
         numeric ``rmf``; with ``rmf="header"`` it overrides the header RMFT.
     name : str, optional
@@ -1189,18 +1232,19 @@ def mud_filtrate(rmf: Any = None, rmf_temp_f: Optional[float] = None, *,
     Examples
     --------
     >>> from petrophys.workflow import steps
-    >>> steps.mud_filtrate(rmf=0.3, rmf_temp_f=75).produces
+    >>> steps.mud_filtrate(rmf=0.3, rmf_meas_temp="75 degF").produces
     {'RMF': 'ohm.m'}
     """
     check = _Params("steps.mud_filtrate()")
     value = _resistivity(check, "rmf", rmf, "RMF and RMFT")
     values = {"rmf": value,
-              "rmf_temp_f": check.number("rmf_temp_f", rmf_temp_f, minimum=-60, maximum=800)}
+              "rmf_temp_f": check.number("rmf_meas_temp", _in_degf(check, "rmf_meas_temp_f", rmf_meas_temp),
+                                         minimum=-60, maximum=800)}
     if rmf is None:
-        check.add(Advice("give rmf= (ohm.m, with rmf_temp_f=) or rmf='header'", ('rmf', 'rmf_temp_f')))
-    elif isinstance(value, float) and rmf_temp_f is None:
-        check.add("rmf_temp_f is required with rmf: the temperature (degF) at which rmf was "
-                  "measured, e.g. rmf=0.3, rmf_temp_f=75")
+        check.add(Advice("give rmf= (ohm.m, with rmf_meas_temp=) or rmf='header'", ('rmf', 'rmf_meas_temp')))
+    elif isinstance(value, float) and rmf_meas_temp is None:
+        check.add("rmf_meas_temp is required with rmf: the temperature at which rmf was "
+                  "measured, e.g. rmf=0.3, rmf_meas_temp='75 degF'")
     check.raise_if_any()
     requirements = []
     if value == "header":
@@ -2099,7 +2143,7 @@ def interpret(*, name: Optional[str] = None, **settings: Any) -> Step:
         Step name; defaults to ``"interpret"``.
     **settings
         :class:`~petrophys.workflow.DynamicWorkflowConfig` settings, e.g.
-        ``rw=0.07, rw_meas_temp_f=230``. They must be JSON-serializable
+        ``rw=0.07, rw_meas_temp="230 degF"``. They must be JSON-serializable
         (pass files as paths).
 
     Returns
@@ -2120,7 +2164,7 @@ def interpret(*, name: Optional[str] = None, **settings: Any) -> Step:
     Examples
     --------
     >>> from petrophys.workflow import steps
-    >>> steps.interpret(rw=0.07, rw_meas_temp_f=230, sw_modle="archie")
+    >>> steps.interpret(rw=0.07, rw_meas_temp="230 degF", sw_modle="archie")
     Traceback (most recent call last):
     ...
     TypeError: steps.interpret() got unexpected setting(s) 'sw_modle' (did you mean 'sw_model'?). See petrophys.DynamicWorkflowConfig for the available settings.

@@ -21,7 +21,7 @@ S = pp.sample
 
 
 def _30_6_5():
-    return pp.interpret(S("30_6-5"), formations=S("formations_30_6-5"), rw=0.07, rw_meas_temp_f=230)
+    return pp.interpret(S("30_6-5"), formations=S("formations_30_6-5"), rw=0.07, rw_meas_temp="230 degF")
 
 
 def _30_6_5_geolink():

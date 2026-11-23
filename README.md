@@ -51,7 +51,7 @@ Contributors: `python -m pip install -e ".[all,dev,docs]"`.
 import petrophys as pp
 
 well = pp.read(pp.sample("30_6-5"))        # or pp.read("my_well.las")
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)   # Rw (ohm.m) at 230 degF; use your own
+result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")   # Rw (ohm.m) at 230 degF; use your own
 result.raise_for_errors()
 
 result.print_trace()                       # what ran, what was skipped, and why
@@ -74,10 +74,10 @@ well = pp.read(
     formations="formations.csv",   # formation_name, top_depth[, bottom_depth]
     lithology="lithology.csv",     # top, bottom, lithology
 )
-result = pp.interpret(well, rw=0.05, rw_meas_temp_f=75, bht_f=210)
+result = pp.interpret(well, rw=0.05, rw_meas_temp="75 degF", bht="210 degF")
 ```
 
-Give Rw (ohm.m) with the temperature it was measured at, `rw_meas_temp_f`
+Give Rw (ohm.m) with the temperature it was measured at, `rw_meas_temp`
 (degF); the workflow corrects it along the well's temperature profile. Without
 that temperature, a given Rw, or a header RW without RWT or FMT, is taken at
 the well's median formation temperature, with a warning.
@@ -102,13 +102,13 @@ Templates for every input ship with the package, e.g.
 ### Configuring the interpretation
 
 Every setting of `pp.interpret` is a field of `DynamicWorkflowConfig`, with
-units in the name (`bht_f` in degF, `td_ft` in feet) and validation on
+units in the name (`bht` in degF, `td` in feet) and validation on
 creation. The values here are placeholders for your well's:
 
 ```python
 config = pp.DynamicWorkflowConfig(
-    rw=0.05, rw_meas_temp_f=75,      # formation water
-    bht_f=220, td_ft=8500,           # temperature profile
+    rw=0.05, rw_meas_temp="75 degF",      # formation water
+    bht="220 degF", td="8500 ft",           # temperature profile
     sw_model="indonesia",            # or "auto" (the default) to route per sample
     a=1.0, m=2.0, n=2.0,             # Archie parameters, e.g. from SCAL
     skip_steps=["permeability"],
@@ -163,7 +163,7 @@ from petrophys.workflow import Workflow, steps
 wf = Workflow("Brent Group quick look", [
     steps.clay_volume(method="gr", gr_clean=20, gr_shale=110),
     steps.porosity(method="density", matrix_density=2.65),
-    steps.formation_water(rw=0.07, rw_temp_f=230),
+    steps.formation_water(rw=0.07, rw_meas_temp="230 degF"),
     steps.saturation(model="archie"),
     steps.net_pay(vcl_cutoff=0.35, phie_cutoff=0.10, sw_cutoff=0.60),
 ])

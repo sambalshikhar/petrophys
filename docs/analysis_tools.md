@@ -42,7 +42,7 @@ from which the Brent Group is one query:
 ```{code-cell} python
 import petrophys as pp
 
-result = pp.interpret(pp.sample("30_6-5"), rw=0.070, rw_meas_temp_f=230.0)
+result = pp.interpret(pp.sample("30_6-5"), rw=0.070, rw_meas_temp="230.0 degF")
 logs = result.well.to_dataframe()
 brent = logs.query("2841 <= DEPTH <= 2958")
 ```

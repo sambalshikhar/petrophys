@@ -38,7 +38,7 @@ import pandas as pd
 import petrophys as pp
 
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)  # Rw 0.07 ohm.m at 230 degF
+result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")  # Rw 0.07 ohm.m at 230 degF
 result.status
 ```
 
@@ -134,7 +134,7 @@ Invalid values fail before anything runs, with the accepted values:
 
 ```{code-cell} python
 try:
-    pp.interpret(well, rw=0.07, rw_meas_temp_f=230, sw_model="archy", hc_type="gass")
+    pp.interpret(well, rw=0.07, rw_meas_temp="230 degF", sw_model="archy", hc_type="gass")
 except ValueError as error:
     print(error)
 ```
@@ -145,7 +145,7 @@ The most-used settings, from {func}`~petrophys.workflow.config_schema`. {doc}`ap
 from petrophys.workflow import config_schema
 
 settings = pd.DataFrame(config_schema()).set_index("name")
-settings.loc[["rw", "rw_meas_temp_f", "bht_f", "lithology_domain", "matrix_type", "gr_min",
+settings.loc[["rw", "rw_meas_temp", "bht", "lithology_domain", "matrix_type", "gr_min",
               "gr_max", "sw_model", "vcl_cutoff", "phie_cutoff", "sw_cutoff", "skip_steps"],
              ["default", "description"]]
 ```
@@ -187,8 +187,8 @@ Archie keys are lithologies of the Archie table (`sandstone`, `limestone`, `dolo
 Settings can differ by depth: pass `zones`, a list of intervals each with its settings, or a table or CSV/Excel file with `top`, `bottom` and one column per setting (an empty cell sets nothing; `name` and `depth_unit` are optional):
 
 ```python
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230, zones=[
-    {"name": "overburden", "top": 176, "bottom": 1908, "rw": 0.5, "rw_meas_temp_f": 60},
+result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF", zones=[
+    {"name": "overburden", "top": 176, "bottom": 1908, "rw": 0.5, "rw_meas_temp": "60 degF"},
     {"name": "Brent Group", "top": 2841, "bottom": 2958, "m": 1.9},
 ])
 ```
@@ -217,14 +217,14 @@ pp.export_context("wells/", "context/", layout="package", zones="zones.xlsx")
 | neither | lithology runs over the whole well | the whole well |
 
 The full order is: your zone values inside their zone, then your whole-well settings, then LAS header zone values (`RW_Z1`, `M_Z1`, ... with `TOP_Z1`/`BOT_Z1`) inside their zone, then LAS header whole-well values, then the defaults. A header value one of yours overrides is named in the warnings. The same order holds on every route; `DynamicWorkflow(config).run` alone uses the config as given, without the header.
-An explicit setting wins over a LAS header value: `rw` over the header RW, `salinity_ppm` over the header RW, `rw_meas_temp_f` over the header RWT, and `rm`, `rmf_salinity_ppm` and `rmf_chlorides_mg_l` over the header RMF and CLFL (a value `pp.interpret` copied from the header, such as CLFL, ranks with the header, below a direct RMF).
-`phi_cl`, `rmf_meas_temp_f` and `rm_meas_temp_f` are unset (`None`) by default and resolve to 0.15 v/v and 75 degF, so an explicit value, including one equal to the default, is always used.
+An explicit setting wins over a LAS header value: `rw` over the header RW, `salinity_ppm` over the header RW, `rw_meas_temp` over the header RWT, and `rm`, `rmf_salinity_ppm` and `rmf_chlorides_mg_l` over the header RMF and CLFL (a value `pp.interpret` copied from the header, such as CLFL, ranks with the header, below a direct RMF).
+`phi_cl`, `rmf_meas_temp` and `rm_meas_temp` are unset (`None`) by default and resolve to 0.15 v/v and 75 degF, so an explicit value, including one equal to the default, is always used.
 Zone-only header parameters (`RW_Z1` with `TOP_Z1`/`BOT_Z1`) apply inside their zone; outside it the whole-well settings and header values are used, and the trace and warnings say so.
 A zone whose `TOP_Z1`/`BOT_Z1` span every depth of the well replaces the header value everywhere, in `pp.interpret` as in the zoned runner, and a warning names both values when they differ.
 Header values are converted from their units: `TD` from its own depth unit (the well's depth unit when it has none), `RHO_MA`/`RHO_FL` from kg/m3 (`KG/M3`, `K/M3`) or lb/ft3, and salinity from ppm, ppk, ppt (g/kg), mg/l, g/l or %; a salinity in a unit not on that list is not used, with a warning.
-Settings outside their physical range are refused: temperatures below absolute zero, `bht_f` below `surface_temp_f`, `rho_ma` outside 1.5-3.5 g/cm3 or not above `rho_fl`, `rho_fl` outside 0-2 g/cm3, `nphi_ma` outside -0.1 to 0.5 and `salinity_ppm` outside 0-400,000 ppm.
-`rw_meas_temp_f` given without `rw` is the measurement temperature of the header RW, replacing its RWT.
-A measured `TEMP` log with at least half of its samples finite is the temperature source, with the modelled gradient filling its gaps; a sparser log is kept as `TEMP_LOG` and the modelled profile is used. With `bht_f` or `surface_temp_f` set, the modelled profile is used and the log is kept as `TEMP_LOG`.
+Settings outside their physical range are refused: temperatures below absolute zero, `bht` below `surface_temp`, `rho_ma` outside 1.5-3.5 g/cm3 or not above `rho_fl`, `rho_fl` outside 0-2 g/cm3, `nphi_ma` outside -0.1 to 0.5 and `salinity_ppm` outside 0-400,000 ppm.
+`rw_meas_temp` given without `rw` is the measurement temperature of the header RW, replacing its RWT.
+A measured `TEMP` log with at least half of its samples finite is the temperature source, with the modelled gradient filling its gaps; a sparser log is kept as `TEMP_LOG` and the modelled profile is used. With `bht` or `surface_temp` set, the modelled profile is used and the log is kept as `TEMP_LOG`.
 Set `rho_ma`, `dt_ma` or `nphi_ma` and it holds at every depth, also where a lithology log would give each group its own matrix value.
 The SP-derived Rw uses `sp_max` and `sp_min` as its clean-sand and shale lines when they are set.
 With `apply_hc_correction=True`, the porosity step reads the hydrocarbon-corrected `NPHI_HC` and `RHOB_HC`. The correction scales with the flushed zone's hydrocarbon (1 - SXO) and runs before the saturation step, so it needs an input SXO curve; without one it is skipped with a warning.
@@ -279,7 +279,7 @@ With oil-based mud (`mud_type="OBM"`), no SXO or MHI is computed and Rw is not e
 One setting apart, the saturation model changes the Brent Group answer. Dual Water and Waxman-Smits are left out here, as 30/6-5 gives no `rwb`, `cec` or `b_coeff`:
 
 ```{code-cell} python
-runs = {model: pp.interpret(well, rw=0.07, rw_meas_temp_f=230, sw_model=model)
+runs = {model: pp.interpret(well, rw=0.07, rw_meas_temp="230 degF", sw_model=model)
         for model in ["archie", "simandoux", "indonesia", "auto"]}
 pd.DataFrame({model: run.summary(top=2841, bottom=2958)["net_thickness"]
               for model, run in runs.items()})
@@ -353,7 +353,7 @@ For wells already in memory, {class}`~petrophys.workflow.BatchProcessor` runs th
 ```{code-cell} python
 from petrophys.workflow import DynamicWorkflow, WorkflowStep
 
-workflow = DynamicWorkflow(pp.DynamicWorkflowConfig(rw=0.07, rw_meas_temp_f=230))
+workflow = DynamicWorkflow(pp.DynamicWorkflowConfig(rw=0.07, rw_meas_temp="230 degF"))
 partial = workflow.run_selected_steps(pp.read(pp.sample("30_6-5")),
                                       [WorkflowStep.VCLAY, WorkflowStep.POROSITY])
 partial.to_dataframe()[["Step", "Method", "Output Curves"]]
@@ -370,7 +370,7 @@ The checks below run on 30/6-5 again, with its lithology intervals attached as w
 ```{code-cell} python
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"),
                lithology=pp.sample("lithology_30_6-5"))
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
+result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")
 result.warnings
 ```
 
@@ -381,7 +381,7 @@ This page hides one more message, a Python warning raised each time the percent 
 | Check | Where to look |
 |---|---|
 | **Inputs**: expected curves, right units | `well.describe()`; `DataQualityWarning` messages |
-| **Rw and its temperature** | pass `rw_meas_temp_f` with `rw`; the `rw` step in the trace |
+| **Rw and its temperature** | pass `rw_meas_temp` with `rw`; the `rw` step in the trace |
 | **Clay volume**: the gamma-ray endpoints (`gr_min`, `gr_max`; picked from the log when unset, see {doc}`input_templates`) and the neutron-density clay point (`nd_clay`, {ref}`workflows-clay`) | the `vclay` step in the trace |
 | **Porosity and saturation**: core agreement; the core porosity correction, used only when its fit has at least 8 core-log pairs, a positive slope and r² of at least 0.5; the chosen Sw model | `result.print_trace()`, the `core_correction` and `saturation` steps |
 | **Hole quality**: bad-hole samples are left out of net reservoir and pay; where no bit size is known, only DRHO can flag them | the `BAD_HOLE` curve next to the pay flags; the warnings and sample counts of the `bad_hole` step |
@@ -422,11 +422,11 @@ The `bad_hole` step records where its bit sizes came from (`bit_size_source`) an
 
 ### Rw needs its temperature
 
-Without `rw_meas_temp_f`, Rw is taken at the well's median formation temperature, recorded in the `rw` step and in `result.warnings`. On 30/6-5 the median formation temperature is 168 degF, not 230 degF, so the same 0.07 ohm.m stands for a saltier water: Rw in the reservoir reads lower, Sw lower, and the Brent Group net pay rises from 23.0 m to 24.8 m.
+Without `rw_meas_temp`, Rw is taken at the well's median formation temperature, recorded in the `rw` step and in `result.warnings`. On 30/6-5 the median formation temperature is 168 degF, not 230 degF, so the same 0.07 ohm.m stands for a saltier water: Rw in the reservoir reads lower, Sw lower, and the Brent Group net pay rises from 23.0 m to 24.8 m.
 
 ```{code-cell} python
 assumed = pp.interpret(well, rw=0.07)  # no temperature given
-[text for text in assumed.warnings if "rw_meas_temp_f" in text]
+[text for text in assumed.warnings if "rw_meas_temp" in text]
 ```
 
 ```{code-cell} python

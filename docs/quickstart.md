@@ -58,7 +58,7 @@ formation-water resistivity `rw` and the temperature it was measured at.
 {doc}`api/settings` lists them all.
 
 ```{code-cell} python
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)   # Rw 0.07 ohm.m at 230 degF
+result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")   # Rw 0.07 ohm.m at 230 degF
 result.status
 ```
 
@@ -110,9 +110,9 @@ result.specific_steps_skipped
 The workflow takes Rw from the first source it finds, your settings before the
 file's header:
 
-1. the Rw you set, `rw` (at `rw_meas_temp_f`);
+1. the Rw you set, `rw` (at `rw_meas_temp`);
 2. the formation-water salinity you set, `salinity_ppm`;
-3. the `RW` value in the LAS header (at its `RWT`, or at `rw_meas_temp_f` when
+3. the `RW` value in the LAS header (at its `RWT`, or at `rw_meas_temp` when
    you set one, else at the header formation temperature `FMT`);
 4. a formation-water salinity in the LAS header (`WATSAL`, `WSAL`, `SAL`, ...);
 5. the SP or Rxo/Rt response, given a mud-filtrate resistivity (water-based mud
@@ -125,10 +125,11 @@ file's header:
 7. a default of 0.05 ohm.m, with a warning (`allow_default_rw=False` turns it
    off).
 
-Always give the temperature Rw was measured at (`rw_meas_temp_f`); otherwise Rw
-is taken at the well's median formation temperature, with a warning.
-The 30/6-5 header gives `RW = 0.07` ohm.m at `RWT = 230` degF; this page
-passes the same values as settings, to show how you give your own.
+Give the temperature Rw was measured at with its unit, `rw_meas_temp="230 degF"`
+or `rw_meas_temp="110 degC"`; without it, Rw is taken at the well's median
+formation temperature, with a warning. The 30/6-5 header gives `RW = 0.07` ohm.m
+at `RWT = 230` degF, which the workflow would read by itself; this page passes
+them as settings to show how you give your own.
 :::
 
 ## Read the trace

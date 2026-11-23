@@ -2556,6 +2556,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         well=well(),
         max_generic_tracks=value(),
         generic_curves_per_track=value(),
+        include_on_request=switch(),
     ),
     "petrophys.visualization.log_viewer.create_log_viewer": fn(
         well=well(),
@@ -2634,6 +2635,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         figsize=values(unit="in"),
         xlim=values(unit="v/v"),
         ylim=values(unit="ohm.m"),
+        vcl_max=value(unit="v/v"),
     ),
     "petrophys.visualization.saturation_height_plot.create_saturation_height_plot": fn(
         model=object_(),

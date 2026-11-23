@@ -104,7 +104,7 @@ from petrophys.interpretation.core_analysis import (
 )
 
 result = pp.interpret(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"),
-                      rw=0.07, rw_meas_temp_f=230)
+                      rw=0.07, rw_meas_temp="230 degF")
 core = core_data_from_well(result)
 core
 ```

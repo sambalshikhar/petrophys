@@ -171,7 +171,7 @@
    },
    "settings_used": {
     "a": 1.0,
-    "bht_f": 251.0,
+    "bht": "251 degF",
     "calculation_profile": "geolink",
     "lithology_domain": "carbonate",
     "m": 2.03,
@@ -180,9 +180,10 @@
     "phi_cl": 0.2,
     "rho_fl": 1.1,
     "rw": 0.0682,
-    "rw_meas_temp_f": 68.0,
+    "rw_meas_temp": "68 degF",
+    "surface_temp": "68 degF",
     "sw_model": "archie",
-    "td_ft": 8299.0
+    "td": "8299 ft"
    },
    "skipped_steps": {
     "bad_hole": "Needs a caliper (CALI) or density-correction (DRHO) curve",

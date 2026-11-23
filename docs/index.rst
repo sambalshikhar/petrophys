@@ -210,7 +210,7 @@ interpretation straight after installing:
    import petrophys as pp
 
    well = pp.read(pp.sample("30_6-5"))
-   result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)  # Rw 0.07 ohm.m at 230 degF
+   result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")  # Rw 0.07 ohm.m at 230 degF
 
    print(result.status)
    print(result.summary(top=2841, bottom=2958))   # the Brent Group

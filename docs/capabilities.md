@@ -238,7 +238,7 @@ from petrophys.visualization import create_bar_comparison, create_nd_crossplot, 
 
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"),
                lithology=pp.sample("lithology_30_6-5"))
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)   # Rw 0.07 ohm.m at 230 degF
+result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")   # Rw 0.07 ohm.m at 230 degF
 
 thumb("cap_qc", pp.plot(result, top=3000, bottom=3110, curves=["GR", "CALI", "BS"],
                         figsize=LOG_THUMB).fig)
@@ -253,7 +253,7 @@ thumb("cap_pickett", create_pickett_plot(result, rw=0.07, rt_curve="RDEP", color
 # Dual Water needs a bound-water resistivity (rwb) and Waxman-Smits a CEC;
 # 30/6-5 gives neither, so they are left out.
 models = ["archie", "simandoux", "indonesia", "auto"]
-pay = [pp.interpret(well, rw=0.07, rw_meas_temp_f=230, sw_model=model)
+pay = [pp.interpret(well, rw=0.07, rw_meas_temp="230 degF", sw_model=model)
        .summary(top=2841, bottom=2958)["net_thickness"]["net_pay"] for model in models]
 fig, ax = create_bar_comparison(models, pay, value_labels=True, figsize=THUMB,
                                 ylabel="Brent Group net pay (m)", title="Net pay by Sw model, 30/6-5")

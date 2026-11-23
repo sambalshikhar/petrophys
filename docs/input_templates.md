@@ -222,12 +222,12 @@ in for:
 
 | LAS parameter | Setting | How it is read |
 | --- | --- | --- |
-| `RW`, `RWT` | `rw`, `rw_meas_temp_f` | Rw in ohm.m at RWT; without RWT, at the formation temperature `FMT` when the header gives it, else at the well's median formation temperature, with a warning |
-| `RMF`, `RMFT` | `rmf_at_meas_temp`, `rmf_meas_temp_f` | `RMFS` and `MFST`, the Schlumberger mud-filtrate sample resistivity and temperature, stand in for a missing RMF and RMFT |
-| `RM`, `RMT` | `rm`, `rm_meas_temp_f` | `RMS` and `MST`, the mud sample resistivity and temperature, stand in for a missing RM and RMT |
+| `RW`, `RWT` | `rw`, `rw_meas_temp` | Rw in ohm.m at RWT; without RWT, at the formation temperature `FMT` when the header gives it, else at the well's median formation temperature, with a warning |
+| `RMF`, `RMFT` | `rmf_at_meas_temp`, `rmf_meas_temp` | `RMFS` and `MFST`, the Schlumberger mud-filtrate sample resistivity and temperature, stand in for a missing RMF and RMFT |
+| `RM`, `RMT` | `rm`, `rm_meas_temp` | `RMS` and `MST`, the mud sample resistivity and temperature, stand in for a missing RM and RMT |
 | `CLFL` | `rmf_chlorides_mg_l` | Mud-filtrate chlorides in mg/l (values in ppm, kppm or % are converted). Without an Rmf, Rmf comes from the NaCl equivalent, Cl x 58.44/35.45, divided by the brine density |
-| `BHT`, `TD` | `bht_f`, `td_ft` | BHT is taken as the static formation temperature at TD, with no correction for mud circulation. `MRT` (maximum recorded temperature) or `BHTEMP` stands in for a missing BHT, and the logger or driller depth (`TDL`, `DL`, `TDD`, `DD`) for a missing TD |
-| `TGRAD` | `gradient_f_per_100ft` | Geothermal gradient (degC/100 m, degC/km or degF/100 ft; without a unit, degC/100 m up to 10, else degC/km), from `surface_temp_f` at depth 0. Used only without a BHT, which anchors the profile at TD |
+| `BHT`, `TD` | `bht`, `td` | BHT is taken as the static formation temperature at TD, with no correction for mud circulation. `MRT` (maximum recorded temperature) or `BHTEMP` stands in for a missing BHT, and the logger or driller depth (`TDL`, `DL`, `TDD`, `DD`) for a missing TD |
+| `TGRAD` | `temperature_gradient` | Geothermal gradient (degC/100 m, degC/km or degF/100 ft; without a unit, degC/100 m up to 10, else degC/km), from `surface_temp` at depth 0. Used only without a BHT, which anchors the profile at TD |
 | `OBM` | `mud_type` | An oil-based-mud flag: `YES` gives `"OBM"`, `NO` gives `"WBM"` |
 | `FLSAL` | `rmf_salinity_ppm` | Mud-filtrate salinity (units converted) |
 | `CEC` | `cec` | meq/100 g; a value labelled meq/g is multiplied by 100, and a value under 1 gets a warning, as meq/g values look like that |

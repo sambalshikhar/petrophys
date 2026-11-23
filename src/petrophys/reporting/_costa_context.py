@@ -157,7 +157,7 @@ def costa_workflow_config():
 
     return DynamicWorkflowConfig(
         calculation_profile="geolink",
-        surface_temp_f=_SURFACE_TEMP_F,
+        surface_temp=(_SURFACE_TEMP_F, "degF"),
         lithology="carbonate",
         matrix_type="limestone",
         rho_fl=_FLUID_DENSITY,

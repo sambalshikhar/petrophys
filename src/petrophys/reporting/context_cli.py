@@ -225,7 +225,7 @@ def main(argv=None) -> int:
         metavar="NAME=VALUE",
         help=(
             "Interpretation setting, as for petrophys.interpret (see DynamicWorkflowConfig); "
-            "repeat for several, e.g. --setting rw=0.07 --setting rw_meas_temp_f=230. VALUE is "
+            "repeat for several, e.g. --setting rw=0.07 --setting 'rw_meas_temp=230 degF'. VALUE is "
             "read as JSON (numbers, true/false, null, lists, objects), else as text. Not with --profile."
         ),
     )

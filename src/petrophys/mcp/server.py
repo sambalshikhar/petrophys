@@ -113,7 +113,7 @@ SummaryBottom = Annotated[
 Settings = Annotated[
     Optional[Dict[str, Any]],
     Field(
-        description="Interpretation settings by name, e.g. {'rw': 0.07, 'rw_meas_temp_f': 230, "
+        description="Interpretation settings by name, e.g. {'rw': 0.07, 'rw_meas_temp': '230 degF', "
         "'lithology_domain': 'carbonate'}; see interpret_well and interpretation_settings."
     ),
 ]
@@ -719,7 +719,7 @@ def create_server(
                     row.update(_well_row(summary, result.well, summary_top, summary_bottom))
                     if rw_from_header:
                         row["rw"] = (f"{header_rw['rw']:g} ohm.m at "
-                                     f"{header_rw['rw_meas_temp_f']:g} degF (header RW and RWT)")
+                                     f"{header_rw['rw_meas_temp'][0]:g} degF (header RW and RWT)")
                     units.add(result.well.depth_unit)
                 except (ToolError, SessionError, ValueError, TypeError, LookupError, OSError,
                         RuntimeError) as exc:
@@ -1130,7 +1130,7 @@ def create_server(
     ) -> str:
         """Guide the model through loading, interpreting and reporting on a well."""
         if rw and rw_temperature_f:
-            rw_text = f"Use rw={rw} ohm.m with rw_meas_temp_f={rw_temperature_f}."
+            rw_text = f"Use rw={rw} ohm.m with rw_meas_temp='{rw_temperature_f} degF'."
         elif rw:
             rw_text = (
                 f"Use rw={rw} ohm.m; ask me at what temperature it was measured "
@@ -1168,7 +1168,7 @@ def _human_size(size: int) -> str:
     return f"{value:.1f} GB"
 
 
-def _header_rw(well: Any) -> Dict[str, float]:
+def _header_rw(well: Any) -> Dict[str, Any]:
     """rw and rw_meas_temp_f (degF) from a well's header RW and RWT."""
     from petrophys.model.units import temperature_to_fahrenheit
 
@@ -1184,11 +1184,11 @@ def _header_rw(well: Any) -> Dict[str, float]:
         raise ValueError("the header has no RW; give rw and rw_meas_temp_f in settings")
     if rwt is None:
         raise ValueError(
-            f"the header RW ({rw:g}) has no temperature (RWT); give rw and rw_meas_temp_f in "
+            f"the header RW ({rw:g}) has no temperature (RWT); give rw and rw_meas_temp in "
             "settings instead"
         )
     unit = well.get_parameter("RWT__UNIT")
-    return {"rw": rw, "rw_meas_temp_f": float(temperature_to_fahrenheit(rwt, unit or None))}
+    return {"rw": rw, "rw_meas_temp": (float(temperature_to_fahrenheit(rwt, unit or None)), "degF")}
 
 
 def _well_row(summary: Dict[str, Any], well: Any, top: Optional[float],

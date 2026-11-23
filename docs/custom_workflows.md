@@ -43,7 +43,7 @@ from petrophys.workflow import Workflow, WorkflowValidationError, steps, workflo
 wf = Workflow("Brent Group quick look")
 wf.add(steps.clay_volume(method="gr", gr_clean=20, gr_shale=110))
 wf.add(steps.porosity(method="density", matrix_density=2.65))
-wf.add(steps.formation_water(rw=0.07, rw_temp_f=230))   # Rw 0.07 ohm.m at 230 degF
+wf.add(steps.formation_water(rw=0.07, rw_meas_temp="230 degF"))   # Rw 0.07 ohm.m at 230 degF
 wf.add(steps.saturation(model="archie", a=1, m=2, n=2))
 wf.add(steps.net_pay(vcl_cutoff=0.35, phie_cutoff=0.10, sw_cutoff=0.60))
 wf.describe()
@@ -175,7 +175,7 @@ Keep steps you share in a module; a step defined in a notebook reloads only in t
 
 ```{code-cell} python
 auto_plus = Workflow("pp.interpret + hydrocarbon porosity", [
-    steps.interpret(rw=0.07, rw_meas_temp_f=230),
+    steps.interpret(rw=0.07, rw_meas_temp="230 degF"),
     hydrocarbon_porosity(),
     steps.formation_summary(rank="formation"),
 ])

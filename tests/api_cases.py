@@ -187,7 +187,7 @@ def _cases(TMP, RESULTS, ONLY):
             raise RuntimeError(f"status failed: {result.errors}")
         return result
 
-    r_base = case("interpret", "Well", lambda: run(well305, rw=0.07, rw_meas_temp_f=230))
+    r_base = case("interpret", "Well", lambda: run(well305, rw=0.07, rw_meas_temp="230 degF"))
     case("interpret", "str path", lambda: run(str(W305)))
     case("interpret", "Path", lambda: run(Path(W305)))
     case("interpret", "csv path + depth_unit", lambda: run(csv_path, depth_unit="m"))

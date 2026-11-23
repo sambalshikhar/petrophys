@@ -98,7 +98,7 @@ another source on the same depths. Here the effective porosity of an
 interpretation goes back on the raw well:
 
 ```{code-cell} python
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
+result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")
 well.add_curve("PHIE", result.well["PHIE"].data, unit="v/v", description="Effective porosity")
 well["PHIE"]
 ```

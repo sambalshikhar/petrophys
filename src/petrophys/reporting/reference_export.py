@@ -1059,7 +1059,7 @@ def export_example_format_las(
     --------
     >>> import petrophys as pp
     >>> from petrophys.reporting import export_example_format_las
-    >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp_f=230)
+    >>> result = pp.interpret(pp.read(pp.sample("30_6-5")), rw=0.07, rw_meas_temp="230 degF")
     >>> export_example_format_las(result.well, "delivery/30_6-5.las")
     PosixPath('delivery/30_6-5.las')
     """
@@ -2737,7 +2737,9 @@ def _context_workflow_config(
         defaulted = {name for name in ("matrix_type", "lithology_domain") if name not in options}
         options.setdefault("matrix_type", "sandstone")
         options.setdefault("lithology_domain", "clastic")
-        config = DynamicWorkflowConfig(**options)
+        from petrophys.workflow.dynamic_workflow import _public_settings
+
+        config = DynamicWorkflowConfig(**_public_settings(options))
         # The two defaults filled here are not the caller's settings.
         config._explicit_settings = config._explicit_settings - defaulted
         return config

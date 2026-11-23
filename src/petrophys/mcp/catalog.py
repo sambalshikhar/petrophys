@@ -170,11 +170,11 @@ def _natural(text: str) -> Tuple[Any, ...]:
 
 #: Settings shown by default, in this order: the ones agents need most often.
 COMMON_SETTINGS: Tuple[str, ...] = (
-    "rw", "rw_meas_temp_f", "salinity_ppm", "bht_f", "td_ft", "surface_temp_f",
+    "rw", "rw_meas_temp", "salinity_ppm", "bht", "td", "surface_temp",
     "lithology_domain", "matrix_type", "rho_ma", "sw_model", "a", "m", "n",
     "vcl_cutoff", "phie_cutoff", "sw_cutoff", "gr_min", "gr_max", "gr_method",
     "apply_hc_correction", "hc_type", "perm_method", "rmf_at_meas_temp",
-    "rmf_meas_temp_f", "skip_steps", "allow_default_rw",
+    "rmf_meas_temp", "skip_steps", "allow_default_rw",
 )
 
 #: Choices worth listing for settings whose accepted values include aliases.
@@ -189,14 +189,15 @@ _RUNTIME_DEFAULTS = {
     "vcl_cutoff": "0.40 clastic, 0.30 carbonate samples (0.3 under the 'geolink' profile)",
     "sw_cutoff": "0.60 clastic, 0.70 carbonate samples (0.7 under the 'geolink' profile)",
     "phie_cutoff": "0.08 clastic, 0.045 carbonate samples",
-    "bht_f": "header BHT (converted to degF)",
-    "td_ft": "header TD, else deepest sample",
+    "bht": "header BHT",
+    "td": "header TD, else deepest sample",
+    "surface_temp": "68 degF",
     "lithology_domain": "LAS header value, else clastic",
     "matrix_type": "LAS header value, else sandstone in the clastic domain, auto in the others",
     "gr_min": "P5 of the GR log, lowered to 20 API when higher",
     "gr_max": "P95 of the GR log, raised to 100 API when lower",
     "rw": "header RW (at RWT, else at the header FMT, else the median formation temperature)",
-    "gradient_f_per_100ft": "header TGRAD, used only without a BHT",
+    "temperature_gradient": "header TGRAD, used only without a BHT",
     "a": "by lithology", "m": "by lithology", "n": "by lithology",
     "rho_ma": "from matrix_type",
     "carbonate_calibration": "generic ('costa' under the 'geolink' profile)",

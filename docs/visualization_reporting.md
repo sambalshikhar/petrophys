@@ -31,7 +31,7 @@ import petrophys as pp
 
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"),
                lithology=pp.sample("lithology_30_6-5"))
-result = pp.interpret(well, rw=0.07, rw_meas_temp_f=230)
+result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")
 pp.plot(result, top=2800, bottom=3000)
 ```
 
