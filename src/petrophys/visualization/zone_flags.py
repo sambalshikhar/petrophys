@@ -35,6 +35,10 @@ def _cell_fill(depth: np.ndarray, mask: np.ndarray):
 
 
 @_styled_plot
+#: Flag names as the log plot's FLAGS track shows them.
+_FLAG_NAMES = {"NET_ROCK": "Clean Rock", "NET_RES": "Res", "NET_PAY": "Pay", "SEALFLAG": "Seal"}
+
+
 def plot_zone_flags(
     well: "Well",
     flag_curves: List[str],
@@ -117,7 +121,8 @@ def plot_zone_flags(
     ax.set_ylim(bottom, top)
     # Each column is named above it, so no legend covers the flags.
     ax.set_xticks([(i + 0.5) * width for i in range(n_flags)])
-    ax.set_xticklabels(flag_curves, rotation=90 if n_flags > 3 else 0, fontsize=8)
+    shown = [_FLAG_NAMES.get(str(name).upper(), name) for name in flag_curves]
+    ax.set_xticklabels(shown, rotation=90 if n_flags > 3 else 0, fontsize=8)
     ax.xaxis.tick_top()
     ax.tick_params(axis="x", length=0)
     ax.set_ylabel(_depth_label(well))
@@ -133,7 +138,7 @@ def plot_zone_flags(
 def add_zone_shading(
     ax: "Axes",
     zones: List[Dict],
-    alpha: float = 0.2
+    alpha: float = 0.15
 ) -> None:
     """
     Add zone shading to an existing plot.
@@ -154,7 +159,8 @@ def add_zone_shading(
     if not HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for visualization")
 
-    default_colors = ['yellow', 'cyan', 'magenta', 'lightgreen', 'lightsalmon']
+    # Pale colours, behind the curves, so the curves and their fills stay legible.
+    default_colors = ["#fdd49e", "#c6dbef", "#d9f0d3", "#fbb4ae", "#decbe4"]
 
     for i, zone in enumerate(zones):
         top = zone.get("top", 0)
@@ -164,16 +170,15 @@ def add_zone_shading(
         color = zone.get("color", default_colors[i % len(default_colors)])
 
         # Add horizontal span
-        ax.axhspan(top, bottom, alpha=alpha, color=color, label=name)
+        ax.axhspan(top, bottom, alpha=alpha, color=color, label=name, zorder=0, linewidth=0)
 
-        # Add zone label
-        mid_depth = (top + bottom) / 2
+        # The label at the track's right edge, at the top of the zone, clear of the curves.
         ax.text(
-            0.02, mid_depth, name,
+            0.98, min(top, bottom), name,
             transform=ax.get_yaxis_transform(),
-            fontsize=8,
-            verticalalignment='center',
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.7)
+            fontsize=8, ha="right", va="top" if ax.yaxis_inverted() else "bottom",
+            bbox=dict(boxstyle="square,pad=0.15", facecolor="white", edgecolor="none", alpha=0.8),
+            zorder=8,
         )
 
 
