@@ -13,6 +13,19 @@ changing tool descriptions or outputs. It needs `OPENAI_API_KEY`, costs API
 tokens, and can target the in-process server, stdio, or a running HTTP server
 (`--target http://127.0.0.1:8000/mcp`, token from `PETROPHYS_MCP_TOKEN`).
 
+## Imputation accuracy
+
+`evaluate_imputation.py` measures how well `pp.impute` rebuilds a curve in wells
+it did not learn from: it splits the LAS files of the folders given into
+training and test wells at random, removes the curve from each test well,
+rebuilds it, and reports R² and mean absolute error over the rebuilt samples.
+The accuracy stated on the analysis-tools page is its result on the 223 GeoLink
+wells with seeds 0, 1 and 2 (about ten minutes per seed).
+
+```bash
+python scripts/evaluate_imputation.py "PATH/eval" "PATH/LAS_with_petrophys_params" --seed 0 --curves RHOB,DTC,NPHI
+```
+
 ## Eval context benchmark
 
 `generate_benchmark_context.py` generates category context for GeoLink, GeoLink

@@ -149,11 +149,14 @@ missing curve from the other logs (it needs the `ml` extra). The result is added
 in its gaps.
 
 On the 223 GeoLink North Sea wells, with 80 % of the wells as `train_wells` and
-each curve removed from the 36 others and rebuilt, R² over the rebuilt samples
-is 0.79 for RHOB (mean absolute error 0.081 g/cm3), 0.75 for DTC (10.5 us/ft)
-and 0.63 for NPHI (0.050 v/v; two wells whose NPHI is zero-filled are not
-scored). Scores vary from well to well, so check a rebuild against measured
-data in your own wells before using it.
+each curve removed from each of the others that has it (37 to 43 wells) and
+rebuilt, R² over the rebuilt samples is 0.74-0.75 for RHOB (mean absolute error
+0.082-0.085 g/cm3), 0.39-0.60 for DTC (12.5-14.2 us/ft) and 0.50-0.74 for NPHI
+(0.047-0.063 v/v), the range of three random splits of the wells; held or
+zero-filled readings are not scored. `scripts/evaluate_imputation.py` repeats
+the measurement on any set of wells. Scores vary from well to well and from one
+choice of training wells to another, so check a rebuild against measured data
+in your own wells before using it.
 
 `pp.impute` also writes `<CURVE>_PREDICTED`, a prediction at every depth, so a
 rebuild can be checked where the curve was measured. The check is out-of-fold: the

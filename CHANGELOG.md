@@ -1508,7 +1508,9 @@ wherever the package used the function.
   for resistivity and permeability, and `pp.plot(well, curves=["RHOB",
   "RHOB_PREDICTED"])` draws it over the measured curve. A training well
   that is the well itself is left out, with a warning, so the check does
-  not learn from the samples it predicts.
+  not learn from the samples it predicts. `scripts/evaluate_imputation.py`
+  measures the rebuild in wells the model did not learn from (on the 223
+  GeoLink wells, R² 0.74-0.75 for RHOB, 0.39-0.60 for DTC, 0.50-0.74 for NPHI).
 - Plotting: `create_heatmap` centres each cell on its coordinate, draws
   unevenly and log-spaced bins such as NMR T2, and accepts cell edges; the
   core plotting helpers (`plot_calibration`, `plot_poro_perm`,
