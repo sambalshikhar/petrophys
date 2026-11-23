@@ -107,19 +107,22 @@ result.specific_steps_skipped
 :::{admonition} Where Rw comes from
 :class: note
 
-Without `rw`, the workflow uses the first source it finds:
+The workflow takes Rw from the first source it finds, your settings before the
+file's header:
 
-1. a formation-water salinity you set, `salinity_ppm`;
-2. an `RW` value in the LAS header (at its `RWT`, or at `rw_meas_temp_f` when
+1. the Rw you set, `rw` (at `rw_meas_temp_f`);
+2. the formation-water salinity you set, `salinity_ppm`;
+3. the `RW` value in the LAS header (at its `RWT`, or at `rw_meas_temp_f` when
    you set one, else at the header formation temperature `FMT`);
-3. the SP or Rxo/Rt response, given a mud-filtrate resistivity (water-based mud
+4. a formation-water salinity in the LAS header (`WATSAL`, `WSAL`, `SAL`, ...);
+5. the SP or Rxo/Rt response, given a mud-filtrate resistivity (water-based mud
    only);
-4. the apparent Rw of clean rock, with a warning: each sample's apparent Rw
+6. the apparent Rw of clean rock, with a warning: each sample's apparent Rw
    is corrected from its own temperature to 75 degF, and the P5 of those
    values is taken as one water for the whole well (values saltier than
    saturated brine are left out). Use `zones=` where the water changes, for
    example fresher shallow sands;
-5. a default of 0.05 ohm.m, with a warning (`allow_default_rw=False` turns it
+7. a default of 0.05 ohm.m, with a warning (`allow_default_rw=False` turns it
    off).
 
 Always give the temperature Rw was measured at (`rw_meas_temp_f`); otherwise Rw
