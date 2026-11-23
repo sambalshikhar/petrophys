@@ -2,7 +2,7 @@
 Basic log plot functionality.
 """
 
-from petrophys.visualization.style import _styled_plot, save_figure
+from petrophys.visualization.style import _styled_plot, display_unit, save_figure
 
 from typing import TYPE_CHECKING, Optional, List, Dict, Tuple, Union
 import numpy as np
@@ -208,7 +208,8 @@ class LogPlot:
 
         # One curve on an axis -> "NAME [unit]"; several curves of one unit -> "[unit]".
         names = info["names"][canonical]
-        text = f"{names[0]} [{unit}]" if len(names) == 1 else f"[{unit}]"
+        shown = display_unit(unit) or unit
+        text = f"{names[0]} [{shown}]" if len(names) == 1 else f"[{shown}]"
         if ax is base:
             ax.set_xlabel(text)
         else:

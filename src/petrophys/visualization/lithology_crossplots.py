@@ -7,7 +7,7 @@ own calibration; the overlays are not vendor response charts.
 
 from __future__ import annotations
 
-from petrophys.visualization.style import _styled_plot
+from petrophys.visualization.style import _styled_plot, display_unit
 
 from typing import Optional, Tuple
 
@@ -22,6 +22,7 @@ except Exception:  # pragma: no cover
 
 from petrophys.visualization._data import (
     curve_values, porosity_label, note_outside_axes, archie_parameters, chart_limits,
+    clean_rock_only, formation_rw,
 )
 from petrophys._internal.advice import Advice
 from petrophys._internal.validation import warn_invalid
@@ -52,7 +53,7 @@ def _color(well, color_curve, depth_range):
         return None, None
     c, _ = _xy(well, [color_curve], depth_range)
     curve = well.get(color_curve)
-    unit = str(getattr(curve, "unit", "") or "").strip() if curve is not None else ""
+    unit = display_unit(getattr(curve, "unit", "")) if curve is not None else ""
     return c, f"{color_curve} [{unit}]" if unit else color_curve
 
 
@@ -114,6 +115,68 @@ def create_nd_crossplot(
     ax.set_xlim(-0.05, 0.45); ax.set_ylim(3.0, 1.8)   # density inverted
     _note_outside_axes(ax, nphi, rhob)
     ax.set_title(f"Density-Neutron - {well.header.well_name or ''}")
+    ax.grid(alpha=0.3); ax.legend(fontsize=8, loc="upper right")
+    fig.tight_layout()
+    return fig
+
+
+# Photoelectric matrix points (Schlumberger log interpretation charts): bulk
+# density (g/cc), electron density (g/cc) and volumetric cross section
+# U = PEF x electron density (barns/cc).
+_PEF_MATRIX = {
+    "Quartz": {"rhob": 2.65, "rhoe": 2.650, "u": 4.78, "color": "goldenrod"},
+    "Calcite": {"rhob": 2.71, "rhoe": 2.708, "u": 13.77, "color": "royalblue"},
+    "Dolomite": {"rhob": 2.87, "rhoe": 2.863, "u": 9.00, "color": "seagreen"},
+}
+_PEF_POINTS = {"Anhydrite": {"rhob": 2.98, "pef": 5.05, "color": "mediumpurple"}}
+_WATER_RHOE, _WATER_U = 1.110, 0.398
+
+
+@_styled_plot
+def create_pef_crossplot(
+    well, color_curve: str = "GR", depth_range: Optional[Tuple[float, float]] = None,
+    figsize: Tuple[float, float] = (8, 8),
+):
+    """Density-PEF crossplot with quartz, calcite and dolomite porosity lines
+    (ticked 0-40 %, fresh water in the pores) and the anhydrite point.
+
+    PEF hardly changes with porosity, so the minerals fall in columns while
+    density moves with porosity. A line mixes the matrix and water by volume
+    in the volumetric cross section U = PEF x electron density, as the
+    charts do, so it bends slightly toward low PEF. RHOB is inverted (high
+    density at the bottom); PEF runs 0-8 b/e, and points beyond, such as
+    barite spikes, are counted in a note.
+    """
+    pef, _ = _xy(well, ["PEF", "PE"], depth_range)
+    rhob, _ = _xy(well, ["RHOB"], depth_range, "g/cm3")
+    if pef is None or rhob is None:
+        raise ValueError("Density-PEF crossplot needs PEF and RHOB")
+    c, clabel = _color(well, color_curve, depth_range)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    _scatter(ax, pef, rhob, c, clabel, fig)
+
+    phis = np.linspace(0.0, 0.40, 5)
+    fine = np.linspace(0.0, 0.40, 41)
+    for name, m in _PEF_MATRIX.items():
+        def line(phi):
+            u = (1 - phi) * m["u"] + phi * _WATER_U
+            rhoe = (1 - phi) * m["rhoe"] + phi * _WATER_RHOE
+            return u / rhoe, (1 - phi) * m["rhob"] + phi * _RHO_FL
+        x, y = line(fine)
+        ax.plot(x, y, color=m["color"], lw=1.6, label=name, zorder=5)
+        x, y = line(phis)
+        ax.scatter(x, y, color=m["color"], s=14, zorder=6)
+        for phi, xp, yp in zip(phis, x, y):
+            ax.annotate(f"{int(round(phi * 100))}", (xp, yp), fontsize=6,
+                        color=m["color"], xytext=(3, 0), textcoords="offset points", va="center")
+    for name, m in _PEF_POINTS.items():
+        ax.scatter([m["pef"]], [m["rhob"]], color=m["color"], marker="s", s=30, zorder=6, label=name)
+
+    ax.set_xlabel("PEF [b/e]"); ax.set_ylabel("RHOB [g/cc]")
+    ax.set_xlim(0, 8); ax.set_ylim(3.0, 1.8)   # density inverted
+    _note_outside_axes(ax, pef, rhob)
+    ax.set_title(f"Density-PEF - {well.header.well_name or ''}")
     ax.grid(alpha=0.3); ax.legend(fontsize=8, loc="upper right")
     fig.tight_layout()
     return fig
@@ -276,17 +339,23 @@ def create_buckles_plot(
 
 @_styled_plot
 def create_hingle_plot(
-    well, rw: float = 0.05, m: float = 2.0, n: float = 2.0,
+    well, rw: Optional[float] = None, m: float = 2.0, n: float = 2.0,
     phie_curve: str = "PHIE", rt_curve: str = "RDEP", color_curve: str = "VCL",
     a: float = 1.0, depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
     *, xlim: Tuple[float, float] = (0, .40), ylim: Optional[Tuple[float, float]] = None,
+    vcl_max: Optional[float] = 0.15,
 ):
     """Hingle plot: porosity vs Rt^(-1/m) on linear axes, with iso-Sw lines through
     the origin (the linear-axis counterpart of the Pickett plot). Water-bearing
     points fall on the Sw=1 line, whose slope is (a*Rw)^(-1/m), so
-    a*Rw = slope^(-m)."""
-    rw, a, m, n = archie_parameters(rw, a, m, n)
+    a*Rw = slope^(-m).
+
+    As the Pickett plot: ``rw`` (ohm.m, at the temperature of the plotted
+    samples) defaults to the median of the well's ``RW`` curve over them, and
+    only samples with ``VCL`` at or below ``vcl_max`` are plotted (default
+    0.15, clean rock; ``None`` plots every sample), the number left out
+    noted on the plot."""
     xlim = chart_limits(xlim, "xlim")
     if ylim is not None:
         ylim = chart_limits(ylim, "ylim")
@@ -294,6 +363,10 @@ def create_hingle_plot(
     rt, _ = _xy(well, [rt_curve, "RT", "RDEP"], depth_range, "ohm.m")
     if phie is None or rt is None:
         raise ValueError("Hingle plot needs PHIE and Rt")
+    phie, rt, shaly_left_out = clean_rock_only(well, phie, rt, depth_range, vcl_max)
+    if rw is None:
+        rw = formation_rw(well, phie, rt, depth_range)
+    rw, a, m, n = archie_parameters(rw, a, m, n)
     c, clabel = _color(well, color_curve, depth_range)
 
     invalid = (np.isfinite(phie) & ((phie <= 0) | (phie > 1))) | (np.isfinite(rt) & (rt <= 0))
@@ -302,6 +375,8 @@ def create_hingle_plot(
     with np.errstate(divide="ignore", invalid="ignore"):
         y = np.power(rt, -1.0 / m)        # Rt^(-1/m); water line is linear in phi
     y = np.where(np.isfinite(y) & np.isfinite(rt) & ~invalid, y, np.nan)
+    if c is not None:  # the colour scale spans the plotted samples only
+        c = np.where(np.isfinite(phie) & np.isfinite(y), c, np.nan)
 
     fig, ax = plt.subplots(figsize=figsize)
     _scatter(ax, phie, y, c, clabel, fig, cmap="viridis")
@@ -320,6 +395,9 @@ def create_hingle_plot(
     if ylim is not None:
         ax.set_ylim(ylim)
     _note_outside_axes(ax, phie, y)
-    ax.set_title(f"Hingle Plot - {well.header.well_name or ''}  (Rw={rw:g} ohm.m)")
+    if shaly_left_out:
+        ax.text(0.99, 0.01, f"{shaly_left_out} samples with VCL > {vcl_max:g} left out",
+                transform=ax.transAxes, ha="right", va="bottom", fontsize=8, color="0.35")
+    ax.set_title(f"Hingle Plot - {well.header.well_name or ''}  (Rw={rw:.3g} ohm.m)")
     ax.grid(alpha=0.3); fig.tight_layout()
     return fig

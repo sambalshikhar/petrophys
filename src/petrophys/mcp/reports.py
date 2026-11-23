@@ -671,9 +671,10 @@ def zone_table(
 #: Words a model may use for a track, mapped to words that appear in track names.
 TRACK_SYNONYMS = {
     "GR": ("GR", "GAMMA"), "GAMMA": ("GAMMA", "GR"), "GAMMA RAY": ("GAMMA", "GR"),
-    "VCL": ("VCL",), "VSH": ("VCL",), "CLAY": ("VCL",), "SHALE": ("VCL",),
+    "VCL": ("VCL", "CLAY", "GAMMA"), "VSH": ("VCL", "CLAY", "GAMMA"), "CLAY": ("VCL", "CLAY", "GAMMA"),
+    "SHALE": ("VCL", "CLAY", "GAMMA"),
     "CALI": ("CALI", "HOLE"), "CALIPER": ("CALI", "HOLE"), "HOLE": ("HOLE", "CALI"),
-    "SP": ("SP",), "RES": ("RESISTIVITY",), "RT": ("RESISTIVITY",), "RDEP": ("RESISTIVITY",),
+    "SP": ("SP", "GAMMA"), "INVASION": ("INVASION",), "RXO/RT": ("INVASION",), "MHI": ("MHI",), "RES": ("RESISTIVITY",), "RT": ("RESISTIVITY",), "RDEP": ("RESISTIVITY",),
     "ILD": ("RESISTIVITY",), "RESISTIVITY": ("RESISTIVITY",),
     "RHOB": ("DENSITY",), "DEN": ("DENSITY",), "DENSITY": ("DENSITY",),
     "NPHI": ("NEUTRON",), "NEU": ("NEUTRON",), "NEUTRON": ("NEUTRON",),
@@ -692,7 +693,7 @@ def resolve_tracks(requested: Sequence[str], available: Sequence[str]) -> List[s
     """Map loose track names ("GR", "res", "porosity") onto a template's track names.
 
     Matching ignores case. A name matches a track exactly, as one of the
-    words between slashes ("GR" -> "GR / VCL"), through a synonym ("RHOB"
+    words between slashes ("HOLE" -> "GAMMA / HOLE"), through a synonym ("RHOB"
     -> "DENSITY / NEUTRON"), or as a prefix ("RES" -> "RESISTIVITY").
 
     Raises

@@ -63,7 +63,7 @@ def create_mdt_pretest_plot(trace, result=None, *, figsize=(10, 4), title=None):
     heading = title or trace.source or "MDT pretest"
     status = result.status if not result.flags else "review: " + ", ".join(result.flags)
     width = max(40, int(fig.get_figwidth()*9))
-    ax.set(xlabel="Elapsed acquisition time (s)", ylabel=f"Pressure ({trace.pressure_unit})",
+    ax.set(xlabel="Elapsed acquisition time [s]", ylabel=f"Pressure [{trace.pressure_unit}]",
            title=heading + "\n" + textwrap.fill(status, width=width))
     ax.grid(alpha=.2)
     ax.legend(fontsize=8)

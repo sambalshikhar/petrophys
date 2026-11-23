@@ -2525,6 +2525,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         figsize=values(unit="in"),
         xlim=values(unit="v/v"),
         ylim=values(),
+        vcl_max=value(unit="v/v"),
     ),
     "petrophys.visualization.lithology_crossplots.create_mid_plot": fn(
         well=well(),
@@ -2540,6 +2541,12 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         figsize=values(unit="in"),
     ),
     "petrophys.visualization.lithology_crossplots.create_nd_crossplot": fn(
+        well=well(),
+        color_curve=curve_name(),
+        depth_range=values(),
+        figsize=values(unit="in"),
+    ),
+    "petrophys.visualization.lithology_crossplots.create_pef_crossplot": fn(
         well=well(),
         color_curve=curve_name(),
         depth_range=values(),
@@ -2662,6 +2669,9 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
     "petrophys.visualization.specialist_panels.has_nmr_curves": fn(
         well=well(),
     ),
+    "petrophys.visualization.style.display_unit": fn(
+        unit=text(),
+    ),
     "petrophys.visualization.style.draw_categories": fn(
         ax=object_(),
         x=values(),
@@ -2670,6 +2680,8 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         label=text(),
         size=value(),
         alpha=value(),
+        labels=object_(),
+        colors=object_(),
     ),
     "petrophys.visualization.style.plot_style": fn(
         overrides=object_(),

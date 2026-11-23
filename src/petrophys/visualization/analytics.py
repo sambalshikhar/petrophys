@@ -13,7 +13,7 @@ arrays so notebooks never need to hand-roll matplotlib.
 from __future__ import annotations
 
 from petrophys._internal.advice import Advice
-from petrophys.visualization.style import _styled_plot
+from petrophys.visualization.style import _styled_plot, display_unit
 
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -192,6 +192,7 @@ def create_multiwell_overlay(
     if normalize:
         ax.set_xlabel(f"normalized {curve}")
     else:
+        shared_unit = display_unit(shared_unit)
         ax.set_xlabel(f"{curve} [{shared_unit}]" if shared_unit else curve)
     ax.set_ylabel(f"Depth [{plot_unit}]" if plot_unit else "Depth")
     if plotted:
@@ -424,7 +425,7 @@ def create_histogram_comparison(
     _require_mpl()
     if curve is not None:
         datasets, unit = _curve_by_well(datasets, curve)
-        xlabel = xlabel or (f"{curve} ({unit})" if unit else curve)
+        xlabel = xlabel or (f"{curve} [{unit}]" if unit else curve)
     elif not isinstance(datasets, Mapping) or any(
             hasattr(getattr(value, "well", value), "curves") for value in datasets.values()):
         raise ValueError(

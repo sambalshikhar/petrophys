@@ -1442,6 +1442,20 @@ wherever the package used the function.
   kept in `.fig`, so edits survive later saves; the multi-well comparison
   converts curves to standard units, reverses neutron and sonic and warns
   when units still differ.
+- One look across plots: `create_nmr_panel` is drawn by the log viewer (its
+  headers, scales and fills; bound and free fluid shaded), plot labels spell
+  units as the log plot headers do (`display_unit`: API, g/cc, mD), and log
+  axes spanning under two decades are labelled at 1, 2 and 5.
+  `create_pef_crossplot` draws density against PEF with quartz, calcite and
+  dolomite porosity lines mixed in U = PEF x electron density, and the
+  anhydrite point. `create_hingle_plot`, as `create_pickett_plot`, takes Rw
+  at formation temperature from the `RW` curve unless `rw` is given, and
+  plots clean rock only (`vcl_max`, default 0.15). The log plot draws
+  `INVASION_RATIO` (shaded below 0.8 and above 1.2) and `MHI` (shaded below
+  0.7) in tracks of their own when `curves=` names them, and a requested
+  curve named after a curve of the layout (`SW_JH` after `SW`) in that
+  curve's track and scale. The comparison of runs or wells draws volume
+  fractions the layout stacks (mineral volumes) on 0-1.
 - Core and electrical analysis: `apply_poro_perm_transform` writes
   the core-calibrated `PERM_CC` (a core-plug name such as `PERM_CORE` would be
   read back as plugs), and `PERM_CORECAL` is an alias of `PERM_CC`; `plot_core_on_logs` overlays plugs on any PHI*, PERM*, SW* or SO*

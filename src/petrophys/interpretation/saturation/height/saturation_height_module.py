@@ -105,7 +105,7 @@ class JFunctionModel:
             else:
                 fig = ax.figure
             shown = ax.scatter(sw, height, c=np.log10(perm), s=7, lw=0, cmap="viridis")
-            fig.colorbar(shown, ax=ax, label="log10 permeability (mD)")
+            fig.colorbar(shown, ax=ax, label="log10 permeability [mD]")
             curve_height = np.linspace(0.5, float(np.nanmax(height)), 200)
             log_perm = np.log10(perm)
             outline = [path_effects.withStroke(linewidth=3.6, foreground="black")]
@@ -117,8 +117,8 @@ class JFunctionModel:
                         curve_height, color=shown.cmap(shown.norm(np.log10(k))), lw=2.0,
                         path_effects=outline, label=f"model, {k:g} mD, phi {p:.2f}")
             title = f"J-function fit, R2 = {self.r2:.2f}" if self.r2 is not None else "J-function fit"
-            ax.set(xlim=(0, 1), xlabel="Sw (v/v)", ylabel="Height above FWL (ft)", title=title)
-            ax.legend(loc="upper right", fontsize=8)
+            ax.set(xlim=(0, 1), xlabel="Sw [v/v]", ylabel="Height above FWL [ft]", title=title)
+            ax.legend(loc="best", fontsize=8)
             return fig
 
     def _plot_j(self, ax: Any = None) -> Any:
@@ -134,14 +134,14 @@ class JFunctionModel:
             else:
                 fig = ax.figure
             shown = ax.scatter(sw, j, c=np.log10(np.clip(perm, 1e-3, None)), s=5, lw=0, cmap="viridis")
-            fig.colorbar(shown, ax=ax, label="log10 permeability (mD)")
+            fig.colorbar(shown, ax=ax, label="log10 permeability [mD]")
             line = np.geomspace(max(float(np.nanmin(j)), 1e-4), float(np.nanmax(j)), 200)
             ax.plot(self.sw_from_j(line), line, color="black", lw=1.8,
                     label=self._equation(3))
             ax.set_yscale("log")
             title = f"J-function from core, R2 = {self.r2:.2f}" if self.r2 is not None else "J-function from core"
-            ax.set(xlim=(0, 1), xlabel="Sw (v/v)", ylabel="Leverett J", title=title)
-            ax.legend(loc="upper right", fontsize=8)
+            ax.set(xlim=(0, 1), xlabel="Sw [v/v]", ylabel="Leverett J", title=title)
+            ax.legend(loc="best", fontsize=8)
             return fig
 
     def sw_from_j(self, j: ArrayLike) -> ArrayLike:

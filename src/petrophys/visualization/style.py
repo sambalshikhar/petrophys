@@ -99,11 +99,41 @@ def _styled_plot(function):
         if "well" in kwargs:
             kwargs["well"] = _as_well(kwargs["well"])
         if _active_style.get():
-            return function(*args, **kwargs)
+            return _label_short_log_axes(function(*args, **kwargs))
         with plot_style():
-            return function(*args, **kwargs)
+            return _label_short_log_axes(function(*args, **kwargs))
 
     return wrapped
+
+
+def _label_short_log_axes(result):
+    """Label 1-2-5 steps on log axes spanning under two decades.
+
+    Matplotlib labels only the decades, so such an axis shows one number or
+    none. Axes whose ticks a plotter set itself are left as they are.
+    """
+    from matplotlib.figure import Figure
+    from matplotlib.ticker import FormatStrFormatter, LogLocator, NullFormatter
+
+    figure = result if isinstance(result, Figure) else getattr(result, "fig", None)
+    if figure is None and isinstance(result, tuple) and result and isinstance(result[0], Figure):
+        figure = result[0]
+    if figure is None:
+        return result
+    for ax in figure.axes:
+        for axis, limits in ((ax.xaxis, ax.get_xlim()), (ax.yaxis, ax.get_ylim())):
+            low, high = sorted(limits)
+            if axis.get_scale() != "log" or low <= 0 or high / low >= 100:
+                continue
+            if not isinstance(axis.get_major_locator(), LogLocator):
+                continue
+            shown = [tick for tick in axis.get_majorticklocs() if low <= tick <= high]
+            if len(shown) > 2:
+                continue
+            axis.set_major_locator(LogLocator(subs=(1.0, 2.0, 5.0)))
+            axis.set_major_formatter(FormatStrFormatter("%g"))
+            axis.set_minor_formatter(NullFormatter())
+    return result
 
 
 def save_figure(figure, filename, dpi=EXPORT_DPI, **kwargs):
@@ -129,10 +159,28 @@ def save_figure(figure, filename, dpi=EXPORT_DPI, **kwargs):
 _MAX_CATEGORIES = 10
 
 
-def draw_categories(ax, x, y, values, label, *, size=6.0, alpha=0.7) -> bool:
+def display_unit(unit) -> str:
+    """A unit as plot labels spell it, the log plot headers' way (gAPI -> API, g/cm3 -> g/cc, MD -> mD)."""
+    import re
+
+    from petrophys.visualization.log_viewer import UNIT_DISPLAY_ALIASES
+
+    text = str(unit or "").strip()
+    if text.lower() in {"", "-", "none", "nan"}:
+        return ""
+    key = re.sub(r"\s+", " ", text.lower().replace("_", " ")).strip()
+    key = key.replace("ohm-m", "ohm.m").replace("ohm m", "ohm.m")
+    return UNIT_DISPLAY_ALIASES.get(key, text)
+
+
+def draw_categories(ax, x, y, values, label, *, size=6.0, alpha=0.7, labels=None, colors=None) -> bool:
     """Scatter coloured by category when ``values`` hold a few whole numbers
     (hydraulic flow units, facies, a 0/1 flag): one colour and legend entry each,
-    not a continuous colour bar. Returns False, drawing nothing, otherwise."""
+    not a continuous colour bar. Returns False, drawing nothing, otherwise.
+
+    ``labels`` and ``colors`` map a class code to its name and colour (a curve's
+    ``metadata.custom["category_labels"]`` and ``["category_colors"]``); other
+    classes are named "<label> <code>" in the tab10 colours."""
     import numpy as np
     from matplotlib import colormaps
 
@@ -151,8 +199,10 @@ def draw_categories(ax, x, y, values, label, *, size=6.0, alpha=0.7) -> bool:
     palette = colormaps["tab10"]
     for index, category in enumerate(categories):
         chosen = values == category
+        code = int(category)
+        name = (labels or {}).get(code, f"{label} {category:g}".strip())
         ax.scatter(np.asarray(x)[chosen], np.asarray(y)[chosen], s=size, alpha=alpha, edgecolors="none",
-                   color=palette(index % 10), label=f"{label} {category:g}".strip())
+                   color=(colors or {}).get(code, palette(index % 10)), label=name)
     missing = ~np.isfinite(values)
     if missing.any():
         ax.scatter(np.asarray(x)[missing], np.asarray(y)[missing], s=size, alpha=alpha, edgecolors="none",

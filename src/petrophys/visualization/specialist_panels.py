@@ -57,127 +57,141 @@ def has_nmr_curves(well: "Well") -> bool:
 def create_nmr_panel(
     well: "Well",
     depth_range: Optional[Tuple[float, float]] = None,
-    figsize: Tuple[float, float] = (15, 11),
+    figsize: Optional[Tuple[float, float]] = None,
 ) -> "plt.Figure":
     """Create an NMR specialist panel for processed NMR summary logs.
+
+    The panel is drawn as :func:`petrophys.plot` draws a well: gamma ray and
+    calipers, cable tension, NMR porosity with bound fluid (brown) and free
+    fluid (yellow) shaded, NMR permeability, and irreducible water
+    saturation (from the file, else bound fluid over total porosity). Bound
+    fluid is total porosity minus free fluid when the file has no bound-fluid
+    curve.
 
     ``depth_range`` is the (top, bottom) window drawn, in the well's depth
     unit (default: the whole log). The permeability track spans the whole
     decades of the permeabilities inside that window.
     """
     _require_matplotlib()
+    from copy import deepcopy
+
+    from petrophys.visualization.log_viewer import (
+        LogCurveSpec,
+        LogTrackSpec,
+        LogViewer,
+        LogViewerTemplate,
+    )
+
     depth = _depth(well)
     top, bottom = _resolve_depth_range(depth, depth_range)
-    fig, axes = plt.subplots(1, 5, figsize=figsize, sharey=True)
-    axes = list(np.atleast_1d(axes))
-    _format_axes(axes, top, bottom, well)
-
-    _plot_first(axes[0], well, ("GR_EDTC", "GR"), depth, "forestgreen", "GR", xlim=(0, 150))
-    qc_axes = [axes[0]]
-    cdf_axis = _plot_qc_twin(
-        axes[0], well, ("CDF",), depth, "magenta", "CDF", offset=0.0
-    )
-    tension_axis = _plot_qc_twin(
-        axes[0], well, ("TENS",), depth, "black", "TENS", offset=0.09
-    )
-    qc_axes.extend(ax for ax in (cdf_axis, tension_axis) if ax is not None)
-    # CDF and TENS are cable-tension QC (sticking, pull), not NMR quality curves.
-    axes[0].set_title("GR / Tension" if len(qc_axes) > 1 else "GR", pad=38 if len(qc_axes) > 1 else 6)
-
-    _plot_first(
-        axes[1],
-        well,
-        ("HD1_PPC1", "HD1", "CALI"),
-        depth,
-        "firebrick",
-        "HD1",
-        xlim=(6, 16),
-    )
-    _plot_first(
-        axes[1],
-        well,
-        ("HD2_PPC1", "HD2"),
-        depth,
-        "royalblue",
-        "HD2",
-        xlim=(6, 16),
-    )
-    _plot_first(
-        axes[1],
-        well,
-        ("BS",),
-        depth,
-        "black",
-        "BS",
-        xlim=(6, 16),
-        linestyle="--",
-    )
-    axes[1].set_title("Borehole")
-
-    total, total_name = _curve_data(well, NMR_TOTAL_ALIASES)
-    ffi, ffi_name = _curve_data(well, NMR_FFI_ALIASES)
-    bvi, bvi_name = _curve_data(well, NMR_BVI_ALIASES)
+    shown = deepcopy(well)
+    total = _curve(shown, NMR_TOTAL_ALIASES)
+    ffi = _curve(shown, NMR_FFI_ALIASES)
+    bvi = _curve(shown, NMR_BVI_ALIASES)
+    bound_label = None if bvi is not None else "Bound fluid"
     if bvi is None and total is not None and ffi is not None:
-        bvi = np.where(np.isfinite(total) & np.isfinite(ffi), total - ffi, np.nan)
-        bvi = np.where(bvi >= 0.0, bvi, np.nan)
-        bvi_name = "MBVI*"
-    poro_xlim = _porosity_xlim([arr for arr in (total, ffi, bvi) if arr is not None])
-    if total is not None:
-        axes[2].plot(total, depth, color="black", linewidth=0.7, label=total_name)
-    if ffi is not None:
-        axes[2].plot(ffi, depth, color="magenta", linewidth=0.7, label=ffi_name)
-    if bvi is not None:
-        axes[2].plot(bvi, depth, color="saddlebrown", linewidth=0.7, label=bvi_name)
-    axes[2].set_xlim(poro_xlim)
-    axes[2].set_title("NMR Porosity")
-
-    _plot_first(axes[3], well, ("KSDR", "NMR_KSDR"), depth, "royalblue", "KSDR", log=True)
-    _plot_first(axes[3], well, ("KTIM", "NMR_KTIM", "K_COATES"), depth, "red", "KTIM", log=True)
-    # Whole decades spanning the 1-99 percentiles of the curves in the depth
-    # window (0.01-10,000 mD at most wide), so a tight well is not drawn off
-    # the scale.
-    perms = []
-    for line in axes[3].get_lines():
-        values = np.asarray(line.get_xdata(), dtype=float)
-        at = np.asarray(line.get_ydata(), dtype=float)
-        perms.append(values[np.isfinite(values) & (values > 0)
-                            & (at >= min(top, bottom)) & (at <= max(top, bottom))])
-    perms = np.concatenate(perms) if perms else np.array([])
-    if perms.size:
-        low, high = np.percentile(perms, [1, 99])
-        low, high = 10.0 ** np.floor(np.log10(low)), 10.0 ** np.ceil(np.log10(high))
-        axes[3].set_xlim(min(low, 0.01), max(high, low * 1000))
-    else:
-        axes[3].set_xlim(0.01, 10000)
-    axes[3].set_title("NMR Perm")
-
-    swirr, swirr_name = _nmr_swirr_for_plot(well)
+        bound = np.asarray(total.data, dtype=float) - np.asarray(ffi.data, dtype=float)
+        shown.add_curve("NMR_BVI", np.where(bound >= 0.0, bound, np.nan), unit=total.unit,
+                        description="Bound fluid: total minus free-fluid porosity")
+        bvi = shown.get("NMR_BVI")
+    swirr, _ = _nmr_swirr_for_plot(well)
+    swirr_curve = _curve(shown, NMR_SWIRR_ALIASES)
     if swirr is not None:
-        axes[4].plot(swirr, depth, color="navy", linewidth=0.7, label=swirr_name)
-    axes[4].set_xlim(0, 1)
-    axes[4].set_title("Swirr")
-    cutoff, cutoff_name = _curve_data(well, ("T2CUTOFF", "T2_CUTOFF", "T2CUT"))
-    shown = cutoff[np.isfinite(cutoff)] if cutoff is not None else np.array([])
-    if shown.size and np.ptp(shown) == 0:
-        # One cutoff for the whole log: state it rather than draw a flat line.
-        axes[4].set_title(f"Swirr (T2 cutoff {shown[0]:g} ms)")
-    elif cutoff is not None:
-        axes[4].set_title("Swirr / T2")
-        ax_t2 = axes[4].twiny()
-        ax_t2.plot(cutoff, depth, color="red", linewidth=0.6, label=cutoff_name)
-        ax_t2.set_xlabel("T2 cutoff [ms]", fontsize=8)
-        _set_data_xlim(ax_t2, cutoff)
+        # As a fraction, from the file's curve or as bound fluid over total porosity.
+        name = swirr_curve.mnemonic if swirr_curve is not None else "SWIRR_NMR"
+        shown.add_curve(name, swirr, unit="v/v", description="Irreducible water saturation from NMR")
+        swirr_curve = shown.get(name)
 
-    _finalize_log_figure(fig, axes, well, "NMR Panel")
-    qc_handles = []
-    qc_labels = []
-    for ax in qc_axes:
-        handles, labels = ax.get_legend_handles_labels()
-        qc_handles.extend(handles)
-        qc_labels.extend(labels)
-    if qc_handles:
-        axes[0].legend(qc_handles, qc_labels, loc="upper right", fontsize=7)
+    def first(aliases: Sequence[str]) -> Optional[str]:
+        curve = _curve(shown, aliases)
+        return None if curve is None else curve.mnemonic
+
+    def spec(aliases, label, left, right, color, **style) -> Optional[LogCurveSpec]:
+        name = aliases if isinstance(aliases, str) else first(aliases)
+        if name is None or shown.get(name) is None:
+            return None
+        return LogCurveSpec(curve_name=name, display_name=label, left=left, right=right, color=color, **style)
+
+    def track(name, specs, **options) -> Optional[LogTrackSpec]:
+        curves = [item for item in specs if item is not None]
+        return LogTrackSpec(display_name=name, curves=curves, **options) if curves else None
+
+    names = {key: first(aliases) for key, aliases in (
+        ("total", NMR_TOTAL_ALIASES), ("bound", NMR_BVI_ALIASES),
+    )}
+    porosity = [
+        # Free fluid, between total porosity and bound fluid; bound fluid, from it to zero.
+        spec(NMR_TOTAL_ALIASES, None, 0.45, 0, "#000000", fill_color="#ffd92f", fill_alpha=0.55,
+             right_crossover=names["bound"]),
+        spec(NMR_FFI_ALIASES, None, 0.45, 0, "#1f78b4", line_style=":"),
+        spec(NMR_BVI_ALIASES, bound_label, 0.45, 0, "#8c510a", fill="right", fill_color="#bf812d", fill_alpha=0.6),
+    ]
+    permeability = [
+        spec(("KSDR", "NMR_KSDR"), None, 0.01, 10000, "#e7298a", line_style="-."),
+        spec(("KTIM", "NMR_KTIM", "K_COATES"), None, 0.01, 10000, "#66a61e"),
+    ]
+    low, high = _decades([shown.get(item.curve_name) for item in permeability if item is not None],
+                         depth, top, bottom)
+    permeability = [None if item is None else LogCurveSpec(**{**item.__dict__, "left": low, "right": high})
+                    for item in permeability]
+
+    cutoff = _curve(shown, ("T2CUTOFF", "T2_CUTOFF", "T2CUT"))
+    values = np.asarray(cutoff.data, dtype=float) if cutoff is not None else np.array([])
+    values = values[np.isfinite(values)]
+    one_cutoff = values.size and np.ptp(values) == 0
+    saturation = [spec(swirr_curve.mnemonic if swirr_curve is not None else (), "Swirr", 1, 0, "#762a83")]
+    if cutoff is not None and values.size and not one_cutoff:
+        saturation.append(spec(cutoff.mnemonic, "T2 cutoff", float(np.min(values)), float(np.max(values)),
+                               "#d73027", line_style="--"))
+
+    tension = []
+    for aliases, color in ((("TENS",), "#000000"), (("CDF",), "#e7298a")):
+        curve = _curve(shown, aliases)
+        data = np.asarray(curve.data, dtype=float) if curve is not None else np.array([])
+        data = data[np.isfinite(data)]
+        if data.size:
+            # Round scale ends: steps of half the decade of the range.
+            step = 10.0 ** np.floor(np.log10(max(float(np.ptp(data)), 1e-9))) / 2.0
+            tension.append(spec(curve.mnemonic, None, float(np.floor(np.min(data) / step) * step),
+                                float(np.ceil(np.max(data) / step) * step), color))
+
+    tracks = [
+        LogTrackSpec(display_name="DEPTH", width=0.55, depth_track=True, track_type="depth"),
+        track("GAMMA / HOLE", [
+            spec(("GR_EDTC", "GR"), None, 0, 150, "#1b7837"),
+            spec(("HD1_PPC1", "HD1", "CALI"), None, 6, 16, "#d73027"),
+            spec(("HD2_PPC1", "HD2"), None, 6, 16, "#0571b0"),
+            spec(("BS",), None, 6, 16, "#000000", line_style="--"),
+        ]),
+        # Cable tension and its downhole force flag tool sticking, not NMR quality.
+        track("CABLE TENSION", tension),
+        track("NMR POROSITY", porosity, width=1.35),
+        track("NMR PERMEABILITY", permeability, scale="log", left=low, right=high, width=1.25),
+        # One cutoff for the whole log is stated in the title rather than drawn as a flat line.
+        track(f"SWIRR, T2 CUTOFF {values[0]:g} ms" if one_cutoff else "SWIRR", saturation, width=1.4),
+    ]
+    viewer = LogViewer(shown, template_defaults="auto", figsize=figsize)
+    viewer.template = LogViewerTemplate(name="nmr", tracks=[item for item in tracks if item is not None])
+    viewer.optional_tracks, viewer._optional_track_specs = [], []
+    fig, _ = viewer.create(depth_range=(top, bottom))
     return fig
+
+
+def _decades(curves, depth: np.ndarray, top: float, bottom: float) -> Tuple[float, float]:
+    """Whole decades spanning the 1-99 percentiles of the curves in the window.
+
+    The scale reaches 0.01 mD and spans three decades at least, so a tight
+    well is not drawn off the scale.
+    """
+    inside = (depth >= min(top, bottom)) & (depth <= max(top, bottom))
+    parts = [np.asarray(curve.data, dtype=float)[inside] for curve in curves if curve is not None]
+    values = np.concatenate(parts) if parts else np.array([])
+    values = values[np.isfinite(values) & (values > 0)]
+    if not values.size:
+        return 0.01, 10000.0
+    low, high = np.percentile(values, [1, 99])
+    low, high = 10.0 ** np.floor(np.log10(low)), 10.0 ** np.ceil(np.log10(high))
+    return float(min(low, 0.01)), float(max(high, low * 1000))
 
 
 @_styled_plot
@@ -256,121 +270,16 @@ def _resolve_depth_range(
     return float(np.nanmin(finite)), float(np.nanmax(finite))
 
 
-def _format_axes(axes: Sequence["plt.Axes"], top: float, bottom: float, well: "Well") -> None:
-    for index, ax in enumerate(axes):
-        ax.set_ylim(bottom, top)
-        ax.grid(True, alpha=0.28)
-        if index == 0:
-            ax.set_ylabel(f"Depth [{getattr(well, 'depth_unit', '')}]".strip())
-        else:
-            ax.tick_params(axis="y", labelleft=False)
 
 
-def _plot_first(
-    ax: "plt.Axes",
-    well: "Well",
-    aliases: Sequence[str],
-    depth: np.ndarray,
-    color: str,
-    label: str,
-    xlim: Optional[Tuple[float, float]] = None,
-    log: bool = False,
-    linestyle: str = "-",
-) -> bool:
-    data, source = _curve_data(well, aliases)
-    if data is None:
-        return False
-    finite = np.isfinite(data) & np.isfinite(depth)
-    if log:
-        finite &= data > 0
-    if not np.any(finite):
-        return False
-    ax.plot(
-        data[finite],
-        depth[finite],
-        color=color,
-        linewidth=0.7,
-        linestyle=linestyle,
-        label=label or source,
-    )
-    if log:
-        ax.set_xscale("log")
-    if xlim:
-        ax.set_xlim(xlim)
-    elif log:
-        _set_log_data_xlim(ax, data)
-    else:
-        _set_data_xlim(ax, data)
-    return True
 
 
-def _plot_qc_twin(
-    parent: "plt.Axes",
-    well: "Well",
-    aliases: Sequence[str],
-    depth: np.ndarray,
-    color: str,
-    label: str,
-    offset: float,
-) -> Optional["plt.Axes"]:
-    curve = _curve(well, aliases)
-    if curve is None:
-        return None
-    try:
-        data = np.asarray(curve.data, dtype=float)
-    except (TypeError, ValueError):
-        return None
-    finite = np.isfinite(data) & np.isfinite(depth)
-    if not np.any(finite):
-        return None
-
-    ax = parent.twiny()
-    ax.spines["top"].set_position(("axes", 1.0 + offset))
-    ax.plot(data[finite], depth[finite], color=color, linewidth=0.65, label=label)
-    _set_data_xlim(ax, data)
-    unit = str(getattr(curve, "unit", "") or "").strip()
-    axis_label = f"{label} [{unit}]" if unit else label
-    ax.set_xlabel(axis_label, color=color, fontsize=7, labelpad=1)
-    ax.tick_params(axis="x", colors=color, labelsize=7, pad=1)
-    ax.grid(False)
-    return ax
 
 
-def _set_data_xlim(ax: "plt.Axes", data: np.ndarray) -> None:
-    finite = np.asarray(data, dtype=float)
-    finite = finite[np.isfinite(finite)]
-    if finite.size == 0:
-        return
-    low = float(np.nanmin(finite))
-    high = float(np.nanmax(finite))
-    if high <= low:
-        pad = abs(high) * 0.1 if high else 1.0
-        ax.set_xlim(low - pad, high + pad)
-    else:
-        pad = (high - low) * 0.08
-        ax.set_xlim(low - pad, high + pad)
 
 
-def _set_log_data_xlim(ax: "plt.Axes", data: np.ndarray) -> None:
-    finite = np.asarray(data, dtype=float)
-    finite = finite[np.isfinite(finite) & (finite > 0)]
-    if finite.size == 0:
-        return
-    low = float(np.nanmin(finite))
-    high = float(np.nanmax(finite))
-    if high <= low:
-        ax.set_xlim(max(low / 10.0, 1e-6), high * 10.0)
-    else:
-        ax.set_xlim(low / 1.5, high * 1.5)
 
 
-def _porosity_xlim(arrays: Sequence[np.ndarray]) -> tuple[float, float]:
-    finite_parts = [np.asarray(arr, dtype=float)[np.isfinite(arr)] for arr in arrays]
-    finite_parts = [part for part in finite_parts if part.size]
-    if not finite_parts:
-        return 0.0, 0.45
-    values = np.concatenate(finite_parts)
-    return (0.0, 80.0) if np.nanmax(values) > 1.5 else (0.0, 0.8)
 
 
 def _nmr_swirr_for_plot(well: "Well") -> tuple[Optional[np.ndarray], Optional[str]]:
@@ -400,14 +309,6 @@ def _fraction_if_percent(values: np.ndarray) -> np.ndarray:
     return arr
 
 
-def _finalize_log_figure(fig: "plt.Figure", axes: Sequence["plt.Axes"], well: "Well", title: str) -> None:
-    for ax in axes:
-        handles, _ = ax.get_legend_handles_labels()
-        if handles:
-            ax.legend(loc="upper right", fontsize=7)
-    well_name = well.name or "Unknown Well"
-    fig.suptitle(f"{title} - {well_name}", fontsize=13)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
 
 
 def _require_matplotlib() -> None:

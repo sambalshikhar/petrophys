@@ -10,7 +10,7 @@ the Matplotlib figure (and axes) so it can be styled further or saved.
 
 from petrophys.visualization.style import plot_style, use_plot_style, save_figure
 from petrophys.visualization.lithology_crossplots import (
-    create_nd_crossplot, create_mn_plot, create_mid_plot,
+    create_nd_crossplot, create_pef_crossplot, create_mn_plot, create_mid_plot,
     create_buckles_plot, create_hingle_plot,
 )
 from petrophys.visualization.xrf_panel import create_xrf_panel
@@ -73,7 +73,7 @@ __all__ = [
     "create_formation_pressure_plot",
     "create_mdt_pretest_plot",
     "create_pressure_contact_plot",
-    "create_nd_crossplot", "create_mn_plot", "create_mid_plot",
+    "create_nd_crossplot", "create_pef_crossplot", "create_mn_plot", "create_mid_plot",
     # Batch export
     "BatchVisualizationResult",
     "export_interpretation_plots",

@@ -1170,7 +1170,7 @@ _FLAG_FAMILIES = {"NET_PAY", "NET_RES", "NET_ROCK"}
 _INTERMEDIATE_CURVES = {
     "VCL_GR", "VCLGR", "VCL_SP", "VCLSP", "VCL_ND", "VCLND", "PHI_SEC", "PHI_Z",
     "INVASION_RATIO", "RESFLAG", "PRIME_OIL_TARGET", "PRIME_GAS_TARGET", "LITHO", "LITHO_CLASS",
-    *BAD_HOLE_CURVE_NAMES, *CROSSOVER_CURVE_NAMES,
+    "NET_EXCLUSION", *BAD_HOLE_CURVE_NAMES, *CROSSOVER_CURVE_NAMES,
 }
 
 #: Depth references added as curves (pp.read(..., survey=...)); never drawn as data.
@@ -1596,6 +1596,20 @@ def create_adaptive_log_viewer_template(
         right=2000,
     )
     add_track(
+        "INVASION",
+        [
+            # Shallow over deep resistivity: shaded below 0.8 (conductive invasion)
+            # and above 1.2 (resistive invasion); unshaded is little contrast.
+            replace(_adaptive_spec("INVASION_RATIO", "Rxo/Rt", 0.1, 10, "#000000", fill_color="#fdae61",
+                                   fill_alpha=0.6),
+                    left_cutoff_fill=0.8, right_cutoff_fill=1.2, on_request=True),
+        ],
+        width=1.0,
+        scale="log",
+        left=0.1,
+        right=10,
+    )
+    add_track(
         "DENSITY / NEUTRON",
         [
             # Limestone-compatible scales (NPHI in limestone units, 0 v/v at 2.70 g/cc):
@@ -1653,14 +1667,23 @@ def create_adaptive_log_viewer_template(
         [
             _adaptive_spec("SW", "Sw", 1, 0, "#0571b0", fill="right", fill_color="#9ecae1"),
             _adaptive_spec("SXO", "Sxo", 1, 0, "#41b6c4", line_style="--"),
-            # MHI is a ratio, not a saturation: by name only, on its own scale.
-            replace(_adaptive_spec("MHI", "MHI", 0, 1.5, "#d73027"), on_request=True),
             replace(_adaptive_spec("SWIRR_APP", "Swirr", 1, 0, "#762a83"), on_request=True),
             _adaptive_spec("SWC", "Sw Core", 1, 0, "#08519c", marker="x"),
             _adaptive_spec("SW_INPUT", "Sw input", 1, 0, "#4d4d4d", line_style="--"),
             _adaptive_spec("SOC", "So Core", 0, 1, "#b35806", marker="o"),
         ],
         width=1.3,
+    )
+    add_track(
+        "MHI",
+        [
+            # Sw/Sxo, a ratio: shaded below 0.7, where hydrocarbon has moved (rule of thumb).
+            replace(_adaptive_spec("MHI", "MHI", 0, 1.5, "#d73027", fill_color="#fdae61", fill_alpha=0.6),
+                    left_cutoff_fill=0.7, on_request=True),
+        ],
+        width=0.9,
+        left=0,
+        right=1.5,
     )
     add_track(
         "PERMEABILITY",
@@ -2338,7 +2361,15 @@ class LogViewer:
                 # named after what it holds (no "GAMMA / HOLE" over VCL alone).
                 if (track.display_name in _TRACKS_NAMED_FOR_LOGS and track.curves
                         and specs[0] is not track.curves[0] and track.curves[0] not in specs):
-                    shown = [str(spec.display_name or spec.curve_name) for spec in specs]
+                    # An imputed companion is drawn only where its curve has gaps: not a title.
+                    # A curve drawn under an alias is named as the well names it (NPOR, not NPHI).
+                    shown = []
+                    for spec in specs:
+                        if spec.curve_name.upper().endswith(IMPUTED_SUFFIX):
+                            continue
+                        drawn = _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates)
+                        shown.append(str(drawn) if drawn and str(drawn).upper() != spec.curve_name.upper()
+                                     else str(spec.display_name or spec.curve_name))
                     if all(name.upper().startswith("VCL") for name in shown):
                         track.display_name = "CLAY VOLUME"
                     else:
@@ -2382,6 +2413,22 @@ class LogViewer:
             if name not in satisfied and targets[name] not in placed and targets[name] != code
         ))
         colors = ["#000000", "#1b7837", "#d73027", "#0571b0", "#762a83", "#8c510a"]
+        # A curve named after a curve of the layout (SW_JH after SW) goes in
+        # that curve's track, on its scale, in a colour the track does not use.
+        for name in list(leftover):
+            family = name.upper().split("_")[0]
+            home = next(((track, spec) for track in kept if not track.display_name.startswith("OTHER")
+                         for spec in track.curves if spec.curve_name.upper() == family
+                         and spec.left is not None and spec.right is not None), None)
+            if home is None or family == name.upper():
+                continue
+            track, spec = home
+            used = {str(other.color).lower() for other in track.curves}
+            track.curves.append(replace(
+                spec, curve_name=name, candidates=[], display_name=name, fill=None, marker=None,
+                line_style="-", left_crossover=None, right_crossover=None, gaps_of=None, on_request=False,
+                color=next((color for color in colors if color not in used), "#000000")))
+            leftover.remove(name)
         others = [track for track in kept if track.display_name.startswith("OTHER")]
 
         def unit_of(name: str) -> str:
@@ -2679,6 +2726,9 @@ class LogViewer:
         filtered = []
         self.omitted_tracks = []
         for track in tracks:
+            if track.track_type == "lithology" and not self._lithology_in_window(track, visible):
+                self.omitted_tracks.append({"track": track.display_name, "reason": "no lithology in depth window"})
+                continue
             if (
                 track.depth_track
                 or track.track_type == "lithology"
@@ -2692,6 +2742,19 @@ class LogViewer:
         if len(filtered) == 0:
             return list(tracks[:1])
         return filtered
+
+    def _lithology_in_window(self, track: LogTrackSpec, visible: np.ndarray) -> bool:
+        """True when the lithology track has intervals or codes to draw in the window."""
+        if self.lithology_intervals is not None:
+            return True
+        if self.lithology_source == "config":
+            return False
+        curve = self.well.get("LITHO") if self.lithology_source == "computed" else (
+            self._get_curve(track.curves[0]) if track.curves else None)
+        if curve is None:
+            return False
+        data = np.asarray(curve.data, dtype=float)
+        return bool(np.any(np.isfinite(data) & visible))
 
     def _tracks_for_plot(self, tracks: Sequence[LogTrackSpec]) -> List[LogTrackSpec]:
         plot_tracks = [track for track in tracks if not track.depth_track]
@@ -4168,13 +4231,9 @@ class LogViewer:
         return DEFAULT_CURVE_DISPLAY_UNITS.get(mnemonic, "")
 
     def _normalize_display_unit(self, unit: str) -> str:
-        text = str(unit or "").strip()
-        if text.lower() in {"", "-", "none", "nan"}:
-            return ""
-        key = re.sub(r"\s+", " ", text.lower().replace("_", " ")).strip()
-        key = key.replace("ohm-m", "ohm.m")
-        key = key.replace("ohm m", "ohm.m")
-        return UNIT_DISPLAY_ALIASES.get(key, text)
+        from petrophys.visualization.style import display_unit
+
+        return display_unit(unit)
 
     def _split_header_label(self, label: str) -> Tuple[str, str]:
         match = re.match(r"^(?P<name>.*?)\s*(?P<unit>\[[^\]]+\])\s*$", str(label))

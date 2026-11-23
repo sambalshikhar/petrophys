@@ -125,19 +125,21 @@ create_mid_plot(result, depth_range=(2784, 3176));
 
 **Pickett plot**: log Rt against log porosity. Water-bearing rock falls on a straight
 line whose slope is -m and whose intercept at porosity 1 is a * Rw; with a known,
-Rw can be recovered. Rw must be at formation temperature. Lines of constant Sw lie
-above it. Here with the operator's Archie constants (a 0.8, m and n 2):
+Rw can be recovered. Rw must be at formation temperature: by default the plot takes the
+median of the interpretation's `RW` curve over the plotted points. Lines of constant Sw lie
+above it. Only clean rock is plotted (`VCL` up to 0.15, `vcl_max`), as the chart is read on
+clean rock. Here with the operator's Archie constants (a 0.8, m and n 2):
 
 ```{code-cell} python
-create_pickett_plot(result, rw=0.07, a=0.8, rt_curve="RDEP", color_curve="VCL",
+create_pickett_plot(result, a=0.8, rt_curve="RDEP", color_curve="VCL",
                     depth_range=(3223, 3556));
 ```
 
 **Hingle plot**: the same Archie water line on linear axes, where it passes through
-the matrix point at zero porosity:
+the matrix point at zero porosity, with the same Rw and clean points:
 
 ```{code-cell} python
-create_hingle_plot(result, rw=0.07, a=0.8, depth_range=(3223, 3556));
+create_hingle_plot(result, a=0.8, depth_range=(3223, 3556));
 ```
 
 **Buckles plot**: each hyperbola represents constant bulk-volume water (porosity * Sw).
@@ -249,7 +251,11 @@ Several wells give a {class}`~petrophys.visualization.MultiWellPlot` (each well'
 
 The `auto` template of the interpreted 30/6-5 has the tracks DEPTH, LITHOLOGY,
 GAMMA / HOLE, RESISTIVITY, DENSITY / NEUTRON, SONIC, POROSITY, SATURATION,
-PERMEABILITY, ROCK QUALITY, MINERAL VOLUMES and FLAGS; `tracks=` keeps a few of them:
+PERMEABILITY, ROCK QUALITY, MINERAL VOLUMES and FLAGS; `tracks=` keeps a few of them.
+Some curves are drawn only when `curves=` names them: the single clay volumes `VCL_GR`,
+`VCL_ND` and `VCL_SP`, the porosities `PHID`, `PHIS` and `PHIN`, and the invasion ratio
+`INVASION_RATIO` and `MHI`, each of the last two in a track of its own, shaded where its
+rule of thumb reads invasion or moved hydrocarbon.
 
 ```{code-cell} python
 focus = pp.plot(result, top=2841, bottom=2958,

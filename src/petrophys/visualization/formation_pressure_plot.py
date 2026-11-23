@@ -46,8 +46,8 @@ def create_formation_pressure_plot(data, result=None, *, hydrocarbon="oil",
     ax.axhline(result.fwl_depth, color="black",
                label=f"FWL {result.fwl_depth:.2f} {data.depth_unit}")
     ax.invert_yaxis()
-    ax.set(xlabel=f"Formation pressure ({data.pressure_unit})",
-           ylabel=f"{data.depth_reference}, positive down ({data.depth_unit})", title=title)
+    ax.set(xlabel=f"Formation pressure [{data.pressure_unit}]",
+           ylabel=f"{data.depth_reference}, positive down [{data.depth_unit}]", title=title)
     ax.grid(alpha=0.25)
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -120,8 +120,8 @@ def create_pressure_contact_plot(data, result=None, *, figsize=(7, 8),
                     transform=ax.transAxes, fontsize=8, color="0.3", va="bottom")
     if not ax.yaxis_inverted():
         ax.invert_yaxis()
-    ax.set(xlabel=f"Formation pressure ({data.pressure_unit})",
-           ylabel=f"{data.depth_reference}, positive down ({data.depth_unit})",
+    ax.set(xlabel=f"Formation pressure [{data.pressure_unit}]",
+           ylabel=f"{data.depth_reference}, positive down [{data.depth_unit}]",
            title=f"{title}\nStatus: {result.status}")
     ax.grid(alpha=0.25)
     if ax.get_legend_handles_labels()[0]:

@@ -2,7 +2,7 @@
 Crossplot visualization.
 """
 
-from petrophys.visualization.style import _styled_plot, save_figure
+from petrophys.visualization.style import _styled_plot, display_unit, save_figure
 
 from typing import TYPE_CHECKING, Optional, Tuple, Union
 import warnings
@@ -117,8 +117,10 @@ class CrossPlot:
 
         from petrophys.visualization.style import draw_categories
 
+        labels, colors = getattr(self, "_categories", (None, None))
         if color_data is not None and draw_categories(self.ax, x_data[mask], y_data[mask], color_data[mask],
-                                                       color_label, size=marker_size, alpha=alpha):
+                                                       color_label, size=marker_size, alpha=alpha,
+                                                       labels=labels, colors=colors):
             pass
         elif color_data is not None and np.any(np.isfinite(color_data[mask])):
             c = color_data[mask]
@@ -262,7 +264,8 @@ def create_crossplot(
         c_c = well.get(color_curve)
         if c_c is not None:
             color_data = c_c.data
-            color_label = f"{color_curve} [{c_c.unit}]"
+            unit = display_unit(c_c.unit)
+            color_label = f"{color_curve} [{unit}]" if unit else color_curve
         else:
             warnings.warn(
                 f"Colour curve '{color_curve}' not found; plotting without colour.",
@@ -283,11 +286,15 @@ def create_crossplot(
         title = f"{x_curve} vs {y_curve}"
 
     plot = CrossPlot(figsize=figsize)
+    if color_curve and well.get(color_curve) is not None:
+        # A class curve's own names and colours (HFU: "no unit", the flow-unit plot's colours).
+        custom = getattr(getattr(well.get(color_curve), "metadata", None), "custom", None) or {}
+        plot._categories = (custom.get("category_labels"), custom.get("category_colors"))
     plot.create(
         x_data, y_data,
         color_data=color_data,
-        x_label=f"{x_curve} [{x_c.unit}]",
-        y_label=f"{y_curve} [{y_c.unit}]",
+        x_label=f"{x_curve} [{display_unit(x_c.unit)}]" if display_unit(x_c.unit) else x_curve,
+        y_label=f"{y_curve} [{display_unit(y_c.unit)}]" if display_unit(y_c.unit) else y_curve,
         color_label=color_label,
         title=title,
         **kwargs

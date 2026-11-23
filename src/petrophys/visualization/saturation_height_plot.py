@@ -68,7 +68,7 @@ def create_saturation_height_plot(
     axj.plot(jline, model.sw_from_j(jline), color="crimson", lw=2.0, label=fit_label)
     axj.set_xscale("log")
     axj.set_xlabel("Leverett J  (dimensionless)")
-    axj.set_ylabel("Sw  (frac)")
+    axj.set_ylabel("Sw [frac]")
     axj.set_ylim(0, 1.02)
     r2 = f"  (R²={model.r2:.3f})" if model.r2 is not None else ""
     axj.set_title("J-function fit" + r2)
@@ -81,8 +81,8 @@ def create_saturation_height_plot(
     for (k, phi), color in zip(rock_classes, cmap):
         sw_h = model.sw_from_height(h, np.full_like(h, k), np.full_like(h, phi))
         axh.plot(sw_h, h, color=color, lw=1.8, label=f"k={k:g} mD, φ={phi:.2f}")
-    axh.set_xlabel("Sw  (frac)")
-    axh.set_ylabel("Height above FWL  (ft)")
+    axh.set_xlabel("Sw [frac]")
+    axh.set_ylabel("Height above FWL [ft]")
     axh.set_xlim(0, 1.02)
     axh.set_title("Saturation-height type curves")
     axh.grid(True, color="0.92", lw=0.5)

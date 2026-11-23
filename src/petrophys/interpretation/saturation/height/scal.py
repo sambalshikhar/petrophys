@@ -292,9 +292,9 @@ class CapillaryPressureData:
                 shown = group[group["PC"] > 0]
                 ax.plot(shown["SW"], shown["PC"], color=cmap(norm(max(perms[sample], 1e-3))), lw=0.8)
             ax.set_yscale("log")
-            ax.set(xlim=(0, 1), xlabel="Sw (v/v)", ylabel=f"Pc, {self.system.replace('_', '-')} (psi)",
+            ax.set(xlim=(0, 1), xlabel="Sw [v/v]", ylabel=f"Pc, {self.system.replace('_', '-')} [psi]",
                    title=f"Capillary pressure, {self.n_samples} plugs")
-            fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, label="Permeability (mD)")
+            fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, label="Permeability [mD]")
             return fig
 
 
@@ -556,7 +556,7 @@ class FWLFromLogs:
             ax_fit.axhline(best, color="tab:blue", lw=1.2,
                            label=f"FWL {best:.1f}" if self.bound is None else f"search edge {best:.1f}")
             ax_fit.invert_yaxis()
-            ax_fit.set(xlabel="RMS Sw misfit", ylabel=f"Candidate FWL ({self.depth_unit})",
+            ax_fit.set(xlabel="RMS Sw misfit", ylabel=f"Candidate FWL [{self.depth_unit}]",
                        title="Misfit against FWL")
             ax_fit.legend(loc="lower right", fontsize=8)
             depth, log_sw, model_sw = (self._plot_data[key] for key in ("depth", "log_sw", "model_sw"))
@@ -564,7 +564,7 @@ class FWLFromLogs:
             ax_sw.plot(model_sw, depth, ".", ms=2.5, color="tab:blue", label="model Sw")
             ax_sw.axhline(self._plot_data["best"], color="tab:blue", lw=1.0)
             ax_sw.invert_yaxis()
-            ax_sw.set(xlim=(0, 1), xlabel="Sw (v/v)", ylabel=f"Depth ({self.depth_unit})",
+            ax_sw.set(xlim=(0, 1), xlabel="Sw [v/v]", ylabel=f"Depth [{self.depth_unit}]",
                       title="Log and model at the best FWL")
             ax_sw.legend(loc="lower left", fontsize=8)
             fig.tight_layout()

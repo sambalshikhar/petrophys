@@ -98,10 +98,10 @@ class DiagnosticPlotChecks(unittest.TestCase):
         w.get("PHIE").data = np.array([5., np.nan, 20., 30.]); w.get("PHIE").unit = "%"
         fig = create_buckles_plot(w)
         np.testing.assert_allclose(point_coordinates(fig)[:, 0], [.05, .1, .2, .3])
-        self.assertIn("effective/total", fig.axes[0].get_xlabel())
+        self.assertIn("effective and total", fig.axes[0].get_xlabel())
         w.remove_curve("PHIE")
         self.assertIn("Total", create_buckles_plot(w).axes[0].get_xlabel())
-        self.assertIn("Total", create_hingle_plot(w).axes[0].get_xlabel())
+        self.assertIn("Total", create_hingle_plot(w, rw=0.05).axes[0].get_xlabel())
 
     def test_mid_pure_endmembers_with_and_without_total_porosity(self):
         for use_phit in [True, False]:

@@ -80,6 +80,38 @@ def archie_parameters(rw, a, m, n):
     return tuple(positive_scalar(value, name) for name, value in (("rw", rw), ("a", a), ("m", m), ("n", n)))
 
 
+def clean_rock_only(well, phie, rt, depth_range, vcl_max):
+    """Porosity and Rt with samples above ``vcl_max`` clay volume set to NaN.
+
+    Archie charts (Pickett, Hingle) are read on clean rock; shaly samples plot
+    off their lines whatever their saturation. Returns the arrays and the
+    number of samples left out; ``None`` or a well without VCL keeps all.
+    """
+    if vcl_max is None:
+        return phie, rt, 0
+    vcl_max = float(vcl_max)
+    if not 0.0 <= vcl_max <= 1.0:
+        raise ValueError(f"vcl_max must be a clay volume between 0 and 1; got {vcl_max:g}")
+    vcl, _, _ = curve_values(well, ["VCL"], depth_range, "v/v")
+    if vcl is None:
+        return phie, rt, 0
+    plotted = np.isfinite(phie) & np.isfinite(rt)
+    with np.errstate(invalid="ignore"):
+        shaly = plotted & ~(vcl <= vcl_max)
+    return np.where(shaly, np.nan, phie), np.where(shaly, np.nan, rt), int(shaly.sum())
+
+
+def formation_rw(well, phie, rt, depth_range):
+    """Median of the well's RW curve (Rw at formation temperature) over the plotted samples."""
+    rw_curve, _, _ = curve_values(well, ["RW"], depth_range, "ohm.m")
+    used = np.isfinite(phie) & np.isfinite(rt)
+    values = rw_curve[used] if rw_curve is not None else np.array([])
+    values = values[np.isfinite(values) & (values > 0)]
+    if not values.size:
+        raise ValueError("rw is needed: the well has no RW curve over the plotted samples; pass rw=")
+    return float(np.median(values))
+
+
 def paired_values(x, y, color=None):
     x, y = numeric_array(x, "x values"), numeric_array(y, "y values")
     if x.ndim != 1 or y.ndim != 1 or x.shape != y.shape:
@@ -94,12 +126,12 @@ def paired_values(x, y, color=None):
 def porosity_label(sources):
     names = [str(name).upper() for name in sources]
     if names and all(name.startswith("PHIT") for name in names):
-        return "Total porosity (v/v)"
+        return "Total porosity [v/v]"
     if names and all(name.startswith("PHIE_CC") for name in names):
-        return "Core-calibrated effective porosity (v/v)"
+        return "Core-calibrated effective porosity [v/v]"
     if any(name.startswith("PHIT") for name in names):
-        return "Porosity (v/v; effective/total sources)"
-    return "Effective porosity (v/v)"
+        return "Porosity, effective and total [v/v]"
+    return "Effective porosity [v/v]"
 
 
 def note_outside_axes(ax, x, y):

@@ -113,7 +113,7 @@ The mineral solver splits the 15/9-14 chalk into porosity and mineral volumes, m
 ```
 Check Rw and the Archie exponents against the 30/6-5 Statfjord water leg.
 
-`create_pickett_plot(result, rw=0.07)`
+`create_pickett_plot(result)`
 +++
 {doc}`Tutorial 06: formation water <tutorials/part_a/06_formation_water_and_environment>` · {doc}`Tutorial 07: the Pickett plot <tutorials/part_a/07_water_saturation>`
 :::
@@ -246,7 +246,7 @@ thumb("cap_nd", create_nd_crossplot(well, depth_range=(2841, 2958), figsize=THUM
 chalk = pp.interpret(pp.read(pp.sample("15_9-14")))
 thumb("cap_minerals", pp.plot(chalk, top=2840, bottom=2900, template="minerals",
                               figsize=LOG_THUMB).fig)
-thumb("cap_pickett", create_pickett_plot(result, rw=0.07, rt_curve="RDEP", color_curve="VCL",
+thumb("cap_pickett", create_pickett_plot(result, rt_curve="RDEP", color_curve="VCL",
                                          depth_range=(3223, 3556), a=0.8, m=2.0, n=2.0,
                                          figsize=THUMB).fig)
 

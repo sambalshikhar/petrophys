@@ -2,7 +2,7 @@
 Pickett plot for Archie parameter determination.
 """
 
-from petrophys.visualization.style import _styled_plot, save_figure
+from petrophys.visualization.style import _styled_plot, display_unit, save_figure
 
 from typing import TYPE_CHECKING, Optional, Tuple
 import warnings
@@ -23,6 +23,7 @@ import numpy as np
 from petrophys._internal.validation import numeric_array, warn_invalid
 from petrophys.visualization._data import (
     archie_parameters, paired_values, chart_limits, note_outside_axes, curve_values, porosity_label,
+    clean_rock_only, formation_rw,
 )
 
 
@@ -56,7 +57,7 @@ class PickettPlot:
         color_label: str = "Depth",
         xlim: Tuple[float, float] = (.01, .5),
         ylim: Tuple[float, float] = (.1, 1000.),
-        x_label: str = "Effective porosity (v/v)",
+        x_label: str = "Effective porosity [v/v]",
     ) -> Tuple[Figure, Axes]:
         """
         Create the Pickett plot.
@@ -309,27 +310,9 @@ def create_pickett_plot(
     if rt is None:
         raise ValueError(f"Curve {' or '.join(repr(name) for name in rt_names)} not found")
 
-    shaly_left_out = 0
-    if vcl_max is not None:
-        vcl_max = float(vcl_max)
-        if not 0.0 <= vcl_max <= 1.0:
-            raise ValueError(f"vcl_max must be a clay volume between 0 and 1; got {vcl_max:g}")
-        vcl, _, _ = curve_values(well, ["VCL"], depth_range, "v/v")
-        if vcl is not None:
-            plotted = np.isfinite(phie) & np.isfinite(rt)
-            with np.errstate(invalid="ignore"):
-                shaly = plotted & ~(vcl <= vcl_max)
-            shaly_left_out = int(shaly.sum())
-            phie, rt = np.where(shaly, np.nan, phie), np.where(shaly, np.nan, rt)
-
+    phie, rt, shaly_left_out = clean_rock_only(well, phie, rt, depth_range, vcl_max)
     if rw is None:
-        rw_curve, _, _ = curve_values(well, ["RW"], depth_range, "ohm.m")
-        used = np.isfinite(phie) & np.isfinite(rt)
-        values = rw_curve[used] if rw_curve is not None else np.array([])
-        values = values[np.isfinite(values) & (values > 0)]
-        if not values.size:
-            raise ValueError("rw is needed: the well has no RW curve over the plotted samples; pass rw=")
-        rw = float(np.median(values))
+        rw = formation_rw(well, phie, rt, depth_range)
 
     color_data = None
     color_label = "Value"
@@ -337,7 +320,8 @@ def create_pickett_plot(
         color_data, _, _ = curve_values(well, [color_curve], depth_range)
         if color_data is not None:
             c_c = well.get(color_curve)
-            color_label = f"{color_curve} [{getattr(c_c, 'unit', '')}]"
+            unit = display_unit(getattr(c_c, "unit", ""))
+            color_label = f"{color_curve} [{unit}]" if unit else color_curve
         else:
             warnings.warn(
                 f"Colour curve '{color_curve}' not found; plotting without colour.",

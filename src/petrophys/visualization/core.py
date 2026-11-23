@@ -8,7 +8,7 @@ Plotting functions for core-to-log calibration:
 - Core data on log depth plot
 """
 
-from petrophys.visualization.style import _styled_plot
+from petrophys.visualization.style import _styled_plot, display_unit
 
 from typing import Optional, Tuple, List
 import re
@@ -102,13 +102,20 @@ def plot_calibration(
             y_fit,
             "b-",
             linewidth=1,
-            label=f"Fit: y={result.slope:.2f}x+{result.intercept:.3f}",
+            label=f"Fit: y = {result.slope:.2f}x {result.intercept:+.3f}",
         )
 
     # "Porosity (PHIE)" names the log curve; the core axis is the measured property.
-    core_property = re.sub(r"\s*\([^)]*\)$", "", result.property_name)
-    ax.set_xlabel(f"Core {core_property}")
-    ax.set_ylabel(f"Log {result.property_name}")
+    core_property = re.sub(r"\s*\([^)]*\)$", "", result.property_name).lower()
+    inside = re.search(r"\(([^)]*)\)$", result.property_name)
+    parts = [part.strip() for part in inside.group(1).split(",")] if inside else []
+    log_curve = parts[0] if parts else "log"
+    unit = {"porosity": "v/v", "water saturation": "frac", "permeability": "mD"}.get(core_property, "")
+    if "log10" in parts:
+        unit = f"log10 {unit}"
+    shown = f" [{unit}]" if unit else ""
+    ax.set_xlabel(f"Core {core_property}{shown}")
+    ax.set_ylabel(f"{log_curve}{shown}")
     ax.set_title(
         title
         or (
@@ -198,8 +205,8 @@ def plot_poro_perm(
         ax.legend(fontsize=9)
 
     ax.set_yscale("log")
-    ax.set_xlabel("Core Porosity (v/v)")
-    ax.set_ylabel("Core Permeability (mD)")
+    ax.set_xlabel("Core porosity [v/v]")
+    ax.set_ylabel("Core permeability [mD]")
     ax.set_title(title)
     ax.grid(True, alpha=0.3, which="both")
 
@@ -337,8 +344,9 @@ def plot_core_on_logs(
             if is_perm:
                 values = np.where(values > 0, values, np.nan)
             label = curve_name if resolved.upper() == curve_name.upper() else f"{resolved} ({curve_name})"
+            # Solid, in the log plot's colour: dashes break up on a busy curve beside plugs.
             ax.plot(values, depth[d_mask], color=spec.color if spec is not None else "#000000",
-                    linestyle=spec.line_style if spec is not None else "-", linewidth=0.8, label=label)
+                    linestyle="-", linewidth=0.8, label=label)
         else:
             missing.append(curve_name)
         if scale == "log" and not is_perm:
@@ -362,6 +370,7 @@ def plot_core_on_logs(
                 or ""
             )
         name = resolved if curve is not None else curve_name
+        unit = display_unit(unit)
         xlabel = f"{name} [{unit}]" if unit else name
         if curve is None:
             xlabel += " (no log curve)"

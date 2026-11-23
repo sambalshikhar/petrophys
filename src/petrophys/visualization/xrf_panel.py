@@ -124,7 +124,7 @@ def create_xrf_panel(
     axes[0].invert_yaxis()
     axes[0].set_ylabel("Depth")
     name = (xrf.metadata or {}).get("well")
-    fig.suptitle(f"XRF geochemistry{(' — ' + name) if name else ''}", fontsize=12)
+    fig.suptitle(f"XRF geochemistry{(' - ' + name) if name else ''}", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     return fig
 

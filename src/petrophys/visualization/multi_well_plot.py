@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple, Un
 
 import numpy as np
 
-from petrophys.visualization.style import _styled_plot
+from petrophys.visualization.style import _styled_plot, display_unit
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -224,6 +224,8 @@ def compare_wells(
             if resolved is None:
                 continue
             for spec_track in create_adaptive_log_viewer_template(well, include_on_request=True).tracks:
+                if spec_track.cumulative:
+                    continue  # stacked volumes have no scale of their own
                 for spec in spec_track.curves:
                     found = _resolve_curve_name_for_well(well, spec.curve_name, spec.candidates)
                     if found is not None and found.upper() == resolved.upper():
@@ -287,10 +289,14 @@ def compare_wells(
         if spec is not None and spec.left is not None and spec.right is not None:
             left, right = float(spec.left), float(spec.right)
         else:
-            # A curve the layout does not know: the wells' 0.5-99.5 percentiles.
+            # A curve the layout does not know: a volume fraction on 0-1, else the
+            # wells' 0.5-99.5 percentiles.
             data = np.concatenate(shown) if shown else np.empty(0)
             data = data[data > 0] if log_track else data
-            if data.size:
+            fraction = {display_unit(u) for u in units if u} == {"v/v"}
+            if data.size and fraction and not log_track and data.min() >= 0 and data.max() <= 1:
+                left, right = 0.0, 1.0
+            elif data.size:
                 low, high = np.percentile(data, [0.5, 99.5])
                 if high > low:
                     pad = 0.03 * (high - low)
@@ -301,7 +307,7 @@ def compare_wells(
         if len(units) > 1:
             notes.append(f"{name}: the wells give it in different units ({', '.join(sorted(units))}); "
                          "the track compares unlike values")
-        unit_text = next(iter(units)) if len(units) == 1 else ("mixed units" if units else "")
+        unit_text = display_unit(next(iter(units))) if len(units) == 1 else ("mixed units" if units else "")
         # The header of a log-plot track: name and unit, with the scale ends.
         ax.xaxis.tick_top()
         ax.xaxis.set_label_position("top")

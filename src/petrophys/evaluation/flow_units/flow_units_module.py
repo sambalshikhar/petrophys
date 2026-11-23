@@ -375,5 +375,17 @@ class FlowUnitModule:
         well.add_curve("PHI_Z", result.phi_z, "v/v", "Normalized Porosity")
         well.add_curve("FZI", result.fzi, "microns", "Flow Zone Indicator")
         well.add_curve("HFU", result.hfu.astype(float), "", "Hydraulic Flow Unit")
+        # Class names and the flow-unit plot's colours, for plots coloured by HFU.
+        n_units = max(int(result.n_units), 1)
+        custom = well["HFU"].metadata.custom
+        custom["category_labels"] = {0: "no unit", **{k: f"HFU {k}" for k in range(1, n_units + 1)}}
+        try:
+            from matplotlib import colormaps
+        except ImportError:  # plotting is optional
+            pass
+        else:
+            palette = colormaps["turbo"](np.linspace(0.06, 0.94, n_units))
+            custom["category_colors"] = {0: "#999999", **{k: tuple(float(c) for c in palette[k - 1])
+                                                          for k in range(1, n_units + 1)}}
         well.add_curve("PERM_HFU", result.perm_predicted, "mD", "Permeability from HFU")
         return well

@@ -335,6 +335,7 @@ def core_data_from_well(
     metadata = {
         "well_name": well.name,
         "field": well.header.field,
+        "depth_unit": str(getattr(well, "depth_unit", "") or ""),
         "core_porosity_curve": porosity_source,
         "core_permeability_curve": permeability_source,
         "core_grain_density_curve": grain_density_source,
