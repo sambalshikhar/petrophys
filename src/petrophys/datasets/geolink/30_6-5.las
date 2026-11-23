@@ -39,7 +39,7 @@ SWC              .frac   : Core water saturation
 SOC              .frac   : Core oil saturation
 ~Params ----------------------------------------------------
 CLFL    .mg/l              20366 : Mud Filtrate Cl
-RW      .ohmm              0.070 : Rw (Statoil 1981 CPI, printed 0.70)
+RW      .ohmm              0.070 : Rw (Statoil 1981 CPI)
 RWT     .degF                230 : Rw measurement temperature
 RMF     .ohmm               0.08 : Rmf
 BHT     .degC                126 : Max Recorded Bottom Hole Temperature

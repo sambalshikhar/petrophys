@@ -31,7 +31,7 @@ any user-owned path directly to `read_las()` or `read_dlis()`.
 | Folder or file | Purpose |
 |---|---|
 | `costa/` | The 17-well Costa carbonate field used by the multiwell field-study and screening notebooks. Each file covers only the Kharaib-2 reservoir interval, not the whole well. |
-| `geolink/30_6-5.las` | Main North Sea clastic tutorial well with a rich curve suite and vendor lithology. Its header RW, 0.070 ohm.m at 230 degF (RWT), is the Rw of Statoil's 1981 petrophysical evaluation in the completion report (Sodir), whose log header prints it as 0.70: the evaluation's own pay table is reproduced with 0.070 and not with 0.70 (Tutorial 09). The GeoLink delivery had RW 0.7 without a temperature. |
+| `geolink/30_6-5.las` | Main North Sea clastic tutorial well with a rich curve suite and vendor lithology. Its header RW, 0.070 ohm.m at 230 degF (RWT), is the Rw of Statoil's 1981 petrophysical evaluation in the completion report (Sodir), whose pay table Tutorial 09 reproduces. |
 | `geolink/16_7-1.las` | A well with a Zechstein evaporite (halite) section whose resistivity exceeds the tool range, and no neutron or PEF; the imperfect-well and curve-wrapping example. |
 | `geolink/15_9-14.las` | Mineral-solver tutorial well with vendor lithology. |
 | `geolink/25_5-1.las` | Core-bearing North Sea example with PHIC, permeability, saturation, and grain-density curves. |

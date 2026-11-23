@@ -317,7 +317,6 @@ pp.impute(hw24, "RHOB", train_wells=[pp.sample(name) for name in pp.list_samples
                                      if name != "HW-24"])
 thumb("cap_ml", pp.plot(hw24, curves=["RHOB", "RHOB_PREDICTED"], top=8510, bottom=8580,
                         figsize=LOG_THUMB).fig)
-print(hw24["RHOB_PREDICTED"].description)
 
 # NMR: the library's Timur-Coates permeability against the vendor KTIM curve.
 nmr = NMRData.from_las(pp.sample("daydream1_cmr"), mphi_mnemonic="TCMR", mffi_mnemonic="CMFF")
