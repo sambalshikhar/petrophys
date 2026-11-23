@@ -7,7 +7,9 @@ exactly what readers see. A notebook fails the check when it has
 * a code cell that was never executed,
 * execution counts that are not 1, 2, 3, ... (not run top to bottom in a
   fresh kernel),
-* an error output, or
+* an error output,
+* a figure that was not drawn into the notebook (run under a non-inline
+  backend such as ``MPLBACKEND=Agg``), or
 * a local filesystem path in its text outputs.
 
 Usage::
@@ -63,6 +65,11 @@ def check_notebook(path):
             if output.get("output_type") == "error":
                 problems.append(f"cell {index}: error output {output.get('ename', '')}")
             for text in _output_texts(output):
+                if "is non-interactive, and thus cannot be shown" in text:
+                    problems.append(
+                        f"cell {index}: figure not drawn into the notebook "
+                        "(executed with a non-inline backend; unset MPLBACKEND)"
+                    )
                 match = LOCAL_PATH.search(text)
                 if match:
                     line = next(

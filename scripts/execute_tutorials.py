@@ -78,6 +78,9 @@ def execute_notebook(source, destination, timeout=300):
         ]
         environment = dict(os.environ)
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        # A non-inline backend (MPLBACKEND=Agg, set for scripts and tests)
+        # would leave the figures out of the saved notebook.
+        environment.pop("MPLBACKEND", None)
         environment["PYTHONPATH"] = os.pathsep.join(filter(None, (
             str(REPO_ROOT / "src"), environment.get("PYTHONPATH"),
         )))
