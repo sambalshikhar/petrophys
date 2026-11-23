@@ -1,0 +1,1267 @@
+{
+ "context": {
+  "context_kind": "well_summary",
+  "geology": {
+   "lithology_selection": {
+    "external_available": false,
+    "requested_source": "auto",
+    "selected_source": "vendor",
+    "vendor_available": true
+   },
+   "selected_lithology_source": "vendor"
+  },
+  "include_raw_traces_in_context": false,
+  "interpretation": {
+   "errors": [],
+   "executed_steps": [
+    {
+     "method": "validated_geology_selection",
+     "name": "input_context",
+     "success": true
+    },
+    {
+     "method": "linear_gradient_from_BHT",
+     "name": "temperature",
+     "success": true
+    },
+    {
+     "method": "caliper_drho_flags",
+     "name": "bad_hole",
+     "success": true
+    },
+    {
+     "method": "linear",
+     "name": "vclay",
+     "success": true
+    },
+    {
+     "method": "lithology_shale_median_rt",
+     "name": "rcl",
+     "success": true
+    },
+    {
+     "method": "las_metadata_assumed_reference_temperature",
+     "name": "rmf",
+     "success": true
+    },
+    {
+     "method": "component_based",
+     "name": "porosity",
+     "success": true
+    },
+    {
+     "method": "canonical_multi_mineral_solver",
+     "name": "lithology",
+     "success": true
+    },
+    {
+     "method": "same_well_core_correction",
+     "name": "core_correction",
+     "success": true
+    },
+    {
+     "method": "las_metadata_temperature_profile_corrected",
+     "name": "rw",
+     "success": true
+    },
+    {
+     "method": "rxo_rt_ratio",
+     "name": "invasion",
+     "success": true
+    },
+    {
+     "method": "archie+indonesia+dual_water",
+     "name": "saturation",
+     "success": true
+    },
+    {
+     "method": "auto",
+     "name": "permeability",
+     "success": true
+    },
+    {
+     "method": "RQI_FZI_phi_z",
+     "name": "rock_quality",
+     "success": true
+    },
+    {
+     "method": "PHIE_x_SW",
+     "name": "bvw",
+     "success": true
+    },
+    {
+     "method": "moveable_HC_index",
+     "name": "mhi",
+     "success": true
+    },
+    {
+     "method": "cutoff_flags",
+     "name": "net_pay",
+     "success": true
+    }
+   ],
+   "key_results": {
+    "PERM": {
+     "max": 10000.0,
+     "mean": 3815.9894107853834,
+     "median": 2985.506534062915,
+     "min": 0.0,
+     "p10": 0.006614288255243796,
+     "p90": 10000.0,
+     "samples": 22176,
+     "unit": "mD",
+     "valid": 21666
+    },
+    "PHIE": {
+     "max": 0.5,
+     "mean": 0.317012217740932,
+     "median": 0.3866819480134582,
+     "min": 0.0,
+     "p10": 0.08319867839457684,
+     "p90": 0.4828026777467306,
+     "samples": 22176,
+     "unit": "v/v",
+     "valid": 22176
+    },
+    "PHIT": {
+     "max": 0.5,
+     "mean": 0.33146107225898447,
+     "median": 0.39942090909090905,
+     "min": 0.0,
+     "p10": 0.12354999999999997,
+     "p90": 0.4897107272727273,
+     "samples": 22176,
+     "unit": "v/v",
+     "valid": 22176
+    },
+    "SW": {
+     "max": 1.0,
+     "mean": 0.6871342001727542,
+     "median": 0.6930311062856656,
+     "min": 0.0,
+     "p10": 0.45335076688460396,
+     "p90": 1.0,
+     "samples": 22176,
+     "unit": "v/v",
+     "valid": 22171
+    },
+    "VCL": {
+     "max": 1.0,
+     "mean": 0.15381037338076747,
+     "median": 0.11418988576166454,
+     "min": 0.0,
+     "p10": 0.0,
+     "p90": 0.36991413150384045,
+     "samples": 22176,
+     "unit": "v/v",
+     "valid": 22176
+    }
+   },
+   "lithology_domain": "clastic",
+   "net_thickness": {
+    "depth_unit": "m",
+    "net_pay": 1400.86,
+    "net_res": 2865.7,
+    "net_rock": 2955.13
+   },
+   "petrophys_version": "3.0.0",
+   "resolved": {
+    "lithology_domain": "clastic",
+    "matrix_type": "sandstone"
+   },
+   "settings_used": {
+    "calculation_profile": "geolink",
+    "lithology_domain": "clastic",
+    "matrix_type": "sandstone",
+    "rmf_salinity_ppm": 20366.0
+   },
+   "skipped_steps": {
+    "elemental_spectroscopy": "Not run by the interpretation workflow; use petrophys.interpretation.geochemistry.interpret_elemental_spectroscopy directly",
+    "hc_correction": "apply_hc_correction=False (hydrocarbon correction is opt-in)",
+    "normalization": "standardize_input=False",
+    "porosity_refinement": "Not run by the interpretation workflow; porosity is computed once in the porosity step",
+    "spectral_gamma": "Not run by the interpretation workflow; use petrophys.interpretation.geochemistry.interpret_spectral_gamma directly"
+   },
+   "status": "interpreted",
+   "summary_interval": {
+    "bottom": null,
+    "depth_unit": "m",
+    "top": null
+   },
+   "warnings": [],
+   "well": "30/6-5"
+  },
+  "petrophys_version": "3.0.0",
+  "schema_version": "1.0",
+  "well": {
+   "bottom": 3556.08032,
+   "curves": [
+    {
+     "description": "Lithology_geolink",
+     "mnemonic": "LITHOLOGY_GEOLINK",
+     "unit": "_",
+     "valid_fraction": 0.484
+    },
+    {
+     "description": "CALI",
+     "mnemonic": "CALI",
+     "unit": "in",
+     "valid_fraction": 0.996
+    },
+    {
+     "description": "DRHO",
+     "mnemonic": "DRHO",
+     "unit": "g/cm3",
+     "valid_fraction": 0.786
+    },
+    {
+     "description": "NPHI",
+     "mnemonic": "NPHI",
+     "unit": "m3/m3",
+     "valid_fraction": 0.786
+    },
+    {
+     "description": "RHOB",
+     "mnemonic": "RHOB",
+     "unit": "g/cm3",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "PEF",
+     "mnemonic": "PEF",
+     "unit": "b/e",
+     "valid_fraction": 0.116
+    },
+    {
+     "description": "GR",
+     "mnemonic": "GR",
+     "unit": "gAPI",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "DTC",
+     "mnemonic": "DTC",
+     "unit": "us/ft",
+     "valid_fraction": 0.996
+    },
+    {
+     "description": "DTE",
+     "mnemonic": "DTE",
+     "unit": "us/ft",
+     "valid_fraction": 0.996
+    },
+    {
+     "description": "RDEP",
+     "mnemonic": "RDEP",
+     "unit": "ohm.m",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "SP",
+     "mnemonic": "SP",
+     "unit": "mV",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "RSHA",
+     "mnemonic": "RSHA",
+     "unit": "ohm.m",
+     "valid_fraction": 0.996
+    },
+    {
+     "description": "RMED",
+     "mnemonic": "RMED",
+     "unit": "ohm.m",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "BIT SIZE",
+     "mnemonic": "BS",
+     "unit": "in",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Core porosity",
+     "mnemonic": "PHIC",
+     "unit": "v/v",
+     "valid_fraction": 0.009
+    },
+    {
+     "description": "Grain density",
+     "mnemonic": "GDEN",
+     "unit": "g/c3",
+     "valid_fraction": 0.009
+    },
+    {
+     "description": "Horizontal permeability  Klinkenberg-corrected",
+     "mnemonic": "KH_CORE",
+     "unit": "mD",
+     "valid_fraction": 0.009
+    },
+    {
+     "description": "Vertical permeability  Klinkenberg-corrected",
+     "mnemonic": "KV_CORE",
+     "unit": "mD",
+     "valid_fraction": 0.009
+    },
+    {
+     "description": "Core water saturation",
+     "mnemonic": "SWC",
+     "unit": "frac",
+     "valid_fraction": 0.003
+    },
+    {
+     "description": "Core oil saturation",
+     "mnemonic": "SOC",
+     "unit": "frac",
+     "valid_fraction": 0.002
+    },
+    {
+     "description": "Formation Temperature",
+     "mnemonic": "TEMP",
+     "unit": "degF",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Bad Hole Flag",
+     "mnemonic": "BAD_HOLE",
+     "unit": "",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Bad Hole Flag",
+     "mnemonic": "BADHOLEFLAG",
+     "unit": "",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Clay Volume",
+     "mnemonic": "VCL",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Clay Volume",
+     "mnemonic": "VCLAY",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "VCL from GR",
+     "mnemonic": "VCL_GR",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "VCL from GR",
+     "mnemonic": "VCLGR",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "VCL from SP",
+     "mnemonic": "VCL_SP",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "VCL from SP",
+     "mnemonic": "VCLSP",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "VCL from N-D",
+     "mnemonic": "VCL_ND",
+     "unit": "v/v",
+     "valid_fraction": 0.785
+    },
+    {
+     "description": "VCL from N-D",
+     "mnemonic": "VCLND",
+     "unit": "v/v",
+     "valid_fraction": 0.785
+    },
+    {
+     "description": "Mud Filtrate Resistivity",
+     "mnemonic": "RMF",
+     "unit": "ohm.m",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Neutron Porosity",
+     "mnemonic": "PHIN",
+     "unit": "v/v",
+     "valid_fraction": 0.786
+    },
+    {
+     "description": "Density Porosity",
+     "mnemonic": "PHID",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Sonic Porosity",
+     "mnemonic": "PHIS",
+     "unit": "v/v",
+     "valid_fraction": 0.996
+    },
+    {
+     "description": "Total Porosity",
+     "mnemonic": "PHIT",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Effective Porosity",
+     "mnemonic": "PHIE",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Secondary Porosity Index",
+     "mnemonic": "PHI_SEC",
+     "unit": "v/v",
+     "valid_fraction": 0.996
+    },
+    {
+     "description": "Quartz Volume",
+     "mnemonic": "VQUAR",
+     "unit": "v/v",
+     "valid_fraction": 0.116
+    },
+    {
+     "description": "Calcite Volume",
+     "mnemonic": "VCALC",
+     "unit": "v/v",
+     "valid_fraction": 0.116
+    },
+    {
+     "description": "Dolomite Volume",
+     "mnemonic": "VDOLO",
+     "unit": "v/v",
+     "valid_fraction": 0.116
+    },
+    {
+     "description": "Anhydrite Volume",
+     "mnemonic": "VANHY",
+     "unit": "v/v",
+     "valid_fraction": 0.116
+    },
+    {
+     "description": "Permeability input porosity from core calibration",
+     "mnemonic": "PHIE_CC",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Formation Water Resistivity",
+     "mnemonic": "RW",
+     "unit": "ohm.m",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Invasion Ratio Rxo/Rt",
+     "mnemonic": "INVASION_RATIO",
+     "unit": "",
+     "valid_fraction": 0.996
+    },
+    {
+     "description": "Water Saturation (archie+indonesia+dual_water)",
+     "mnemonic": "SW",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Flushed Zone Water Saturation",
+     "mnemonic": "SXO",
+     "unit": "v/v",
+     "valid_fraction": 0.996
+    },
+    {
+     "description": "Reservoir Flag",
+     "mnemonic": "RESFLAG",
+     "unit": "",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Permeability (coates)",
+     "mnemonic": "PERM",
+     "unit": "mD",
+     "valid_fraction": 0.977
+    },
+    {
+     "description": "Permeability from core-calibrated poro-perm transform",
+     "mnemonic": "PERM_CC",
+     "unit": "mD",
+     "valid_fraction": 0.373
+    },
+    {
+     "description": "Apparent irreducible water saturation from hydrocarbon-mask P5 method",
+     "mnemonic": "SWIRR_APP",
+     "unit": "v/v",
+     "valid_fraction": 0.977
+    },
+    {
+     "description": "Reservoir Quality Index",
+     "mnemonic": "RQI",
+     "unit": "microns",
+     "valid_fraction": 0.891
+    },
+    {
+     "description": "Normalized Porosity",
+     "mnemonic": "PHI_Z",
+     "unit": "v/v",
+     "valid_fraction": 0.977
+    },
+    {
+     "description": "Flow Zone Indicator",
+     "mnemonic": "FZI",
+     "unit": "microns",
+     "valid_fraction": 0.891
+    },
+    {
+     "description": "Bulk Volume Water",
+     "mnemonic": "BVW",
+     "unit": "v/v",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Moveable Hydrocarbon Index",
+     "mnemonic": "MHI",
+     "unit": "",
+     "valid_fraction": 0.996
+    },
+    {
+     "description": "Net Rock Flag",
+     "mnemonic": "NET_ROCK",
+     "unit": "",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Net Reservoir Flag",
+     "mnemonic": "NET_RES",
+     "unit": "",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Net Pay Flag",
+     "mnemonic": "NET_PAY",
+     "unit": "",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Seal Flag",
+     "mnemonic": "SEALFLAG",
+     "unit": "",
+     "valid_fraction": 1.0
+    },
+    {
+     "description": "Neutron-density crossover flag",
+     "mnemonic": "CROSSOVER_FLAG",
+     "unit": "",
+     "valid_fraction": 0.785
+    },
+    {
+     "description": "Integrated prime oil target flag",
+     "mnemonic": "PRIME_OIL_TARGET",
+     "unit": "",
+     "valid_fraction": 1.0
+    }
+   ],
+   "depth_unit": "m",
+   "formations": [],
+   "header": {
+    "field": "OSEBERG \u00d8ST",
+    "uwi": "30/6-5"
+   },
+   "header_parameters": {
+    "BHT": 126.0,
+    "CLFL": 20366.0,
+    "RMF": 0.08,
+    "RW": 0.07,
+    "RWT": 230.0
+   },
+   "lithology_intervals": 0,
+   "n_samples": 22176,
+   "name": "30/6-5",
+   "step": 0.15235000000029686,
+   "top": 176.60999
+  }
+ },
+ "curves": {
+  "BADHOLEFLAG": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.5695797258297258,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 1.0,
+   "p90": 1.0
+  },
+  "BAD_HOLE": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.5695797258297258,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 1.0,
+   "p90": 1.0
+  },
+  "BS": {
+   "finite": 22176,
+   "max": 36.0,
+   "mean": 16.113501082251084,
+   "min": 8.5,
+   "p10": 8.5,
+   "p50": 12.25,
+   "p90": 26.0
+  },
+  "BVW": {
+   "finite": 22171,
+   "max": 0.5,
+   "mean": 0.21713330376510057,
+   "min": 0.0,
+   "p10": 0.03340889225559289,
+   "p50": 0.2311690976356312,
+   "p90": 0.3498464141816699
+  },
+  "CALI": {
+   "finite": 22084,
+   "max": 24.141,
+   "mean": 15.213447246875564,
+   "min": 8.195,
+   "p10": 9.797,
+   "p50": 14.383,
+   "p90": 19.922
+  },
+  "CROSSOVER_FLAG": {
+   "finite": 17416,
+   "max": 1.0,
+   "mean": 0.011598530087276068,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.0,
+   "p90": 0.0
+  },
+  "DRHO": {
+   "finite": 17421,
+   "max": 0.412,
+   "mean": -0.01934988921416681,
+   "min": -1.74596,
+   "p10": -0.024,
+   "p50": -0.002,
+   "p90": 0.027
+  },
+  "DTC": {
+   "finite": 22081,
+   "max": 207.35713,
+   "mean": 124.30719780037136,
+   "min": 34.04385,
+   "p10": 77.94514,
+   "p50": 133.6033,
+   "p90": 155.98039
+  },
+  "DTE": {
+   "finite": 22081,
+   "max": 206.22461,
+   "mean": 123.29460568316654,
+   "min": 32.84267,
+   "p10": 77.43053,
+   "p50": 133.31306,
+   "p90": 155.58864
+  },
+  "FZI": {
+   "finite": 19757,
+   "max": 4.9756525427354905,
+   "mean": 3.3370112980079134,
+   "min": 0.00011050488976469061,
+   "p10": 0.6288548288506052,
+   "p50": 4.3078507379997335,
+   "p90": 4.865101134361971
+  },
+  "GDEN": {
+   "finite": 200,
+   "max": 3.06,
+   "mean": 2.67785,
+   "min": 2.47,
+   "p10": 2.65,
+   "p50": 2.67,
+   "p90": 2.71
+  },
+  "GR": {
+   "finite": 22176,
+   "max": 238.0,
+   "mean": 59.768001958423525,
+   "min": -12.59262,
+   "p10": 30.038114999999998,
+   "p50": 53.299405,
+   "p90": 102.75
+  },
+  "INVASION_RATIO": {
+   "finite": 22079,
+   "max": 36.782565833896015,
+   "mean": 1.3537262378287958,
+   "min": 6.149951200137226e-05,
+   "p10": 0.634421258076988,
+   "p50": 1.1901547876169907,
+   "p90": 2.2060849647247416
+  },
+  "KH_CORE": {
+   "finite": 198,
+   "max": 5826.0,
+   "mean": 436.9421717171717,
+   "min": 0.02,
+   "p10": 0.14100000000000007,
+   "p50": 44.5,
+   "p90": 1285.0000000000002
+  },
+  "KV_CORE": {
+   "finite": 198,
+   "max": 4794.0,
+   "mean": 375.29833333333335,
+   "min": 0.01,
+   "p10": 0.03,
+   "p50": 17.5,
+   "p90": 1179.1000000000015
+  },
+  "LITHOLOGY_GEOLINK": {
+   "finite": 10732,
+   "max": 19.0,
+   "mean": 6.956205739843459,
+   "min": 1.0,
+   "p10": 3.0,
+   "p50": 6.0,
+   "p90": 13.0
+  },
+  "MHI": {
+   "finite": 22079,
+   "max": 1.0,
+   "mean": 0.9314966414543552,
+   "min": 0.0,
+   "p10": 0.8563599841171233,
+   "p50": 1.0,
+   "p90": 1.0
+  },
+  "NET_PAY": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.4146374458874459,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.0,
+   "p90": 1.0
+  },
+  "NET_RES": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.8482142857142857,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 1.0,
+   "p90": 1.0
+  },
+  "NET_ROCK": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.8746843434343434,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 1.0,
+   "p90": 1.0
+  },
+  "NPHI": {
+   "finite": 17421,
+   "max": 0.67997,
+   "mean": 0.3893833298892142,
+   "min": 0.00117,
+   "p10": 0.19189,
+   "p50": 0.40429,
+   "p90": 0.5502
+  },
+  "PEF": {
+   "finite": 2569,
+   "max": 401.70023,
+   "mean": 5.636264028804982,
+   "min": 2.455,
+   "p10": 3.43791,
+   "p50": 4.055,
+   "p90": 5.654584000000002
+  },
+  "PERM": {
+   "finite": 21666,
+   "max": 10000.0,
+   "mean": 3815.9894107853834,
+   "min": 0.0,
+   "p10": 0.006614288255243796,
+   "p50": 2985.506534062915,
+   "p90": 10000.0
+  },
+  "PERM_CC": {
+   "finite": 8269,
+   "max": 3549.0272571942432,
+   "mean": 192.07229702012347,
+   "min": 0.00678817110045211,
+   "p10": 0.05303270718284972,
+   "p50": 5.034939757650985,
+   "p90": 553.1887886607506
+  },
+  "PHIC": {
+   "finite": 200,
+   "max": 0.277,
+   "mean": 0.17413,
+   "min": 0.022,
+   "p10": 0.0689,
+   "p50": 0.1925,
+   "p90": 0.24509999999999998
+  },
+  "PHID": {
+   "finite": 22171,
+   "max": 0.5,
+   "mean": 0.2862947905477513,
+   "min": 0.0,
+   "p10": 0.04339999999999984,
+   "p50": 0.33034545454545455,
+   "p90": 0.4690787878787878
+  },
+  "PHIE": {
+   "finite": 22176,
+   "max": 0.5,
+   "mean": 0.317012217740932,
+   "min": 0.0,
+   "p10": 0.08319867839457684,
+   "p50": 0.3866819480134582,
+   "p90": 0.4828026777467306
+  },
+  "PHIE_CC": {
+   "finite": 22176,
+   "max": 0.47889292734301603,
+   "mean": 0.30631242953960125,
+   "min": 0.0,
+   "p10": 0.08622715487163701,
+   "p50": 0.3721367389344513,
+   "p90": 0.46269144362168557
+  },
+  "PHIN": {
+   "finite": 17421,
+   "max": 0.6,
+   "mean": 0.38535064405028413,
+   "min": 0.0,
+   "p10": 0.13887,
+   "p50": 0.40616,
+   "p90": 0.5702
+  },
+  "PHIS": {
+   "finite": 22081,
+   "max": 0.5,
+   "mean": 0.3977504576929553,
+   "min": 0.0,
+   "p10": 0.153096329588015,
+   "p50": 0.5,
+   "p90": 0.5
+  },
+  "PHIT": {
+   "finite": 22176,
+   "max": 0.5,
+   "mean": 0.33146107225898447,
+   "min": 0.0,
+   "p10": 0.12354999999999997,
+   "p50": 0.39942090909090905,
+   "p90": 0.4897107272727273
+  },
+  "PHI_SEC": {
+   "finite": 22081,
+   "max": 0.26960126582278476,
+   "mean": 0.0013570197270342359,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.0,
+   "p90": 0.0
+  },
+  "PHI_Z": {
+   "finite": 21667,
+   "max": 1.0,
+   "mean": 0.5502779667741708,
+   "min": 2.149828172341812e-05,
+   "p10": 0.1066095934999517,
+   "p50": 0.6569962134035207,
+   "p90": 0.9354481908372663
+  },
+  "PRIME_OIL_TARGET": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.39790764790764793,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.0,
+   "p90": 1.0
+  },
+  "RDEP": {
+   "finite": 22171,
+   "max": 2000.01587,
+   "mean": 5.046552242118082,
+   "min": 0.409,
+   "p10": 0.71602,
+   "p50": 1.53498,
+   "p90": 6.156
+  },
+  "RESFLAG": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.8482142857142857,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 1.0,
+   "p90": 1.0
+  },
+  "RHOB": {
+   "finite": 22171,
+   "max": 2.77863,
+   "mean": 2.1761382441026567,
+   "min": 1.0,
+   "p10": 1.87602,
+   "p50": 2.10637,
+   "p90": 2.57431
+  },
+  "RMED": {
+   "finite": 22171,
+   "max": 598.5,
+   "mean": 3.1900156443101344,
+   "min": 0.124,
+   "p10": 0.711,
+   "p50": 1.572,
+   "p90": 7.488
+  },
+  "RMF": {
+   "finite": 22176,
+   "max": 0.07764885032462072,
+   "mean": 0.04142163888978474,
+   "min": 0.024632300335128216,
+   "p10": 0.026437373119907084,
+   "p50": 0.037400240231599255,
+   "p90": 0.0638963278196479
+  },
+  "RQI": {
+   "finite": 19757,
+   "max": 4.544674374916599,
+   "mean": 2.465517046954042,
+   "min": 1.0743101070104682e-05,
+   "p10": 0.10519066816008293,
+   "p50": 2.998251353118272,
+   "p90": 4.47075420143949
+  },
+  "RSHA": {
+   "finite": 22079,
+   "max": 1134.0,
+   "mean": 4.325280023098872,
+   "min": 0.123,
+   "p10": 0.6488000000000002,
+   "p50": 1.778,
+   "p90": 10.578
+  },
+  "RW": {
+   "finite": 22176,
+   "max": 0.19673234077217075,
+   "mean": 0.10494651167839732,
+   "min": 0.06240878111232447,
+   "p10": 0.06698214173169076,
+   "p50": 0.0947578331867591,
+   "p90": 0.1618887348125937
+  },
+  "SEALFLAG": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.001488095238095238,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.0,
+   "p90": 0.0
+  },
+  "SOC": {
+   "finite": 44,
+   "max": 16.9,
+   "mean": 6.022727272727274,
+   "min": 0.6,
+   "p10": 0.8300000000000001,
+   "p50": 5.35,
+   "p90": 12.490000000000002
+  },
+  "SP": {
+   "finite": 22169,
+   "max": 176.35744,
+   "mean": 59.93143179033786,
+   "min": -68.89999,
+   "p10": 46.9334,
+   "p50": 53.3255,
+   "p90": 100.456
+  },
+  "SW": {
+   "finite": 22171,
+   "max": 1.0,
+   "mean": 0.6871342001727542,
+   "min": 0.0,
+   "p10": 0.45335076688460396,
+   "p50": 0.6930311062856656,
+   "p90": 1.0
+  },
+  "SWC": {
+   "finite": 74,
+   "max": 84.6,
+   "mean": 48.23918918918919,
+   "min": 13.7,
+   "p10": 29.020000000000003,
+   "p50": 47.35,
+   "p90": 69.12000000000002
+  },
+  "SWIRR_APP": {
+   "finite": 21666,
+   "max": 1.0,
+   "mean": 0.37938568524166444,
+   "min": 0.17718574218744976,
+   "p10": 0.18329846736393124,
+   "p50": 0.223436993654281,
+   "p90": 0.9194555223289088
+  },
+  "SXO": {
+   "finite": 22079,
+   "max": 1.0,
+   "mean": 0.7332248683495679,
+   "min": 0.053047436432651744,
+   "p10": 0.5149961128078223,
+   "p50": 0.7143888971852282,
+   "p90": 1.0
+  },
+  "TEMP": {
+   "finite": 22176,
+   "max": 258.8,
+   "mean": 168.1379674536629,
+   "min": 77.47593503512317,
+   "p10": 95.6083405658284,
+   "p50": 168.13796751756158,
+   "p90": 240.66759420102187
+  },
+  "VANHY": {
+   "finite": 2571,
+   "max": 0.0,
+   "mean": 0.0,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.0,
+   "p90": 0.0
+  },
+  "VCALC": {
+   "finite": 2571,
+   "max": 0.8551372976144784,
+   "mean": 0.09988858107118508,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.0,
+   "p90": 0.3304396099294504
+  },
+  "VCL": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.15381037338076747,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.11418988576166454,
+   "p90": 0.36991413150384045
+  },
+  "VCLAY": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.15381037338076747,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.11418988576166454,
+   "p90": 0.36991413150384045
+  },
+  "VCLGR": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.4053575381901528,
+   "min": 0.0,
+   "p10": 0.10531737538426028,
+   "p50": 0.34936897380210463,
+   "p90": 0.868192166860764
+  },
+  "VCLND": {
+   "finite": 17416,
+   "max": 1.0,
+   "mean": 0.37956100102692314,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.38939568345323744,
+   "p90": 0.6965881294964027
+  },
+  "VCLSP": {
+   "finite": 22169,
+   "max": 1.0,
+   "mean": 0.2652723120384973,
+   "min": 0.0,
+   "p10": 0.05501800974025973,
+   "p50": 0.14841337462653104,
+   "p90": 0.8370399988615103
+  },
+  "VCL_GR": {
+   "finite": 22176,
+   "max": 1.0,
+   "mean": 0.4053575381901528,
+   "min": 0.0,
+   "p10": 0.10531737538426028,
+   "p50": 0.34936897380210463,
+   "p90": 0.868192166860764
+  },
+  "VCL_ND": {
+   "finite": 17416,
+   "max": 1.0,
+   "mean": 0.37956100102692314,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.38939568345323744,
+   "p90": 0.6965881294964027
+  },
+  "VCL_SP": {
+   "finite": 22169,
+   "max": 1.0,
+   "mean": 0.2652723120384973,
+   "min": 0.0,
+   "p10": 0.05501800974025973,
+   "p50": 0.14841337462653104,
+   "p90": 0.8370399988615103
+  },
+  "VDOLO": {
+   "finite": 2571,
+   "max": 0.6665761348449428,
+   "mean": 0.07047579218209375,
+   "min": 0.0,
+   "p10": 0.0,
+   "p50": 0.02705248215144222,
+   "p90": 0.20058136653710834
+  },
+  "VQUAR": {
+   "finite": 2571,
+   "max": 0.9840283636363636,
+   "mean": 0.48309287432972525,
+   "min": 0.0,
+   "p10": 0.009737244920350217,
+   "p50": 0.5118266138555722,
+   "p90": 0.8742922423712811
+  }
+ },
+ "depth": {
+  "finite": 22176,
+  "max": 3556.08032,
+  "mean": 1866.3451538090728,
+  "min": 176.60999,
+  "p10": 514.557005,
+  "p50": 1866.345155,
+  "p90": 3218.1333
+ },
+ "lithology_domain": "clastic",
+ "net_thickness": {
+  "depth_unit": "m",
+  "net_pay": 1400.86,
+  "net_res": 2865.7,
+  "net_rock": 2955.13
+ },
+ "resolved": {
+  "lithology_domain": "clastic",
+  "matrix_type": "sandstone"
+ },
+ "skipped_steps": [
+  "elemental_spectroscopy",
+  "hc_correction",
+  "normalization",
+  "porosity_refinement",
+  "spectral_gamma"
+ ],
+ "status": "interpreted",
+ "steps": [
+  [
+   "input_context",
+   "validated_geology_selection",
+   true
+  ],
+  [
+   "temperature",
+   "linear_gradient_from_BHT",
+   true
+  ],
+  [
+   "bad_hole",
+   "caliper_drho_flags",
+   true
+  ],
+  [
+   "vclay",
+   "linear",
+   true
+  ],
+  [
+   "rcl",
+   "lithology_shale_median_rt",
+   true
+  ],
+  [
+   "rmf",
+   "las_metadata_assumed_reference_temperature",
+   true
+  ],
+  [
+   "porosity",
+   "component_based",
+   true
+  ],
+  [
+   "lithology",
+   "canonical_multi_mineral_solver",
+   true
+  ],
+  [
+   "core_correction",
+   "same_well_core_correction",
+   true
+  ],
+  [
+   "rw",
+   "las_metadata_temperature_profile_corrected",
+   true
+  ],
+  [
+   "invasion",
+   "rxo_rt_ratio",
+   true
+  ],
+  [
+   "saturation",
+   "archie+indonesia+dual_water",
+   true
+  ],
+  [
+   "permeability",
+   "auto",
+   true
+  ],
+  [
+   "rock_quality",
+   "RQI_FZI_phi_z",
+   true
+  ],
+  [
+   "bvw",
+   "PHIE_x_SW",
+   true
+  ],
+  [
+   "mhi",
+   "moveable_HC_index",
+   true
+  ],
+  [
+   "net_pay",
+   "cutoff_flags",
+   true
+  ]
+ ]
+}

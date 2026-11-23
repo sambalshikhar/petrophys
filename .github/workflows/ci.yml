@@ -48,6 +48,11 @@ jobs:
           python scripts/check_input_validation.py
           python scripts/check_diagnostic_plots.py
 
+      - name: Run the test suite
+        env:
+          MPLBACKEND: Agg
+        run: python -m unittest discover -s tests -v
+
   tutorials:
     runs-on: ${{ matrix.os }}
     strategy:

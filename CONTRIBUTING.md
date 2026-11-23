@@ -11,6 +11,19 @@ cd petrophys
 python -m pip install -e ".[all,dev,docs,tutorials]"
 ```
 
+Run the test suite before opening a pull request (ten to thirty minutes):
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+It checks every public entry point with each documented input form and the
+errors bad input raises, holds the interpretations of bundled wells to their
+reference numbers in `tests/reference/`, and runs the MCP server and the
+repository's check scripts. A change meant to move the numbers updates the
+reference with `python tests/make_reference.py` and commits the JSON diff with
+the change; `tests/README.md` describes each file.
+
 Execute the affected tutorials in fresh kernels before opening a pull request:
 
 ```bash

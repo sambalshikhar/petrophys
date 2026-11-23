@@ -1550,6 +1550,12 @@ wherever the package used the function.
   their saved outputs.
 - Third-party data provenance and model validation records accompany the
   package.
+- A test suite, `python -m unittest discover -s tests`, run by CI on Python
+  3.9 to 3.13: every public entry point with each documented input form and
+  the errors bad input raises, the interpretations of nine bundled wells
+  (with the GeoLink and COSTA benchmark profiles) held to reference numbers,
+  the mineral solvers' least squares, an MCP client session and the
+  repository's check scripts. `tests/README.md` describes it.
 
 ### Known limitations
 
