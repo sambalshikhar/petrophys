@@ -969,7 +969,9 @@ wherever the package used the function.
   (`cutoffs_by_family`, `cutoff_source`).
 - Evaporites (halite and the other salts, anhydrite and gypsum), coal,
   halite recognised from its logs and bad-hole samples (BAD_HOLE = 1) are
-  not net reservoir or net pay; net rock keeps them. Evaporites and coal
+  not net reservoir or net pay. Evaporites and halite recognised from its logs
+  are not net rock either, as rock that is not reservoir at any clay volume;
+  coal and bad-hole samples stay in net rock. Evaporites and coal
   come from the per-depth lithology (a code log or intervals), never from
   `lithology_domain`. Where no bit size is known, BAD_HOLE comes from
   `|DRHO| > 0.15 g/cm3` alone (see "Bad hole"). The trace parameter

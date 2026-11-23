@@ -132,7 +132,7 @@
   "NET_ROCK": {
    "finite": 14986,
    "max": 1.0,
-   "mean": 0.3737488322434272,
+   "mean": 0.15521153076204458,
    "min": 0.0,
    "p10": 0.0,
    "p50": 0.0,
@@ -387,7 +387,7 @@
   "depth_unit": "m",
   "net_pay": 1.07,
   "net_res": 160.02,
-  "net_rock": 853.59
+  "net_rock": 354.48
  },
  "resolved": {
   "lithology_domain": "clastic",

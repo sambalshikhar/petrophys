@@ -1936,6 +1936,7 @@ def _run_net_pay(ctx: _StepContext, *, vcl_cutoff: Optional[float], phie_cutoff:
         removed = {
             kind: {
                 **item,
+                "net_rock_removed": round(item.get("net_rock_samples_removed", 0) * step, 2),
                 "net_reservoir_removed": round(item["net_reservoir_samples_removed"] * step, 2),
                 "net_pay_removed": round(item["net_pay_samples_removed"] * step, 2),
                 "depth_unit": well.depth_unit,

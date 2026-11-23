@@ -476,6 +476,10 @@ def _log_halite(well: "Well", lithology: Union[str, np.ndarray]) -> np.ndarray:
     return halite & ~evaporite
 
 
+#: Exclusions that are not reservoir rock at any clay volume: out of net rock too.
+_NOT_ROCK_KINDS = ("evaporite", "halite_log_signature")
+
+
 def _non_reservoir_samples(well: "Well", lithology: Union[str, np.ndarray]) -> Dict[str, np.ndarray]:
     """Samples kept out of net reservoir and net pay under ``"current"``, by kind.
 
@@ -563,7 +567,8 @@ def _net_flags_by_family(
     the standard (:data:`~petrophys.evaluation.STANDARD_CUTOFFS`) of the
     sample's family in ``families``. The samples in ``excluded_masks``
     (:func:`_non_reservoir_samples`) are then removed from net reservoir and
-    net pay; net rock keeps them.
+    net pay; evaporite and log-identified halite leave net rock too, as rock
+    that is not reservoir at any clay volume.
 
     Returns
     -------
@@ -614,6 +619,12 @@ def _net_flags_by_family(
     }
 
     excluded: Dict[str, Dict[str, int]] = {}
+    # Salt, anhydrite and gypsum are not reservoir rock at any clay volume:
+    # they leave net rock too. Coal and bad hole stay in net rock.
+    not_rock = np.zeros(well.n_samples, dtype=bool)
+    for kind in _NOT_ROCK_KINDS:
+        if kind in excluded_masks:
+            not_rock |= excluded_masks[kind]
     usable = np.ones(well.n_samples, dtype=bool)
     exclusion = np.zeros(well.n_samples, dtype=float)    # per sample: the kind that left it out (0: none)
     exclusion_codes = {0: "not excluded"}
@@ -621,6 +632,8 @@ def _net_flags_by_family(
         removed = mask & usable
         excluded[kind] = {
             "samples": int(np.count_nonzero(mask)),
+            "net_rock_samples_removed": (int(np.count_nonzero(result.net_rock & mask))
+                                         if kind in _NOT_ROCK_KINDS else 0),
             "net_reservoir_samples_removed": int(np.count_nonzero(result.net_reservoir & removed)),
             "net_pay_samples_removed": int(np.count_nonzero(result.net_pay & removed)),
         }
@@ -628,7 +641,8 @@ def _net_flags_by_family(
         exclusion_codes[code] = kind
         usable &= ~mask
     if excluded:
-        result = module.calculate(well, vcl=vcl, phie=phie, sw=sw, quality_mask=usable)
+        result = module.calculate(well, vcl=vcl, phie=phie, sw=sw, quality_mask=usable,
+                                  rock_mask=~not_rock if not_rock.any() else None)
     details = {
         "cutoffs": cutoffs,
         "cutoff_source": source,
@@ -754,6 +768,14 @@ def _net_pay_detail_decisions(
     }
     for kind, item in excluded.items():
         unit = item["depth_unit"]
+        if kind in _NOT_ROCK_KINDS:
+            lines.append(
+                f"{reasons.get(kind, kind)}: {item['samples']} samples left out of NET_ROCK, NET_RES "
+                f"and NET_PAY, removing {item.get('net_rock_removed', 0.0):.1f} {unit} of net rock, "
+                f"{item['net_reservoir_removed']:.1f} {unit} of net reservoir and "
+                f"{item['net_pay_removed']:.1f} {unit} of net pay"
+            )
+            continue
         lines.append(
             f"{reasons.get(kind, kind)}: {item['samples']} samples left out of NET_RES and "
             f"NET_PAY, removing {item['net_reservoir_removed']:.1f} {unit} of net reservoir and "
@@ -4639,8 +4661,8 @@ class DynamicWorkflow:
         the standard (:data:`~petrophys.evaluation.STANDARD_CUTOFFS`) of the
         sample's lithology family (:meth:`_cutoff_families`). Evaporite, coal,
         log-identified halite and bad-hole samples are then removed from net
-        reservoir and net pay (:func:`_non_reservoir_samples`); net rock keeps
-        them. ``vcl_cutoff`` and ``phie_cutoff``, when given, replace the clay
+        reservoir and net pay (:func:`_non_reservoir_samples`); evaporite and
+        log-identified halite leave net rock too. ``vcl_cutoff`` and ``phie_cutoff``, when given, replace the clay
         and porosity cutoffs. See :func:`_net_flags_by_family` for the result.
         """
         explicit = {
@@ -7897,8 +7919,10 @@ class DynamicWorkflow:
             las_rw, las_rw_temp_f = self._covering_zone_rw(well, las_rw, las_rw_temp_f, decisions)
         if las_rw is None:
             las_rw = self._zoned_constant(well, "RW")
-        if las_rw is not None and self.config.salinity_ppm is not None and not self._historical:
-            # An explicit salinity wins over the header, as rw does.
+        if (las_rw is not None and self.config.salinity_ppm is not None and not self._historical
+                and "salinity_ppm" in _explicit(self.config)):
+            # A salinity you set wins over the header Rw, as rw does; a header
+            # salinity does not (the header Rw comes before it).
             decisions.append(
                 f"salinity_ppm is set: the header Rw {float(las_rw):g} ohm.m is not used"
             )
@@ -10487,6 +10511,7 @@ class DynamicWorkflow:
             excluded = {
                 kind: {
                     **item,
+                    "net_rock_removed": round(item.get("net_rock_samples_removed", 0) * step_len, 2),
                     "net_reservoir_removed": round(item["net_reservoir_samples_removed"] * step_len, 2),
                     "net_pay_removed": round(item["net_pay_samples_removed"] * step_len, 2),
                     "depth_unit": unit,

@@ -149,6 +149,7 @@ class NetPayModule:
         phie: Optional[np.ndarray] = None,
         sw: Optional[np.ndarray] = None,
         quality_mask: Optional[np.ndarray] = None,
+        rock_mask: Optional[np.ndarray] = None,
     ) -> NetPayResult:
         """Calculate net pay.
 
@@ -157,6 +158,10 @@ class NetPayModule:
         where RHOB and NPHI -- and therefore PHIE and Sw -- are unreliable) are
         excluded from net reservoir and net pay. This prevents borehole washout
         from being certified as hydrocarbon pay.
+
+        ``rock_mask`` (optional): boolean array, False where the rock cannot be
+        reservoir at any clay volume (salt, anhydrite, gypsum). Those samples
+        are left out of net rock, and so of net reservoir and net pay.
         """
         if vcl is None:
             vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
@@ -187,6 +192,13 @@ class NetPayModule:
             vcl, phie, sw,
             vcl_cutoff, phie_cutoff, sw_cutoff,
         )
+
+        if rock_mask is not None:
+            rock = np.asarray(rock_mask, dtype=bool)
+            if rock.shape != flags["net_rock"].shape:
+                raise ValueError("rock_mask must match the well sample shape")
+            for key in ("net_rock", "net_reservoir", "net_pay"):
+                flags[key] = flags[key] & rock
 
         if quality_mask is not None:
             quality = np.asarray(quality_mask, dtype=float)
