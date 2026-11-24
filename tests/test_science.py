@@ -119,7 +119,7 @@ class CarbonatePermeabilityWithoutCore(unittest.TestCase):
     @staticmethod
     def warned(well):
         result = pp.interpret(well, lithology="carbonate")
-        return any("carbonate well comes from" in str(message) for message in result.warnings)
+        return any("carbonate well is" in str(message) for message in result.warnings)
 
     def test_warns_only_without_core(self):
         well = pp.read(pp.sample("HW-3"))
