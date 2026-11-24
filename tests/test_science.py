@@ -113,6 +113,22 @@ class RwSourceOrder(unittest.TestCase):
         self.assertLess(salinity, 0.5 * header)
 
 
+class CarbonatePermeabilityWithoutCore(unittest.TestCase):
+    """HW-3 carries core-corrected PERM_CC; without it a carbonate run warns that PERM has no core behind it."""
+
+    @staticmethod
+    def warned(well):
+        result = pp.interpret(well, lithology="carbonate")
+        return any("carbonate well comes from" in str(message) for message in result.warnings)
+
+    def test_warns_only_without_core(self):
+        well = pp.read(pp.sample("HW-3"))
+        self.assertFalse(self.warned(well))
+        for name in ("PERM_CC", "PHIE_CC"):
+            well.remove_curve(name)
+        self.assertTrue(self.warned(well))
+
+
 class DepthAlignment(unittest.TestCase):
     def well_with_lag(self, lag):
         rng = np.random.default_rng(0)

@@ -10366,6 +10366,23 @@ class DynamicWorkflow:
             decisions.append("Core-corrected permeability stored as PERM_CC")
         decisions.append(f"Permeability: {_perm_method_text(result.method)}")
         decisions.append(f"Perm range: {np.nanmin(perm_output):.3f} - {np.nanmax(perm_output):.1f} mD")
+        if (
+            not self._historical
+            and self.config.lithology_domain == "carbonate"
+            and perm_core is None
+            and "PERM_CC" not in self._input_core_basis
+        ):
+            # Carbonate permeability follows pore type and size as much as
+            # porosity (Lucia, 1983, 1995): one porosity carries permeabilities
+            # that differ by orders of magnitude, so an equation in porosity
+            # and irreducible water saturation needs core to rest on.
+            self._warn_assumed(
+                f"PERM of this carbonate well comes from {_perm_method_text(perm_desc)} with no core to "
+                "calibrate it. In carbonates permeability depends on pore type and pore size as much as on "
+                "porosity (Lucia, 1995), and one porosity carries permeabilities orders of magnitude apart; "
+                "read PERM as a ranking within the well. Core permeability of this well, or of wells of the "
+                "same field (peer_wells=[...], use_peer_core=True), calibrates it as PERM_CC."
+            )
         trace.decisions = decisions
         return trace
 
