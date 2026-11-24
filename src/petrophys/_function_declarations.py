@@ -173,7 +173,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         reservoir_flag=curve(),
         output_curve=text(),
     ),
-    "petrophys.evaluation.net_pay.flags.generate_net_flags": fn(
+    "petrophys.evaluation.net_pay.flags.net_flags": fn(
         vcl=curve("VCL"),
         phie=curve("PHIE"),
         sw=curve("SW"),
@@ -181,7 +181,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         phie_cutoff=curve(),
         sw_cutoff=value(),
     ),
-    "petrophys.evaluation.net_pay.flags.generate_volumetric_pay_flag": fn(
+    "petrophys.evaluation.net_pay.flags.volumetric_pay_flag": fn(
         fluid_type=curve(),
         reservoir_flag=curve(),
         hydrocarbon_fluids=text(many=True),
@@ -268,7 +268,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         perm_k=curve("PERM", unit="mD"),
         phi_e=curve("PHIE", unit="v/v"),
     ),
-    "petrophys.evaluation.rock_quality.rock_quality_module.calculate_winland_r35": fn(
+    "petrophys.evaluation.rock_quality.rock_quality_module.winland_r35": fn(
         perm_k=curve("PERM", unit="mD"),
         phi=curve("PHIE", unit="v/v"),
     ),
@@ -324,14 +324,14 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         cases=object_(),
         outputs=text(many=True),
     ),
-    "petrophys.evaluation.summaries.averages.calculate_pay_averages": fn(
+    "petrophys.evaluation.summaries.averages.pay_averages": fn(
         well=well(),
         top_depth=window("top"),
         bottom_depth=window("bottom"),
         net_pay_curve=curve_name("NET_PAY"),
         curves=curve_name(many=True),
     ),
-    "petrophys.evaluation.summaries.averages.calculate_pore_volume_weighted_sw": fn(
+    "petrophys.evaluation.summaries.averages.pore_volume_weighted_sw": fn(
         well=well(),
         top_depth=window("top"),
         bottom_depth=window("bottom"),
@@ -344,7 +344,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         bottom_depth=window("bottom"),
         net_pay_only=switch(),
     ),
-    "petrophys.evaluation.summaries.averages.calculate_weighted_averages": fn(
+    "petrophys.evaluation.summaries.averages.weighted_averages": fn(
         well=well(),
         curves=curve_name(many=True),
         weight_curve=curve_name("PHIE"),
@@ -352,7 +352,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         bottom_depth=window("bottom"),
         net_pay_curve=curve_name("NET_PAY"),
     ),
-    "petrophys.evaluation.summaries.averages.calculate_zone_averages": fn(
+    "petrophys.evaluation.summaries.averages.zone_averages": fn(
         well=well(),
         top_depth=window("top"),
         bottom_depth=window("bottom"),
@@ -395,11 +395,11 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         net_rock_curve=curve_name("NET_ROCK"),
         include_bottom=switch(),
     ),
-    "petrophys.evaluation.summaries.net_gross.calculate_ntg_by_zone": fn(
+    "petrophys.evaluation.summaries.net_gross.ntg_by_zone": fn(
         well=well(),
         zones=object_(),
     ),
-    "petrophys.evaluation.summaries.net_gross.create_ntg_table": fn(
+    "petrophys.evaluation.summaries.net_gross.ntg_table": fn(
         well=well(),
         zones=object_(),
     ),
@@ -471,7 +471,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         bg=value(unit="rcf/scf"),
         ngi=value(unit="fraction"),
     ),
-    "petrophys.evaluation.volumetrics.hydrocarbon_pore_volume.calculate_hcpv_from_well": fn(
+    "petrophys.evaluation.volumetrics.hydrocarbon_pore_volume.hcpv_from_well": fn(
         well=well(),
         area_acres=value(unit="acres"),
         top_depth=window("top"),
@@ -479,7 +479,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         bo=value(unit="rb/stb"),
         bg=value(unit="rcf/scf"),
     ),
-    "petrophys.evaluation.volumetrics.hydrocarbon_pore_volume.calculate_ogip": fn(
+    "petrophys.evaluation.volumetrics.hydrocarbon_pore_volume.ogip": fn(
         area_acres=value(unit="acres"),
         net_pay_ft=value(unit="ft"),
         porosity=value(unit="v/v", curve="PHIE"),
@@ -487,7 +487,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         bg=value(unit="rcf/scf"),
         recovery_factor=value(unit="fraction"),
     ),
-    "petrophys.evaluation.volumetrics.hydrocarbon_pore_volume.calculate_ooip": fn(
+    "petrophys.evaluation.volumetrics.hydrocarbon_pore_volume.ooip": fn(
         area_acres=value(unit="acres"),
         net_pay_ft=value(unit="ft"),
         porosity=value(unit="v/v", curve="PHIE"),
@@ -578,7 +578,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
     "petrophys.interpretation.clay_volume.classification.classify_vcl": fn(
         vcl=curve("VCL"),
     ),
-    "petrophys.interpretation.clay_volume.classification.get_vcl_quality_code": fn(
+    "petrophys.interpretation.clay_volume.classification.vcl_quality_code": fn(
         vcl=curve("VCL"),
     ),
     "petrophys.interpretation.clay_volume.classification.is_clean_sand": fn(
@@ -836,7 +836,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         default_rho_ma=value(unit="g/cm3"),
         output_curve=text(),
     ),
-    "petrophys.interpretation.core_analysis.calibration.estimate_archie_m": fn(
+    "petrophys.interpretation.core_analysis.calibration.archie_m": fn(
         well=well(),
         core=object_(),
         rw=value(unit="ohm.m", curve="RW"),
@@ -948,7 +948,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         samplewise=True,
         ratio=curve("INVASION_RATIO"),
     ),
-    "petrophys.interpretation.electrical.invasion.invasion_module.calculate_invasion_ratio": fn(
+    "petrophys.interpretation.electrical.invasion.invasion_module.invasion_ratio": fn(
         rxo=curve("RXO"),
         rt=curve("RDEP"),
         rt_min=value(),
@@ -1046,7 +1046,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         sp=curve("SP"),
         sp_shale=curve(),
     ),
-    "petrophys.interpretation.electrical.rw.sp_rw.estimate_sp_lines": fn(
+    "petrophys.interpretation.electrical.rw.sp_rw.sp_lines": fn(
         sp=curve("SP", unit="mV"),
     ),
     "petrophys.interpretation.electrical.rw.sp_rw.rw_from_rxo_rt": fn(
@@ -1292,19 +1292,19 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
     "petrophys.interpretation.lithology.matrix_properties.get_log_density": fn(
         mineral=text(),
     ),
-    "petrophys.interpretation.lithology.matrix_properties.get_matrix_density": fn(
+    "petrophys.interpretation.lithology.matrix_properties.matrix_density": fn(
         mineral=text(),
     ),
-    "petrophys.interpretation.lithology.matrix_properties.get_matrix_nphi": fn(
+    "petrophys.interpretation.lithology.matrix_properties.matrix_nphi": fn(
         mineral=text(),
     ),
-    "petrophys.interpretation.lithology.matrix_properties.get_matrix_pef": fn(
+    "petrophys.interpretation.lithology.matrix_properties.matrix_pef": fn(
         mineral=text(),
     ),
-    "petrophys.interpretation.lithology.matrix_properties.get_matrix_slowness": fn(
+    "petrophys.interpretation.lithology.matrix_properties.matrix_slowness": fn(
         mineral=text(),
     ),
-    "petrophys.interpretation.lithology.matrix_properties.get_mineral_properties": fn(
+    "petrophys.interpretation.lithology.matrix_properties.mineral_properties": fn(
         mineral=text(),
         property_name=choice("density", "slowness", "nphi", "pef", "u"),
     ),
@@ -1424,14 +1424,14 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
             "dunite_basic",
         ),
     ),
-    "petrophys.interpretation.permeability.perm_module.estimate_apparent_swirr": fn(
+    "petrophys.interpretation.permeability.perm_module.apparent_swirr": fn(
         phi=curve("PHIE"),
         sw=curve("SW"),
         vcl=curve("VCL"),
         vcl_cutoff=value(curve="VCL"),
         phi_cutoff=value(curve="PHIE"),
     ),
-    "petrophys.interpretation.permeability.perm_module.estimate_hc_swirr": fn(
+    "petrophys.interpretation.permeability.perm_module.hc_swirr": fn(
         sw=curve("SW"),
         rdep=curve("RDEP"),
         resflag=curve("RESFLAG"),
@@ -1440,7 +1440,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         min_samples=value(),
         fallback_swirr=value(curve="SWIRR_APP"),
     ),
-    "petrophys.interpretation.permeability.perm_module.estimate_swirr_app": fn(
+    "petrophys.interpretation.permeability.perm_module.swirr_app": fn(
         sw=curve("SW"),
         rdep=curve("RDEP"),
         resflag=curve("RESFLAG"),
@@ -1648,7 +1648,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         method=choice("adaptive", "average", "rms"),
         gas_method=choice("rms", "density"),
     ),
-    "petrophys.interpretation.rock_physics.elastic.calculate_elastic_properties": fn(
+    "petrophys.interpretation.rock_physics.elastic.elastic_properties": fn(
         rhob_gcc=curve("RHOB", unit="g/cc"),
         dtc_us_per_ft=curve("DTC", unit="us/ft"),
         dts_us_per_ft=curve("DTS", unit="us/ft"),
@@ -2077,12 +2077,12 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         temp_unit=choice("F", "C", "K"),
         method=choice("arps", "arp2"),
     ),
-    "petrophys.interpretation.temperature.temp_corrections.estimate_nacl_resistivity": fn(
+    "petrophys.interpretation.temperature.temp_corrections.nacl_resistivity": fn(
         salinity_ppm=value(unit="ppm"),
         temperature=value(),
         temp_unit=choice("F", "C", "K"),
     ),
-    "petrophys.interpretation.temperature.temp_gradient.calculate_temperature_gradient": fn(
+    "petrophys.interpretation.temperature.temp_gradient.temperature_gradient": fn(
         temp1=value(curve="TEMP"),
         depth1=value(),
         temp2=value(curve="TEMP"),
@@ -2090,7 +2090,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         temp_unit=choice("F", "C", "K"),
         depth_unit=choice("ft", "m"),
     ),
-    "petrophys.interpretation.temperature.temp_gradient.estimate_gradient_from_bht": fn(
+    "petrophys.interpretation.temperature.temp_gradient.gradient_from_bht": fn(
         bht=value(curve="TEMP"),
         td=value(),
         surface_temp=value(),
@@ -2137,7 +2137,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         train_wells=well(),
         output=text(),
     ),
-    "petrophys.preprocessing.normalization.histogram_matching.compute_histogram_statistics": fn(
+    "petrophys.preprocessing.normalization.histogram_matching.histogram_statistics": fn(
         data=curve(),
         n_bins=value(),
     ),
@@ -2177,12 +2177,12 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         mask_pef=switch(),
         inplace=switch(),
     ),
-    "petrophys.preprocessing.quality.bad_hole.curve_masking.create_quality_curve": fn(
+    "petrophys.preprocessing.quality.bad_hole.curve_masking.quality_curve": fn(
         well=well(),
         flags=object_(),
         weights=object_(),
     ),
-    "petrophys.preprocessing.quality.bad_hole.curve_masking.get_good_data_mask": fn(
+    "petrophys.preprocessing.quality.bad_hole.curve_masking.good_data_mask": fn(
         well=well(),
         flags=object_(),
         required_curves=curve_name(many=True),
@@ -2194,7 +2194,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         mask_value=value(),
         inplace=switch(),
     ),
-    "petrophys.preprocessing.quality.bad_hole.flag_generator.generate_bad_hole_flags": fn(
+    "petrophys.preprocessing.quality.bad_hole.flag_generator.bad_hole_flags": fn(
         well=well(),
         bit_size=curve("BS", unit="in"),
         cali_threshold=value(unit="in"),
@@ -2205,20 +2205,20 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         large_hole_threshold=value(unit="in"),
         drho_alone=switch(),
     ),
-    "petrophys.preprocessing.quality.bad_hole.flag_generator.generate_large_hole_flag": fn(
+    "petrophys.preprocessing.quality.bad_hole.flag_generator.large_hole_flag": fn(
         bit_size=curve("BS", unit="in"),
         threshold=value(unit="in"),
     ),
-    "petrophys.preprocessing.quality.bad_hole.flag_generator.generate_low_density_flag": fn(
+    "petrophys.preprocessing.quality.bad_hole.flag_generator.low_density_flag": fn(
         rhob=curve("RHOB", unit="g/cm3"),
         threshold=value(unit="g/cm3"),
     ),
-    "petrophys.preprocessing.quality.bad_hole.flag_generator.generate_pef_exclusion_flag": fn(
+    "petrophys.preprocessing.quality.bad_hole.flag_generator.pef_exclusion_flag": fn(
         pef=curve("PEF", unit="b/e"),
         max_threshold=value(unit="b/e"),
         min_threshold=value(unit="b/e"),
     ),
-    "petrophys.preprocessing.quality.bad_hole.flag_generator.generate_washout_flag": fn(
+    "petrophys.preprocessing.quality.bad_hole.flag_generator.washout_flag": fn(
         cali=curve("CALI", unit="in"),
         bit_size=curve("BS", unit="in"),
         drho=curve("DRHO", unit="g/cm3"),
@@ -2331,7 +2331,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
     "petrophys.preprocessing.standardization.unit_converter.detect_porosity_unit": fn(
         data=curve(),
     ),
-    "petrophys.preprocessing.standardization.unit_converter.get_conversion_factor": fn(
+    "petrophys.preprocessing.standardization.unit_converter.conversion_factor": fn(
         from_unit=text(),
         to_unit=text(),
     ),

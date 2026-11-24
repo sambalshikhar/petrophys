@@ -14,8 +14,8 @@ from petrophys.model.constants import DefaultParameters
 from petrophys.model.units import UnitConverter, temperature_to_fahrenheit, temperature_unit
 from petrophys.interpretation.temperature.temp_gradient import (
     _depth_unit_is_metres,
-    calculate_temperature_gradient,
-    estimate_gradient_from_bht,
+    temperature_gradient,
+    gradient_from_bht,
     gradient_c_per_km_to_fahrenheit_per_100ft,
 )
 
@@ -302,7 +302,7 @@ class TemperatureProfile:
         if _depth_unit_is_metres(depth_unit):
             td = UnitConverter.meters_to_feet(td)
 
-        gradient = estimate_gradient_from_bht(bht, td, surface_temp)
+        gradient = gradient_from_bht(bht, td, surface_temp)
 
         profile = cls(
             gradient=gradient,
@@ -367,7 +367,7 @@ class TemperatureProfile:
         TemperatureProfile
             Configured temperature profile
         """
-        gradient = calculate_temperature_gradient(
+        gradient = temperature_gradient(
             temp1, depth1, temp2, depth2, temp_unit, depth_unit
         )
 

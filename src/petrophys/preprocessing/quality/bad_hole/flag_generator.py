@@ -57,7 +57,7 @@ def _known_bit_size(well: "Well") -> np.ndarray:
     return bit_size
 
 
-def generate_washout_flag(
+def washout_flag(
     cali: np.ndarray,
     bit_size: Union[float, np.ndarray],
     drho: Optional[np.ndarray] = None,
@@ -101,7 +101,7 @@ def generate_washout_flag(
     return cali_flag
 
 
-def generate_large_hole_flag(
+def large_hole_flag(
     bit_size: Union[float, np.ndarray],
     threshold: float = DefaultParameters.LARGE_HOLE_BS,
 ) -> Union[bool, np.ndarray]:
@@ -125,7 +125,7 @@ def generate_large_hole_flag(
     return bit_size > threshold
 
 
-def generate_low_density_flag(
+def low_density_flag(
     rhob: np.ndarray, threshold: float = DefaultParameters.RHOB_MIN
 ) -> np.ndarray:
     """
@@ -148,7 +148,7 @@ def generate_low_density_flag(
     return rhob < threshold
 
 
-def generate_pef_exclusion_flag(
+def pef_exclusion_flag(
     pef: np.ndarray,
     max_threshold: float = DefaultParameters.PEF_MAX,
     min_threshold: float = DefaultParameters.PEF_MIN,
@@ -177,7 +177,7 @@ def generate_pef_exclusion_flag(
     return (pef > max_threshold) | (pef < min_threshold)
 
 
-def generate_bad_hole_flags(
+def bad_hole_flags(
     well: "Well",
     bit_size: Optional[Union[float, np.ndarray]] = None,
     cali_threshold: float = DefaultParameters.CALI_BS_THRESHOLD,
@@ -268,13 +268,13 @@ def generate_bad_hole_flags(
     drho, _, _ = get_curve_data_depthwise(well, ["DRHO"])
 
     if cali is not None and bit_size is not None:
-        flags["washout"] = generate_washout_flag(cali, bit_size, drho, cali_threshold, drho_threshold)
+        flags["washout"] = washout_flag(cali, bit_size, drho, cali_threshold, drho_threshold)
     elif drho_alone and drho is not None:
         flags["washout"] = np.abs(drho) > drho_threshold
 
     # Generate large hole flag
     if bit_size is not None:
-        large_hole = generate_large_hole_flag(bit_size, large_hole_threshold)
+        large_hole = large_hole_flag(bit_size, large_hole_threshold)
         if np.isscalar(large_hole):
             flags["large_hole"] = np.full(n_samples, bool(large_hole))
         else:
@@ -283,12 +283,12 @@ def generate_bad_hole_flags(
     # Generate low density flag
     rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
     if rhob is not None:
-        flags["low_density"] = generate_low_density_flag(rhob, rhob_min)
+        flags["low_density"] = low_density_flag(rhob, rhob_min)
 
     # Generate PEF exclusion flag
     pef, _, _ = get_curve_data_depthwise(well, ["PEF"])
     if pef is not None:
-        flags["pef_exclusion"] = generate_pef_exclusion_flag(pef, pef_max, pef_min)
+        flags["pef_exclusion"] = pef_exclusion_flag(pef, pef_max, pef_min)
 
     # Combined bad hole flag
     #

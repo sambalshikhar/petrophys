@@ -47,10 +47,10 @@ def rxo_rt_ratio(well: "Well") -> Tuple[Optional[np.ndarray], str]:
     The workflow's INVASION_RATIO when the well has one, so the classes agree
     with the workflow's invasion statistics; otherwise RXO (then RSHA, RESS)
     over RDEP (then RT), from
-    :func:`~petrophys.interpretation.electrical.invasion.calculate_invasion_ratio`.
+    :func:`~petrophys.interpretation.electrical.invasion.invasion_ratio`.
     ``(None, "unavailable")`` without either.
     """
-    from petrophys.interpretation.electrical.invasion.invasion_module import calculate_invasion_ratio
+    from petrophys.interpretation.electrical.invasion.invasion_module import invasion_ratio
 
     ratio, source = get_curve_data(well, ["INVASION_RATIO"])
     if ratio is not None:
@@ -59,7 +59,7 @@ def rxo_rt_ratio(well: "Well") -> Tuple[Optional[np.ndarray], str]:
     rdep, rdep_source = get_curve_data(well, ["RDEP", "RT"])
     if rxo is None or rdep is None:
         return None, "unavailable"
-    ratio = np.asarray(calculate_invasion_ratio(rxo, rdep), dtype=float)
+    ratio = np.asarray(invasion_ratio(rxo, rdep), dtype=float)
     return ratio, f"{format_curve_source(rxo_source)} / {format_curve_source(rdep_source)}"
 
 

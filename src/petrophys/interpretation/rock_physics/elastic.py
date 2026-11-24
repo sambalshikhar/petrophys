@@ -44,7 +44,7 @@ def velocity_from_slowness_us_per_ft(slowness_us_per_ft: np.ndarray | float) -> 
     return velocity
 
 
-def calculate_elastic_properties(
+def elastic_properties(
     rhob_gcc: np.ndarray | float,
     dtc_us_per_ft: np.ndarray | float,
     dts_us_per_ft: np.ndarray | float | None = None,

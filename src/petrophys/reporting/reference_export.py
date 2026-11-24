@@ -3348,7 +3348,7 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
     from petrophys.model.constants import DefaultParameters
     from petrophys.preprocessing.quality.bad_hole.flag_generator import (
         _known_bit_size,
-        generate_bad_hole_flags,
+        bad_hole_flags,
     )
 
     current = not _reproduces_benchmark_context(workflow_result)
@@ -3367,7 +3367,7 @@ def _workflow_bad_hole_details(well: "Well", workflow_result) -> Optional[dict[s
     thresholds = _bad_hole_threshold_values(
         getattr(_first_step_result(workflow_result, "bad_hole"), "parameters", None)
     )
-    flags = generate_bad_hole_flags(
+    flags = bad_hole_flags(
         well,
         bit_size=bit_size_for_flags,
         cali_threshold=thresholds["cali"],

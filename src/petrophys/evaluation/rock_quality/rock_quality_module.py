@@ -237,7 +237,7 @@ PORE_THROAT_CLASSES = (
 )
 
 
-def calculate_winland_r35(
+def winland_r35(
     perm_k: Union[float, np.ndarray],
     phi: Union[float, np.ndarray],
 ) -> Union[float, np.ndarray]:
@@ -248,7 +248,7 @@ def calculate_winland_r35(
     percent; ``phi`` is given as a fraction. NaN where either input is
     missing or not positive.
 
-    >>> round(calculate_winland_r35(100.0, 0.20), 2)
+    >>> round(winland_r35(100.0, 0.20), 2)
     6.08
     """
     perm_arr = np.asarray(perm_k, dtype=float)
@@ -256,7 +256,7 @@ def calculate_winland_r35(
     finite_phi = phi_arr[np.isfinite(phi_arr)]
     if finite_phi.size and np.median(finite_phi) > 1.0:
         raise ValueError(
-            "calculate_winland_r35: porosity looks like percent (median "
+            "winland_r35: porosity looks like percent (median "
             f"{np.median(finite_phi):g}); give it as a fraction (read_core converts core tables)"
         )
     result = np.full(np.broadcast_shapes(perm_arr.shape, phi_arr.shape), np.nan, dtype=float)

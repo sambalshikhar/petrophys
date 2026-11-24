@@ -42,7 +42,7 @@ from typing import Dict, Mapping, Optional, Tuple, Union
 import numpy as np
 from petrophys._internal.nnls import nnls
 
-from petrophys.interpretation.lithology.matrix_properties import get_log_density, get_mineral_properties
+from petrophys.interpretation.lithology.matrix_properties import get_log_density, mineral_properties
 
 
 # Tool-response endpoints of version 1, held apart from the shared mineral
@@ -76,7 +76,7 @@ def _get_endpoints(name: str) -> Dict[str, float]:
     """Return endpoint dict with density, nphi, pef, u, dt for a mineral/fluid."""
     if name in _V1_ENDPOINTS:
         return dict(_V1_ENDPOINTS[name])
-    p = get_mineral_properties(name)
+    p = mineral_properties(name)
     return {
         # the density-log response (evaporites read below their grain density)
         "density": get_log_density(name),

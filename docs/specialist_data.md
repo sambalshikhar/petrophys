@@ -257,7 +257,7 @@ README records the curve mappings, units and depth-matching limits.
 | --- | --- | --- | --- | --- |
 | XRF concentrations and mineral proxies | `XRFData`, `xrf_panel` | EDE-01 concentrations and matching well logs | XRD mineral fractions | 12 |
 | Grain size and permeability comparison | `GrainSizeData` | EDE-01 merged P50 and probe permeability | P13/P87 and measured core porosity for Kozeny-Carman calibration | 12 |
-| Scanner strength and dynamic mechanics | `calculate_elastic_properties` | EDE-01 scanner strength and density/sonic well logs | core VP/VS LAS, static moduli and plug UCS tests | 12 |
+| Scanner strength and dynamic mechanics | `elastic_properties` | EDE-01 scanner strength and density/sonic well logs | core VP/VS LAS, static moduli and plug UCS tests | 12 |
 | NMR T2 distributions and SDR | `NMRData` with bins | Phillips teaching example | a field T2 distribution with matching core | 14 |
 | Laboratory capillary pressure | `read_capillary_pressure` (`.thomeer()`, `.to_reservoir()`, `.entry_pressure()`), `fit_j_function_from_core`, `find_fwl`, `water_contact_from_fwl` | COSTA mercury-injection curves | fluid properties and the well and depth of each plug | 15 |
 

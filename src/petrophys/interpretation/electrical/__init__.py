@@ -6,7 +6,7 @@ from petrophys.interpretation.electrical.cementation import (
 )
 from petrophys.interpretation.electrical.invasion import (
     InvasionModule,
-    calculate_invasion_ratio,
+    invasion_ratio,
     classify_invasion,
 )
 from petrophys.interpretation.electrical.rmf import RmfModule, calculate_rmf
@@ -23,7 +23,7 @@ __all__ = [
     "RmfModule",
     "RwModule",
     "SpRwEstimate",
-    "calculate_invasion_ratio",
+    "invasion_ratio",
     "calculate_rmf",
     "calculate_rw",
     "classify_invasion",

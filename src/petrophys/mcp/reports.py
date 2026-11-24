@@ -86,7 +86,7 @@ def data_quality_report(
     Uses the library's own checks: plausible-range screening with unit
     conversion (:mod:`petrophys.preprocessing.standardization`), held
     readings (:func:`~petrophys.preprocessing.quality.find_held_readings`),
-    bad-hole flags (:func:`~petrophys.preprocessing.quality.generate_bad_hole_flags`),
+    bad-hole flags (:func:`~petrophys.preprocessing.quality.bad_hole_flags`),
     coverage, values pinned at a limit and duplicate curves.
 
     Raises
@@ -94,7 +94,7 @@ def data_quality_report(
     ValueError
         If a requested curve is missing or the window holds no samples.
     """
-    from petrophys.preprocessing.quality import find_held_readings, generate_bad_hole_flags
+    from petrophys.preprocessing.quality import find_held_readings, bad_hole_flags
     from petrophys.preprocessing.quality.bad_hole.flag_generator import _known_bit_size
     from petrophys.preprocessing.standardization.curve_standardizer import CurveStandardizer
 
@@ -273,7 +273,7 @@ def data_quality_report(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         hole = standardizer.standardize(well.depth_slice(top, bottom))
-    flags = generate_bad_hole_flags(hole, bit_size=_known_bit_size(hole), drho_alone=True)
+    flags = bad_hole_flags(hole, bit_size=_known_bit_size(hole), drho_alone=True)
     has_inputs = any(hole.get(name) is not None for name in ("CALI", "CAL", "DRHO"))
     if has_inputs:
         combined = np.asarray(flags["bad_hole"], dtype=bool)

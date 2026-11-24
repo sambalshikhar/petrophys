@@ -143,7 +143,7 @@ def histogram_equalization(
     return result
 
 
-def compute_histogram_statistics(
+def histogram_statistics(
     data: np.ndarray,
     n_bins: int = 100
 ) -> dict:

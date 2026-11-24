@@ -9,7 +9,7 @@ import numpy as np
 
 from petrophys.model.constants import DefaultParameters
 from petrophys.evaluation.net_pay.cutoffs import cutoff_family, cutoff_fraction
-from petrophys.evaluation.net_pay.flags import generate_net_flags
+from petrophys.evaluation.net_pay.flags import net_flags
 from petrophys._internal.analysis_helpers import cell_thickness, get_curve_data_depthwise
 from petrophys._internal.benchmark import reproducing_benchmark
 
@@ -198,7 +198,7 @@ class NetPayModule:
         vcl_cutoff = self._build_vcl_cutoff(len(phie))
         sw_cutoff = self._build_sw_cutoff(len(phie))
 
-        flags = generate_net_flags(
+        flags = net_flags(
             vcl, phie, sw,
             vcl_cutoff, phie_cutoff, sw_cutoff,
         )

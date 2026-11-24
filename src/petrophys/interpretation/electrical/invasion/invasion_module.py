@@ -159,7 +159,7 @@ class InvasionModule:
             raise ValueError("Deep resistivity curve not found")
 
         # Calculate ratio
-        ratio = calculate_invasion_ratio(rxo_data, rt_data)
+        ratio = invasion_ratio(rxo_data, rt_data)
         rxo_data, rt_data = np.broadcast_arrays(
             np.asarray(rxo_data, dtype=float),
             np.asarray(rt_data, dtype=float),
@@ -266,7 +266,7 @@ class InvasionModule:
         return well
 
 
-def calculate_invasion_ratio(
+def invasion_ratio(
     rxo: Union[float, np.ndarray],
     rt: Union[float, np.ndarray],
     rt_min: float = 0.0,
@@ -294,7 +294,7 @@ def calculate_invasion_ratio(
 
     Examples
     --------
-    >>> ratio = calculate_invasion_ratio(rxo_data, rt_data)
+    >>> ratio = invasion_ratio(rxo_data, rt_data)
     """
     rxo_arr, rt_arr = np.broadcast_arrays(
         np.asarray(rxo, dtype=float),

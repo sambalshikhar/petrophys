@@ -837,7 +837,7 @@ def correct_porosity_with_grain_density(
     return phid
 
 
-def estimate_archie_m(
+def archie_m(
     well,
     core: CoreData,
     rw: float,

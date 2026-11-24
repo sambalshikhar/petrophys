@@ -102,7 +102,7 @@ MINERAL_PROPERTIES: Dict[str, Dict[str, float]] = {
 }
 
 
-def get_mineral_properties(mineral: str, property_name: Optional[str] = None):
+def mineral_properties(mineral: str, property_name: Optional[str] = None):
     """
     Get properties for a mineral.
 
@@ -146,9 +146,9 @@ def get_mineral_properties(mineral: str, property_name: Optional[str] = None):
     return props
 
 
-def get_matrix_density(mineral: str) -> float:
+def matrix_density(mineral: str) -> float:
     """Get matrix density for a mineral in g/cm³."""
-    return get_mineral_properties(mineral, "density")
+    return mineral_properties(mineral, "density")
 
 
 def get_log_density(mineral: str) -> float:
@@ -162,7 +162,7 @@ def get_log_density(mineral: str) -> float:
     """
     from petrophys._internal.benchmark import reproducing_benchmark
 
-    density = get_mineral_properties(mineral, "density")
+    density = mineral_properties(mineral, "density")
     if reproducing_benchmark():
         return density
     try:
@@ -172,19 +172,19 @@ def get_log_density(mineral: str) -> float:
     return props.log_density if props.log_density is not None else density
 
 
-def get_matrix_slowness(mineral: str) -> float:
+def matrix_slowness(mineral: str) -> float:
     """Get matrix slowness for a mineral in μs/ft."""
-    return get_mineral_properties(mineral, "slowness")
+    return mineral_properties(mineral, "slowness")
 
 
-def get_matrix_nphi(mineral: str) -> float:
+def matrix_nphi(mineral: str) -> float:
     """Get matrix neutron response for a mineral in v/v."""
-    return get_mineral_properties(mineral, "nphi")
+    return mineral_properties(mineral, "nphi")
 
 
-def get_matrix_pef(mineral: str) -> float:
+def matrix_pef(mineral: str) -> float:
     """Get matrix PEF for a mineral in b/e."""
-    return get_mineral_properties(mineral, "pef")
+    return mineral_properties(mineral, "pef")
 
 
 class MineralEndpoints:
@@ -216,8 +216,8 @@ class MineralEndpoints:
         # Load properties
         self.endpoints = {}
         for mineral in minerals:
-            self.endpoints[mineral] = get_mineral_properties(mineral)
-        self.endpoints["fluid"] = get_mineral_properties(fluid)
+            self.endpoints[mineral] = mineral_properties(mineral)
+        self.endpoints["fluid"] = mineral_properties(fluid)
 
     def get_density(self, mineral: str) -> float:
         """Get density for a component."""

@@ -11,11 +11,11 @@ from petrophys.preprocessing.quality.bad_hole import (
     WashoutDetection,
     apply_quality_flags,
     detect_washout,
-    generate_bad_hole_flags,
-    generate_large_hole_flag,
-    generate_low_density_flag,
-    generate_pef_exclusion_flag,
-    generate_washout_flag,
+    bad_hole_flags,
+    large_hole_flag,
+    low_density_flag,
+    pef_exclusion_flag,
+    washout_flag,
     mask_bad_hole_curves,
 )
 from petrophys.preprocessing.quality.depth_match import DepthMatch, depth_match
@@ -42,11 +42,11 @@ __all__ = [
     # Bad Hole
     "WashoutDetection",
     "detect_washout",
-    "generate_bad_hole_flags",
-    "generate_washout_flag",
-    "generate_large_hole_flag",
-    "generate_low_density_flag",
-    "generate_pef_exclusion_flag",
+    "bad_hole_flags",
+    "washout_flag",
+    "large_hole_flag",
+    "low_density_flag",
+    "pef_exclusion_flag",
     "mask_bad_hole_curves",
     "apply_quality_flags",
     # Depth alignment

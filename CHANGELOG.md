@@ -209,7 +209,7 @@ their raw logs.
     to 20, and its Mount Messenger sands, about 86 API, then read 62 % clay.
     The "geolink" profile bounds every baseline.
   - `NMRData.from_las(t2_cutoff=...)` beats a T2CUTOFF curve in the file.
-  - `calculate_zone_averages(use_arithmetic=...)` is applied.
+  - `zone_averages(use_arithmetic=...)` is applied.
   - The reduced quartz-calcite fallback of the version 2 solve keeps the
     caller's `solver_options`.
   - `read_dlis` applies `standardize` to a single frame, and reads a frame
@@ -431,7 +431,7 @@ tools page.
 - Public `apparent_water_resistivity` (Rwa) and `sw_from_rwa`; apparent
   matrix density, slowness and volumetric PE (`apparent_matrix_density`,
   `apparent_matrix_slowness`, `apparent_matrix_volumetric_pe`,
-  `apparent_total_porosity`); `calculate_winland_r35` and
+  `apparent_total_porosity`); `winland_r35` and
   `classify_pore_throat`.
 - `zone_statistics`: statistics and percentiles of any curves over any zones
   (tops file, table or intervals).
@@ -741,7 +741,7 @@ wherever the package used the function.
   factor before the 0-0.5 limits (Hilchie, 1978). Oil and heavy oil have a
   hydrogen index of 1.0, so the opt-in hydrocarbon correction leaves NPHI
   unchanged for oil. The mineral table's clay U is 9.81 b/cm3 (3.7 x 2.65).
-  `calculate_elastic_properties` returns floats for scalar inputs, and
+  `elastic_properties` returns floats for scalar inputs, and
   `ArchieParameterDefaults` reads "porous_limestone" as limestone and "gap"
   as generic clean rock.
 
@@ -776,10 +776,10 @@ wherever the package used the function.
 - Temperature helpers accept any recognised unit label, such as "degF",
   "deg C" or "K", and raise `ValueError` on an unknown one:
   `arps_equation`, `correct_resistivity_temperature`,
-  `calculate_temperature_gradient`, `TemperatureProfile` and its `from_bht`,
+  `temperature_gradient`, `TemperatureProfile` and its `from_bht`,
   `from_gradient_c_per_km` and `from_two_points`, `rw_from_salinity`,
-  `salinity_from_rw`, `rw_from_ssp` and `estimate_nacl_resistivity`.
-  `estimate_gradient_from_bht` and `rw_at_reference_temperature` convert
+  `salinity_from_rw`, `rw_from_ssp` and `nacl_resistivity`.
+  `gradient_from_bht` and `rw_at_reference_temperature` convert
   their default reference temperatures (68 and 75 degF) to the caller's
   unit, `RwModule` and `RmfModule` read TEMP and TMPC by their unit, and
   `convert_units` and `convert_curve_units` convert between temperature
@@ -928,7 +928,7 @@ wherever the package used the function.
   `water_contact_from_fwl` places the water contact above the FWL by the
   entry-pressure height. The search for the FWL starts at the shallowest
   sample used, and a 95% range cut by the edge of the search is flagged.
-- The volumetric functions (`calculate_ooip`, `calculate_ogip`,
+- The volumetric functions (`ooip`, `ogip`,
   `calculate_hcpv`) and the stand-alone net-pay functions read a porosity,
   saturation or cutoff above 1, up to 100, as percent, and refuse negative
   areas and thicknesses, values above 100 and non-positive formation volume
@@ -959,7 +959,7 @@ wherever the package used the function.
   width (`t2_fraction_below_cutoff`). `partial_bins=False` keeps the
   whole-bin split; with `cutoff_ms=32.0` it matches the MBVI supplied with
   the Phillips data set.
-- `calculate_hcpv_from_well` converts metric net pay to feet, weights
+- `hcpv_from_well` converts metric net pay to feet, weights
   porosity by thickness and SW by pore volume, and raises `ValueError`
   without NET_PAY, PHIE or SW.
 
@@ -994,7 +994,7 @@ wherever the package used the function.
   depths, so mixed sampling rates add up and data gaps count for nothing:
   `NetPayModule` (gross is the sum of the cells), `summarize_pay`, the
   sensitivity tools, `calculate_net_gross`, the zone and formation
-  summaries, `calculate_hcpv_from_well`, `flag_intervals` (which by default
+  summaries, `hcpv_from_well`, `flag_intervals` (which by default
   joins only samples whose cells touch) and, under `"current"`,
   `result.summary()`.
 
@@ -1054,7 +1054,7 @@ wherever the package used the function.
 - Library functions: `classify_porosity` and `classify_sw` read values as
   fractions unless `percent=True`, and warn when fractions look like percent
   (porosity above 1, SW above 2), so an unclipped SW of 1.02 is
-  WATER_BEARING. `get_vcl_quality_code` gives 0 and `get_invasion_type` None
+  WATER_BEARING. `vcl_quality_code` gives 0 and `get_invasion_type` None
   for a value that is not finite; `is_clean_sand` and `is_shale` default to
   the VCL classes (`threshold=None`). `InvasionModule` counts its
   conductive, minimal and resistive percentages with the classes of its
@@ -1113,7 +1113,7 @@ wherever the package used the function.
 - `pp.export_context(result)` without an output path returns the context as
   a dict; `layout="package"` (CLI `--layout package`) writes the context
   package of a folder of wells.
-- `calculate_pore_volume_weighted_sw`
+- `pore_volume_weighted_sw`
   (`petrophys.evaluation.summaries`) gives the pore-volume-weighted Sw over
   net pay, sum(Sw PHIE h) / sum(PHIE h), with PHIE_CC preferred. The
   formation and zone tables and `summarize_pay` (`avg_sw_pay`) report this
@@ -1171,7 +1171,7 @@ wherever the package used the function.
     `bvi_from_bins` and `ffi_from_bins`, and `tvd_curve` on
     `saturation_height_from_logs`;
   - net pay and screening: `steps.net_pay(exclude_non_reservoir=...)`,
-    `generate_bad_hole_flags(drho_alone=...)`, which also flags washout from
+    `bad_hole_flags(drho_alone=...)`, which also flags washout from
     |DRHO| alone where the caliper test cannot run (no caliper curve or no
     bit size), and `plausible_ranges` on `standardize_curves` and
     `CurveStandardizer`;

@@ -34,7 +34,7 @@ DEFAULT_NON_PAY_FLUIDS = frozenset(
 )
 
 
-def generate_net_flags(
+def net_flags(
     vcl: np.ndarray,
     phie: np.ndarray,
     sw: np.ndarray,
@@ -87,7 +87,7 @@ def generate_net_flags(
     }
 
 
-def generate_volumetric_pay_flag(
+def volumetric_pay_flag(
     fluid_type: Union[str, np.ndarray],
     reservoir_flag: Optional[Union[float, np.ndarray]] = None,
     hydrocarbon_fluids: Iterable[str] = DEFAULT_HYDROCARBON_FLUIDS,
@@ -151,7 +151,7 @@ def add_volumetric_pay_flag(
 ) -> np.ndarray:
     """Generate and add ``PAY_FLAG_VOLUMETRIC`` to a well."""
     flag = np.asarray(
-        generate_volumetric_pay_flag(
+        volumetric_pay_flag(
             fluid_type,
             reservoir_flag=reservoir_flag,
             **kwargs,

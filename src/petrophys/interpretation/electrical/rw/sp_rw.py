@@ -43,7 +43,7 @@ def calculate_ssp(
     return sp - sp_shale
 
 
-def estimate_sp_lines(sp: Union[float, np.ndarray]) -> Tuple[float, float]:
+def sp_lines(sp: Union[float, np.ndarray]) -> Tuple[float, float]:
     """
     Estimate clean-sand and shale SP lines from the SP log itself.
 

@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import numpy as np
 
-from petrophys.interpretation.electrical.rw.sp_rw import estimate_sp_lines, rw_from_sp, rw_from_rxo_rt
+from petrophys.interpretation.electrical.rw.sp_rw import sp_lines, rw_from_sp, rw_from_rxo_rt
 from petrophys.interpretation.electrical.rw.salinity_rw import rw_from_salinity
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 from petrophys._internal.benchmark import reproducing_benchmark
@@ -232,9 +232,9 @@ class RwModule:
                 clean_sp = sp_data[clean_mask] if clean_mask is not None else sp_data
                 clean_sp = clean_sp[np.isfinite(clean_sp)]
                 if clean_sp.size > 0:
-                    sp_clean, _ = estimate_sp_lines(clean_sp)
+                    sp_clean, _ = sp_lines(clean_sp)
                 else:
-                    sp_clean, _ = estimate_sp_lines(sp_data)
+                    sp_clean, _ = sp_lines(sp_data)
 
                 if sp_shale is None:
                     if shale_mask is not None:
@@ -243,7 +243,7 @@ class RwModule:
                         if shale_sp.size > 0:
                             sp_shale = float(np.nanmedian(shale_sp))
                     if sp_shale is None:
-                        _, sp_shale = estimate_sp_lines(sp_data)
+                        _, sp_shale = sp_lines(sp_data)
 
                 ssp = sp_clean - sp_shale
                 rw = rw_from_sp(sp_clean, sp_shale, rmf, temperature)

@@ -153,7 +153,7 @@ def _benchmark_units() -> bool:
     return _BENCHMARK_UNITS.get() or reproducing_benchmark()
 
 
-def get_conversion_factor(from_unit: str, to_unit: str) -> Optional[float]:
+def conversion_factor(from_unit: str, to_unit: str) -> Optional[float]:
     """
     Get conversion factor between units.
 
@@ -173,7 +173,7 @@ def get_conversion_factor(from_unit: str, to_unit: str) -> Optional[float]:
 
 
 def _conversion_factor(from_unit: str, to_unit: str, *, spellings: bool) -> Optional[float]:
-    """:func:`get_conversion_factor`, with :data:`UNIT_SPELLINGS` only if ``spellings``."""
+    """:func:`conversion_factor`, with :data:`UNIT_SPELLINGS` only if ``spellings``."""
     from_unit = from_unit.lower().strip()
     to_unit = to_unit.lower().strip()
     if spellings:
@@ -232,7 +232,7 @@ def convert_units(
     ValueError
         If no conversion is available
     """
-    factor = get_conversion_factor(from_unit, to_unit)
+    factor = conversion_factor(from_unit, to_unit)
     if factor is None:
         if _converts_temperature(from_unit, to_unit):
             return UnitConverter.temperature(data, from_unit, to_unit)
@@ -271,7 +271,7 @@ def convert_curve_units(
     if curve.unit.lower() == to_unit.lower():
         return curve
 
-    factor = get_conversion_factor(curve.unit, to_unit)
+    factor = conversion_factor(curve.unit, to_unit)
     if factor is None:
         if not _converts_temperature(curve.unit, to_unit):
             raise ValueError(
@@ -315,7 +315,7 @@ def standardize_units(
         return curve if inplace else curve.copy()
     unit = str(curve.unit or "").strip()
     if unit.lower() != standard_unit.lower() and (
-        get_conversion_factor(unit, standard_unit) is None
+        conversion_factor(unit, standard_unit) is None
         and not _converts_temperature(unit, standard_unit)
     ):
         warnings.warn(
@@ -389,7 +389,7 @@ def standardize_resistivity_units(
         (converted_data, "ohm.m"), or (data, current_unit) when unconvertible
     """
     data = np.asarray(data, dtype=np.float64)
-    factor = get_conversion_factor(current_unit, "ohm.m")
+    factor = conversion_factor(current_unit, "ohm.m")
     if factor is None:
         warnings.warn(
             f"Resistivity unit {current_unit!r} cannot be converted to 'ohm.m'; "

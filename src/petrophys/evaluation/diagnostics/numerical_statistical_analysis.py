@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Sequence
 import numpy as np
 from scipy.cluster.vq import ClusterError, kmeans2
 
-from petrophys.interpretation.rock_physics.elastic import calculate_elastic_properties
+from petrophys.interpretation.rock_physics.elastic import elastic_properties
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys._internal.analysis_helpers import (
     CategoryAnalysisResult,
@@ -213,7 +213,7 @@ class NumericalStatisticalAnalysis:
         electrofacies = np.full(n_samples, np.nan, dtype=float)
 
         if rhob is not None and dtc is not None:
-            elastic = calculate_elastic_properties(rhob, dtc, dts)
+            elastic = elastic_properties(rhob, dtc, dts)
             acoustic_impedance = np.clip(elastic.acoustic_impedance, 1e6, 30e6)
             poisson_ratio = elastic.poisson_ratio
             young_mod = elastic.young_mod_gpa

@@ -6229,7 +6229,7 @@ class DynamicWorkflow:
         return trace
 
     def _step_bad_hole(self, well: "Well") -> StepResult:
-        from petrophys.preprocessing.quality.bad_hole.flag_generator import generate_bad_hole_flags
+        from petrophys.preprocessing.quality.bad_hole.flag_generator import bad_hole_flags
 
         trace = StepResult(step="bad_hole", success=True, method="caliper_drho_flags")
         inputs = []
@@ -6277,9 +6277,9 @@ class DynamicWorkflow:
             representative_bit_size = bit_size = bit_size_source = None
             bit_size_unique_values = []
             trace.decisions.append("No BS curve or header bit size found; CALI-BS and large-hole criteria skipped")
-            flags = generate_bad_hole_flags(well, bit_size=None, drho_alone=True, **self._bad_hole_thresholds(trace))
+            flags = bad_hole_flags(well, bit_size=None, drho_alone=True, **self._bad_hole_thresholds(trace))
         else:
-            flags = generate_bad_hole_flags(well, bit_size=bit_size, **self._bad_hole_thresholds(trace))
+            flags = bad_hole_flags(well, bit_size=bit_size, **self._bad_hole_thresholds(trace))
         well.add_curve("BAD_HOLE", flags["bad_hole"].astype(float), "", "Bad Hole Flag")
         if self._benchmark:
             # The eval package carried the flag twice, under both mnemonics.
@@ -6303,7 +6303,7 @@ class DynamicWorkflow:
         return float((self.config.bad_hole or {}).get(key, defaults[key]))
 
     def _bad_hole_thresholds(self, trace: StepResult) -> Dict[str, float]:
-        """The ``bad_hole`` thresholds set, as :func:`generate_bad_hole_flags` arguments, recorded in ``trace``."""
+        """The ``bad_hole`` thresholds set, as :func:`bad_hole_flags` arguments, recorded in ``trace``."""
         names = {"cali": "cali_threshold", "drho": "drho_threshold", "large_hole": "large_hole_threshold"}
         given = dict(self.config.bad_hole or {})
         if given:
@@ -6325,7 +6325,7 @@ class DynamicWorkflow:
         how many, and a warning says where a caliper reading has no bit size.
         The thresholds are those of ``bad_hole`` where it sets them.
         """
-        from petrophys.preprocessing.quality.bad_hole.flag_generator import generate_bad_hole_flags
+        from petrophys.preprocessing.quality.bad_hole.flag_generator import bad_hole_flags
 
         n_samples = well.n_samples
         logged_bs, _, _ = get_curve_data_depthwise(well, ["BS"])
@@ -6352,7 +6352,7 @@ class DynamicWorkflow:
         has_cali = np.zeros(n_samples, dtype=bool) if cali is None else np.isfinite(cali)
         has_drho = np.zeros(n_samples, dtype=bool) if drho is None else np.isfinite(drho)
         caliper_test = has_cali & known
-        flags = generate_bad_hole_flags(well, bit_size=bit_size, drho_alone=True, **self._bad_hole_thresholds(trace))
+        flags = bad_hole_flags(well, bit_size=bit_size, drho_alone=True, **self._bad_hole_thresholds(trace))
         bad_hole = np.asarray(flags["bad_hole"], dtype=bool)
         assessed = caliper_test | has_drho | np.asarray(flags["large_hole"], dtype=bool)
 
@@ -7978,7 +7978,7 @@ class DynamicWorkflow:
     def _step_rw(self, well: "Well") -> StepResult:
         from petrophys.interpretation.electrical.rw.rw_module import RwModule
         from petrophys.interpretation.electrical.rw.salinity_rw import rw_from_salinity, salinity_from_rw
-        from petrophys.interpretation.electrical.rw.sp_rw import estimate_sp_lines, rw_from_sp
+        from petrophys.interpretation.electrical.rw.sp_rw import sp_lines, rw_from_sp
 
         trace = StepResult(step="rw", success=True)
         decisions = []
@@ -8198,9 +8198,9 @@ class DynamicWorkflow:
                         clean_sp = sp_data[clean_mask] if clean_mask is not None else sp_data
                         clean_sp = clean_sp[np.isfinite(clean_sp)]
                         if clean_sp.size > 0:
-                            sp_clean, _ = estimate_sp_lines(clean_sp)
+                            sp_clean, _ = sp_lines(clean_sp)
                         else:
-                            sp_clean, _ = estimate_sp_lines(sp_data)
+                            sp_clean, _ = sp_lines(sp_data)
 
                         if shale_mask is not None:
                             shale_sp = sp_data[shale_mask]
@@ -8208,9 +8208,9 @@ class DynamicWorkflow:
                             if shale_sp.size > 0:
                                 sp_shale = float(np.nanmedian(shale_sp))
                             else:
-                                _, sp_shale = estimate_sp_lines(sp_data)
+                                _, sp_shale = sp_lines(sp_data)
                         else:
-                            _, sp_shale = estimate_sp_lines(sp_data)
+                            _, sp_shale = sp_lines(sp_data)
                         if not self._reproducing_benchmark:
                             # sp_max and sp_min are the clean-sand and shale lines.
                             if self.config.sp_max is not None:

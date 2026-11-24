@@ -7,7 +7,7 @@ from shallow and deep resistivity measurements.
 
 from petrophys.interpretation.electrical.invasion.invasion_module import (
     InvasionModule,
-    calculate_invasion_ratio,
+    invasion_ratio,
 )
 from petrophys.interpretation.electrical.invasion.invasion_classification import (
     classify_invasion,
@@ -39,7 +39,7 @@ __all__ = [
     "invert_well_invasion",
     "read_tool_responses",
     "InvasionModule",
-    "calculate_invasion_ratio",
+    "invasion_ratio",
     "classify_invasion",
     "InvasionType",
     "DEPTH_OF_INVESTIGATION",

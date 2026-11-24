@@ -193,7 +193,7 @@ class PermeabilityResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-def estimate_hc_swirr(
+def hc_swirr(
     sw: np.ndarray,
     rdep: np.ndarray,
     resflag: np.ndarray,
@@ -219,7 +219,7 @@ def estimate_hc_swirr(
     return float(fallback_swirr), n_samples, "default_0.20"
 
 
-def estimate_swirr_app(
+def swirr_app(
     sw: np.ndarray,
     rdep: np.ndarray,
     resflag: np.ndarray,
@@ -236,7 +236,7 @@ def estimate_swirr_app(
     log so downstream exports can audit which Swirr value permeability used.
     """
     sw = np.asarray(sw, dtype=float)
-    swirr, n_samples, source = estimate_hc_swirr(
+    swirr, n_samples, source = hc_swirr(
         sw,
         rdep,
         resflag,
@@ -248,7 +248,7 @@ def estimate_swirr_app(
     return np.full_like(sw, swirr, dtype=float), swirr, n_samples, source
 
 
-def estimate_apparent_swirr(
+def apparent_swirr(
     phi: np.ndarray,
     sw: np.ndarray,
     vcl: Optional[np.ndarray] = None,
@@ -259,7 +259,7 @@ def estimate_apparent_swirr(
     Buckles-style Swirr estimate for direct callers.
 
     The dynamic workflow does not use this estimate; it uses
-    ``estimate_hc_swirr`` through ``resolve_swirr``.
+    ``hc_swirr`` through ``resolve_swirr``.
     """
     phi = np.asarray(phi, dtype=float)
     sw = np.asarray(sw, dtype=float)
@@ -428,7 +428,7 @@ def _resolve_swirr_details(
                 "swirr_app": curve,
                 "swirr_app_method": "buckles_bvw_irr",
             }
-    swirr_app, swirr, n_samples, source = estimate_swirr_app(
+    apparent, swirr, n_samples, source = swirr_app(
         sw,
         rdep,
         resflag,
@@ -443,7 +443,7 @@ def _resolve_swirr_details(
         "min_samples": 10,
         "hc_mask_samples": n_samples,
         "fallback_swirr": 0.20,
-        "swirr_app": swirr_app,
+        "swirr_app": apparent,
         "swirr_app_method": source,
     }
 

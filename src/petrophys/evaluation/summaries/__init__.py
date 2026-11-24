@@ -10,13 +10,13 @@ from petrophys.evaluation.summaries.zone_summary import (
 from petrophys.evaluation.summaries.net_gross import (
     NetGrossResult,
     calculate_net_gross,
-    calculate_ntg_by_zone,
+    ntg_by_zone,
 )
 from petrophys.evaluation.summaries.averages import (
-    calculate_zone_averages,
-    calculate_pay_averages,
-    calculate_weighted_averages,
-    calculate_pore_volume_weighted_sw,
+    zone_averages,
+    pay_averages,
+    weighted_averages,
+    pore_volume_weighted_sw,
 )
 from petrophys.evaluation.summaries.statistics import (
     curve_statistics,
@@ -32,8 +32,8 @@ from petrophys.evaluation.summaries.ranking import (
 from petrophys.evaluation.volumetrics.hydrocarbon_pore_volume import (
     HCPVResult,
     calculate_hcpv,
-    calculate_ooip,
-    calculate_ogip,
+    ooip,
+    ogip,
 )
 from petrophys.evaluation.summaries.formation_analysis import (
     Formation,
@@ -61,17 +61,17 @@ __all__ = [
     # Net gross
     "NetGrossResult",
     "calculate_net_gross",
-    "calculate_ntg_by_zone",
+    "ntg_by_zone",
     # Averages
-    "calculate_zone_averages",
-    "calculate_pay_averages",
-    "calculate_weighted_averages",
-    "calculate_pore_volume_weighted_sw",
+    "zone_averages",
+    "pay_averages",
+    "weighted_averages",
+    "pore_volume_weighted_sw",
     # HCPV
     "HCPVResult",
     "calculate_hcpv",
-    "calculate_ooip",
-    "calculate_ogip",
+    "ooip",
+    "ogip",
     # Formation analysis
     "Formation",
     "FormationSummary",

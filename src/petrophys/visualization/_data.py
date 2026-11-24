@@ -7,7 +7,7 @@ import numpy as np
 from petrophys._internal.analysis_helpers import curve_source_mnemonic
 from petrophys._internal.validation import numeric_array
 from petrophys.exceptions import DataQualityWarning
-from petrophys.preprocessing.standardization.unit_converter import get_conversion_factor
+from petrophys.preprocessing.standardization.unit_converter import conversion_factor
 
 
 def convert_values(values, source_unit, target_unit, name):
@@ -21,7 +21,7 @@ def convert_values(values, source_unit, target_unit, name):
         warnings.warn(f"{name}: no unit is declared; assuming {target} for this plot.",
                       DataQualityWarning, stacklevel=2)
         return values
-    factor = get_conversion_factor(source, target)
+    factor = conversion_factor(source, target)
     permeability = {"md": 1., "millidarcy": 1., "millidarcies": 1.,
                     "d": 1000., "darcy": 1000., "darcies": 1000.}
     if factor is None and source.lower() in permeability and target.lower() in permeability:

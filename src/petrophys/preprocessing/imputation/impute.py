@@ -25,7 +25,7 @@ from petrophys.preprocessing.standardization.curve_standardizer import (
     CURVE_PLAUSIBLE_RANGES,
     POROSITY_FRACTION_CURVES,
 )
-from petrophys.preprocessing.standardization.unit_converter import get_conversion_factor
+from petrophys.preprocessing.standardization.unit_converter import conversion_factor
 from petrophys.preprocessing.standardization.user_aliases import user_standard_name
 
 if TYPE_CHECKING:
@@ -77,7 +77,7 @@ def _standard_values(well: "Well", mnemonic: str, standard: str) -> Tuple[np.nda
     unit = str(getattr(curve, "unit", "") or "").strip()
     standard_unit = str(get_standard_unit(standard) or "")
     if unit and standard_unit:
-        conversion = get_conversion_factor(unit, standard_unit)
+        conversion = conversion_factor(unit, standard_unit)
         if conversion is None:
             raise ValueError(
                 f"{well.name}: {mnemonic} is in {unit!r}, which cannot be converted to {standard_unit!r}"

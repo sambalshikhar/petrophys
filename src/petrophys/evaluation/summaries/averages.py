@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from petrophys.model.well import Well
 
 
-def calculate_zone_averages(
+def zone_averages(
     well: "Well",
     top_depth: float,
     bottom_depth: float,
@@ -116,7 +116,7 @@ def calculate_zone_averages(
     return results
 
 
-def calculate_pay_averages(
+def pay_averages(
     well: "Well",
     top_depth: Optional[float] = None,
     bottom_depth: Optional[float] = None,
@@ -148,7 +148,7 @@ def calculate_pay_averages(
         :func:`~petrophys.evaluation.summaries.zone_summary.pay_average_data`);
         permeability (PERM, PERM_CC, K, PERMEABILITY) is a geometric mean.
         ``SW`` is weighted by thickness here;
-        :func:`calculate_pore_volume_weighted_sw` gives the
+        :func:`pore_volume_weighted_sw` gives the
         pore-volume-weighted value of the formation summaries.
 
     Returns
@@ -179,7 +179,7 @@ def calculate_pay_averages(
             warnings.warn(
                 f"Net-pay flag curve {net_pay_curve!r} is not on the well, so there is no pay to "
                 "average over: the averages are NaN. Run the net-pay step, or use "
-                "calculate_zone_averages for averages over the whole interval.",
+                "zone_averages for averages over the whole interval.",
                 UserWarning, stacklevel=2,
             )
             return {name: np.nan for name in curves}
@@ -211,7 +211,7 @@ def calculate_pay_averages(
     return results
 
 
-def calculate_weighted_averages(
+def weighted_averages(
     well: "Well",
     curves: List[str],
     weight_curve: str = "PHIE",
@@ -304,7 +304,7 @@ def calculate_weighted_averages(
     return results
 
 
-def calculate_pore_volume_weighted_sw(
+def pore_volume_weighted_sw(
     well: "Well",
     top_depth: Optional[float] = None,
     bottom_depth: Optional[float] = None,

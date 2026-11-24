@@ -133,7 +133,7 @@ def calculate_net_gross(
     )
 
 
-def calculate_ntg_by_zone(
+def ntg_by_zone(
     well: "Well",
     zones: List[Dict[str, Union[str, float]]]
 ) -> Dict[str, NetGrossResult]:
@@ -169,7 +169,7 @@ def calculate_ntg_by_zone(
     return results
 
 
-def create_ntg_table(
+def ntg_table(
     well: "Well",
     zones: List[Dict[str, Union[str, float]]]
 ) -> str:
@@ -188,7 +188,7 @@ def create_ntg_table(
     str
         Formatted table string
     """
-    results = calculate_ntg_by_zone(well, zones)
+    results = ntg_by_zone(well, zones)
 
     # Header
     lines = [

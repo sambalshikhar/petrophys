@@ -23,7 +23,7 @@ def _depth_unit_is_metres(depth_unit: str) -> bool:
     return normalize_depth_unit(depth_unit, strict=True) == "m"
 
 
-def calculate_temperature_gradient(
+def temperature_gradient(
     temp1: float,
     depth1: float,
     temp2: float,
@@ -63,7 +63,7 @@ def calculate_temperature_gradient(
 
     Examples
     --------
-    >>> gradient = calculate_temperature_gradient(
+    >>> gradient = temperature_gradient(
     ...     temp1=68, depth1=0,
     ...     temp2=200, depth2=10000
     ... )
@@ -92,7 +92,7 @@ def calculate_temperature_gradient(
     return gradient
 
 
-def estimate_gradient_from_bht(
+def gradient_from_bht(
     bht: float,
     td: float,
     surface_temp: Optional[float] = None,
@@ -125,7 +125,7 @@ def estimate_gradient_from_bht(
         surface_temp = DefaultParameters.SURFACE_TEMPERATURE_F
         if temperature_unit(bht_unit, strict=True) != "F":
             surface_temp = UnitConverter.temperature(surface_temp, "F", bht_unit)
-    return calculate_temperature_gradient(
+    return temperature_gradient(
         temp1=surface_temp,
         depth1=0,
         temp2=bht,

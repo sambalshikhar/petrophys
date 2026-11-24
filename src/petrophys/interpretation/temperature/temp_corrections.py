@@ -160,7 +160,7 @@ def convert_rw_temperature(
     return correct_resistivity_temperature(rw, from_temp, to_temp, temp_unit)
 
 
-def estimate_nacl_resistivity(
+def nacl_resistivity(
     salinity_ppm: float,
     temperature: float,
     temp_unit: str = "F"

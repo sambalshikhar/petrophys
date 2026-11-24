@@ -2037,7 +2037,7 @@ def _display_well(well: "Well", interpreted: bool = False) -> "Well":
     )
     display._curves.update(depth_curves)
     # An imputed companion (NPHI_IMPUTED) is converted as its measured curve was.
-    from petrophys.preprocessing.standardization.unit_converter import get_conversion_factor
+    from petrophys.preprocessing.standardization.unit_converter import conversion_factor
 
     for name, curve in display._curves.items():
         suffix = next((s for s in (IMPUTED_SUFFIX, PREDICTED_SUFFIX) if name.upper().endswith(s)), None)
@@ -2046,7 +2046,7 @@ def _display_well(well: "Well", interpreted: bool = False) -> "Well":
             continue
         old_unit, new_unit = units_before.get(base.mnemonic, ""), str(base.unit or "").strip()
         if old_unit != new_unit and str(curve.unit or "").strip() == old_unit:
-            factor = get_conversion_factor(old_unit, new_unit) if old_unit else 1.0
+            factor = conversion_factor(old_unit, new_unit) if old_unit else 1.0
             if factor is not None:
                 curve._data = np.asarray(curve.data, dtype=float) * factor
                 curve.unit = new_unit

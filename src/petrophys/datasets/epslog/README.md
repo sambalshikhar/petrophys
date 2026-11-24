@@ -69,7 +69,7 @@ Mg is absent, so Mg-dependent ratios remain missing.
   UCS test. The report lists core VP/VS, but these are absent from the scanner
   LAS. Static Young's modulus and static Poisson ratio are absent.
 - Composite RHOB is g/cm3, DTC/DTS are us/ft. Use the library's
-  `calculate_elastic_properties` for dynamic well-log properties.
+  `elastic_properties` for dynamic well-log properties.
   Missing DTS must not be replaced with invented shear measurements.
 - `NPHI_CH` and spectral curves suffixed `_CH` are cased-hole products.
   Preserve `CH_FLAG-DTC` and `CH_FLAG-DTS`; a missing flag does not establish

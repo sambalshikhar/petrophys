@@ -216,7 +216,7 @@ The rest of the reference documents what these calls are built from.""",
         "standardizes curves and screens value ranges itself; the functions "
         "here let you run and inspect each step.",
         key="petrophys.preprocessing.standardization.standardize_curves "
-        "petrophys.preprocessing.quality.generate_bad_hole_flags "
+        "petrophys.preprocessing.quality.bad_hole_flags "
         "petrophys.preprocessing.normalization.normalize_log "
         "petrophys.preprocessing.imputation.impute",
         items=[
@@ -246,8 +246,8 @@ The rest of the reference documents what these calls are built from.""",
                 groups=[
                     (
                         "Bad hole and washout",
-                        "generate_bad_hole_flags generate_washout_flag generate_large_hole_flag "
-                        "generate_low_density_flag generate_pef_exclusion_flag "
+                        "bad_hole_flags washout_flag large_hole_flag "
+                        "low_density_flag pef_exclusion_flag "
                         "mask_bad_hole_curves apply_quality_flags detect_washout "
                         "WashoutDetection WellboreQC",
                     ),
@@ -286,7 +286,7 @@ The rest of the reference documents what these calls are built from.""",
                     ("Temperature profile", "temperature_profile TemperatureProfile"),
                     (
                         "Geothermal gradient",
-                        "estimate_gradient_from_bht calculate_temperature_gradient "
+                        "gradient_from_bht temperature_gradient "
                         "gradient_c_per_km_to_fahrenheit_per_100ft gradient_to_celsius_per_km",
                     ),
                     (
@@ -371,7 +371,7 @@ The rest of the reference documents what these calls are built from.""",
                             (
                                 "Mineral solvers",
                                 "MultiMineralSolver MultiMineralSolverV1 solve_two_mineral solve_three_mineral "
-                                "get_mineral_properties",
+                                "mineral_properties",
                             ),
                             (
                                 "Crossplot data",
@@ -420,7 +420,7 @@ The rest of the reference documents what these calls are built from.""",
                             (
                                 "Rw from the SP",
                                 "rw_from_sp sp_rw_in_window SpRwEstimate rw_from_ssp "
-                                "calculate_ssp estimate_sp_lines",
+                                "calculate_ssp sp_lines",
                             ),
                             (
                                 "Salinity and temperature",
@@ -531,8 +531,8 @@ The rest of the reference documents what these calls are built from.""",
                     ("Equations", "timur coates_denoo wyllie_rose lith_vcl_permeability"),
                     (
                         "Irreducible water saturation",
-                        "resolve_swirr estimate_hc_swirr estimate_swirr_app "
-                        "estimate_apparent_swirr",
+                        "resolve_swirr hc_swirr swirr_app "
+                        "apparent_swirr",
                     ),
                     ("Impermeable zones", "flag_impermeable"),
                 ],
@@ -662,7 +662,7 @@ The rest of the reference documents what these calls are built from.""",
                                         "fit_log_poro_perm_transform_from_correction "
                                         "apply_poro_perm PoroPermTransform",
                                     ),
-                                    ("Archie exponent from core", "estimate_archie_m"),
+                                    ("Archie exponent from core", "archie_m"),
                                     (
                                         "Depth matching",
                                         "find_core_depth_shift shift_core_depths "
@@ -708,7 +708,7 @@ The rest of the reference documents what these calls are built from.""",
                 "Net pay",
                 key="petrophys.evaluation.net_pay.calculate_net_pay "
                 "petrophys.evaluation.net_pay.summarize_pay "
-                "petrophys.evaluation.net_pay.generate_net_flags "
+                "petrophys.evaluation.net_pay.net_flags "
                 "petrophys.evaluation.net_pay.standard_cutoffs",
                 sections=[
                     Section(
@@ -723,7 +723,7 @@ The rest of the reference documents what these calls are built from.""",
                             ("Cutoffs", "standard_cutoffs default_cutoffs Cutoffs"),
                             (
                                 "Flags",
-                                "generate_net_flags generate_volumetric_pay_flag "
+                                "net_flags volumetric_pay_flag "
                                 "add_volumetric_pay_flag",
                             ),
                         ],
@@ -765,12 +765,12 @@ The rest of the reference documents what these calls are built from.""",
                             ),
                             (
                                 "Net to gross",
-                                "calculate_net_gross calculate_ntg_by_zone NetGrossResult",
+                                "calculate_net_gross ntg_by_zone NetGrossResult",
                             ),
                             (
                                 "Averages",
-                                "calculate_zone_averages calculate_pay_averages "
-                                "calculate_weighted_averages calculate_pore_volume_weighted_sw",
+                                "zone_averages pay_averages "
+                                "weighted_averages pore_volume_weighted_sw",
                             ),
                         ],
                     ),

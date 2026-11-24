@@ -18,7 +18,7 @@ from petrophys._internal.advice import Advice
 from petrophys._internal.analysis_helpers import cell_thickness, get_curve_data_depthwise
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.evaluation.net_pay.cutoffs import cutoff_fraction, standard_cutoffs
-from petrophys.evaluation.net_pay.flags import generate_net_flags
+from petrophys.evaluation.net_pay.flags import net_flags
 
 VCL_CURVES = ("VCL", "VCLAY", "VSH")
 PHIE_CURVES = ("PHIE_CC", "PHIE", "PHIT")
@@ -175,7 +175,7 @@ def resolve_cutoffs(vcl_cutoff, phie_cutoff, sw_cutoff, lithology):
 def pay_summary_from_arrays(vcl, phie, sw, dz, cutoffs, depth_unit="") -> PaySummary:
     """Summarize already-windowed arrays (internal helper)."""
     with np.errstate(invalid="ignore"):
-        flags = generate_net_flags(
+        flags = net_flags(
             vcl, phie, sw,
             cutoffs["vcl_cutoff"], cutoffs["phie_cutoff"], cutoffs["sw_cutoff"],
         )
@@ -235,7 +235,7 @@ def summarize_pay(
 ) -> PaySummary:
     """Net pay, net-to-gross, pay averages and hydrocarbon pore thickness.
 
-    Flags follow :func:`~petrophys.evaluation.net_pay.generate_net_flags`:
+    Flags follow :func:`~petrophys.evaluation.net_pay.net_flags`:
     net rock is ``VCL < vcl_cutoff``, net reservoir adds
     ``PHIE > phie_cutoff`` and net pay adds ``Sw < sw_cutoff``. A sample
     exactly at a cutoff fails that test, and samples with a missing input

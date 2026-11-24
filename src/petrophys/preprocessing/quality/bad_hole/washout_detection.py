@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from petrophys.model.constants import DefaultParameters
-from petrophys.preprocessing.quality.bad_hole.flag_generator import generate_bad_hole_flags
+from petrophys.preprocessing.quality.bad_hole.flag_generator import bad_hole_flags
 
 if TYPE_CHECKING:
     from petrophys.model.well import Well
@@ -111,7 +111,7 @@ class WashoutDetection:
             Detection results
         """
         # Generate flags
-        flags = generate_bad_hole_flags(
+        flags = bad_hole_flags(
             well,
             bit_size=bit_size,
             cali_threshold=self.cali_threshold,

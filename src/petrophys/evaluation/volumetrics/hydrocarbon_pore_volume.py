@@ -194,7 +194,7 @@ def calculate_hcpv(
     )
 
 
-def calculate_ooip(
+def ooip(
     area_acres: float,
     net_pay_ft: float,
     porosity: float,
@@ -270,7 +270,7 @@ def calculate_ooip(
     }
 
 
-def calculate_ogip(
+def ogip(
     area_acres: float,
     net_pay_ft: float,
     porosity: float,
@@ -343,7 +343,7 @@ def calculate_ogip(
     }
 
 
-def calculate_hcpv_from_well(
+def hcpv_from_well(
     well: "Well",
     area_acres: float,
     top_depth: Optional[float] = None,
@@ -407,7 +407,7 @@ def calculate_hcpv_from_well(
     ]
     if missing:
         raise ValueError(
-            f"calculate_hcpv_from_well needs {', '.join(missing)} on the well; "
+            f"hcpv_from_well needs {', '.join(missing)} on the well; "
             "run the interpretation first"
         )
 

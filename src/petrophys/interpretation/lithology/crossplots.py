@@ -15,7 +15,7 @@ Schlumberger (1989). *Log Interpretation Principles/Applications*.
 from typing import Dict
 import numpy as np
 
-from petrophys.interpretation.lithology.matrix_properties import get_log_density, get_mineral_properties
+from petrophys.interpretation.lithology.matrix_properties import get_log_density, mineral_properties
 
 
 def nd_crossplot_data(
@@ -47,7 +47,7 @@ def nd_crossplot_data(
     # below their grain density)
     endpoints = {}
     for mineral in minerals:
-        props = get_mineral_properties(mineral)
+        props = mineral_properties(mineral)
         endpoints[mineral] = {
             "nphi": props["nphi"],
             "rhob": get_log_density(mineral)
@@ -111,7 +111,7 @@ def mn_crossplot_data(
     endpoints = {}
 
     for mineral in minerals:
-        props = get_mineral_properties(mineral)
+        props = mineral_properties(mineral)
         d = props["density"] - rhob_fluid
         if abs(d) > 0.01:
             m_val = (dtc_fluid - props["slowness"]) / d * 0.01
@@ -159,7 +159,7 @@ def pef_crossplot_data(
 
     endpoints = {}
     for mineral in minerals:
-        props = get_mineral_properties(mineral)
+        props = mineral_properties(mineral)
         endpoints[mineral] = {
             "rhob": props["density"],
             "pef": props["pef"],

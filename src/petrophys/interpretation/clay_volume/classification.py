@@ -92,7 +92,7 @@ def is_shale(vcl: Union[float, np.ndarray], threshold: Optional[float] = None) -
     return vcl > threshold
 
 
-def get_vcl_quality_code(vcl: Union[float, np.ndarray]) -> Union[int, np.ndarray]:
+def vcl_quality_code(vcl: Union[float, np.ndarray]) -> Union[int, np.ndarray]:
     """
     Get numeric quality code for VCL.
 

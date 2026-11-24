@@ -28,7 +28,7 @@ from petrophys.preprocessing.standardization.unit_converter import (
     _converts_temperature,
     convert_units,
     standardize_core_saturation,
-    get_conversion_factor,
+    conversion_factor,
 )
 from petrophys.model.units import PERCENT_SATURATION_UNITS, UnitConverter, temperature_unit
 
@@ -125,7 +125,7 @@ def _unconfirmed_cala(mnemonic: str, curve: "Curve") -> bool:
     """
     return (
         base_curve_mnemonic(mnemonic) == "CALA"
-        and get_conversion_factor(str(curve.unit or "").strip(), "in") is None
+        and conversion_factor(str(curve.unit or "").strip(), "in") is None
     )
 
 
@@ -1108,7 +1108,7 @@ class CurveStandardizer:
             if curve.unit:
                 standard_unit = get_standard_unit(standard)
                 if standard_unit and curve.unit.lower() != standard_unit.lower():
-                    factor = get_conversion_factor(curve.unit, standard_unit)
+                    factor = conversion_factor(curve.unit, standard_unit)
                     if factor is not None or _converts_temperature(curve.unit, standard_unit):
                         report["unit_conversions"].append({
                             "curve": mnemonic,

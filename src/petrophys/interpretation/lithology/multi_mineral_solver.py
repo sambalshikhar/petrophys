@@ -18,7 +18,7 @@ import numpy as np
 from petrophys._internal.nnls import nnls
 from petrophys.model.well import Well
 
-from petrophys.interpretation.lithology.matrix_properties import get_log_density, get_mineral_properties
+from petrophys.interpretation.lithology.matrix_properties import get_log_density, mineral_properties
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 
 
@@ -34,7 +34,7 @@ def _get_endpoints(name: str) -> Dict[str, float]:
     grain density (pure halite 2.032, not 2.17), so the grain density would
     solve a salt to several porosity units.
     """
-    p = get_mineral_properties(name)
+    p = mineral_properties(name)
     density = get_log_density(name)
     return {
         "density": density,

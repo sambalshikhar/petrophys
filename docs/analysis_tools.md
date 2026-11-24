@@ -289,11 +289,11 @@ permeability and porosity; it sorts the Brent plugs into pore-throat classes
 
 ```{code-cell} python
 import pandas as pd
-from petrophys.evaluation.rock_quality import calculate_winland_r35, classify_pore_throat
+from petrophys.evaluation.rock_quality import winland_r35, classify_pore_throat
 from petrophys.interpretation.core_analysis import core_data
 
 plugs = core_data(result).filter_by_depth(2841, 2958)
-r35 = calculate_winland_r35(plugs.permeability, plugs.porosity)
+r35 = winland_r35(plugs.permeability, plugs.porosity)
 pd.Series(classify_pore_throat(r35)).value_counts()
 ```
 

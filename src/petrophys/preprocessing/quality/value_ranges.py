@@ -154,9 +154,9 @@ def _rule_bounds(
     standard = RULE_UNITS.get(canonical)
     if standard is None or not unit or reproducing_benchmark():
         return (rule.low, rule.high), None
-    from petrophys.preprocessing.standardization.unit_converter import get_conversion_factor
+    from petrophys.preprocessing.standardization.unit_converter import conversion_factor
 
-    factor = get_conversion_factor(str(unit), standard)
+    factor = conversion_factor(str(unit), standard)
     if factor is None or factor <= 0.0 or factor == 1.0:
         return (rule.low, rule.high), None
     return (rule.low / factor, rule.high / factor), str(unit)

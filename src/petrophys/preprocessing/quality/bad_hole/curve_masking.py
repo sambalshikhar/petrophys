@@ -92,7 +92,7 @@ def apply_quality_flags(
     well : Well
         Well object
     flags : dict
-        Dictionary of flag arrays from generate_bad_hole_flags
+        Dictionary of flag arrays from bad_hole_flags
     mask_shallow : bool, optional
         Mask shallow curves in washout zones (default: True)
     mask_pef : bool, optional
@@ -136,7 +136,7 @@ def apply_quality_flags(
     return well
 
 
-def create_quality_curve(
+def quality_curve(
     well: "Well",
     flags: dict,
     weights: Optional[dict] = None
@@ -181,7 +181,7 @@ def create_quality_curve(
     return quality
 
 
-def get_good_data_mask(
+def good_data_mask(
     well: "Well",
     flags: dict,
     required_curves: Optional[List[str]] = None

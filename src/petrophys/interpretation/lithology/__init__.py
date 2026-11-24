@@ -20,7 +20,7 @@ from petrophys.interpretation.lithology.multi_mineral_solver_v1 import (
     MultiMineralSolverV1,
 )
 from petrophys.interpretation.lithology.matrix_properties import (
-    get_mineral_properties,
+    mineral_properties,
     MINERAL_PROPERTIES,
 )
 from petrophys.interpretation.lithology.crossplots import (
@@ -51,7 +51,7 @@ __all__ = [
     "MultiMineralSolverV2",
     "solve_two_mineral",
     "solve_three_mineral",
-    "get_mineral_properties",
+    "mineral_properties",
     "MINERAL_PROPERTIES",
     "nd_crossplot_data",
     "mn_crossplot_data",
