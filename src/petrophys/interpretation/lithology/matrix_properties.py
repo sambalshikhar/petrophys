@@ -5,8 +5,8 @@ This module provides reference mineral properties for
 multi-mineral solver and crossplot analysis.
 """
 
-from typing import Dict, Optional, NamedTuple
-from petrophys.model.constants import MatrixProperties, MineralProperties
+from typing import Dict, Optional
+from petrophys.model.constants import MatrixProperties
 
 
 # Mineral properties for multi-mineral analysis. "u" is about PEF x density,

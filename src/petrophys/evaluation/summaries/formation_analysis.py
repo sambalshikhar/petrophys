@@ -15,7 +15,6 @@ from typing import Optional, List, Dict, Union, Any
 from dataclasses import dataclass, field
 from pathlib import Path
 import numpy as np
-import csv
 
 from petrophys.evaluation.summaries.zone_summary import (
     ZoneSummary,

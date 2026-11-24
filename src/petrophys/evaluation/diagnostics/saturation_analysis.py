@@ -109,8 +109,6 @@ class SaturationAnalysis:
         sxo, sxo_source = get_curve_data(well, ["SWXOA", "SXO", "SXO-LOG"])
         if sxo is None:
             sxo = self._first_sxo_curve(well)
-            if sxo is not None:
-                sxo_source = "SXO-*"
         phit, phit_source = get_curve_data(well, ["PHIE_CC", "PHIT"])
         phie, phie_source = get_curve_data(well, ["PHIE_CC", "PHIE", "PHIT"])
         bvw, bvw_source = get_curve_data(well, ["BVW"])

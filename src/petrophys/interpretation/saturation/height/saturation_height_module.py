@@ -96,6 +96,8 @@ class JFunctionModel:
         if self.points is None:
             raise ValueError("plot() needs the fitted samples: fit with fit_j_function_from_well "
                              "or fit_j_function_from_core")
+        from petrophys.visualization.base import Plot
+
         if "height" not in self.points:
             return self._plot_j(ax)
         height, sw, perm, phi = (self.points[key] for key in ("height", "sw", "perm", "phi"))
@@ -119,11 +121,12 @@ class JFunctionModel:
             title = f"J-function fit, R2 = {self.r2:.2f}" if self.r2 is not None else "J-function fit"
             ax.set(xlim=(0, 1), xlabel="Sw [v/v]", ylabel="Height above FWL [ft]", title=title)
             ax.legend(loc="best", fontsize=8)
-            return fig
+            return Plot(fig)
 
     def _plot_j(self, ax: Any = None) -> Any:
         import matplotlib.pyplot as plt
 
+        from petrophys.visualization.base import Plot
         from petrophys.visualization.style import plot_style
 
         assert self.points is not None
@@ -142,7 +145,7 @@ class JFunctionModel:
             title = f"J-function from core, R2 = {self.r2:.2f}" if self.r2 is not None else "J-function from core"
             ax.set(xlim=(0, 1), xlabel="Sw [v/v]", ylabel="Leverett J", title=title)
             ax.legend(loc="best", fontsize=8)
-            return fig
+            return Plot(fig)
 
     def sw_from_j(self, j: ArrayLike) -> ArrayLike:
         """Water saturation (v/v) at Leverett J values.

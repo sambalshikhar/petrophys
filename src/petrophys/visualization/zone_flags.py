@@ -2,6 +2,7 @@
 Zone flag plotting utilities.
 """
 
+from petrophys.visualization.base import Plot
 from petrophys.visualization.style import _styled_plot
 
 from typing import TYPE_CHECKING, Optional, Tuple, List, Dict
@@ -11,9 +12,7 @@ if TYPE_CHECKING:
 
 try:
     import matplotlib.pyplot as plt
-    from matplotlib.figure import Figure
     from matplotlib.axes import Axes
-    from matplotlib.patches import Rectangle
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
@@ -43,9 +42,10 @@ def zone_flags_plot(
     well: "Well",
     flag_curves: List[str],
     colors: Optional[Dict[str, str]] = None,
-    depth_range: Optional[Tuple[float, float]] = None,
+    top: Optional[float] = None,
+    bottom: Optional[float] = None,
     figsize: Tuple[float, float] = (4, 12)
-) -> Tuple["Figure", "Axes"]:
+) -> Plot:
     """
     Plot zone flags as colored columns.
 
@@ -58,15 +58,17 @@ def zone_flags_plot(
     colors : dict, optional
         Dictionary mapping curve names to colors. Flags the log plot knows
         (NET_ROCK, NET_RES, NET_PAY, SEALFLAG) default to its colours.
-    depth_range : tuple, optional
-        (top, bottom) depth range
+    top, bottom : float, optional
+        Depth window, in the depth unit of the data; an end not given is the
+        data's own.
     figsize : tuple
         Figure size
 
     Returns
     -------
-    tuple
-        (Figure, Axes)
+    Plot
+        ``.fig`` and ``.ax``; ``.save(path)``. Shows itself at the end of a
+        notebook cell.
     """
     if not HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for visualization")
@@ -85,10 +87,9 @@ def zone_flags_plot(
     depth = well_depth_array(well)
 
     # Set depth range
-    if depth_range:
-        top, bottom = depth_range
-    else:
-        top, bottom = resolve_well_depth_range(well)
+    logged_top, logged_bottom = resolve_well_depth_range(well)
+    top = logged_top if top is None else float(top)
+    bottom = logged_bottom if bottom is None else float(bottom)
 
     n_flags = len(flag_curves)
     if n_flags == 0:
@@ -132,7 +133,7 @@ def zone_flags_plot(
 
     plt.tight_layout()
 
-    return fig, ax
+    return Plot(fig, ax)
 
 
 def add_zone_shading(

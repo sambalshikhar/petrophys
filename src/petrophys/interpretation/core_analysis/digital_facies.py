@@ -18,7 +18,7 @@ Algorithms*, 1027-1035.
 
 from typing import Optional, Union, Dict, List, Any
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import numpy as np
 
 try:

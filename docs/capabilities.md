@@ -27,8 +27,9 @@ use_plot_style()
 THUMB, LOG_THUMB = (4, 3), (4, 4)  # inches: gallery thumbnails, and log-plot thumbnails
 
 
-def thumb(key, fig):
-    """Store a figure as the thumbnail of its gallery card."""
+def thumb(key, plot):
+    """Store a plot's figure as the thumbnail of its gallery card."""
+    fig = getattr(plot, "fig", plot)
     for ax in fig.axes:
         ax.xaxis.set_minor_formatter(NullFormatter())  # no crowded minor labels on log axes
     fig.tight_layout()
@@ -223,8 +224,7 @@ Borehole images (FMI) are oriented, equalized and displayed from DLIS or LAS arr
 
 ## How the gallery is built
 
-Each card's figure comes from the call under it. The NMR figure is drawn with
-matplotlib from the library's results.
+Each card's figure comes from the call under it.
 
 ```{code-cell} python
 ---
@@ -253,10 +253,10 @@ thumb("cap_pickett", pp.crossplot(result, "PHIE", "RDEP", top=3223, bottom=3556,
 models = ["archie", "simandoux", "indonesia", "auto"]
 pay = [pp.interpret(well, rw=0.07, rw_meas_temp="230 degF", sw_model=model)
        .summary(top=2841, bottom=2958)["net_thickness"]["net_pay"] for model in models]
-fig, ax = pp.bar_chart(models, pay, value_labels=True, figsize=THUMB,
-                       ylabel="Brent Group net pay [m]", title="Net pay by Sw model, 30/6-5")
-ax.set_ylim(0, 1.2 * max(pay))
-thumb("cap_sw", fig)
+chart = pp.bar_chart(models, pay, value_labels=True, figsize=THUMB,
+                     ylabel="Brent Group net pay [m]", title="Net pay by Sw model, 30/6-5")
+chart.ax.set_ylim(0, 1.2 * max(pay))
+thumb("cap_sw", chart)
 ```
 
 ```{code-cell} python
@@ -274,9 +274,8 @@ from petrophys.interpretation.geochemistry import interpret_spectral_gamma
 core = core_data(result)  # the PHIC, KH_CORE, GDEN and SWC plugs in the LAS
 thumb("cap_poroperm", pp.crossplot(core, "PHIC", "KH_CORE", title="30/6-5 core poro-perm", figsize=THUMB).fig)
 thumb("cap_flow", pp.crossplot(core, "PHI_Z", "RQI", title="30/6-5 flow units", figsize=THUMB).fig)
-fig, ax = pp.calibration_plot(calibrate_porosity(result, core, log_curve="PHID"),
-                              title="Density porosity vs core", figsize=THUMB)
-thumb("cap_calibration", fig)
+thumb("cap_calibration", pp.calibration_plot(calibrate_porosity(result, core, log_curve="PHID"),
+                                             title="Density porosity vs core", figsize=THUMB))
 
 gamma_well = pp.read(pp.sample("25_5-1"))
 interpret_spectral_gamma(gamma_well, alias_overrides={"SGR": ["GR"]})  # adds THORIUM, URANIUM, ...
@@ -288,9 +287,8 @@ field = pp.interpret(pp.read([pp.sample(name) for name in pp.list_samples("costa
                              formations=pp.sample("formations_costa")),
                      lithology_domain="carbonate", vcl_cutoff=0.30, phie_cutoff=0.10, sw_cutoff=0.60)
 pay = field.summary().set_index("Well")["Net pay"].sort_values(ascending=False)
-fig, ax = pp.bar_chart(list(pay.index), list(pay.values), figsize=THUMB,
-                       ylabel="Net pay [ft]", title="Kharaib-2 net pay, COSTA field")
-thumb("cap_costa", fig)
+thumb("cap_costa", pp.bar_chart(list(pay.index), list(pay.values), figsize=THUMB,
+                                ylabel="Net pay [ft]", title="Kharaib-2 net pay, COSTA field"))
 ```
 
 ```{code-cell} python
@@ -312,22 +310,20 @@ thumb("cap_ml", pp.plot(hw24, curves=["RHOB", "RHOB_PREDICTED"], top=8510, botto
 
 # NMR: the library's Timur-Coates permeability against the vendor KTIM curve.
 nmr = NMRData.from_las(pp.sample("daydream1_cmr"), mphi_mnemonic="TCMR", mffi_mnemonic="CMFF")
-fig, ax = plt.subplots(figsize=THUMB)
-ax.loglog(nmr.stored_permeability["KTIM"], nmr.permeability_coates(prefer_stored=False),
-          ".", ms=2, alpha=0.3, color="navy")
-ax.plot((1e-4, 1e2), (1e-4, 1e2), color="red", lw=1, label="1:1")
-ax.set(xlim=(1e-4, 1e2), ylim=(1e-4, 1e2), xlabel="Vendor KTIM (mD)",
-       ylabel="Petrophys Timur-Coates (mD)", title="Daydream CMR permeability")
-ax.legend()
-thumb("cap_nmr", fig)
+cmr = pp.read(pp.sample("daydream1_cmr"))
+cmr.add_curve("K_TC_LIBRARY", nmr.permeability_coates(prefer_stored=False), "mD")
+chart = pp.crossplot(cmr, "KTIM", "K_TC_LIBRARY", xlim=(1e-4, 1e2), ylim=(1e-4, 1e2),
+                     title="Daydream CMR permeability", figsize=THUMB)
+chart.add_line([1e-4, 1e2], [1e-4, 1e2], color="red", linewidth=1, label="1:1")
+thumb("cap_nmr", chart)
 
 # Saturation-height: a J-function fitted on HW-3 (Kharaib-2), with the FWL
 # taken 1 ft below the deepest sample with Sw, porosity and permeability (7990 ft), the base of the transition zone.
 model = fit_j_function_from_well(pp.read(pp.sample("HW-3")), fwl_depth=7991, sw_curve="SW_INPUT",
                                  perm_curve="PERM_CC", phi_curve="PHIE_CC")
-fig = model.plot()
-fig.set_size_inches(*THUMB)
-thumb("cap_height", fig)
+chart = model.plot()
+chart.fig.set_size_inches(*THUMB)
+thumb("cap_height", chart)
 ```
 
 ## Next

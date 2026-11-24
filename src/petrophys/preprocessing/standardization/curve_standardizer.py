@@ -26,10 +26,8 @@ from petrophys.preprocessing.standardization.unit_converter import (
     _benchmark_units,
     _conversion_factor,
     _converts_temperature,
-    convert_curve_units,
     convert_units,
     standardize_core_saturation,
-    standardize_units,
     get_conversion_factor,
 )
 from petrophys.model.units import PERCENT_SATURATION_UNITS, UnitConverter, temperature_unit
@@ -807,8 +805,6 @@ class CurveStandardizer:
         Well
             Well with standardized curves
         """
-        from petrophys.model.curve import Curve, CurveMetadata
-        from petrophys.model.data_types import DataType
 
         # Track renamed curves to avoid conflicts
         historical = reproducing_benchmark()

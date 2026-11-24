@@ -18,11 +18,7 @@ import numpy as np
 from petrophys._internal.nnls import nnls
 from petrophys.model.well import Well
 
-from petrophys.interpretation.lithology.matrix_properties import (
-    get_log_density,
-    get_mineral_properties,
-    MINERAL_PROPERTIES,
-)
+from petrophys.interpretation.lithology.matrix_properties import get_log_density, get_mineral_properties
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 
 
@@ -241,7 +237,7 @@ class MultiMineralSolver:
             active_minerals, rhob, nphi, vcl, pef, dt,
             phi_fixed if use_fixed_phi else None,
         )
-        if np.linalg.matrix_rank(A_arr) < A_arr.shape[1]:
+        if self._rank(A_arr) < A_arr.shape[1]:
             return [], tuple(), np.nan, True, np.nan
         x, residual = nnls(A_arr, b_arr)
 
@@ -275,6 +271,15 @@ class MultiMineralSolver:
 
         return (active_minerals, tuple(float(v) for v in mineral_x),
                 float(residual), poor_fit, phi_solved)
+
+    def _rank(self, A: np.ndarray) -> int:
+        """Rank of a response matrix; the matrix depends only on which logs a
+        sample has, so each distinct one is decomposed once."""
+        cache = self.__dict__.setdefault("_ranks", {})
+        key = (A.shape, A.tobytes())
+        if key not in cache:
+            cache[key] = int(np.linalg.matrix_rank(A))
+        return cache[key]
 
     def _active_minerals(self, nphi, pef, dt, use_fixed_phi: bool) -> list:
         """Pick the mineral set the available equations can resolve at a sample."""

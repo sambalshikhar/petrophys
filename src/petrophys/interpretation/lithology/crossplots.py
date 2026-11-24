@@ -12,14 +12,10 @@ cross plot. SPWLA 10th Annual Logging Symposium.
 Schlumberger (1989). *Log Interpretation Principles/Applications*.
 """
 
-from typing import Dict, Tuple, Optional
+from typing import Dict
 import numpy as np
 
-from petrophys.interpretation.lithology.matrix_properties import (
-    get_log_density,
-    get_mineral_properties,
-    MINERAL_PROPERTIES,
-)
+from petrophys.interpretation.lithology.matrix_properties import get_log_density, get_mineral_properties
 
 
 def nd_crossplot_data(

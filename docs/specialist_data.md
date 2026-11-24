@@ -33,7 +33,7 @@ The bundled Daydream 1 file is a vendor CMR summary, with GR and calipers.
 import petrophys as pp
 
 cmr = pp.read(pp.sample("daydream1_cmr"))
-pp.nmr_panel(cmr, depth_range=(3900, 4100));
+pp.nmr_panel(cmr, top=3900, bottom=4100);
 ```
 
 {class}`~petrophys.interpretation.nmr.NMRData` loads the same file to compute bound fluid (`MPHI - MFFI`), irreducible saturation and permeability.
@@ -141,7 +141,7 @@ transform of your own to any porosity curve):
 
 ```{code-cell} python
 pp.core_on_logs(result, core, curves=["PHID", "PERM_CC"], figsize=(8, 7),
-                depth_range=(core.top - 10, core.bottom + 10));
+                top=core.top - 10, bottom=core.bottom + 10);
 ```
 
 Core saturation stays calibration evidence; it does not replace the log Sw curve. Check depth ties first: on 25/5-1 the plugs need a depth shift before they match the logs ({doc}`tutorial 12 <tutorials/part_b/12_core_calibration_and_digital_core>`).
@@ -238,7 +238,7 @@ image
 ```{code-cell} python
 :tags: [skip-execution]
 
-pp.fmi_panel(image, depth_range=(4052, 4058), orient=True, equalize="dynamic")
+pp.fmi_panel(image, top=4052, bottom=4058, orient=True, equalize="dynamic")
 ```
 
 `orient_to_azimuth` turns an image to north, `azimuthal_coverage` gives the imaged

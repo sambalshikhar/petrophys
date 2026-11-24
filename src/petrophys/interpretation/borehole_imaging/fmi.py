@@ -413,13 +413,16 @@ def fmi_colormap() -> Any:
 
 def plot_fmi(
     data: BoreholeImageData,
-    depth_range: Optional[tuple[float, float]] = None,
+    top: Optional[float] = None,
+    bottom: Optional[float] = None,
     ax: Any = None,
     equalize: str = "dynamic",
     window_m: float = 0.5,
     interpolation: str = "bilinear",
 ) -> Any:
-    """Plot FMI image data with brown image-log colors and an azimuth axis."""
+    """Plot FMI image data with brown image-log colours (dark conductive, light
+    resistive) and an azimuth axis; ``top`` and ``bottom`` set the depth window.
+    Draws on ``ax`` when given; returns a :class:`~petrophys.visualization.Plot`."""
     if not HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plotting")
 
@@ -429,9 +432,10 @@ def plot_fmi(
         with plot_style():
             _, ax = plt.subplots(figsize=(5, 11))
 
-    display_data = (
-        data.filter_by_depth(*depth_range) if depth_range is not None else data
-    )
+    from petrophys.visualization._data import depth_limits
+
+    window = depth_limits(data.depth, top, bottom)
+    display_data = data.filter_by_depth(*window) if window is not None else data
     top = display_data.top
     bottom = display_data.bottom
     if top is None or bottom is None:
@@ -482,7 +486,9 @@ def plot_fmi(
         ax.set_xticklabels(
             ["HS", "90", "LS", "270", "HS"] if highside else ["N", "E", "S", "W", "N"]
         )
-    return ax
+    from petrophys.visualization.base import Plot
+
+    return Plot(ax.figure, ax)
 
 
 def _accumulate_sparse_buttons(

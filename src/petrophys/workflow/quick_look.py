@@ -2,7 +2,7 @@
 Quick look analysis for rapid well evaluation.
 """
 
-from typing import TYPE_CHECKING, Optional, Dict, Any, List
+from typing import TYPE_CHECKING, Optional, Dict, List
 from dataclasses import dataclass, field
 import numpy as np
 

@@ -80,6 +80,20 @@ def archie_parameters(rw, a, m, n):
     return tuple(positive_scalar(value, name) for name, value in (("rw", rw), ("a", a), ("m", m), ("n", n)))
 
 
+def depth_limits(depth, top, bottom):
+    """``(top, bottom)`` of a plot window, an end not given taken from ``depth``
+    (or open); ``None`` when neither is given."""
+    if top is None and bottom is None:
+        return None
+    values = np.asarray(depth, dtype=float) if depth is not None else np.empty(0)
+    values = values[np.isfinite(values)]
+    low = float(top) if top is not None else (float(values.min()) if values.size else -np.inf)
+    high = float(bottom) if bottom is not None else (float(values.max()) if values.size else np.inf)
+    if not low < high:
+        raise ValueError(f"top ({low:g}) must be above bottom ({high:g})")
+    return low, high
+
+
 def clean_rock_only(well, phie, rt, depth_range, vcl_max):
     """Porosity and Rt with samples above ``vcl_max`` clay volume set to NaN.
 

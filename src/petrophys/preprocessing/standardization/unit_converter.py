@@ -264,7 +264,6 @@ def convert_curve_units(
     Curve
         Curve with converted data
     """
-    from petrophys.model.curve import Curve
 
     if not inplace:
         curve = curve.copy()

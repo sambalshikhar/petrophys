@@ -140,32 +140,60 @@ its unit comes from a header such as ``MD (ft)``. Tool responses are the
 pseudo-geometric factors J(di) read off the vendor's charts, in a long
 table (one row per point) or a wide one (one column per tool).
 
+(analysis-off-depth)=
 ## Curves off depth
 
 A delivered file can carry a curve recorded at the wrong depth: a run spliced
-off depth, or one tool moved in a merge and its neighbours not. Two curves that
-respond to the same beds then line up best at a lag.
-{func}`~petrophys.preprocessing.find_log_depth_shift` scans the lags (20 m
-either way by default) and returns the shift that lines a curve up with a
-reference; {func}`~petrophys.preprocessing.shift_curves` moves curves by it.
-`pp.interpret` runs the check on density against neutron and warns when they
-line up clearly better shifted. In COSTA well HW-3 the density reads 55 ft too
-deep:
+off depth, a tool string stretched by cable stick-slip, or one tool moved in a
+merge and its neighbours not. Two curves that respond to the same beds then line
+up only when one is moved, by an amount that can change with depth.
+
+{func}`~petrophys.preprocessing.depth_match` finds that correction at every
+depth, by Kerzner's method (1984) in two passes, as he advises. First the major
+shift: the one whose correlations in 10 m windows have the highest median, kept
+when that median is at least 0.35 and 0.2 higher than as recorded. Then the
+detail, within 2 m of it: the peaks of each window's correlogram are candidate
+shifts, and dynamic programming picks one per depth so that the moved log never
+folds, stretches little, and keeps the most correlation; a shift other than the
+major one must correlate 0.1 better, the noise of a window. Correlation is the
+measure of a match that Le et al. (2019) found best of thirteen.
+{func}`~petrophys.preprocessing.shift_curves` applies the correction. In COSTA
+well HW-3 density and sonic line up with the neutron only when moved 56 ft:
 
 ```{code-cell} python
-from petrophys.preprocessing import find_log_depth_shift, shift_curves
+from petrophys.preprocessing import depth_match, shift_curves
 
 hw3 = pp.read(pp.sample("HW-3"))
-found = find_log_depth_shift(hw3, "RHOB", "NPHI")
-aligned = shift_curves(hw3, ["RHOB", "DTC"], found.shift)
-found
+match = depth_match(hw3, "RHOB", "NPHI", sign="negative")
+aligned = shift_curves(hw3, ["RHOB", "DTC"], match)
+match
 ```
 
-Density and neutron respond to porosity in opposite directions, so on depth
-they correlate negatively; `sign="negative"` makes the scan expect that.
-Of 208 wells with both logs (the bundled samples, the GeoLink and COSTA
-wells), only HW-3 passes the warning's test: a correlation of at least 0.6 in
-size, 0.3 better than as recorded, at a shift inside the scanned range.
+`sign` says how the curves follow each other: `"negative"` for density against
+neutron, which respond to porosity in opposite directions, `"positive"` for
+sonic against neutron, `None` for either, bed by bed. Match curves that respond
+to the same property: density, neutron and sonic to each other, resistivities
+to each other, a gamma-ray pass to gamma ray. Curves that respond to different
+properties, such as resistivity against gamma ray in a carbonate, correlate too
+loosely, and their best match can be wrong.
+
+The check is optional. `pp.interpret(well, depth_check=True)` matches density,
+neutron and sonic to each other and warns when they line up only moved, naming
+the curve that disagrees with the other two; the curves stay as recorded until
+you move them with `shift_curves`. On 621 such pairs of 221 wells (the bundled
+samples, the GeoLink and COSTA wells), the shift that correlates best raised
+the median windowed correlation by less than 0.11 in 95 % of them. The check
+warns in 12 of the wells. In five,
+two pairs agree on which curve is off: HW-3, 35/11-7, whose neutron lines up
+with density and sonic only when moved 1.4 m, and 25/5-4, 31/5-4 S and 31/5-5 R,
+whose sonic is 0.5-1.7 m off. In the other seven one pair is off by a few tenths
+of a metre to 2 m, in places or throughout, as between the sonic and the
+neutron of 30/6-11 below 2335 m. A known splice and stretch put into the 30/6-5 gamma
+ray is recovered to within one sample at 90 % of depths, and a curve already
+on depth is left where it is.
+
+{func}`~petrophys.preprocessing.find_log_depth_shift` measures one shift for
+the whole interval.
 
 (analysis-gap-filling)=
 ## Gap filling with machine learning

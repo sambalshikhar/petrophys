@@ -2,7 +2,7 @@
 Statistical utilities for petrophysics calculations.
 """
 
-from typing import Optional, Dict, Union, Tuple
+from typing import Optional, Dict, Tuple
 import warnings
 
 import numpy as np

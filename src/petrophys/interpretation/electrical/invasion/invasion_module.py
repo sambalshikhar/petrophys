@@ -9,9 +9,6 @@ from typing import TYPE_CHECKING, Optional, Union
 from dataclasses import dataclass
 import numpy as np
 
-from petrophys.interpretation.electrical.invasion.invasion_classification import (
-    InvasionType,
-)
 from petrophys._internal.analysis_helpers import get_curve, get_curve_data_depthwise
 from petrophys.model.class_tables import CLASS_TABLES, Bands
 from petrophys.model.classifications import InvasionClassification

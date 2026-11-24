@@ -11,7 +11,6 @@ from pathlib import Path
 import csv
 import re
 import warnings
-import numpy as np
 import pandas as pd
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.units import normalize_depth_unit

@@ -103,7 +103,17 @@ class NetPayModule:
         return cutoff_family(label) == "carbonate"
 
     def _carbonate_mask(self) -> np.ndarray:
-        return np.array([self._is_carbonate(v) for v in self.lithology])
+        # Each distinct label is classified once.
+        known: dict = {}
+        mask = np.zeros(len(self.lithology), dtype=bool)
+        for index, label in enumerate(self.lithology):
+            try:
+                if label not in known:
+                    known[label] = self._is_carbonate(label)
+                mask[index] = known[label]
+            except TypeError:  # an unhashable label
+                mask[index] = self._is_carbonate(label)
+        return mask
 
     def _build_phie_cutoff(self, n_samples: int) -> Union[float, np.ndarray]:
         """Build per-depth PHIE cutoff array from lithology."""

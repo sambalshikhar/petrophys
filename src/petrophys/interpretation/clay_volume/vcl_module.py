@@ -5,7 +5,7 @@ This module provides the VclModule class that combines multiple
 VCL methods and selects the minimum value.
 """
 
-from typing import Optional, List, Dict, Any, Sequence, Tuple, Union
+from typing import Optional, Dict, Sequence, Tuple
 from dataclasses import dataclass, field
 import warnings
 import numpy as np
@@ -14,9 +14,8 @@ from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.well import Well
 from petrophys.model.constants import DefaultParameters, MatrixProperties
 from petrophys.interpretation.clay_volume.gr_method import bounded_gr_baselines, vcl_from_gr
-from petrophys.interpretation.clay_volume.sp_method import vcl_from_sp, should_use_sp, sp_polarity
+from petrophys.interpretation.clay_volume.sp_method import vcl_from_sp, sp_polarity
 from petrophys.interpretation.clay_volume.nd_method import ND_CLAY_POINT, vcl_from_nd, nd_clean_line
-from petrophys.interpretation.clay_volume.classification import classify_vcl
 from petrophys.interpretation.porosity.density_porosity import density_porosity
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 

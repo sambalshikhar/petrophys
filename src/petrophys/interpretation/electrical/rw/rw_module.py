@@ -12,7 +12,6 @@ import numpy as np
 
 from petrophys.interpretation.electrical.rw.sp_rw import estimate_sp_lines, rw_from_sp, rw_from_rxo_rt
 from petrophys.interpretation.electrical.rw.salinity_rw import rw_from_salinity
-from petrophys.interpretation.electrical.rw.temp_correction import correct_rw_temperature
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys._internal.advice import Advice

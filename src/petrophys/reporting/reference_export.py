@@ -9,7 +9,6 @@ from petrophys._internal.advice import joined
 from collections import OrderedDict
 import copy
 from dataclasses import dataclass, field
-import functools
 import hashlib
 from datetime import datetime
 from pathlib import Path
@@ -2794,7 +2793,6 @@ def _read_context_input_well(
     with the optional lithology intervals and domain applied; LAS header
     parameters are applied by the zoned workflow runner.
     """
-    import dataclasses
 
     from petrophys.workflow.dynamic_workflow import DynamicWorkflowConfig
     from petrophys.api import read

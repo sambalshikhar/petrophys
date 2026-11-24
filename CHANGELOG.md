@@ -1453,6 +1453,19 @@ wherever the package used the function.
   coloured by `color=` (`"DEPTH"` for depth). `top=` and `bottom=` set the
   window as in `pp.plot`; the result shows itself at the end of a notebook
   cell and saves with `.save(path)`.
+- Every plot returns a `Plot` (`petrophys.visualization.Plot`): `.fig`,
+  `.ax` and `.axes` to style further, `.save(path)`, `.show()`, and its figure
+  at the end of a notebook cell. The crossplots, charts, panels, core plots,
+  zone flags, pressure plots, bar, line, tornado and heat-map charts and the
+  `.plot()` of fitted models return it; the log plots return their viewer,
+  with the same `.fig`, `.axes`, `.save` and `.show`. Every plot with a depth
+  axis takes its window as `top=` and `bottom=`, as `pp.plot` does; an end not
+  given is the data's own.
+- `pp.interpret` is three to five times faster on wells with a mineral solve
+  (30/6-5, 15/9-14, 25/5-1). The mineral solvers build each distinct
+  response matrix once and check the optimality of all samples' solutions in
+  one array operation; the per-sample arithmetic, and every result, is as
+  before.
 - The interpretation charts, data over the lines of a chart, are each a
   function of their own in `petrophys.visualization.charts`, on `pp` as well,
   with the usual curves as defaults: `nd_plot`, `pef_plot`, `mn_plot`,
@@ -1477,12 +1490,17 @@ wherever the package used the function.
 - The log plot draws a class curve carrying class names (the flow units
   `HFU` of `FlowUnitModule.add_to_well`) as coloured blocks with a legend, in
   the colours of the flow-unit crossplot.
-- `find_log_depth_shift(well, curve, reference)` finds the depth shift that
-  lines one curve up with another of the same well (density with neutron:
-  the strongest negative correlation), and `shift_curves(well, curves,
-  shift)` moves curves by it on a copy of the well. `pp.interpret` warns when
-  density and neutron line up clearly better shifted: of 208 wells with both
-  logs, only COSTA well HW-3, whose RHOB reads 55 ft deep, passes the test.
+- `depth_match(well, curve, reference)` matches one curve to another of the
+  same well, the correction free to vary with depth (splices, stretch), by
+  Kerzner's method (1984): a major shift from the median of windowed
+  correlations, then correlogram peaks in 10 m windows chosen by dynamic
+  programming so that the moved log never folds and stretches little.
+  `shift_curves(well, curves, shift)` moves curves by one shift, a shift per
+  sample or a match, on a copy of the well; `find_log_depth_shift` measures
+  one shift for the whole interval. `pp.interpret(well, depth_check=True)`
+  matches density, neutron and sonic to each other and warns when they line
+  up only moved, naming the curve that disagrees with the other two (COSTA
+  well HW-3: 56 ft); the check is off by default.
 - One look across plots: `nmr_panel` is drawn by the log viewer (its
   headers, scales and fills; bound and free fluid shaded), plot labels spell
   units as the log plot headers do (`display_unit`: API, g/cc, mD), and log

@@ -10,7 +10,6 @@ This module provides reference values for:
 from dataclasses import dataclass
 from typing import Dict, Optional
 import unicodedata
-import numpy as np
 
 
 @dataclass(frozen=True)

@@ -21,8 +21,8 @@ Asquith, G. and Krygowski, D. (2004). *Basic Well Log Analysis*, 2nd ed.
 AAPG Methods in Exploration 16.
 """
 
-from typing import Optional, Tuple, Dict, Union, Iterable
-from dataclasses import dataclass, field
+from typing import Optional, Dict, Union, Iterable
+from dataclasses import dataclass
 import warnings
 
 import numpy as np

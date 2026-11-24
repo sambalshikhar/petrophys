@@ -8,6 +8,7 @@ Plotting functions for core-to-log calibration:
 - Core data on log depth plot
 """
 
+from petrophys.visualization.base import Plot
 from petrophys.visualization.style import _styled_plot, display_unit
 
 from typing import Any, Callable, List, Mapping, Optional, Tuple
@@ -50,7 +51,7 @@ def calibration_plot(
     title: Optional[str] = None,
     show_fit: bool = True,
     figsize: Optional[Tuple[float, float]] = None,
-) -> Tuple["Figure", Any]:
+) -> Plot:
     """
     Plot a core-vs-log calibration crossplot.
 
@@ -74,14 +75,15 @@ def calibration_plot(
 
     Returns
     -------
-    tuple
-        (Figure, Axes)
+    Plot
+        ``.fig`` and ``.ax``; ``.save(path)``. Shows itself at the end of a
+        notebook cell.
     """
     if not HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required")
     if isinstance(result, Mapping):
-        return _side_by_side(result, lambda item, axis, name: calibration_plot(
-            item, ax=axis, title=name, show_fit=show_fit), figsize)
+        return Plot(*_side_by_side(result, lambda item, axis, name: calibration_plot(
+            item, ax=axis, title=name, show_fit=show_fit), figsize))
 
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize or (7, 6))
@@ -147,7 +149,7 @@ def calibration_plot(
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
 
-    return fig, ax
+    return Plot(fig, ax)
 
 
 @_styled_plot
@@ -275,9 +277,10 @@ def core_on_logs(
     well,
     core: CoreData,
     curves: Optional[List[str]] = None,
-    depth_range: Optional[Tuple[float, float]] = None,
+    top: Optional[float] = None,
+    bottom: Optional[float] = None,
     figsize: Tuple[float, float] = (20, 12),
-) -> Tuple["Figure", List["Axes"]]:
+) -> Plot:
     """
     Plot core data points overlaid on log curves.
 
@@ -295,16 +298,17 @@ def core_on_logs(
         Core data to overlay.
     curves : list, optional
         Log curves to show. Default: ["GR", "PHIE", "PERM", "SW"].
-    depth_range : tuple, optional
-        (top, bottom) depth range. Default: core interval +/- 50 depth
-        units (m or ft, as the well).
+    top, bottom : float, optional
+        Depth window. Default: the core interval +/- 50 depth units (m or
+        ft, as the well).
     figsize : tuple
         Figure size.
 
     Returns
     -------
-    tuple
-        (Figure, list of Axes)
+    Plot
+        ``.fig`` and ``.axes`` (one per curve); ``.save(path)``. Shows itself at the end of a
+        notebook cell.
     """
     if not HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required")
@@ -345,10 +349,10 @@ def core_on_logs(
     # Units converted as the log plot converts them; values are not screened.
     shown = _display_well(well, interpreted=True)
     depth = np.asarray(shown.depth, dtype=float)
-    if depth_range is None:
+    if top is None or bottom is None:
         if core.top is None or core.bottom is None:
-            raise ValueError("core has no finite top/bottom depth; pass depth_range explicitly")
-        depth_range = (core.top - 50, core.bottom + 50)
+            raise ValueError("core has no finite top/bottom depth; pass top= and bottom=")
+    depth_range = (core.top - 50 if top is None else float(top), core.bottom + 50 if bottom is None else float(bottom))
     d_mask = (depth >= depth_range[0]) & (depth <= depth_range[1])
     missing = []
     # Each curve's colour, line and scale as the log plot draws it.
@@ -443,4 +447,4 @@ def core_on_logs(
     )
     plt.tight_layout()
 
-    return fig, axes
+    return Plot(fig, axes)

@@ -328,25 +328,71 @@ class MultiMineralSolverV1:
         result["qc_flag"] = np.zeros(n, dtype=bool)
 
         selected = None if samples is None else np.broadcast_to(np.asarray(samples, dtype=bool), (n,))
-        for i in range(n):
-            if (selected is not None and not selected[i]) or any(np.isnan([rhob[i], nphi[i], vcl[i], phie[i]])):
-                for mineral in all_minerals:
-                    result[mineral][i] = np.nan
-                result["qc_flag"][i] = True
-                continue
+        valid = ~(np.isnan(rhob) | np.isnan(nphi) | np.isnan(vcl) | np.isnan(phie))
+        if selected is not None:
+            valid &= selected
+        for mineral in all_minerals:
+            result[mineral][~valid] = np.nan
+        result["qc_flag"][~valid] = True
 
-            pef_i = float(pef_arr[i]) if pef_arr is not None else None
-            dt_i  = float(dt_arr[i])  if dt_arr  is not None else None
-            if pef_i is not None and np.isnan(pef_i):
-                pef_i = None
-            if dt_i is not None and np.isnan(dt_i):
-                dt_i = None
-
-            active_minerals, fractions = self._solve_sample(rhob[i], nphi[i], vcl[i], phie[i], pef_i, dt_i)
-            for mineral, v in zip(active_minerals, fractions):
-                result[mineral][i] = v
-            if any(np.isnan(fractions)):
-                result["qc_flag"][i] = True
+        has_pef = np.zeros(n, dtype=bool) if pef_arr is None else ~np.isnan(np.broadcast_to(pef_arr, (n,)))
+        has_dt = np.zeros(n, dtype=bool) if dt_arr is None else ~np.isnan(np.broadcast_to(dt_arr, (n,)))
+        if not self.sonic_without_pef:
+            # 4 minerals need at least 4 equations: Unity + RHOB + NPHI + (PEF or DTC).
+            has_dt = has_dt & has_pef
+        # Samples sharing which logs they have share one system matrix; each is
+        # solved on its own, with the arithmetic of _solve_sample.
+        for pef_on in (False, True):
+            for dt_on in (False, True):
+                rows = np.flatnonzero(valid & (has_pef == pef_on) & (has_dt == dt_on))
+                if rows.size:
+                    self._solve_group(rows, rhob, nphi, vcl, phie, pef_arr, dt_arr, pef_on, dt_on, result)
 
         result["solved"] = ~result["qc_flag"]
         return result
+
+    def _solve_group(self, rows, rhob, nphi, vcl, phie, pef_arr, dt_arr, pef_on, dt_on, result) -> None:
+        """Solve the samples ``rows``, which have the same logs, into ``result``."""
+        from petrophys._internal.nnls import nnls_many
+
+        active_minerals = self.minerals if (pef_on or dt_on) else self.minerals_no_pef
+        m = [self.mineral_props[name] for name in active_minerals]
+        fl, cl = self.fluid_props, self.clay_props
+        vcl_s = np.clip(vcl[rows], 0.0, 1.0)
+        phie_s = np.clip(phie[rows], 0.0, 1.0)
+
+        A_rows, b_rows, row_names = [], [], []
+
+        def add_row(row, mineral_vals, cl_val, fl_val, log_val):
+            A_rows.append(mineral_vals)
+            b_rows.append(log_val - vcl_s * cl_val - phie_s * fl_val)
+            row_names.append(row)
+
+        add_row("unity", [1.0] * len(active_minerals), cl_val=1.0, fl_val=1.0, log_val=1.0)
+        add_row("rhob", [mi["density"] for mi in m], cl_val=cl["density"], fl_val=fl["density"], log_val=rhob[rows])
+        add_row("nphi", [mi["nphi"] for mi in m], cl_val=cl["nphi"], fl_val=fl["nphi"], log_val=nphi[rows])
+        if pef_on:
+            pef_s = np.broadcast_to(pef_arr, rhob.shape)[rows]
+            add_row("u", [mi["u"] for mi in m], cl_val=cl["u"], fl_val=fl["u"], log_val=pef_s * rhob[rows])
+        if dt_on:
+            dt_s = np.broadcast_to(dt_arr, rhob.shape)[rows]
+            add_row("dt", [mi["dt"] for mi in m], cl_val=cl["dt"], fl_val=fl["dt"], log_val=dt_s)
+
+        A = np.array(A_rows)
+        B = np.ascontiguousarray(np.array(b_rows).T)  # one right-hand side per sample
+        if self.row_uncertainty is not None:
+            weights = 1.0 / np.array([self.row_uncertainty[row] for row in row_names])
+            A, B = A * weights[:, None], B * weights
+        X = nnls_many(A, B)
+
+        available = 1.0 - vcl_s - phie_s
+        closed = ~(np.abs(X.sum(axis=1) - available) > CLOSURE_TOLERANCE)
+        # _constrain_mineral_fractions, sample by sample.
+        X = np.clip(X, 0.0, np.maximum(available, 0.0)[:, None])
+        total = np.nansum(X, axis=1)
+        scale = (total > available) & (total > 0.0)
+        X[scale] *= (available[scale] / total[scale])[:, None]
+        X[~closed] = np.nan
+        for k, mineral in enumerate(active_minerals):
+            result[mineral][rows] = X[:, k]
+        result["qc_flag"][rows[~closed]] = True

@@ -1,5 +1,6 @@
 """Show raw MDT pressure and the library's selected/review buildup windows."""
 
+from petrophys.visualization.base import Plot
 from petrophys.visualization.style import _styled_plot
 import numpy as np
 
@@ -68,4 +69,4 @@ def pretest_plot(trace, result=None, *, figsize=(10, 4), title=None):
     ax.grid(alpha=.2)
     ax.legend(fontsize=8)
     fig.tight_layout()
-    return fig
+    return Plot(fig)

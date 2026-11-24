@@ -272,9 +272,11 @@ class CapillaryPressureData:
     def plot(self, ax: Any = None) -> Any:
         """The curves, Pc (log) against Sw, coloured by permeability.
 
-        Drawn on ``ax`` when given, else on a figure of its own; returns the
-        figure.
+        Drawn on ``ax`` when given, else on a figure of its own; returns a
+        :class:`~petrophys.visualization.Plot`.
         """
+        from petrophys.visualization.base import Plot
+
         import matplotlib.pyplot as plt
         from matplotlib.colors import LogNorm
 
@@ -295,7 +297,7 @@ class CapillaryPressureData:
             ax.set(xlim=(0, 1), xlabel="Sw [v/v]", ylabel=f"Pc, {self.system.replace('_', '-')} [psi]",
                    title=f"Capillary pressure, {self.n_samples} plugs")
             fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, label="Permeability [mD]")
-            return fig
+            return Plot(fig)
 
 
 def read_capillary_pressure(
@@ -544,6 +546,8 @@ class FWLFromLogs:
         """The misfit against candidate FWL, and log against model Sw at the best FWL."""
         import matplotlib.pyplot as plt
 
+        from petrophys.visualization.base import Plot
+
         from petrophys.visualization.style import plot_style
 
         with plot_style():
@@ -568,7 +572,7 @@ class FWLFromLogs:
                       title="Log and model at the best FWL")
             ax_sw.legend(loc="lower left", fontsize=8)
             fig.tight_layout()
-            return fig
+            return Plot(fig)
 
 
 def _depth_and_unit(well: "Well", tvd_curve: Optional[str], caller: str) -> Tuple[np.ndarray, str]:

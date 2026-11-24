@@ -10,7 +10,7 @@ Shier, D.E. (2004). Well log normalization: methods and guidelines.
 *Petrophysics* 45(3), 268-280.
 """
 
-from typing import TYPE_CHECKING, Optional, Union, Tuple, List
+from typing import TYPE_CHECKING, Optional, Union, Tuple
 from dataclasses import dataclass
 import numpy as np
 

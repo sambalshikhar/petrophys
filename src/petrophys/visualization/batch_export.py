@@ -20,6 +20,7 @@ except ImportError:  # pragma: no cover - handled by plotting module
 
 from petrophys.io import read_las
 from petrophys.preprocessing.standardization import standardize_curves
+from petrophys.visualization._data import depth_limits
 from petrophys.visualization.log_viewer import _log_viewer
 
 
@@ -38,7 +39,9 @@ def export_plots(
     output_dir: str | Path,
     pattern: str = "*.las",
     recursive: bool = False,
-    depth_range: Optional[Tuple[float, float]] = None,
+    top: Optional[float] = None,
+    bottom: Optional[float] = None,
+
     figsize: Tuple[float, float] = (20, 14),
     dpi: int = 150,
     standardize: bool = True,
@@ -60,8 +63,9 @@ def export_plots(
         File glob pattern.
     recursive : bool
         Whether to search subdirectories recursively.
-    depth_range : tuple, optional
-        Optional (top, bottom) depth range passed to the plot.
+    top, bottom : float, optional
+        Depth window, in the depth unit of the data; an end not given is the
+        data's own.
     figsize : tuple
         Figure size for each plot.
     dpi : int
@@ -92,7 +96,7 @@ def export_plots(
             plot = _log_viewer(
                 well,
                 template_defaults="interpretation",
-                depth_range=depth_range,
+                depth_range=depth_limits(well.depth, top, bottom),
                 figsize=figsize,
             )
             plot.save(str(export_path), dpi=dpi)

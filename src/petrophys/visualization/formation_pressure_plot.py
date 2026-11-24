@@ -1,5 +1,6 @@
 """Formation-pressure stations, fitted fluid gradients and their intersection."""
 
+from petrophys.visualization.base import Plot
 from petrophys.visualization.style import _styled_plot
 import numpy as np
 
@@ -51,7 +52,7 @@ def pressure_plot(data, result=None, *, hydrocarbon="oil",
     ax.grid(alpha=0.25)
     ax.legend(fontsize=8)
     fig.tight_layout()
-    return fig
+    return Plot(fig)
 
 
 @_styled_plot
@@ -127,4 +128,4 @@ def contact_plot(data, result=None, *, figsize=(7, 8),
     if ax.get_legend_handles_labels()[0]:
         ax.legend(fontsize=8)
     fig.tight_layout()
-    return fig
+    return Plot(fig)

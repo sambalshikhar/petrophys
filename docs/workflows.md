@@ -229,6 +229,8 @@ Set `rho_ma`, `dt_ma` or `nphi_ma` and it holds at every depth, also where a lit
 The SP-derived Rw uses `sp_max` and `sp_min` as its clean-sand and shale lines when they are set.
 With `apply_hc_correction=True`, the porosity step reads the hydrocarbon-corrected `NPHI_HC` and `RHOB_HC`. The correction scales with the flushed zone's hydrocarbon (1 - SXO) and runs before the saturation step, so it needs an input SXO curve; without one it is skipped with a warning.
 
+With `depth_check=True`, the porosity step first matches density, neutron and sonic to each other with `depth_match` and warns when one of them lines up with the others only after a depth shift; the curves stay as recorded (see {ref}`analysis-off-depth`).
+
 Three settings take a mapping, so you give only the values you change and the rest keep their defaults:
 
 ```python

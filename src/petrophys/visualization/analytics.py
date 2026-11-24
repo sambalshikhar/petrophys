@@ -13,16 +13,16 @@ arrays so notebooks never need to hand-roll matplotlib.
 from __future__ import annotations
 
 from petrophys._internal.advice import Advice
+from petrophys.visualization.base import Plot
 from petrophys.visualization.style import _styled_plot, display_unit
 
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
 try:
     import matplotlib.pyplot as plt
     from matplotlib.axes import Axes
-    from matplotlib.figure import Figure
 
     HAS_MATPLOTLIB = True
 except Exception:  # pragma: no cover - exercised by import environment
@@ -100,13 +100,14 @@ def _minmax_normalize(values: np.ndarray, low: float = 5.0, high: float = 95.0) 
 def multiwell_overlay(
     wells: Sequence[Any],
     curve: str,
-    depth_range: Optional[Tuple[float, float]] = None,
+    top: Optional[float] = None,
+    bottom: Optional[float] = None,
     normalize: bool = False,
     labels: Optional[Sequence[str]] = None,
     figsize: Tuple[float, float] = (7, 10),
     title: Optional[str] = None,
     ax: Optional["Axes"] = None,
-) -> Tuple["Figure", "Axes"]:
+) -> Plot:
     """Overlay one curve versus depth from several wells on a shared depth axis.
 
     Ideal for cross-well QC and normalization "before/after" displays. When
@@ -125,7 +126,7 @@ def multiwell_overlay(
     curve : str
         Curve to plot: a curve of the well or a standard name (``RDEP`` finds
         ``RT`` or ``ILD``), found as :func:`petrophys.plot` finds it.
-    depth_range : tuple of float, optional
+    top, bottom : float, optional
         Depth window, in the depth unit of the first well.
     normalize : bool
         Scale each curve so its 5th-95th percentiles span 0-1 before plotting.
@@ -140,12 +141,16 @@ def multiwell_overlay(
 
     Returns
     -------
-    (Figure, Axes)
+    Plot
+        ``.fig`` and ``.ax``; ``.save(path)``. Shows itself at the end of a
+        notebook cell.
     """
     _require_mpl()
     from petrophys.model.units import normalize_depth_unit
+    from petrophys._internal.analysis_helpers import as_well
     from petrophys.visualization.log_viewer import _display_well, _resolve_curve_name_for_well
 
+    wells = [as_well(well) for well in wells]  # interpretation results give their wells
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
@@ -175,8 +180,9 @@ def multiwell_overlay(
         elif (unit, plot_unit) == ("m", "ft"):
             depth = depth / 0.3048
         data = np.asarray(found.data, dtype=float)
-        if depth_range is not None:
-            lo, hi = sorted(depth_range)
+        if top is not None or bottom is not None:
+            lo = -np.inf if top is None else float(top)
+            hi = np.inf if bottom is None else float(bottom)
             sel = (depth >= lo) & (depth <= hi)
             depth, data = depth[sel], data[sel]
         if normalize:
@@ -201,7 +207,7 @@ def multiwell_overlay(
             handle.set_linewidth(2.0)
     if title:
         ax.set_title(title)
-    return fig, ax
+    return Plot(fig, ax)
 
 
 @_styled_plot
@@ -219,7 +225,7 @@ def bar_chart(
     ylabel: Optional[str] = None,
     value_labels: bool = False,
     ax: Optional["Axes"] = None,
-) -> Tuple["Figure", "Axes"]:
+) -> Plot:
     """Single or grouped bar chart for rankings and category comparisons.
 
     ``values`` is either a 1-D sequence (single series) or a 2-D array / mapping
@@ -296,7 +302,7 @@ def bar_chart(
     ax.grid(True, axis=("x" if horizontal else "y"), alpha=0.3)
     if title:
         ax.set_title(title)
-    return fig, ax
+    return Plot(fig, ax)
 
 
 @_styled_plot
@@ -311,7 +317,7 @@ def tornado_plot(
     low_color: str = "#c44e52",
     high_color: str = "#4c72b0",
     ax: Optional["Axes"] = None,
-) -> Tuple["Figure", "Axes"]:
+) -> Plot:
     """Sensitivity tornado: horizontal bars of low/high outcome about a base case.
 
     Parameters are sorted by total span (widest at top). ``low``/``high`` are the
@@ -357,7 +363,7 @@ def tornado_plot(
     ax.grid(True, axis="x", alpha=0.3)
     if title:
         ax.set_title(title)
-    return fig, ax
+    return Plot(fig, ax)
 
 
 def _curve_by_well(wells: Any, curve: str) -> Tuple[Dict[str, np.ndarray], str]:
@@ -407,7 +413,7 @@ def histograms(
     ax: Optional["Axes"] = None,
     value_range: Optional[Tuple[float, float]] = None,
     histtype: str = "bar",
-) -> Tuple["Figure", "Axes"]:
+) -> Plot:
     """Overlay histograms of several datasets (e.g. GR before/after normalization).
 
     ``datasets`` maps a label to a 1-D array; NaNs are dropped. Or it is
@@ -465,7 +471,7 @@ def histograms(
     ax.grid(True, alpha=0.3)
     if title:
         ax.set_title(title)
-    return fig, ax
+    return Plot(fig, ax)
 
 
 @_styled_plot
@@ -481,7 +487,7 @@ def line_chart(
     markers: bool = False,
     invert_yaxis: bool = False,
     ax: Optional["Axes"] = None,
-) -> Tuple["Figure", "Axes"]:
+) -> Plot:
     """Generic x versus multiple y-series line plot.
 
     Covers transfer functions (e.g. Vcl vs IGR for several methods), temperature
@@ -511,7 +517,7 @@ def line_chart(
     ax.grid(True, alpha=0.3)
     if title:
         ax.set_title(title)
-    return fig, ax
+    return Plot(fig, ax)
 
 
 @_styled_plot
@@ -528,7 +534,7 @@ def heatmap(
     colorbar_label: Optional[str] = None,
     log_color: bool = False,
     ax: Optional["Axes"] = None,
-) -> Tuple["Figure", "Axes"]:
+) -> Plot:
     """2-D intensity map, e.g. an NMR T2-distribution vs depth or a binned density crossplot.
 
     Parameters
@@ -560,7 +566,9 @@ def heatmap(
 
     Returns
     -------
-    (Figure, Axes)
+    Plot
+        ``.fig`` and ``.ax``; ``.save(path)``. Shows itself at the end of a
+        notebook cell.
     """
     _require_mpl()
     if ax is None:
@@ -592,7 +600,7 @@ def heatmap(
         cb.set_label(colorbar_label)
     if title:
         ax.set_title(title)
-    return fig, ax
+    return Plot(fig, ax)
 
 
 __all__ = [

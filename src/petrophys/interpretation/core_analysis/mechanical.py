@@ -11,7 +11,7 @@ Mavko, G., Mukerji, T. and Dvorkin, J. (2009). *The Rock Physics Handbook*,
 2nd ed. Cambridge University Press.
 """
 
-from typing import Optional, Union, Dict, List, Any
+from typing import Optional, Union, Dict, Any
 from pathlib import Path
 from dataclasses import dataclass, field
 import numpy as np

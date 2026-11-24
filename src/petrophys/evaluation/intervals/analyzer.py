@@ -5,7 +5,7 @@ Given a Well object and one or more Interval objects, compute
 summaries including net pay, average properties, and HCPV.
 """
 
-from typing import Optional, List, Union
+from typing import List, Union
 from dataclasses import dataclass
 from pathlib import Path
 import numpy as np

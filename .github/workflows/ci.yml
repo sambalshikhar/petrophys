@@ -29,7 +29,7 @@ jobs:
 
       - name: Lint with flake8
         run: |
-          flake8 src/petrophys --count --select=E9,F63,F7,F82 --builtins=Well,Curve --show-source --statistics
+          flake8 src/petrophys scripts tests --count --select=E9,F63,F7,F82,F401,F811,F841 --builtins=Well,Curve --show-source --statistics
           flake8 src/petrophys --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
 
       - name: Check the declared parameters of the public functions

@@ -9,6 +9,8 @@ viewer pages. This module only adds specialist panels for NMR and FMI data.
 from __future__ import annotations
 
 from petrophys._internal.advice import Advice
+from petrophys.visualization._data import depth_limits
+from petrophys.visualization.base import Plot
 from petrophys.visualization.style import _styled_plot
 
 import warnings
@@ -56,9 +58,10 @@ def has_nmr_curves(well: "Well") -> bool:
 @_styled_plot
 def nmr_panel(
     well: "Well",
-    depth_range: Optional[Tuple[float, float]] = None,
+    top: Optional[float] = None,
+    bottom: Optional[float] = None,
     figsize: Optional[Tuple[float, float]] = None,
-) -> "plt.Figure":
+) -> Plot:
     """Create an NMR specialist panel for processed NMR summary logs.
 
     The panel is drawn as :func:`petrophys.plot` draws a well: gamma ray and
@@ -68,8 +71,8 @@ def nmr_panel(
     fluid is total porosity minus free fluid when the file has no bound-fluid
     curve.
 
-    ``depth_range`` is the (top, bottom) window drawn, in the well's depth
-    unit (default: the whole log). The permeability track spans the whole
+    ``top`` and ``bottom`` set the window drawn, in the well's depth unit
+    (default: the whole log). The permeability track spans the whole
     decades of the permeabilities inside that window.
     """
     _require_matplotlib()
@@ -83,7 +86,7 @@ def nmr_panel(
     )
 
     depth = _depth(well)
-    top, bottom = _resolve_depth_range(depth, depth_range)
+    top, bottom = _resolve_depth_range(depth, depth_limits(depth, top, bottom))
     shown = deepcopy(well)
     total = _curve(shown, NMR_TOTAL_ALIASES)
     ffi = _curve(shown, NMR_FFI_ALIASES)
@@ -173,8 +176,8 @@ def nmr_panel(
     viewer = LogViewer(shown, template_defaults="auto", figsize=figsize)
     viewer.template = LogViewerTemplate(name="nmr", tracks=[item for item in tracks if item is not None])
     viewer.optional_tracks, viewer._optional_track_specs = [], []
-    fig, _ = viewer.create(depth_range=(top, bottom))
-    return fig
+    fig, axes = viewer.create(depth_range=(top, bottom))
+    return Plot(fig, axes)
 
 
 def _decades(curves, depth: np.ndarray, top: float, bottom: float) -> Tuple[float, float]:
@@ -197,19 +200,23 @@ def _decades(curves, depth: np.ndarray, top: float, bottom: float) -> Tuple[floa
 @_styled_plot
 def fmi_panel(
     fmi_image: BoreholeImageData,
-    depth_range: Optional[Tuple[float, float]] = None,
+    top: Optional[float] = None,
+    bottom: Optional[float] = None,
+
     orient: bool = True,
     equalize: str = "dynamic",
     figsize: Tuple[float, float] = (5, 11),
-) -> "plt.Figure":
-    """Create a specialist FMI image panel."""
+) -> Plot:
+    """Borehole image panel: the image (oriented to azimuth when navigation
+    is there) with the image-log colours, dark conductive and light resistive.
+    ``top`` and ``bottom`` set the depth window."""
     _require_matplotlib()
-    image = _prepared_fmi_image(fmi_image, depth_range, orient)
+    image = _prepared_fmi_image(fmi_image, depth_limits(fmi_image.depth, top, bottom), orient)
     fig, ax = plt.subplots(figsize=figsize)
     plot_fmi(image, ax=ax, equalize=equalize, interpolation="nearest")
     fig.suptitle("FMI Image", fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    return fig
+    return Plot(fig, ax)
 
 
 def _prepared_fmi_image(

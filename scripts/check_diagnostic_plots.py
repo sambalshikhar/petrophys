@@ -156,7 +156,7 @@ class DiagnosticPlotChecks(unittest.TestCase):
     def test_histograms_normalize_units_and_reject_incompatible_units(self):
         first, second = control(), control()
         second.get("PHIE").data *= 100; second.get("PHIE").unit = "%"
-        fig, ax = histograms([first, second], curve="PHIE", bins=10)
+        ax = histograms([first, second], curve="PHIE", bins=10).ax
         np.testing.assert_array_equal([p.get_height() for p in ax.containers[0]],
                                       [p.get_height() for p in ax.containers[1]])
         self.assertIn("v/v", ax.get_xlabel())

@@ -279,7 +279,7 @@ def impute(
         )
 
     try:
-        from sklearn.ensemble import HistGradientBoostingRegressor
+        from sklearn.ensemble import HistGradientBoostingRegressor  # noqa: F401 - the check that scikit-learn is installed
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise ImportError('pp.impute needs scikit-learn: pip install "petrophys[ml]"') from exc
 

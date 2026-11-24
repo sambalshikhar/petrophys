@@ -51,7 +51,6 @@ from petrophys.preprocessing.quality.bad_hole.flag_generator import (
     _plausible_bit_size,
 )
 import pandas as pd
-from petrophys.io import ascii_reader, las_reader
 from petrophys._internal.advice import Advice, joined, restated
 
 DEFAULT_RESISTIVITY_REFERENCE_TEMP_F = 75.0
@@ -1320,6 +1319,13 @@ class DynamicWorkflowConfig:
     #: samples without a neutron reading get the neutron-density value.
     phi_cl: Optional[float] = None
 
+    # -- Depth check -----------------------------------------------------------
+    #: Match density, neutron and sonic to each other with ``depth_match``
+    #: before the porosity step and warn when one of them lines up with the
+    #: others only after a depth shift (opt-in). The curves are not moved:
+    #: ``shift_curves`` does that when you choose to.
+    depth_check: bool = False
+
     # -- Hydrocarbon correction ----------------------------------------------
     #: Apply the neutron-density hydrocarbon correction (opt-in). It writes the
     #: corrected curves NPHI_HC and RHOB_HC, and the porosity step (so SW and
@@ -2228,7 +2234,7 @@ _CURRENT_RANGE_LIMITS = {"DTC": (38.5, 300.0), "SP": (-500.0, 500.0)}
 _BOOL_FIELDS = (
     "standardize_input", "rename_input_curves", "allow_default_rw",
     "mud_has_clay_or_kcl", "raise_on_error", "apply_hc_correction", "use_peer_core",
-    "reuse_input_resflag",
+    "reuse_input_resflag", "depth_check",
 )
 _POSITIVE_FIELDS = (
     "rw", "rmf_at_meas_temp", "rm", "rmf_salinity_ppm", "rmf_chlorides_mg_l", "salinity_ppm", "td_ft",
@@ -4882,16 +4888,29 @@ class DynamicWorkflow:
 
         from petrophys.evaluation.net_pay.cutoffs import cutoff_family
 
+        resolved: Dict[Any, tuple] = {}
         for idx, raw_lithology in enumerate(lithology_values):
-            lithology_name = _coerce_lithology_group(raw_lithology) or fallback
-            coeffs = ArchieParameterDefaults.get(lithology_name)
-            # A value per lithology goes by the sample's lithology, then its family.
-            canonical, family = str(coeffs.lithology), cutoff_family(lithology_name)
-            a_values[idx] = _lithology_value(self.config.a, canonical, family, coeffs.a)
-            m_values[idx] = _lithology_value(self.config.m, canonical, family, coeffs.m)
-            n_values[idx] = _lithology_value(self.config.n, canonical, family, coeffs.n)
-
-            key = str(coeffs.lithology or lithology_name).upper()
+            try:
+                found = resolved.get(raw_lithology)
+            except TypeError:  # an unhashable label is resolved each time
+                found = None
+            if found is None:
+                lithology_name = _coerce_lithology_group(raw_lithology) or fallback
+                coeffs = ArchieParameterDefaults.get(lithology_name)
+                # A value per lithology goes by the sample's lithology, then its family.
+                canonical, family = str(coeffs.lithology), cutoff_family(lithology_name)
+                found = (
+                    _lithology_value(self.config.a, canonical, family, coeffs.a),
+                    _lithology_value(self.config.m, canonical, family, coeffs.m),
+                    _lithology_value(self.config.n, canonical, family, coeffs.n),
+                    coeffs,
+                    str(coeffs.lithology or lithology_name).upper(),
+                )
+                try:
+                    resolved[raw_lithology] = found
+                except TypeError:
+                    pass
+            a_values[idx], m_values[idx], n_values[idx], coeffs, key = found
             item = summary.setdefault(
                 key,
                 {
@@ -5355,9 +5374,6 @@ class DynamicWorkflow:
             elif self._selected_lithology_source == "config":
                 raise ValueError(Advice("lithology_source='config' requires explicit lithology and matrix_type, "
                                         "not 'auto'.", ("lithology", "matrix_type")))
-
-        # Detect available curves
-        available = self._detect_available_curves(well)
 
         # Execute pipeline in order
         pipeline = self.get_pipeline()
@@ -7384,7 +7400,6 @@ class DynamicWorkflow:
         decisions = []
 
         temp_profile = self._get_temperature_profile(well)
-        reference_temp = self._reference_temperature(temp_profile)
 
         zone_only_rmf = self._zone_only_parameters(well, "RMF")
 
@@ -7963,7 +7978,7 @@ class DynamicWorkflow:
     def _step_rw(self, well: "Well") -> StepResult:
         from petrophys.interpretation.electrical.rw.rw_module import RwModule
         from petrophys.interpretation.electrical.rw.salinity_rw import rw_from_salinity, salinity_from_rw
-        from petrophys.interpretation.electrical.rw.sp_rw import estimate_sp_lines, rw_from_sp, rw_from_rxo_rt
+        from petrophys.interpretation.electrical.rw.sp_rw import estimate_sp_lines, rw_from_sp
 
         trace = StepResult(step="rw", success=True)
         decisions = []
@@ -9024,24 +9039,49 @@ class DynamicWorkflow:
         return merged
 
     def _warn_if_off_depth(self, well: "Well", density: str, neutron: str) -> None:
-        """Warn when the density lines up with the neutron clearly better shifted than as recorded."""
-        from petrophys.preprocessing.quality.depth_alignment import find_log_depth_shift
+        """Warn when density, neutron or sonic is off depth against the others.
 
-        try:
-            found = find_log_depth_shift(well, density, neutron, sign="negative")
-        except ValueError:
+        The three see the same porosity, so on depth they line up: each pair is
+        matched with :func:`~petrophys.preprocessing.depth_match`. A curve
+        that disagrees with both others is named; a single pair off is reported
+        as such.
+        """
+        from petrophys.preprocessing.quality.depth_match import depth_match
+
+        sonic = get_curve(well, ["DTC", "DT"])
+        curves = [density, neutron] + ([sonic.mnemonic] if sonic is not None else [])
+        signs = {frozenset((density, neutron)): "negative"}
+        if sonic is not None:
+            signs[frozenset((sonic.mnemonic, neutron))] = "positive"
+            signs[frozenset((sonic.mnemonic, density))] = "negative"
+        found = {}
+        for pair, sign in signs.items():
+            moved, reference = sorted(pair, key=curves.index, reverse=True)
+            try:
+                match = depth_match(well, moved, reference, sign=sign)
+            except ValueError:
+                continue
+            if match.off_depth:
+                found[pair] = match
+        if not found:
             return
-        if not found.off_depth:
-            return
-        unit = found.depth_unit
-        where = "higher" if found.shift < 0 else "deeper"
-        self._result.warnings.append(
-            f"{density} lines up with {neutron} {abs(found.shift):g} {unit} {where} than recorded "
-            f"(correlation {found.correlation:.2f}, against {found.correlation_unshifted:.2f} as recorded): "
-            f"the density may be off depth, and porosity from it describes other beds. "
-            f"find_log_depth_shift(well, {density!r}, {neutron!r}) and shift_curves(...) check and move it "
-            "before interpreting."
-        )
+        odd = [name for name in curves if len(found) == 2 and all(name in pair for pair in found)]
+        for pair, match in found.items():
+            # The curve that disagrees with both others, else the pair's own.
+            curve = odd[0] if odd else match.curve
+            others = [name for name in curves if name != curve] if odd else [match.reference]
+            shift = float(np.median(match.shift)) * (1 if curve == match.curve else -1)
+            size = f"{abs(shift):.2g}"
+            self._result.warnings.append(
+                f"{curve} lines up with {' and '.join(others)} only when moved {size} {match.depth_unit} "
+                f"{'up' if shift < 0 else 'down'} (median windowed correlation {match.correlation_before:.2f} "
+                f"as recorded, {match.correlation_after:.2f} moved). One side is off depth and describes other "
+                "beds than the curves it is combined with; check each against the gamma ray of its run. "
+                f"depth_match(well, {match.curve!r}, {match.reference!r}) measures the shift and "
+                "shift_curves(well, [...], match) moves the curves before interpreting."
+            )
+            if odd:
+                break
 
     def _step_porosity_refinement(self, well: "Well") -> StepResult:
         self._lithology_log = None
@@ -9066,7 +9106,7 @@ class DynamicWorkflow:
 
         nphi_curve = get_curve(well, ["NPHI"])
         rhob_curve = get_curve(well, ["RHOB"])
-        if (not refinement and nphi_curve is not None and rhob_curve is not None
+        if (self.config.depth_check and not refinement and nphi_curve is not None and rhob_curve is not None
                 and not self._reproducing_benchmark and not self._historical):
             self._warn_if_off_depth(well, rhob_curve.mnemonic, nphi_curve.mnemonic)
         hc_corrected = (

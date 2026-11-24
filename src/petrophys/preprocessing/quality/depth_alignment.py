@@ -15,7 +15,7 @@ the size of the correlation by default and reports its sign.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Optional
 
 import numpy as np
 
@@ -220,13 +220,16 @@ def find_log_depth_shift(
     )
 
 
-def shift_curves(well, curves: Iterable[str], shift: float):
-    """Return a copy of ``well`` with ``curves`` moved by ``shift`` (well depth units).
+def shift_curves(well, curves, shift):
+    """Return a copy of ``well`` with ``curves`` moved by ``shift``.
 
-    A reading recorded at depth ``z`` is placed at ``z + shift``: a negative
-    shift moves a curve up. Values are interpolated onto the well's depth
-    index; depths the moved curve does not reach become NaN, and gaps stay
-    gaps. Each moved curve's description records the shift.
+    ``shift`` is one correction in well depth units, a correction per sample,
+    or a :class:`~petrophys.preprocessing.DepthMatch`: the moved curve at depth
+    ``z`` is the recorded curve at ``z - shift``, so a reading recorded at
+    ``z`` moves to ``z + shift`` and a negative shift moves a curve up. Values
+    are interpolated onto the well's depth index; depths the moved curve does
+    not reach become NaN, and gaps stay gaps. Each moved curve's description
+    records the shift.
 
     Examples
     --------
@@ -237,26 +240,24 @@ def shift_curves(well, curves: Iterable[str], shift: float):
     """
     from copy import deepcopy
 
+    from petrophys.preprocessing.quality.depth_match import _moved
+
     names = [str(name) for name in ([curves] if isinstance(curves, str) else curves)]
-    shift = float(shift)
-    if not np.isfinite(shift):
-        raise ValueError("shift must be a finite number of depth units")
     out = deepcopy(well)
     depth = np.asarray(out.depth, dtype=float)
+    values_of_shift = np.asarray(getattr(shift, "shift", shift), dtype=float)
+    if values_of_shift.ndim == 0:
+        values_of_shift = np.full(depth.shape, float(values_of_shift))
+    if values_of_shift.shape != depth.shape:
+        raise ValueError(f"shift has {values_of_shift.size} values; the well has {depth.size} samples")
+    if not np.all(np.isfinite(values_of_shift)):
+        raise ValueError("shift must be finite")
     unit = str(getattr(well, "depth_unit", "") or "")
+    low, high = float(values_of_shift.min()), float(values_of_shift.max())
+    note = (f"shifted {low:+g} {unit}" if low == high else f"shifted {low:+g} to {high:+g} {unit}").strip()
     for name in names:
         curve = _find(out, name)
-        values = np.asarray(curve.data, dtype=float)
-        moved_depth = depth + shift
-        finite = np.isfinite(values) & np.isfinite(moved_depth)
-        result = np.full(depth.shape, np.nan)
-        if finite.sum() >= 2:
-            result = np.interp(depth, moved_depth[finite], values[finite], left=np.nan, right=np.nan)
-            # Keep the gaps: a target depth whose nearest moved sample is NaN stays NaN.
-            nearest = np.clip(np.searchsorted(moved_depth, depth), 0, depth.size - 1)
-            result[~np.isfinite(values[nearest])] = np.nan
-        curve.data = result
-        note = f"shifted {shift:+g} {unit}".strip()
+        curve.data = _moved(depth, np.asarray(curve.data, dtype=float), values_of_shift)
         curve.metadata.description = f"{curve.description}; {note}" if curve.description else note
     return out
 

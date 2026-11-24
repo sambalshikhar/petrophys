@@ -9,11 +9,7 @@ from typing import TYPE_CHECKING, Optional, Union
 from dataclasses import dataclass
 import numpy as np
 
-from petrophys.model.constants import DefaultParameters
-from petrophys.interpretation.temperature.temp_corrections import (
-    correct_resistivity_temperature,
-    arps_equation,
-)
+from petrophys.interpretation.temperature.temp_corrections import correct_resistivity_temperature
 from petrophys._internal.benchmark import reproducing_benchmark
 
 if TYPE_CHECKING:

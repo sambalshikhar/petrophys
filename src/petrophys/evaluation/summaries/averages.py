@@ -2,7 +2,7 @@
 Average calculations for zones and intervals.
 """
 
-from typing import TYPE_CHECKING, Optional, List, Dict, Union
+from typing import TYPE_CHECKING, Optional, List, Dict
 import warnings
 import numpy as np
 

@@ -180,7 +180,7 @@ pp.flow_unit_plot(core_data(result))
 
 ```{code-cell} python
 pp.zone_flags_plot(result, flag_curves=["NET_ROCK", "NET_RES", "NET_PAY"],
-                   depth_range=(2841, 2958));
+                   top=2841, bottom=2958);
 ```
 
 Formation tops given to `pp.read` (or to `pp.plot` as `formations=`) are drawn on

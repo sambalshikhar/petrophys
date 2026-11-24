@@ -3,7 +3,7 @@ Zone summary calculations.
 """
 
 from typing import TYPE_CHECKING, Optional, List, Dict, Union
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar

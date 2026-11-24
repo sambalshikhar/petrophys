@@ -2,9 +2,10 @@
 Crossplot visualization.
 """
 
+from petrophys.visualization.base import Plot
 from petrophys.visualization.style import _styled_plot, display_unit, save_figure
 
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
 import warnings
 
 if TYPE_CHECKING:
@@ -14,7 +15,6 @@ try:
     import matplotlib.pyplot as plt
     from matplotlib.figure import Figure
     from matplotlib.axes import Axes
-    import matplotlib.colors as mcolors
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
@@ -24,7 +24,7 @@ from petrophys._internal.validation import warn_invalid
 from petrophys.visualization._data import paired_values, note_outside_axes
 
 
-class CrossPlot:
+class CrossPlot(Plot):
     """
     Crossplot creator for petrophysics analysis.
 
@@ -39,8 +39,9 @@ class CrossPlot:
             raise ImportError("matplotlib is required for visualization")
 
         self.figsize = figsize
-        self.fig: Optional[Figure] = None
-        self.ax: Optional[Axes] = None
+        Plot.__init__(self)
+        # Names and colours of a class curve colouring the points (set by crossplot).
+        self._categories: Tuple[Any, Any] = (None, None)
 
     @_styled_plot
     def create(
@@ -208,16 +209,6 @@ class CrossPlot:
         self.fig.tight_layout()
         save_figure(self.fig, filename, dpi=dpi)
 
-    def _ipython_display_(self) -> None:
-        # A plot at the end of a notebook cell shows its figure, once.
-        from IPython.core.pylabtools import print_figure
-        from IPython.display import Image, display
-
-        if self.fig is None:
-            return
-        display(Image(data=print_figure(self.fig, "png", bbox_inches="tight")))
-        plt.close(self.fig)  # keeps .fig for saving; the notebook does not draw it again
-
 
 @_styled_plot
 def _plain_crossplot(
@@ -318,7 +309,6 @@ def _plain_crossplot(
     return plot
 
 
-
 #: Chart recognised from a pair of standard curve names (either order).
 _POROSITY = {"PHIE", "PHIT", "PHIE_CC", "PHI", "PHIT_GAS_CORR"}
 _RESISTIVITY = {"RT", "RDEP", "RD", "ILD", "LLD", "RT_INV", "AT90", "M2R9"}
@@ -354,7 +344,6 @@ def _chart_for(x: str, y: str):
         if (y.upper() in first or sy in first) and (x.upper() in second or sx in second):
             return chart, True
     return "plain", False
-
 
 
 def crossplot(

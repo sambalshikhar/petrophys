@@ -499,16 +499,9 @@ def interpret_costa_las(
     resistivity for, are dropped. Writes the interpreted LAS and a ``workflow_json`` trace per well under
     ``output_dir``, and returns one BatchLasResult per well.
     """
-    from petrophys.io import export_las, read_las
-    from petrophys.preprocessing.standardization import standardize_curves
+    from petrophys.io import export_las
     from petrophys.reporting.reference_export import _filter_input_files_by_well_names
-    from petrophys.workflow.dynamic_workflow import _dataset_calculations
-    from petrophys.workflow.zoned_batch import (
-        BatchLasResult,
-        _finalize_export_curves,
-        _write_json_log,
-        run_dynamic_workflow_with_zones,
-    )
+    from petrophys.workflow.zoned_batch import BatchLasResult, _write_json_log
 
     parameters = parameters if parameters is not None else load_costa_parameters()
     reference_volumes = reference_volumes if reference_volumes is not None else load_costa_reference_volumes()

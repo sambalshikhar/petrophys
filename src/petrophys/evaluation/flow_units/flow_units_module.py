@@ -25,7 +25,7 @@ SPE 26436, SPE Annual Technical Conference and Exhibition.
 """
 from dataclasses import dataclass, field
 import warnings
-from typing import TYPE_CHECKING, List, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Optional, Sequence, Union
 
 import numpy as np
 

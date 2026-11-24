@@ -18,6 +18,7 @@ from petrophys.preprocessing.quality.bad_hole import (
     generate_washout_flag,
     mask_bad_hole_curves,
 )
+from petrophys.preprocessing.quality.depth_match import DepthMatch, depth_match
 from petrophys.preprocessing.quality.depth_alignment import (
     LogDepthShift,
     find_log_depth_shift,
@@ -49,6 +50,8 @@ __all__ = [
     "mask_bad_hole_curves",
     "apply_quality_flags",
     # Depth alignment
+    "DepthMatch",
+    "depth_match",
     "LogDepthShift",
     "find_log_depth_shift",
     "shift_curves",

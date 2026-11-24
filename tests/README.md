@@ -17,6 +17,7 @@ pressure DLIS samples dlisio (`petrophys[dlis]`).
 |---|---|
 | `test_public_api.py` | Every public entry point (`sample`, `read`, `read_formations`, `Well`, `interpret`, results, `plot`, `impute`, `export_context`) with each documented input form, and the error each bad input raises; every bundled well interpreted, plotted and exported. The cases are in `api_cases.py`. |
 | `test_reference_values.py` | The interpretation of nine bundled wells, including the GeoLink and COSTA benchmark profiles: steps and methods, net thickness, statistics of every curve, and the exported context of the benchmark profiles, to a relative 1e-6. Scenarios are in `reference_cases.py`, stored numbers in `reference/`. |
+| `test_science.py` | The textbook equations (Archie and the shaly-sand models in clean rock, density and sonic porosity, Larionov, Timur, Coates-Denoo, RQI/FZI, Arps, brine resistivity from salinity) against values worked by hand; the order of the Rw sources; the depth-shift tools; the plot object. Runs in seconds. |
 | `test_nnls.py` | The mineral solvers' non-negative least squares reaches the optimum, whatever the scipy version. |
 | `test_mcp_server.py` | An MCP client session: tool list, sample well, interpretation, step trace, zone summaries, plot, export, refused requests. |
 | `test_check_scripts.py` | `scripts/check_input_validation.py`, `check_diagnostic_plots.py`, `check_function_schema.py` and `check_notebook_outputs.py` pass. |

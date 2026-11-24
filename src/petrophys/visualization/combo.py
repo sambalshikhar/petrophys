@@ -15,7 +15,8 @@ from typing import Optional, Tuple
 @_styled_plot
 def triple_combo(
     well,
-    depth_range: Optional[Tuple[float, float]] = None,
+    top: Optional[float] = None,
+    bottom: Optional[float] = None,
     figsize: Optional[Tuple[float, float]] = None,
 ):
     """Standard triple-combo display: GR/caliper, resistivity, density-neutron.
@@ -24,11 +25,9 @@ def triple_combo(
     Returns the :class:`~petrophys.visualization.log_viewer.LogViewer` (use
     ``.fig`` / ``.save(path)``).
     """
-    from petrophys.visualization.log_viewer import _log_viewer
+    from petrophys.visualization._data import depth_limits
+    from petrophys.visualization.log_viewer import LogViewer
 
-    return _log_viewer(
-        well,
-        template_defaults="triple_combo",
-        depth_range=depth_range,
-        figsize=figsize,
-    )
+    viewer = LogViewer(well, template_defaults="triple_combo", figsize=figsize)
+    viewer.create(depth_range=depth_limits(viewer.well.depth, top, bottom))
+    return viewer

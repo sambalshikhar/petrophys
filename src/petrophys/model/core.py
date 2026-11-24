@@ -6,7 +6,7 @@ saturation, etc.) from CSV/Excel/DataFrame and provides depth-aligned access
 for log-core calibration workflows.
 """
 
-from typing import Optional, Union, List, Dict, Any
+from typing import Optional, Union, Dict, Any
 from pathlib import Path
 from dataclasses import dataclass, field
 import numpy as np

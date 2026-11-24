@@ -12,6 +12,7 @@ sensitivity studies. Every plot keeps its Matplotlib figure, so it can be
 styled further or saved.
 """
 
+from petrophys.visualization.base import Plot
 from petrophys.visualization.style import plot_style, use_plot_style, save_figure
 from petrophys.visualization.xrf import xrf_panel
 from petrophys.visualization.charts import (
@@ -59,6 +60,8 @@ from petrophys.visualization.analytics import (
 )
 
 __all__ = [
+    # What every plot returns
+    "Plot",
     # Any two curves
     "crossplot",
     "CrossPlot",

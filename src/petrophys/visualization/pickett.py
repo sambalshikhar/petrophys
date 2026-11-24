@@ -2,6 +2,7 @@
 Pickett plot for Archie parameter determination.
 """
 
+from petrophys.visualization.base import Plot
 from petrophys.visualization.style import _styled_plot, display_unit, save_figure
 
 from typing import TYPE_CHECKING, Optional, Tuple
@@ -27,7 +28,7 @@ from petrophys.visualization._data import (
 )
 
 
-class PickettPlot:
+class PickettPlot(Plot):
     """
     Pickett crossplot for determining Archie parameters.
 
@@ -39,8 +40,7 @@ class PickettPlot:
             raise ImportError("matplotlib is required for visualization")
 
         self.figsize = figsize
-        self.fig: Optional[Figure] = None
-        self.ax: Optional[Axes] = None
+        Plot.__init__(self)
 
     @_styled_plot
     def create(
@@ -244,16 +244,6 @@ class PickettPlot:
             raise RuntimeError("Call create() first")
         self.fig.tight_layout()
         save_figure(self.fig, filename, dpi=dpi)
-
-    def _ipython_display_(self) -> None:
-        # A plot at the end of a notebook cell shows its figure, once.
-        from IPython.core.pylabtools import print_figure
-        from IPython.display import Image, display
-
-        if self.fig is None:
-            return
-        display(Image(data=print_figure(self.fig, "png", bbox_inches="tight")))
-        plt.close(self.fig)  # keeps .fig for saving; the notebook does not draw it again
 
 
 @_styled_plot

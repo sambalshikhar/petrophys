@@ -5,8 +5,7 @@ This module provides functions for calculating geothermal gradients
 from temperature measurements.
 """
 
-from typing import Optional, Tuple, Union
-import numpy as np
+from typing import Optional, Tuple
 
 from petrophys._internal.benchmark import reproducing_benchmark
 from petrophys.model.constants import DefaultParameters

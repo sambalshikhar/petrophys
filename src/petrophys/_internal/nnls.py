@@ -8,24 +8,31 @@ otherwise the system, a handful of unknowns, is solved exactly by trying every
 set of active variables. The residual returned is always that of ``x``.
 """
 
+import math
 from itertools import combinations
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 from scipy.optimize import nnls as _scipy_nnls
 
 
-def _is_optimal(A: np.ndarray, b: np.ndarray, x: np.ndarray) -> bool:
-    """KKT conditions of min ||Ax - b|| subject to x >= 0, to rounding."""
-    if not np.all(np.isfinite(x)) or np.any(x < 0):
+def _is_optimal(A: np.ndarray, b: np.ndarray, x: np.ndarray, a_max: Optional[float] = None) -> bool:
+    """KKT conditions of min ||Ax - b|| subject to x >= 0, to rounding.
+
+    ``a_max``, the largest ``|A|``, may be given when many systems share ``A``.
+    """
+    # Plain Python on these few numbers: abs, max and comparisons are exact,
+    # and far cheaper than numpy calls on arrays this small.
+    xs = x.tolist()
+    if not all(math.isfinite(v) and v >= 0 for v in xs):
         return False
-    gradient = A.T @ (A @ x - b)
-    a_max = float(np.abs(A).max()) if A.size else 0.0
+    gradient = (A.T @ (A @ x - b)).tolist()
+    if a_max is None:
+        a_max = float(np.abs(A).max()) if A.size else 0.0
     # Rounding of A.T (A x - b) is of order eps * |A| (|A| |x| + |b|); allow
     # ten thousand times that, far below what a suboptimal step leaves.
-    scale = 1e-12 * max(1.0, a_max * (a_max * (float(np.abs(x).max()) + 1.0) + float(np.abs(b).max())))
-    free = x > 0
-    return bool(np.all(np.abs(gradient[free]) <= scale) and np.all(gradient[~free] >= -scale))
+    scale = 1e-12 * max(1.0, a_max * (a_max * (max(abs(v) for v in xs) + 1.0) + max(abs(v) for v in b.tolist())))
+    return all(abs(g) <= scale if v > 0 else g >= -scale for g, v in zip(gradient, xs))
 
 
 def _exact_nnls(A: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -44,6 +51,26 @@ def _exact_nnls(A: np.ndarray, b: np.ndarray) -> np.ndarray:
             if norm < best_norm:
                 best_x, best_norm = x, norm
     return best_x
+
+
+def nnls_many(A: np.ndarray, B: np.ndarray) -> np.ndarray:
+    """``x`` of :func:`nnls` for each row of ``B`` against one float ``A``.
+
+    The optimality check of :func:`_is_optimal` runs on all the solutions at
+    once; a system that fails it is solved exactly.
+    """
+    X = np.array([_scipy_nnls(A, b)[0] for b in B]).reshape(len(B), A.shape[1])
+    if not len(B):
+        return X
+    a_max = float(np.abs(A).max()) if A.size else 0.0
+    gradient = (X @ A.T - B) @ A
+    scale = 1e-12 * np.maximum(1.0, a_max * (a_max * (np.abs(X).max(axis=1) + 1.0) + np.abs(B).max(axis=1)))
+    free = X > 0
+    within = np.where(free, np.abs(gradient) <= scale[:, None], gradient >= -scale[:, None])
+    optimal = np.isfinite(X).all(axis=1) & (X >= 0).all(axis=1) & within.all(axis=1)
+    for j in np.flatnonzero(~optimal):
+        X[j] = _exact_nnls(A, B[j])
+    return X
 
 
 def nnls(A, b) -> Tuple[np.ndarray, float]:

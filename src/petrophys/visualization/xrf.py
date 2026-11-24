@@ -14,7 +14,8 @@ from typing import Optional, Tuple
 import numpy as np
 import warnings
 from petrophys.exceptions import DataQualityWarning
-from petrophys.visualization._data import depth_window
+from petrophys.visualization._data import depth_limits, depth_window
+from petrophys.visualization.base import Plot
 from petrophys._internal.validation import numeric_array
 
 try:
@@ -42,7 +43,8 @@ _PROXY_COLORS = [
 @_styled_plot
 def xrf_panel(
     xrf,
-    depth_range: Optional[Tuple[float, float]] = None,
+    top: Optional[float] = None,
+    bottom: Optional[float] = None,
     figsize: Tuple[float, float] = (14, 11),
     *, concentration_unit: str = "%",
 ):
@@ -80,7 +82,7 @@ def xrf_panel(
     xrf = XRFData(depth=depth, elements=elements,
                   units={name: concentration_unit for name in elements}, metadata=getattr(xrf, "metadata", {}))
     depth = np.asarray(xrf.depth, dtype=float)
-    window = depth_window(depth, depth_range)
+    window = depth_window(depth, depth_limits(depth, top, bottom))
 
     def _sel(arr):
         arr = np.asarray(arr, dtype=float)
@@ -126,7 +128,7 @@ def xrf_panel(
     name = (xrf.metadata or {}).get("well")
     fig.suptitle(f"XRF geochemistry{(' - ' + name) if name else ''}", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    return fig
+    return Plot(fig)
 
 
 def _concentration_label(xrf, elements) -> str:

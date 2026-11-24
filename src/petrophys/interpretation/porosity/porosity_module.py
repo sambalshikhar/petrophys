@@ -5,7 +5,7 @@ This module provides the PorosityModule class for comprehensive
 porosity analysis.
 """
 
-from typing import TYPE_CHECKING, Dict, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Dict, Optional, Sequence
 from dataclasses import dataclass
 import warnings
 import numpy as np

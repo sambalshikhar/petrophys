@@ -653,6 +653,8 @@ def create_server(
         - apply_hc_correction, hc_type: oil|gas; rho_hc (g/cm3), hc_hydrogen_index:
           the hydrocarbon's density and hydrogen index (unset: oil 0.8/1.0, gas
           0.2/0.3); skip_steps: e.g. ['permeability'].
+        - depth_check: true matches density, neutron and sonic to each other and
+          warns when one is off depth (off by default).
         Use run_workflow for a recipe with given methods (e.g. a quick look) and
         interpret_wells to compare wells.
         """

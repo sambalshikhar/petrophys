@@ -16,7 +16,7 @@ and Applications*. Halliburton Energy Services, Houston.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, TYPE_CHECKING
 
 import numpy as np

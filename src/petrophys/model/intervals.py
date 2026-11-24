@@ -5,7 +5,7 @@ Provides a common base class and four concrete interval types:
 Formation, Zone, SubZone, and ManualInterval.
 """
 
-from typing import Optional, Union, Dict, Any
+from typing import Union, Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
 
