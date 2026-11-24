@@ -236,8 +236,11 @@ pp.plot(hw24, curves=["GR", "RHOB", "RHOB_PREDICTED"])
 ```
 
 The prediction follows the dense intervals at the top and base and the porous
-limestone between them. In a well with gaps, `RHOB_IMPUTED` keeps the measured density
-and takes the prediction only in the gaps, where `pp.plot` draws it dashed.
+limestone between them, apart from short swings: down to 2.25-2.45 g/cm3 at 8384-8389 ft,
+where the measured density reads 2.6-2.7; up to 2.6-2.7 at 8392-8395 ft, where it reads
+about 2.4; and down to about 2.53 at 8568-8570 ft, where it reads 2.70. In a well with gaps,
+`RHOB_IMPUTED` keeps the measured density and takes the prediction only in the gaps,
+where `pp.plot` draws it in grey.
 
 ## Matrix and water indicators
 

@@ -148,6 +148,39 @@ def porosity_label(sources):
     return "Effective porosity [v/v]"
 
 
+def clip_past_frame(ax, line) -> None:
+    """Clip a log curve a line width beyond the track's sides, so a curve that
+    sits on a scale limit (SW = 1 on a 1-0 track) is drawn over the frame at
+    full width instead of half hidden under it."""
+    from matplotlib.patches import Rectangle
+
+    width_in = ax.get_position().width * ax.figure.get_figwidth()
+    if width_in <= 0:
+        return
+    margin = (line.get_linewidth() / 72.0) / width_in
+    line.set_clip_path(Rectangle((-margin, 0.0), 1.0 + 2.0 * margin, 1.0, transform=ax.transAxes))
+
+
+def depth_downward(colorbar, label) -> None:
+    """A colour bar of depth reads downward, as a log does: deeper at the bottom."""
+    if str(label or "").strip().upper().split(" ")[0] in {"DEPTH", "DEPT", "MD", "TVD", "TVDSS"}:
+        colorbar.ax.invert_yaxis()
+
+
+def add_note(ax, text):
+    """A note in the chart's lower-left corner; several notes stack in one box
+    instead of printing over each other."""
+    notes = ax.__dict__.setdefault("_petrophys_notes", [])
+    notes.append(str(text))
+    previous = ax.__dict__.get("_petrophys_note_artist")
+    if previous is not None:
+        previous.remove()
+    ax._petrophys_note_artist = ax.text(
+        .01, .01, "\n".join(notes), transform=ax.transAxes, fontsize=7, color="0.3",
+        ha="left", va="bottom", zorder=5,
+        bbox=dict(facecolor="white", alpha=0.8, edgecolor="none", pad=1.5))
+
+
 def note_outside_axes(ax, x, y):
     x, y = np.asarray(x), np.asarray(y)
     finite = np.isfinite(x) & np.isfinite(y)
@@ -155,8 +188,7 @@ def note_outside_axes(ax, x, y):
     outside = finite & ((x < x0) | (x > x1) | (y < y0) | (y > y1))
     count = int(outside.sum())
     if count:
-        ax.text(.01, .01, f"{count} of {int(finite.sum())} points outside the plotted range",
-                transform=ax.transAxes, fontsize=7, color="0.35", va="bottom")
+        add_note(ax, f"{count} of {int(finite.sum())} points outside the plotted range")
     elif not finite.any():
         ax.text(.5, .5, "No finite data in this depth window", ha="center", va="center",
                 transform=ax.transAxes, color="0.35")

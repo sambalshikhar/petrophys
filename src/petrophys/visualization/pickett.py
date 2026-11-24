@@ -23,7 +23,7 @@ except ImportError:
 import numpy as np
 from petrophys._internal.validation import numeric_array, warn_invalid
 from petrophys.visualization._data import (
-    archie_parameters, paired_values, chart_limits, note_outside_axes, curve_values, porosity_label,
+    add_note, archie_parameters, paired_values, chart_limits, note_outside_axes, curve_values, porosity_label,
     clean_rock_only, formation_rw,
 )
 
@@ -162,7 +162,7 @@ class PickettPlot(Plot):
         # Labels
         self.ax.set_xlabel(x_label)
         self.ax.set_ylabel('True Resistivity (Rt) [ohm.m]')
-        self.ax.set_title(f'{title}\na={a:g}, m={m:g}, n={n:g}, Rw={rw:.3f} ohm.m')
+        self.ax.set_title(f'{title}\na={a:g}, m={m:g}, n={n:g}, Rw={rw:.3g} ohm.m')
         note_outside_axes(self.ax, phie_valid, rt_valid)
         self.ax.grid(True, alpha=0.3, which='both')
 
@@ -351,7 +351,6 @@ def _pickett_chart(
         xlim=xlim, ylim=ylim, x_label=porosity_label(phi_sources),
     )
     if shaly_left_out and plot.ax is not None:
-        plot.ax.text(0.99, 0.01, f"{shaly_left_out} samples with VCL > {vcl_max:g} left out",
-                     transform=plot.ax.transAxes, ha="right", va="bottom", fontsize=8, color="0.35")
+        add_note(plot.ax, f"{shaly_left_out} samples with VCL > {vcl_max:g} left out")
 
     return plot

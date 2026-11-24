@@ -31,9 +31,11 @@ warning-producing step is recorded in the result.
    :class: ph-log-figure
 
    Interpretation of the bundled well 30/6-5 across the Brent Group, showing
-   lithology, conventional logs, porosity, saturation, permeability, mineral
-   volumes, core points and reservoir flags. ``pp.plot(result, top=2800,
-   bottom=2980)`` draws it.
+   the file's lithology log, conventional logs, porosity, saturation,
+   permeability, mineral volumes, core points and reservoir flags.
+   ``well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))``,
+   ``result = pp.interpret(well, rw=0.070, rw_meas_temp="230 degF")`` and
+   ``pp.plot(result, top=2800, bottom=2980)`` draw it.
 
 From first well to LLM agents
 =============================

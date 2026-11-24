@@ -21,7 +21,7 @@ except Exception:  # pragma: no cover
     HAS_MPL = False
 
 from petrophys.visualization._data import (
-    curve_values, porosity_label, note_outside_axes, archie_parameters, chart_limits,
+    add_note, depth_downward, curve_values, porosity_label, note_outside_axes, archie_parameters, chart_limits,
     clean_rock_only, formation_rw,
 )
 from petrophys._internal.advice import Advice
@@ -80,6 +80,7 @@ def _scatter(ax, x, y, c, clabel, fig, cmap="viridis", norm=None):
         if cb.solids is not None:  # opaque, whatever the points' transparency
             cb.solids.set_alpha(1.0)
         cb.set_label(clabel, fontsize=8)
+        depth_downward(cb, clabel)
     else:
         ax.scatter(x, y, s=6, alpha=0.6, color="0.3")
 
@@ -390,14 +391,31 @@ def _hingle_chart(
                     textcoords="offset points", ha="right", fontsize=7, color="0.4")
 
     ax.set_xlabel(porosity_label(sources))
-    ax.set_ylabel(f"Rt^(-1/{m:g})  [(ohm.m)^(-1/{m:g})]")
     ax.set_xlim(xlim)
     if ylim is not None:
         ax.set_ylim(ylim)
+    # The chart's nonlinear resistivity scale: ticks at Rt values, spaced as Rt^(-1/m).
+    # Its foot is Rt = infinity (0), where the Sw lines meet at the matrix point.
+    if ylim is None:
+        ax.set_ylim(0.0, max(ax.get_ylim()))
+    low, high = sorted(ax.get_ylim())
+    ticks = []
+    for rt_value in (0.5, 1, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000, 2000):
+        position = rt_value ** (-1.0 / m)
+        # Kept apart by at least 4 % of the axis: the high resistivities crowd near zero.
+        if low <= position <= high and all(abs(position - kept ** (-1.0 / m)) > 0.04 * (high - low)
+                                           for kept in ticks):
+            ticks.append(rt_value)
+    if len(ticks) >= 2:
+        ax.set_yticks([rt_value ** (-1.0 / m) for rt_value in ticks])
+        ax.set_yticklabels([f"{rt_value:g}" for rt_value in ticks])
+        ax.set_ylim(low, high)
+        ax.set_ylabel(f"Rt [ohm.m]  (scaled as Rt^(-1/{m:g}))")
+    else:
+        ax.set_ylabel(f"Rt^(-1/{m:g})  [(ohm.m)^(-1/{m:g})]")
     _note_outside_axes(ax, phie, y)
     if shaly_left_out:
-        ax.text(0.99, 0.01, f"{shaly_left_out} samples with VCL > {vcl_max:g} left out",
-                transform=ax.transAxes, ha="right", va="bottom", fontsize=8, color="0.35")
+        add_note(ax, f"{shaly_left_out} samples with VCL > {vcl_max:g} left out")
     ax.set_title(f"Hingle Plot - {well.header.well_name or ''}  (Rw={rw:.3g} ohm.m)")
     ax.grid(alpha=0.3); fig.tight_layout()
     return fig

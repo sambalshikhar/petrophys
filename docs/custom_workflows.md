@@ -206,7 +206,7 @@ field
 
 ```{code-cell} python
 pp.bar_chart(field["Well"], field["Net Pay"], horizontal=True, sort_by=0,
-             xlabel="Net pay (ft)", title="Net pay by well, Kharaib-2 interval (custom workflow)",
+             xlabel="Net pay [ft]", title="Net pay by well, Kharaib-2 interval (custom workflow)",
              figsize=(8, 4.5));
 ```
 

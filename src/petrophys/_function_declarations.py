@@ -2405,6 +2405,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         invert_yaxis=switch(),
         colorbar_label=text(),
         log_color=switch(),
+        values=text(),
         ax=object_(),
     ),
     "petrophys.visualization.analytics.histograms": fn(
@@ -2454,6 +2455,8 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         xlabel=text(),
         low_color=text(),
         high_color=text(),
+        low_label=text(),
+        high_label=text(),
         ax=object_(),
     ),
     "petrophys.visualization.batch_export.export_plots": fn(

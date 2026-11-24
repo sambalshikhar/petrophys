@@ -461,7 +461,7 @@ def plot_fmi(
 
     oriented = bool(display_data.metadata.get("oriented"))
     xmax = 360 if oriented else display_data.n_borehole_samples
-    ax.imshow(
+    shown = ax.imshow(
         image,
         aspect="auto",
         cmap=fmi_colormap(),
@@ -486,6 +486,18 @@ def plot_fmi(
         ax.set_xticklabels(
             ["HS", "90", "LS", "270", "HS"] if highside else ["N", "E", "S", "W", "N"]
         )
+    # The colour key: equalized images run from conductive (dark) to resistive (light).
+    key = ax.figure.colorbar(shown, ax=ax, fraction=0.05, pad=0.02)
+    if vmin is not None:
+        key.set_ticks([0.0, 1.0])
+        key.set_ticklabels(["conductive", "resistive"])
+    else:
+        key.set_label("Button value")
+    if not ax.get_title():
+        well_name = str(display_data.metadata.get("well_name") or display_data.metadata.get("well") or "").strip()
+        method = {"dynamic": f"dynamic equalization, {window_m:g} m window", "static": "static equalization"}.get(
+            mode, "no equalization")
+        ax.set_title(f"{well_name + ': ' if well_name else ''}borehole image ({method})", fontsize=10)
     from petrophys.visualization.base import Plot
 
     return Plot(ax.figure, ax)

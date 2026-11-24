@@ -102,14 +102,16 @@ def xrf_panel(
             v = xrf.get(el)
             if v is None:
                 continue
-            ax.plot(_sel(v), depth, color=color, lw=0.6, label=el)
+            # Element symbols as chemistry writes them: Si, Al, Fe.
+            symbol = el.capitalize() if el.isalpha() and len(el) <= 2 else el
+            ax.plot(_sel(v), depth, color=color, lw=0.6, label=symbol)
             plotted = True
             plotted_elements.append(el)
         ax.set_title(title, fontsize=9)
         ax.set_xlabel(_concentration_label(xrf, plotted_elements), fontsize=8)
         ax.grid(alpha=0.3)
         if plotted:
-            ax.legend(fontsize=7, loc="upper right")
+            ax.legend(fontsize=7, loc="best")
 
     if proxies:
         axm = axes[len(_ELEMENT_GROUPS)]
@@ -118,13 +120,14 @@ def xrf_panel(
                 axm.plot(_sel(proxies[key]), depth, color=color, lw=0.7,
                          label=key.replace("_index", ""))
         axm.set_title("Mineral proxies", fontsize=9)
-        axm.set_xlabel("index (0-1)", fontsize=8)
+        axm.set_xlabel("Index [0-1]", fontsize=8)
         axm.set_xlim(0, 1)
         axm.grid(alpha=0.3)
-        axm.legend(fontsize=7, loc="upper right")
+        axm.legend(fontsize=7, loc="best")
 
     axes[0].invert_yaxis()
-    axes[0].set_ylabel("Depth")
+    depth_unit = (xrf.metadata or {}).get("depth_unit")
+    axes[0].set_ylabel(f"Depth [{depth_unit}]" if depth_unit else "Depth")
     name = (xrf.metadata or {}).get("well")
     fig.suptitle(f"XRF geochemistry{(' - ' + name) if name else ''}", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.97))

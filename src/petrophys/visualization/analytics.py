@@ -316,12 +316,15 @@ def tornado_plot(
     xlabel: str = "Outcome",
     low_color: str = "#c44e52",
     high_color: str = "#4c72b0",
+    low_label: str = "low",
+    high_label: str = "high",
     ax: Optional["Axes"] = None,
 ) -> Plot:
-    """Sensitivity tornado: horizontal bars of low/high outcome about a base case.
+    """Sensitivity tornado: horizontal bars of two outcomes about a base case.
 
     Parameters are sorted by total span (widest at top). ``low``/``high`` are the
-    outcome values when each parameter takes its low/high setting; ``base`` is the
+    outcome values of each parameter's two settings, named in the legend by
+    ``low_label``/``high_label`` (say, ``"stricter cutoff"``); ``base`` is the
     base-case outcome (drawn as a vertical reference).
     """
     _require_mpl()
@@ -346,9 +349,9 @@ def tornado_plot(
         else:
             low_y, high_y, height = row, row, 0.8
         ax.barh(low_y, lo - base, height=height, left=base, color=low_color, alpha=0.85,
-                label="low" if row == 0 else None)
+                label=low_label if row == 0 else None)
         ax.barh(high_y, hi - base, height=height, left=base, color=high_color, alpha=0.85,
-                label="high" if row == 0 else None)
+                label=high_label if row == 0 else None)
 
     values = np.concatenate([low, high, [base]])
     values = values[np.isfinite(values)]
@@ -533,6 +536,7 @@ def heatmap(
     invert_yaxis: bool = True,
     colorbar_label: Optional[str] = None,
     log_color: bool = False,
+    values: Optional[str] = None,
     ax: Optional["Axes"] = None,
 ) -> Plot:
     """2-D intensity map, e.g. an NMR T2-distribution vs depth or a binned density crossplot.
@@ -561,6 +565,8 @@ def heatmap(
         Label of the colour bar.
     log_color : bool
         Log-scaled colour (LogNorm).
+    values : str, optional
+        Format of each cell's value written in the cell, e.g. ``"{:.2f}"``.
     ax : matplotlib Axes, optional
         Axes to draw on.
 
@@ -593,6 +599,20 @@ def heatmap(
                        shading="flat")
     if invert_yaxis:
         _depth_axis_down(ax)
+    # A few cells given by their centres: ticks at the computed values only.
+    for coords, count, set_ticks in ((x, n_x, ax.set_xticks), (y, n_y, ax.set_yticks)):
+        if coords is not None and len(coords) == count <= 20:
+            set_ticks(np.asarray(coords, dtype=float))
+    if values:
+        x_mid = (x_edges[:-1] + x_edges[1:]) / 2
+        y_mid = (y_edges[:-1] + y_edges[1:]) / 2
+        for row in range(n_y):
+            for col in range(n_x):
+                if np.isfinite(mat[row, col]):
+                    red, green, blue, _ = im.cmap(im.norm(mat[row, col]))
+                    dark = 0.299 * red + 0.587 * green + 0.114 * blue < 0.5  # white text on dark cells
+                    ax.text(x_mid[col], y_mid[row], values.format(mat[row, col]),
+                            ha="center", va="center", fontsize=8, color="white" if dark else "black")
     ax.set_xlabel(xlabel or "")
     ax.set_ylabel(ylabel or "")
     cb = fig.colorbar(im, ax=ax, pad=0.02)

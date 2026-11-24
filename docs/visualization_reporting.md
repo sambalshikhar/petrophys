@@ -22,9 +22,13 @@ import warnings
 # 30/6-5 labels its percent core saturations (SWC, SOC) as fractions; Petrophys
 # converts them to v/v and warns. The page explains this once, in the text.
 warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core saturation")
+# Warnings print as "Category: message", without the source file they come from.
+warnings.formatwarning = lambda message, category, *args, **kwargs: f"{category.__name__}: {message}\n"
 ```
 
-The examples interpret 30/6-5 once, with Rw 0.07 ohm.m at 230 °F. Its core SWC and SOC are percent values labelled as fractions. Petrophys converts them and warns; this page hides that warning.
+The examples interpret 30/6-5 once, with Rw 0.07 ohm.m at 230 °F and the bundled
+formation-scale lithology table (one lithology per formation, so the lithology track
+shows the Brent Group as sandstone; the LAS file's own lithology log is finer). Its core SWC and SOC are percent values labelled as fractions. Petrophys converts them and warns; this page hides that warning.
 
 ```{code-cell} python
 import petrophys as pp
@@ -157,10 +161,11 @@ Clustering along one hyperbola can support an irreducible-water interpretation,
 but constant BVW alone does not establish irreducible saturation. Only the
 physical segment with Sw <= 1 is drawn. The axis identifies total porosity when
 PHIT supplies the fallback. HW-3,
-a COSTA carbonate whose header carries Rw:
+a COSTA carbonate whose header carries Rw, coloured by the file's core-calibrated
+permeability `PERM_CC` (the run's own `PERM` has no core calibration in a carbonate):
 
 ```{code-cell} python
-pp.buckles_plot(pp.interpret(pp.sample("HW-3")))
+pp.buckles_plot(pp.interpret(pp.sample("HW-3")), color="PERM_CC")
 ```
 
 ## Reservoir displays
@@ -205,7 +210,7 @@ shared unit. Equivalent percent and fraction porosities share a distribution;
 incompatible declared units raise an error. For example:
 
 ```{code-cell} python
-pp.histograms(costa, "GR", density=True, xlabel="GR (API)", title="GR by well");
+pp.histograms(costa, "GR", density=True, histtype="step", xlabel="GR [API]", title="GR by well");
 ```
 
 **Tornado**: how far each assumption moves the answer.
@@ -225,7 +230,8 @@ def net_pay(**cutoffs):
 low, high = zip(net_pay(vcl_cutoffs=[0.3, 0.5]), net_pay(phie_cutoffs=[0.12, 0.05]),
                 net_pay(sw_cutoffs=[0.5, 0.7]))
 pp.tornado_plot(["VCL cutoff 0.3 / 0.5", "PHIE cutoff 0.12 / 0.05", "Sw cutoff 0.5 / 0.7"],
-                low, high, base=net_pay()[0], xlabel="Brent Group net pay (m)");
+                low, high, base=net_pay()[0], xlabel="Brent Group net pay [m]",
+                low_label="stricter cutoff", high_label="looser cutoff");
 ```
 
 With the standard cutoffs the Brent Group has 23.3 m of net pay. The Sw cutoff moves
@@ -239,7 +245,7 @@ grid = cutoff_sensitivity(result.well, top=2841, bottom=2958,
                           vcl_cutoffs=[0.2, 0.3, 0.4, 0.5], sw_cutoffs=[0.4, 0.5, 0.6, 0.7, 0.8])
 ntg = grid.pivot(index="vcl_cutoff", columns="sw_cutoff", values="ntg_pay")
 pp.heatmap(ntg, x=ntg.columns, y=ntg.index, cmap="RdYlGn", invert_yaxis=False,
-           xlabel="Sw cutoff", ylabel="VCL cutoff", colorbar_label="Net-to-gross pay",
+           xlabel="Sw cutoff", ylabel="VCL cutoff", colorbar_label="Net-to-gross pay", values="{:.2f}",
            title="Brent Group net-to-gross pay", figsize=(7, 4.5));
 ```
 

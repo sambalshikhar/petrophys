@@ -105,6 +105,7 @@ CURVE_ALIAS_CANDIDATES: Dict[str, List[str]] = {
     "VCL": ["VCL", "VCLAY", "VSH", "VSHGR", "VSHALE_GR", "VSHALE_GR_LINEAR", "VSHALE_GR_CLAVIER", "VSHALE_GR_STEIBER", "VSHALE_GR_LARIONOV_YOUNG", "VWCL", "VCLGR", "VCL_GR", "VCLND", "VCL_ND", "VSHALE", "VCLAV"],
     "VCLAY": [
         "VCLAY",
+        "VILL",  # the clay of the COSTA carbonate solve (illite from GR)
         "VCL",
         "VSH",
         "VSHGR",
@@ -197,6 +198,7 @@ MINERAL_VOLUME_TRACK_NAMES = {
 MINERAL_VOLUME_CURVE_NAMES = {
     "VCL",
     "VCLAY",
+    "VILL",
     "VSH",
     "VQUAR",
     "VQTZ",
@@ -216,7 +218,7 @@ MINERAL_VOLUME_CURVE_NAMES = {
 # should inherit, so the cumulative mineral-composition track is styled identically
 # to the lithology track (quartz -> sandstone dots, calcite -> limestone brick, etc.).
 MINERAL_VOLUME_LITHOLOGY_LABELS: Dict[str, str] = {
-    "VCLAY": "Shale", "VCL": "Shale", "VSH": "Shale", "VSHALE": "Shale", "VCLA": "Shale",
+    "VCLAY": "Shale", "VILL": "Shale", "VCL": "Shale", "VSH": "Shale", "VSHALE": "Shale", "VCLA": "Shale",
     "VQUAR": "Sandstone", "VQTZ": "Sandstone", "VSAND": "Sandstone",
     "VQUARTZ": "Sandstone", "VSND": "Sandstone",
     "VCALC": "Limestone", "VCAL": "Limestone", "VLIM": "Limestone",
@@ -1107,6 +1109,9 @@ class LogCurveSpec:
     right_color_value: Optional[float] = None
     left_cutoff_fill: Optional[float] = None
     right_cutoff_fill: Optional[float] = None
+    #: Colour above ``right_cutoff_fill`` when it means something else than
+    #: below ``left_cutoff_fill`` (resistive against conductive invasion).
+    right_cutoff_fill_color: Optional[str] = None
     left_crossover: Optional[str] = None
     right_crossover: Optional[str] = None
     marker: Optional[str] = None
@@ -1295,6 +1300,15 @@ def _adaptive_curve_range(well: "Well", curve_name: str) -> Tuple[float, float]:
 #: Suffix of a curve rebuilt by :func:`petrophys.impute` (measured values plus predictions in the gaps).
 #: Tracks named after the logs they hold, renamed when ``curves=`` keeps none of those logs.
 _TRACKS_NAMED_FOR_LOGS = {"GAMMA / HOLE", "DENSITY / NEUTRON", "DENSITY / NEUTRON / SONIC", "SONIC"}
+#: The logs each part of such a title names: a part whose logs the track does
+#: not draw is left out of the title ("GAMMA" over GR alone).
+_TITLE_PART_CURVES = {
+    "GAMMA": {"GR", "SGR", "CGR"},
+    "HOLE": {"CALI", "BS", "HD1", "HD2"},
+    "DENSITY": {"RHOB", "DRHO", "PEF"},
+    "NEUTRON": {"NPHI"},
+    "SONIC": {"DTC", "DTS", "DTE"},
+}
 IMPUTED_SUFFIX = "_IMPUTED"
 #: Suffix of the out-of-fold check curve of an imputation (``RHOB_PREDICTED``).
 PREDICTED_SUFFIX = "_PREDICTED"
@@ -1380,6 +1394,23 @@ def _plausible_slowness(well: "Well", curve_name: str) -> bool:
     data = np.asarray(curve.data, dtype=float)
     finite = data[np.isfinite(data)]
     return bool(finite.size) and _SLOWNESS_RANGE[0] <= float(np.median(finite)) <= _SLOWNESS_RANGE[1]
+
+
+def _compressional_like(well: "Well", curve_name: str) -> bool:
+    """True when ``curve_name`` reads faster than any shear slowness of the well's DTC.
+
+    Vp/Vs = sqrt((2 - 2 nu) / (1 - 2 nu)) exceeds sqrt(2) for any positive
+    Poisson's ratio nu, so a shear slowness is at least sqrt(2) times the
+    compressional; a median ratio below that is a compressional curve.
+    """
+    curve, dtc_name = well.get(curve_name), _resolve_curve_name_for_well(well, "DTC")
+    dtc = well.get(dtc_name) if dtc_name else None
+    if curve is None or dtc is None or dtc_name == curve_name:
+        return False
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.asarray(curve.data, dtype=float) / np.asarray(dtc.data, dtype=float)
+    ratio = ratio[np.isfinite(ratio) & (ratio > 0)]
+    return bool(ratio.size >= 10) and float(np.median(ratio)) < math.sqrt(2.0)
 
 
 def _curve_has_finite_values(well: "Well", curve_name: str) -> bool:
@@ -1506,8 +1537,12 @@ def auto_template(
                 continue
             if not _curve_has_finite_values(well, resolved):
                 continue
-            if spec.curve_name.upper() == "DTE" and not _plausible_slowness(well, resolved):
-                continue
+            if spec.curve_name.upper() == "DTE":
+                if not _plausible_slowness(well, resolved):
+                    continue
+                if _compressional_like(well, resolved):
+                    # A second compressional slowness, on the DTC scale.
+                    spec = replace(spec, left=140.0, right=40.0)
             track_resolved.add(resolved)
             used_resolved.add(resolved)
             if spec.left is None or spec.right is None:
@@ -1575,7 +1610,7 @@ def auto_template(
             replace(_adaptive_spec("CGR", "CGR", 0, 150, "#4daf4a", line_style="--"),
                     candidates=["CGR", "HCGR", "GRKT", "CGR_EDTC"]),
             # SP is relative: its scale follows the well's shale baseline (see _sp_range).
-            _adaptive_spec("SP", "SP", color="#4d4d4d", line_style="-."),
+            replace(_adaptive_spec("SP", "SP", color="#4d4d4d"), line_width=0.7),
         ],
         width=1.35,
     )
@@ -1597,11 +1632,12 @@ def auto_template(
     add_track(
         "INVASION",
         [
-            # Shallow over deep resistivity: shaded below 0.8 (conductive invasion)
-            # and above 1.2 (resistive invasion); unshaded is little contrast.
-            replace(_adaptive_spec("INVASION_RATIO", "Rxo/Rt", 0.1, 10, "#000000", fill_color="#fdae61",
+            # Shallow over deep resistivity: green below 0.8 (conductive invasion),
+            # blue above 1.2 (resistive invasion); unshaded is little contrast.
+            replace(_adaptive_spec("INVASION_RATIO", "Rxo/Rt", 0.1, 10, "#000000", fill_color="#66bd63",
                                    fill_alpha=0.6),
-                    left_cutoff_fill=0.8, right_cutoff_fill=1.2, on_request=True),
+                    left_cutoff_fill=0.8, right_cutoff_fill=1.2, right_cutoff_fill_color="#4575b4",
+                    on_request=True),
         ],
         width=1.0,
         scale="log",
@@ -1631,7 +1667,8 @@ def auto_template(
         [
             _adaptive_spec("DTC", "DTC", 140, 40, "#762a83"),
             _adaptive_spec("DTS", "DTS", 240, 40, "#e7298a", line_style="--"),
-            # DTE (shear slowness in GeoLink-style sets) on the shear scale.
+            # DTE: shear slowness in GeoLink-style sets, on the shear scale; a
+            # DTE that reads as a compressional slowness takes the DTC scale.
             _adaptive_spec("DTE", "DTE", 240, 40, "#1b9e77", line_style=":"),
         ],
         width=1.1,
@@ -1893,6 +1930,7 @@ def _parse_curve(element: ET.Element) -> LogCurveSpec:
         right_color_value=_as_float(element.attrib.get("right_color_value")),
         left_cutoff_fill=_as_float(element.attrib.get("left_cutoff_fill")),
         right_cutoff_fill=_as_float(element.attrib.get("right_cutoff_fill")),
+        right_cutoff_fill_color=element.attrib.get("right_cutoff_fill_color"),
         left_crossover=_first_attr(element, ("left_crossover", "left_crossover_curve")),
         right_crossover=_first_attr(element, ("right_crossover", "right_crossover_curve")),
         marker=_first_attr(element, ("marker", "symbol")),
@@ -2376,9 +2414,13 @@ class LogViewer:
                         drawn = _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates)
                         shown.append(str(drawn) if drawn and str(drawn).upper() != spec.curve_name.upper()
                                      else str(spec.display_name or spec.curve_name))
+                    families = {part for part, members in _TITLE_PART_CURVES.items()
+                                if part in track.display_name.split(" / ")}
                     if all(name.upper().startswith("VCL") for name in shown):
                         track.display_name = "CLAY VOLUME"
-                    else:
+                    elif not any(str(get_standard_mnemonic(name)).upper() in _TITLE_PART_CURVES[part]
+                                 for name in shown for part in families):
+                        # Still a log the title names (DTE in SONIC): the title stays.
                         track.display_name = " / ".join(shown[:3]).upper()
                 # A crossover fill needs its partner curve in the same track.
                 names = {spec.curve_name.upper() for spec in specs}
@@ -2535,6 +2577,7 @@ class LogViewer:
         self._window = (depth_range, top, height)
         depth = self._depth()
         plot_top, plot_bottom = self._resolve_depth_window(depth, depth_range, top, height)
+        self._plot_window = (plot_top, plot_bottom)
         if not plot_bottom > plot_top:
             raise ValueError(f"The depth window {plot_top:g}-{plot_bottom:g} has no height")
         logged_top, logged_bottom = finite_min_max(depth)
@@ -2771,7 +2814,34 @@ class LogViewer:
     def _track_header_row_count(self, track: LogTrackSpec) -> int:
         if self._is_mineral_volume_track(track):
             return max(5, min(8, len(track.curves) + 2))
-        return max(1, len(track.curves))
+        backups = sum(self._backup_range(spec, track) is not None for spec in track.curves)
+        return max(1, len(track.curves) + backups)
+
+    def _backup_range(self, spec: LogCurveSpec, track: LogTrackSpec) -> Optional[Tuple[float, float]]:
+        """The backup scale of a gamma ray that runs past its scale in the window.
+
+        As on a printed log, values beyond the right end are drawn again on a
+        second scale of the same width that starts there (150-300 API beside
+        0-150 API); None when the gamma ray stays on its scale.
+        """
+        if str(track.scale).lower() == "log":
+            return None
+        curve = self._get_curve(spec)
+        if curve is None or str(get_standard_mnemonic(curve.mnemonic)).upper() not in {"GR", "SGR", "CGR"}:
+            return None
+        left = spec.left if spec.left is not None else track.left
+        right = spec.right if spec.right is not None else track.right
+        if left is None or right is None or not right > left:
+            return None
+        data = np.asarray(curve.data, dtype=float)
+        depth = self._depth()
+        low, high = getattr(self, "_plot_window", (None, None))
+        inside = np.isfinite(data) & np.isfinite(depth)
+        if low is not None and high is not None:
+            inside &= (depth >= low) & (depth <= high)
+        if not np.any(data[inside] > right):
+            return None
+        return float(right), float(right + (right - left))
 
     def _is_mineral_volume_track(self, track: LogTrackSpec) -> bool:
         title = str(track.display_name).strip().upper()
@@ -2800,11 +2870,23 @@ class LogViewer:
                 return True
         return False
 
+    def _title_of_drawn_logs(self, track: LogTrackSpec, title: str) -> str:
+        """``title`` without the parts whose logs the track draws no value of."""
+        drawn = set()
+        for spec in track.curves:
+            curve = self._get_curve(spec)
+            if curve is not None and np.any(np.isfinite(np.asarray(curve.data, dtype=float))):
+                drawn.add(str(get_standard_mnemonic(curve.mnemonic)).upper())
+        parts = [part for part in title.split(" / ") if _TITLE_PART_CURVES.get(part, set()) & drawn]
+        return " / ".join(parts) if parts else title
+
     def _format_header_axis(self, ax: Axes, track: LogTrackSpec) -> None:
         ax.set_xlim(0.0, 1.0)
         ax.set_ylim(0.0, 1.0)
         ax.axis("off")
         title = str(track.display_name)
+        if title in _TRACKS_NAMED_FOR_LOGS:
+            title = self._title_of_drawn_logs(track, title)
         if re.fullmatch(r"OTHER( \d+)?", title):
             # A generic track is titled by the curves it holds.
             names = list(dict.fromkeys(str(spec.display_name or spec.curve_name) for spec in track.curves))
@@ -2921,9 +3003,25 @@ class LogViewer:
             label = self._curve_label(self._display_label(spec, curve), curve)
             self._warn_off_scale(ax, curve, data, x, depth, finite, left, right)
             fill_color = spec.fill_color or spec.color
-            if spec.fill:
+            # The PHIE fill is the hydrocarbon left after BVW overprints the
+            # water; with no BVW in the track it would shade wet rock as oil.
+            phie_without_bvw = get_standard_mnemonic(spec.curve_name) == "PHIE" and not any(
+                get_standard_mnemonic(other.curve_name) == "BVW" and self._get_curve(other) is not None
+                for other in track.curves
+            )
+            if spec.fill and not phie_without_bvw:
+                fill_x, fill_finite = x, finite
+                if get_standard_mnemonic(spec.curve_name) == "PHIE":
+                    behind = self._porosity_behind_bvw()
+                    if behind is not None and behind.mnemonic != curve.mnemonic:
+                        # Shade the pore volume SW was computed on (an input PHIE_CC
+                        # read as it stands), so PHIE - BVW is the run's hydrocarbon.
+                        # PHIE_CC where it has a value; the run read PHIE elsewhere.
+                        behind_x = self._normalize(np.asarray(behind.data, dtype=float), left, right, track.scale)
+                        fill_x = np.where(np.isfinite(behind_x), behind_x, x)
+                        fill_finite = np.isfinite(fill_x) & np.isfinite(depth)
                 self._plot_curve_fill(
-                    ax, depth, x, finite, spec, fill_color, left, right, track.scale
+                    ax, depth, fill_x, fill_finite, spec, fill_color, left, right, track.scale
                 )
 
             self._plot_cutoff_fills(ax, depth, data, x, finite, left, right, track, spec)
@@ -2944,7 +3042,7 @@ class LogViewer:
                 )
                 line_style = "None"
             else:
-                ax.plot(
+                (line,) = ax.plot(
                     x,
                     depth,
                     color=spec.color,
@@ -2954,6 +3052,7 @@ class LogViewer:
                     label=label,
                     zorder=3,
                 )
+                self._clip_past_frame(ax, line)
                 line_style = spec.line_style
             self._add_curve_header(
                 ax,
@@ -2966,6 +3065,17 @@ class LogViewer:
                 line_style=line_style,
                 marker=marker,
             )
+            backup = None if discrete else self._backup_range(spec, track)
+            if backup is not None:
+                # The part beyond the scale, dashed on the backup scale.
+                over = np.where(finite & (data > right), self._normalize(data, backup[0], backup[1], track.scale), np.nan)
+                (backup_line,) = ax.plot(over, depth, color=spec.color, linewidth=max(spec.line_width * 0.8, 0.6),
+                                         linestyle="--", alpha=spec.alpha, zorder=3)
+                self._clip_past_frame(ax, backup_line)
+                label_rows += 1
+                self._add_curve_header(ax, label_rows, f"backup [{self._curve_unit(curve)}]"
+                                       if self._curve_unit(curve) else "backup",
+                                       backup[0], backup[1], spec.color, track.scale, line_style="--")
             plotted_curves.append(
                 {
                     "spec": spec,
@@ -3111,10 +3221,14 @@ class LogViewer:
 
     def _plot_mineral_volume_track(self, ax: Axes, track: LogTrackSpec, depth: np.ndarray) -> None:
         cumulative = np.zeros_like(depth, dtype=float)
+        first_top = np.full(depth.shape, np.nan)
         plotted_items: List[Dict[str, Any]] = []
 
         for spec in track.curves:
             curve = self._get_curve(spec)
+            if spec.curve_name.upper() == "VCLAY" and self.well.get("VILL") is not None:
+                # The COSTA carbonate solve closes with illite (VILL), not the VCL-based VCLAY.
+                curve = self.well.get("VILL")
             if curve is None:
                 self._warn_missing(spec.curve_name)
                 continue
@@ -3151,11 +3265,13 @@ class LogViewer:
                 {
                     "spec": spec,
                     "curve": curve,
-                    "label": spec.display_name or curve.mnemonic,
+                    "label": curve.mnemonic if curve.mnemonic == "VILL" else (spec.display_name or curve.mnemonic),
                     "color": fill_color,
                     "hatch": hatch,
                 }
             )
+            if not plotted_items[:-1]:
+                first_top = next_cumulative  # the top of the first (clay) component
             cumulative = next_cumulative
 
         # Close the volumetric stack with the porosity wedge (white). Our clay term
@@ -3164,6 +3280,16 @@ class LogViewer:
         # porosity (PHIE), not total (PHIT, which would double-count clay-bound water).
         if plotted_items:
             self._plot_mineral_porosity_wedge(ax, track, depth, cumulative, plotted_items)
+            # Samples the mineral solve left unsolved: grey and hatched, so the gap
+            # beside the clay is not read as the white of porosity.
+            unsolved = np.isfinite(first_top) & ~np.isfinite(cumulative) & np.isfinite(depth)
+            if np.any(unsolved):
+                start = self._normalize(first_top, track.left, track.right, track.scale)
+                right_x = self._normalize_scalar(track.right, track.left, track.right, track.scale)
+                ax.fill_betweenx(depth, np.where(unsolved, start, np.nan), right_x, where=unsolved,
+                                 color="0.85", hatch="xxx", edgecolor="0.55", linewidth=0.0, zorder=1)
+                plotted_items.append({"spec": None, "curve": None, "label": "not solved",
+                                      "color": "0.85", "hatch": "xxx"})
 
         left_x = self._normalize_scalar(track.left, track.left, track.right, track.scale)
         right_x = self._normalize_scalar(track.right, track.left, track.right, track.scale)
@@ -3249,15 +3375,19 @@ class LogViewer:
 
         unit = self._mineral_volume_unit(plotted_items)
         scale_y = 0.58
+        # The scale spans the track edge to edge, as the stacked volumes do.
         header_ax.plot(
-            [0.08, 0.92],
+            [0.0, 1.0],
             [scale_y, scale_y],
             color="0.25",
             linewidth=0.65,
             transform=transform,
             clip_on=True,
         )
-        for x_pos, label in ((0.08, f"{track.left:g}"), (0.50, "0.5"), (0.92, f"{track.right:g}")):
+        middle = (float(track.left) + float(track.right)) / 2.0
+        for x_pos, label, align in (
+            (0.0, f"{track.left:g}", "left"), (0.50, f"{middle:g}", "center"), (1.0, f"{track.right:g}", "right")
+        ):
             header_ax.plot(
                 [x_pos, x_pos],
                 [scale_y - 0.018, scale_y + 0.018],
@@ -3272,7 +3402,7 @@ class LogViewer:
                 label,
                 color="black",
                 fontsize=7.4,
-                ha="center",
+                ha=align,
                 va="center",
                 transform=transform,
                 clip_on=True,
@@ -4053,6 +4183,11 @@ class LogViewer:
         spec: LogCurveSpec,
     ) -> None:
         fill_color = spec.fill_color or spec.color
+        for cutoff in (spec.left_cutoff_fill, spec.right_cutoff_fill):
+            if cutoff is not None:
+                # The cutoff itself, so the shading reads against it.
+                ax.axvline(self._normalize_scalar(cutoff, left, right, track.scale),
+                           color="0.35", linewidth=0.6, linestyle=":", zorder=2)
         if spec.left_cutoff_fill is not None:
             cutoff_x = self._normalize_scalar(spec.left_cutoff_fill, left, right, track.scale)
             ax.fill_betweenx(
@@ -4072,7 +4207,7 @@ class LogViewer:
                 cutoff_x,
                 x,
                 where=finite & (data > spec.right_cutoff_fill),
-                color=fill_color,
+                color=spec.right_cutoff_fill_color or fill_color,
                 alpha=spec.fill_alpha,
                 linewidth=0.0,
                 zorder=1,
@@ -4157,7 +4292,7 @@ class LogViewer:
 
         label_text, unit_text = self._split_header_label(label)
         if str(scale).lower() == "log":
-            unit_text = f"{unit_text}, log" if unit_text else "log"
+            unit_text = f"{unit_text}, log" if unit_text else "[-], log"
         label_y = row_center + row_step * 0.16
         scale_y = row_center - row_step * 0.22
         sample_style = "None" if str(line_style).lower() == "none" else line_style
@@ -4425,6 +4560,22 @@ class LogViewer:
         # of being cut off beneath them.
         label_ax.set_zorder(max(ax.get_zorder() for ax in self.axes) + 1)
         ordered = sorted(grouped)
+        # The formation the window opens in, whose top lies above it, is named
+        # at the top of the window.
+        above = [formation for formation in self.formation_tops if formation.depth < lo]
+        if above and lo not in grouped:
+            deepest = max(formation.depth for formation in above)
+            names = [formation.name for formation in above if formation.depth == deepest]
+            first_top = ordered[0] if ordered else hi
+            if lo + span * 0.035 * len(names) <= first_top:
+                label_ax.annotate(
+                    "\n".join(names), xy=(0.02, lo), xycoords=("axes fraction", "data"),
+                    xytext=(2, -2), textcoords="offset points", fontsize=8.0, fontweight="bold",
+                    color="black", ha="left", va="top",
+                    bbox={"boxstyle": "square,pad=0.12", "facecolor": "white", "edgecolor": "none", "alpha": 0.72},
+                    zorder=8,
+                )
+                next_label_depth = lo + span * 0.035 * len(names)
         for position, depth in enumerate(ordered):
             names = grouped[depth]
             for ax in self.axes:
@@ -4483,6 +4634,28 @@ class LogViewer:
                 return curve
         return None
 
+    def _porosity_behind_bvw(self):
+        """The porosity curve BVW = SW x porosity was computed on: PHIE, or the
+        PHIE_CC a run read in its place; None when neither reproduces BVW."""
+        bvw, sw = self.well.get("BVW"), self.well.get("SW")
+        if bvw is None or sw is None:
+            return None
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = np.asarray(bvw.data, dtype=float) / np.asarray(sw.data, dtype=float)
+        best, best_error = None, 0.005
+        for name in ("PHIE", "PHIE_CC"):
+            curve = self.well.get(name)
+            if curve is None:
+                continue
+            values = np.asarray(curve.data, dtype=float)
+            both = np.isfinite(ratio) & np.isfinite(values) & (np.asarray(sw.data, dtype=float) > 0.05)
+            if np.count_nonzero(both) < 10:
+                continue
+            error = float(np.median(np.abs(ratio[both] - values[both])))
+            if error < best_error:
+                best, best_error = curve, error
+        return best
+
     def _get_curve(self, spec: LogCurveSpec):
         resolved = _resolve_curve_name_for_well(self.well, spec.curve_name, spec.candidates)
         if resolved is None:
@@ -4505,6 +4678,12 @@ class LogViewer:
             raise ValueError(message)
         if message not in self.warnings:
             self.warnings.append(message)
+
+    @staticmethod
+    def _clip_past_frame(ax, line) -> None:
+        from petrophys.visualization._data import clip_past_frame
+
+        clip_past_frame(ax, line)
 
     def _normalize(self, values: np.ndarray, left: float, right: float, scale: str) -> np.ndarray:
         values = np.asarray(values, dtype=float)

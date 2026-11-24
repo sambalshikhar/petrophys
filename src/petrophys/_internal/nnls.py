@@ -3,9 +3,10 @@
 ``scipy.optimize.nnls`` in some releases (1.15.3 among those tested) stops
 short of the optimum on small, well-conditioned systems such as the per-sample
 mineral systems, and reports a residual other than that of the solution it
-returns. Its answer is kept when it satisfies the optimality (KKT) conditions;
-otherwise the system, a handful of unknowns, is solved exactly by trying every
-set of active variables. The residual returned is always that of ``x``.
+returns, and older releases (1.13 among those tested) raise RuntimeError when
+they reach their iteration limit. Its answer is kept when it satisfies the
+optimality (KKT) conditions; otherwise the system, a handful of unknowns, is
+solved exactly by trying every set of active variables. The residual returned is always that of ``x``.
 """
 
 import math
@@ -14,6 +15,15 @@ from typing import Optional, Tuple
 
 import numpy as np
 from scipy.optimize import nnls as _scipy_nnls
+
+
+def _scipy_solution(A: np.ndarray, b: np.ndarray) -> Tuple[np.ndarray, float]:
+    """scipy's ``(x, residual)``; NaN when it stops at its iteration limit."""
+    try:
+        x, reported = _scipy_nnls(A, b)
+    except RuntimeError:
+        return np.full(A.shape[1], np.nan), math.nan
+    return x, float(reported)
 
 
 def _is_optimal(A: np.ndarray, b: np.ndarray, x: np.ndarray, a_max: Optional[float] = None) -> bool:
@@ -59,7 +69,7 @@ def nnls_many(A: np.ndarray, B: np.ndarray) -> np.ndarray:
     The optimality check of :func:`_is_optimal` runs on all the solutions at
     once; a system that fails it is solved exactly.
     """
-    X = np.array([_scipy_nnls(A, b)[0] for b in B]).reshape(len(B), A.shape[1])
+    X = np.array([_scipy_solution(A, b)[0] for b in B]).reshape(len(B), A.shape[1])
     if not len(B):
         return X
     a_max = float(np.abs(A).max()) if A.size else 0.0
@@ -77,7 +87,7 @@ def nnls(A, b) -> Tuple[np.ndarray, float]:
     """``(x, ||Ax - b||)`` with ``x >= 0`` minimising the residual."""
     A = np.asarray(A, dtype=float)
     b = np.asarray(b, dtype=float)
-    x, reported = _scipy_nnls(A, b)
+    x, reported = _scipy_solution(A, b)
     if not _is_optimal(A, b, x):
         x = _exact_nnls(A, b)
     residual = float(np.linalg.norm(A @ x - b))

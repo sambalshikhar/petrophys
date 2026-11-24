@@ -312,7 +312,7 @@ thumb("cap_ml", pp.plot(hw24, curves=["RHOB", "RHOB_PREDICTED"], top=8510, botto
 nmr = NMRData.from_las(pp.sample("daydream1_cmr"), mphi_mnemonic="TCMR", mffi_mnemonic="CMFF")
 cmr = pp.read(pp.sample("daydream1_cmr"))
 cmr.add_curve("K_TC_LIBRARY", nmr.permeability_coates(prefer_stored=False), "mD")
-chart = pp.crossplot(cmr, "KTIM", "K_TC_LIBRARY", xlim=(1e-4, 1e2), ylim=(1e-4, 1e2),
+chart = pp.crossplot(cmr, "KTIM", "K_TC_LIBRARY", xlim=(1e-4, 1e2), ylim=(1e-4, 1e2), x_log=True, y_log=True,
                      title="Daydream CMR permeability", figsize=THUMB)
 chart.add_line([1e-4, 1e2], [1e-4, 1e2], color="red", linewidth=1, label="1:1")
 thumb("cap_nmr", chart)

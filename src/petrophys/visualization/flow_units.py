@@ -29,7 +29,7 @@ def _flow_unit_chart(
     phi_e=None,
     perm=None,
     figsize: Tuple[float, float] = (7.5, 6.5),
-    cmap: str = "turbo",
+    cmap: str = "plasma",
     title: str = "Hydraulic Flow Units (RQI vs φz)",
     **kwargs,
 ):
@@ -55,7 +55,7 @@ def _flow_unit_chart(
 
     fig, ax = plt.subplots(figsize=figsize)
     n = max(int(result.n_units), 1)
-    colors = plt.get_cmap(cmap)(np.linspace(0.06, 0.94, n))
+    colors = plt.get_cmap(cmap)(np.linspace(0.0, 0.85, n))  # no pale end: every unit reads on white
 
     pz_line = np.array([np.nanmin(phi_z[valid]) * 0.8, np.nanmax(phi_z[valid]) * 1.2]) \
         if np.any(valid) else np.array([0.05, 1.0])

@@ -276,6 +276,8 @@ With `sw_model="auto"` (the default), saturation is routed per sample.
 Samples with VCL below `sw_routing_vcl_cutoff` (by default `vcl_cutoff`, or 0.3 when that is unset) get Archie; the same clay volume bounds the samples SWIRR_APP is picked from.
 With `vcl_cutoff` unset, routing switches at 0.3 while clastic net rock extends to VCL 0.40, so net rock with 0.3-0.4 clay gets a shaly-sand equation.
 In shaly rock, carbonate samples get Dual Water when the bound-water resistivity `rwb` is given; Rwb is never estimated.
+
+Where the porosity SW is computed on is below 0.01 v/v, about what porosity tools resolve, there is no pore space to hold hydrocarbon, and SW and SXO are 1 whatever the equation returns; a shaly-sand equation would otherwise read an Sw of its clay term alone in shale. The saturation step's trace counts those samples.
 All other shaly samples get Waxman-Smits when `cec` (meq/100 g) and `b_coeff` ((S/m)/(meq/cm3)) are given, Simandoux when the formation-water salinity is at least 20,000 ppm (`salinity_ppm`, or else the salinity of the given or header Rw at its temperature), and otherwise Indonesia, the published equation of Poupon and Leveaux (1971). On 30/6-5, Rw 0.07 ohm.m at 230 degF is a water of about 30,500 ppm, so shaly samples get Simandoux.
 `sw_model="dual_water"` without `rwb`, or `"waxman_smits"` without `cec` and `b_coeff`, fails the saturation step with a message naming the missing input.
 With oil-based mud (`mud_type="OBM"`), no SXO or MHI is computed and Rw is not estimated from the SP or Rxo/Rt.
@@ -456,7 +458,7 @@ groups
 
 ```{code-cell} python
 pp.bar_chart(groups["Formation"], groups["Net Pay (m)"], horizontal=True, value_labels=True,
-             xlabel="Flagged net pay (m)", title="30/6-5: net-pay flags by group",
+             xlabel="Flagged net pay [m]", title="30/6-5: net-pay flags by group",
              figsize=(8, 4.5));
 ```
 

@@ -11,6 +11,6 @@
   <track display_name="POROSITY / SW" width="1.25" major_lines="5">
     <curve display_name="PHIE" curve_name="PHIE" color="#d73027" left="0.45" right="0" fill="right" fill_color="#fee08b"/>
     <curve display_name="PHIT" curve_name="PHIT" color="#253494" left="0.45" right="0"/>
-    <curve display_name="Sw" curve_name="SW" color="#0571b0" left="1" right="0" fill="right" fill_color="#9ecae1"/>
+    <curve display_name="Sw" curve_name="SW" color="#0571b0" left="1" right="0"/>
   </track>
 </graph>

@@ -153,9 +153,12 @@ class XRFData:
                 elements[mn] = data
                 units[mn] = curve.unit or ""
 
+        depth_unit = next((str(curve.unit or "") for curve in las.curves if curve.mnemonic == depth_mnemonic), "")
         meta = {
             "well": las.well.WELL.value if hasattr(las.well, "WELL") else "",
             "source": str(filepath),
+            "depth_unit": {"M": "m", "F": "ft", "FT": "ft", "FEET": "ft", "METERS": "m", "METRES": "m"}.get(
+                depth_unit.strip().upper(), depth_unit.strip()),
         }
 
         return cls(depth=depth, elements=elements, units=units,

@@ -1490,6 +1490,8 @@ wherever the package used the function.
 - The log plot draws a class curve carrying class names (the flow units
   `HFU` of `FlowUnitModule.add_to_well`) as coloured blocks with a legend, in
   the colours of the flow-unit crossplot.
+- SW and SXO are 1 where the porosity they are computed on is below 0.01 v/v:
+  without pore space no equation's clay term alone sets a saturation.
 - `depth_match(well, curve, reference)` matches one curve to another of the
   same well, the correction free to vary with depth (splices, stretch), by
   Kerzner's method (1984): a major shift from the median of windowed

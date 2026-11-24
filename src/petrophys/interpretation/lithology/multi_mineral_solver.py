@@ -60,7 +60,9 @@ def _constrain_mineral_fractions(
     total = float(np.nansum(constrained))
     if total > 0.0:
         constrained *= float(max(available_fraction, 0.0)) / total
-    elif available_fraction <= 0.0:
+    elif available_fraction <= 1e-9:
+        # Clay and porosity fill the rock (to rounding: 1 - VCL - porosity can
+        # come out as +1e-17 or -1e-17 from one numpy release to the next).
         constrained[:] = 0.0
     else:
         constrained[:] = np.nan

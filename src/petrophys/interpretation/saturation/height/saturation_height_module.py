@@ -106,19 +106,24 @@ class JFunctionModel:
                 fig, ax = plt.subplots(figsize=(6, 5))
             else:
                 fig = ax.figure
-            shown = ax.scatter(sw, height, c=np.log10(perm), s=7, lw=0, cmap="viridis")
-            fig.colorbar(shown, ax=ax, label="log10 permeability [mD]")
-            curve_height = np.linspace(0.5, float(np.nanmax(height)), 200)
+            from matplotlib.colors import LogNorm
+
+            shown = ax.scatter(sw, height, c=perm, norm=LogNorm(), s=7, lw=0, cmap="viridis")
+            fig.colorbar(shown, ax=ax, label="Permeability [mD]")
+            # From just above the free-water level, where the model reaches Sw = 1.
+            top_height = float(np.nanmax(height))
+            curve_height = np.concatenate([np.geomspace(top_height * 1e-6, 0.5, 200)[:-1],
+                                           np.linspace(0.5, top_height, 200)])
             log_perm = np.log10(perm)
-            outline = [path_effects.withStroke(linewidth=3.6, foreground="black")]
+            outline = [path_effects.withStroke(linewidth=2.8, foreground="black")]
             for k in perms:
                 near = np.abs(log_perm - np.log10(k)) <= 0.5
                 p = float(np.median(phi[near])) if near.any() else float(np.median(phi))
-                ax.plot(self.sw_from_height(curve_height, np.full_like(curve_height, k),
-                                            np.full_like(curve_height, p)),
-                        curve_height, color=shown.cmap(shown.norm(np.log10(k))), lw=2.0,
-                        path_effects=outline, label=f"model, {k:g} mD, phi {p:.2f}")
-            title = f"J-function fit, R2 = {self.r2:.2f}" if self.r2 is not None else "J-function fit"
+                model_sw = np.minimum(self.sw_from_height(curve_height, np.full_like(curve_height, k),
+                                                          np.full_like(curve_height, p)), 1.0)
+                ax.plot(model_sw, curve_height, color=shown.cmap(shown.norm(k)), lw=1.6,
+                        solid_capstyle="round", path_effects=outline, label=f"model, {k:g} mD, phi {p:.2f}")
+            title = f"J-function fit, R² = {self.r2:.2f}" if self.r2 is not None else "J-function fit"
             ax.set(xlim=(0, 1), xlabel="Sw [v/v]", ylabel="Height above FWL [ft]", title=title)
             ax.legend(loc="best", fontsize=8)
             return Plot(fig)
@@ -136,13 +141,15 @@ class JFunctionModel:
                 fig, ax = plt.subplots(figsize=(6, 5))
             else:
                 fig = ax.figure
-            shown = ax.scatter(sw, j, c=np.log10(np.clip(perm, 1e-3, None)), s=5, lw=0, cmap="viridis")
-            fig.colorbar(shown, ax=ax, label="log10 permeability [mD]")
+            from matplotlib.colors import LogNorm
+
+            shown = ax.scatter(sw, j, c=np.clip(perm, 1e-3, None), norm=LogNorm(), s=5, lw=0, cmap="viridis")
+            fig.colorbar(shown, ax=ax, label="Permeability [mD]")
             line = np.geomspace(max(float(np.nanmin(j)), 1e-4), float(np.nanmax(j)), 200)
             ax.plot(self.sw_from_j(line), line, color="black", lw=1.8,
                     label=self._equation(3))
             ax.set_yscale("log")
-            title = f"J-function from core, R2 = {self.r2:.2f}" if self.r2 is not None else "J-function from core"
+            title = f"J-function from core, R² = {self.r2:.2f}" if self.r2 is not None else "J-function from core"
             ax.set(xlim=(0, 1), xlabel="Sw [v/v]", ylabel="Leverett J", title=title)
             ax.legend(loc="best", fontsize=8)
             return Plot(fig)

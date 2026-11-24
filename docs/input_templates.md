@@ -49,7 +49,10 @@ In Python, `pp.sample("<template name>")` gives the installed copy's path.
 ## What the tables add
 
 Attached to a well, formation and lithology tables become the tops and the
-lithology track. The bundled 30/6-5 files follow the same templates.
+lithology track. The bundled 30/6-5 files follow the same templates. Their
+lithology table is formation-scale, one lithology per formation: the whole
+Brent Group is sandstone in it, while the LAS file's own lithology log
+(`LITHOLOGY_GEOLINK`) shows the Ness coals, silts and shaly beds.
 
 ```{code-cell} python
 :tags: [remove-cell]

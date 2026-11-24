@@ -560,13 +560,13 @@ class FWLFromLogs:
             ax_fit.axhline(best, color="tab:blue", lw=1.2,
                            label=f"FWL {best:.1f}" if self.bound is None else f"search edge {best:.1f}")
             ax_fit.invert_yaxis()
-            ax_fit.set(xlabel="RMS Sw misfit", ylabel=f"Candidate FWL [{self.depth_unit}]",
+            ax_fit.set(xlabel="RMS Sw misfit [v/v]", ylabel=f"Candidate FWL [{self.depth_unit}]",
                        title="Misfit against FWL")
             ax_fit.legend(loc="lower right", fontsize=8)
             depth, log_sw, model_sw = (self._plot_data[key] for key in ("depth", "log_sw", "model_sw"))
             ax_sw.plot(log_sw, depth, ".", ms=2.5, color="0.45", label="log Sw")
             ax_sw.plot(model_sw, depth, ".", ms=2.5, color="tab:blue", label="model Sw")
-            ax_sw.axhline(self._plot_data["best"], color="tab:blue", lw=1.0)
+            ax_sw.axhline(self._plot_data["best"], color="tab:blue", lw=1.0, label=f"FWL {best:.1f}")
             ax_sw.invert_yaxis()
             ax_sw.set(xlim=(0, 1), xlabel="Sw [v/v]", ylabel=f"Depth [{self.depth_unit}]",
                       title="Log and model at the best FWL")

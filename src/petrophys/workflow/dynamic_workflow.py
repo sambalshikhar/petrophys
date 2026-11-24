@@ -9812,6 +9812,18 @@ class DynamicWorkflow:
         )
 
         computed_sw = np.asarray(result.sw, dtype=float)
+        no_pores = None
+        if not self._reproducing_benchmark and sat_phie is not None:
+            # Rock without effective pore space holds no hydrocarbon: SW and
+            # SXO are 1 there, whatever a shaly-sand equation returns from its
+            # clay term alone. Below 0.01 v/v, about what porosity tools
+            # resolve, the porosity SW is computed on is taken as none.
+            with np.errstate(invalid="ignore"):
+                no_pores = np.asarray(sat_phie, dtype=float) < 0.01
+            computed_sw = np.where(no_pores & np.isfinite(computed_sw), 1.0, computed_sw)
+            if result.sxo is not None:
+                sxo = np.asarray(result.sxo, dtype=float)
+                result.sxo = np.where(no_pores & np.isfinite(sxo), 1.0, sxo)
         source_sw_source = None
         source_sw_meta = {}
         source_sw_mask = np.zeros(well.n_samples, dtype=bool)
@@ -9909,6 +9921,10 @@ class DynamicWorkflow:
                 "waxman_smits_clipped_to_zero": result.waxman_smits_clipped_to_zero,
             })
         trace.decisions.append(f"Saturation equations: {_equation_names(result.model)}")
+        if no_pores is not None and np.any(no_pores):
+            trace.decisions.append(
+                f"SW = 1 at {int(np.count_nonzero(no_pores))} samples without effective porosity (below 0.01 v/v)"
+            )
         if self._reproducing_benchmark:
             # The equations this well's samples were routed to, with their sample counts.
             names = {

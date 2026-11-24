@@ -83,7 +83,7 @@ gamma = interpret_spectral_gamma(well25, alias_overrides={"SGR": ["GR"]})
 gamma.output_curves
 ```
 
-The run ends at 3432 m with held readings (values repeated exactly, then zeros), so the plot stops at 3423 m. Between 2906 and 3423 m, 371 of the 3395 logged samples get at least half their gamma ray from uranium (`SGR_URANIUM_FRACTION` of 0.5 or more, flagged in `SGR_URANIUM_EXCESS_FLAG`); 350 of them lie in the uranium-rich shale above 2990 m, where uranium reaches 34 ppm:
+The run ends at 3432 m with held readings (values repeated exactly, then zeros), so the plot stops at 3423 m. Between 2906 and 3423 m, 371 of the 3393 logged samples get at least half their gamma ray from uranium (`SGR_URANIUM_FRACTION` of 0.5 or more, flagged in `SGR_URANIUM_EXCESS_FLAG`); 350 of them lie in the uranium-rich shale above 2990 m, where uranium reaches 34 ppm:
 
 ```{code-cell} python
 pp.plot(well25, curves=["GR", "THOR", "URAN", "SGR_URANIUM_FRACTION"], top=2900, bottom=3423,
@@ -143,6 +143,12 @@ transform of your own to any porosity curve):
 pp.core_on_logs(result, core, curves=["PHID", "PERM_CC"], figsize=(8, 7),
                 top=core.top - 10, bottom=core.bottom + 10);
 ```
+
+Read `PERM_CC` against the plugs where they were cut. Away from the sands they sample the
+transform runs high: a median of about 20 mD and up to about 400 mD at 2843-2847 m, where
+the Ness plugs read 0.1-1.5 mD; a median of about 750 mD and up to 10,000 mD in the Ness coal
+and bad hole at 2862-2869 m; and 10,000 mD in the washed-out Heather shale at the casing
+shoe, about 2805 m.
 
 Core saturation stays calibration evidence; it does not replace the log Sw curve. Check depth ties first: on 25/5-1 the plugs need a depth shift before they match the logs ({doc}`tutorial 12 <tutorials/part_b/12_core_calibration_and_digital_core>`).
 

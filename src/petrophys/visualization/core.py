@@ -38,8 +38,13 @@ def _side_by_side(items: Mapping[str, Any], draw: Callable[[Any, "Axes", str], A
         raise ValueError("Give at least one entry to plot")
     n = len(items)
     fig, axes = plt.subplots(1, n, figsize=figsize or (6.0 * n, 5.5), sharex=True, sharey=True, squeeze=False)
+    limits = []
     for ax, (name, item) in zip(axes[0], items.items()):
         draw(item, ax, str(name))
+        limits.append((ax.get_xlim(), ax.get_ylim()))  # before the next panel resets the shared axes
+    # The shared axes span every panel's data, not the last panel's alone.
+    for which, set_ in ((0, "set_xlim"), (1, "set_ylim")):
+        getattr(axes[0][0], set_)(min(pair[which][0] for pair in limits), max(pair[which][1] for pair in limits))
     fig.tight_layout()
     return fig, list(axes[0])
 
@@ -138,11 +143,16 @@ def calibration_plot(
     shown = f" [{unit}]" if unit else ""
     ax.set_xlabel(f"Core {core_property}{shown}")
     ax.set_ylabel(f"{log_curve}{shown}")
+    # One scale on both axes, so the 1:1 line runs at 45 degrees.
+    margin = 0.03 * (vmax - vmin)
+    ax.set_xlim(vmin - margin, vmax + margin)
+    ax.set_ylim(vmin - margin, vmax + margin)
+    ax.set_aspect("equal", adjustable="box")
     ax.set_title(
         title
         or (
             f"{result.property_name}\n"
-            f"R^2={result.r_squared:.3f}, Bias={result.bias:.4f}, "
+            f"R²={result.r_squared:.3f}, Bias={result.bias:.4f}, "
             f"RMSE={result.rmse:.4f} (n={result.n_points})"
         )
     )
@@ -231,7 +241,7 @@ def _poro_perm_chart(
             linewidth=2,
             label=(
                 f"Fit: log10(K) = {transform.A:.1f}*phi {'-' if transform.B < 0 else '+'} {abs(transform.B):.1f}\n"
-                f"R^2 = {transform.r_squared:.3f}"
+                f"R² = {transform.r_squared:.3f}"
             ),
         )
         ax.legend(fontsize=9)
@@ -250,6 +260,7 @@ def _poro_perm_chart(
     unit = getattr(core, "depth_unit", None) or (core.metadata.get("depth_unit") if isinstance(
         getattr(core, "metadata", None), dict) else None)
     cbar.set_label(f"Depth [{unit}]" if unit else "Depth")
+    cbar.ax.invert_yaxis()  # deeper at the bottom, as on a log
 
     return fig, ax
 

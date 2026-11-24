@@ -7,6 +7,7 @@ a track per curve and every well's curve in it.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -279,7 +280,10 @@ def compare_wells(
             inside = in_window(depth) & np.isfinite(values)
             color = "#000000" if same else colors(index % colors.N)
             label = "every run" if same else names[index]
-            ax.plot(values, depth, color=color, linewidth=0.8, label=label)
+            (line,) = ax.plot(values, depth, color=color, linewidth=0.8, label=label, zorder=3)
+            from petrophys.visualization._data import clip_past_frame
+
+            clip_past_frame(ax, line)
             if inside.any():
                 with_data.add(label)
             shown.append(values[inside])
@@ -301,6 +305,8 @@ def compare_wells(
                 if high > low:
                     pad = 0.03 * (high - low)
                     left, right = (low / 1.5, high * 1.5) if log_track else (low - pad, high + pad)
+                    if not log_track and data.min() >= 0:
+                        left = max(left, 0.0)  # a quantity that is never negative starts at 0
                     if not log_track:
                         # Round scale ends, as a log plot header shows them.
                         from matplotlib.ticker import MaxNLocator
@@ -320,12 +326,18 @@ def compare_wells(
             ax.set_xticks([left, right])
             ax.set_xticklabels([f"{left:g}", f"{right:g}"], fontsize=8)
             ax.set_xlim(left, right)
+        if log_track:
+            unit_text = f"{unit_text}, log" if unit_text else "log"
         ax.set_xlabel(f"{name} [{unit_text}]" if unit_text else name, fontsize=9, fontweight="bold")
         from matplotlib.ticker import NullFormatter
 
         ax.xaxis.set_minor_formatter(NullFormatter())
         if not log_track and left is not None:
             ax.set_xticks(np.linspace(left, right, 6), minor=True)
+        elif log_track and left is not None and left > 0:
+            # A gridline at every decade, so values read off the log scale.
+            low_power, high_power = int(np.ceil(np.log10(left))), int(np.floor(np.log10(right)))
+            ax.set_xticks([10.0 ** k for k in range(low_power, high_power + 1)], minor=True)
         ax.grid(True, which="both", axis="x", alpha=0.3)
         ax.grid(True, which="major", axis="y", alpha=0.3)
         if track == 0:
@@ -341,7 +353,13 @@ def compare_wells(
             if label not in legend_labels and label in with_data:
                 handles.append(handle)
                 legend_labels.append(label)
-    well_names = list(dict.fromkeys(str(well.name) for well in wells))
+    # One well under two spellings ("EDE 01", "EDE-01") is named once.
+    by_key: Dict[str, str] = {}
+    for well in wells:
+        by_key.setdefault(re.sub(r"[^0-9A-Z]", "", str(well.name).upper()), str(well.name))
+    well_names = list(by_key.values())
+    # A well with nothing in the window is not named in the title.
+    well_names = [name for name in well_names if name in with_data] or well_names
     title = " | ".join(well_names) if len(well_names) <= 3 else f"{len(well_names)} wells"
     fig.suptitle(title, fontsize=12, fontweight="bold")
     if handles:

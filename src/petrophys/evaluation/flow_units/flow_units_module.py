@@ -384,7 +384,7 @@ class FlowUnitModule:
         except ImportError:  # plotting is optional
             pass
         else:
-            palette = colormaps["turbo"](np.linspace(0.06, 0.94, n_units))
+            palette = colormaps["plasma"](np.linspace(0.0, 0.85, n_units))
             custom["category_colors"] = {0: "#999999", **{k: tuple(float(c) for c in palette[k - 1])
                                                           for k in range(1, n_units + 1)}}
         well.add_curve("PERM_HFU", result.perm_predicted, "mD", "Permeability from HFU")

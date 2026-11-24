@@ -167,7 +167,7 @@ def nmr_panel(
             spec(("BS",), None, 6, 16, "#000000", line_style="--"),
         ]),
         # Cable tension and its downhole force flag tool sticking, not NMR quality.
-        track("CABLE TENSION", tension),
+        track("TENSION (QC)", tension),
         track("NMR POROSITY", porosity, width=1.35),
         track("NMR PERMEABILITY", permeability, scale="log", left=low, right=high, width=1.25),
         # One cutoff for the whole log is stated in the title rather than drawn as a flat line.
@@ -192,7 +192,7 @@ def _decades(curves, depth: np.ndarray, top: float, bottom: float) -> Tuple[floa
     values = values[np.isfinite(values) & (values > 0)]
     if not values.size:
         return 0.01, 10000.0
-    low, high = np.percentile(values, [1, 99])
+    low, high = np.percentile(values, [1, 100])  # the top decade holds the highest reading
     low, high = 10.0 ** np.floor(np.log10(low)), 10.0 ** np.ceil(np.log10(high))
     return float(min(low, 0.01)), float(max(high, low * 1000))
 
@@ -214,8 +214,7 @@ def fmi_panel(
     image = _prepared_fmi_image(fmi_image, depth_limits(fmi_image.depth, top, bottom), orient)
     fig, ax = plt.subplots(figsize=figsize)
     plot_fmi(image, ax=ax, equalize=equalize, interpolation="nearest")
-    fig.suptitle("FMI Image", fontsize=13)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.tight_layout()
     return Plot(fig, ax)
 
 
