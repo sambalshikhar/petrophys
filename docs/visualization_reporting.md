@@ -95,6 +95,13 @@ plot (`chart="hingle"` the Hingle plot), a porosity and Sw the Buckles plot,
 chart. Any other pair is drawn as points, coloured by `color=`. `top=` and `bottom=` set
 the depth window, as in `pp.plot`.
 
+Each of these charts, data over the lines of a chart, is also a function of its own in
+{mod}`petrophys.visualization.charts`, on `pp` as well, with the usual curves as defaults:
+`pp.nd_plot`, `pp.pef_plot`, `pp.mn_plot`, `pp.mid_plot`, `pp.pickett_plot`,
+`pp.hingle_plot`, `pp.buckles_plot`, `pp.flow_unit_plot`, `pp.poro_perm_plot` and
+`pp.saturation_height_plot`. `pp.pickett_plot(result)` is
+`pp.crossplot(result, "PHIE", "RDEP")`; the examples below use the named charts.
+
 Crossplots convert declared compatible units before plotting and leave the source well unchanged. Unknown or incompatible units raise a named error; missing units warn before assuming the chart unit. Pickett, Hingle and Buckles accept `xlim=` and `ylim=`; a note counts finite points outside the displayed range.
 
 Each crossplot answers one question. The lithology plots use the interval where PEF
@@ -107,13 +114,13 @@ limestone-referenced neutron response with linear mineral endpoints; they are no
 vendor-specific tool calibration charts:
 
 ```{code-cell} python
-pp.crossplot(result, "NPHI", "RHOB", top=2784, bottom=3176)
+pp.nd_plot(result, top=2784, bottom=3176)
 ```
 
 **M-N plot**: matrix minerals from density, neutron and sonic together:
 
 ```{code-cell} python
-pp.crossplot(result, "N", "M", top=2784, bottom=3176)
+pp.mn_plot(result, top=2784, bottom=3176)
 ```
 
 **MID plot**: apparent matrix density against apparent matrix slowness. It removes
@@ -124,7 +131,7 @@ Samples outside that clean binary-mineral model warn and are omitted. For gas,
 clay or complex mineral mixtures, supply independently determined total porosity:
 
 ```{code-cell} python
-pp.crossplot(result, "DTMAA", "RHOMAA", top=2784, bottom=3176)
+pp.mid_plot(result, top=2784, bottom=3176)
 ```
 
 **Pickett plot**: log Rt against log porosity. Water-bearing rock falls on a straight
@@ -135,14 +142,14 @@ above it. Only clean rock is plotted (`VCL` up to 0.15, `vcl_max`), as the chart
 clean rock. Here with the operator's Archie constants (a 0.8, m and n 2):
 
 ```{code-cell} python
-pp.crossplot(result, "PHIE", "RDEP", top=3223, bottom=3556, a=0.8)
+pp.pickett_plot(result, top=3223, bottom=3556, a=0.8)
 ```
 
 **Hingle plot**: the same Archie water line on linear axes, where it passes through
 the matrix point at zero porosity, with the same Rw and clean points:
 
 ```{code-cell} python
-pp.crossplot(result, "PHIE", "RDEP", chart="hingle", top=3223, bottom=3556, a=0.8)
+pp.hingle_plot(result, top=3223, bottom=3556, a=0.8)
 ```
 
 **Buckles plot**: each hyperbola represents constant bulk-volume water (porosity * Sw).
@@ -153,7 +160,7 @@ PHIT supplies the fallback. HW-3,
 a COSTA carbonate whose header carries Rw:
 
 ```{code-cell} python
-pp.crossplot(pp.interpret(pp.sample("HW-3")), "PHIE", "SW")
+pp.buckles_plot(pp.interpret(pp.sample("HW-3")))
 ```
 
 ## Reservoir displays
@@ -166,7 +173,7 @@ Flow units, net flags and formation tops sum up where the good rock is.
 ```{code-cell} python
 from petrophys.interpretation.core_analysis import core_data
 
-pp.crossplot(core_data(result), "PHI_Z", "RQI")
+pp.flow_unit_plot(core_data(result))
 ```
 
 **Zone flags** draw net rock, net reservoir and net pay as depth bars:

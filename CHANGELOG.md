@@ -1453,9 +1453,16 @@ wherever the package used the function.
   coloured by `color=` (`"DEPTH"` for depth). `top=` and `bottom=` set the
   window as in `pp.plot`; the result shows itself at the end of a notebook
   cell and saves with `.save(path)`.
+- The interpretation charts, data over the lines of a chart, are each a
+  function of their own in `petrophys.visualization.charts`, on `pp` as well,
+  with the usual curves as defaults: `nd_plot`, `pef_plot`, `mn_plot`,
+  `mid_plot`, `pickett_plot`, `hingle_plot`, `buckles_plot`,
+  `flow_unit_plot`, `poro_perm_plot` and `saturation_height_plot`.
+  `pp.pickett_plot(result)` draws what `pp.crossplot(result, "PHIE", "RDEP")`
+  draws.
 - Plots have short names and are on `pp` as well as in
   `petrophys.visualization`: `pp.nmr_panel`, `pp.fmi_panel`, `pp.xrf_panel`,
-  `pp.triple_combo`, `pp.saturation_height_plot`, `pp.pressure_plot`,
+  `pp.triple_combo`, `pp.pressure_plot`,
   `pp.contact_plot`, `pp.pretest_plot`, `pp.calibration_plot`,
   `pp.core_on_logs`, `pp.zone_flags_plot`, `pp.bar_chart`, `pp.line_chart`,
   `pp.histograms`, `pp.heatmap`, `pp.tornado_plot` and

@@ -919,20 +919,28 @@ The rest of the reference documents what these calls are built from.""",
                 VIZ,
                 title="Crossplots",
                 slug="visualization-crossplots",
-                description="One crossplot for any two curves: density-neutron, "
-                "density-PEF, M-N, MID, Pickett, Hingle, Buckles, flow units and core "
-                "poro-perm charts by the pair named.",
+                description="One crossplot for any two curves; a pair with a chart of "
+                "its own (NPHI and RHOB, PHIE and RDEP, ...) gets that chart.",
                 names="crossplot CrossPlot PickettPlot",
+            ),
+            Section(
+                "petrophys.visualization.charts",
+                title="Interpretation charts",
+                slug="visualization-charts",
+                description="Data over the lines of a chart, each by name: mineral "
+                "lines, lines of constant Sw, BVW or FZI, a fitted poro-perm transform, "
+                "saturation-height type curves.",
+                names="nd_plot pef_plot mn_plot mid_plot pickett_plot hingle_plot "
+                "buckles_plot flow_unit_plot poro_perm_plot saturation_height_plot",
             ),
             Section(
                 VIZ,
                 title="Specialist panels",
                 slug="visualization-specialist",
-                description="NMR, borehole-image and XRF panels, saturation-height "
-                "type curves and formation-pressure plots.",
+                description="NMR, borehole-image and XRF panels and formation-pressure "
+                "plots.",
                 names="nmr_panel has_nmr_curves fmi_panel xrf_panel "
-                "saturation_height_plot pressure_plot "
-                "contact_plot pretest_plot",
+                "pressure_plot contact_plot pretest_plot",
             ),
             Section(
                 VIZ,

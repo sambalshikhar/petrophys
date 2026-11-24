@@ -14,7 +14,7 @@ from petrophys.visualization import crossplot, xrf_panel
 from petrophys.visualization.lithology_crossplots import (
     _buckles_chart, _hingle_chart, _mid_chart, _mn_chart, _nd_chart,
 )
-from petrophys.visualization.pickett_plot import PickettPlot, _pickett_chart
+from petrophys.visualization.pickett import PickettPlot, _pickett_chart
 from petrophys.visualization.crossplot_viewer import CrossPlot
 from petrophys.visualization.analytics import histograms
 

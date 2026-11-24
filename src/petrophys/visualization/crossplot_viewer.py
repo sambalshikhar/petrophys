@@ -356,12 +356,6 @@ def _chart_for(x: str, y: str):
     return "plain", False
 
 
-def _as_crossplot(figure, figsize) -> "CrossPlot":
-    plot = CrossPlot(figsize=figsize or tuple(figure.get_size_inches()))
-    plot.fig = figure
-    plot.ax = figure.axes[0] if figure.axes else None
-    return plot
-
 
 def crossplot(
     data,
@@ -432,6 +426,11 @@ def crossplot(
         ``.fig`` and ``.ax``; ``.show()``, ``.save(path)``. At the end of a
         notebook cell it shows its figure.
 
+    See Also
+    --------
+    petrophys.visualization.charts : each chart by name, with its own
+        defaults: ``pickett_plot(result)``, ``nd_plot(well)``, ...
+
     Examples
     --------
     >>> import petrophys as pp
@@ -442,6 +441,7 @@ def crossplot(
     from collections.abc import Mapping
 
     from petrophys.model.core import CoreData
+    from petrophys.visualization import charts
 
     if chart is not None and chart not in _CHARTS:
         raise ValueError(f"chart must be one of {sorted(_CHARTS)}; got {chart!r}")
@@ -449,73 +449,45 @@ def crossplot(
     kind = chart or found
     if swapped and kind != "plain":
         x, y = y, x
-    window = None if top is None and bottom is None else (
-        -np.inf if top is None else float(top), np.inf if bottom is None else float(bottom))
+    if isinstance(data, Mapping) and kind != "poro_perm":
+        raise ValueError("A mapping of data draws side-by-side poro-perm panels; pass one well otherwise")
+    if isinstance(data, CoreData) and kind not in {"poro_perm", "flow_units"}:
+        kind = "poro_perm"
+    common = {"title": title, "figsize": figsize}
+    window = {"top": top, "bottom": bottom}
+    colour = {} if color is _AUTO else {"color": color}
 
-    if isinstance(data, Mapping):
-        if kind != "poro_perm":
-            raise ValueError("A mapping of data draws side-by-side poro-perm panels; pass one well otherwise")
-        from petrophys.visualization.core import _poro_perm_chart
+    # A pair with a chart of its own: that chart, as charts.<name>_plot draws it.
+    if kind == "poro_perm":
+        if not isinstance(data, (Mapping, CoreData)):
+            from petrophys.interpretation.core_analysis import core_data as _core_data
 
-        figure, _ = _poro_perm_chart(dict(data), transform=options.pop("transform", None), figsize=figsize)
-        return _as_crossplot(figure, figsize)
-
+            data = _core_data(data, porosity_curves=[str(x)], perm_curves=[str(y)])
+        return charts.poro_perm_plot(data, **({"transform": options.pop("transform")} if "transform" in options
+                                              else {}), **common)
     if kind == "flow_units" and not hasattr(data, "curves"):
-        # A flow-unit result, or core plugs to compute the units from.
-        from petrophys.visualization.flow_unit_plot import _flow_unit_chart
-
-        figure = _flow_unit_chart(data, title=title or "Hydraulic flow units (RQI vs phi_z)",
-                                  figsize=figsize or (7.5, 6.5), **options)
-        return _as_crossplot(figure, figsize)
-
-    if isinstance(data, CoreData) or kind == "poro_perm":
-        from petrophys.interpretation.core_analysis import core_data as _core_data
-        from petrophys.visualization.core import _poro_perm_chart
-
-        core = data if isinstance(data, CoreData) else _core_data(
-            data, porosity_curves=[str(x)], perm_curves=[str(y)])
-        transform = options.pop("transform", _AUTO)
-        if transform is _AUTO:
-            # The transform fitted to these plugs, drawn over them.
-            from petrophys.interpretation.core_analysis import fit_poro_perm
-
-            transform = fit_poro_perm(core)
-        figure, _ = _poro_perm_chart(core, transform=transform,
-                                     title=title or "Core poro-perm", figsize=figsize)
-        return _as_crossplot(figure, figsize)
+        return charts.flow_unit_plot(data, **common, **options)
+    if kind in {"nd", "pef", "mn"}:
+        draw = {"nd": charts.nd_plot, "pef": charts.pef_plot, "mn": charts.mn_plot}[kind]
+        return draw(data, **window, **colour, **common, **options)
+    if kind == "mid":
+        return charts.mid_plot(data, **window, **colour, **common, **options)
+    if kind in {"pickett", "hingle"}:
+        draw = charts.pickett_plot if kind == "pickett" else charts.hingle_plot
+        return draw(data, str(x), str(y), **window, **colour, **common, **options)
+    if kind == "buckles":
+        return charts.buckles_plot(data, str(x), str(y), **window, **colour, **common, **options)
 
     from petrophys._internal.analysis_helpers import as_well
 
-    well = as_well(data)
-    chosen = {} if color is _AUTO else {"color_curve": color}
-    sized = {} if figsize is None else {"figsize": figsize}
-    if kind in {"nd", "pef", "mn", "mid", "buckles", "hingle"}:
-        from petrophys.visualization import lithology_crossplots as charts
-
-        draw = {"nd": charts._nd_chart, "pef": charts._pef_chart, "mn": charts._mn_chart,
-                "mid": charts._mid_chart, "buckles": charts._buckles_chart, "hingle": charts._hingle_chart}[kind]
-        if kind == "buckles":
-            options.setdefault("phie_curve", str(x))
-            options.setdefault("sw_curve", str(y))
-        if kind == "hingle":
-            options.setdefault("phie_curve", str(x))
-            options.setdefault("rt_curve", str(y))
-        figure = draw(well, depth_range=window, **chosen, **sized, **options)
-        plot = _as_crossplot(figure, figsize)
-    elif kind == "pickett":
-        from petrophys.visualization.pickett_plot import _pickett_chart
-
-        if color is _AUTO:
-            chosen = {"color_curve": "VCL"}
-        plot = _pickett_chart(well, phie_curve=str(x), rt_curve=str(y), depth_range=window,
-                              **chosen, **sized, **options)
-    else:
-        # Resistivity and permeability on log axes, unless told otherwise.
-        logs = _RESISTIVITY | {"PERM", "PERM_CC", "KH_CORE", "K", "KTIM", "KSDR", "PERM_TIMUR", "PERM_COATES"}
-        options.setdefault("x_log", _standard(x) in logs or str(x).upper() in logs)
-        options.setdefault("y_log", _standard(y) in logs or str(y).upper() in logs)
-        plot = _plain_crossplot(well, str(x), str(y), color_curve=None if color is _AUTO else color,
-                                depth_range=window, title=title, figsize=figsize or (8, 7), **options)
+    # Resistivity and permeability on log axes, unless told otherwise.
+    logs = _RESISTIVITY | {"PERM", "PERM_CC", "KH_CORE", "K", "KTIM", "KSDR", "PERM_TIMUR", "PERM_COATES"}
+    options.setdefault("x_log", _standard(x) in logs or str(x).upper() in logs)
+    options.setdefault("y_log", _standard(y) in logs or str(y).upper() in logs)
+    depth_range = None if top is None and bottom is None else (
+        -np.inf if top is None else float(top), np.inf if bottom is None else float(bottom))
+    plot = _plain_crossplot(as_well(data), str(x), str(y), color_curve=None if color is _AUTO else color,
+                            depth_range=depth_range, title=title, figsize=figsize or (8, 7), **options)
     if title and plot.ax is not None:
         plot.ax.set_title(title)
     return plot

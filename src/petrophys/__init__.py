@@ -25,6 +25,8 @@ from petrophys.preprocessing.imputation import impute
 #: so ``import petrophys`` does not import Matplotlib.
 _PLOTS = (
     "crossplot",
+    "nd_plot", "pef_plot", "mn_plot", "mid_plot", "pickett_plot", "hingle_plot", "buckles_plot",
+    "flow_unit_plot", "poro_perm_plot",
     "nmr_panel", "fmi_panel", "xrf_panel", "triple_combo",
     "saturation_height_plot", "pressure_plot", "contact_plot", "pretest_plot",
     "calibration_plot", "core_on_logs", "zone_flags_plot",
