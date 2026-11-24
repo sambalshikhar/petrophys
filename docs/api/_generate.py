@@ -283,7 +283,7 @@ The rest of the reference documents what these calls are built from.""",
                 f"{INTERP}.temperature",
                 title="Temperature",
                 groups=[
-                    ("Temperature profile", "calculate_temperature_profile TemperatureProfile"),
+                    ("Temperature profile", "temperature_profile TemperatureProfile"),
                     (
                         "Geothermal gradient",
                         "estimate_gradient_from_bht calculate_temperature_gradient "
@@ -633,9 +633,9 @@ The rest of the reference documents what these calls are built from.""",
                     Page(
                         f"{INTERP}.core_analysis",
                         "Core analysis",
-                        key=f"{INTERP}.core_analysis.core_data_from_well "
+                        key=f"{INTERP}.core_analysis.core_data "
                         f"{INTERP}.core_analysis.calibrate_porosity "
-                        f"{INTERP}.core_analysis.fit_poro_perm_transform "
+                        f"{INTERP}.core_analysis.fit_poro_perm "
                         f"{INTERP}.core_analysis.find_core_depth_shift",
                         sections=[
                             Section(
@@ -643,7 +643,7 @@ The rest of the reference documents what these calls are built from.""",
                                 groups=[
                                     (
                                         "Core data from a well",
-                                        "core_data_from_well interpolate_log_at_core",
+                                        "core_data interpolate_log_at_core",
                                     ),
                                     (
                                         "Calibration against logs",
@@ -658,9 +658,9 @@ The rest of the reference documents what these calls are built from.""",
                                     ),
                                     (
                                         "Poro-perm transforms",
-                                        "fit_poro_perm_transform fit_log_poro_perm_transform "
+                                        "fit_poro_perm fit_log_poro_perm_transform "
                                         "fit_log_poro_perm_transform_from_correction "
-                                        "apply_poro_perm_transform PoroPermTransform",
+                                        "apply_poro_perm PoroPermTransform",
                                     ),
                                     ("Archie exponent from core", "estimate_archie_m"),
                                     (
@@ -898,34 +898,31 @@ The rest of the reference documents what these calls are built from.""",
         title="Visualization",
         card="Log viewers and templates, crossplots, specialist panels, "
         "reservoir displays, analytics charts, core plots and batch export.",
-        intro="Plots for wells, interpretations and specialist data. Every "
-        "function returns the Matplotlib figure (and axes), so you can style "
-        "it further or save it.",
-        key="petrophys.visualization.create_log_viewer "
-        "petrophys.visualization.create_triple_combo "
-        "petrophys.visualization.create_pickett_plot "
-        "petrophys.visualization.create_nd_crossplot",
+        intro="Plots for wells, interpretations and specialist data. "
+        "``crossplot`` draws any two curves with the chart their pair calls for. "
+        "Every plot keeps its Matplotlib figure, so you can style it further or save it.",
+        key="petrophys.visualization.crossplot "
+        "petrophys.visualization.triple_combo "
+        "petrophys.visualization.nmr_panel "
+        "petrophys.visualization.calibration_plot",
         items=[
             Section(
                 VIZ,
                 title="Log viewer and templates",
                 slug="visualization-log-viewer",
-                description="Template-driven multi-track log displays, the "
-                "triple combo, and simple log plots.",
-                names="create_log_viewer create_adaptive_log_viewer_template "
-                "load_log_viewer_template LogViewer LogViewerTemplate create_triple_combo "
-                "create_log_plot LogPlot DEFAULT_LOG_VIEWER_TEMPLATES "
-                "LITHOLOGY_CODE_LABELS",
+                description="Template-driven multi-track log displays and the "
+                "triple combo.",
+                names="auto_template load_template LogViewer LogViewerTemplate triple_combo "
+                "DEFAULT_LOG_VIEWER_TEMPLATES LITHOLOGY_CODE_LABELS",
             ),
             Section(
                 VIZ,
                 title="Crossplots",
                 slug="visualization-crossplots",
-                description="Lithology crossplots (neutron-density, M-N, MID), "
-                "Pickett, Buckles and Hingle plots, and general crossplots.",
-                names="create_crossplot CrossPlot create_nd_crossplot create_mn_plot "
-                "create_mid_plot create_pickett_plot PickettPlot create_buckles_plot "
-                "create_hingle_plot",
+                description="One crossplot for any two curves: density-neutron, "
+                "density-PEF, M-N, MID, Pickett, Hingle, Buckles, flow units and core "
+                "poro-perm charts by the pair named.",
+                names="crossplot CrossPlot PickettPlot",
             ),
             Section(
                 VIZ,
@@ -933,16 +930,16 @@ The rest of the reference documents what these calls are built from.""",
                 slug="visualization-specialist",
                 description="NMR, borehole-image and XRF panels, saturation-height "
                 "type curves and formation-pressure plots.",
-                names="create_nmr_panel has_nmr_curves create_fmi_panel create_xrf_panel "
-                "create_saturation_height_plot create_formation_pressure_plot "
-                "create_pressure_contact_plot create_mdt_pretest_plot",
+                names="nmr_panel has_nmr_curves fmi_panel xrf_panel "
+                "saturation_height_plot pressure_plot "
+                "contact_plot pretest_plot",
             ),
             Section(
                 VIZ,
                 title="Reservoir displays",
                 slug="visualization-reservoir",
-                description="Flow-unit crossplots and zone flags on logs.",
-                names="create_flow_unit_plot plot_zone_flags add_zone_shading",
+                description="Zone flags on logs.",
+                names="zone_flags_plot add_zone_shading",
             ),
             Section(
                 VIZ,
@@ -958,16 +955,16 @@ The rest of the reference documents what these calls are built from.""",
                 slug="visualization-analytics",
                 description="Charts for multi-well comparisons and sensitivity "
                 "studies.",
-                names="create_multiwell_overlay create_bar_comparison create_tornado_plot "
-                "create_histogram_comparison create_line_comparison create_heatmap",
+                names="multiwell_overlay bar_chart tornado_plot "
+                "histograms line_chart heatmap",
             ),
             Section(
                 VIZ,
                 title="Core plots",
                 slug="visualization-core",
-                description="Core-versus-log calibration, poro-perm crossplots and "
-                "core points on logs.",
-                names="plot_calibration plot_poro_perm plot_core_on_logs",
+                description="Core-versus-log calibration and core points on logs "
+                "(poro-perm: crossplot).",
+                names="calibration_plot core_on_logs",
             ),
             Section(
                 VIZ,
@@ -975,7 +972,7 @@ The rest of the reference documents what these calls are built from.""",
                 slug="visualization-batch",
                 description="Interpretation plots for every LAS file in a folder, "
                 "with a CSV report.",
-                names="export_interpretation_plots write_visualization_report "
+                names="export_plots write_visualization_report "
                 "BatchVisualizationResult",
             ),
         ],

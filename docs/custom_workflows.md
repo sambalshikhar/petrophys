@@ -205,11 +205,9 @@ field
 ```
 
 ```{code-cell} python
-from petrophys.visualization import create_bar_comparison
-
-create_bar_comparison(field["Well"], field["Net Pay"], horizontal=True, sort_by=0,
-                      xlabel="Net pay (ft)", title="Net pay by well, Kharaib-2 interval (custom workflow)",
-                      figsize=(8, 4.5));
+pp.bar_chart(field["Well"], field["Net Pay"], horizontal=True, sort_by=0,
+             xlabel="Net pay (ft)", title="Net pay by well, Kharaib-2 interval (custom workflow)",
+             figsize=(8, 4.5));
 ```
 
 ## Custom workflow or `pp.interpret`?

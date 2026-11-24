@@ -39,7 +39,7 @@ _FLAG_NAMES = {"NET_ROCK": "Clean Rock", "NET_RES": "Res", "NET_PAY": "Pay", "SE
 
 
 @_styled_plot
-def plot_zone_flags(
+def zone_flags_plot(
     well: "Well",
     flag_curves: List[str],
     colors: Optional[Dict[str, str]] = None,
@@ -180,92 +180,3 @@ def add_zone_shading(
             bbox=dict(boxstyle="square,pad=0.15", facecolor="white", edgecolor="none", alpha=0.8),
             zorder=8,
         )
-
-
-@_styled_plot
-def create_net_pay_summary_plot(
-    well: "Well",
-    depth_range: Optional[Tuple[float, float]] = None,
-    figsize: Tuple[float, float] = (6, 12)
-) -> Tuple["Figure", List["Axes"]]:
-    """
-    Create a summary plot showing net rock/reservoir/pay.
-
-    Parameters
-    ----------
-    well : Well
-        Well object with NET_ROCK, NET_RES, NET_PAY curves
-    depth_range : tuple, optional
-        (top, bottom) depth range
-    figsize : tuple
-        Figure size
-
-    Returns
-    -------
-    tuple
-        (Figure, list of Axes)
-    """
-    if not HAS_MATPLOTLIB:
-        raise ImportError("matplotlib is required for visualization")
-
-    fig, axes = plt.subplots(1, 2, figsize=figsize, sharey=True)
-
-    depth = well_depth_array(well)
-
-    # Set depth range
-    if depth_range:
-        top, bottom = depth_range
-    else:
-        top, bottom = resolve_well_depth_range(well)
-
-    # Track 1: GR for reference
-    ax1 = axes[0]
-    gr = well.get("GR")
-    if gr is not None:
-        ax1.plot(gr.data, depth, 'g-', linewidth=0.5)
-        ax1.fill_betweenx(depth, 0, gr.data, alpha=0.3, color='green')
-        ax1.set_xlim(0, 150)
-    ax1.set_xlabel("GR [API]")
-    ax1.set_ylabel(_depth_label(well))
-    ax1.grid(True, alpha=0.3)
-
-    # Track 2: Flags
-    ax2 = axes[1]
-
-    from petrophys.visualization.log_viewer import FLAG_COLORS
-
-    flag_config = [
-        ("NET_ROCK", FLAG_COLORS["NET_ROCK"], 0.0, 0.33),
-        ("NET_RES", FLAG_COLORS["NET_RES"], 0.33, 0.66),
-        ("NET_PAY", FLAG_COLORS["NET_PAY"], 0.66, 1.0),
-    ]
-
-    for curve_name, color, x_left, x_right in flag_config:
-        curve = well.get(curve_name)
-        if curve is not None:
-            mask = curve.data > 0.5
-            cell_depth, cell_mask = _cell_fill(depth, mask)
-            ax2.fill_betweenx(
-                cell_depth, x_left, x_right,
-                where=cell_mask,
-                color=color,
-                alpha=0.85,
-                linewidth=0.0,
-            )
-
-    ax2.set_xlim(0, 1)
-    ax2.set_xticks([0.165, 0.5, 0.83])
-    ax2.set_xticklabels(['Clean Rock', 'Res', 'Pay'])
-    ax2.set_xlabel("Net Flags")
-    ax2.grid(True, axis="y", alpha=0.3)
-
-    # Common settings
-    for ax in axes:
-        ax.set_ylim(bottom, top)
-
-    well_name = well.name or "Unknown Well"
-    fig.suptitle(f"Net Pay Summary - {well_name}", fontsize=12)
-
-    plt.tight_layout()
-
-    return fig, axes

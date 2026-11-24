@@ -85,7 +85,7 @@ def _scatter(ax, x, y, c, clabel, fig, cmap="viridis", norm=None):
 
 
 @_styled_plot
-def create_nd_crossplot(
+def _nd_chart(
     well, color_curve: str = "GR", depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
 ):
@@ -133,7 +133,7 @@ _WATER_RHOE, _WATER_U = 1.110, 0.398
 
 
 @_styled_plot
-def create_pef_crossplot(
+def _pef_chart(
     well, color_curve: str = "GR", depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
 ):
@@ -183,7 +183,7 @@ def create_pef_crossplot(
 
 
 @_styled_plot
-def create_mn_plot(
+def _mn_chart(
     well, color_curve: str = "GR", depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
 ):
@@ -224,7 +224,7 @@ def create_mn_plot(
 
 
 @_styled_plot
-def create_mid_plot(
+def _mid_chart(
     well, color_curve: str = "GR", depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
     *, porosity_curve: Optional[str] = None,
@@ -283,7 +283,7 @@ def create_mid_plot(
 
 
 @_styled_plot
-def create_buckles_plot(
+def _buckles_chart(
     well, phie_curve: str = "PHIE", sw_curve: str = "SW",
     color_curve: str = "PERM", depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
@@ -338,7 +338,7 @@ def create_buckles_plot(
 
 
 @_styled_plot
-def create_hingle_plot(
+def _hingle_chart(
     well, rw: Optional[float] = None, m: float = 2.0, n: float = 2.0,
     phie_curve: str = "PHIE", rt_curve: str = "RDEP", color_curve: str = "VCL",
     a: float = 1.0, depth_range: Optional[Tuple[float, float]] = None,

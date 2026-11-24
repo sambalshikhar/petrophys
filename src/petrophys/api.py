@@ -622,7 +622,7 @@ def plot(
     >>> pp.plot({"archie": run_a, "indonesia": run_b}, curves=["SW"])          # doctest: +SKIP
     """
     from petrophys.io.lithology_reader import read_lithology_codes
-    from petrophys.visualization import create_log_viewer
+    from petrophys.visualization.log_viewer import _log_viewer
 
     labels: Optional[List[str]] = None
     if isinstance(well, Mapping):
@@ -708,7 +708,7 @@ def plot(
 
         plotted = deepcopy(plotted)
         attach_curve_aliases(plotted, curve_aliases)
-    viewer = create_log_viewer(
+    viewer = _log_viewer(
         plotted,
         template_xml_path=template_xml_path,
         template_defaults=template,

@@ -209,7 +209,7 @@ def compare_wells(
     from petrophys.visualization.log_viewer import (
         _display_well,
         _resolve_curve_name_for_well,
-        create_adaptive_log_viewer_template,
+        auto_template,
     )
 
     wells = [_display_well(_plotted_well(item), interpreted=hasattr(item, "steps_executed")) for item in items]
@@ -223,7 +223,7 @@ def compare_wells(
             resolved = _resolve_curve_name_for_well(well, name)
             if resolved is None:
                 continue
-            for spec_track in create_adaptive_log_viewer_template(well, include_on_request=True).tracks:
+            for spec_track in auto_template(well, include_on_request=True).tracks:
                 if spec_track.cumulative:
                     continue  # stacked volumes have no scale of their own
                 for spec in spec_track.curves:
@@ -301,6 +301,11 @@ def compare_wells(
                 if high > low:
                     pad = 0.03 * (high - low)
                     left, right = (low / 1.5, high * 1.5) if log_track else (low - pad, high + pad)
+                    if not log_track:
+                        # Round scale ends, as a log plot header shows them.
+                        from matplotlib.ticker import MaxNLocator
+                        ticks = MaxNLocator(nbins=4).tick_values(left, right)
+                        left, right = float(ticks[0]), float(ticks[-1])
         if left is not None:
             ax.set_xlim(left, right)
         units.discard("")

@@ -14,7 +14,7 @@ The steps follow common practice for special core analysis:
 4. Normalise the plugs with the Leverett (1941) J-function and fit one J-Sw
    relation (:func:`fit_j_function_from_core`).
 5. With that core model, find the free-water level (FWL) that best explains
-   the log water saturation (:func:`estimate_fwl_from_logs`), and place the
+   the log water saturation (:func:`find_fwl`), and place the
    water contact, where the logs first read Sw = 1, above the FWL by the
    entry-pressure height (:func:`water_contact_from_fwl`).
 
@@ -585,7 +585,7 @@ def _depth_and_unit(well: "Well", tvd_curve: Optional[str], caller: str) -> Tupl
     return np.asarray(well.depth, dtype=float), well.depth_unit
 
 
-def estimate_fwl_from_logs(
+def find_fwl(
     well: Any,
     model: JFunctionModel,
     *,
@@ -644,7 +644,7 @@ def estimate_fwl_from_logs(
         if values is None:
             raise ValueError(f"No {role} curve: the well has none of {names}")
         data[role] = np.asarray(values, dtype=float)
-    depth, unit = _depth_and_unit(well, tvd_curve, "estimate_fwl_from_logs")
+    depth, unit = _depth_and_unit(well, tvd_curve, "find_fwl")
     index_depth = np.asarray(well.depth, dtype=float)
     use = (np.isfinite(depth) & np.isfinite(data["sw"]) & (data["sw"] >= 0) & (data["sw"] <= 1)
            & np.isfinite(data["perm"]) & (data["perm"] > 0) & np.isfinite(data["phi"]) & (data["phi"] > 0))
@@ -697,7 +697,7 @@ def estimate_fwl_from_logs(
         range_cut = "both" if cut_top and cut_bottom else "top" if cut_top else "bottom" if cut_bottom else ""
         if range_cut:
             edge = "top and bottom" if range_cut == "both" else range_cut
-            warnings.warn(f"estimate_fwl_from_logs: the 95% range of the FWL reaches the {edge} of the "
+            warnings.warn(f"find_fwl: the 95% range of the FWL reaches the {edge} of the "
                           f"search ({low_search:.1f}-{high_search:.1f} {unit}) and may extend beyond it; "
                           "widen search= to see the whole range.", UserWarning, stacklevel=2)
     ss_tot = float(np.sum((sw - sw.mean()) ** 2))

@@ -122,7 +122,7 @@ def sp_rw_in_window(
         Temperature (degF) at which ``rmf`` was measured.
     temperature_f : float or array-like
         Formation temperature in degF: one value, or one per sample of the
-        whole well (for example ``calculate_temperature_profile(...).temperature``).
+        whole well (for example ``temperature_profile(...).temperature``).
     top, bottom : float, optional
         Depth window (inclusive), in well depth units. Defaults to the whole
         log, which is only safe when the SP baseline does not drift.
@@ -155,9 +155,9 @@ def sp_rw_in_window(
     Examples
     --------
     >>> import petrophys as pp
-    >>> from petrophys.interpretation.temperature import calculate_temperature_profile
+    >>> from petrophys.interpretation.temperature import temperature_profile
     >>> well = pp.read(pp.sample("30_6-5"))
-    >>> temp_f = calculate_temperature_profile(
+    >>> temp_f = temperature_profile(
     ...     well, bht=258.8, bht_unit="F", surface_temp=68.0, td=well.bottom).temperature
     >>> local = sp_rw_in_window(well, rmf=0.186, rmf_temp_f=75.0, temperature_f=temp_f,
     ...                         top=2800.0, bottom=2958.0, reference_temp_f=224.0)

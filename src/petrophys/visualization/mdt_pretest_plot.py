@@ -5,7 +5,7 @@ import numpy as np
 
 
 @_styled_plot
-def create_mdt_pretest_plot(trace, result=None, *, figsize=(10, 4), title=None):
+def pretest_plot(trace, result=None, *, figsize=(10, 4), title=None):
     """Return a Matplotlib Figure; review candidates are never labeled picks.
 
     Pass the result from this trace's pick_pressure() to preserve custom QC

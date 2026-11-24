@@ -14,7 +14,7 @@ import numpy as np
 from petrophys.interpretation.core_analysis.calibration import (
     PorosityCorrection,
     PoroPermTransform,
-    core_data_from_well,
+    core_data,
     fit_porosity_correction,
     fit_log_poro_perm_transform_from_correction,
 )
@@ -722,7 +722,7 @@ def _fit_core_perm_model(
         )
 
     try:
-        core = core_data_from_well(source_well, top=top, bottom=bottom)
+        core = core_data(source_well, top=top, bottom=bottom)
     except ValueError:
         _reject("no_core_curves")
         return None

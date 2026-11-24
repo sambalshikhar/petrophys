@@ -133,7 +133,7 @@ def _formation_temperature_f(well: "Well", names: Sequence[str]) -> Union[float,
     from petrophys._internal.benchmark import reproducing_benchmark
 
     try:
-        result = calculate_temperature_profile(well)
+        result = temperature_profile(well)
     except Exception:
         # No depth for a profile: the header BHT itself, or a nominal 150 degF.
         if well.header.bht is None:
@@ -491,7 +491,7 @@ class TemperatureProfile:
         return well
 
 
-def calculate_temperature_profile(
+def temperature_profile(
     well: "Well",
     bht: Optional[float] = None,
     surface_temp: float = DefaultParameters.SURFACE_TEMPERATURE_F,
@@ -550,8 +550,8 @@ def calculate_temperature_profile(
 
     Examples
     --------
-    >>> from petrophys.interpretation.temperature import calculate_temperature_profile
-    >>> result = calculate_temperature_profile(well, bht=200)
+    >>> from petrophys.interpretation.temperature import temperature_profile
+    >>> result = temperature_profile(well, bht=200)
     >>> well["TEMP"] = result.temperature
     """
     if well.depth is None:

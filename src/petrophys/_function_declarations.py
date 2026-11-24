@@ -787,7 +787,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
             "dolo",
         ),
     ),
-    "petrophys.interpretation.core_analysis.calibration.apply_poro_perm_transform": fn(
+    "petrophys.interpretation.core_analysis.calibration.apply_poro_perm": fn(
         well=well(),
         transform=object_(),
         porosity_curve=curve_name("PHIE"),
@@ -816,7 +816,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         log_curve=curve_name("SW"),
         core_unit=choice("%", "v/v"),
     ),
-    "petrophys.interpretation.core_analysis.calibration.core_data_from_well": fn(
+    "petrophys.interpretation.core_analysis.calibration.core_data": fn(
         well=well(),
         porosity_curves=curve_name("PHIC", many=True),
         perm_curves=curve_name("KH_CORE", many=True),
@@ -858,7 +858,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         porosity_curve=curve_name("PHIE"),
         min_perm=value(unit="mD"),
     ),
-    "petrophys.interpretation.core_analysis.calibration.fit_poro_perm_transform": fn(
+    "petrophys.interpretation.core_analysis.calibration.fit_poro_perm": fn(
         core=object_(),
         min_perm=value(unit="mD"),
     ),
@@ -1847,7 +1847,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         depth_increases_down=switch(),
         tvd_curve=curve_name(),
     ),
-    "petrophys.interpretation.saturation.height.scal.estimate_fwl_from_logs": fn(
+    "petrophys.interpretation.saturation.height.scal.find_fwl": fn(
         well=well(),
         model=object_(),
         sw_curve=curve_name("SW", many=True),
@@ -2109,7 +2109,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         gradient_c_per_m=value(unit="degC/m"),
     ),
     "petrophys.interpretation.temperature.temp_gradient.typical_gradient_range": fn(),
-    "petrophys.interpretation.temperature.temp_profile.calculate_temperature_profile": fn(
+    "petrophys.interpretation.temperature.temp_profile.temperature_profile": fn(
         well=well(),
         bht=value(curve="TEMP"),
         surface_temp=value(),
@@ -2227,6 +2227,21 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
     "petrophys.preprocessing.quality.bad_hole.washout_detection.detect_washout": fn(
         well=well(),
         bit_size=value(unit="in", curve="BS"),
+    ),
+    "petrophys.preprocessing.quality.depth_alignment.find_log_depth_shift": fn(
+        well=well(),
+        curve=curve_name("RHOB"),
+        reference=curve_name("NPHI"),
+        max_shift=value(),
+        top=window("top"),
+        bottom=window("bottom"),
+        sign=text(),
+        min_points=value(),
+    ),
+    "petrophys.preprocessing.quality.depth_alignment.shift_curves": fn(
+        well=well(),
+        curves=curve_name(many=True),
+        shift=value(),
     ),
     "petrophys.preprocessing.quality.held_readings.find_held_readings": fn(
         well=well(),
@@ -2347,7 +2362,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         well=well(),
         mnemonic=curve_name(),
     ),
-    "petrophys.visualization.analytics.create_bar_comparison": fn(
+    "petrophys.visualization.analytics.bar_chart": fn(
         categories=text(many=True),
         values=values(),
         series_labels=text(many=True),
@@ -2362,7 +2377,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         value_labels=switch(),
         ax=object_(),
     ),
-    "petrophys.visualization.analytics.create_heatmap": fn(
+    "petrophys.visualization.analytics.heatmap": fn(
         matrix=object_(),
         x=values(),
         y=values(),
@@ -2376,7 +2391,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         log_color=switch(),
         ax=object_(),
     ),
-    "petrophys.visualization.analytics.create_histogram_comparison": fn(
+    "petrophys.visualization.analytics.histograms": fn(
         datasets=object_(),
         curve=curve_name(),
         bins=value(),
@@ -2389,7 +2404,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         value_range=values(),
         histtype=choice("bar", "barstacked", "step", "stepfilled"),
     ),
-    "petrophys.visualization.analytics.create_line_comparison": fn(
+    "petrophys.visualization.analytics.line_chart": fn(
         x=curve(),
         series=object_(),
         figsize=values(unit="in"),
@@ -2402,7 +2417,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         invert_yaxis=switch(),
         ax=object_(),
     ),
-    "petrophys.visualization.analytics.create_multiwell_overlay": fn(
+    "petrophys.visualization.analytics.multiwell_overlay": fn(
         wells=object_(),
         curve=curve_name(),
         depth_range=values(),
@@ -2412,7 +2427,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         title=text(),
         ax=object_(),
     ),
-    "petrophys.visualization.analytics.create_tornado_plot": fn(
+    "petrophys.visualization.analytics.tornado_plot": fn(
         labels=text(many=True),
         low=values(),
         high=values(),
@@ -2424,7 +2439,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         high_color=text(),
         ax=object_(),
     ),
-    "petrophys.visualization.batch_export.export_interpretation_plots": fn(
+    "petrophys.visualization.batch_export.export_plots": fn(
         input_dir=text(),
         output_dir=text(),
         pattern=text(),
@@ -2438,39 +2453,29 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         results=object_(),
         report_path=text(),
     ),
-    "petrophys.visualization.core.plot_calibration": fn(
+    "petrophys.visualization.core.calibration_plot": fn(
         result=object_(),
         ax=object_(),
         title=text(),
         show_fit=switch(),
         figsize=values(unit="in"),
     ),
-    "petrophys.visualization.core.plot_core_on_logs": fn(
+    "petrophys.visualization.core.core_on_logs": fn(
         well=well(),
         core=object_(),
         curves=curve_name(many=True),
         depth_range=values(),
         figsize=values(unit="in"),
     ),
-    "petrophys.visualization.core.plot_poro_perm": fn(
-        core=object_(),
-        transform=object_(),
-        ax=object_(),
+    "petrophys.visualization.crossplot_viewer.crossplot": fn(
+        data=well(),
+        x=curve_name(),
+        y=curve_name(),
+        color=curve_name(),
+        top=window("top"),
+        bottom=window("bottom"),
+        chart=text(),
         title=text(),
-        figsize=values(unit="in"),
-    ),
-    "petrophys.visualization.crossplot_viewer.create_crossplot": fn(
-        well=well(),
-        x_curve=curve_name(),
-        y_curve=curve_name(),
-        color_curve=curve_name(),
-        depth_range=values(),
-        title=text(),
-        figsize=values(unit="in"),
-    ),
-    "petrophys.visualization.crossplot_viewer.create_density_neutron_crossplot": fn(
-        well=well(),
-        depth_range=values(),
         figsize=values(unit="in"),
     ),
     "petrophys.visualization.curve_labels.is_apparent_porosity_curve": fn(
@@ -2480,126 +2485,27 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         base_label=text(),
         curve=object_(),
     ),
-    "petrophys.visualization.flow_unit_plot.create_flow_unit_plot": fn(
-        result=object_(),
-        phi_e=curve("PHIE", unit="v/v"),
-        perm=curve("PERM", unit="mD"),
-        figsize=values(unit="in"),
-        cmap=text(),
-        title=text(),
-    ),
-    "petrophys.visualization.formation_pressure_plot.create_formation_pressure_plot": fn(
+    "petrophys.visualization.formation_pressure_plot.pressure_plot": fn(
         data=object_(),
         result=object_(),
         hydrocarbon=choice("oil", "gas"),
         figsize=values(unit="in"),
         title=text(),
     ),
-    "petrophys.visualization.formation_pressure_plot.create_pressure_contact_plot": fn(
+    "petrophys.visualization.formation_pressure_plot.contact_plot": fn(
         data=object_(),
         result=object_(),
         figsize=values(unit="in"),
         title=text(),
         zoom=choice("fit", "all"),
     ),
-    "petrophys.visualization.lithology_crossplots.create_buckles_plot": fn(
-        well=well(),
-        phie_curve=curve_name("PHIE"),
-        sw_curve=curve_name("SW"),
-        color_curve=curve_name(),
-        depth_range=values(),
-        figsize=values(unit="in"),
-        xlim=values(unit="v/v"),
-        ylim=values(unit="v/v"),
-    ),
-    "petrophys.visualization.lithology_crossplots.create_hingle_plot": fn(
-        well=well(),
-        rw=value(unit="ohm.m", curve="RW"),
-        m=value(),
-        n=value(),
-        phie_curve=curve_name("PHIE"),
-        rt_curve=curve_name("RDEP"),
-        color_curve=curve_name(),
-        a=value(),
-        depth_range=values(),
-        figsize=values(unit="in"),
-        xlim=values(unit="v/v"),
-        ylim=values(),
-        vcl_max=value(unit="v/v"),
-    ),
-    "petrophys.visualization.lithology_crossplots.create_mid_plot": fn(
-        well=well(),
-        color_curve=curve_name(),
-        depth_range=values(),
-        figsize=values(unit="in"),
-        porosity_curve=curve_name("PHIT"),
-    ),
-    "petrophys.visualization.lithology_crossplots.create_mn_plot": fn(
-        well=well(),
-        color_curve=curve_name(),
-        depth_range=values(),
-        figsize=values(unit="in"),
-    ),
-    "petrophys.visualization.lithology_crossplots.create_nd_crossplot": fn(
-        well=well(),
-        color_curve=curve_name(),
-        depth_range=values(),
-        figsize=values(unit="in"),
-    ),
-    "petrophys.visualization.lithology_crossplots.create_pef_crossplot": fn(
-        well=well(),
-        color_curve=curve_name(),
-        depth_range=values(),
-        figsize=values(unit="in"),
-    ),
-    "petrophys.visualization.log_plot.create_log_plot": fn(
-        well=well(),
-        curves=object_(),
-        depth_range=values(),
-        title=text(),
-        figsize=values(unit="in"),
-    ),
-    "petrophys.visualization.log_viewer.create_adaptive_log_viewer_template": fn(
+    "petrophys.visualization.log_viewer.auto_template": fn(
         well=well(),
         max_generic_tracks=value(),
         generic_curves_per_track=value(),
         include_on_request=switch(),
     ),
-    "petrophys.visualization.log_viewer.create_log_viewer": fn(
-        well=well(),
-        template_xml_path=text(),
-        template_defaults=choice(
-            "auto",
-            "adaptive",
-            "raw",
-            "triple_combo",
-            "comprehensive",
-            "full",
-            "petrophysics",
-            "interpretation",
-            "minerals",
-            "geolink",
-            "geolink_full",
-            "standard",
-            "universal",
-        ),
-        depth_range=values(),
-        top=window("top"),
-        height=value(),
-        strict=switch(),
-        figsize=values(unit="in"),
-        lithology_mapping=object_(),
-        lithology_mapping_df=object_(),
-        formation_tops=object_(),
-        formation_tops_df=object_(),
-        formation_name=text(),
-        lithology_intervals=object_(),
-        tracks=text(many=True),
-        interpreted=switch(),
-        curves=curve_name(many=True),
-        curve_styles=object_(),
-    ),
-    "petrophys.visualization.log_viewer.load_log_viewer_template": fn(
+    "petrophys.visualization.log_viewer.load_template": fn(
         template_xml_path=text(),
         template_defaults=choice(
             "raw",
@@ -2615,7 +2521,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
             "universal",
         ),
     ),
-    "petrophys.visualization.mdt_pretest_plot.create_mdt_pretest_plot": fn(
+    "petrophys.visualization.mdt_pretest_plot.pretest_plot": fn(
         trace=object_(),
         result=object_(),
         figsize=values(unit="in"),
@@ -2629,22 +2535,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         figsize=values(unit="in"),
         labels=text(many=True),
     ),
-    "petrophys.visualization.pickett_plot.create_pickett_plot": fn(
-        well=well(),
-        rw=value(unit="ohm.m", curve="RW"),
-        phie_curve=curve_name("PHIE"),
-        rt_curve=curve_name("RT"),
-        color_curve=curve_name(),
-        depth_range=values(),
-        a=value(),
-        m=value(),
-        n=value(),
-        figsize=values(unit="in"),
-        xlim=values(unit="v/v"),
-        ylim=values(unit="ohm.m"),
-        vcl_max=value(unit="v/v"),
-    ),
-    "petrophys.visualization.saturation_height_plot.create_saturation_height_plot": fn(
+    "petrophys.visualization.saturation_height_plot.saturation_height_plot": fn(
         model=object_(),
         j=curve(),
         sw=curve("SW", unit="v/v"),
@@ -2654,14 +2545,14 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         title=text(),
         data_label=text(),
     ),
-    "petrophys.visualization.specialist_panels.create_fmi_panel": fn(
+    "petrophys.visualization.specialist_panels.fmi_panel": fn(
         fmi_image=object_(),
         depth_range=values(),
         orient=switch(),
         equalize=choice("dynamic", "static", "none", "raw", "false"),
         figsize=values(unit="in"),
     ),
-    "petrophys.visualization.specialist_panels.create_nmr_panel": fn(
+    "petrophys.visualization.specialist_panels.nmr_panel": fn(
         well=well(),
         depth_range=values(),
         figsize=values(unit="in"),
@@ -2692,24 +2583,12 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         dpi=value(),
     ),
     "petrophys.visualization.style.use_plot_style": fn(),
-    "petrophys.visualization.triple_combo.create_triple_combo": fn(
+    "petrophys.visualization.triple_combo.triple_combo": fn(
         well=well(),
         depth_range=values(),
         figsize=values(unit="in"),
     ),
-    "petrophys.visualization.wrap.plot_wrapped_log_curve": fn(
-        ax=object_(),
-        depth=depth(),
-        values=curve(),
-        xmin=value(),
-        xmax=value(),
-        color=text(),
-        linewidth=value(),
-        label=text(),
-        backup_linestyle=object_(),
-        backup_alpha=value(),
-    ),
-    "petrophys.visualization.xrf_panel.create_xrf_panel": fn(
+    "petrophys.visualization.xrf_panel.xrf_panel": fn(
         xrf=object_(),
         depth_range=values(),
         figsize=values(unit="in"),
@@ -2720,12 +2599,7 @@ DECLARATIONS: Dict[str, FunctionDeclaration] = {
         zones=object_(),
         alpha=value(),
     ),
-    "petrophys.visualization.zone_flags.create_net_pay_summary_plot": fn(
-        well=well(),
-        depth_range=values(),
-        figsize=values(unit="in"),
-    ),
-    "petrophys.visualization.zone_flags.plot_zone_flags": fn(
+    "petrophys.visualization.zone_flags.zone_flags_plot": fn(
         well=well(),
         flag_curves=curve_name(many=True),
         colors=object_(),

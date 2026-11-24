@@ -217,6 +217,8 @@ autosummary_generate = True
 # Data for the templates in _templates/autosummary: the other public paths of
 # each object ("Also available as") and the attributes a class docstring lists.
 autosummary_context = API_REFERENCE.autosummary_context
+# Names that differ only in case need distinct files on case-insensitive file systems.
+autosummary_filename_map = {"petrophys.visualization.CrossPlot": "petrophys.visualization.CrossPlot-class"}
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 # The class template adds :show-inheritance: when a class has bases other than

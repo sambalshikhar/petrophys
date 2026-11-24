@@ -24,7 +24,7 @@ from petrophys.evaluation.flow_units import calculate_flow_units, FlowUnitResult
 
 
 @_styled_plot
-def create_flow_unit_plot(
+def _flow_unit_chart(
     result: Optional[FlowUnitResult] = None,
     phi_e=None,
     perm=None,
@@ -35,7 +35,7 @@ def create_flow_unit_plot(
 ):
     """Render the RQI vs phi_z flow-unit crossplot.
 
-    Provide a pre-computed ``result``, core data (``create_flow_unit_plot(core)``,
+    Provide a pre-computed ``result``, core data (``crossplot(core, "PHI_Z", "RQI")``,
     its plugs with porosity and permeability), or ``phi_e`` + ``perm`` arrays
     (``**kwargs`` are forwarded to :func:`calculate_flow_units`).
     """

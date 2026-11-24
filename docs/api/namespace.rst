@@ -23,6 +23,40 @@ Read, interpret, plot
    * - :class:`pp.DynamicWorkflowConfig <petrophys.workflow.DynamicWorkflowConfig>`
      - All interpretation settings; see :doc:`settings`
 
+More plots
+----------
+
+.. list-table::
+   :widths: 38 62
+
+   * - :func:`pp.crossplot <petrophys.visualization.crossplot>`
+     - Any two curves, with the chart their pair calls for: density-neutron
+       (``"NPHI", "RHOB"``), density-PEF, M-N, MID, Pickett (porosity and
+       deep resistivity; ``chart="hingle"`` for Hingle), Buckles (porosity and
+       Sw), flow units (``"PHI_Z", "RQI"``) and core poro-perm
+   * - :func:`pp.nmr_panel <petrophys.visualization.nmr_panel>`,
+       :func:`pp.fmi_panel <petrophys.visualization.fmi_panel>`,
+       :func:`pp.xrf_panel <petrophys.visualization.xrf_panel>`,
+       :func:`pp.triple_combo <petrophys.visualization.triple_combo>`
+     - Specialist panels and the classic quick-look
+   * - :func:`pp.calibration_plot <petrophys.visualization.calibration_plot>`,
+       :func:`pp.core_on_logs <petrophys.visualization.core_on_logs>`
+     - Core against log, and core points on log tracks
+   * - :func:`pp.saturation_height_plot <petrophys.visualization.saturation_height_plot>`,
+       :func:`pp.pressure_plot <petrophys.visualization.pressure_plot>`,
+       :func:`pp.contact_plot <petrophys.visualization.contact_plot>`,
+       :func:`pp.pretest_plot <petrophys.visualization.pretest_plot>`
+     - Saturation height, formation pressures, fluid contacts and pretests
+   * - :func:`pp.zone_flags_plot <petrophys.visualization.zone_flags_plot>`
+     - Net rock, reservoir and pay flags against depth
+   * - :func:`pp.bar_chart <petrophys.visualization.bar_chart>`,
+       :func:`pp.line_chart <petrophys.visualization.line_chart>`,
+       :func:`pp.histograms <petrophys.visualization.histograms>`,
+       :func:`pp.heatmap <petrophys.visualization.heatmap>`,
+       :func:`pp.tornado_plot <petrophys.visualization.tornado_plot>`,
+       :func:`pp.multiwell_overlay <petrophys.visualization.multiwell_overlay>`
+     - Charts for comparisons and sensitivity studies
+
 Inputs
 ------
 

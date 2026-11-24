@@ -21,10 +21,34 @@ from petrophys.datasets import sample, list_samples
 from petrophys.workflow import DynamicWorkflowConfig
 from petrophys.preprocessing.imputation import impute
 
+#: Plots reachable as ``pp.<name>``; loaded with their module on first use,
+#: so ``import petrophys`` does not import Matplotlib.
+_PLOTS = (
+    "crossplot",
+    "nmr_panel", "fmi_panel", "xrf_panel", "triple_combo",
+    "saturation_height_plot", "pressure_plot", "contact_plot", "pretest_plot",
+    "calibration_plot", "core_on_logs", "zone_flags_plot",
+    "bar_chart", "line_chart", "histograms", "heatmap", "tornado_plot", "multiwell_overlay",
+)
+
+
+def __getattr__(name):
+    if name in _PLOTS:
+        import petrophys.visualization as visualization
+
+        return getattr(visualization, name)
+    raise AttributeError(f"module 'petrophys' has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_PLOTS))
+
+
 __all__ = [
     "read",
     "interpret",
     "plot",
+    *_PLOTS,
     "impute",
     "export_context",
     "read_formations",

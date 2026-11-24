@@ -24,7 +24,7 @@ from petrophys.interpretation.saturation.height.saturation_height_module import 
 
 
 @_styled_plot
-def create_saturation_height_plot(
+def saturation_height_plot(
     model: JFunctionModel,
     j: Optional[Sequence[float]] = None,
     sw: Optional[Sequence[float]] = None,

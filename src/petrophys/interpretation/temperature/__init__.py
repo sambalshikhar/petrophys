@@ -7,7 +7,7 @@ profiles and temperature-related corrections.
 
 from petrophys.interpretation.temperature.temp_profile import (
     TemperatureProfile,
-    calculate_temperature_profile,
+    temperature_profile,
 )
 from petrophys.interpretation.temperature.temp_gradient import (
     calculate_temperature_gradient,
@@ -22,7 +22,7 @@ from petrophys.interpretation.temperature.temp_corrections import (
 
 __all__ = [
     "TemperatureProfile",
-    "calculate_temperature_profile",
+    "temperature_profile",
     "calculate_temperature_gradient",
     "estimate_gradient_from_bht",
     "gradient_c_per_km_to_fahrenheit_per_100ft",

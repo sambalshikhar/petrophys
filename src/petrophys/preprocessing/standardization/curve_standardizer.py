@@ -260,7 +260,7 @@ def _maybe_convert_percent_porosity(data: np.ndarray, standard_name: str) -> np.
 
 #: Vendor density and sonic porosities, often delivered in percent under a
 #: blank label. They keep their own names and are read in v/v. Core
-#: porosities are converted by :func:`~petrophys.interpretation.core_analysis.core_data_from_well`.
+#: porosities are converted by :func:`~petrophys.interpretation.core_analysis.core_data`.
 PERCENT_PRONE_POROSITY_CURVES = {"DPOR", "DPHI", "DPHZ", "PORD", "SPOR", "SPHI", "PORS"}
 
 #: Unit labels of a fraction (lower case).

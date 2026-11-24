@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - handled by plotting module
 
 from petrophys.io import read_las
 from petrophys.preprocessing.standardization import standardize_curves
-from petrophys.visualization.log_viewer import create_log_viewer
+from petrophys.visualization.log_viewer import _log_viewer
 
 
 @dataclass
@@ -33,7 +33,7 @@ class BatchVisualizationResult:
     errors: List[str] = field(default_factory=list)
 
 
-def export_interpretation_plots(
+def export_plots(
     input_dir: str | Path,
     output_dir: str | Path,
     pattern: str = "*.las",
@@ -89,7 +89,7 @@ def export_interpretation_plots(
             if standardize:
                 well = standardize_curves(well, rename_curves=True, convert_units=True)
 
-            plot = create_log_viewer(
+            plot = _log_viewer(
                 well,
                 template_defaults="interpretation",
                 depth_range=depth_range,

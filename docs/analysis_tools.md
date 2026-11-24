@@ -140,6 +140,33 @@ its unit comes from a header such as ``MD (ft)``. Tool responses are the
 pseudo-geometric factors J(di) read off the vendor's charts, in a long
 table (one row per point) or a wide one (one column per tool).
 
+## Curves off depth
+
+A delivered file can carry a curve recorded at the wrong depth: a run spliced
+off depth, or one tool moved in a merge and its neighbours not. Two curves that
+respond to the same beds then line up best at a lag.
+{func}`~petrophys.preprocessing.find_log_depth_shift` scans the lags (20 m
+either way by default) and returns the shift that lines a curve up with a
+reference; {func}`~petrophys.preprocessing.shift_curves` moves curves by it.
+`pp.interpret` runs the check on density against neutron and warns when they
+line up clearly better shifted. In COSTA well HW-3 the density reads 55 ft too
+deep:
+
+```{code-cell} python
+from petrophys.preprocessing import find_log_depth_shift, shift_curves
+
+hw3 = pp.read(pp.sample("HW-3"))
+found = find_log_depth_shift(hw3, "RHOB", "NPHI")
+aligned = shift_curves(hw3, ["RHOB", "DTC"], found.shift)
+found
+```
+
+Density and neutron respond to porosity in opposite directions, so on depth
+they correlate negatively; `sign="negative"` makes the scan expect that.
+Of 208 wells with both logs (the bundled samples, the GeoLink and COSTA
+wells), only HW-3 passes the warning's test: a correlation of at least 0.6 in
+size, 0.3 better than as recorded, at a shift inside the scanned range.
+
 (analysis-gap-filling)=
 ## Gap filling with machine learning
 
@@ -235,9 +262,9 @@ permeability and porosity; it sorts the Brent plugs into pore-throat classes
 ```{code-cell} python
 import pandas as pd
 from petrophys.evaluation.rock_quality import calculate_winland_r35, classify_pore_throat
-from petrophys.interpretation.core_analysis import core_data_from_well
+from petrophys.interpretation.core_analysis import core_data
 
-plugs = core_data_from_well(result).filter_by_depth(2841, 2958)
+plugs = core_data(result).filter_by_depth(2841, 2958)
 r35 = calculate_winland_r35(plugs.permeability, plugs.porosity)
 pd.Series(classify_pore_throat(r35)).value_counts()
 ```

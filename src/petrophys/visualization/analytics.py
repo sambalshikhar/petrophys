@@ -6,7 +6,7 @@ sensitivity analysis: multi-well curve overlays, grouped bar comparisons,
 sensitivity tornadoes, histogram comparisons and generic line comparisons.
 
 They stay native to the ``petrophys.model.well.Well`` data model where relevant
-(``create_multiwell_overlay`` takes Well objects) and otherwise accept plain
+(``multiwell_overlay`` takes Well objects) and otherwise accept plain
 arrays so notebooks never need to hand-roll matplotlib.
 """
 
@@ -97,7 +97,7 @@ def _minmax_normalize(values: np.ndarray, low: float = 5.0, high: float = 95.0) 
 
 
 @_styled_plot
-def create_multiwell_overlay(
+def multiwell_overlay(
     wells: Sequence[Any],
     curve: str,
     depth_range: Optional[Tuple[float, float]] = None,
@@ -205,7 +205,7 @@ def create_multiwell_overlay(
 
 
 @_styled_plot
-def create_bar_comparison(
+def bar_chart(
     categories: Sequence[str],
     values: Any,
     series_labels: Optional[Sequence[str]] = None,
@@ -300,7 +300,7 @@ def create_bar_comparison(
 
 
 @_styled_plot
-def create_tornado_plot(
+def tornado_plot(
     labels: Sequence[str],
     low: Sequence[float],
     high: Sequence[float],
@@ -395,7 +395,7 @@ def _curve_by_well(wells: Any, curve: str) -> Tuple[Dict[str, np.ndarray], str]:
 
 
 @_styled_plot
-def create_histogram_comparison(
+def histograms(
     datasets: Any,
     curve: Optional[str] = None,
     bins: int = 40,
@@ -430,7 +430,7 @@ def create_histogram_comparison(
             hasattr(getattr(value, "well", value), "curves") for value in datasets.values()):
         raise ValueError(
             Advice("Without curve=, datasets must map a label to an array. To compare wells or "
-            'interpretation results, name the curve: create_histogram_comparison(wells, curve="GR")', ('curve',))
+            'interpretation results, name the curve: histograms(wells, curve="GR")', ('curve',))
         )
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
@@ -469,7 +469,7 @@ def create_histogram_comparison(
 
 
 @_styled_plot
-def create_line_comparison(
+def line_chart(
     x: Any,
     series: "Mapping[str, Any]",
     figsize: Tuple[float, float] = (8, 5),
@@ -515,7 +515,7 @@ def create_line_comparison(
 
 
 @_styled_plot
-def create_heatmap(
+def heatmap(
     matrix: Any,
     x: Optional[Sequence[float]] = None,
     y: Optional[Sequence[float]] = None,
@@ -596,10 +596,10 @@ def create_heatmap(
 
 
 __all__ = [
-    "create_multiwell_overlay",
-    "create_bar_comparison",
-    "create_tornado_plot",
-    "create_histogram_comparison",
-    "create_line_comparison",
-    "create_heatmap",
+    "multiwell_overlay",
+    "bar_chart",
+    "tornado_plot",
+    "histograms",
+    "line_chart",
+    "heatmap",
 ]

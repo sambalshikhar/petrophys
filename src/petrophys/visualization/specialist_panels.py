@@ -54,7 +54,7 @@ def has_nmr_curves(well: "Well") -> bool:
 
 
 @_styled_plot
-def create_nmr_panel(
+def nmr_panel(
     well: "Well",
     depth_range: Optional[Tuple[float, float]] = None,
     figsize: Optional[Tuple[float, float]] = None,
@@ -195,7 +195,7 @@ def _decades(curves, depth: np.ndarray, top: float, bottom: float) -> Tuple[floa
 
 
 @_styled_plot
-def create_fmi_panel(
+def fmi_panel(
     fmi_image: BoreholeImageData,
     depth_range: Optional[Tuple[float, float]] = None,
     orient: bool = True,
@@ -222,7 +222,7 @@ def _prepared_fmi_image(
         if get_navigation(data):
             return orient_to_azimuth(data)
         warnings.warn(
-            Advice("create_fmi_panel: orientation requested but no navigation curve "
+            Advice("fmi_panel: orientation requested but no navigation curve "
             "(P1AZ/HAZI/RB) was found; plotting the raw un-oriented image "
             "(x-axis is borehole sample, not azimuth). Provide navigation or "
             "pass orient=False to silence this.", ('orient',)),
@@ -317,7 +317,7 @@ def _require_matplotlib() -> None:
 
 
 __all__ = [
-    "create_fmi_panel",
-    "create_nmr_panel",
+    "fmi_panel",
+    "nmr_panel",
     "has_nmr_curves",
 ]

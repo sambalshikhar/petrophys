@@ -2254,7 +2254,7 @@ _FINITE_FIELDS = (
 _CORE_POROSITY_MIN_R_SQUARED = 0.5
 
 #: Core porosity mnemonics that let the "current" core-correction step run:
-#: those core_data_from_well reads core porosity from. The "geolink" profile
+#: those core_data reads core porosity from. The "geolink" profile
 #: ran the step on PHIC and CPOR only.
 _CORE_POROSITY_CURVES = ("PHIC", "CPOR", "CPOR-AMB", "CPOR_AMB")
 
@@ -6002,7 +6002,7 @@ class DynamicWorkflow:
 
     def _step_temperature(self, well: "Well") -> StepResult:
         from petrophys.interpretation.temperature import (
-            calculate_temperature_profile,
+            temperature_profile,
             gradient_to_celsius_per_km,
         )
         from petrophys.interpretation.temperature.temp_profile import (
@@ -6106,7 +6106,7 @@ class DynamicWorkflow:
             trace.parameters["gradient_f_per_100ft"] = gradient
 
         try:
-            result = calculate_temperature_profile(
+            result = temperature_profile(
                 well,
                 bht=bht_f,
                 surface_temp=surface_temp_f,
@@ -6479,7 +6479,7 @@ class DynamicWorkflow:
                 return temp
 
         if well.depth is not None:
-            from petrophys.interpretation.temperature import calculate_temperature_profile
+            from petrophys.interpretation.temperature import temperature_profile
 
             try:
                 surface_temp_f = (
@@ -6487,7 +6487,7 @@ class DynamicWorkflow:
                     if self.config.surface_temp_f is not None
                     else 68.0
                 )
-                result = calculate_temperature_profile(
+                result = temperature_profile(
                     well,
                     bht=self.config.bht_f if self.config.bht_f is not None else _metadata_bht_f(well),
                     surface_temp=surface_temp_f,
@@ -9023,6 +9023,26 @@ class DynamicWorkflow:
         )
         return merged
 
+    def _warn_if_off_depth(self, well: "Well", density: str, neutron: str) -> None:
+        """Warn when the density lines up with the neutron clearly better shifted than as recorded."""
+        from petrophys.preprocessing.quality.depth_alignment import find_log_depth_shift
+
+        try:
+            found = find_log_depth_shift(well, density, neutron, sign="negative")
+        except ValueError:
+            return
+        if not found.off_depth:
+            return
+        unit = found.depth_unit
+        where = "higher" if found.shift < 0 else "deeper"
+        self._result.warnings.append(
+            f"{density} lines up with {neutron} {abs(found.shift):g} {unit} {where} than recorded "
+            f"(correlation {found.correlation:.2f}, against {found.correlation_unshifted:.2f} as recorded): "
+            f"the density may be off depth, and porosity from it describes other beds. "
+            f"find_log_depth_shift(well, {density!r}, {neutron!r}) and shift_curves(...) check and move it "
+            "before interpreting."
+        )
+
     def _step_porosity_refinement(self, well: "Well") -> StepResult:
         self._lithology_log = None
         self._lithology_source = "config"
@@ -9046,6 +9066,9 @@ class DynamicWorkflow:
 
         nphi_curve = get_curve(well, ["NPHI"])
         rhob_curve = get_curve(well, ["RHOB"])
+        if (not refinement and nphi_curve is not None and rhob_curve is not None
+                and not self._reproducing_benchmark and not self._historical):
+            self._warn_if_off_depth(well, rhob_curve.mnemonic, nphi_curve.mnemonic)
         hc_corrected = (
             self.config.apply_hc_correction
             and not self._historical
@@ -10793,10 +10816,10 @@ class DynamicWorkflow:
             return (surface_temp_f + float(bht_f)) / 2.0
 
         if well.depth is not None:
-            from petrophys.interpretation.temperature import calculate_temperature_profile
+            from petrophys.interpretation.temperature import temperature_profile
 
             try:
-                result = calculate_temperature_profile(
+                result = temperature_profile(
                     well,
                     surface_temp=surface_temp_f,
                     surface_temp_unit="F",

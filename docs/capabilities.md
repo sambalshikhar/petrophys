@@ -45,7 +45,7 @@ def thumb(key, fig):
 | Review the answer | Warnings, the step-by-step trace, the cutoffs used, net pay per formation | `result.print_trace()`, `result.formation_summary()` | {ref}`review-interpretation` |
 | Your own recipe | Built-in and custom steps, checked before they run, saved as JSON and run on many wells | `Workflow`, `@workflow_step` | {doc}`custom_workflows` |
 | Plots and delivery | Log viewer templates, crossplots, multi-well charts; LAS, JSON, CSV and Excel exports | `pp.plot` | {doc}`visualization_reporting` |
-| Core and specialist data | Core calibration, NMR, spectral gamma, saturation-height, borehole images, formation pressures | `core_data_from_well`, `NMRData` | {doc}`specialist_data` |
+| Core and specialist data | Core calibration, NMR, spectral gamma, saturation-height, borehole images, formation pressures | `core_data`, `NMRData` | {doc}`specialist_data` |
 | Further analyses | Rock-quality and matrix indicators, shale distribution, heterogeneity, zonation, Monte Carlo, invasion, pore pressure | `zone_well`, `monte_carlo` | {doc}`analysis_tools` |
 | Many wells | Batch and zoned runs over a folder of wells | `pp.interpret(folder)`, `BatchProcessor` | {ref}`workflows-batch`, {doc}`custom_workflows` |
 | LLMs | Bounded JSON context files of interpreted wells; an MCP server that lets a model run Petrophys | `pp.export_context`, `petrophys-mcp` | {doc}`context`, {doc}`mcp` |
@@ -93,7 +93,7 @@ The density of COSTA well HW-24 (red) against its prediction from the other logs
 ```
 Neutron-density crossplot of the 30/6-5 Brent Group, with the matrix lines.
 
-`create_nd_crossplot(well)`
+`pp.crossplot(well, "NPHI", "RHOB")`
 +++
 {doc}`Tutorial 05: lithology and minerals <tutorials/part_a/05_lithology_and_mineral_solver>`
 :::
@@ -113,7 +113,7 @@ The mineral solver splits the 15/9-14 chalk into porosity and mineral volumes, m
 ```
 Check Rw and the Archie exponents against the 30/6-5 Statfjord water leg.
 
-`create_pickett_plot(result)`
+`pp.crossplot(result, "PHIE", "RDEP")`
 +++
 {doc}`Tutorial 06: formation water <tutorials/part_a/06_formation_water_and_environment>` · {doc}`Tutorial 07: the Pickett plot <tutorials/part_a/07_water_saturation>`
 :::
@@ -139,7 +139,7 @@ Brent Group net pay under four saturation models, one setting apart.
 ```
 A poro-perm transform fitted to the 30/6-5 core plugs: permeability on a log scale against porosity, coloured by depth.
 
-`plot_poro_perm(core, transform=fit_poro_perm_transform(core))`
+`pp.crossplot(core, "PHIC", "KH_CORE")`
 +++
 {doc}`Tutorial 08: permeability <tutorials/part_a/08_permeability>`
 :::
@@ -149,7 +149,7 @@ A poro-perm transform fitted to the 30/6-5 core plugs: permeability on a log sca
 ```
 The 30/6-5 core plugs grouped into hydraulic flow units by FZI.
 
-`create_flow_unit_plot(core_data_from_well(well))`
+`pp.crossplot(core_data(well), "PHI_Z", "RQI")`
 +++
 {doc}`Tutorial 09: reservoir quality <tutorials/part_a/09_reservoir_quality_and_net_pay>`
 :::
@@ -175,7 +175,7 @@ Seventeen COSTA carbonate wells interpreted in one call, ranked by Kharaib-2 net
 ```
 The bias and scatter of 30/6-5 density porosity against core.
 
-`plot_calibration(calibrate_porosity(well, core, log_curve="PHID"))`
+`calibration_plot(calibrate_porosity(well, core, log_curve="PHID"))`
 +++
 {doc}`Tutorial 12: core calibration <tutorials/part_b/12_core_calibration_and_digital_core>`
 :::
@@ -195,7 +195,7 @@ Timur-Coates permeability from the Daydream CMR, checked against the vendor's.
 ```
 Thorium and uranium on 25/5-1, with the uranium-dominated samples flagged.
 
-`interpret_spectral_gamma(well)` · `create_crossplot(well, "URANIUM", "THORIUM")`
+`interpret_spectral_gamma(well)` · `pp.crossplot(well, "URANIUM", "THORIUM")`
 +++
 {doc}`Tutorial 12, part 3 <tutorials/part_b/12_core_calibration_and_digital_core>`
 :::
@@ -234,7 +234,6 @@ mystnb:
   code_prompt_hide: "Hide the code: reading, QC, interpretation and Sw models"
 ---
 import petrophys as pp
-from petrophys.visualization import create_bar_comparison, create_nd_crossplot, create_pickett_plot
 
 well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"),
                lithology=pp.sample("lithology_30_6-5"))
@@ -242,21 +241,20 @@ result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")   # Rw 0.07 ohm.m 
 
 thumb("cap_qc", pp.plot(result, top=3000, bottom=3110, curves=["GR", "CALI", "BS"],
                         figsize=LOG_THUMB).fig)
-thumb("cap_nd", create_nd_crossplot(well, depth_range=(2841, 2958), figsize=THUMB))
+thumb("cap_nd", pp.crossplot(well, "NPHI", "RHOB", top=2841, bottom=2958, figsize=THUMB).fig)
 chalk = pp.interpret(pp.read(pp.sample("15_9-14")))
 thumb("cap_minerals", pp.plot(chalk, top=2840, bottom=2900, template="minerals",
                               figsize=LOG_THUMB).fig)
-thumb("cap_pickett", create_pickett_plot(result, rt_curve="RDEP", color_curve="VCL",
-                                         depth_range=(3223, 3556), a=0.8, m=2.0, n=2.0,
-                                         figsize=THUMB).fig)
+thumb("cap_pickett", pp.crossplot(result, "PHIE", "RDEP", top=3223, bottom=3556, a=0.8, m=2.0, n=2.0,
+                                  figsize=THUMB).fig)
 
 # Dual Water needs a bound-water resistivity (rwb) and Waxman-Smits a CEC;
 # 30/6-5 gives neither, so they are left out.
 models = ["archie", "simandoux", "indonesia", "auto"]
 pay = [pp.interpret(well, rw=0.07, rw_meas_temp="230 degF", sw_model=model)
        .summary(top=2841, bottom=2958)["net_thickness"]["net_pay"] for model in models]
-fig, ax = create_bar_comparison(models, pay, value_labels=True, figsize=THUMB,
-                                ylabel="Brent Group net pay (m)", title="Net pay by Sw model, 30/6-5")
+fig, ax = pp.bar_chart(models, pay, value_labels=True, figsize=THUMB,
+                       ylabel="Brent Group net pay [m]", title="Net pay by Sw model, 30/6-5")
 ax.set_ylim(0, 1.2 * max(pay))
 thumb("cap_sw", fig)
 ```
@@ -269,35 +267,29 @@ mystnb:
   code_prompt_hide: "Hide the code: core, flow units, spectral gamma and many wells"
 ---
 from petrophys.interpretation.core_analysis import (
-    calibrate_porosity, core_data_from_well, fit_poro_perm_transform,
+    calibrate_porosity, core_data,
 )
 from petrophys.interpretation.geochemistry import interpret_spectral_gamma
-from petrophys.visualization import (
-    create_crossplot, create_flow_unit_plot, plot_calibration, plot_poro_perm,
-)
 
-core = core_data_from_well(result)  # the PHIC, KH_CORE, GDEN and SWC plugs in the LAS
-fig, ax = plot_poro_perm(core, transform=fit_poro_perm_transform(core),
-                         title="30/6-5 core poro-perm", figsize=THUMB)
-thumb("cap_poroperm", fig)
-thumb("cap_flow", create_flow_unit_plot(core, title="30/6-5 flow units", figsize=THUMB))
-fig, ax = plot_calibration(calibrate_porosity(result, core, log_curve="PHID"),
-                           title="Density porosity vs core", figsize=THUMB)
+core = core_data(result)  # the PHIC, KH_CORE, GDEN and SWC plugs in the LAS
+thumb("cap_poroperm", pp.crossplot(core, "PHIC", "KH_CORE", title="30/6-5 core poro-perm", figsize=THUMB).fig)
+thumb("cap_flow", pp.crossplot(core, "PHI_Z", "RQI", title="30/6-5 flow units", figsize=THUMB).fig)
+fig, ax = pp.calibration_plot(calibrate_porosity(result, core, log_curve="PHID"),
+                              title="Density porosity vs core", figsize=THUMB)
 thumb("cap_calibration", fig)
 
 gamma_well = pp.read(pp.sample("25_5-1"))
 interpret_spectral_gamma(gamma_well, alias_overrides={"SGR": ["GR"]})  # adds THORIUM, URANIUM, ...
-thumb("cap_sgr", create_crossplot(gamma_well, "URANIUM", "THORIUM",
-                                  color_curve="SGR_URANIUM_EXCESS_FLAG", x_log=True, y_log=True,
-                                  title="25/5-1 spectral gamma", figsize=THUMB).fig)
+thumb("cap_sgr", pp.crossplot(gamma_well, "URANIUM", "THORIUM", color="SGR_URANIUM_EXCESS_FLAG",
+                              x_log=True, y_log=True, title="25/5-1 spectral gamma", figsize=THUMB).fig)
 
 # Seventeen COSTA wells, each covering the Kharaib-2 interval only.
 field = pp.interpret(pp.read([pp.sample(name) for name in pp.list_samples("costa")],
                              formations=pp.sample("formations_costa")),
                      lithology_domain="carbonate", vcl_cutoff=0.30, phie_cutoff=0.10, sw_cutoff=0.60)
 pay = field.summary().set_index("Well")["Net pay"].sort_values(ascending=False)
-fig, ax = create_bar_comparison(list(pay.index), list(pay.values), figsize=THUMB,
-                                ylabel="Net pay (ft)", title="Kharaib-2 net pay, COSTA field")
+fig, ax = pp.bar_chart(list(pay.index), list(pay.values), figsize=THUMB,
+                       ylabel="Net pay [ft]", title="Kharaib-2 net pay, COSTA field")
 thumb("cap_costa", fig)
 ```
 

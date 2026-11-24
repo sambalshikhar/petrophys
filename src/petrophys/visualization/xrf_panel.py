@@ -40,7 +40,7 @@ _PROXY_COLORS = [
 
 
 @_styled_plot
-def create_xrf_panel(
+def xrf_panel(
     xrf,
     depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (14, 11),

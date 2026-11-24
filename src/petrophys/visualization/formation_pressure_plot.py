@@ -5,15 +5,15 @@ import numpy as np
 
 
 @_styled_plot
-def create_formation_pressure_plot(data, result=None, *, hydrocarbon="oil",
-                                   figsize=(7, 8), title="Formation pressures"):
+def pressure_plot(data, result=None, *, hydrocarbon="oil",
+                  figsize=(7, 8), title="Formation pressures"):
     """Plot FormationPressureData; return a Matplotlib Figure.
 
     If no result is provided, call data.fit_fwl(hydrocarbon). All finite
     excluded stations remain visible for QC. No report contacts are used.
     ``result`` is the fluid-labelled fit of ``data.fit_fwl``; the unlabelled
     inference of ``data.infer_contacts()`` is drawn by
-    :func:`create_pressure_contact_plot`.
+    :func:`contact_plot`.
     """
     import matplotlib.pyplot as plt
 
@@ -21,9 +21,9 @@ def create_formation_pressure_plot(data, result=None, *, hydrocarbon="oil",
         result = data.fit_fwl(hydrocarbon)
     if not hasattr(result, "hydrocarbon_fluid"):
         raise TypeError(
-            f"create_formation_pressure_plot draws a fluid-labelled fit (data.fit_fwl(...)), "
+            f"pressure_plot draws a fluid-labelled fit (data.fit_fwl(...)), "
             f"not a {type(result).__name__}: the stations need fluid labels for it. "
-            "Plot an infer_contacts() result with create_pressure_contact_plot(data, result)."
+            "Plot an infer_contacts() result with contact_plot(data, result)."
         )
     if (result.depth_unit, result.pressure_unit, result.depth_reference) != (
             data.depth_unit, data.pressure_unit, data.depth_reference):
@@ -55,8 +55,8 @@ def create_formation_pressure_plot(data, result=None, *, hydrocarbon="oil",
 
 
 @_styled_plot
-def create_pressure_contact_plot(data, result=None, *, figsize=(7, 8),
-                                 title="Pressure contact interpretation", zoom="fit"):
+def contact_plot(data, result=None, *, figsize=(7, 8),
+                 title="Pressure contact interpretation", zoom="fit"):
     """Plot unlabeled inference, including unresolved contacts and suspect points.
 
     Returns a Figure. Call ``data.infer_contacts(**settings)`` first to control

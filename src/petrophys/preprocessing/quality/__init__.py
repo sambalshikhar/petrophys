@@ -5,6 +5,7 @@ This umbrella module contains tools for:
 - Bad hole detection (washout, flags)
 - Plausibility-range checks
 - Held (stuck or padded) tool readings
+- Curves off depth against each other
 """
 from petrophys.preprocessing.quality.bad_hole import (
     WashoutDetection,
@@ -16,6 +17,11 @@ from petrophys.preprocessing.quality.bad_hole import (
     generate_pef_exclusion_flag,
     generate_washout_flag,
     mask_bad_hole_curves,
+)
+from petrophys.preprocessing.quality.depth_alignment import (
+    LogDepthShift,
+    find_log_depth_shift,
+    shift_curves,
 )
 from petrophys.preprocessing.quality.held_readings import (
     HeldReadings,
@@ -42,6 +48,10 @@ __all__ = [
     "generate_pef_exclusion_flag",
     "mask_bad_hole_curves",
     "apply_quality_flags",
+    # Depth alignment
+    "LogDepthShift",
+    "find_log_depth_shift",
+    "shift_curves",
     # Held readings
     "HeldReadings",
     "find_held_readings",

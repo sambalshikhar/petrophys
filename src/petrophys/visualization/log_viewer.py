@@ -1436,7 +1436,7 @@ def _lithology_code_curve(well: "Well") -> Optional[str]:
 
 
 @_styled_plot
-def create_adaptive_log_viewer_template(
+def auto_template(
     well: "Well",
     max_generic_tracks: int = 0,
     generic_curves_per_track: int = 3,
@@ -1783,6 +1783,13 @@ def create_adaptive_log_viewer_template(
         width=0.95,
         track_type="flags",
     )
+    add_track(
+        "FLOW UNITS",
+        # Hydraulic flow units as coloured blocks, in the flow-unit plot's colours.
+        [_adaptive_spec("HFU", "Flow unit", color="#000000")],
+        width=0.7,
+        track_type="category",
+    )
 
     generic_names = []
     for curve_name in getattr(well, "curves", []):
@@ -1933,7 +1940,7 @@ def _parse_track(element: ET.Element) -> LogTrackSpec:
     )
 
 
-def load_log_viewer_template(
+def load_template(
     template_xml_path: Optional[str | Path] = None,
     template_defaults: str = "raw",
 ) -> LogViewerTemplate:
@@ -2164,13 +2171,13 @@ class LogViewer:
         if template_xml_path is None and template_key in ADAPTIVE_LOG_VIEWER_TEMPLATE_NAMES:
             # A raw well shows every logged curve: those no named track takes
             # go to generic tracks. An interpretation's plot keeps its tracks.
-            self.template = create_adaptive_log_viewer_template(
+            self.template = auto_template(
                 self.well, max_generic_tracks=0 if interpreted else _RAW_GENERIC_TRACKS,
                 include_on_request=curves is not None,
             )
             self._adaptive_template = True
         else:
-            self.template = load_log_viewer_template(template_xml_path, template_defaults)
+            self.template = load_template(template_xml_path, template_defaults)
             self._add_imputed_curves()
             self._add_relative_scales()
         if self.lithology_intervals is not None and not any(
@@ -2591,6 +2598,8 @@ class LogViewer:
                 self._plot_lithology_track(ax, track, depth, plot_top, plot_bottom)
             elif track.track_type == "flags":
                 self._plot_flag_track(ax, track, depth)
+            elif track.track_type == "category":
+                self._plot_category_track(ax, track, depth)
             else:
                 self._plot_curve_track(ax, track, depth)
 
@@ -2836,7 +2845,7 @@ class LogViewer:
         self._draw_track_grid(ax, track)
 
     def _draw_track_grid(self, ax: Axes, track: LogTrackSpec) -> None:
-        if track.track_type in {"lithology", "flags"}:
+        if track.track_type in {"lithology", "flags", "category"}:
             return
         if str(track.scale).lower() == "log" and track.left > 0 and track.right > 0:
             lo, hi = sorted((track.left, track.right))
@@ -3986,6 +3995,35 @@ class LogViewer:
                                    text_color=_readable_text_color(color))
         ax.set_xlim(0.0, 1.0)
 
+    def _plot_category_track(self, ax: Axes, track: LogTrackSpec, depth: np.ndarray) -> None:
+        """Each class of a class curve (HFU, facies) as a coloured block, named in a legend."""
+        from matplotlib import colormaps
+        from matplotlib.patches import Patch
+
+        ax.set_xlim(0.0, 1.0)
+        spec = track.curves[0] if track.curves else None
+        curve = self._get_curve(spec) if spec is not None else None
+        if curve is None:
+            return
+        custom = getattr(getattr(curve, "metadata", None), "custom", None) or {}
+        labels = {int(k): str(v) for k, v in (custom.get("category_labels") or {}).items()}
+        colors = {int(k): v for k, v in (custom.get("category_colors") or {}).items()}
+        data = np.asarray(curve.data, dtype=float)
+        finite = np.isfinite(data) & np.isfinite(depth)
+        codes = [int(code) for code in np.unique(data[finite]) if float(code).is_integer()]
+        palette = colormaps["tab10"]
+        handles = []
+        for index, code in enumerate(codes):
+            color = colors.get(code, palette(index % 10))
+            cell_depth, cell_active = _sample_cell_fill(depth, finite & (data == code))
+            ax.fill_betweenx(cell_depth, 0.0, 1.0, where=cell_active, color=color, linewidth=0.0)
+            handles.append(Patch(facecolor=color, edgecolor="0.28",
+                                 label=labels.get(code, f"{spec.display_name or curve.mnemonic} {code}")))
+        self._add_curve_header(ax, 0, spec.display_name or curve.mnemonic, 0.0, 1.0, "#000000", "linear")
+        if handles:
+            ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.025), fontsize=8.0,
+                      ncol=1, frameon=False)
+
     def _plot_no_flags(self, ax: Axes) -> None:
         ax.set_xlim(0.0, 1.0)
         ax.set_facecolor("#fbf7f7")
@@ -4599,7 +4637,7 @@ class LogViewer:
 
 
 @_styled_plot
-def create_log_viewer(
+def _log_viewer(
     well: "Well",
     template_xml_path: Optional[str | Path] = None,
     template_defaults: str = "auto",

@@ -451,11 +451,9 @@ groups
 ```
 
 ```{code-cell} python
-from petrophys.visualization import create_bar_comparison
-
-create_bar_comparison(groups["Formation"], groups["Net Pay (m)"], horizontal=True, value_labels=True,
-                      xlabel="Flagged net pay (m)", title="30/6-5: net-pay flags by group",
-                      figsize=(8, 4.5));
+pp.bar_chart(groups["Formation"], groups["Net Pay (m)"], horizontal=True, value_labels=True,
+             xlabel="Flagged net pay (m)", title="30/6-5: net-pay flags by group",
+             figsize=(8, 4.5));
 ```
 
 With these tops and lithology attached, nearly all the flagged pay lies in the Brent Group, the reservoir. The 0.6 m flagged in the Hordaland Group and the 0.15 m each in the Shetland and Viking groups still need a geological check.

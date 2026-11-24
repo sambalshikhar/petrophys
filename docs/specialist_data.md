@@ -27,14 +27,13 @@ warnings.filterwarnings("ignore", message=r"(SWC|SOC): inferred percent core sat
 ## NMR: Daydream CMR
 
 The bundled Daydream 1 file is a vendor CMR summary, with GR and calipers.
-{func}`~petrophys.visualization.create_nmr_panel` draws the standard display from its curves.
+{func}`~petrophys.visualization.nmr_panel` draws the standard display from its curves.
 
 ```{code-cell} python
 import petrophys as pp
-from petrophys.visualization import create_nmr_panel
 
 cmr = pp.read(pp.sample("daydream1_cmr"))
-create_nmr_panel(cmr, depth_range=(3900, 4100));
+pp.nmr_panel(cmr, depth_range=(3900, 4100));
 ```
 
 {class}`~petrophys.interpretation.nmr.NMRData` loads the same file to compute bound fluid (`MPHI - MFFI`), irreducible saturation and permeability.
@@ -96,16 +95,16 @@ Where uranium dominates, GR over-reads clay and thorium is the safer clay indica
 
 ## Core data and calibration: 30/6-5
 
-The 30/6-5 LAS contains core porosity, permeability, grain-density and saturation curves. {func}`~petrophys.interpretation.core_analysis.core_data_from_well` reads those embedded measurements directly. The LAS labels its percent core SWC and SOC as fractions; Petrophys detects and converts them to fractions with a warning, hidden on this page.
+The 30/6-5 LAS contains core porosity, permeability, grain-density and saturation curves. {func}`~petrophys.interpretation.core_analysis.core_data` reads those embedded measurements directly. The LAS labels its percent core SWC and SOC as fractions; Petrophys detects and converts them to fractions with a warning, hidden on this page.
 
 ```{code-cell} python
 from petrophys.interpretation.core_analysis import (
-    calibrate_porosity, core_data_from_well, fit_poro_perm_transform,
+    calibrate_porosity, core_data, fit_poro_perm,
 )
 
 result = pp.interpret(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"),
                       rw=0.07, rw_meas_temp="230 degF")
-core = core_data_from_well(result)
+core = core_data(result)
 core
 ```
 
@@ -116,10 +115,8 @@ interpretation, which uses a quartz matrix and is independent of the core.
 the plugs in shaly rock.)
 
 ```{code-cell} python
-from petrophys.visualization import plot_calibration, plot_core_on_logs, plot_poro_perm
-
 calibration = calibrate_porosity(result, core, log_curve="PHID")
-plot_calibration(calibration, title="Density porosity against core");
+pp.calibration_plot(calibration, title="Density porosity against core");
 ```
 
 Density porosity reads 0.02 v/v below the plugs on average (RMSE 0.046 v/v, R² 0.65
@@ -127,8 +124,8 @@ over 200 plugs). A poro-perm transform fitted to the plugs predicts permeability
 from porosity:
 
 ```{code-cell} python
-transform = fit_poro_perm_transform(core)
-plot_poro_perm(core, transform=transform, title="Core poro-perm and transform");
+transform = fit_poro_perm(core)
+pp.crossplot(core, "PHIC", "KH_CORE", transform=transform, title="Core poro-perm and transform")
 ```
 
 `pp.interpret` applies a core calibration itself when the well has core: it writes
@@ -139,12 +136,12 @@ its own and the other formations the whole-well model, far from the rock the plu
 sample. `PERM_CC` is written only where clay volume is at or below the net-rock clay
 cutoff (0.40 for sandstone); `PERM` holds elsewhere. Plot density
 porosity and `PERM_CC` with the plugs
-({func}`~petrophys.interpretation.core_analysis.apply_poro_perm_transform` applies a
+({func}`~petrophys.interpretation.core_analysis.apply_poro_perm` applies a
 transform of your own to any porosity curve):
 
 ```{code-cell} python
-plot_core_on_logs(result, core, curves=["PHID", "PERM_CC"], figsize=(8, 7),
-                  depth_range=(core.top - 10, core.bottom + 10));
+pp.core_on_logs(result, core, curves=["PHID", "PERM_CC"], figsize=(8, 7),
+                depth_range=(core.top - 10, core.bottom + 10));
 ```
 
 Core saturation stays calibration evidence; it does not replace the log Sw curve. Check depth ties first: on 25/5-1 the plugs need a depth shift before they match the logs ({doc}`tutorial 12 <tutorials/part_b/12_core_calibration_and_digital_core>`).
@@ -158,7 +155,7 @@ plugs, each with its porosity and permeability; no well or depth is recorded for
 
 ```{code-cell} python
 from petrophys.interpretation.saturation.height import (
-    estimate_fwl_from_logs, fit_j_function_from_core, read_capillary_pressure,
+    find_fwl, fit_j_function_from_core, read_capillary_pressure,
     water_contact_from_fwl,
 )
 
@@ -195,8 +192,8 @@ is the depth at which the model, applied to a well's porosity and permeability, 
 matches its log Sw. On HW-24, which logs a transition zone:
 
 ```{code-cell} python
-fit = estimate_fwl_from_logs(pp.read(pp.sample("HW-24")), model, sw_curve="SW_INPUT",
-                             perm_curve="PERM_CC", phi_curve="PHIE_CC")
+fit = find_fwl(pp.read(pp.sample("HW-24")), model, sw_curve="SW_INPUT",
+               perm_curve="PERM_CC", phi_curve="PHIE_CC")
 fit
 ```
 
@@ -233,7 +230,6 @@ Petrophys orients, equalizes, measures coverage of and draws image logs; it does
 
 from petrophys.datasets import integration_fixture
 from petrophys.interpretation.borehole_imaging import read_fmi_dlis
-from petrophys.visualization import create_fmi_panel
 
 image = read_fmi_dlis(integration_fixture("daydream1_fmi_processed_dynamic_image.dlis"))
 image
@@ -242,7 +238,7 @@ image
 ```{code-cell} python
 :tags: [skip-execution]
 
-create_fmi_panel(image, depth_range=(4052, 4058), orient=True, equalize="dynamic")
+pp.fmi_panel(image, depth_range=(4052, 4058), orient=True, equalize="dynamic")
 ```
 
 `orient_to_azimuth` turns an image to north, `azimuthal_coverage` gives the imaged
@@ -259,15 +255,15 @@ README records the curve mappings, units and depth-matching limits.
 
 | Data | API | Bundled data | Not included | Tutorial |
 | --- | --- | --- | --- | --- |
-| XRF concentrations and mineral proxies | `XRFData`, `create_xrf_panel` | EDE-01 concentrations and matching well logs | XRD mineral fractions | 12 |
+| XRF concentrations and mineral proxies | `XRFData`, `xrf_panel` | EDE-01 concentrations and matching well logs | XRD mineral fractions | 12 |
 | Grain size and permeability comparison | `GrainSizeData` | EDE-01 merged P50 and probe permeability | P13/P87 and measured core porosity for Kozeny-Carman calibration | 12 |
 | Scanner strength and dynamic mechanics | `calculate_elastic_properties` | EDE-01 scanner strength and density/sonic well logs | core VP/VS LAS, static moduli and plug UCS tests | 12 |
 | NMR T2 distributions and SDR | `NMRData` with bins | Phillips teaching example | a field T2 distribution with matching core | 14 |
-| Laboratory capillary pressure | `read_capillary_pressure` (`.thomeer()`, `.to_reservoir()`, `.entry_pressure()`), `fit_j_function_from_core`, `estimate_fwl_from_logs`, `water_contact_from_fwl` | COSTA mercury-injection curves | fluid properties and the well and depth of each plug | 15 |
+| Laboratory capillary pressure | `read_capillary_pressure` (`.thomeer()`, `.to_reservoir()`, `.entry_pressure()`), `fit_j_function_from_core`, `find_fwl`, `water_contact_from_fwl` | COSTA mercury-injection curves | fluid properties and the well and depth of each plug | 15 |
 
 `read_formation_pressure` accepts CSV/LAS station files, DataFrames and LAS objects.
 Fluid labels are optional. For unlabeled stations call `.infer_contacts()` and
-`create_pressure_contact_plot(data, result)`. This compares up to three robust
+`contact_plot(data, result)`. This compares up to three robust
 depth-ordered gradients, estimates fluid densities, evaluates possible fluid
 sequences and intersects adjacent lines. It returns model scores, assignments,
 suspect flags and conditional sensitivity intervals. A single gradient, weak
@@ -292,14 +288,14 @@ inputs through `read_mdt_pretest`. Three original MDT pretest DLIS files from
 IODP Hole C0009A are bundled with LAS copies (`319-C0009A_MDT_059LTP` and
 `c0009a_mdt_059`, likewise 067 and 078). `pick_pressure()` accepts 4102.13 psi
 for file 059; the low-mobility test 067 and the unstable-baseline test 078 are
-returned for review. `create_mdt_pretest_plot(trace, pick)` shades the mud
+returned for review. `pretest_plot(trace, pick)` shades the mud
 baselines at both ends and the buildup windows, with the baseline that failed the
 stability check in red. DLIS input needs the `dlis` extra. After a user
 supplies verified TVD values, `formation_pressures_from_mdt` builds station
 data for `.infer_contacts()`.
 
 For already interpreted fluid labels, `.fit_fwl()`, `fit_pressure_fwl` and
-`create_formation_pressure_plot` are available. Images and report contacts
+`pressure_plot` are available. Images and report contacts
 are not interpretation inputs. Units, a positive-down TVD datum, a consistent
 pressure reference and reservoir selection are necessary for either mode.
 

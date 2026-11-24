@@ -14,8 +14,10 @@ from petrophys.preprocessing.quality import (
     clean_curve_values,
     detect_washout,
     find_held_readings,
+    find_log_depth_shift,
     generate_bad_hole_flags,
     held_reading_mask,
+    shift_curves,
     value_range_qc_note,
 )
 from petrophys.preprocessing.standardization import (
@@ -37,10 +39,12 @@ __all__ = [
     "clean_curve_values",
     "detect_washout",
     "find_held_readings",
+    "find_log_depth_shift",
     "generate_bad_hole_flags",
     "held_reading_mask",
     "histogram_matching",
     "normalize_log",
+    "shift_curves",
     "standardize_curves",
     "standardize_core_saturation",
     "value_range_qc_note",

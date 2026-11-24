@@ -10,7 +10,7 @@ Plotting functions for core-to-log calibration:
 
 from petrophys.visualization.style import _styled_plot, display_unit
 
-from typing import Optional, Tuple, List
+from typing import Any, Callable, List, Mapping, Optional, Tuple
 import re
 
 import numpy as np
@@ -30,16 +30,33 @@ from petrophys.interpretation.core_analysis.calibration import (
 )
 
 
+def _side_by_side(items: Mapping[str, Any], draw: Callable[[Any, "Axes", str], Any],
+                  figsize: Optional[Tuple[float, float]]) -> Tuple["Figure", List["Axes"]]:
+    """One panel per entry of ``items``, titled by its key, on shared axes."""
+    if not items:
+        raise ValueError("Give at least one entry to plot")
+    n = len(items)
+    fig, axes = plt.subplots(1, n, figsize=figsize or (6.0 * n, 5.5), sharex=True, sharey=True, squeeze=False)
+    for ax, (name, item) in zip(axes[0], items.items()):
+        draw(item, ax, str(name))
+    fig.tight_layout()
+    return fig, list(axes[0])
+
+
 @_styled_plot
-def plot_calibration(
+def calibration_plot(
     result: CalibrationResult,
     ax: Optional["Axes"] = None,
     title: Optional[str] = None,
     show_fit: bool = True,
-    figsize: Tuple[float, float] = (7, 6),
-) -> Tuple["Figure", "Axes"]:
+    figsize: Optional[Tuple[float, float]] = None,
+) -> Tuple["Figure", Any]:
     """
     Plot a core-vs-log calibration crossplot.
+
+    ``result`` may also be a mapping of titles to results, e.g.
+    ``{"as stored": cal, "shifted +2.89 m": cal_tied}``: one panel each, side
+    by side on shared axes, and the axes are returned as a list.
 
     Parameters
     ----------
@@ -62,9 +79,12 @@ def plot_calibration(
     """
     if not HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required")
+    if isinstance(result, Mapping):
+        return _side_by_side(result, lambda item, axis, name: calibration_plot(
+            item, ax=axis, title=name, show_fit=show_fit), figsize)
 
     if ax is None:
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(figsize=figsize or (7, 6))
     else:
         fig = ax.figure
 
@@ -131,15 +151,20 @@ def plot_calibration(
 
 
 @_styled_plot
-def plot_poro_perm(
+def _poro_perm_chart(
     core: CoreData,
     transform: Optional[PoroPermTransform] = None,
     ax: Optional["Axes"] = None,
     title: str = "Core Poro-Perm Crossplot",
-    figsize: Tuple[float, float] = (8, 6),
-) -> Tuple["Figure", "Axes"]:
+    figsize: Optional[Tuple[float, float]] = None,
+) -> Tuple["Figure", Any]:
     """
     Plot a porosity-permeability crossplot from core data.
+
+    ``core`` may also be a mapping of titles to ``CoreData`` or to
+    ``(CoreData, transform)`` pairs, e.g. ``{"30/6-5": (core, t), "25/5-1":
+    (core25, t25)}``: one panel each, side by side on shared axes, and the
+    axes are returned as a list.
 
     Parameters
     ----------
@@ -161,12 +186,17 @@ def plot_poro_perm(
     """
     if not HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required")
+    if isinstance(core, Mapping):
+        def draw(item, axis, name):
+            plugs, fitted = item if isinstance(item, tuple) else (item, transform)
+            return _poro_perm_chart(plugs, transform=fitted, ax=axis, title=name)
+        return _side_by_side(core, draw, figsize)
 
     if core.porosity is None or core.permeability is None:
         raise ValueError("CoreData needs both porosity and permeability")
 
     if ax is None:
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(figsize=figsize or (8, 6))
     else:
         fig = ax.figure
 
@@ -241,7 +271,7 @@ _CORE_UNITS = {"porosity": "v/v", "permeability": "mD", "sw": "v/v", "so": "v/v"
 
 
 @_styled_plot
-def plot_core_on_logs(
+def core_on_logs(
     well,
     core: CoreData,
     curves: Optional[List[str]] = None,
@@ -285,7 +315,7 @@ def plot_core_on_logs(
     from petrophys.visualization.log_viewer import (
         _display_well,
         _resolve_curve_name_for_well,
-        create_adaptive_log_viewer_template,
+        auto_template,
         DEFAULT_CURVE_DISPLAY_UNITS,
     )
 
@@ -323,7 +353,7 @@ def plot_core_on_logs(
     missing = []
     # Each curve's colour, line and scale as the log plot draws it.
     layout = {}
-    for track in create_adaptive_log_viewer_template(shown, include_on_request=True).tracks:
+    for track in auto_template(shown, include_on_request=True).tracks:
         for spec in track.curves:
             found = _resolve_curve_name_for_well(shown, spec.curve_name, spec.candidates)
             if found is not None:
@@ -392,7 +422,7 @@ def plot_core_on_logs(
 
     if missing:
         warnings.warn(
-            f"plot_core_on_logs: the well has no {', '.join(missing)} curve "
+            f"core_on_logs: the well has no {', '.join(missing)} curve "
             f"(by its own name or an alias); those tracks show core points only.",
             UserWarning,
             stacklevel=3,

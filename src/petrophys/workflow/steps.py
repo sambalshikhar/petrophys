@@ -504,7 +504,7 @@ def temperature(*, bht: Optional[Any] = None, td: Optional[Any] = None,
     temperature at total depth, or from a given gradient. Without either, the
     LAS header BHT is used, and failing that a 30 degC/km gradient (with a
     warning). Wraps
-    :func:`petrophys.interpretation.temperature.calculate_temperature_profile`,
+    :func:`petrophys.interpretation.temperature.temperature_profile`,
     the function :func:`petrophys.interpret` uses.
 
     :func:`formation_water` and :func:`mud_filtrate` correct resistivities
@@ -577,12 +577,12 @@ def temperature(*, bht: Optional[Any] = None, td: Optional[Any] = None,
 def _run_temperature(ctx: _StepContext, *, bht_f: Optional[float], td_ft: Optional[float],
                      surface_temp_f: float, gradient_f_per_100ft: Optional[float]) -> None:
     from petrophys.interpretation.temperature import (
-        calculate_temperature_profile,
+        temperature_profile,
         gradient_to_celsius_per_km,
     )
     from petrophys.interpretation.temperature.temp_profile import store_temperature_parameters
 
-    result = calculate_temperature_profile(
+    result = temperature_profile(
         ctx.well, bht=bht_f, surface_temp=surface_temp_f, gradient=gradient_f_per_100ft,
         bht_unit="F", surface_temp_unit="F", td=td_ft,
         td_unit="ft" if td_ft is not None else None,
@@ -1052,7 +1052,7 @@ def _header_requirement(resistivity: str, temperature: str, what: str) -> _Requi
 
 def _formation_temperature(ctx: _StepContext) -> np.ndarray:
     """Formation temperature in degF: TEMP if present, else a default profile."""
-    from petrophys.interpretation.temperature import calculate_temperature_profile
+    from petrophys.interpretation.temperature import temperature_profile
     from petrophys.model.units import temperature_unit
 
     found = ctx.optional("TEMP")
@@ -1066,7 +1066,7 @@ def _formation_temperature(ctx: _StepContext) -> np.ndarray:
             values = (values - 273.15) * 9.0 / 5.0 + 32.0
         ctx.decide("Corrected along the TEMP curve")
         return values
-    result = calculate_temperature_profile(ctx.well)
+    result = temperature_profile(ctx.well)
     if result.source == "fallback_geothermal_gradient":
         ctx.warn(Advice("No TEMP curve or bottom-hole temperature; formation temperature from the "
                         "default 30 degC/km gradient. Add steps.temperature(bht=...) first.", ("bht",)))

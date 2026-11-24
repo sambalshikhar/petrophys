@@ -295,7 +295,6 @@ their raw logs.
     the MDT pressure files apart from the wells.
   - `RwModule`/`calculate_rw` in "auto" use the header RW (at its RWT) and
     header RMF; unknown methods raise.
-  - `create_pickett_plot` falls back to RDEP when there is no RT.
   - `total_porosity` rejects unknown methods.
   - `petrophys-context` given a file says a folder is needed.
 - Docs: the precedence of settings, header values and defaults is stated once
@@ -337,7 +336,7 @@ their raw logs.
   curve (`RDEP`). `petrophys-context` takes `--curve-aliases FILE`. An
   entry that names no curve of the well, or is written the other way round
   (`{"GR": "GAMMA"}`), gives a warning with the likely correction.
-- `create_histogram_comparison` takes `value_range` and `histtype="step"`;
+- `histograms` takes `value_range` and `histtype="step"`;
   the multi-well overlay labels its depth unit and draws legible legend
   lines. The NMR panel titles its first track "GR / Tension" (CDF and TENS
   are cable tension) and states a constant T2 cutoff in the Swirr title.
@@ -635,7 +634,7 @@ wherever the package used the function.
   an `"auto"` matrix and the per-depth lithology groups behind the net-pay
   cutoffs and exclusions. The run records it on the well, and context
   exports, the diagnostics, the zoned batch runner, `steps.net_pay`,
-  `PermeabilityModule`, `core_data_from_well`, `IntervalAnalyzer` and the
+  `PermeabilityModule`, `core_data`, `IntervalAnalyzer` and the
   log viewer read the same curve. A curve other than `LITHOLOGY_GEOLINK` is
   named in a warning saying that its codes are decoded with the
   built-in lithology code table; the trace gives the lithology source as
@@ -921,7 +920,7 @@ wherever the package used the function.
   G, Bv-infinity), `.to_reservoir(fluids)` converts lab Pc by the ratio of
   sigma cos(theta), and `fit_j_function_from_core` fits one Leverett
   J-function to all plugs at reservoir conditions.
-- Fluid contacts from capillary pressure: `estimate_fwl_from_logs` finds the
+- Fluid contacts from capillary pressure: `find_fwl` finds the
   free-water level at which a core saturation-height model best matches the
   log Sw, with a 95% range (or says the FWL lies deeper or shallower than the
   logged interval when the logs miss the transition zone, and the R2 of the
@@ -1284,15 +1283,15 @@ wherever the package used the function.
   bottom)` a table of any curves' statistics over a depth window, for
   `pp.interpret` and custom `Workflow` runs alike; `curve.description` reads a
   curve's description. Plotters
-  (`create_nd_crossplot`, `create_pickett_plot`, ...) and the core
-  calibration functions (`core_data_from_well`, `calibrate_porosity`, ...),
+  (`pp.crossplot`, `pp.calibration_plot`, ...) and the core
+  calibration functions (`core_data`, `calibrate_porosity`, ...),
   `cutoff_sensitivity` and `zone_well` take an interpretation result as well
   as a well. `result.summary()` describes PHIE_CC and PERM_CC beside PHIE and
   PERM, and the several-wells `summary()` takes its PHIE and PERM medians
   from them where the interpretation produced them, as the formation
   summaries do.
-- `create_histogram_comparison(wells, "GR")` compares one curve across wells
-  or results; `calculate_flow_units(core)` and `create_flow_unit_plot(core)`
+- `histograms(wells, "GR")` compares one curve across wells
+  or results; `calculate_flow_units(core)` and `pp.crossplot(core, "PHI_Z", "RQI")`
   take core data, and the flow-unit result gives `to_dataframe()` and
   `summary()`; `fit_j_function_from_well(well, fwl_depth)` fits a Leverett
   J-function to a well's log Sw above a free-water level, and the model's
@@ -1404,7 +1403,7 @@ wherever the package used the function.
   `CoreData.from_dataframe`/`from_csv` take `porosity_unit=` and
   `saturation_unit=` and convert percent values with a warning;
   `kozeny_carman_perm`, `sorting_coefficient` and `skewness` say why they
-  give no result; `create_pressure_contact_plot` frames the fitted stations
+  give no result; `contact_plot` frames the fitted stations
   (`zoom="fit"`, or `"all"`); the MDT pretest plot wraps its review flags
   and shades the mud baselines it tested; clay typing labels samples it
   cannot type "unclassified".
@@ -1432,23 +1431,58 @@ wherever the package used the function.
     a formation top at the bottom of the window is not labelled below the
     plot; `curve_styles` `display_name` applies to resistivity and alias
     curves.
-  - `create_multiwell_overlay`, `plot_core_on_logs` and `create_log_plot`
+  - `multiwell_overlay` and `core_on_logs`
     find curves by standard name, convert units and depths, and draw
     permeability on a log axis; the tornado chart shows both bars when they
     fall on one side of the base; the Buckles colour bar spans the 1st to
-    99th percentile of permeability; zone flags and the net-pay summary use
+    99th percentile of permeability; zone flags use
     the log viewer's flag colours.
 - Plots: after `save` in a script the figure is released from pyplot but
   kept in `.fig`, so edits survive later saves; the multi-well comparison
   converts curves to standard units, reverses neutron and sonic and warns
   when units still differ.
-- One look across plots: `create_nmr_panel` is drawn by the log viewer (its
+- `pp.crossplot(data, x, y)` draws any two curves with the chart their pair
+  calls for, by standard or the well's own names, in either order:
+  neutron-density (`"NPHI", "RHOB"`), density-PEF (`"PEF", "RHOB"`), M-N
+  (`"N", "M"`), MID (`"DTMAA", "RHOMAA"`), Pickett (a porosity and a deep
+  resistivity; `chart="hingle"` for Hingle), Buckles (a porosity and Sw),
+  flow units (`"PHI_Z", "RQI"`, or core data or a flow-unit result) and core
+  poro-perm (core porosity and permeability, or core data, with the fitted
+  transform; a mapping of titles to core data draws panels side by side).
+  Other pairs are drawn as points, resistivity and permeability on log axes,
+  coloured by `color=` (`"DEPTH"` for depth). `top=` and `bottom=` set the
+  window as in `pp.plot`; the result shows itself at the end of a notebook
+  cell and saves with `.save(path)`.
+- Plots have short names and are on `pp` as well as in
+  `petrophys.visualization`: `pp.nmr_panel`, `pp.fmi_panel`, `pp.xrf_panel`,
+  `pp.triple_combo`, `pp.saturation_height_plot`, `pp.pressure_plot`,
+  `pp.contact_plot`, `pp.pretest_plot`, `pp.calibration_plot`,
+  `pp.core_on_logs`, `pp.zone_flags_plot`, `pp.bar_chart`, `pp.line_chart`,
+  `pp.histograms`, `pp.heatmap`, `pp.tornado_plot` and
+  `pp.multiwell_overlay`; `auto_template`, `load_template` and
+  `export_plots` in `petrophys.visualization`. Core calibration reads
+  `core_data(well)`, fits `fit_poro_perm(core)` and applies
+  `apply_poro_perm(...)`; `find_fwl` places the free-water level from logs;
+  `temperature_profile` builds the temperature profile. Matplotlib is
+  imported with the first plot, not with `import petrophys`.
+  `calibration_plot` takes a mapping of titles to results for panels side by
+  side on shared axes.
+- The log plot draws a class curve carrying class names (the flow units
+  `HFU` of `FlowUnitModule.add_to_well`) as coloured blocks with a legend, in
+  the colours of the flow-unit crossplot.
+- `find_log_depth_shift(well, curve, reference)` finds the depth shift that
+  lines one curve up with another of the same well (density with neutron:
+  the strongest negative correlation), and `shift_curves(well, curves,
+  shift)` moves curves by it on a copy of the well. `pp.interpret` warns when
+  density and neutron line up clearly better shifted: of 208 wells with both
+  logs, only COSTA well HW-3, whose RHOB reads 55 ft deep, passes the test.
+- One look across plots: `nmr_panel` is drawn by the log viewer (its
   headers, scales and fills; bound and free fluid shaded), plot labels spell
   units as the log plot headers do (`display_unit`: API, g/cc, mD), and log
   axes spanning under two decades are labelled at 1, 2 and 5.
-  `create_pef_crossplot` draws density against PEF with quartz, calcite and
-  dolomite porosity lines mixed in U = PEF x electron density, and the
-  anhydrite point. `create_hingle_plot`, as `create_pickett_plot`, takes Rw
+  The density-PEF crossplot draws quartz, calcite and dolomite porosity
+  lines mixed in U = PEF x electron density, and the anhydrite point. The
+  Hingle plot, as the Pickett plot, takes Rw
   at formation temperature from the `RW` curve unless `rw` is given, and
   plots clean rock only (`vcl_max`, default 0.15). The log plot draws
   `INVASION_RATIO` (shaded below 0.8 and above 1.2) and `MHI` (shaded below
@@ -1456,10 +1490,10 @@ wherever the package used the function.
   curve named after a curve of the layout (`SW_JH` after `SW`) in that
   curve's track and scale. The comparison of runs or wells draws volume
   fractions the layout stacks (mineral volumes) on 0-1.
-- Core and electrical analysis: `apply_poro_perm_transform` writes
+- Core and electrical analysis: `apply_poro_perm` writes
   the core-calibrated `PERM_CC` (a core-plug name such as `PERM_CORE` would be
-  read back as plugs), and `PERM_CORECAL` is an alias of `PERM_CC`; `plot_core_on_logs` overlays plugs on any PHI*, PERM*, SW* or SO*
-  curve and `plot_poro_perm` draws the transform over the plugs' porosity
+  read back as plugs), and `PERM_CORECAL` is an alias of `PERM_CC`; `core_on_logs` overlays plugs on any PHI*, PERM*, SW* or SO*
+  curve and the poro-perm crossplot draws the transform over the plugs' porosity
   range; `find_core_depth_shift` warns on a weak tie (r < 0.5);
   `pickett_analysis` returns Rw and warns when m lies outside 1.3-3; it
   fits by reduced major axis (errors in both porosity and resistivity),
@@ -1533,10 +1567,9 @@ wherever the package used the function.
   not learn from the samples it predicts. `scripts/evaluate_imputation.py`
   measures the rebuild in wells the model did not learn from (on the 223
   GeoLink wells, R² 0.74-0.75 for RHOB, 0.39-0.60 for DTC, 0.50-0.74 for NPHI).
-- Plotting: `create_heatmap` centres each cell on its coordinate, draws
+- Plotting: `heatmap` centres each cell on its coordinate, draws
   unevenly and log-spaced bins such as NMR T2, and accepts cell edges; the
-  core plotting helpers (`plot_calibration`, `plot_poro_perm`,
-  `plot_core_on_logs`) and `GEOLINK_LITHOLOGY_CODE_LABELS` are exported from
+  core plotting helpers (`calibration_plot`, `core_on_logs`) and `GEOLINK_LITHOLOGY_CODE_LABELS` are exported from
   `petrophys.visualization`. The log viewer reads the lithology codebook from
   `lithology_mapping` or `PETROPHYS_LITHOLOGY_MAPPING`.
 - Public modules are organized under `model`, `io`, `preprocessing`,

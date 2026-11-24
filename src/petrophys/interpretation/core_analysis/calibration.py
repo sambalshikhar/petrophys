@@ -201,7 +201,7 @@ def _core_permeability_to_md(values: np.ndarray, unit: Optional[str], mnemonic: 
     return values * factor if factor != 1.0 else values
 
 
-def core_data_from_well(
+def core_data(
     well,
     porosity_curves: Iterable[str] = ("PHIC", "CPOR", "CPOR-AMB", "CPOR_AMB"),
     perm_curves: Iterable[str] = (
@@ -581,7 +581,7 @@ def calibrate_saturation(
     )
 
 
-def fit_poro_perm_transform(
+def fit_poro_perm(
     core: CoreData,
     min_perm: float = 0.001,
 ) -> PoroPermTransform:
@@ -725,7 +725,7 @@ def fit_log_poro_perm_transform_from_correction(
     )
 
 
-def apply_poro_perm_transform(
+def apply_poro_perm(
     well,
     transform: PoroPermTransform,
     porosity_curve: str = "PHIE",
@@ -739,7 +739,7 @@ def apply_poro_perm_transform(
     well : Well
         Well object with a porosity curve.
     transform : PoroPermTransform
-        Fitted transform from ``fit_poro_perm_transform``.
+        Fitted transform from ``fit_poro_perm``.
     porosity_curve : str
         Name of the porosity curve to use as input.
     output_curve : str

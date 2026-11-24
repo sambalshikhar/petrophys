@@ -245,9 +245,19 @@ class PickettPlot:
         self.fig.tight_layout()
         save_figure(self.fig, filename, dpi=dpi)
 
+    def _ipython_display_(self) -> None:
+        # A plot at the end of a notebook cell shows its figure, once.
+        from IPython.core.pylabtools import print_figure
+        from IPython.display import Image, display
+
+        if self.fig is None:
+            return
+        display(Image(data=print_figure(self.fig, "png", bbox_inches="tight")))
+        plt.close(self.fig)  # keeps .fig for saving; the notebook does not draw it again
+
 
 @_styled_plot
-def create_pickett_plot(
+def _pickett_chart(
     well: "Well",
     rw: Optional[float] = None,
     phie_curve: str = "PHIE",

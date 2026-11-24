@@ -39,7 +39,7 @@ from petrophys.interpretation.saturation.height.mdt_pretest import (
 from petrophys.interpretation.saturation.height.scal import (
     CapillaryPressureData,
     FWLFromLogs,
-    estimate_fwl_from_logs,
+    find_fwl,
     fit_j_function_from_core,
     fit_thomeer,
     read_capillary_pressure,
@@ -74,7 +74,7 @@ __all__ = [
     "fit_j_function_from_well",
     "CapillaryPressureData",
     "FWLFromLogs",
-    "estimate_fwl_from_logs",
+    "find_fwl",
     "fit_j_function_from_core",
     "fit_thomeer",
     "read_capillary_pressure",

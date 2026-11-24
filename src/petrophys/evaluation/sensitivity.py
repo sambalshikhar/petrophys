@@ -172,7 +172,7 @@ def cutoff_sensitivity(
     See Also
     --------
     petrophys.evaluation.net_pay.summarize_pay : One cutoff set.
-    petrophys.visualization.create_heatmap : Plot the pivoted grid.
+    petrophys.visualization.heatmap : Plot the pivoted grid.
 
     Examples
     --------
@@ -298,7 +298,7 @@ def parameter_sensitivity(
 
     See Also
     --------
-    petrophys.visualization.create_tornado_plot : Draw the result.
+    petrophys.visualization.tornado_plot : Draw the result.
 
     Examples
     --------

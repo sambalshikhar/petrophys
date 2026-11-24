@@ -72,7 +72,7 @@ pp.plot(result, top=2830, bottom=2970, template="comprehensive")
 ```
 
 `triple_combo` is the classic first look at gamma ray, resistivity and density-neutron
-({func}`~petrophys.visualization.create_triple_combo` draws the same):
+({func}`~petrophys.visualization.triple_combo` draws the same):
 
 ```{code-cell} python
 pp.plot(result, top=2830, bottom=2970, template="triple_combo")
@@ -86,6 +86,15 @@ pp.plot(well, top=2830, bottom=2970)
 
 ## Crossplots
 
+One call draws every crossplot: `pp.crossplot(data, x, y)`. The pair of curves picks the
+chart, in either order and by the well's own names or standard ones: `"NPHI", "RHOB"`
+draws the neutron-density chart, `"PEF", "RHOB"` the density-PEF chart, `"N", "M"` the
+M-N plot, `"DTMAA", "RHOMAA"` the MID plot, a porosity and a deep resistivity the Pickett
+plot (`chart="hingle"` the Hingle plot), a porosity and Sw the Buckles plot,
+`"PHI_Z", "RQI"` the flow units and core porosity with core permeability the poro-perm
+chart. Any other pair is drawn as points, coloured by `color=`. `top=` and `bottom=` set
+the depth window, as in `pp.plot`.
+
 Crossplots convert declared compatible units before plotting and leave the source well unchanged. Unknown or incompatible units raise a named error; missing units warn before assuming the chart unit. Pickett, Hingle and Buckles accept `xlim=` and `ylim=`; a note counts finite points outside the displayed range.
 
 Each crossplot answers one question. The lithology plots use the interval where PEF
@@ -98,18 +107,13 @@ limestone-referenced neutron response with linear mineral endpoints; they are no
 vendor-specific tool calibration charts:
 
 ```{code-cell} python
-from petrophys.visualization import (
-    create_buckles_plot, create_hingle_plot, create_mid_plot,
-    create_mn_plot, create_nd_crossplot, create_pickett_plot,
-)
-
-create_nd_crossplot(result, depth_range=(2784, 3176));
+pp.crossplot(result, "NPHI", "RHOB", top=2784, bottom=3176)
 ```
 
 **M-N plot**: matrix minerals from density, neutron and sonic together:
 
 ```{code-cell} python
-create_mn_plot(result, depth_range=(2784, 3176));
+pp.crossplot(result, "N", "M", top=2784, bottom=3176)
 ```
 
 **MID plot**: apparent matrix density against apparent matrix slowness. It removes
@@ -120,7 +124,7 @@ Samples outside that clean binary-mineral model warn and are omitted. For gas,
 clay or complex mineral mixtures, supply independently determined total porosity:
 
 ```{code-cell} python
-create_mid_plot(result, depth_range=(2784, 3176));
+pp.crossplot(result, "DTMAA", "RHOMAA", top=2784, bottom=3176)
 ```
 
 **Pickett plot**: log Rt against log porosity. Water-bearing rock falls on a straight
@@ -131,15 +135,14 @@ above it. Only clean rock is plotted (`VCL` up to 0.15, `vcl_max`), as the chart
 clean rock. Here with the operator's Archie constants (a 0.8, m and n 2):
 
 ```{code-cell} python
-create_pickett_plot(result, a=0.8, rt_curve="RDEP", color_curve="VCL",
-                    depth_range=(3223, 3556));
+pp.crossplot(result, "PHIE", "RDEP", top=3223, bottom=3556, a=0.8)
 ```
 
 **Hingle plot**: the same Archie water line on linear axes, where it passes through
 the matrix point at zero porosity, with the same Rw and clean points:
 
 ```{code-cell} python
-create_hingle_plot(result, a=0.8, depth_range=(3223, 3556));
+pp.crossplot(result, "PHIE", "RDEP", chart="hingle", top=3223, bottom=3556, a=0.8)
 ```
 
 **Buckles plot**: each hyperbola represents constant bulk-volume water (porosity * Sw).
@@ -150,7 +153,7 @@ PHIT supplies the fallback. HW-3,
 a COSTA carbonate whose header carries Rw:
 
 ```{code-cell} python
-create_buckles_plot(pp.interpret(pp.sample("HW-3")));
+pp.crossplot(pp.interpret(pp.sample("HW-3")), "PHIE", "SW")
 ```
 
 ## Reservoir displays
@@ -161,17 +164,16 @@ Flow units, net flags and formation tops sum up where the good rock is.
 (φz) for the core plugs; each hydraulic flow unit lies on its own line:
 
 ```{code-cell} python
-from petrophys.interpretation.core_analysis import core_data_from_well
-from petrophys.visualization import create_flow_unit_plot, plot_zone_flags
+from petrophys.interpretation.core_analysis import core_data
 
-create_flow_unit_plot(core_data_from_well(result));
+pp.crossplot(core_data(result), "PHI_Z", "RQI")
 ```
 
 **Zone flags** draw net rock, net reservoir and net pay as depth bars:
 
 ```{code-cell} python
-plot_zone_flags(result, flag_curves=["NET_ROCK", "NET_RES", "NET_PAY"],
-                depth_range=(2841, 2958));
+pp.zone_flags_plot(result, flag_curves=["NET_ROCK", "NET_RES", "NET_PAY"],
+                   depth_range=(2841, 2958));
 ```
 
 Formation tops given to `pp.read` (or to `pp.plot` as `formations=`) are drawn on
@@ -181,19 +183,14 @@ use {func}`~petrophys.visualization.add_zone_shading`.
 ## Multi-well and sensitivity charts
 
 `petrophys.visualization` also draws charts that are not depth tracks.
-`create_bar_comparison` and `create_line_comparison` complete the set.
+`bar_chart` and `line_chart` complete the set.
 
 **Multi-well overlay**: one curve from several wells on a shared depth axis, here the
 normalized gamma ray of five COSTA wells:
 
 ```{code-cell} python
-from petrophys.visualization import (
-    create_heatmap, create_histogram_comparison, create_multiwell_overlay,
-    create_tornado_plot,
-)
-
 costa = pp.read([pp.sample(name) for name in ["HW-3", "HW-4", "HW-5", "HW-6", "HW-7"]])
-create_multiwell_overlay(costa, "GR", normalize=True, title="Normalized GR, five COSTA wells");
+pp.multiwell_overlay(costa, "GR", normalize=True, title="Normalized GR, five COSTA wells");
 ```
 
 **Histogram comparison**: distributions on common bins after conversion to a
@@ -201,7 +198,7 @@ shared unit. Equivalent percent and fraction porosities share a distribution;
 incompatible declared units raise an error. For example:
 
 ```{code-cell} python
-create_histogram_comparison(costa, "GR", density=True, xlabel="GR (API)", title="GR by well");
+pp.histograms(costa, "GR", density=True, xlabel="GR (API)", title="GR by well");
 ```
 
 **Tornado**: how far each assumption moves the answer.
@@ -220,8 +217,8 @@ def net_pay(**cutoffs):
 
 low, high = zip(net_pay(vcl_cutoffs=[0.3, 0.5]), net_pay(phie_cutoffs=[0.12, 0.05]),
                 net_pay(sw_cutoffs=[0.5, 0.7]))
-create_tornado_plot(["VCL cutoff 0.3 / 0.5", "PHIE cutoff 0.12 / 0.05", "Sw cutoff 0.5 / 0.7"],
-                    low, high, base=net_pay()[0], xlabel="Brent Group net pay (m)");
+pp.tornado_plot(["VCL cutoff 0.3 / 0.5", "PHIE cutoff 0.12 / 0.05", "Sw cutoff 0.5 / 0.7"],
+                low, high, base=net_pay()[0], xlabel="Brent Group net pay (m)");
 ```
 
 With the standard cutoffs the Brent Group has 23.3 m of net pay. The Sw cutoff moves
@@ -234,9 +231,9 @@ either way.
 grid = cutoff_sensitivity(result.well, top=2841, bottom=2958,
                           vcl_cutoffs=[0.2, 0.3, 0.4, 0.5], sw_cutoffs=[0.4, 0.5, 0.6, 0.7, 0.8])
 ntg = grid.pivot(index="vcl_cutoff", columns="sw_cutoff", values="ntg_pay")
-create_heatmap(ntg, x=ntg.columns, y=ntg.index, cmap="RdYlGn", invert_yaxis=False,
-               xlabel="Sw cutoff", ylabel="VCL cutoff", colorbar_label="Net-to-gross pay",
-               title="Brent Group net-to-gross pay", figsize=(7, 4.5));
+pp.heatmap(ntg, x=ntg.columns, y=ntg.index, cmap="RdYlGn", invert_yaxis=False,
+           xlabel="Sw cutoff", ylabel="VCL cutoff", colorbar_label="Net-to-gross pay",
+           title="Brent Group net-to-gross pay", figsize=(7, 4.5));
 ```
 
 Specialist displays (NMR panel, borehole images, XRF, saturation-height, core plots) are shown in {doc}`specialist_data`.
@@ -311,7 +308,7 @@ pp.plot(pp.sample("teapot_44-mdx-10"), curves=["GR", "SP", "RDEP", "RMED", "NPHI
         curve_styles={"GR": {"color": "black"}, "SP": {"color": "#984ea3"}})
 ```
 
-Coincident formation tops are grouped, not discarded. Plotting never computes a missing curve: a well without Sw shows no Sw. {func}`~petrophys.visualization.create_adaptive_log_viewer_template` lists the tracks `auto` would draw before you render.
+Coincident formation tops are grouped, not discarded. Plotting never computes a missing curve: a well without Sw shows no Sw. {func}`~petrophys.visualization.auto_template` lists the tracks `auto` would draw before you render.
 
 ## Exports
 
@@ -358,7 +355,7 @@ sorted(path.as_posix() for path in Path().rglob("*.*"))
 | Delivery LAS | `export_example_format_las` | Standardized curve families with calculation provenance |
 | Several wells | `results.to_las(folder)`, `results.save_plots(folder)` | One interpreted LAS and one plot per well |
 | Work package | `export_example_work_package_directory` | Runs the workflow on each LAS in a folder: interpreted LAS plus reference JSON |
-| Batch plots | `export_interpretation_plots`, `write_visualization_report` | One PNG per LAS in a folder and a CSV of what was drawn or skipped |
+| Batch plots | `export_plots`, `write_visualization_report` | One PNG per LAS in a folder and a CSV of what was drawn or skipped |
 
 For LLM-ready JSON grouped by formation and lithology, see {doc}`context`.
 

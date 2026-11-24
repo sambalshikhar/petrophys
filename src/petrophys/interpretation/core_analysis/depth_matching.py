@@ -198,7 +198,7 @@ def find_core_depth_shift(
         gives a meaningless tie).
     core : CoreData
         Core plugs, for example from
-        :func:`~petrophys.interpretation.core_analysis.core_data_from_well`.
+        :func:`~petrophys.interpretation.core_analysis.core_data`.
     log_curve : str, default "PHIE"
         Log curve to match.
     core_property : str, default "porosity"
