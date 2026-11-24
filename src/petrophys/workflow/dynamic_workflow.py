@@ -10377,8 +10377,7 @@ class DynamicWorkflow:
             # that differ by orders of magnitude, so an equation in porosity
             # and irreducible water saturation needs core to rest on.
             self._warn_assumed(
-                f"PERM of this carbonate well is {_perm_method_text(perm_desc)} with no core calibration: in "
-                "carbonates one porosity can carry permeabilities orders of magnitude apart (Lucia, 1995). "
+                f"PERM of this carbonate well is {_perm_method_text(perm_desc)} with no core calibration. "
                 "Core of this well or of field wells (peer_wells=[...], use_peer_core=True) calibrates it."
             )
         trace.decisions = decisions

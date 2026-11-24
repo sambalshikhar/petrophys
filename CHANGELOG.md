@@ -1502,9 +1502,7 @@ wherever the package used the function.
   up only moved, naming the curve that disagrees with the other two (COSTA
   well HW-3: 56 ft); the check is off by default.
 - A carbonate run with no core to calibrate permeability warns that `PERM`
-  comes from an equation alone, which in carbonates (Lucia, 1995) is a
-  ranking within the well, and names the core and peer-well settings that
-  calibrate it as `PERM_CC`.
+  has no core calibration and names the peer-well settings that calibrate it.
 - One look across plots: `nmr_panel` is drawn by the log viewer (its
   headers, scales and fills; bound and free fluid shaded), plot labels spell
   units as the log plot headers do (`display_unit`: API, g/cc, mD), and log
