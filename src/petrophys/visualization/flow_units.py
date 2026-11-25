@@ -77,6 +77,7 @@ def _flow_unit_chart(
     ax.set_ylabel("RQI = 0.0314·√(k/φe)  [microns]")
     ax.set_title(title)
     ax.grid(True, which="both", color="0.9", lw=0.5)
-    ax.legend(fontsize=8, loc="best", framealpha=0.9)
+    # Beside the plot: the units' points spread over the whole RQI-phi_z plane.
+    ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.01, 1.0), frameon=False)
     fig.tight_layout()
     return fig

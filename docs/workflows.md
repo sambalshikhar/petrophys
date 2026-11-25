@@ -504,7 +504,7 @@ excluded = net_pay.parameters["excluded_from_net_reservoir_and_pay"]
 pd.DataFrame.from_dict(excluded, orient="index")
 ```
 
-Pass project values as `vcl_cutoff`, `phie_cutoff` and `sw_cutoff`; a value you set applies to every sample. Give them as fractions: a value above 1 is read as a percentage (`vcl_cutoff=40` is 0.40).
+Pass project values as `vcl_cutoff`, `phie_cutoff` and `sw_cutoff`; a value you set applies to every sample. Give them as fractions: a value above 1 is read as a percentage (`vcl_cutoff=40` is 0.40). The same holds for `swirr`, `phi_cl` and `sw_routing_vcl_cutoff`, and for each value of a per-lithology setting (`{"clastic": 40}`); a value above 100 is refused.
 
 Marl is a clay-carbonate mixture, not pure limestone ([SLB definition](https://glossary.slb.com/en/terms/m/marl)).
 Petrophys interprets marl with the limestone matrix and the carbonate cutoffs, and warns when a lithology file contains it, as above. Supply project endpoints and cutoffs for marl-rich intervals.

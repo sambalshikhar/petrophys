@@ -9906,7 +9906,11 @@ class DynamicWorkflow:
         if not flushed_zone:
             sxo_method, sxo_reason, sxo_method_counts = None, _OBM_FLUSHED_ZONE_NOTE, {}
         elif result.sxo is not None:
-            well.add_curve("SXO", result.sxo, "v/v", "Flushed Zone Water Saturation")
+            description = "Flushed Zone Water Saturation"
+            if sxo_method == "fifth_root_quicklook" and not self._reproducing_benchmark:
+                # Plots and exports say the curve is the SW^(1/5) estimate, not a measured Sxo.
+                description += ", SW^(1/5) quick-look"
+            well.add_curve("SXO", result.sxo, "v/v", description)
             outputs.append("SXO")
 
         trace.method = result.model

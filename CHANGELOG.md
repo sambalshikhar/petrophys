@@ -1437,6 +1437,11 @@ wherever the package used the function.
     fall on one side of the base; the Buckles colour bar spans the 1st to
     99th percentile of permeability; zone flags use
     the log viewer's flag colours.
+  - Legends sit clear of the data: below each `core_on_logs` track, beside
+    the flow-unit crossplot, and in the empty low-porosity, high-permeability
+    corner of the core poro-perm crossplot. An SXO estimated as SW^(1/5)
+    over the whole well is labelled "Sxo = Sw^0.2" in the log plot, and its
+    curve description says so.
 - Plots: after `save` in a script the figure is released from pyplot but
   kept in `.fig`, so edits survive later saves; the multi-well comparison
   converts curves to standard units, reverses neutron and sonic and warns

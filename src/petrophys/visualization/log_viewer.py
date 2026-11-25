@@ -4384,6 +4384,9 @@ class LogViewer:
             # the header must not claim a curve the well does not hold.
             return porosity_display_label(mnemonic, curve)
         label = spec.display_name or getattr(curve, "mnemonic", spec.curve_name)
+        if mnemonic == "SXO" and "quick-look" in str(getattr(curve, "description", "") or ""):
+            # Sxo estimated from Sw alone, not from a flushed-zone resistivity.
+            return "Sxo = Sw^0.2"
         return porosity_display_label(label, curve)
 
     def _curve_unit(self, curve: Any) -> str:

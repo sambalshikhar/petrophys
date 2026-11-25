@@ -240,11 +240,12 @@ def _poro_perm_chart(
             "r-",
             linewidth=2,
             label=(
-                f"Fit: log10(K) = {transform.A:.1f}*phi {'-' if transform.B < 0 else '+'} {abs(transform.B):.1f}\n"
+                f"log10 K = {transform.A:.1f} φ {'-' if transform.B < 0 else '+'} {abs(transform.B):.1f}\n"
                 f"R² = {transform.r_squared:.3f}"
             ),
         )
-        ax.legend(fontsize=9)
+        # Low porosity with high permeability is the corner core data leaves empty.
+        ax.legend(fontsize=8, loc="upper left", framealpha=0.85, handlelength=1.2)
 
     ax.set_yscale("log")
     ax.set_xlabel("Core porosity [v/v]")
@@ -432,7 +433,8 @@ def core_on_logs(
         if i == 0:
             ax.set_ylabel(f"Depth [{well.depth_unit}]" if well.depth_unit else "Depth")
         if ax.get_legend_handles_labels()[0]:
-            ax.legend(fontsize=8, loc="lower right", framealpha=0.85)
+            # Below the track, as on a printed log, so it covers no reading or plug.
+            ax.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.01), ncol=2, frameon=False)
         ax.grid(True, alpha=0.3, which="both" if is_perm else "major")
 
     if missing:
