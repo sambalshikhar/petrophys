@@ -1490,6 +1490,12 @@ wherever the package used the function.
 - The log plot draws a class curve carrying class names (the flow units
   `HFU` of `FlowUnitModule.add_to_well`) as coloured blocks with a legend, in
   the colours of the flow-unit crossplot.
+- A `td` of zero or below is a depth above the datum (a subsea depth, say):
+  the run warns that it is not the depth of the bottom-hole temperature and
+  places the BHT at the deepest log sample.
+- The trace says why: SW = 1 below 0.01 v/v porosity, zero minerals where
+  clay and porosity fill the rock, and the chartbook conversion of a
+  sandstone- or dolomite-referenced neutron.
 - A sandstone- or dolomite-referenced neutron (NPSS, CNSS, NPHI_SS) is
   converted to the limestone scale along the chartbook's lines (Por-11): 0.02
   at zero porosity, about 0.05 at 20 %.

@@ -2968,10 +2968,6 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
             setattr(config, name, value)
         if value is not None and not 0.0 <= value <= 1.0:
             errors.append(f"{name} must be a fraction between 0 and 1, or a percentage; got {value!r}")
-    # A bare total depth is read in the well's depth unit at run time; it is a depth all the same.
-    if (isinstance(config.td, (int, float, np.integer, np.floating)) and not isinstance(config.td, bool)
-            and not (np.isfinite(config.td) and config.td > 0)):
-        errors.append(f"td must be a depth greater than 0; got {config.td!r}")
     if config.gr_min is not None and config.gr_max is not None and config.gr_min >= config.gr_max:
         errors.append(f"gr_min ({config.gr_min}) must be less than gr_max ({config.gr_max})")
     if (
@@ -5851,6 +5847,15 @@ class DynamicWorkflow:
                     if working_aliases
                     else "No standard curve names needed adding: the logs use them already"
                 ),
+                *(
+                    f"{name}: {curve.metadata.custom['neutron_matrix_conversion']}, along the chartbook's "
+                    "line (Schlumberger Por-11): interpretation reads neutron on the limestone scale, and the "
+                    "gap between the matrix lines grows with porosity (sandstone 0.02 at zero porosity, "
+                    "about 0.05 at 20 %), so no constant offset converts it"
+                    for name in well.curves
+                    for curve in [well.get(name)]
+                    if "neutron_matrix_conversion" in curve.metadata.custom
+                ),
             ],
         )
 
@@ -6149,7 +6154,9 @@ class DynamicWorkflow:
                 if in_well_unit(float(value), value_unit) >= bottom * (1.0 - 1e-6):
                     td_ft, td_unit, td_label = value, value_unit, f"{label} ({value:g} {value_unit or unit})"
                     break
-                rejected.append(f"{label} = {value:g} {value_unit or unit}")
+                # A negative depth is legitimate against a datum above it (a subsea depth, say).
+                rejected.append(f"{label} = {value:g} {value_unit or unit}"
+                                + (" (negative, a depth above the datum)" if float(value) < 0 else ""))
             if rejected:
                 message = (
                     f"{' and '.join(rejected)} is above the deepest log sample ({bottom:g} {unit}), so it is "
@@ -7213,6 +7220,15 @@ class DynamicWorkflow:
             values[fill] = np.asarray(getattr(other, name))[fill]
             setattr(result, name, values)
         trace.parameters["version2_samples_without_nphi"] = int(fill.sum())
+        minerals = [np.asarray(getattr(other, name), dtype=float) for name in
+                    ("v_quartz", "v_calcite", "v_dolomite", "v_anhydrite")]
+        no_room = fill & np.all([np.nan_to_num(v, nan=0.0) == 0.0 for v in minerals], axis=0)
+        if np.any(no_room):
+            trace.decisions.append(
+                f"{int(no_room.sum())} of them take no mineral volume: clay and the solved porosity fill the "
+                "rock (1 - VCL - porosity at most 1e-9; rounding puts an exact fill at +1e-17 or -1e-17 "
+                "depending on the numpy release), so the minerals are 0 rather than unsolved"
+            )
         trace.decisions.append(
             f"{int(fill.sum())} samples without NPHI solved by the version 2 solver from RHOB and PEF "
             "(porosity solved jointly)"
@@ -9972,8 +9988,11 @@ class DynamicWorkflow:
         trace.decisions.append(f"Saturation equations: {_equation_names(result.model)}")
         if no_pores is not None and np.any(no_pores):
             trace.decisions.append(
-                f"SW = 1 at {int(np.count_nonzero(no_pores))} samples without effective porosity (below 0.01 v/v)"
+                f"SW = 1 at {int(np.count_nonzero(no_pores))} samples whose porosity is below 0.01 v/v, about "
+                "what porosity tools resolve: without pore space no hydrocarbon is held, and a shaly-sand "
+                "equation would otherwise read an Sw from its clay term alone"
             )
+            trace.parameters["sw_one_below_porosity"] = 0.01
         if self._reproducing_benchmark:
             # The equations this well's samples were routed to, with their sample counts.
             names = {
