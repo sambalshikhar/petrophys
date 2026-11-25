@@ -113,9 +113,10 @@ and sonic are both logged (2784-3176 m); the resistivity plots use the Statfjord
 leg (3223-3556 m), where the clean sands plot near the water line (Sw 80-100 %).
 
 **Neutron-density** shows lithology and gas against the sandstone, limestone and
-dolomite lines. The neutron-density and M-N references assume freshwater and
-limestone-referenced neutron response with linear mineral endpoints; they are not
-vendor-specific tool calibration charts:
+dolomite lines of the chartbook (Schlumberger Por-11: CNL and Litho-Density, fresh water;
+the sandstone and dolomite lines curve). The M-N reference assumes freshwater and a
+limestone-referenced neutron response with linear mineral endpoints; neither is a
+calibration chart for another tool:
 
 ```{code-cell} python
 pp.nd_plot(result, top=2784, bottom=3176)

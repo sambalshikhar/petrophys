@@ -2244,6 +2244,12 @@ _POSITIVE_FIELDS = (
 _FRACTION_FIELDS = (
     "vcl_cutoff", "sw_cutoff", "phie_cutoff", "swirr", "phi_cl", "sw_routing_vcl_cutoff",
 )
+#: Settings held in fixed units under another name, named as they are given.
+_GIVEN_AS = {
+    "surface_temp_f": "surface_temp", "bht_f": "bht", "rmf_meas_temp_f": "rmf_meas_temp",
+    "rm_meas_temp_f": "rm_meas_temp", "rw_meas_temp_f": "rw_meas_temp",
+    "gradient_f_per_100ft": "temperature_gradient", "td_ft": "td",
+}
 _FINITE_FIELDS = (
     "surface_temp_f", "bht_f", "rmf_meas_temp_f", "rm_meas_temp_f",
     "rw_meas_temp_f", "nphi_ma", "gr_min", "gr_max", "sp_min", "sp_max", "cec",
@@ -2932,13 +2938,15 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
 
     def _number(name: str) -> Optional[float]:
         value = getattr(config, name)
+        # The setting as it is given: bht, not the bht_f it is held as in degF.
+        shown = _GIVEN_AS.get(name, name)
         if value is None or isinstance(value, dict):
             return None  # a per-lithology value is checked by _per_lithology_values
         if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)):
-            errors.append(f"{name} must be a number; got {value!r}")
+            errors.append(f"{shown} must be a number; got {value!r}")
             return None
         if not np.isfinite(value):
-            errors.append(f"{name} must be finite; got {value!r}")
+            errors.append(f"{shown} must be finite; got {value!r}")
             return None
         return float(value)
 
@@ -2948,7 +2956,7 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     for name in _POSITIVE_FIELDS:
         value = _number(name)
         if value is not None and value <= 0:
-            errors.append(f"{name} must be greater than 0; got {value!r}")
+            errors.append(f"{_GIVEN_AS.get(name, name)} must be greater than 0; got {value!r}")
     for name in _FRACTION_FIELDS:
         value = _number(name)
         if value is not None and 1.0 < value <= 100.0:
@@ -2957,6 +2965,10 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
             setattr(config, name, value)
         if value is not None and not 0.0 <= value <= 1.0:
             errors.append(f"{name} must be a fraction between 0 and 1, or a percentage; got {value!r}")
+    # A bare total depth is read in the well's depth unit at run time; it is a depth all the same.
+    if (isinstance(config.td, (int, float, np.integer, np.floating)) and not isinstance(config.td, bool)
+            and not (np.isfinite(config.td) and config.td > 0)):
+        errors.append(f"td must be a depth greater than 0; got {config.td!r}")
     if config.gr_min is not None and config.gr_max is not None and config.gr_min >= config.gr_max:
         errors.append(f"gr_min ({config.gr_min}) must be less than gr_max ({config.gr_max})")
     if (

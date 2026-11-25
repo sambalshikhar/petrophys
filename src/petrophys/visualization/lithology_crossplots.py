@@ -36,6 +36,21 @@ _MATRIX = {
 }
 _RHO_FL, _NPHI_FL, _DT_FL = 1.0, 1.0, 189.0
 
+#: The density-neutron chart's lithology lines: apparent limestone neutron
+#: porosity (v/v) at true porosity 0, 0.05, ..., 0.40, with the matrix density
+#: each line is drawn for. Read from the vector lines of Schlumberger's Por-11
+#: (former CP-1e: CNL and Litho-Density, fresh water in the invaded zone,
+#: Log Interpretation Charts, 2013), where the sandstone and dolomite lines
+#: curve; bulk density follows from rho_ma (1 - phi) + phi. Dolomite ends at 0.35.
+_ND_CHART_LINES = {
+    "Sandstone": {"rhob": 2.65, "color": "goldenrod",
+                  "nphi": (-0.020, 0.019, 0.060, 0.103, 0.149, 0.197, 0.248, 0.300, 0.355)},
+    "Limestone": {"rhob": 2.71, "color": "royalblue",
+                  "nphi": (0.000, 0.050, 0.100, 0.150, 0.200, 0.250, 0.300, 0.350, 0.400)},
+    "Dolomite": {"rhob": 2.85, "color": "seagreen",
+                 "nphi": (0.008, 0.060, 0.115, 0.171, 0.229, 0.287, 0.346, 0.405)},
+}
+
 
 def _xy(well, names, depth_range, unit=None):
     """Depth-wise curve data; with ``unit`` each source curve is converted to it.
@@ -90,8 +105,9 @@ def _nd_chart(
     well, color_curve: str = "GR", depth_range: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (8, 8),
 ):
-    """Density-neutron crossplot with sandstone/limestone/dolomite matrix lines
-    (porosity ticked 0-40%). RHOB axis is inverted (high density at the bottom)."""
+    """Density-neutron crossplot with the sandstone, limestone and dolomite lines
+    of the chartbook (Schlumberger Por-11, CNL, fresh water), porosity ticked every
+    10 %. RHOB axis is inverted (high density at the bottom)."""
     nphi, _ = _xy(well, ["NPHI", "PHIN"], depth_range, "v/v")
     rhob, _ = _xy(well, ["RHOB"], depth_range, "g/cm3")
     if nphi is None or rhob is None:
@@ -101,15 +117,16 @@ def _nd_chart(
     fig, ax = plt.subplots(figsize=figsize)
     _scatter(ax, nphi, rhob, c, clabel, fig)
 
-    phis = np.linspace(0.0, 0.40, 5)
-    for name, p in _MATRIX.items():
-        # straight line from the matrix point (phi=0) toward the fluid point (phi=1)
-        line_n = p["nphi"] + phis * (_NPHI_FL - p["nphi"])
+    for name, p in _ND_CHART_LINES.items():
+        # The chartbook line, curved where the mineral's neutron response is (Por-11).
+        line_n = np.asarray(p["nphi"])
+        phis = np.arange(line_n.size) * 0.05
         line_r = p["rhob"] + phis * (_RHO_FL - p["rhob"])
         ax.plot(line_n, line_r, color=p["color"], lw=1.6, label=name, zorder=5)
-        ax.scatter(line_n, line_r, color=p["color"], s=14, zorder=6)
-        for phi, xn, yr in zip(phis, line_n, line_r):
-            ax.annotate(f"{int(phi*100)}", (xn, yr), fontsize=6,
+        ticks = phis <= 0.401
+        ax.scatter(line_n[::2], line_r[::2], color=p["color"], s=14, zorder=6)
+        for phi, xn, yr in zip(phis[::2][ticks[::2]], line_n[::2], line_r[::2]):
+            ax.annotate(f"{int(round(phi * 100))}", (xn, yr), fontsize=6,
                         color=p["color"], xytext=(2, 2), textcoords="offset points")
 
     ax.set_xlabel("NPHI [v/v, limestone]"); ax.set_ylabel("RHOB [g/cc]")
