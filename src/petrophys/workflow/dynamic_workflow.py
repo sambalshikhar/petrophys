@@ -2244,6 +2244,9 @@ _POSITIVE_FIELDS = (
 _FRACTION_FIELDS = (
     "vcl_cutoff", "sw_cutoff", "phie_cutoff", "swirr", "phi_cl", "sw_routing_vcl_cutoff",
 )
+#: Logs checked for held (padded) readings; calipers, bit size and flags are flat by nature.
+_HELD_READING_LOGS = {"GR", "SGR", "CGR", "RHOB", "DRHO", "NPHI", "PEF", "DTC", "DTS", "RDEP", "RMED", "RSHA",
+                      "RXO", "SP", "THOR", "URAN", "POTA"}
 #: Settings held in fixed units under another name, named as they are given.
 _GIVEN_AS = {
     "surface_temp_f": "surface_temp", "bht_f": "bht", "rmf_meas_temp_f": "rmf_meas_temp",
@@ -5700,12 +5703,46 @@ class DynamicWorkflow:
     def _can_normalization(self, well: "Well") -> bool:
         return bool(self._setting("standardize_input"))
 
+    def _warn_held_readings(self, well: "Well") -> None:
+        """Warn of logs that repeat one reading exactly over ten samples or more.
+
+        A tool that stopped reading, or a merge that padded a log to a depth,
+        leaves a value held flat while the other logs change (a 15 ft run of GR
+        69.89 API in COSTA HW-26). The readings are named, not removed: a held
+        value can also be a real flat reading. Calipers are left out, as a
+        caliper in gauge hole or at full arm opening is flat by nature.
+        """
+        from petrophys.preprocessing.quality import find_held_readings
+        from petrophys.preprocessing.standardization.alias_map import get_standard_mnemonic
+
+        logs = [name for name in well.curves if str(get_standard_mnemonic(name)).upper() in _HELD_READING_LOGS]
+        if not logs:
+            return
+        runs = find_held_readings(well, logs, min_run=10).runs
+        if not len(runs):
+            return
+        longest = runs.sort_values("samples", ascending=False)
+        unit = well.depth_unit or ""
+        shown = ", ".join(
+            f"{row.curve} {row.value:g} over {row.top:g}-{row.bottom:g} {unit} ({int(row.samples) + 1} samples)"
+            for row in longest.head(5).itertuples()
+        )
+        more = f" and {len(runs) - 5} more" if len(runs) > 5 else ""
+        self._warn_assumed(
+            f"Held readings, one value repeated exactly over ten samples or more: {shown}{more}. A tool "
+            "that stopped reading, or a log padded to a depth, holds its last value while the other logs "
+            "change; check these against the other logs before using them."
+        )
+
     def _step_normalization(self, well: "Well") -> StepResult:
         """Standardize aliases and physical units before interpretation."""
         from petrophys.preprocessing.standardization import (
             add_standard_curve_aliases,
             standardize_curves,
         )
+
+        if not self._reproducing_benchmark:
+            self._warn_held_readings(well)
 
         before = {
             name: {
@@ -10799,7 +10836,48 @@ class DynamicWorkflow:
                 "Hydrocarbon indicators computed: "
                 + ", ".join(str(name).replace("_", " ") for name in hc_result.sections.keys())
             )
+        if not self._reproducing_benchmark:
+            self._warn_clay_disagreement(well, unit)
         return trace
+
+    def _warn_clay_disagreement(self, well: "Well", unit: str) -> None:
+        """Warn of net pay where the gamma ray calls the rock shale and neutron-density clean.
+
+        VCL takes the lower of the clay estimates, so where VCL_GR exceeds VCL_ND
+        by more than 0.5 over three samples or more, VCL is the neutron-density
+        value and a radioactive bed can count as clean rock: a density read too
+        light (bad hole near a casing shoe), gas, or heavy minerals. Only runs
+        that reach net pay are named; the curves are not changed.
+        """
+        curves = [well.get(name) for name in ("VCL_GR", "VCL_ND", "NET_PAY")]
+        if any(curve is None for curve in curves):
+            return
+        vcl_gr, vcl_nd, pay = (np.asarray(curve.data, dtype=float) for curve in curves)
+        depth = np.asarray(well.depth, dtype=float)
+        with np.errstate(invalid="ignore"):
+            apart = (vcl_gr - vcl_nd) > 0.5
+        runs = []
+        start = None
+        for index, flag in enumerate(np.append(apart, False)):
+            if flag and start is None:
+                start = index
+            elif not flag and start is not None:
+                if index - start >= 3 and np.any(pay[start:index] > 0.5):
+                    runs.append((start, index))
+                start = None
+        if not runs:
+            return
+        shown = ", ".join(
+            f"{depth[a]:g}-{depth[b - 1]:g} {unit} (VCL_GR {np.nanmedian(vcl_gr[a:b]):.2f}, VCL_ND {np.nanmedian(vcl_nd[a:b]):.2f})"
+            for a, b in runs[:5]
+        )
+        more = f" and {len(runs) - 5} more" if len(runs) > 5 else ""
+        self._warn_assumed(
+            f"Net pay where the gamma ray reads shale and neutron-density clean, VCL_GR above VCL_ND by "
+            f"more than 0.5: {shown}{more}. VCL takes the lower value, so these beds count as clean rock; "
+            "check the density and neutron there (a density read too light in bad hole or near a casing "
+            "shoe, gas, heavy minerals)."
+        )
 
     # ---- Helpers ----
 

@@ -420,6 +420,9 @@ The workflow also checks these inputs:
 | A caliper, but neither a bit size nor DRHO | The `bad_hole` step is skipped, with the reason in `result.specific_steps_skipped`, and no `BAD_HOLE` curve is written |
 | Logs that read like halite where no lithology code says evaporite: RHOB 1.95-2.15 g/cm3, GR below 15 API, RT above 500 ohm.m (or, without RT, a caliper more than 0.5 in under the bit size), and NPHI at most 0.05 and PEF 4.0-5.5 where logged | Porosity uses the halite endpoints; the samples are left out of net reservoir and pay |
 | Neutron readings beyond both the clean line's 40 p.u. end point and the clay point, as in undercompacted mudstone | VCL_ND is left undefined there, and VCL comes from the other indicators |
+| A log that repeats one reading exactly over ten samples or more (a tool that stopped reading, a log padded to a depth); calipers are not checked | A warning names the curve, the value and the depths; the readings are kept |
+| Net pay where VCL_GR exceeds VCL_ND by more than 0.5 over three samples or more | A warning names the depths: VCL takes the lower value, so a radioactive bed counts as clean; the density may read too light (bad hole, a casing shoe), or gas or heavy minerals move the neutron-density point |
+| A neutron in sandstone or dolomite units (NPSS, CNSS, NPHI_SS) | Converted to the limestone scale along the chartbook's lines (Schlumberger Por-11), with a warning |
 
 `BAD_HOLE` = 1 marks washout or large hole, where density and neutron readings, and the PHIE and SW built on them, are unreliable.
 Each sample's bit size is the BS curve, else a 3-36 in header value, which also fills gaps in the BS curve.

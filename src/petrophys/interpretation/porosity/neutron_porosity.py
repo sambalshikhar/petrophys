@@ -7,7 +7,27 @@ This module provides neutron porosity standardization and processing.
 from typing import Union
 import numpy as np
 
-from petrophys.model.constants import MatrixProperties
+
+#: Apparent limestone neutron porosity (v/v) of a clean, water-filled rock at
+#: true porosity 0, 0.05, ..., 0.40, and the matrix density its line is drawn
+#: for: the lithology lines of Schlumberger's Por-11 (former CP-1e: CNL and
+#: Litho-Density, fresh water in the invaded zone; Log Interpretation Charts,
+#: 2013), read from the chart's vector lines. The sandstone and dolomite lines
+#: curve: the gap to the limestone line grows from 0.02 at zero porosity to
+#: about 0.05 at 20 %. The dolomite line ends at 0.35.
+CNL_CHART_LINES = {
+    "sandstone": {"rhob": 2.65, "nphi": (-0.020, 0.019, 0.060, 0.103, 0.149, 0.197, 0.248, 0.300, 0.355)},
+    "limestone": {"rhob": 2.71, "nphi": (0.000, 0.050, 0.100, 0.150, 0.200, 0.250, 0.300, 0.350, 0.400)},
+    "dolomite": {"rhob": 2.85, "nphi": (0.008, 0.060, 0.115, 0.171, 0.229, 0.287, 0.346, 0.405)},
+}
+
+
+def _along(x: np.ndarray, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+    """Piecewise-linear ``ys(x)``, carried on by the end segments outside ``xs``."""
+    y = np.interp(x, xs, ys)
+    low, high = x < xs[0], x > xs[-1]
+    y = np.where(low, ys[0] + (x - xs[0]) * (ys[1] - ys[0]) / (xs[1] - xs[0]), y)
+    return np.where(high, ys[-1] + (x - xs[-1]) * (ys[-1] - ys[-2]) / (xs[-1] - xs[-2]), y)
 
 
 def neutron_porosity(
@@ -61,13 +81,13 @@ def standardize_nphi(
 
     Notes
     -----
-    The offset is the difference of the two matrix neutron readings on the
-    limestone scale in :class:`~petrophys.model.constants.MatrixProperties`
-    (sandstone -0.02, limestone 0, dolomite 0.02), the readings
-    :func:`neutron_porosity` and :func:`petrophys.interpret` subtract, so a
-    log converted here and then referred to its matrix comes back unchanged.
-    It is a first-order constant: the chart offset grows with porosity
-    (about 0.04 between limestone and sandstone at 0.15-0.20).
+    The conversion follows the chartbook lines (:data:`CNL_CHART_LINES`,
+    Schlumberger Por-11): a reading in the units of one matrix is that
+    matrix's true porosity, which its line turns into the limestone scale,
+    and the target matrix's line turns back. The offset therefore grows with
+    porosity: limestone to sandstone adds 0.02 at zero porosity and about
+    0.05 at 20 %. Readings beyond the chart's 0-40 % carry on along its end
+    segments.
     """
     from petrophys.preprocessing.standardization.unit_converter import _benchmark_units
 
@@ -82,13 +102,7 @@ def standardize_nphi(
             ("dolomite", "sandstone"): 0.06,
         }
     else:
-        matrix_reading = {
-            name: MatrixProperties.get(name).nphi for name in ("limestone", "sandstone", "dolomite")
-        }
-        corrections = {
-            (current, target): matrix_reading[current] - matrix_reading[target]
-            for current in matrix_reading for target in matrix_reading if current != target
-        }
+        corrections = {}
 
     aliases = {"calcite": "limestone", "lime": "limestone",
                "quartz": "sandstone", "sand": "sandstone"}
@@ -98,6 +112,17 @@ def standardize_nphi(
         if name not in ("limestone", "sandstone", "dolomite"):
             raise ValueError(f"Unknown matrix {name!r}: use limestone, sandstone or dolomite")
         names.append(name)
+    if not _benchmark_units():
+        current, target = names
+        if current == target:
+            return nphi
+        values = np.asarray(nphi, dtype=float)
+        porosity = np.arange(9) * 0.05
+        source = np.asarray(CNL_CHART_LINES[current]["nphi"])
+        goal = np.asarray(CNL_CHART_LINES[target]["nphi"])
+        limestone_scale = _along(values, porosity[:source.size], source)
+        converted = _along(limestone_scale, goal, porosity[:goal.size])
+        return float(converted) if np.ndim(nphi) == 0 else converted
     correction = corrections.get(tuple(names), 0.0)
 
     return nphi + correction

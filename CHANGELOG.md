@@ -1490,6 +1490,12 @@ wherever the package used the function.
 - The log plot draws a class curve carrying class names (the flow units
   `HFU` of `FlowUnitModule.add_to_well`) as coloured blocks with a legend, in
   the colours of the flow-unit crossplot.
+- A sandstone- or dolomite-referenced neutron (NPSS, CNSS, NPHI_SS) is
+  converted to the limestone scale along the chartbook's lines (Por-11): 0.02
+  at zero porosity, about 0.05 at 20 %.
+- A warning names net pay where VCL_GR exceeds VCL_ND by more than 0.5
+  over three samples or more (VCL takes the lower value), and another names
+  logs that hold one reading over ten samples or more.
 - The density-neutron chart draws the chartbook's sandstone, limestone and
   dolomite lines (Schlumberger Por-11, CNL and Litho-Density in fresh water),
   curved where the chart curves, dolomite at 2.85 g/cm3 as the chart draws it.

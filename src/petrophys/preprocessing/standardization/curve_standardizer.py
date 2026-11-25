@@ -689,8 +689,8 @@ def _note_neutron_matrix_reference(curve: "Curve", source_mnemonic: str, standar
     curve.metadata.description = f"{description}; {note}" if description else note
     warnings.warn(
         f"{source_mnemonic} is a {reference}-referenced neutron porosity and is used as NPHI, which "
-        f"interpretation reads on the limestone scale: it was converted by the first-order offset "
-        f"{offset:+.2f} v/v (the chart offset varies by about 0.01-0.02 with porosity).",
+        f"interpretation reads on the limestone scale: it was converted along the chartbook's "
+        f"{reference} line (Schlumberger Por-11), {offset:+.2f} v/v at the median reading.",
         DataQualityWarning,
         stacklevel=3,
     )

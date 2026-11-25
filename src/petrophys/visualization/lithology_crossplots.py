@@ -25,6 +25,7 @@ from petrophys.visualization._data import (
     clean_rock_only, formation_rw,
 )
 from petrophys._internal.advice import Advice
+from petrophys.interpretation.porosity.neutron_porosity import CNL_CHART_LINES
 from petrophys._internal.validation import warn_invalid
 
 
@@ -43,12 +44,8 @@ _RHO_FL, _NPHI_FL, _DT_FL = 1.0, 1.0, 189.0
 #: Log Interpretation Charts, 2013), where the sandstone and dolomite lines
 #: curve; bulk density follows from rho_ma (1 - phi) + phi. Dolomite ends at 0.35.
 _ND_CHART_LINES = {
-    "Sandstone": {"rhob": 2.65, "color": "goldenrod",
-                  "nphi": (-0.020, 0.019, 0.060, 0.103, 0.149, 0.197, 0.248, 0.300, 0.355)},
-    "Limestone": {"rhob": 2.71, "color": "royalblue",
-                  "nphi": (0.000, 0.050, 0.100, 0.150, 0.200, 0.250, 0.300, 0.350, 0.400)},
-    "Dolomite": {"rhob": 2.85, "color": "seagreen",
-                 "nphi": (0.008, 0.060, 0.115, 0.171, 0.229, 0.287, 0.346, 0.405)},
+    name.title(): {**CNL_CHART_LINES[name], "color": color}
+    for name, color in (("sandstone", "goldenrod"), ("limestone", "royalblue"), ("dolomite", "seagreen"))
 }
 
 
