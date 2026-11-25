@@ -1062,6 +1062,8 @@ wherever the package used the function.
 
 #### Context exports
 
+- The delivery LAS (`export_example_format_las`) leaves out DTE, a sonic
+  slowness of no standard name; benchmark packages keep their DTE column.
 - A context export computes each curve's statistics once per lithology
   group, for all six category files, resolves lithology labels once per
   distinct value, and does not read the written files back.
@@ -1423,7 +1425,8 @@ wherever the package used the function.
 - Plots checked track by track on real wells:
   - Fixed templates leave out tracks with no drawable curve and list them
     in `omitted_tracks`; a curve mostly off its track's scale is named in
-    `viewer.warnings`; DTE is drawn in the sonic track; BVW shares the
+    `viewer.warnings`; DTE is drawn in the sonic track on the DTC scale (the
+    DTS scale when it reads at least sqrt 2 times DTC); BVW shares the
     porosity scale in every template; the "raw" template and the triple
     combo take the well's own SP range; `geolink_full` is another name for
     the `comprehensive` layout.

@@ -110,7 +110,7 @@ FAMILY_LABELS = {
     "BS": "Bit Size",
     "DRHO": "Bulk Density Correction",
     "DTC": "Compressional Slowness",
-    "DTE": "Shear Slowness",
+    "DTE": "Shear Slowness",  # benchmark packages only; DTE is not delivered otherwise
     "VP_VS_RATIO": "Vp/Vs Ratio",
     "GR": "Gamma Ray",
     "LITHOLOGY_GEOLINK": "Lithology",
@@ -836,7 +836,9 @@ def _first_sxo_curve(well: "Well"):
 def _build_alias_specs(well: "Well") -> List[ExportCurveSpec]:
     specs: List[ExportCurveSpec] = []
 
-    dte = _first_curve(well, ["DTE", "DTS"])
+    # DTE is no named sonic (GeoLink DTE reads like DTC), so it is not
+    # delivered; the benchmark packages keep their DTE column, filled from DTS.
+    dte = _first_curve(well, ["DTE", "DTS"]) if reproducing_benchmark() else None
     if dte is not None:
         specs.append(
             ExportCurveSpec(
@@ -937,6 +939,8 @@ def _should_exclude_curve(mnemonic: str) -> bool:
     if upper in EXCLUDED_LAS_CURVES:
         return True
     if upper.startswith("SXO-"):
+        return True
+    if upper == "DTE" and not reproducing_benchmark():
         return True
     return False
 

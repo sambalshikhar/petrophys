@@ -1396,8 +1396,8 @@ def _plausible_slowness(well: "Well", curve_name: str) -> bool:
     return bool(finite.size) and _SLOWNESS_RANGE[0] <= float(np.median(finite)) <= _SLOWNESS_RANGE[1]
 
 
-def _compressional_like(well: "Well", curve_name: str) -> bool:
-    """True when ``curve_name`` reads faster than any shear slowness of the well's DTC.
+def _shear_like(well: "Well", curve_name: str) -> bool:
+    """True when ``curve_name`` reads as slow as a shear slowness of the well's DTC.
 
     Vp/Vs = sqrt((2 - 2 nu) / (1 - 2 nu)) exceeds sqrt(2) for any positive
     Poisson's ratio nu, so a shear slowness is at least sqrt(2) times the
@@ -1410,7 +1410,7 @@ def _compressional_like(well: "Well", curve_name: str) -> bool:
     with np.errstate(divide="ignore", invalid="ignore"):
         ratio = np.asarray(curve.data, dtype=float) / np.asarray(dtc.data, dtype=float)
     ratio = ratio[np.isfinite(ratio) & (ratio > 0)]
-    return bool(ratio.size >= 10) and float(np.median(ratio)) < math.sqrt(2.0)
+    return bool(ratio.size >= 10) and float(np.median(ratio)) >= math.sqrt(2.0)
 
 
 def _curve_has_finite_values(well: "Well", curve_name: str) -> bool:
@@ -1540,9 +1540,9 @@ def auto_template(
             if spec.curve_name.upper() == "DTE":
                 if not _plausible_slowness(well, resolved):
                     continue
-                if _compressional_like(well, resolved):
-                    # A second compressional slowness, on the DTC scale.
-                    spec = replace(spec, left=140.0, right=40.0)
+                if _shear_like(well, resolved):
+                    # At least sqrt(2) times DTC: a shear slowness, on the DTS scale.
+                    spec = replace(spec, left=240.0, right=40.0)
             track_resolved.add(resolved)
             used_resolved.add(resolved)
             if spec.left is None or spec.right is None:
@@ -1667,9 +1667,9 @@ def auto_template(
         [
             _adaptive_spec("DTC", "DTC", 140, 40, "#762a83"),
             _adaptive_spec("DTS", "DTS", 240, 40, "#e7298a", line_style="--"),
-            # DTE: shear slowness in GeoLink-style sets, on the shear scale; a
-            # DTE that reads as a compressional slowness takes the DTC scale.
-            _adaptive_spec("DTE", "DTE", 240, 40, "#1b9e77", line_style=":"),
+            # DTE: a sonic slowness of no standard name; in the GeoLink sets it
+            # reads like DTC (DTE/DTC 0.99), so it takes the DTC scale.
+            _adaptive_spec("DTE", "DTE", 140, 40, "#1b9e77", line_style=":"),
         ],
         width=1.1,
     )
