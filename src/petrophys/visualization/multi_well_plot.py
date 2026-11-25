@@ -113,6 +113,14 @@ class MultiWellPlot:
 _LOG_CURVES = {"RDEP", "RMED", "RSHA", "RXO", "RT", "PERM", "PERM_CC", "KH_CORE", "NMR_KSDR", "NMR_KTIM"}
 
 
+def _gamma_ray(name: str, series: Sequence[Any]) -> bool:
+    """True when the track draws a gamma ray (GR, SGR or CGR)."""
+    from petrophys.preprocessing.standardization.alias_map import get_standard_mnemonic
+
+    names = [name, *(resolved for *_, resolved in series)]
+    return any(str(get_standard_mnemonic(str(item))).upper() in {"GR", "SGR", "CGR"} for item in names)
+
+
 def _log_scale(name: str, mnemonic: str) -> bool:
     from petrophys.preprocessing.standardization.alias_map import get_standard_mnemonic
 
@@ -314,6 +322,18 @@ def compare_wells(
                         left, right = float(ticks[0]), float(ticks[-1])
         if left is not None:
             ax.set_xlim(left, right)
+        backup = None
+        if left is not None and not log_track and right > left and _gamma_ray(name, series):
+            # As on a printed log: readings past the right end are drawn again,
+            # dashed, on a backup scale of the same width (150-300 API beside 0-150).
+            over_scale = [values > right for _, depth, values, _ in drawn]
+            if any(np.any(over & in_window(depth)) for over, (_, depth, _, _) in zip(over_scale, drawn)):
+                backup = (right, right + (right - left))
+                for over, (index, depth, values, _) in zip(over_scale, drawn):
+                    color = "#000000" if same else colors(index % colors.N)
+                    (line,) = ax.plot(np.where(over, values - (right - left), np.nan), depth, color=color,
+                                      linewidth=0.7, linestyle="--", zorder=3)
+                    clip_past_frame(ax, line)
         units.discard("")
         if len(units) > 1:
             notes.append(f"{name}: the wells give it in different units ({', '.join(sorted(units))}); "
@@ -329,6 +349,9 @@ def compare_wells(
         if log_track:
             unit_text = f"{unit_text}, log" if unit_text else "log"
         ax.set_xlabel(f"{name} [{unit_text}]" if unit_text else name, fontsize=9, fontweight="bold")
+        if backup is not None:
+            ax.set_xlabel(f"{ax.get_xlabel()}\nbackup {backup[0]:g}-{backup[1]:g}, dashed", fontsize=9,
+                          fontweight="bold")
         from matplotlib.ticker import NullFormatter
 
         ax.xaxis.set_minor_formatter(NullFormatter())

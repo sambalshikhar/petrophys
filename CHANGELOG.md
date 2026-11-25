@@ -877,7 +877,9 @@ wherever the package used the function.
   2 us/ft), and leaves unsolved the samples whose mineral total misses
   `1 - VCL - PHIE` by more than 0.05. `row_uncertainty=None` solves the rows
   unscaled, which the "geolink" profile uses. `MultiMineralSolver` is
-  version 2 (also exported as `MultiMineralSolverV2`).
+  version 2 (also exported as `MultiMineralSolverV2`); it solves porosity
+  with the minerals, unweighted by default, and weights its rows by tool
+  uncertainty when given `row_uncertainty` (`{}` for the nominal values).
   `DynamicWorkflowConfig.mineral_solver_version` selects the clastic
   workflow solver (default `1`), and `LithologyModule(solver_version=...)`
   selects it there (default `2`).
@@ -1498,6 +1500,9 @@ wherever the package used the function.
 - The log plot draws a class curve carrying class names (the flow units
   `HFU` of `FlowUnitModule.add_to_well`) as coloured blocks with a legend, in
   the colours of the flow-unit crossplot.
+- The multi-well comparison draws a gamma ray past its scale again, dashed,
+  on a backup scale of the same width (150-300 API beside 0-150 API), named
+  in the track header, as the single-well log plot does.
 - A `td` of zero or below is a depth above the datum (a subsea depth, say):
   the run warns that it is not the depth of the bottom-hole temperature and
   places the BHT at the deepest log sample.

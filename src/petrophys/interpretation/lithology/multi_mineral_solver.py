@@ -19,7 +19,13 @@ from petrophys._internal.nnls import nnls
 from petrophys.model.well import Well
 
 from petrophys.interpretation.lithology.matrix_properties import get_log_density, mineral_properties
+from petrophys.interpretation.lithology.multi_mineral_solver_v1 import _row_uncertainty
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+
+#: Row of each tool-response equation in the version 1 ``ROW_UNCERTAINTY``,
+#: by row label.
+_ROW_KEYS = {"Unity": "unity", "Density (RHOB)": "rhob", "Neutron (NPHI)": "nphi",
+             "U = PEF·ρ": "u", "Sonic (DT)": "dt"}
 
 
 def _u(pef: float, density: float) -> float:
@@ -111,6 +117,19 @@ class MultiMineralSolver:
     unknown (rather than subtracting a pre-computed PHIE) is what makes the
     mineral result independent of the assumed matrix.
 
+    The rows are solved unweighted by default. ``row_uncertainty`` divides
+    each row by its one-sigma tool uncertainty first, the weighted least
+    squares of Mayer and Sibbit (1980, SPE 9341) and Quirein et al. (1986,
+    SPWLA 27th Symposium). Where the system has as many rows as unknowns and
+    its solution has no negative volume, the weights do not change it; they
+    decide the compromise where the logs plot outside the mineral end
+    members and a volume is held at zero. With the nominal uncertainties of
+    :data:`~petrophys.interpretation.lithology.multi_mineral_solver_v1.ROW_UNCERTAINTY`
+    they did not bring the solve closer to the vendor lithology of the
+    GeoLink sample wells (25/5-1 samples without NPHI:
+    clastic/carbonate agreement 0.78 unweighted, 0.76 weighted), so they are
+    not the default.
+
     Parameters
     ----------
     minerals : list, optional
@@ -132,6 +151,14 @@ class MultiMineralSolver:
         ``density`` (g/cm³), ``nphi``, ``pef``, ``u`` or ``dt`` (μs/ft): e.g.
         ``{"water": {"density": 1.1}, "clay": {"density": 2.45}}``. The
         ``fluid`` and ``clay_mineral`` names address the fluid and clay.
+    row_uncertainty : mapping or None, optional
+        One-sigma uncertainty of each equation, keyed ``unity`` (v/v),
+        ``rhob`` (g/cm³), ``nphi`` (v/v), ``u`` (b/cm³) and ``dt`` (μs/ft);
+        keys left out take the nominal values of
+        :data:`~petrophys.interpretation.lithology.multi_mineral_solver_v1.ROW_UNCERTAINTY`
+        (0.01, 0.02, 0.02, 0.5, 2.0), so ``{}`` weights every row by them. The reported
+        ``residual`` is then in units of tool error. Default (None): the rows
+        are solved unweighted.
 
     Examples
     --------
@@ -149,6 +176,7 @@ class MultiMineralSolver:
         fluid: str = "water",
         closure_tolerance: float = 0.05,
         endpoint_overrides: Optional[Mapping[str, Mapping[str, float]]] = None,
+        row_uncertainty: Optional[Mapping[str, float]] = None,
     ):
         if minerals is None:
             minerals = ["quartz", "calcite", "dolomite", "anhydrite"]
@@ -161,8 +189,16 @@ class MultiMineralSolver:
         self.fluid             = fluid
         self.closure_tolerance = closure_tolerance
         self.endpoint_overrides = {name: dict(values) for name, values in (endpoint_overrides or {}).items()}
+        self.row_uncertainty = _row_uncertainty(row_uncertainty)
 
         self._load_properties()
+
+    def _weighted_nnls(self, A: np.ndarray, b: np.ndarray, row_labels: Sequence[str]):
+        """NNLS of ``A x = b`` with each row divided by its tool uncertainty."""
+        if self.row_uncertainty is None:
+            return nnls(A, b)
+        weights = np.array([1.0 / self.row_uncertainty[_ROW_KEYS[label]] for label in row_labels])
+        return nnls(A * weights[:, None], b * weights)
 
     def _load_properties(self):
         """Load mineral and fluid properties."""
@@ -235,13 +271,13 @@ class MultiMineralSolver:
         if not active_minerals:
             return [], tuple(), np.nan, True, np.nan
 
-        A_arr, b_arr, _row_labels, _columns = self._assemble_sample(
+        A_arr, b_arr, row_labels, _columns = self._assemble_sample(
             active_minerals, rhob, nphi, vcl, pef, dt,
             phi_fixed if use_fixed_phi else None,
         )
         if self._rank(A_arr) < A_arr.shape[1]:
             return [], tuple(), np.nan, True, np.nan
-        x, residual = nnls(A_arr, b_arr)
+        x, residual = self._weighted_nnls(A_arr, b_arr, row_labels)
 
         if use_fixed_phi:
             mineral_x = x
@@ -368,10 +404,12 @@ class MultiMineralSolver:
             raise ValueError("not enough equations to resolve any mineral at this sample")
         A, b, row_labels, columns = self._assemble_sample(
             active, float(rhob), nphi, vcl, pef, dt, phi_fixed)
-        x, residual = nnls(A, b)
+        x, residual = self._weighted_nnls(A, b, row_labels)
         return {
             "minerals": list(active), "row_labels": row_labels, "columns": columns,
             "A": A, "b": b, "x": x, "residual": float(residual),
+            "row_uncertainty": (None if self.row_uncertainty is None
+                                else [self.row_uncertainty[_ROW_KEYS[label]] for label in row_labels]),
             "vcl": vcl, "porosity_solved": (phi_fixed if use_fixed_phi else float(x[-1])),
         }
 
