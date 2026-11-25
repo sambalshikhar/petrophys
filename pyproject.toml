@@ -209,7 +209,6 @@ module = [
     "petrophys.interpretation.lithology.matrix_inference",
     "petrophys.interpretation.lithology.matrix_properties",
     "petrophys.interpretation.lithology.multi_mineral_solver",
-    "petrophys.interpretation.lithology.multi_mineral_solver_v1",
     "petrophys.interpretation.nmr.calibration",
     "petrophys.interpretation.nmr.nmr_data",
     "petrophys.interpretation.nmr.permeability",

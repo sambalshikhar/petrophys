@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 
 #: Largest RHOB misfit (g/cm3) of a solved sample: the nominal density-tool
-#: uncertainty, as in the version 1 mineral solver's row weights.
+#: uncertainty, as in the mineral solver's row weights.
 DENSITY_TOLERANCE = 0.02
 
 #: Constants of each calibration, densities in g/cm3. ``"generic"`` takes the
@@ -224,7 +224,7 @@ def solve_carbonate_minerals(
         lithology_name=names,
         qc_flag=~solved,
         solved=solved,
-        reduced_qc_fallback=np.zeros(well.n_samples, dtype=bool),
+        porosity_solved=np.zeros(well.n_samples, dtype=bool),
         mineral_selection={
             "lithology_domain": "carbonate",
             "method": f"{calibration}_calcite_dolomite_density_closure",

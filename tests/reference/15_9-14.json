@@ -561,7 +561,7 @@
   ],
   [
    "lithology",
-   "canonical_multi_mineral_solver",
+   "multi_mineral_solver",
    true
   ],
   [

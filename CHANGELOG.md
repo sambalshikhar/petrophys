@@ -144,7 +144,7 @@ their raw logs.
   template; unknown keys raise an error, names no track draws a warning.
 - Mineral solver, checked against synthetic mixtures, core grain density and
   vendor lithology logs:
-  - Without PEF, the clastic solve (version 1) takes quartz, calcite and
+  - Without PEF, the clastic solve takes quartz, calcite and
     dolomite from RHOB and NPHI; the sonic does not stand in for PEF, which
     would read most carbonates as quartz. The solve calls 74-89 % of the
     vendor-coded carbonates of 15/9-14 and 30/6-5 carbonate. Beside PEF the
@@ -158,10 +158,14 @@ their raw logs.
   - A sandstone-referenced neutron (NPSS, CNSS, NPHI_SS) is converted to the
     limestone scale the interpretation reads (first-order -0.04 v/v), with a
     warning.
-  - Samples version 1 cannot solve for want of NPHI, where PEF is logged,
-    are solved by version 2 (porosity solved jointly): 25/5-1, whose NPHI
-    covers a short interval, has mineral volumes over 99 % of the well,
-    agreeing with its vendor log on 90 % of those samples. A well with
+  - Where NPHI is missing and PEF is logged, porosity is solved with the
+    minerals from RHOB, PEF and closure: quartz and calcite, or calcite and
+    dolomite in carbonate (sonic is fitted beside PEF but resolves no
+    mineral), under the same 0.05 closure check. On 25/5-1, whose NPHI
+    covers 2906-3432 m, the dominant mineral matches the vendor log's
+    clastic or carbonate call on 87 % of those samples, with no dolomite in
+    its clastic rock; the shallow mudstones at RHOB near 2.0 g/cm3, which no
+    mineral mix closes at the well's VCL, are left unsolved. A well with
     neither NPHI nor PEF skips the step and says it needs one of them.
   - The COSTA calibration solves its carbonates in closed form,
     `solve_carbonate_minerals(..., "costa")`, with the equations of the
@@ -210,8 +214,6 @@ their raw logs.
     The "geolink" profile bounds every baseline.
   - `NMRData.from_las(t2_cutoff=...)` beats a T2CUTOFF curve in the file.
   - `zone_averages(use_arithmetic=...)` is applied.
-  - The reduced quartz-calcite fallback of the version 2 solve keeps the
-    caller's `solver_options`.
   - `read_dlis` applies `standardize` to a single frame, and reads a frame
     given `step`, `step_strategy` or `channel_preference` through the merged
     path, which honours them.
@@ -868,21 +870,18 @@ wherever the package used the function.
 
 #### Mineral solvers
 
-- Mineral solvers are versioned. `MultiMineralSolverV1`, the clastic
-  workflow's solver, takes VCL and PHIE as fixed inputs, divides each
-  equation row by its nominal one-sigma tool uncertainty before the
-  non-negative least squares, the weighted solve of Mayer and Sibbit (1980)
-  and Quirein et al. (1986): `row_uncertainty`, default `ROW_UNCERTAINTY`
-  (closure 0.01 v/v, RHOB 0.02 g/cm3, NPHI 0.02 v/v, U 0.5 b/cm3, DT
-  2 us/ft), and leaves unsolved the samples whose mineral total misses
-  `1 - VCL - PHIE` by more than 0.05. `row_uncertainty=None` solves the rows
-  unscaled, which the "geolink" profile uses. `MultiMineralSolver` is
-  version 2 (also exported as `MultiMineralSolverV2`); it solves porosity
-  with the minerals, unweighted by default, and weights its rows by tool
-  uncertainty when given `row_uncertainty` (`{}` for the nominal values).
-  `DynamicWorkflowConfig.mineral_solver_version` selects the clastic
-  workflow solver (default `1`), and `LithologyModule(solver_version=...)`
-  selects it there (default `2`).
+- `MultiMineralSolver` divides each equation row by its nominal one-sigma
+  tool uncertainty before the non-negative least squares, the weighted
+  solve of Mayer and Sibbit (1980) and Quirein et al. (1986):
+  `row_uncertainty`, default `ROW_UNCERTAINTY` (closure 0.01 v/v, RHOB
+  0.02 g/cm3, NPHI 0.02 v/v, U 0.5 b/cm3, DT 2 us/ft); `None` solves the
+  rows unscaled, which the "geolink" profile uses. Where a sample has NPHI
+  and PHIE, VCL and PHIE are fixed inputs; elsewhere porosity is solved
+  with the minerals (`solve_porosity`, off under the benchmark profiles),
+  or fixed by `core_phi`, with the minerals of `minerals_reduced` the logs
+  resolve. Samples whose total misses the available rock volume by more
+  than 0.05 are left unsolved. `explain_sample` returns the system solved
+  at one depth.
 - The carbonate domain takes calcite and dolomite from bulk density and
   closure in closed form over whole arrays (Clavier and Rust, 1976; module
   `petrophys.interpretation.lithology.carbonate_minerals` with
@@ -1149,7 +1148,7 @@ wherever the package used the function.
     `MatrixProperties.get_log_density()`, the minerals sylvite, carnallite,
     polyhalite and kainite (kainite has no published slowness),
     `total_porosity(gas_method=...)`, `steps.porosity(hc_type=...)`,
-    `MultiMineralSolverV1(row_uncertainty=...)` with `ROW_UNCERTAINTY`,
+    `MultiMineralSolver(row_uncertainty=...)` with `ROW_UNCERTAINTY`,
     `LithologyModule(solver_options=...)` and the module
     `petrophys.interpretation.lithology.carbonate_minerals`;
   - core correction and permeability:

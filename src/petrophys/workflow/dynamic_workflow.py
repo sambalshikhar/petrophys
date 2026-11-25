@@ -1240,16 +1240,6 @@ class DynamicWorkflowConfig:
     #: is no recognized rock are left without a group, with a warning. Not
     #: used by the benchmark profiles.
     lithology_codes: Optional[Any] = None
-    #: Mineral solver for the clastic mineral step. ``1`` (default) is
-    #: :class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`:
-    #: VCL and PHIE are fixed inputs, each equation row is
-    #: weighted by its nominal tool uncertainty (unweighted under the "geolink"
-    #: profile), and samples that fail the 0.05 closure gate are left
-    #: unsolved. ``2`` is
-    #: :class:`~petrophys.interpretation.lithology.MultiMineralSolver`, which
-    #: solves porosity jointly with the minerals. The carbonate domain uses its
-    #: own calcite-dolomite solve (``carbonate_calibration``) either way.
-    mineral_solver_version: int = 1
     #: Calibration of the carbonate-domain mineral solve, which takes calcite
     #: and dolomite from bulk density and closure. ``"generic"``: clay volume
     #: from VCL with density ``rho_cl``, effective porosity, pore fluid
@@ -1787,11 +1777,9 @@ def _zone_value(name: str, value: Any) -> Any:
             number = float(text)
         except ValueError:
             return text
-        return int(number) if name == "mineral_solver_version" and number.is_integer() else number
+        return number
     if isinstance(value, np.generic):
         value = value.item()
-    if name == "mineral_solver_version" and isinstance(value, float) and value.is_integer():
-        return int(value)  # a table column with a blank cell reads 2 as 2.0
     return value
 
 
@@ -2160,7 +2148,6 @@ _FRACTION_UNITS = {"v/v", "frac", "fraction", "dec", "decimal", "m3/m3", "ft3/ft
 _LITHOLOGY_SOURCES = ("auto", "external", "vendor", "computed", "config")
 _HC_TYPES = ("oil", "gas")
 _SWIRR_FLAG_PHI_CL = ("workflow", "all_shale_phit")
-_MINERAL_SOLVER_VERSIONS = (1, 2)
 _CARBONATE_CALIBRATIONS = ("generic", "costa")
 #: Profiles that keep the eval package's calculations (see
 #: DynamicWorkflowConfig.calculation_profile).
@@ -2897,11 +2884,6 @@ def _validate_workflow_config(config: "DynamicWorkflowConfig") -> None:
     _normalized_choice(config, "hc_type", _HC_TYPES, errors)
     _normalized_choice(config, "swirr_flag_phi_cl", _SWIRR_FLAG_PHI_CL, errors)
     _normalized_choice(config, "calculation_profile", _CALCULATION_PROFILES, errors)
-    version = config.mineral_solver_version
-    if isinstance(version, (bool, np.bool_)) or not isinstance(version, (int, np.integer))             or int(version) not in _MINERAL_SOLVER_VERSIONS:
-        errors.append(f"mineral_solver_version must be 1 or 2; got {version!r}")
-    else:
-        config.mineral_solver_version = int(version)
     if config.carbonate_calibration is not None:
         _normalized_choice(config, "carbonate_calibration", _CARBONATE_CALIBRATIONS, errors)
     config.gr_method = gr_method_name(config.gr_method)
@@ -5933,8 +5915,8 @@ class DynamicWorkflow:
                 and self._has_curve(well, "PHIT", "PHIE")
             )
         if not self._reproducing_benchmark:
-            # Version 1 solves where NPHI is logged (with or without PEF); the
-            # version 2 solve fills samples with PEF but no NPHI.
+            # PHIE is used where NPHI is logged (with or without PEF); where it
+            # is not, porosity is solved with the minerals from RHOB and PEF.
             return (
                 self._has_curve(well, "RHOB")
                 and self._has_curve(well, "NPHI", "PEF")
@@ -7183,57 +7165,28 @@ class DynamicWorkflow:
             codes[i] = LithologyModule.LITHOLOGY_CODES.get(name, LithologyModule.LITHOLOGY_CODES["mixed"])
         return codes
 
-    def _fill_without_nphi(self, well: "Well", result, trace: StepResult):
-        """Solve with version 2 the samples version 1 could not, for want of NPHI, where PEF is logged.
-
-        Version 2 solves porosity jointly, so it needs no NPHI: against vendor
-        lithology logs it matched them where version 1 could not run (25/5-1:
-        90 % of the samples without NPHI). Samples without PEF either stay
-        unsolved: RHOB and sonic alone do not separate the minerals.
-        """
-        from petrophys.interpretation.lithology.lithology_module import LithologyModule
-
-        def log(names):
-            data, _, _ = get_curve_data_depthwise(well, names)
-            return np.asarray(data, dtype=float) if data is not None else np.full(well.n_samples, np.nan)
-
-        pef = LithologyModule._screen_pef(log(["PEF"]))
-        fill = (
-            ~np.asarray(result.solved, dtype=bool)
-            & ~np.isfinite(log(["NPHI", "PHIN"]))
-            & np.isfinite(log(["RHOB"]))
-            & np.isfinite(pef)
+    @staticmethod
+    def _trace_porosity_solved(result, trace: StepResult) -> None:
+        """Say in the trace where porosity was solved with the minerals, and why minerals are 0 there."""
+        solved = np.asarray(result.porosity_solved, dtype=bool) & np.asarray(result.solved, dtype=bool)
+        trace.parameters["porosity_solved_samples"] = int(solved.sum())
+        if not solved.any():
+            return
+        trace.decisions.append(
+            f"{int(solved.sum())} samples without NPHI: porosity solved with the minerals from RHOB and PEF, "
+            "so the minerals do not rest on a porosity computed with an assumed matrix "
+            f"(the minerals beyond what the logs resolve: {', '.join(result.mineral_selection['reduced_minerals'])} "
+            f"for {result.mineral_selection['lithology']} rock)"
         )
-        if not fill.any():
-            return result
-        module = LithologyModule(
-            lithology="auto", solver_version=2, screen_barite_pef=True,
-            solver_options={"endpoint_overrides": self._solver_endpoints()},
-        )
-        other = module.calculate(well, samples=fill)
-        fill &= np.asarray(other.solved, dtype=bool)
-        if not fill.any():
-            return result
-        for name in ("v_quartz", "v_calcite", "v_dolomite", "v_anhydrite", "lithology_code", "lithology_name",
-                     "qc_flag", "solved"):
-            values = np.array(getattr(result, name), copy=True)
-            values[fill] = np.asarray(getattr(other, name))[fill]
-            setattr(result, name, values)
-        trace.parameters["version2_samples_without_nphi"] = int(fill.sum())
-        minerals = [np.asarray(getattr(other, name), dtype=float) for name in
+        minerals = [np.asarray(getattr(result, name), dtype=float) for name in
                     ("v_quartz", "v_calcite", "v_dolomite", "v_anhydrite")]
-        no_room = fill & np.all([np.nan_to_num(v, nan=0.0) == 0.0 for v in minerals], axis=0)
+        no_room = solved & np.all([np.nan_to_num(v, nan=0.0) == 0.0 for v in minerals], axis=0)
         if np.any(no_room):
             trace.decisions.append(
                 f"{int(no_room.sum())} of them take no mineral volume: clay and the solved porosity fill the "
                 "rock (1 - VCL - porosity at most 1e-9; rounding puts an exact fill at +1e-17 or -1e-17 "
                 "depending on the numpy release), so the minerals are 0 rather than unsolved"
             )
-        trace.decisions.append(
-            f"{int(fill.sum())} samples without NPHI solved by the version 2 solver from RHOB and PEF "
-            "(porosity solved jointly)"
-        )
-        return result
 
     def _step_lithology(self, well: "Well") -> StepResult:
         from petrophys.interpretation.lithology.lithology_module import LithologyModule
@@ -7286,54 +7239,33 @@ class DynamicWorkflow:
             trace.input_curves = ["RHOB", *clay_curves, *str(selection["porosity_curve"]).split("+")]
             trace.parameters.update(selection)
         else:
-            solver_version = self.config.mineral_solver_version
-            # The "geolink" profile solves the version 1 rows unweighted.
-            unweighted = solver_version == 1 and self._reproducing_benchmark
-            # Benchmark profiles use unweighted solver rows,
-            # sonic standing in for PEF, PEF always used.
+            from petrophys.workflow._canonical_calculations import CALCULATION_REVISION
+
+            if self._reproducing_benchmark and nphi_curve is None:
+                raise ValueError("The clastic mineral solve of the benchmark profiles requires NPHI/PHIN")
+            # Benchmark profiles solve unweighted rows, sonic standing in for
+            # PEF, PEF always used, and leave samples without NPHI unsolved.
             litho_module = LithologyModule(
                 lithology="auto",
-                solver_version=solver_version,
                 solver_options=(
-                    {"row_uncertainty": None, "sonic_without_pef": True} if unweighted
-                    else {"sonic_without_pef": True} if solver_version == 1 and self._reproducing_benchmark
+                    {"row_uncertainty": None, "sonic_without_pef": True, "solve_porosity": False}
+                    if self._reproducing_benchmark
                     else {"endpoint_overrides": self._solver_endpoints()}
                 ),
                 screen_barite_pef=not self._reproducing_benchmark,
             )
-            # Without NPHI anywhere, outside the benchmarks, version 2 solves the
-            # well from RHOB and PEF (porosity solved jointly).
-            whole_well_v2 = solver_version == 1 and nphi_curve is None and not self._reproducing_benchmark
-            if whole_well_v2:
-                solver_version = 2
-                litho_module = LithologyModule(
-                    lithology="auto", solver_version=2, screen_barite_pef=True,
-                    solver_options={"endpoint_overrides": self._solver_endpoints()},
-                )
-                trace.decisions.append(
-                    "No NPHI: minerals solved by the version 2 solver from RHOB and PEF (porosity solved jointly)"
-                )
-            if solver_version == 1:
-                if nphi_curve is None:
-                    raise ValueError(
-                        "The canonical clastic mineral inversion requires NPHI/PHIN"
-                    )
-                from petrophys.workflow._canonical_calculations import CALCULATION_REVISION
-
-                trace.method = "canonical_multi_mineral_solver"
-                trace.parameters["equation_revision"] = CALCULATION_REVISION
-                weighted_rows = litho_module.solver.row_uncertainty
-                if weighted_rows is not None:
-                    trace.parameters["row_uncertainty"] = dict(weighted_rows)
-            else:
-                trace.method = "multi_mineral_solver"
-            trace.parameters["mineral_solver_version"] = solver_version
+            # The benchmark profiles keep the method name their context records.
+            trace.method = "canonical_multi_mineral_solver" if self._reproducing_benchmark else "multi_mineral_solver"
+            trace.parameters["equation_revision"] = CALCULATION_REVISION
+            weighted_rows = litho_module.solver.row_uncertainty
+            if weighted_rows is not None:
+                trace.parameters["row_uncertainty"] = dict(weighted_rows)
             result = litho_module.calculate(well)
             for note in litho_module.notes:
                 trace.decisions.append(note)
                 self._result.warnings.append(f"lithology: {note}")
-            if solver_version == 1 and not self._reproducing_benchmark:
-                result = self._fill_without_nphi(well, result, trace)
+            if not self._reproducing_benchmark:
+                self._trace_porosity_solved(result, trace)
         code_curve_available = self._lithology_code_curve(well) is not None
         input_lithology_available = self._selected_lithology_source == "external" or (
             self._selected_lithology_source == "vendor" and code_curve_available
@@ -7373,10 +7305,6 @@ class DynamicWorkflow:
             "multi_mineral_fallback" if write_lithology_code else "input_lithology"
         )
         trace.parameters["multi_mineral_solved_samples"] = int(np.count_nonzero(result.solved))
-        trace.parameters["reduced_quartz_calcite_samples"] = int(
-            np.count_nonzero(result.reduced_qc_fallback)
-            if result.reduced_qc_fallback is not None else 0
-        )
         trace.parameters["multi_mineral_qc_flagged_samples"] = int(np.count_nonzero(result.qc_flag))
         trace.parameters["multi_mineral_total_samples"] = int(well.n_samples)
         trace.parameters["lithology_domain"] = self.config.lithology_domain
@@ -7401,10 +7329,6 @@ class DynamicWorkflow:
                 if self._reproducing_benchmark or carbonate
                 else "PEF screened for plausibility; without PEF the minerals are solved from RHOB and NPHI "
                 "(sonic is used beside PEF, not in its place)"
-            )
-        if result.reduced_qc_fallback is not None and np.any(result.reduced_qc_fallback):
-            trace.decisions.append(
-                "Underdetermined samples used fixed PHIE with a reduced quartz-calcite inversion"
             )
         if not carbonate:
             trace.decisions.append(

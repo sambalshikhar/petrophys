@@ -1,11 +1,29 @@
 """
-Multi-mineral solver for lithology determination.
+Multi-mineral solver: mineral volumes from the tool-response equations.
 
-This module provides solvers for determining mineral fractions
-from multiple log measurements using simultaneous equations.
+Each log reads a linear volumetric mix of its response to every mineral, the
+clay and the pore fluid. One equation per log, with a unity equation that
+closes the volumes, is solved by non-negative least squares for the mineral
+volumes. The equations carry different units (v/v, g/cm³, b/cm³, μs/ft), so
+each row is divided by its nominal one-sigma tool uncertainty
+(:data:`ROW_UNCERTAINTY`) first: every residual is then measured in units of
+tool error, the weighted least squares of Mayer and Sibbit (1980, SPE 9341)
+and Quirein et al. (1986, SPWLA 27th Symposium).
+
+Porosity is taken from the interpretation (PHIE) where the sample has a
+neutron log and a porosity; elsewhere it is solved with the minerals, from
+density and the photoelectric factor, so the minerals do not rest on a
+porosity that assumed a matrix.
 
 References
 ----------
+Mayer, C. and Sibbit, A. (1980). GLOBAL, a new approach to
+computer-processed log interpretation. SPE 9341.
+
+Quirein, J., Kimminau, S., Lavigne, J., Singer, J. and Wendel, F. (1986).
+A coherent framework for developing and applying multiple formation
+evaluation models. SPWLA 27th Annual Logging Symposium.
+
 Doveton, J.H. (1994). *Geologic Log Analysis Using Computer Methods*.
 AAPG Computer Applications in Geology 2.
 
@@ -13,196 +31,216 @@ Lawson, C.L. and Hanson, R.J. (1974). *Solving Least Squares Problems*.
 Prentice-Hall.
 """
 
-from typing import Dict, Mapping, Optional, Sequence, Tuple, Union
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Dict, List, Mapping, Optional, Sequence, Union
+
 import numpy as np
-from petrophys._internal.nnls import nnls
-from petrophys.model.well import Well
 
-from petrophys.interpretation.lithology.matrix_properties import get_log_density, mineral_properties
-from petrophys.interpretation.lithology.multi_mineral_solver_v1 import _row_uncertainty
 from petrophys._internal.analysis_helpers import get_curve_data_depthwise
+from petrophys._internal.nnls import nnls, nnls_many
+from petrophys.interpretation.lithology.matrix_properties import get_log_density, mineral_properties
 
-#: Row of each tool-response equation in the version 1 ``ROW_UNCERTAINTY``,
-#: by row label.
-_ROW_KEYS = {"Unity": "unity", "Density (RHOB)": "rhob", "Neutron (NPHI)": "nphi",
-             "U = PEF·ρ": "u", "Sonic (DT)": "dt"}
+if TYPE_CHECKING:
+    from petrophys.model.well import Well
 
 
-def _u(pef: float, density: float) -> float:
-    """Volumetric photoelectric cross-section: U = PEF × ρ [b/cm³]."""
-    return pef * density
+# Tool-response endpoints of the solver, held apart from the shared mineral
+# table so its results do not follow that table. Other minerals use the table.
+_ENDPOINTS: Dict[str, Dict[str, float]] = {
+    "quartz":    {"density": 2.65, "nphi": -0.02, "pef": 1.8,  "u": 4.8,  "dt": 55.5},
+    "calcite":   {"density": 2.71, "nphi": 0.0,   "pef": 5.1,  "u": 13.8, "dt": 47.6},
+    "dolomite":  {"density": 2.87, "nphi": 0.02,  "pef": 3.1,  "u": 9.0,  "dt": 43.5},
+    "anhydrite": {"density": 2.96, "nphi": -0.02, "pef": 5.0,  "u": 14.9, "dt": 50.0},
+    "clay":      {"density": 2.65, "nphi": 0.35,  "pef": 3.7,  "u": 9.71, "dt": 80.0},
+    "water":     {"density": 1.0,  "nphi": 1.0,   "pef": 0.36, "u": 0.36, "dt": 189.0},
+}
+
+CLOSURE_TOLERANCE = 0.05
+
+# Nominal one-sigma uncertainty of each equation row, in the row's own unit.
+# The unity (closure) row is weighted most strongly: the 0.05 closure gate is
+# five of its sigmas. Sonic follows pore shape and compaction as much as
+# mineralogy: beside PEF it helps the closure, but it does not replace PEF
+# (see ``sonic_without_pef``).
+ROW_UNCERTAINTY: Mapping[str, float] = MappingProxyType({
+    "unity": 0.01,  # v/v
+    "rhob":  0.02,  # g/cm³
+    "nphi":  0.02,  # v/v
+    "u":     0.5,   # b/cm³
+    "dt":    2.0,   # μs/ft
+})
+
+_ROW_LABELS = {"unity": "Unity", "rhob": "Density (RHOB)", "nphi": "Neutron (NPHI)",
+               "u": "U = PEF·ρ", "dt": "Sonic (DT)"}
 
 
 def _get_endpoints(name: str) -> Dict[str, float]:
-    """Return endpoint dict with density, nphi, pef, u, dt for a mineral/fluid.
-
-    The density is the density-log response: evaporites read below their
-    grain density (pure halite 2.032, not 2.17), so the grain density would
-    solve a salt to several porosity units.
-    """
+    """Return endpoint dict with density, nphi, pef, u, dt for a mineral/fluid."""
+    if name in _ENDPOINTS:
+        return dict(_ENDPOINTS[name])
     p = mineral_properties(name)
-    density = get_log_density(name)
     return {
-        "density": density,
+        # the density-log response (evaporites read below their grain density)
+        "density": get_log_density(name),
         "nphi":    p["nphi"],
         "pef":     p["pef"],
-        # Derive the U endpoint with the same rule as the measured log term
-        # (U = PEF·ρ, see _u) so the solver's U row is internally consistent.
-        # The table's "u" values differ from PEF·ρ (by about 0.1 for dolomite,
-        # 0.65 for halite at its log density) and would otherwise inject a
-        # spurious-mineral bias on pure lithologies.
-        "u":       _u(p["pef"], density),
+        "u":       p["u"],
         "dt":      p["slowness"],
     }
+
+
+def _row_uncertainty(
+    row_uncertainty: Optional[Mapping[str, float]],
+) -> Optional[Dict[str, float]]:
+    """Merge user row uncertainties over :data:`ROW_UNCERTAINTY`; None stays None."""
+    if row_uncertainty is None:
+        return None
+    unknown = sorted(set(row_uncertainty) - set(ROW_UNCERTAINTY))
+    if unknown:
+        raise ValueError(
+            f"row_uncertainty keys must be among {', '.join(ROW_UNCERTAINTY)}; got {', '.join(unknown)}"
+        )
+    merged = {**ROW_UNCERTAINTY, **row_uncertainty}
+    for row, sigma in merged.items():
+        number = isinstance(sigma, (int, float, np.integer, np.floating)) and not isinstance(sigma, bool)
+        if not (number and np.isfinite(sigma) and sigma > 0):
+            raise ValueError(f"row_uncertainty[{row!r}] must be a positive number; got {sigma!r}")
+    return {row: float(sigma) for row, sigma in merged.items()}
 
 
 def _constrain_mineral_fractions(
     fractions: np.ndarray,
     available_fraction: float,
 ) -> np.ndarray:
-    """Clip mineral fractions and enforce closure to the available rock volume."""
+    """Clip mineral fractions and scale them down if they exceed the available rock volume."""
     constrained = np.asarray(fractions, dtype=float).copy()
     constrained = np.clip(constrained, 0.0, max(float(available_fraction), 0.0))
     total = float(np.nansum(constrained))
-    if total > 0.0:
-        constrained *= float(max(available_fraction, 0.0)) / total
-    elif available_fraction <= 1e-9:
-        # Clay and porosity fill the rock (to rounding: 1 - VCL - porosity can
-        # come out as +1e-17 or -1e-17 from one numpy release to the next).
-        constrained[:] = 0.0
-    else:
-        constrained[:] = np.nan
+    if total > available_fraction and total > 0.0:
+        constrained *= float(available_fraction) / total
     return constrained
+
+
+def _finite(value: Optional[float]) -> Optional[float]:
+    return None if value is None or not np.isfinite(value) else float(value)
 
 
 class MultiMineralSolver:
     """
-    Multi-mineral solver for complex lithology, version 2.
+    Multi-mineral solver: quartz, calcite, dolomite and anhydrite volumes.
 
-    This class solves for mineral fractions using multiple
-    log measurements simultaneously. Version 1, the solver that takes PHIE as
-    a fixed input and gates samples on closure, is
-    :class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`.
+    VCL (from VclModule) is a fixed input. Porosity is fixed or solved per
+    sample:
 
-    Vcl (from VclModule) must be pre-computed before calling this solver and is
-    subtracted from the RHS of every equation. Porosity is NOT taken as an input
-    (a pre-computed PHIE depends on the assumed matrix, which would bias the
-    result); it is solved as an extra unknown alongside the minerals, so the
-    mineral solution is independent of any matrix guess. The ``phie`` argument is
-    accepted but not used in the solve; the solved porosity is returned in
-    ``result["phie"]``.
+    * **PHIE given** where the sample has NPHI and a finite ``phie``: VCL
+      and PHIE are subtracted from the right-hand side and the minerals
+      solved. When the solved total misses ``1 - VCL - PHIE`` by more than
+      0.05, the sample is not solved (NaN volumes, ``qc_flag`` set).
+    * **Porosity solved** elsewhere (no NPHI, or no PHIE as on a raw well):
+      porosity is one more unknown, so the minerals do not rest on a
+      porosity computed with an assumed matrix. A core porosity
+      (``core_phi``) fixes it where one is given. These samples need PEF:
+      density, PEF and closure give porosity and two minerals, the
+      density-photoelectric lithology of the chartbooks. More rows (NPHI,
+      sonic beside PEF) solve more minerals, up to ``minerals``; with fewer
+      the minerals come from ``minerals_reduced`` in its order (quartz and
+      calcite by default, calcite and dolomite in carbonate). The same 0.05
+      closure check applies.
 
-    The active mineral set and equations are determined per depth from the
-    equations available at that sample. Unity and RHOB are always used; NPHI,
-    PEF, and DTC are optional discriminator rows. The full mineral set is used
-    when there are as many rows as minerals plus porosity, otherwise the
-    solver falls back to the reduced mineral set: with the default four
-    minerals and porosity unknown, the full set needs NPHI, PEF and DTC all
-    present, and RHOB with two of them solves quartz, calcite and dolomite.
-    A fixed (core) porosity needs one row fewer.
+    The active mineral set where PHIE is given::
 
-    PEF is preferred over DTC for mineral discrimination because U = PEF × ρ
-    has a much wider spread across carbonates (quartz: 4.77, dolomite: 8.90,
-    calcite: 13.82 b/cm³) and separates anhydrite (14.9) from dolomite far
-    more clearly than density, neutron or sonic.
+        PEF available              -> ``minerals`` (quartz, calcite, dolomite,
+                                      anhydrite) + PEF row (+ DTC if present)
+        PEF absent                 -> ``minerals_no_pef``, RHOB + NPHI only;
+                                      with ``sonic_without_pef`` a DTC row
+                                      makes it ``minerals`` + DTC row
 
-    Tool Response Equations (linear mixing), with porosity φ as an unknown:
+    Tool Response Equations (linear mixing), with porosity φ::
+
         Unity:   V1 + ... + Vn + φ          = 1    - Vcl
         Density: V1·ρ1 + ... + Vn·ρn + φ·ρfl = ρlog - Vcl·ρcl
         Neutron: V1·N1 + ... + Vn·Nn + φ·Nfl = Nlog - Vcl·Ncl
         U:       V1·U1 + ... + Vn·Un + φ·Ufl = Ulog - Vcl·Ucl
         Sonic:   V1·D1 + ... + Vn·Dn + φ·Dfl = Dlog - Vcl·Dcl
 
-    where U = PEF × ρ (volumetric photoelectric cross-section). Solving φ as an
-    unknown (rather than subtracting a pre-computed PHIE) is what makes the
-    mineral result independent of the assumed matrix.
-
-    The rows are solved unweighted by default. ``row_uncertainty`` divides
-    each row by its one-sigma tool uncertainty first, the weighted least
-    squares of Mayer and Sibbit (1980, SPE 9341) and Quirein et al. (1986,
-    SPWLA 27th Symposium). Where the system has as many rows as unknowns and
-    its solution has no negative volume, the weights do not change it; they
-    decide the compromise where the logs plot outside the mineral end
-    members and a volume is held at zero. With the nominal uncertainties of
-    :data:`~petrophys.interpretation.lithology.multi_mineral_solver_v1.ROW_UNCERTAINTY`
-    they did not bring the solve closer to the vendor lithology of the
-    GeoLink sample wells (25/5-1 samples without NPHI:
-    clastic/carbonate agreement 0.78 unweighted, 0.76 weighted), so they are
-    not the default.
+    where U = PEF × ρ; a fixed φ moves to the right-hand side. Each row is
+    divided by its ``row_uncertainty`` before the non-negative least-squares
+    solve. Solved volumes are clipped to the available rock volume and scaled
+    down only when their total exceeds it.
 
     Parameters
     ----------
     minerals : list, optional
-        Full mineral set, solved where a sample has enough rows for it.
-        Default includes anhydrite as the 4th mineral:
-        ["quartz", "calcite", "dolomite", "anhydrite"]
+        Full mineral set (default: ["quartz", "calcite", "dolomite",
+        "anhydrite"]).
     minerals_no_pef : list, optional
-        Reduced mineral set, solved where a sample has too few rows for the
-        full set (default: first three from minerals, i.e.
-        ["quartz", "calcite", "dolomite"])
+        Minerals solved where PHIE is given and PEF is not (default: the
+        first three of ``minerals``).
+    minerals_reduced : list, optional
+        Minerals, in order of preference, solved where porosity is solved and
+        the logs cannot resolve ``minerals`` (default: ["quartz",
+        "calcite"]).
     clay_mineral : str, optional
-        Clay mineral name for endpoint lookup (default: "clay")
+        Clay endpoint name (default: "clay").
     fluid : str, optional
-        Fluid type (default: "water")
-    closure_tolerance : float, optional
-        Largest closure error a solved sample may have (default 0.05).
+        Pore-fluid endpoint name (default: "water").
+    row_uncertainty : mapping or None, optional
+        One-sigma uncertainty of each equation row, keyed ``unity`` (v/v),
+        ``rhob`` (g/cm³), ``nphi`` (v/v), ``u`` (b/cm³) and ``dt`` (μs/ft).
+        Rows are divided by these values before the solve; keys left out keep
+        :data:`ROW_UNCERTAINTY` (0.01, 0.02, 0.02, 0.5, 2.0). None solves the
+        rows unscaled, the calculation behind the "geolink" calculation profile.
+    sonic_without_pef : bool, optional
+        Let a sonic row stand in for a missing PEF and solve ``minerals``
+        (the calculation of the benchmark profiles). Default False: sonic is
+        used beside PEF, not in its place, as it follows pore shape and
+        compaction as much as mineralogy.
+    solve_porosity : bool, optional
+        Solve porosity with the minerals where NPHI or PHIE is missing
+        (default True). False leaves those samples unsolved, the calculation
+        of the benchmark profiles.
     endpoint_overrides : mapping, optional
         Endpoint values replacing the table's, keyed by endpoint name and then
         ``density`` (g/cm³), ``nphi``, ``pef``, ``u`` or ``dt`` (μs/ft): e.g.
         ``{"water": {"density": 1.1}, "clay": {"density": 2.45}}``. The
         ``fluid`` and ``clay_mineral`` names address the fluid and clay.
-    row_uncertainty : mapping or None, optional
-        One-sigma uncertainty of each equation, keyed ``unity`` (v/v),
-        ``rhob`` (g/cm³), ``nphi`` (v/v), ``u`` (b/cm³) and ``dt`` (μs/ft);
-        keys left out take the nominal values of
-        :data:`~petrophys.interpretation.lithology.multi_mineral_solver_v1.ROW_UNCERTAINTY`
-        (0.01, 0.02, 0.02, 0.5, 2.0), so ``{}`` weights every row by them. The reported
-        ``residual`` is then in units of tool error. Default (None): the rows
-        are solved unweighted.
 
     Examples
     --------
     >>> solver = MultiMineralSolver()
-    >>> result = solver.solve(rhob, nphi, vcl=vcl, pef=pef, dt=dt)  # doctest: +SKIP
+    >>> result = solver.solve(rhob, nphi, vcl, phie, pef=pef, dt=dt)  # doctest: +SKIP
     """
-
-    version = 2
 
     def __init__(
         self,
-        minerals: list = None,
-        minerals_no_pef: list = None,
+        minerals: Optional[list] = None,
+        minerals_no_pef: Optional[list] = None,
+        minerals_reduced: Optional[list] = None,
         clay_mineral: str = "clay",
         fluid: str = "water",
-        closure_tolerance: float = 0.05,
+        row_uncertainty: Optional[Mapping[str, float]] = ROW_UNCERTAINTY,
+        sonic_without_pef: bool = False,
+        solve_porosity: bool = True,
         endpoint_overrides: Optional[Mapping[str, Mapping[str, float]]] = None,
-        row_uncertainty: Optional[Mapping[str, float]] = None,
     ):
         if minerals is None:
             minerals = ["quartz", "calcite", "dolomite", "anhydrite"]
         if minerals_no_pef is None:
             minerals_no_pef = minerals[:3]
+        if minerals_reduced is None:
+            minerals_reduced = [name for name in ("quartz", "calcite") if name in minerals] or minerals[:2]
 
-        self.minerals          = minerals
-        self.minerals_no_pef   = minerals_no_pef
-        self.clay_mineral      = clay_mineral
-        self.fluid             = fluid
-        self.closure_tolerance = closure_tolerance
+        self.minerals         = minerals
+        self.minerals_no_pef  = minerals_no_pef
+        self.minerals_reduced = minerals_reduced
+        self.clay_mineral     = clay_mineral
+        self.fluid            = fluid
+        self.row_uncertainty  = _row_uncertainty(row_uncertainty)
+        self.sonic_without_pef = bool(sonic_without_pef)
+        self.solve_porosity   = bool(solve_porosity)
         self.endpoint_overrides = {name: dict(values) for name, values in (endpoint_overrides or {}).items()}
-        self.row_uncertainty = _row_uncertainty(row_uncertainty)
 
-        self._load_properties()
-
-    def _weighted_nnls(self, A: np.ndarray, b: np.ndarray, row_labels: Sequence[str]):
-        """NNLS of ``A x = b`` with each row divided by its tool uncertainty."""
-        if self.row_uncertainty is None:
-            return nnls(A, b)
-        weights = np.array([1.0 / self.row_uncertainty[_ROW_KEYS[label]] for label in row_labels])
-        return nnls(A * weights[:, None], b * weights)
-
-    def _load_properties(self):
-        """Load mineral and fluid properties."""
-        all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef))
+        all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef + self.minerals_reduced))
         self.mineral_props = {m: _get_endpoints(m) for m in all_minerals}
         self.fluid_props   = _get_endpoints(self.fluid)
         self.clay_props    = _get_endpoints(self.clay_mineral)
@@ -214,210 +252,103 @@ class MultiMineralSolver:
             if name in self.mineral_props:
                 self.mineral_props[name].update(values)
 
-    def _solve_sample(
-        self,
-        rhob: float,
-        nphi: Optional[float],
-        vcl: float,
-        phie: Optional[float],
-        pef: Optional[float],
-        dt: Optional[float],
-        phi_fixed: Optional[float] = None,
-    ) -> Tuple[list, tuple, float, bool, float]:
-        """
-        Solve for mineral fractions at a single depth sample.
+    # -- the system of one sample ----------------------------------------------
 
-        Active mineral set is chosen from equation count. Unity and RHOB are
-        always present. NPHI, PEF, and DTC are optional rows; neutron is not
-        required when PEF/DTC provide enough independent equations.
-
-        Parameters
-        ----------
-        rhob : float
-            Bulk density (g/cm³)
-        nphi : float or None
-            Neutron porosity (v/v), omitted when unavailable.
-        vcl : float
-            Clay volume fraction (0-1)
-        phie : float
-            Effective porosity (0-1)
-        pef : float or None
-            Photoelectric factor (b/e)
-        dt : float or None
-            Sonic slowness (μs/ft)
-
-        Returns
-        -------
-        tuple
-            (active_minerals, fractions, residual, poor_fit, porosity) where
-            active_minerals is the list of mineral names used,
-            fractions are the solved (normalized) volumes,
-            residual is the NNLS least-squares residual,
-            poor_fit is True when closure error exceeds closure_tolerance, and
-            porosity is the solved (or fixed) porosity.
-        """
-        vcl  = float(np.clip(vcl,  0.0, 1.0))
-        # Porosity handling:
-        #   - if a known (core) porosity is supplied, fix it -> the matrix density
-        #     is determined, which resolves quartz/calcite even without PEF;
-        #   - otherwise solve porosity as an unknown so the result does not depend
-        #     on a matrix-biased PHIE.
-        # Either way only Vcl (matrix-independent, GR-driven) is on the RHS.
-        use_fixed_phi = phi_fixed is not None and np.isfinite(phi_fixed)
-        if use_fixed_phi:
-            phi_fixed = float(np.clip(phi_fixed, 0.0, 1.0 - vcl))
-
-        active_minerals = self._active_minerals(nphi, pef, dt, use_fixed_phi)
-        if not active_minerals:
-            return [], tuple(), np.nan, True, np.nan
-
-        A_arr, b_arr, row_labels, _columns = self._assemble_sample(
-            active_minerals, rhob, nphi, vcl, pef, dt,
-            phi_fixed if use_fixed_phi else None,
-        )
-        if self._rank(A_arr) < A_arr.shape[1]:
-            return [], tuple(), np.nan, True, np.nan
-        x, residual = self._weighted_nnls(A_arr, b_arr, row_labels)
-
-        if use_fixed_phi:
-            mineral_x = x
-            phi_solved = phi_fixed
-        else:
-            # Scale the complete non-negative solution to the non-clay volume.
-            # This preserves all relative NNLS contributions while guaranteeing
-            # Vcl + porosity + minerals = 1 at every solved sample.
-            raw_total = float(np.sum(x))
-            closure_target = max(1.0 - vcl, 0.0)
-            closure_error = abs(raw_total - closure_target)
-            if raw_total > 0.0:
-                x = x * closure_target / raw_total
-            elif closure_target > 0.0:
-                return [], tuple(), float(residual), True, np.nan
-            mineral_x = x[:-1]
-            phi_solved = float(x[-1])
-
-        available_fraction = max(1.0 - vcl - phi_solved, 0.0)
-        if use_fixed_phi:
-            closure_error = abs(float(np.sum(mineral_x)) - available_fraction)
-        poor_fit = closure_error > self.closure_tolerance
-
-        # Always normalize, never discard a solution just for closure error.
-        # The poor_fit flag and residual give the caller full quality info.
-        mineral_x = _constrain_mineral_fractions(mineral_x, available_fraction)
-        if not np.all(np.isfinite(mineral_x)):
-            return [], tuple(), float(residual), True, np.nan
-
-        return (active_minerals, tuple(float(v) for v in mineral_x),
-                float(residual), poor_fit, phi_solved)
-
-    def _rank(self, A: np.ndarray) -> int:
-        """Rank of a response matrix; the matrix depends only on which logs a
-        sample has, so each distinct one is decomposed once."""
-        cache = self.__dict__.setdefault("_ranks", {})
-        key = (A.shape, A.tobytes())
-        if key not in cache:
-            cache[key] = int(np.linalg.matrix_rank(A))
-        return cache[key]
-
-    def _active_minerals(self, nphi, pef, dt, use_fixed_phi: bool) -> list:
-        """Pick the mineral set the available equations can resolve at a sample."""
-        n_porosity_unknowns = 0 if use_fixed_phi else 1
-        available_equations = 2 + sum(v is not None for v in (nphi, pef, dt))
-        if available_equations >= len(self.minerals) + n_porosity_unknowns:
-            return self.minerals
-        if available_equations >= len(self.minerals_no_pef) + n_porosity_unknowns:
-            return self.minerals_no_pef
-        return []
-
-    def _assemble_sample(self, active_minerals, rhob, nphi, vcl, pef, dt, phi_fixed):
-        """Build the labelled response system A x = b for one sample.
-
-        Returns (A, b, row_labels, column_labels). Shared by the solver and by
-        :meth:`explain_sample`, so what you inspect is exactly what is solved.
-        """
-        use_fixed_phi = phi_fixed is not None and np.isfinite(phi_fixed)
-        vcl = float(np.clip(vcl, 0.0, 1.0))
-        m = [self.mineral_props[name] for name in active_minerals]
-        fl, cl = self.fluid_props, self.clay_props
-        A_rows, b_rows, labels = [], [], []
-
-        def add_row(label, key, log_val):
-            mineral_vals = [1.0] * len(m) if key is None else [mi[key] for mi in m]
-            fl_val = 1.0 if key is None else fl[key]
-            cl_val = 1.0 if key is None else cl[key]
-            if use_fixed_phi:
-                A_rows.append(list(mineral_vals))
-                b_rows.append(log_val - vcl * cl_val - phi_fixed * fl_val)
-            else:
-                A_rows.append(list(mineral_vals) + [fl_val])
-                b_rows.append(log_val - vcl * cl_val)
-            labels.append(label)
-
-        add_row("Unity", None, 1.0)
-        add_row("Density (RHOB)", "density", rhob)
+    def _rows(self, nphi, pef, dt) -> List[str]:
+        """Equation rows a sample's logs give; sonic only beside PEF unless ``sonic_without_pef``."""
+        rows = ["unity", "rhob"]
         if nphi is not None:
-            add_row("Neutron (NPHI)", "nphi", nphi)
+            rows.append("nphi")
         if pef is not None:
-            add_row("U = PEF·ρ", "u", _u(pef, rhob))
-        if dt is not None:
-            add_row("Sonic (DT)", "dt", dt)
+            rows.append("u")
+        if dt is not None and (pef is not None or self.sonic_without_pef):
+            rows.append("dt")
+        return rows
 
-        columns = list(active_minerals) + ([] if use_fixed_phi else ["porosity"])
-        return np.array(A_rows, dtype=float), np.array(b_rows, dtype=float), labels, columns
+    def _fixed_minerals(self, pef, dt) -> list:
+        """Minerals solved where PHIE is given."""
+        if pef is None and not self.sonic_without_pef:
+            dt = None
+        return self.minerals if (pef is not None or dt is not None) else self.minerals_no_pef
 
-    def explain_sample(self, well: "Well" = None, index: int = 0, *, depth=None,
-                       rhob=None, nphi=None, vcl=None, pef=None, dt=None,
-                       core_phi=None) -> Dict[str, object]:
-        """Return the exact linear system solved at one depth, for auditing and teaching.
+    def _solved_minerals(self, rows: Sequence[str], porosity_fixed: bool) -> list:
+        """Minerals the rows resolve where porosity is solved (fixed by core): [] when too few.
 
-        Pass a ``well`` (uses sample ``index``, or the nearest sample to ``depth``)
-        or the log values directly. The returned dict has the labelled response
-        matrix ``A``, right-hand side ``b``, the NNLS solution ``x``, the
-        ``residual``, and the row/column labels, so you can see precisely how a
-        mineral solution was produced.
+        The rows must include PEF; minerals beyond what the rows resolve are
+        dropped from the end of ``minerals_reduced``. Sonic is fitted but not
+        counted: it sits beside PEF and does not stand in for the neutron.
         """
-        if well is not None and depth is not None:
-            dep = np.asarray(well.depth, dtype=float)
-            index = int(np.nanargmin(np.abs(dep - float(depth))))
-        if well is not None:
-            pick = lambda *names: next((np.asarray(well.get(n).data, dtype=float)[index]
-                                        for n in names if well.get(n) is not None), None)
-            rhob = pick("RHOB") if rhob is None else rhob
-            nphi = pick("NPHI", "PHIN") if nphi is None else nphi
-            vcl = pick("VCL", "VCLAY", "VSH") if vcl is None else vcl
-            pef = pick("PEF") if pef is None else pef
-            dt = pick("DTC", "DT") if dt is None else dt
-            if core_phi is None:
-                core_phi = pick("PHIC", "CPOR")
-        vcl = 0.0 if vcl is None or not np.isfinite(vcl) else float(vcl)
-        phi_fixed = float(core_phi) if core_phi is not None and np.isfinite(core_phi) else None
-        for name, val in (("rhob", rhob),):
-            if val is None or not np.isfinite(val):
-                raise ValueError(f"explain_sample needs a finite {name}")
-        nphi = None if nphi is None or not np.isfinite(nphi) else float(nphi)
-        pef = None if pef is None or not np.isfinite(pef) else float(pef)
-        dt = None if dt is None or not np.isfinite(dt) else float(dt)
+        if "u" not in rows:
+            return []
+        resolvable = len([row for row in rows if row != "dt"]) - (0 if porosity_fixed else 1)
+        if resolvable >= len(self.minerals):
+            return list(self.minerals)
+        reduced = list(self.minerals_reduced)[:resolvable]
+        return reduced if len(reduced) >= 2 else []
 
-        use_fixed_phi = phi_fixed is not None
-        active = self._active_minerals(nphi, pef, dt, use_fixed_phi)
-        if not active:
-            raise ValueError("not enough equations to resolve any mineral at this sample")
-        A, b, row_labels, columns = self._assemble_sample(
-            active, float(rhob), nphi, vcl, pef, dt, phi_fixed)
-        x, residual = self._weighted_nnls(A, b, row_labels)
-        return {
-            "minerals": list(active), "row_labels": row_labels, "columns": columns,
-            "A": A, "b": b, "x": x, "residual": float(residual),
-            "row_uncertainty": (None if self.row_uncertainty is None
-                                else [self.row_uncertainty[_ROW_KEYS[label]] for label in row_labels]),
-            "vcl": vcl, "porosity_solved": (phi_fixed if use_fixed_phi else float(x[-1])),
-        }
+    def _system(self, minerals, rows, rhob, nphi, vcl, pef, dt, porosity):
+        """Response matrix and right-hand side; ``porosity`` None adds it as an unknown."""
+        m = [self.mineral_props[name] for name in minerals]
+        fl, cl = self.fluid_props, self.clay_props
+        key = {"unity": None, "rhob": "density", "nphi": "nphi", "u": "u", "dt": "dt"}
+        reading = {"unity": 1.0, "rhob": rhob, "nphi": nphi,
+                   "u": None if pef is None else pef * rhob, "dt": dt}
+        A_rows, b_rows = [], []
+        for row in rows:
+            k = key[row]
+            mineral_vals = [1.0] * len(m) if k is None else [mi[k] for mi in m]
+            fl_val = 1.0 if k is None else fl[k]
+            cl_val = 1.0 if k is None else cl[k]
+            if porosity is None:
+                A_rows.append(mineral_vals + [fl_val])
+                b_rows.append(reading[row] - vcl * cl_val)
+            else:
+                A_rows.append(mineral_vals)
+                b_rows.append(reading[row] - vcl * cl_val - porosity * fl_val)
+        return np.array(A_rows, dtype=float), np.array(b_rows, dtype=float)
+
+    def _weighted(self, A, B, rows):
+        if self.row_uncertainty is None:
+            return A, B
+        weights = 1.0 / np.array([self.row_uncertainty[row] for row in rows])
+        return A * weights[:, None], B * (weights if B.ndim == 1 else weights[None, :])
+
+    def _solve_porosity_sample(self, rhob, nphi, vcl, pef, dt, core_phi):
+        """Minerals and porosity of one sample whose porosity is solved (or fixed by core).
+
+        Returns (minerals, volumes, porosity, closed); minerals is [] when the
+        logs cannot resolve two minerals.
+        """
+        vcl = float(np.clip(vcl, 0.0, 1.0))
+        porosity = None if core_phi is None else float(np.clip(core_phi, 0.0, 1.0 - vcl))
+        rows = self._rows(nphi, pef, dt)
+        minerals = self._solved_minerals(rows, porosity is not None)
+        if not minerals:
+            return [], (), np.nan, False
+        A, b = self._system(minerals, rows, rhob, nphi, vcl, pef, dt, porosity)
+        if np.linalg.matrix_rank(A) < A.shape[1]:
+            return [], (), np.nan, False
+        x, _ = nnls(*self._weighted(A, b, rows))
+        if porosity is None:
+            porosity = float(x[-1])
+            x = x[:-1]
+        available = 1.0 - vcl - porosity
+        closed = abs(float(x.sum()) - available) <= CLOSURE_TOLERANCE
+        if available <= 1e-9:
+            # Clay and porosity fill the rock; rounding puts an exact fill at
+            # +1e-17 or -1e-17 depending on the numpy release.
+            x = np.zeros_like(x)
+        else:
+            x = _constrain_mineral_fractions(x, available)
+        return minerals, tuple(float(v) for v in x), porosity, closed
+
+    # -- whole curves -------------------------------------------------------------
 
     def solve(
         self,
         rhob: Union[float, np.ndarray],
-        nphi: Optional[Union[float, np.ndarray]],
-        vcl:  Union[float, np.ndarray],
+        nphi: Optional[Union[float, np.ndarray]] = None,
+        vcl:  Optional[Union[float, np.ndarray]] = None,
         phie: Optional[Union[float, np.ndarray]] = None,
         pef:  Optional[Union[float, np.ndarray]] = None,
         dt:   Optional[Union[float, np.ndarray]] = None,
@@ -430,144 +361,216 @@ class MultiMineralSolver:
         Parameters
         ----------
         rhob : float or np.ndarray
-            Bulk density (g/cm³)
+            Bulk density (g/cm³).
         nphi : float or np.ndarray, optional
-            Neutron porosity (v/v). Pass None when unavailable.
-        vcl : float or np.ndarray
-            Pre-computed clay volume (0-1)
+            Neutron porosity (v/v); None when unavailable.
+        vcl : float or np.ndarray, optional
+            Pre-computed clay volume (0-1); 0 when not given.
         phie : float or np.ndarray, optional
-            Accepted and not used. The solver derives porosity jointly with
-            mineral volumes (or takes it from ``core_phi``).
-        pef : float or np.ndarray, optional
-            Photoelectric factor (b/e); omit if curve absent
-        dt : float or np.ndarray, optional
-            Sonic slowness (μs/ft); omit if curve absent
+            Effective porosity (0-1), used where the sample has NPHI. Where
+            it is missing, porosity is solved with the minerals.
+        pef, dt : float or np.ndarray, optional
+            Photoelectric factor (b/e) and sonic slowness (μs/ft).
         core_phi : float or np.ndarray, optional
-            Independently constrained porosity (fraction). Finite samples fix
-            porosity; missing samples leave it as an unknown.
+            Core porosity (0-1): where porosity is solved, a finite value
+            fixes it instead.
         samples : np.ndarray of bool, optional
-            Samples to solve; the others are left unsolved, as samples
-            without RHOB are. Each sample is solved on its own, so the
-            solved ones are as a full solve gives them.
+            Samples to solve; the others are left unsolved. Each sample is
+            solved on its own, so the solved ones are as a full solve gives them.
 
         Returns
         -------
         dict
-            Dictionary with mineral fractions, vcl, phie, residual, qc_flag,
-            solved, and underdetermined. Unsolved mineral fractions are NaN.
-            Underdetermined marks samples with too few response equations;
-            it does not mark every failed fit.
-            All minerals from both self.minerals and self.minerals_no_pef
-            are present as keys; depths where a mineral was not in the
-            active set are filled with 0.
+            Volumes for every mineral (0 where a mineral was not active at
+            that depth, NaN where the sample was not solved), the input
+            ``vcl``, ``phie`` (the porosity used: the input, or the solved
+            one), ``porosity_solved`` (True where porosity was solved or
+            fixed by core), ``qc_flag`` (True where not solved) and
+            ``solved`` (its inverse).
         """
-        raw_arrays = {
-            "rhob": np.atleast_1d(np.asarray(rhob, dtype=float)),
-            "vcl": np.atleast_1d(np.asarray(vcl, dtype=float)),
-        }
-        if phie is not None:
-            raw_arrays["phie"] = np.atleast_1d(np.asarray(phie, dtype=float))
-        if nphi is not None:
-            raw_arrays["nphi"] = np.atleast_1d(np.asarray(nphi, dtype=float))
-        if pef is not None:
-            raw_arrays["pef"] = np.atleast_1d(np.asarray(pef, dtype=float))
-        if dt is not None:
-            raw_arrays["dt"] = np.atleast_1d(np.asarray(dt, dtype=float))
-        if core_phi is not None:
-            raw_arrays["core_phi"] = np.atleast_1d(np.asarray(core_phi, dtype=float))
+        rhob = np.atleast_1d(np.asarray(rhob, dtype=float))
+        n    = len(rhob)
 
-        lengths = [len(values) for values in raw_arrays.values()]
-        n = max(lengths)
+        def array(values, fill):
+            if values is None:
+                return np.full(n, fill, dtype=float)
+            return np.array(np.broadcast_to(np.atleast_1d(np.asarray(values, dtype=float)), (n,)), dtype=float)
 
-        def _broadcast(name: str, values: np.ndarray) -> np.ndarray:
-            if len(values) == n:
-                return values.astype(float, copy=False)
-            if len(values) == 1:
-                return np.full(n, float(values[0]), dtype=float)
-            raise ValueError(
-                f"{name} length ({len(values)}) must be 1 or match solve length ({n})"
-            )
+        nphi = array(nphi, np.nan)
+        vcl  = array(vcl, 0.0)
+        phie = array(phie, np.nan)
+        pef_arr = None if pef is None else array(pef, np.nan)
+        dt_arr  = None if dt is None else array(dt, np.nan)
+        core = array(core_phi, np.nan)
 
-        rhob = _broadcast("rhob", raw_arrays["rhob"])
-        nphi_arr = _broadcast("nphi", raw_arrays["nphi"]) if nphi is not None else None
-        vcl = _broadcast("vcl", raw_arrays["vcl"])
-        phie_arr = _broadcast("phie", raw_arrays["phie"]) if phie is not None else None
-        pef_arr = _broadcast("pef", raw_arrays["pef"]) if pef is not None else None
-        dt_arr = _broadcast("dt", raw_arrays["dt"]) if dt is not None else None
-        core_phi_arr = _broadcast("core_phi", raw_arrays["core_phi"]) if core_phi is not None else None
-
-        # All possible minerals across both sets
-        all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef))
-
+        all_minerals = list(dict.fromkeys(self.minerals + self.minerals_no_pef + self.minerals_reduced))
         result = {mineral: np.zeros(n) for mineral in all_minerals}
-        result["vcl"]      = vcl.copy()
-        result["phie"]     = np.full(n, np.nan, dtype=float)
-        result["residual"] = np.zeros(n)
-        result["qc_flag"]  = np.zeros(n, dtype=bool)
-        result["solved"]   = np.zeros(n, dtype=bool)
-        result["underdetermined"] = np.zeros(n, dtype=bool)
+        result["vcl"]     = vcl.copy()
+        result["phie"]    = phie.copy()
+        result["qc_flag"] = np.zeros(n, dtype=bool)
+        result["porosity_solved"] = np.zeros(n, dtype=bool)
 
-        selected = None if samples is None else np.broadcast_to(np.asarray(samples, dtype=bool), (n,))
-        for i in range(n):
-            if (selected is not None and not selected[i]) or (
-                not np.all(np.isfinite([rhob[i], vcl[i]])) or rhob[i] <= 0.0
-            ):
+        selected = np.ones(n, dtype=bool) if samples is None else np.broadcast_to(np.asarray(samples, dtype=bool), (n,))
+        given = ~(np.isnan(rhob) | np.isnan(nphi) | np.isnan(vcl) | np.isnan(phie)) & selected
+        for mineral in all_minerals:
+            result[mineral][~given] = np.nan
+        result["qc_flag"][~given] = True
+
+        has_pef = np.zeros(n, dtype=bool) if pef_arr is None else ~np.isnan(pef_arr)
+        has_dt = np.zeros(n, dtype=bool) if dt_arr is None else ~np.isnan(dt_arr)
+        if not self.sonic_without_pef:
+            # 4 minerals need at least 4 equations: Unity + RHOB + NPHI + (PEF or DTC).
+            has_dt = has_dt & has_pef
+        # Samples sharing which logs they have share one system matrix; each is
+        # solved on its own.
+        for pef_on in (False, True):
+            for dt_on in (False, True):
+                rows = np.flatnonzero(given & (has_pef == pef_on) & (has_dt == dt_on))
+                if rows.size:
+                    self._solve_group(rows, rhob, nphi, vcl, phie, pef_arr, dt_arr, pef_on, dt_on, result)
+
+        if self.solve_porosity:
+            open_rows = np.flatnonzero(selected & ~given & np.isfinite(rhob) & (rhob > 0.0) & np.isfinite(vcl))
+            for i in open_rows:
+                pef_i = None if pef_arr is None else _finite(pef_arr[i])
+                dt_i = None if dt_arr is None else _finite(dt_arr[i])
+                if pef_i is not None and pef_i < 0.0:
+                    pef_i = None
+                if dt_i is not None and dt_i <= 0.0:
+                    dt_i = None
+                minerals, volumes, porosity, closed = self._solve_porosity_sample(
+                    float(rhob[i]), _finite(nphi[i]), float(vcl[i]), pef_i, dt_i, _finite(core[i]))
+                if not minerals or not closed:
+                    continue
                 for mineral in all_minerals:
-                    result[mineral][i] = np.nan
-                result["residual"][i] = np.nan
-                result["qc_flag"][i]  = True
-                continue
+                    result[mineral][i] = 0.0
+                for mineral, volume in zip(minerals, volumes):
+                    result[mineral][i] = volume
+                result["phie"][i] = porosity
+                result["qc_flag"][i] = False
+                result["porosity_solved"][i] = True
 
-            nphi_i = float(nphi_arr[i]) if nphi_arr is not None else None
-            pef_i = float(pef_arr[i]) if pef_arr is not None else None
-            dt_i  = float(dt_arr[i])  if dt_arr  is not None else None
-            core_phi_i = float(core_phi_arr[i]) if core_phi_arr is not None else None
-
-            if nphi_i is not None and not np.isfinite(nphi_i):
-                nphi_i = None
-            if pef_i is not None and (not np.isfinite(pef_i) or pef_i < 0.0):
-                pef_i = None
-            if dt_i is not None and (not np.isfinite(dt_i) or dt_i <= 0.0):
-                dt_i  = None
-            if core_phi_i is not None and not np.isfinite(core_phi_i):
-                core_phi_i = None
-
-            result["underdetermined"][i] = not self._active_minerals(
-                nphi_i, pef_i, dt_i, core_phi_i is not None
-            )
-
-            active_minerals, fractions, residual, poor_fit, phi_solved = self._solve_sample(
-                rhob[i], nphi_i, vcl[i],
-                float(phie_arr[i]) if phie_arr is not None else None,
-                pef_i, dt_i, phi_fixed=core_phi_i
-            )
-
-            if not active_minerals:
-                for mineral in all_minerals:
-                    result[mineral][i] = np.nan
-                result["residual"][i] = residual
-                result["qc_flag"][i] = True
-                continue
-
-            for mineral, v in zip(active_minerals, fractions):
-                result[mineral][i] = v
-
-            # Report the solver-derived (matrix-independent) porosity.
-            result["phie"][i] = phi_solved
-            result["residual"][i] = residual
-            result["qc_flag"][i]  = poor_fit
-            result["solved"][i] = True
-
+        result["solved"] = ~result["qc_flag"]
         return result
+
+    def _solve_group(self, rows, rhob, nphi, vcl, phie, pef_arr, dt_arr, pef_on, dt_on, result) -> None:
+        """Solve the samples ``rows``, which have the same logs and a given PHIE, into ``result``."""
+        active_minerals = self.minerals if (pef_on or dt_on) else self.minerals_no_pef
+        m = [self.mineral_props[name] for name in active_minerals]
+        fl, cl = self.fluid_props, self.clay_props
+        vcl_s = np.clip(vcl[rows], 0.0, 1.0)
+        phie_s = np.clip(phie[rows], 0.0, 1.0)
+
+        A_rows, b_rows, row_names = [], [], []
+
+        def add_row(row, mineral_vals, cl_val, fl_val, log_val):
+            A_rows.append(mineral_vals)
+            b_rows.append(log_val - vcl_s * cl_val - phie_s * fl_val)
+            row_names.append(row)
+
+        add_row("unity", [1.0] * len(active_minerals), cl_val=1.0, fl_val=1.0, log_val=1.0)
+        add_row("rhob", [mi["density"] for mi in m], cl_val=cl["density"], fl_val=fl["density"], log_val=rhob[rows])
+        add_row("nphi", [mi["nphi"] for mi in m], cl_val=cl["nphi"], fl_val=fl["nphi"], log_val=nphi[rows])
+        if pef_on:
+            pef_s = pef_arr[rows]
+            add_row("u", [mi["u"] for mi in m], cl_val=cl["u"], fl_val=fl["u"], log_val=pef_s * rhob[rows])
+        if dt_on:
+            dt_s = dt_arr[rows]
+            add_row("dt", [mi["dt"] for mi in m], cl_val=cl["dt"], fl_val=fl["dt"], log_val=dt_s)
+
+        A = np.array(A_rows)
+        B = np.ascontiguousarray(np.array(b_rows).T)  # one right-hand side per sample
+        if self.row_uncertainty is not None:
+            weights = 1.0 / np.array([self.row_uncertainty[row] for row in row_names])
+            A, B = A * weights[:, None], B * weights
+        X = nnls_many(A, B)
+
+        available = 1.0 - vcl_s - phie_s
+        closed = ~(np.abs(X.sum(axis=1) - available) > CLOSURE_TOLERANCE)
+        # _constrain_mineral_fractions, sample by sample.
+        X = np.clip(X, 0.0, np.maximum(available, 0.0)[:, None])
+        total = np.nansum(X, axis=1)
+        scale = (total > available) & (total > 0.0)
+        X[scale] *= (available[scale] / total[scale])[:, None]
+        X[~closed] = np.nan
+        for k, mineral in enumerate(active_minerals):
+            result[mineral][rows] = X[:, k]
+        result["qc_flag"][rows[~closed]] = True
+
+    # -- auditing ---------------------------------------------------------------------
+
+    def explain_sample(self, well: "Well" = None, index: int = 0, *, depth=None,
+                       rhob=None, nphi=None, vcl=None, phie=None, pef=None, dt=None,
+                       core_phi=None) -> Dict[str, object]:
+        """Return the exact linear system solved at one depth, for auditing and teaching.
+
+        Pass a ``well`` (uses sample ``index``, or the nearest sample to ``depth``)
+        or the log values directly. The returned dict has the labelled response
+        matrix ``A`` and right-hand side ``b`` (before the rows are divided by
+        ``row_uncertainty``), the solution ``x``, the row and column labels,
+        and the porosity used, so you can see precisely how a mineral solution
+        was produced.
+        """
+        if well is not None and depth is not None:
+            dep = np.asarray(well.depth, dtype=float)
+            index = int(np.nanargmin(np.abs(dep - float(depth))))
+        if well is not None:
+            def pick(*names):
+                return next((np.asarray(well.get(n).data, dtype=float)[index]
+                             for n in names if well.get(n) is not None), None)
+            rhob = pick("RHOB") if rhob is None else rhob
+            nphi = pick("NPHI", "PHIN") if nphi is None else nphi
+            vcl = pick("VCL", "VCLAY", "VSH") if vcl is None else vcl
+            phie = pick("PHIE", "PHIT") if phie is None else phie
+            pef = pick("PEF") if pef is None else pef
+            dt = pick("DTC", "DT") if dt is None else dt
+            if core_phi is None:
+                core_phi = pick("PHIE_CC", "PHIT_CC", "CPOR", "CPOR_CC", "PHIC")
+        if rhob is None or not np.isfinite(rhob):
+            raise ValueError("explain_sample needs a finite rhob")
+        rhob = float(rhob)
+        vcl = float(np.clip(_finite(vcl) or 0.0, 0.0, 1.0))
+        nphi, phie, pef, dt, core_phi = (_finite(v) for v in (nphi, phie, pef, dt, core_phi))
+
+        if nphi is not None and phie is not None:
+            porosity: Optional[float] = float(np.clip(phie, 0.0, 1.0))
+            minerals = self._fixed_minerals(pef, dt)
+            rows = ["unity", "rhob", "nphi"]
+            if pef is not None:
+                rows.append("u")
+            if dt is not None and (pef is not None or self.sonic_without_pef):
+                rows.append("dt")
+            source = "PHIE given"
+        else:
+            if not self.solve_porosity:
+                raise ValueError("porosity is not solved by this solver (solve_porosity=False) and PHIE "
+                                 "or NPHI is missing at this sample")
+            porosity = None if core_phi is None else float(np.clip(core_phi, 0.0, 1.0 - vcl))
+            rows = self._rows(nphi, pef, dt)
+            minerals = self._solved_minerals(rows, porosity is not None)
+            source = "core porosity" if porosity is not None else "solved"
+            if not minerals:
+                raise ValueError("not enough equations to resolve two minerals at this sample "
+                                 "(porosity solved: RHOB, PEF and closure at least)")
+        A, b = self._system(minerals, rows, rhob, nphi, vcl, pef, dt, porosity)
+        x, residual = nnls(*self._weighted(A, b, rows))
+        return {
+            "minerals": list(minerals), "row_labels": [_ROW_LABELS[row] for row in rows],
+            "columns": list(minerals) + ([] if porosity is not None else ["porosity"]),
+            "A": A, "b": b, "x": x, "residual": float(residual),
+            "row_uncertainty": (None if self.row_uncertainty is None
+                                else [self.row_uncertainty[row] for row in rows]),
+            "vcl": vcl, "porosity": porosity if porosity is not None else float(x[-1]),
+            "porosity_source": source,
+        }
 
     def add_to_well(self, well: "Well") -> "Well":
         """
-        Add lithology curves to well.
+        Add mineral volume curves to the well.
 
-        Requires RHOB plus VCL on the well object. At least one
-        discriminator curve from NPHI/PHIN, PEF, or DTC/DT must be present.
-        Neutron is helpful but not mandatory when PEF/DTC provide enough
-        independent equations.
+        Requires RHOB and VCL on the well, with NPHI/PHIN or PEF. PHIE (or
+        PHIT) is used where the sample has NPHI; elsewhere porosity is solved
+        with the minerals.
 
         Parameters
         ----------
@@ -577,31 +580,22 @@ class MultiMineralSolver:
         Returns
         -------
         Well
-            Well with lithology curves added
+            Well with VQTZ, VCAL, VDOL, VANH and the MMQC flag added
         """
         rhob, _, _ = get_curve_data_depthwise(well, ["RHOB"])
         nphi, _, _ = get_curve_data_depthwise(well, ["NPHI", "PHIN"])
         vcl, _, _ = get_curve_data_depthwise(well, ["VCL", "VCLAY", "VSH"])
+        phie, _, _ = get_curve_data_depthwise(well, ["PHIE", "PHIT"])
         pef, _, _ = get_curve_data_depthwise(well, ["PEF"])
         dt, _, _ = get_curve_data_depthwise(well, ["DTC", "DT"])
 
-        missing = [
-            name for name, data in zip(
-                ["RHOB", "VCL/VCLAY/VSH"],
-                [rhob, vcl],
-            )
-            if data is None
-        ]
-        if nphi is None and pef is None and dt is None:
-            missing.append("NPHI/PHIN, PEF, or DTC/DT")
+        missing = [name for name, data in zip(["RHOB", "VCL/VCLAY/VSH"], [rhob, vcl]) if data is None]
+        if nphi is None and pef is None:
+            missing.append("NPHI/PHIN or PEF")
         if missing:
             raise ValueError(f"Missing required curves: {missing}")
 
-        result = self.solve(
-            rhob, nphi, vcl,
-            pef=pef,
-            dt=dt,
-        )
+        result = self.solve(rhob, nphi, vcl, phie, pef=pef, dt=dt)
 
         curve_names = {
             "quartz":    "VQTZ",
@@ -610,7 +604,7 @@ class MultiMineralSolver:
             "anhydrite": "VANH",
         }
         for mineral, values in result.items():
-            if mineral in ("vcl", "phie", "residual", "qc_flag", "solved", "underdetermined"):
+            if mineral in ("vcl", "phie", "qc_flag", "solved", "porosity_solved"):
                 continue
             curve_name = curve_names.get(mineral, f"V{mineral.upper()[:4]}")
             well.add_curve(
@@ -620,14 +614,10 @@ class MultiMineralSolver:
 
         well.add_curve(
             "MMQC", result["qc_flag"].astype(float), unit="",
-            description="Multi-mineral closure QC flag (1 = poor fit)",
+            description="Multi-mineral closure QC flag (1 = not solved)",
         )
 
         return well
-
-
-# Explicit name for the current solver alongside MultiMineralSolverV1.
-MultiMineralSolverV2 = MultiMineralSolver
 
 
 def solve_two_mineral(
@@ -643,20 +633,16 @@ def solve_two_mineral(
     """
     Convenience wrapper for a 2-mineral solve.
 
-    It routes through ``MultiMineralSolver`` and defaults VCL/PHIE to zero
-    when they are not provided.
+    It routes through ``MultiMineralSolver``; VCL defaults to zero, and
+    without ``phie`` (or ``nphi``) porosity is solved with the minerals.
     """
-    rhob_arr = np.atleast_1d(np.asarray(rhob, dtype=float))
-    nphi_arr = None if nphi is None else np.atleast_1d(np.asarray(nphi, dtype=float))
-    vcl_arr = np.zeros_like(rhob_arr) if vcl is None else np.atleast_1d(np.asarray(vcl, dtype=float))
-    phie_arr = np.zeros_like(rhob_arr) if phie is None else np.atleast_1d(np.asarray(phie, dtype=float))
-
     solver = MultiMineralSolver(
         minerals=list(minerals),
         minerals_no_pef=list(minerals),
+        minerals_reduced=list(minerals),
         **kwargs,
     )
-    return solver.solve(rhob_arr, nphi_arr, vcl_arr, phie_arr, pef=pef, dt=dt)
+    return solver.solve(rhob, nphi, vcl, phie, pef=pef, dt=dt)
 
 
 def solve_three_mineral(
@@ -672,17 +658,14 @@ def solve_three_mineral(
     """
     Convenience wrapper for a 3-mineral solve.
 
-    It routes through ``MultiMineralSolver`` and defaults VCL/PHIE to zero
-    when they are not provided.
+    It routes through ``MultiMineralSolver``; VCL defaults to zero, and
+    without ``phie`` (or ``nphi``) porosity is solved with the minerals.
     """
-    rhob_arr = np.atleast_1d(np.asarray(rhob, dtype=float))
-    nphi_arr = None if nphi is None else np.atleast_1d(np.asarray(nphi, dtype=float))
-    vcl_arr = np.zeros_like(rhob_arr) if vcl is None else np.atleast_1d(np.asarray(vcl, dtype=float))
-    phie_arr = np.zeros_like(rhob_arr) if phie is None else np.atleast_1d(np.asarray(phie, dtype=float))
-
     solver = MultiMineralSolver(
         minerals=list(minerals),
         minerals_no_pef=list(minerals),
+        minerals_reduced=list(minerals),
         **kwargs,
     )
-    return solver.solve(rhob_arr, nphi_arr, vcl_arr, phie_arr, pef=pef, dt=dt)
+    return solver.solve(rhob, nphi, vcl, phie, pef=pef, dt=dt)
+

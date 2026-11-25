@@ -6,8 +6,9 @@ The ``"current"`` profile uses the published forms,
 :func:`~petrophys.interpretation.saturation.indonesia` (Poupon and Leveaux,
 1971) and :func:`~petrophys.interpretation.saturation.dual_water`.
 
-The canonical mineral inversion is
-:class:`~petrophys.interpretation.lithology.MultiMineralSolverV1`.
+The profile's mineral solve is
+:class:`~petrophys.interpretation.lithology.MultiMineralSolver` with
+unweighted rows.
 """
 
 import numpy as np
