@@ -7173,7 +7173,7 @@ class DynamicWorkflow:
         if not solved.any():
             return
         trace.decisions.append(
-            f"{int(solved.sum())} samples without NPHI: porosity solved with the minerals from RHOB and PEF, "
+            f"{int(solved.sum())} samples without NPHI or PHIE: porosity solved with the minerals from RHOB and PEF or NPHI, "
             "so the minerals do not rest on a porosity computed with an assumed matrix "
             f"(the minerals beyond what the logs resolve: {', '.join(result.mineral_selection['reduced_minerals'])} "
             f"for {result.mineral_selection['lithology']} rock)"

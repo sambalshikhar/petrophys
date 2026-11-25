@@ -139,10 +139,11 @@ class MultiMineralSolver:
     * **Porosity solved** elsewhere (no NPHI, or no PHIE as on a raw well):
       porosity is one more unknown, so the minerals do not rest on a
       porosity computed with an assumed matrix. A core porosity
-      (``core_phi``) fixes it where one is given. These samples need PEF:
-      density, PEF and closure give porosity and two minerals, the
-      density-photoelectric lithology of the chartbooks. More rows (NPHI,
-      sonic beside PEF) solve more minerals, up to ``minerals``; with fewer
+      (``core_phi``) fixes it where one is given. Density and closure with
+      PEF or with NPHI give porosity and two minerals, the
+      density-photoelectric or density-neutron lithology of the chartbooks;
+      sonic is fitted beside them but does not stand in for either. More
+      rows (NPHI and PEF together) solve more minerals, up to ``minerals``; with fewer
       the minerals come from ``minerals_reduced`` in its order (quartz and
       calcite by default, calcite and dolomite in carbonate). The same 0.05
       closure check applies.
@@ -274,12 +275,11 @@ class MultiMineralSolver:
     def _solved_minerals(self, rows: Sequence[str], porosity_fixed: bool) -> list:
         """Minerals the rows resolve where porosity is solved (fixed by core): [] when too few.
 
-        The rows must include PEF; minerals beyond what the rows resolve are
-        dropped from the end of ``minerals_reduced``. Sonic is fitted but not
-        counted: it sits beside PEF and does not stand in for the neutron.
+        Minerals beyond what the rows resolve are dropped from the end of
+        ``minerals_reduced``. Sonic is fitted but not counted: it sits beside
+        PEF and does not stand in for PEF or the neutron, so RHOB with sonic
+        alone resolves no mineral.
         """
-        if "u" not in rows:
-            return []
         resolvable = len([row for row in rows if row != "dt"]) - (0 if porosity_fixed else 1)
         if resolvable >= len(self.minerals):
             return list(self.minerals)
@@ -551,7 +551,7 @@ class MultiMineralSolver:
             source = "core porosity" if porosity is not None else "solved"
             if not minerals:
                 raise ValueError("not enough equations to resolve two minerals at this sample "
-                                 "(porosity solved: RHOB, PEF and closure at least)")
+                                 "(porosity solved: RHOB, closure and PEF or NPHI at least)")
         A, b = self._system(minerals, rows, rhob, nphi, vcl, pef, dt, porosity)
         x, residual = nnls(*self._weighted(A, b, rows))
         return {

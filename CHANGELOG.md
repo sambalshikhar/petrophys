@@ -165,8 +165,12 @@ their raw logs.
     covers 2906-3432 m, the dominant mineral matches the vendor log's
     clastic or carbonate call on 87 % of those samples, with no dolomite in
     its clastic rock; the shallow mudstones at RHOB near 2.0 g/cm3, which no
-    mineral mix closes at the well's VCL, are left unsolved. A well with
-    neither NPHI nor PEF skips the step and says it needs one of them.
+    mineral mix closes at the well's VCL, are left unsolved. Where NPHI is
+    logged but no porosity is given (a raw well passed to `LithologyModule`
+    or `MultiMineralSolver`), density, neutron and closure give porosity and
+    two minerals the same way, the neutron-density lithology of the
+    chartbooks. A well with neither NPHI nor PEF skips the step and says it
+    needs one of them.
   - The COSTA calibration solves its carbonates in closed form,
     `solve_carbonate_minerals(..., "costa")`, with the equations of the
     per-sample SLSQP solve in the COSTA notebooks: the two agree to 1e-7 v/v
