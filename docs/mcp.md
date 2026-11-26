@@ -11,7 +11,7 @@ mystnb:
 
 A context gives a model the result of an interpretation ({doc}`context`); an MCP server lets the model run the interpretation itself.
 Petrophys ships a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for LLM applications such as Claude Desktop, Claude Code, Cursor and VS Code.
-Through it, a model loads wells, interprets them, reads the trace and plots logs on your machine. It uses the same workflow as the Python API.
+Through it, a model loads wells, interprets them, reads the trace, plots logs and calls any public function of the library, on your machine. It uses the same workflow as the Python API.
 
 ```{code-cell} python
 :tags: [remove-cell]
@@ -204,6 +204,63 @@ figure = await call("plot_well", target_id=run["interpretation_id"],
 Image(data=b64decode(figure.content[0].data), width=640)
 ```
 
+## Every library function
+
+The tools above cover the everyday work. Three more reach every other public function of the library: saturation and porosity models, estimates, classifications, calibrations, checks and plots. The server reads them from the installed library, so a function added to Petrophys can be called without a change to the server.
+
+**Find** a function by what it computes. Each hit lists the inputs it needs:
+
+```{code-cell} python
+found = (await call("find_functions", query="bulk volume water", limit=3)).structured_content
+pd.DataFrame(found["found"])[["name", "module", "needs"]]
+```
+
+**Describe** it. With a `target_id`, the answer names the curves of that well that fit each input and gives an example call:
+
+```{code-cell} python
+described = (await call("describe_function", name="calculate_bvw",
+                        target_id=run["interpretation_id"])).structured_content
+described["example"]
+```
+
+**Call** it over the Brent Group window. A result with one value per depth sample becomes a curve on the well, and its statistics come back:
+
+```{code-cell} python
+bvw = (await call("call_function", name="calculate_bvw", target_id=run["interpretation_id"],
+                  arguments={"phie": "PHIE", "sw": "SW"}, top=2841, bottom=2958)).structured_content
+bvw["result_id"], bvw["result"]
+```
+
+Every result is kept under a `result_id`, which a later call takes as an input. Here the core plugs of the well become core data, and the core data go into a calibration against the log porosity:
+
+```{code-cell} python
+core = (await call("call_function", name="core_data", target_id="30_6-5")).structured_content
+calibration = (await call("call_function", name="calibrate_porosity", target_id=run["interpretation_id"],
+                          arguments={"core": core["result_id"]})).structured_content
+calibration["inputs"], sorted(calibration["result"])
+```
+
+A plot comes back as a PNG, like `plot_well`'s:
+
+```{code-cell} python
+pickett = await call("call_function", name="pickett_plot", target_id=run["interpretation_id"],
+                     arguments={"rw": 0.07}, top=2841, bottom=2958, dpi=72)
+Image(data=b64decode(pickett.content[0].data), width=480)
+```
+
+`call_function` reads each input as the kind the library declares for it:
+
+| The function takes | Give |
+|---|---|
+| a curve | its name on the well (its values between `top` and `bottom`), or one number used at every sample |
+| a mask | a curve (non-zero is true) or a condition such as `"VCL < 0.35 and PHIE > 0.1"` |
+| the well, its depths, a depth window | nothing: the server fills them from `target_id`, `top` and `bottom` (the well is passed as a copy) |
+| a choice or a switch | one of the listed values (any case), or true/false |
+| an object: core data, a fitted model, a calibration | the `result_id` of the call that made it (`fn-2`, or `fn-2.model` for a part), or JSON for a mapping, a table or a dataclass; core data can also be a core table file |
+| a file | a path inside the allowed folders |
+
+Curves are named after the function, or `store_as`; an existing curve is never replaced. A well comes back as a new well id. A function that needs Python code as an input, such as a function to sample, is named as such and not called.
+
 ```{code-cell} python
 :tags: [remove-cell]
 workspace.cleanup()
@@ -217,6 +274,7 @@ Every response is compact JSON that carries the well's depth unit. Data-quality 
 |---|---|
 | Rw unknown | Rw rarely comes from logs alone. The server tells models to ask for it; give it, with its temperature, when you know it |
 | Reviewing an answer | ask the model to report `warnings` and `skipped_steps`: they show which results rest on assumptions |
+| A method the tools do not name | the model finds it with `find_functions`; `describe_function` shows what it needs |
 | Whole-well totals | ask for a reservoir window (`summary_top`/`summary_bottom`) or per-formation results: one Rw serves the whole well, so shallow overburden with fresher water, where no lithology code applies, can still be flagged as marginal pay |
 | File access | keep `--root` to the folders the model may use; exports overwrite files of the same name there |
 | `The Petrophys MCP server needs the MCP SDK` | `pip install "petrophys[mcp]"` (Python 3.10+) |

@@ -2,6 +2,29 @@
 
 Release notes for Petrophys: what each version of the library does.
 
+## Unreleased
+
+### MCP server
+
+- Every public function of the library is reachable over MCP. `find_functions`
+  searches them by what they compute, `describe_function` gives each input's
+  kind, unit and default with how to give it, and `call_function` runs one on
+  a well or interpretation. The functions are read from the installed library
+  (`petrophys.function_schema`), so a new function needs no server change.
+- `call_function` reads each input as the kind the library declares: a curve
+  by its name on the well (or one number), a mask as a curve or a condition
+  such as `"VCL < 0.35 and PHIE > 0.1"`, the well, its depths and the depth
+  window filled from the call, a choice checked against its choices, an
+  object as the id of an earlier result (`fn-2`, `fn-2.part`) or JSON, and a
+  file path only inside the allowed folders.
+- A result with one value per depth sample is added to the well as a new
+  curve (an existing curve is never replaced) and returned as statistics; a
+  figure is returned as a PNG, a well as a new well id, and anything else as
+  compact JSON. Every result is kept under a result id; `list_loaded` lists
+  them.
+- A function that needs Python code as an input (a function to sample, a
+  Matplotlib axes) is named as such and not called.
+
 ## 3.0.0 (unreleased)
 
 First public release. Petrophys reads well logs, runs a traceable

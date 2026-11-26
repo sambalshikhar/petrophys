@@ -30,6 +30,7 @@ from petrophys.mcp.serialize import (
     well_summary,
     workflow_summary,
 )
+from petrophys.mcp.functions import LibraryFunctions
 from petrophys.mcp.session import Session, SessionError, default_calculation_profile
 
 try:
@@ -61,6 +62,10 @@ More: interpret_wells compares several wells in one call; run_workflow runs
 a recipe you specify step by step (quick looks, fixed parameters);
 spectral_gamma reads K-Th-U logs; export_results writes LAS/CSV/JSON.
 Prefer these summaries to curve_values, which returns decimated samples.
+Every other public function of the library (models, estimates, checks,
+classifications, calibrations, plots) is reachable: find_functions(query),
+describe_function(name), call_function(name, target_id, arguments). Curves it
+computes are added to the well; each result gets an id later calls take.
 Depths are in each well's depth unit (depth_unit in every response).
 """
 
@@ -245,12 +250,14 @@ def create_server(
             return [redacted(item) for item in value]
         return value
 
-    def reply(data: Dict[str, Any]) -> CallToolResult:
-        """Compact JSON text for the model plus the same data as structured content."""
+    def reply(data: Dict[str, Any], images: Sequence[bytes] = ()) -> CallToolResult:
+        """Compact JSON text for the model plus the same data as structured content;
+        PNG images, when given, come first."""
         clean = redacted(compact(data))
         text = json.dumps(clean, separators=(",", ":"), ensure_ascii=False)
-        return CallToolResult(content=[TextContent(type="text", text=text)],
-                              structured_content=clean)
+        content: List[Any] = [Image(data=png, format="png").to_image_content() for png in images]
+        content.append(TextContent(type="text", text=text))
+        return CallToolResult(content=content, structured_content=clean)
 
     @contextmanager
     def tool_errors() -> Iterator[None]:
@@ -375,6 +382,14 @@ def create_server(
         before = set(state.well(well_id).curves)
         return [name for name in result.well.curves if name not in before]
 
+    def resolve_target(target_id: str) -> str:
+        """An interpretation id as given; a well id, or a sample name loaded on first use."""
+        if target_id in state.interpretations:
+            return target_id
+        return ensure_well(target_id)[0]
+
+    library = LibraryFunctions(state, resolve_target)
+
     # -- discovery -----------------------------------------------------------
     @server.tool(annotations=READ_ONLY)
     def list_sample_wells() -> JsonReply:
@@ -486,6 +501,10 @@ def create_server(
                          "kind": "run_workflow" if hasattr(result, "workflow") else
                          "interpret_well"}
                 for run_id, (owner, result) in state.interpretations.items()
+            },
+            "results": {
+                result_id: {"function": function, "target_id": owner, "type": type(value).__name__}
+                for result_id, (owner, value, function) in state.results.items()
             },
         })
 
@@ -1082,6 +1101,96 @@ def create_server(
                 "size": _human_size(size),
                 "curves": len(result.well.curves),
             })
+
+    # -- every library function ------------------------------------------------------
+    @server.tool(annotations=READ_ONLY)
+    def find_functions(
+        query: Annotated[
+            Optional[str],
+            Field(description="What to compute or check, in words, e.g. 'bulk volume water', "
+                              "'cementation exponent from core', 'pickett plot'. Leave out for the "
+                              "library's areas."),
+        ] = None,
+        package: Annotated[
+            Optional[Literal["interpretation", "evaluation", "preprocessing", "visualization"]],
+            Field(description="Search one package only."),
+        ] = None,
+        limit: Annotated[int, Field(ge=1, le=30, description="Most functions returned.")] = 10,
+    ) -> JsonReply:
+        """Search every public Petrophys function by what it does.
+
+        The other tools cover loading, QC, interpretation, zone summaries and log
+        plots; this reaches the rest of the library (saturation and porosity
+        models, estimates, classifications, calibrations, checks, plots). Each
+        hit lists the inputs it needs; then describe_function and call_function.
+        """
+        with tool_errors():
+            return reply(library.find(query, package=package, limit=limit))
+
+    @server.tool(annotations=READ_ONLY)
+    def describe_function(
+        name: Annotated[
+            str, Field(description="Function name from find_functions, e.g. 'calculate_bvw'.")
+        ],
+        target_id: Annotated[
+            Optional[str],
+            Field(description="A well or interpretation id: lists its curves that fit each curve "
+                              "input."),
+        ] = None,
+    ) -> JsonReply:
+        """Parameters of one library function and how to give each in call_function.
+
+        Per parameter: kind, unit, default, accepted choices and how to give it;
+        the inputs the server fills (the well, its depths, the window); what it
+        returns; an example call.
+        """
+        with tool_errors():
+            return reply(library.describe(name, target_id))
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False, destructive_hint=True, open_world_hint=False
+        )
+    )
+    def call_function(
+        name: Annotated[
+            str, Field(description="Function name from find_functions, e.g. 'calculate_bvw'.")
+        ],
+        target_id: Annotated[
+            Optional[str],
+            Field(description="Well or interpretation id the function works on (an interpretation "
+                              "id includes its calculated curves). Leave out for a function of "
+                              "numbers only."),
+        ] = None,
+        arguments: Annotated[
+            Optional[Dict[str, Any]],
+            Field(description="The function's inputs by name, e.g. {'phie': 'PHIE', 'sw': 'SW'}: a "
+                              "curve by name (or one number), a mask as a condition such as "
+                              "'VCL < 0.35 and PHIE > 0.1', an object as the id of an earlier result "
+                              "('fn-2', 'fn-2.model'). The well, its depths and the window are "
+                              "filled when left out."),
+        ] = None,
+        top: Top = None,
+        bottom: Bottom = None,
+        store_as: Annotated[
+            Optional[str],
+            Field(description="Curve name for a result with one value per depth sample "
+                              "(default: the function's name)."),
+        ] = None,
+        dpi: Annotated[int, Field(ge=50, le=200, description="Resolution of a returned figure.")] = 90,
+    ) -> JsonReply:
+        """Run any public Petrophys function on a well (find_functions, describe_function).
+
+        A result with one value per depth sample is added to the well as a curve
+        (its statistics are returned; curve_statistics, plot_well and later calls
+        read it); a figure comes back as a PNG; a well as a new well id; anything
+        else as compact JSON. Every result gets a result_id that later calls take
+        as an input. File paths stay inside the allowed folders.
+        """
+        with tool_errors():
+            data, images = library.call(name, target_id, arguments, top=top, bottom=bottom,
+                                        store_as=store_as, dpi=dpi)
+            return reply(data, images=images)
 
     # -- resources and prompts -----------------------------------------------------
     @server.resource(

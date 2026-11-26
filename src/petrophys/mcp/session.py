@@ -91,6 +91,10 @@ class Session:
     interpretations : dict, optional
         Interpretation id to ``(well id, result)``; empty by default and
         filled by :meth:`add_interpretation`.
+    results : dict, optional
+        Result id to ``(target id, value, function name)``: what
+        ``call_function`` returned; empty by default and filled by
+        :meth:`add_result`.
 
     Notes
     -----
@@ -107,6 +111,9 @@ class Session:
     #: :class:`~petrophys.workflow.DynamicWorkflowResult` (interpret_well) or a
     #: :class:`~petrophys.workflow.WorkflowRunResult` (run_workflow).
     interpretations: Dict[str, Tuple[str, Any]] = field(default_factory=dict)
+    #: Result id (``fn-1``, ``fn-2``, ...) -> (target id or None, value,
+    #: function name), from :mod:`petrophys.mcp.functions`.
+    results: Dict[str, Tuple[Optional[str], Any, str]] = field(default_factory=dict)
     #: Short labels of ``roots`` (their folder names), used in messages.
     root_labels: List[str] = field(init=False, default_factory=list)
 
@@ -183,6 +190,11 @@ class Session:
         yield from self.roots
         if reading:
             yield _samples_dir()
+
+    def is_allowed(self, path: Any, *, reading: bool = True) -> bool:
+        """Whether ``path`` lies inside an allowed folder (or, when reading, the samples)."""
+        candidate = Path(str(path)).expanduser().resolve()
+        return any(_is_within(candidate, root) for root in self._readable_roots(reading))
 
     def describe_roots(self) -> str:
         """The allowed folders, by label (never their absolute paths)."""
@@ -285,6 +297,29 @@ class Session:
             raise SessionError(
                 self._unknown("interpretation", interpretation_id, self.interpretations) + hint
             ) from None
+
+    # -- function results -----------------------------------------------------
+    def add_result(self, target_id: Optional[str], value: Any, function: str) -> str:
+        """Store what a library function returned and return its id (``fn-<n>``)."""
+        count = len(self.results) + 1
+        while f"fn-{count}" in self.results:
+            count += 1
+        identifier = f"fn-{count}"
+        self.results[identifier] = (target_id, value, function)
+        return identifier
+
+    def result(self, result_id: str) -> Any:
+        """Return the value stored under ``result_id``.
+
+        Raises
+        ------
+        SessionError
+            If no result has that id; the message lists the known ids.
+        """
+        try:
+            return self.results[result_id][1]
+        except KeyError:
+            raise SessionError(self._unknown("result", result_id, self.results)) from None
 
     def target_well(self, target_id: str) -> "Well":
         """Return the interpreted well for an interpretation id, else the loaded well."""

@@ -88,7 +88,7 @@ back with the accepted values, so the model corrects itself, and files stay insi
 **Tools for the whole workflow**
 
 Load and describe wells, check data quality, interpret one well or a whole field, run your own workflows, explain any
-step, summarize zones and plot. [LLM agents](https://welllogbench.com/petrophys/docs/mcp)
+step, summarize zones, plot, and find and call any public function of the library. [LLM agents](https://welllogbench.com/petrophys/docs/mcp)
 
 </td>
 <td width="33%" valign="top">
