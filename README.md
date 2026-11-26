@@ -85,7 +85,7 @@ back with the accepted values, so the model corrects itself, and files stay insi
 <tr>
 <td width="33%" valign="top">
 
-**Seventeen tools**
+**Tools for the whole workflow**
 
 Load and describe wells, check data quality, interpret one well or a whole field, run your own workflows, explain any
 step, summarize zones and plot. [LLM agents](https://welllogbench.com/petrophys/docs/mcp)
@@ -110,9 +110,32 @@ so generated code calls the library correctly.
 </tr>
 </table>
 
+### Pair it with PetroHarness
+
+<table>
+<tr>
+<td width="36%" align="center" valign="middle">
+<a href="https://welllogbench.com/petroharness/"><img src="https://raw.githubusercontent.com/sambalshikhar/petrophys/main/.github/assets/petroharness-logo.png" alt="PetroHarness" width="260"></a>
+</td>
+<td valign="middle">
+
+**An agentic harness that makes formation evaluation auditable and more accurate.** Ask about a well in plain
+language: a language model investigates it step by step, Petrophys does every calculation, and every number in the
+answer traces back to the log. On WellLogBench, the models we tested score higher with it.
+
+```bash
+pip install petroharness
+petroharness --launch-ui
+```
+
+[GitHub](https://github.com/sambalshikhar/PetroHarness) · [Website](https://welllogbench.com/petroharness/) · [Documentation](https://welllogbench.com/petroharness/docs/)
+
+</td>
+</tr>
+</table>
+
 [WellLogBench](https://welllogbench.com), a benchmark of LLM reasoning on well logs, builds its well contexts with
-Petrophys, and in [PetroHarness](https://github.com/sambalshikhar/PetroHarness), an agentic harness, a language model
-investigates a well while Petrophys does every calculation.
+Petrophys.
 
 ## Install
 
