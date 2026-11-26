@@ -18,7 +18,7 @@ department for Python 3.13 and permission to install Python packages with
 
 ## 1. Install Python
 
-Petrophys runs on Python 3.9 to 3.13. The main download button on python.org
+Petrophys runs on Python 3.10 to 3.13. The main download button on python.org
 offers a later version, so take a Python 3.13 installer from the page for your
 system:
 

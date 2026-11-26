@@ -15,7 +15,7 @@ license-files = [
     "src/petrophys/datasets/phillips/LICENSE-*.txt",
     "src/petrophys/datasets/taranaki/LICENSE-*.txt",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     {name = "Petrophys Contributors"}
 ]
@@ -34,7 +34,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -138,7 +137,7 @@ petrophys = [
 
 [tool.black]
 line-length = 88
-target-version = ["py39", "py310", "py311", "py312"]
+target-version = ["py310", "py311", "py312"]
 include = '\.pyi?$'
 
 [tool.isort]

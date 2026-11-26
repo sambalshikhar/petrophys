@@ -1,7 +1,7 @@
 Installation
 ============
 
-Petrophys supports Python 3.9 through 3.13. The core installation includes
+Petrophys supports Python 3.10 through 3.13. The core installation includes
 NumPy, pandas, SciPy, Matplotlib, lasio, openpyxl, and defusedxml.
 
 New to Python? :doc:`new_to_python` runs Petrophys in your browser with
