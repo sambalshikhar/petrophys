@@ -4,9 +4,8 @@
 
 ### From well logs to defensible interpretations.
 
-Petrophys turns well logs, core and specialist measurements into traceable petrophysical interpretations: clay
-volume, porosity, water saturation, permeability, rock quality and net pay. Every executed step is recorded, and
-every skipped step says why.
+Petrophys turns well logs, core and specialist measurements into traceable petrophysical interpretations. Every
+executed step is recorded, and every skipped step says why.
 
 **[Website](https://welllogbench.com/petrophys/) · [Documentation](https://welllogbench.com/petrophys/docs/) · [Quickstart](https://welllogbench.com/petrophys/docs/quickstart) · [Tutorials](https://welllogbench.com/petrophys/docs/tutorials/) · [API reference](https://welllogbench.com/petrophys/docs/api/) · [PyPI](https://pypi.org/project/petrophys/)**
 
