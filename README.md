@@ -1,64 +1,102 @@
-# Petrophys
+<div align="center">
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Documentation](https://img.shields.io/badge/docs-welllogbench.com%2Fpetrophys-087f73.svg)](https://welllogbench.com/petrophys/docs/)
-[![CI](https://github.com/sambalshikhar/petrophys/actions/workflows/ci.yml/badge.svg)](https://github.com/sambalshikhar/petrophys/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<img src="https://raw.githubusercontent.com/sambalshikhar/petrophys/main/.github/assets/petrophys-logo.png" alt="Petrophys" width="380">
 
-Petrophys turns well logs, core, and specialist measurements into traceable
-petrophysical interpretations: clay volume, porosity, water saturation,
-permeability, rock quality, and net pay.
+### From well logs to defensible interpretations.
 
-- **Input-aware.** The workflow checks which curves and parameters a well
-  actually has and runs every step it can. Incomplete log suites give a
-  reduced interpretation, not a crash.
-- **Traceable.** Every step records its method, inputs, outputs, and
-  parameters; every skipped step records why. Results export as JSON for
-  review or for LLM agents.
-- **Honest about data.** Implausible or mislabelled curves, geology that misses
-  the logged interval, and invalid settings are reported, never silently
-  "fixed". Values the workflow has to assume, such as the temperature of a
-  given Rw or a temperature gradient, are reported as warnings.
+Petrophys turns well logs, core and specialist measurements into traceable petrophysical interpretations: clay
+volume, porosity, water saturation, permeability, rock quality and net pay. Every executed step is recorded, and
+every skipped step says why.
 
-## Installation
+**[Website](https://welllogbench.com/petrophys/) · [Documentation](https://welllogbench.com/petrophys/docs/) · [Quickstart](https://welllogbench.com/petrophys/docs/quickstart) · [Tutorials](https://welllogbench.com/petrophys/docs/tutorials/) · [API reference](https://welllogbench.com/petrophys/docs/api/) · [PyPI](https://pypi.org/project/petrophys/)**
+
+[![PyPI](https://img.shields.io/pypi/v/petrophys?color=197e6f&label=pypi)](https://pypi.org/project/petrophys/)
+[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-17263f)](https://welllogbench.com/petrophys/docs/installation)
+[![Documentation](https://img.shields.io/badge/docs-welllogbench.com%2Fpetrophys-197e6f)](https://welllogbench.com/petrophys/docs/)
+[![CI](https://github.com/sambalshikhar/petrophys/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sambalshikhar/petrophys/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-17263f)](https://github.com/sambalshikhar/petrophys/blob/main/LICENSE)
+
+<img src="https://raw.githubusercontent.com/sambalshikhar/petrophys/main/.github/assets/petrophys-brent-group.png" alt="Multi-track Petrophys interpretation of the Brent Group in well 30/6-5: lithology, conventional logs, porosity, saturation, permeability, rock quality, mineral volumes, core points and reservoir flags" width="100%">
+
+<sub>The bundled GeoLink well 30/6-5 across the Brent Group, interpreted and drawn by the <a href="#quick-start">quick start</a> below: the
+file's lithology log, conventional logs, porosity, saturation, permeability, rock quality, mineral volumes, core points
+and reservoir flags.</sub>
+
+</div>
+
+## Why Petrophys
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+**Input-aware**
+
+The workflow checks which curves and parameters a well actually has and runs every step it can. An incomplete log
+suite gives a reduced interpretation, not a crash.
+
+</td>
+<td width="33%" valign="top">
+
+**Traceable**
+
+Every step records its method, inputs, outputs and parameters; every skipped step records why. Results export as
+JSON for review or for LLM agents.
+
+</td>
+<td width="33%" valign="top">
+
+**Honest about data**
+
+Implausible or mislabelled curves, geology that misses the logged interval and invalid settings are reported, never
+silently "fixed". Values the workflow has to assume, such as the temperature of a given Rw, are reported as warnings.
+
+</td>
+</tr>
+</table>
+
+## Install
 
 ```bash
-python -m pip install petrophys
+pip install petrophys
 ```
 
-Until the first release is on PyPI, install from source:
-
-```bash
-git clone https://github.com/sambalshikhar/petrophys.git
-cd petrophys
-python -m pip install -e ".[all]"
-```
-
-Optional extras (add in square brackets, e.g. `pip install "petrophys[dlis,mcp]"`):
+Python 3.10 to 3.13. Optional extras, e.g. `pip install "petrophys[dlis,mcp]"`:
 
 | Extra | Adds |
 |-------|------|
 | `dlis` | DLIS reading (logs and borehole images) |
 | `ml` | Curve imputation and K-means electrofacies |
-| `mcp` | MCP server for LLM clients (Python 3.10+) |
+| `mcp` | MCP server for LLM clients |
 | `all` | Everything above |
 
-Contributors: `python -m pip install -e ".[all,dev,docs]"`.
+<details>
+<summary>From source, for contributors</summary>
+
+```bash
+git clone https://github.com/sambalshikhar/petrophys.git
+cd petrophys
+python -m pip install -e ".[all,dev,docs]"
+```
+
+See [CONTRIBUTING.md](https://github.com/sambalshikhar/petrophys/blob/main/CONTRIBUTING.md) for the verification commands and the pull-request checklist.
+</details>
 
 ## Quick start
 
 ```python
 import petrophys as pp
 
-well = pp.read(pp.sample("30_6-5"))        # or pp.read("my_well.las")
-result = pp.interpret(well, rw=0.07, rw_meas_temp="230 degF")   # Rw (ohm.m) at 230 degF; use your own
+# a bundled well and its formation tops; your own: pp.read("my_well.las", formations=...)
+well = pp.read(pp.sample("30_6-5"), formations=pp.sample("formations_30_6-5"))
+result = pp.interpret(well, rw=0.070, rw_meas_temp="230 degF")   # Rw (ohm.m) at 230 degF
 result.raise_for_errors()
 
-result.print_trace()                       # what ran, what was skipped, and why
-pp.plot(result, top=2800, bottom=3000).save("interpretation.png")
+result.print_trace()                            # what ran, what was skipped, and why
+pp.plot(result, top=2800, bottom=2980).save("brent.png")       # the figure above
 
-result.to_las("interpreted.las")           # curves plus the settings used
-result.to_json("trace.json")               # full machine-readable trace
+result.to_las("interpreted.las")                # curves plus the settings used
+result.to_json("trace.json")                    # full machine-readable trace
 ```
 
 `pp.read`, `pp.interpret`, and `pp.plot` are the front door. `interpret` works
@@ -66,7 +104,83 @@ on a copy of the well; `result.well` holds the interpreted curves (`VCL`,
 `PHIE`, `SW`, `PERM`, `NET_PAY`, ...) and `result.config` the settings that
 were actually used, including automatically resolved matrix and lithology.
 
-### Your own data
+Step through it in the [Quickstart](https://welllogbench.com/petrophys/docs/quickstart), or open it in Google Colab from there with nothing to install.
+
+## What you can do
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Interpret a whole well**<br>
+`pp.interpret` runs nineteen steps, from temperature to net pay, each only when its inputs are there; the trace says
+why a step was skipped. [Workflows](https://welllogbench.com/petrophys/docs/workflows)
+
+</td>
+<td width="50%" valign="top">
+
+**Bring your own data**<br>
+LAS, DLIS, CSV, TSV and Excel logs, formation tops and lithology tables. Vendor mnemonics and units are
+standardized, and implausible values are screened. [Your own data](https://welllogbench.com/petrophys/docs/own_data)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Check every result**<br>
+`result.print_trace()`, warnings for assumed values and suspect curves, and `result.summary()` for any depth
+window. [Reviewing an interpretation](https://welllogbench.com/petrophys/docs/workflows.html#review-interpretation)
+
+</td>
+<td valign="top">
+
+**Build your own workflow**<br>
+Combine built-in steps with your own functions, check the recipe against a well, run it on a field and share it as
+JSON. [Custom workflows](https://welllogbench.com/petrophys/docs/custom_workflows)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Plot and deliver**<br>
+Multi-track log plots, crossplots with chartbook lines, interpreted LAS files and delivery packages.
+[Visualization and reporting](https://welllogbench.com/petrophys/docs/visualization_reporting)
+
+</td>
+<td valign="top">
+
+**Specialist data**<br>
+NMR, spectral gamma, core calibration, saturation-height functions and borehole images.
+[Specialist data](https://welllogbench.com/petrophys/docs/specialist_data)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Analysis tools**<br>
+Gap filling, clay typing, heterogeneity, zonation, Monte Carlo uncertainty and invasion.
+[Analysis tools](https://welllogbench.com/petrophys/docs/analysis_tools)
+
+</td>
+<td valign="top">
+
+**Work with LLM agents**<br>
+An MCP server for Claude, ChatGPT, Cursor, VS Code and Codex, compact context JSON, and
+[llms.txt](https://welllogbench.com/petrophys/docs/llms.txt) for code assistants. [LLM agents](https://welllogbench.com/petrophys/docs/mcp)
+
+</td>
+</tr>
+</table>
+
+Everything at a glance: [What Petrophys can do](https://welllogbench.com/petrophys/docs/capabilities).
+
+## Reference
+
+<details>
+<summary><b>Your own data</b></summary>
 
 ```python
 well = pp.read(
@@ -99,7 +213,10 @@ Templates for every input ship with the package, e.g.
 [input templates guide](https://welllogbench.com/petrophys/docs/input_templates) and the
 [own-data guide](https://welllogbench.com/petrophys/docs/own_data).
 
-### Configuring the interpretation
+</details>
+
+<details>
+<summary><b>Configuring the interpretation</b></summary>
 
 Every setting of `pp.interpret` is a field of `DynamicWorkflowConfig`, with
 units in the name (`bht` in degF, `td` in feet) and validation on
@@ -119,7 +236,10 @@ result = pp.interpret(well, config)
 A misspelled or invalid setting fails immediately with the accepted values,
 e.g. `hc_type='gass' is not valid; use one of: oil, gas (did you mean 'gas'?)`.
 
-### Checking the result
+</details>
+
+<details>
+<summary><b>Checking the result</b></summary>
 
 ```python
 result.status                  # "interpreted", "no_interpretation" or "failed"
@@ -151,7 +271,10 @@ or give such a section its own Rw in a zoned run (header zones such as
 [workflows guide](https://welllogbench.com/petrophys/docs/workflows.html)). A
 formation-water salinity that varies with depth is not available.
 
-## Custom workflows
+</details>
+
+<details>
+<summary><b>Custom workflows</b></summary>
 
 Build your own reusable recipe from built-in steps and your own functions,
 check it against a well, run it on one well or a whole field, and share it as
@@ -176,7 +299,10 @@ wf.save("brent_quick_look.json")      # Workflow.load(...) later
 can add your own steps around it. See the
 [custom workflows guide](https://welllogbench.com/petrophys/docs/custom_workflows.html).
 
-## Context JSON
+</details>
+
+<details>
+<summary><b>Context JSON</b></summary>
 
 ```python
 context = pp.export_context(result)            # the summary as a dict
@@ -194,11 +320,14 @@ otherwise) and uses the limits of each sample's lithology family, clastic or
 carbonate.
 See the [context guide](https://welllogbench.com/petrophys/docs/context.html) and [interpretation review guide](https://welllogbench.com/petrophys/docs/workflows.html#review-interpretation).
 For GeoLink, COSTA and Danish benchmark reproduction, see
-[Reproducing the benchmark packages](docs/benchmark_context.md), with commands, required
+[Reproducing the benchmark packages](https://github.com/sambalshikhar/petrophys/blob/main/docs/benchmark_context.md), with commands, required
 inputs, output layouts and common errors.
 Net-pay output is cutoff screening, not confirmed pay; review warnings and calibration.
 
-## Use with LLM agents (MCP)
+</details>
+
+<details>
+<summary><b>Use with LLM agents (MCP)</b></summary>
 
 Petrophys includes a [Model Context Protocol](https://modelcontextprotocol.io)
 server, so Claude, ChatGPT/OpenAI, Cursor, VS Code, Codex and other MCP clients
@@ -225,7 +354,10 @@ code-generating assistants, the docs also serve
 [llms.txt](https://welllogbench.com/petrophys/docs/llms.txt), and
 `petrophys.workflow.config_schema()` describes every setting as data.
 
-## Workflow steps
+</details>
+
+<details>
+<summary><b>Workflow steps</b></summary>
 
 `pp.interpret` runs these steps in order. Each runs only when its inputs are
 available; `result.specific_steps_skipped` explains every skip.
@@ -292,13 +424,18 @@ each exclusion removed.
 `steps.net_pay` applies the same rules (`exclude_non_reservoir=False` for the
 cutoffs alone).
 
-## Calculation profiles
+</details>
+
+<a id="calculation-profiles"></a>
+
+<details>
+<summary><b>Calculation profiles</b></summary>
 
 `calculation_profile` selects an interpretation configuration: `"current"` is
 the default, and `"geolink"` provides the GeoLink evaluation configuration.
 Use a dataset `context_profile` to generate benchmark context: it applies
 the collection's preparation, interpretation, calibration and export rules.
-See [Reproducing the benchmark packages](docs/benchmark_context.md) for commands and
+See [Reproducing the benchmark packages](https://github.com/sambalshikhar/petrophys/blob/main/docs/benchmark_context.md) for commands and
 required inputs.
 
 For an MCP evaluation harness, `petrophys-mcp serve --calculation-profile geolink`
@@ -331,7 +468,10 @@ well:
 python scripts/generate_benchmark_context.py --input-dir PATH/HW-31.las --output-dir outputs/HW-31
 ```
 
-## Individual calculations
+</details>
+
+<details>
+<summary><b>Individual calculations</b></summary>
 
 Every model is also a plain function on NumPy arrays or floats:
 
@@ -347,7 +487,10 @@ sw_shaly = dual_water(phi_t=0.2, rt=5.0, rw=0.05, rwb=0.02, vcl=0.3, phi_cl=0.15
 quality = calculate_rock_quality(perm_k=100.0, phi_e=0.2)   # {"RQI", "phi_z", "FZI"}
 ```
 
-## Package layout
+</details>
+
+<details>
+<summary><b>Package layout</b></summary>
 
 | Package | Contents |
 |---------|----------|
@@ -364,36 +507,37 @@ quality = calculate_rock_quality(perm_k=100.0, phi_e=0.2)   # {"RQI", "phi_z", "
 See the [architecture guide](https://welllogbench.com/petrophys/docs/architecture) for
 dependency rules.
 
+</details>
+
 ## Documentation
 
-- [Documentation home](https://welllogbench.com/petrophys/docs/)
-- [Installation](https://welllogbench.com/petrophys/docs/installation)
-- [Quickstart](https://welllogbench.com/petrophys/docs/quickstart)
-- [Tutorials](https://welllogbench.com/petrophys/docs/tutorials/)
-- [API reference](https://welllogbench.com/petrophys/docs/api/)
-- [Changelog](CHANGELOG.md)
+| Start here | Guides | Reference |
+|---|---|---|
+| [Installation](https://welllogbench.com/petrophys/docs/installation) | [Workflows](https://welllogbench.com/petrophys/docs/workflows) | [API reference](https://welllogbench.com/petrophys/docs/api/) |
+| [Quickstart](https://welllogbench.com/petrophys/docs/quickstart) | [Custom workflows](https://welllogbench.com/petrophys/docs/custom_workflows) | [The `pp` namespace](https://welllogbench.com/petrophys/docs/api/namespace) |
+| [Your own data](https://welllogbench.com/petrophys/docs/own_data) | [Visualization and reporting](https://welllogbench.com/petrophys/docs/visualization_reporting) | [Interpretation settings](https://welllogbench.com/petrophys/docs/api/settings) |
+| [New to Python?](https://welllogbench.com/petrophys/docs/new_to_python) | [Context export](https://welllogbench.com/petrophys/docs/context) | [Terms and curves](https://welllogbench.com/petrophys/docs/glossary) |
+| [Tutorials](https://welllogbench.com/petrophys/docs/tutorials/) | [LLM agents (MCP)](https://welllogbench.com/petrophys/docs/mcp) | [Input templates](https://welllogbench.com/petrophys/docs/input_templates) |
 
-## Contributing
+Releases: [CHANGELOG.md](https://github.com/sambalshikhar/petrophys/blob/main/CHANGELOG.md). Contributing: [CONTRIBUTING.md](https://github.com/sambalshikhar/petrophys/blob/main/CONTRIBUTING.md).
 
-Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the
-development setup, verification commands, and pull-request checklist.
+<br>
 
-## License
+<p align="center"><img src="https://raw.githubusercontent.com/sambalshikhar/petrophys/main/.github/assets/developed-by.png" alt="Developed by the MBZUAI Institute of Foundation Models, in collaboration with Inception" width="760"></p>
 
-The Petrophys source code is available under the MIT License; see
-[LICENSE](LICENSE). Bundled third-party data retain their
-source terms and attribution requirements; see
-[THIRD_PARTY_DATA.md](THIRD_PARTY_DATA.md) and
-[`petrophys.datasets`](src/petrophys/datasets/README.md).
+## Data and acknowledgements
 
-See [Acknowledgements](ACKNOWLEDGEMENTS.md) for method, data-provider and
-dependency credits. Cite the source datasets and method papers relevant to
-your work in addition to the software citation below.
+The sample wells that ship with Petrophys come from public datasets (GeoLink, COSTA, EpsLog, the Kansas Geological
+Survey, the Taranaki Basin Curated Well Logs Dataset, Teapot Dome, Daydream 1 and others). They keep their source terms
+and attribution requirements: see [THIRD_PARTY_DATA.md](https://github.com/sambalshikhar/petrophys/blob/main/THIRD_PARTY_DATA.md) and
+[`petrophys.datasets`](https://github.com/sambalshikhar/petrophys/blob/main/src/petrophys/datasets/README.md). [ACKNOWLEDGEMENTS.md](https://github.com/sambalshikhar/petrophys/blob/main/ACKNOWLEDGEMENTS.md)
+credits the methods, data providers and dependencies. Cite the source datasets and method papers relevant to your
+work as well as the software.
 
 ## Citation
 
-If you use Petrophys in your research, please cite the software and record the
-version or commit used. Machine-readable metadata is in [CITATION.cff](CITATION.cff).
+If you use Petrophys in your research, please cite the software and record the version or commit used.
+Machine-readable metadata is in [CITATION.cff](https://github.com/sambalshikhar/petrophys/blob/main/CITATION.cff).
 
 ```bibtex
 @software{petrophys,
@@ -403,3 +547,8 @@ version or commit used. Machine-readable metadata is in [CITATION.cff](CITATION.
   url = {https://github.com/sambalshikhar/petrophys}
 }
 ```
+
+## License
+
+The Petrophys source code is released under the [MIT License](https://github.com/sambalshikhar/petrophys/blob/main/LICENSE). Bundled third-party data keep their own
+terms ([THIRD_PARTY_DATA.md](https://github.com/sambalshikhar/petrophys/blob/main/THIRD_PARTY_DATA.md)).
