@@ -1149,3 +1149,13 @@ dl.py.exception > dd > .table-wrapper.autosummary td:first-child {
     padding-left: 0;
   }
 }
+
+/* The repository icon among the top-of-page buttons (_templates/components/view-this-page.html). */
+.content-icon-container .repo-link a {
+  color: var(--color-foreground-secondary);
+}
+.content-icon-container .repo-link svg {
+  fill: currentColor;
+  width: 1.1rem;
+  height: 1.1rem;
+}

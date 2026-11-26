@@ -15,12 +15,15 @@ a { color: #147a64; }
 a:hover { color: #17263f; }
 .nav-a { color: #17263f; text-decoration: none; }
 .nav-a:hover { color: #197e6f; }
+.nav-gh { display: inline-flex; align-items: center; }
+.nav-gh svg { display: block; }
 .btn-primary { background: #197e6f; color: #ffffff; text-decoration: none; font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 14.5px; padding: 12px 22px; border-radius: 8px; }
 .btn-primary:hover { background: #146557; color: #ffffff; }
 .btn-ghost { border: 1px solid #c6d0d8; color: #17263f; text-decoration: none; font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 14.5px; padding: 12px 22px; border-radius: 8px; }
 .btn-ghost:hover { border-color: #197e6f; color: #197e6f; }
 .f-a { color: #67748c; text-decoration: none; }
 .f-a:hover { color: #197e6f; }
+.f-gh { display: inline-flex; align-items: center; gap: 6px; }
 .hero-grid { max-width: 1160px; margin: 0 auto; padding: 64px 32px 72px; display: grid; grid-template-columns: 1.02fr 0.98fr; gap: 56px; align-items: center; }
 .trace-grid { max-width: 1160px; margin: 0 auto; padding: 88px 32px 0; display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 60px; align-items: center; }
 .stages-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; }
@@ -44,7 +47,7 @@ a:hover { color: #17263f; }
       <a href="docs/installation" class="nav-a">Docs</a>
       <a href="docs/tutorials/" class="nav-a">Tutorials</a>
       <a href="docs/api/" class="nav-a">API</a>
-      <a href="https://github.com/sambalshikhar/petrophys" class="nav-a">GitHub &#8599;</a>
+      <a href="https://github.com/sambalshikhar/petrophys" class="nav-a nav-gh" aria-label="Petrophys on GitHub" title="Petrophys on GitHub"><svg viewBox="0 0 16 16" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.01.38-2.53-.5-2.69-.96-.09-.23-.48-.96-.82-1.15-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.21-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.5 7.5 0 0 1 8 3.91c.68 0 1.36.09 2 .27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.95.08 2.16.51.57.82 1.29.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.5 0 1.08-.01 1.95-.01 2.22 0 .22.15.47.55.39A8.14 8.14 0 0 0 16 8.13C16 3.64 12.42 0 8 0z"/></svg></a>
     </div>
   </div>
 </div>
@@ -314,7 +317,7 @@ result.to_las(<span style="color: #8a5f18;">"interpreted.las"</span>)</pre>
       <a href="https://www.inceptionai.ai" style="display: block;"><img src="assets/inception-42.png" alt="Inception" width="542" height="111" style="height: 19px; width: auto; display: block;"></a>
     </div>
     <div style="display: flex; gap: 24px; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; flex-wrap: wrap;">
-      <a href="https://github.com/sambalshikhar/petrophys" class="f-a">GitHub</a>
+      <a href="https://github.com/sambalshikhar/petrophys" class="f-a f-gh"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.01.38-2.53-.5-2.69-.96-.09-.23-.48-.96-.82-1.15-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.21-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.5 7.5 0 0 1 8 3.91c.68 0 1.36.09 2 .27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.95.08 2.16.51.57.82 1.29.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.5 0 1.08-.01 1.95-.01 2.22 0 .22.15.47.55.39A8.14 8.14 0 0 0 16 8.13C16 3.64 12.42 0 8 0z"/></svg>GitHub</a>
       <a href="docs/installation" class="f-a">Documentation</a>
       <span style="color: #98a2b3;">&#169; 2026 MBZUAI &#183; Inception AI</span>
     </div>
