@@ -4,8 +4,9 @@
 
 ### From well logs to defensible interpretations.
 
-Petrophys turns well logs, core and specialist measurements into traceable petrophysical interpretations. Every
-executed step is recorded, and every skipped step says why.
+Petrophys turns well logs, core and specialist measurements into traceable petrophysical interpretations, for
+petrophysicists and for the LLM agents that work beside them. Every executed step is recorded and every skipped step
+says why, so a person can check the work and a model can cite it.
 
 **[Website](https://welllogbench.com/petrophys/) · [Documentation](https://welllogbench.com/petrophys/docs/) · [Quickstart](https://welllogbench.com/petrophys/docs/quickstart) · [Tutorials](https://welllogbench.com/petrophys/docs/tutorials/) · [API reference](https://welllogbench.com/petrophys/docs/api/) · [PyPI](https://pypi.org/project/petrophys/)**
 
@@ -53,6 +54,65 @@ silently "fixed". Values the workflow has to assume, such as the temperature of 
 </td>
 </tr>
 </table>
+
+## Made for LLMs and agents
+
+Language models know the vocabulary of formation evaluation but cannot compute it. Petrophys gives them the engine.
+Through its [MCP server](https://welllogbench.com/petrophys/docs/mcp) an agent loads a well, runs the same validated workflow as `pp.interpret`, reads why
+each step ran or was skipped, and answers with numbers it can trace. The wells stay on your machine.
+
+```text
+you     Where is the pay in the Brent Group of 30/6-5? Rw is 0.07 ohm.m at 230 °F.
+
+agent   load_sample_well    name="30_6-5", with geology
+        interpret_well      Rw 0.07 ohm.m at 230 degF, summary 2841-2958 m
+          returns           status, net thickness, skipped steps and warnings with their
+                            reasons, assumptions in plain words, review notes
+        plot_well           the Brent Group panel
+
+agent   The net pay, citing the steps and settings behind each number.
+```
+
+```bash
+pip install "petrophys[mcp]"
+petrophys-mcp config claude-code --root /path/to/wells   # prints the setup for your client
+```
+
+Claude, ChatGPT, Cursor, VS Code and Codex connect on your machine or over HTTP with a token. An invalid setting comes
+back with the accepted values, so the model corrects itself, and files stay inside the folders you allow.
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+**Seventeen tools**
+
+Load and describe wells, check data quality, interpret one well or a whole field, run your own workflows, explain any
+step, summarize zones and plot. [LLM agents](https://welllogbench.com/petrophys/docs/mcp)
+
+</td>
+<td width="33%" valign="top">
+
+**Context that fits a prompt**
+
+`pp.export_context` packs an interpretation into compact JSON within a byte budget you set; dataset profiles
+reproduce the benchmark context packages for GeoLink, COSTA and the Danish wells. [Context export](https://welllogbench.com/petrophys/docs/context)
+
+</td>
+<td width="33%" valign="top">
+
+**Made for code assistants**
+
+[llms.txt](https://welllogbench.com/petrophys/docs/llms.txt) maps the documentation for a model, and `config_schema()` describes every setting as data,
+so generated code calls the library correctly.
+
+</td>
+</tr>
+</table>
+
+[WellLogBench](https://welllogbench.com), a benchmark of LLM reasoning on well logs, builds its well contexts with
+Petrophys, and in [PetroHarness](https://github.com/sambalshikhar/PetroHarness), an agentic harness, a language model
+investigates a well while Petrophys does every calculation.
 
 ## Install
 
@@ -166,9 +226,9 @@ Gap filling, clay typing, heterogeneity, zonation, Monte Carlo uncertainty and i
 </td>
 <td valign="top">
 
-**Work with LLM agents**<br>
-An MCP server for Claude, ChatGPT, Cursor, VS Code and Codex, compact context JSON, and
-[llms.txt](https://welllogbench.com/petrophys/docs/llms.txt) for code assistants. [LLM agents](https://welllogbench.com/petrophys/docs/mcp)
+**Run a whole field**<br>
+Interpret many wells in one batch, give a zone its own Rw in a zoned run, and compare wells side by side in
+multi-well plots. [Workflows](https://welllogbench.com/petrophys/docs/workflows)
 
 </td>
 </tr>

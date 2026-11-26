@@ -53,7 +53,7 @@ a:hover { color: #17263f; }
     <div style="display: flex; flex-direction: column; gap: 22px;">
       <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #1a8a74;">Open-source formation evaluation</div>
       <h1 style="margin: 0; font-family: 'Poppins', sans-serif; font-size: 46px; line-height: 1.12; font-weight: 600; letter-spacing: -0.015em; color: #17263f; text-wrap: pretty;">From well logs to defensible interpretations.</h1>
-      <p style="margin: 0; font-size: 17px; line-height: 1.6; color: #55627c; max-width: 46ch; text-wrap: pretty;">Petrophys turns logs, core, and specialist data into traceable petrophysical results &#8212; every executed step recorded, every skip explained.</p>
+      <p style="margin: 0; font-size: 17px; line-height: 1.6; color: #55627c; max-width: 46ch; text-wrap: pretty;">Petrophys turns logs, core, and specialist data into traceable petrophysical results &#8212; every executed step recorded, every skip explained. Built for petrophysicists, and for the LLM agents that work beside them.</p>
       <div style="display: flex; align-items: center; gap: 14px; background: #eef6f3; border: 1px solid #cbe4db; border-radius: 10px; padding: 13px 18px; font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; color: #17263f;">
         <span style="color: #197e6f; font-weight: 600;">$</span>
         <span>pip install petrophys</span>
@@ -61,8 +61,9 @@ a:hover { color: #17263f; }
       <div style="display: flex; gap: 12px; flex-wrap: wrap;">
         <a href="docs/quickstart" class="btn-primary">Run the quickstart</a>
         <a href="docs/api/" class="btn-ghost">Browse the API</a>
+        <a href="#agents" class="btn-ghost">LLM agents</a>
       </div>
-      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: #67748c; letter-spacing: 0.02em;">Python 3.10&#8211;3.13 &#160;&#183;&#160; LAS &#183; DLIS &#183; CSV &#160;&#183;&#160; core &#183; NMR &#183; images &#160;&#183;&#160; open source</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: #67748c; letter-spacing: 0.02em;">Python 3.10&#8211;3.13 &#160;&#183;&#160; LAS &#183; DLIS &#183; CSV &#160;&#183;&#160; core &#183; NMR &#183; images &#160;&#183;&#160; MCP for LLM agents &#160;&#183;&#160; open source</div>
     </div>
     <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; box-shadow: 0 18px 44px -18px rgba(21, 36, 61, 0.16); overflow: hidden;">
       <div style="display: flex; align-items: center; gap: 8px; padding: 11px 16px; border-bottom: 1px solid #e9edf0;">
@@ -195,6 +196,76 @@ a:hover { color: #17263f; }
       <a href="docs/visualization_reporting" style="font-size: 13.5px; font-weight: 600; text-decoration: none; margin-top: auto; padding-top: 8px;">Visualization &amp; reporting &#8594;</a>
     </div>
   </div>
+</div>
+<div class="trace-grid" id="agents">
+  <div style="display: flex; flex-direction: column; gap: 18px;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #1a8a74;">For LLMs and agents</div>
+    <h2 style="margin: 0; font-family: 'Poppins', sans-serif; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; color: #17263f; text-wrap: pretty;">A petrophysics engine your agent can call.</h2>
+    <p style="margin: 0; font-size: 16px; line-height: 1.65; color: #55627c; text-wrap: pretty;">Language models know the vocabulary of formation evaluation but cannot compute it. Petrophys gives them the engine: through its MCP server an agent loads a well, runs the same validated workflow as <code>pp.interpret</code>, reads why each step ran or was skipped, and answers with numbers it can trace. The wells stay on your machine.</p>
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 4px;">
+      <div style="display: flex; gap: 12px; align-items: baseline;"><div style="width: 7px; height: 7px; background: #197e6f; flex-shrink: 0;"></div><div style="font-size: 15px; color: #3c4b63;">Claude, ChatGPT, Cursor, VS Code and Codex connect over MCP, on your machine or over HTTP with a token</div></div>
+      <div style="display: flex; gap: 12px; align-items: baseline;"><div style="width: 7px; height: 7px; background: #197e6f; flex-shrink: 0;"></div><div style="font-size: 15px; color: #3c4b63;">An invalid setting comes back with the accepted values, so the model corrects itself</div></div>
+      <div style="display: flex; gap: 12px; align-items: baseline;"><div style="width: 7px; height: 7px; background: #197e6f; flex-shrink: 0;"></div><div style="font-size: 15px; color: #3c4b63;">Files stay inside the folders you allow; read-only tools are marked as such</div></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 14px; background: #eef6f3; border: 1px solid #cbe4db; border-radius: 10px; padding: 13px 18px; font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; color: #17263f; overflow-x: auto;"><span style="color: #197e6f; font-weight: 600;">$</span><span>petrophys-mcp config claude-code --root ./wells</span></div>
+  </div>
+  <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; box-shadow: 0 12px 32px -18px rgba(21, 36, 61, 0.12); overflow: hidden;">
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #e9edf0;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: #67748c;">MCP session &#183; petrophys-mcp</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #197e6f; border: 1px solid #bfdfd4; background: #eef6f3; border-radius: 99px; padding: 3px 10px;">17 tools</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 72px 150px 1fr; gap: 14px; padding: 12px 18px; align-items: baseline;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #b07b2a;">you</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #17263f;">&#8212;</div>
+      <div style="font-size: 13.5px; color: #55627c;">Where is the pay in the Brent Group of 30/6-5? Rw is 0.07 ohm.m at 230 &#176;F.</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 72px 150px 1fr; gap: 14px; padding: 12px 18px; align-items: baseline; border-top: 1px solid #eef1f4;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #197e6f;">call</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #17263f;">load_sample_well</div>
+      <div style="font-size: 13.5px; color: #55627c;">name=&quot;30_6-5&quot;, with geology</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 72px 150px 1fr; gap: 14px; padding: 12px 18px; align-items: baseline; border-top: 1px solid #eef1f4;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #197e6f;">call</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #17263f;">interpret_well</div>
+      <div style="font-size: 13.5px; color: #55627c;">Rw 0.07 ohm.m at 230 degF &#183; summary 2841&#8211;2958 m</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 72px 150px 1fr; gap: 14px; padding: 12px 18px; align-items: baseline; border-top: 1px solid #eef1f4;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #7d8798;">returns</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #17263f;">&#8212;</div>
+      <div style="font-size: 13.5px; color: #55627c;">status, net thickness, skipped steps and warnings with their reasons, assumptions in plain words, review notes</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 72px 150px 1fr; gap: 14px; padding: 12px 18px; align-items: baseline; border-top: 1px solid #eef1f4;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #197e6f;">call</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #17263f;">plot_well</div>
+      <div style="font-size: 13.5px; color: #55627c;">the Brent Group panel</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 72px 150px 1fr; gap: 14px; padding: 12px 18px; align-items: baseline; border-top: 1px solid #eef1f4;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #b07b2a;">agent</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #17263f;">&#8212;</div>
+      <div style="font-size: 13.5px; color: #55627c;">answers with the net pay, citing the steps and settings behind each number</div>
+    </div>
+    <div style="padding: 12px 18px; border-top: 1px solid #e9edf0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #98a2b3;">petrophys://guide &#183; petrophys://settings &#183; petrophys://workflow-steps</div>
+  </div>
+</div>
+<div style="max-width: 1160px; margin: 0 auto; padding: 36px 32px 0;">
+  <div class="caps-grid">
+    <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16px; font-weight: 600; color: #17263f;">Seventeen tools</div>
+      <div style="font-size: 13.5px; line-height: 1.6; color: #67748c;">Load and describe wells, check data quality, interpret one well or a whole field, run your own workflows, explain any step, summarize zones and plot.</div>
+      <a href="docs/mcp" style="font-size: 13.5px; font-weight: 600; text-decoration: none; margin-top: auto; padding-top: 8px;">LLM agents &#8594;</a>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16px; font-weight: 600; color: #17263f;">Context that fits a prompt</div>
+      <div style="font-size: 13.5px; line-height: 1.6; color: #67748c;"><code>pp.export_context</code> packs an interpretation into compact JSON within a byte budget you set; dataset profiles reproduce the benchmark context packages for GeoLink, COSTA and the Danish wells.</div>
+      <a href="docs/context" style="font-size: 13.5px; font-weight: 600; text-decoration: none; margin-top: auto; padding-top: 8px;">Context export &#8594;</a>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e2e7eb; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-family: 'Poppins', sans-serif; font-size: 16px; font-weight: 600; color: #17263f;">Made for code assistants</div>
+      <div style="font-size: 13.5px; line-height: 1.6; color: #67748c;"><code>llms.txt</code> maps the documentation for a model, and <code>config_schema()</code> describes every setting as data, so generated code calls the library correctly.</div>
+      <a href="docs/llms.txt" style="font-size: 13.5px; font-weight: 600; text-decoration: none; margin-top: auto; padding-top: 8px;">llms.txt &#8594;</a>
+    </div>
+  </div>
+  <p style="margin: 28px 0 0; font-size: 15px; line-height: 1.65; color: #55627c; text-wrap: pretty;"><a href="https://welllogbench.com" style="font-weight: 600; text-decoration: none;">WellLogBench</a>, a benchmark of LLM reasoning on well logs, builds its well contexts with Petrophys, and in <a href="https://welllogbench.com/petroharness/" style="font-weight: 600; text-decoration: none;">PetroHarness</a>, an agentic harness, a language model investigates a well while Petrophys does every calculation.</p>
 </div>
 <div style="max-width: 1160px; margin: 0 auto; padding: 88px 32px 96px;">
   <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #1a8a74;">Quickstart</div>
