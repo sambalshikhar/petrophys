@@ -1119,7 +1119,7 @@ CONSTANT_DOCS = {
 }
 
 #: Modules with a page address ``/api/generated/<module>.html``;
-#: ``docs/_extra/_redirects`` sends each to its page in the grouped reference.
+#: welllogbench.com's redirects send each to its page in the grouped reference.
 OLD_MODULE_PAGES = """
 petrophys.api petrophys.exceptions petrophys.model petrophys.model.log_data
 petrophys.io petrophys.datasets petrophys.preprocessing.standardization
@@ -1901,7 +1901,7 @@ def write_reference(docs_dir: Union[str, Path]) -> ReferencePlan:
 
 
 def redirect_rules(plan: ReferencePlan) -> list[str]:
-    """Netlify rules from each old one-page-per-module URL to its new page."""
+    """Redirect rules (old path, new path) from each old one-page-per-module URL to its new page."""
     rules = []
     for module in OLD_MODULE_PAGES:
         target = plan.redirect_pages[module]

@@ -84,8 +84,8 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sambalshikhar/petrophys"
-Documentation = "https://petrophys.netlify.app"
+Homepage = "https://welllogbench.com/petrophys/"
+Documentation = "https://welllogbench.com/petrophys/docs/"
 Repository = "https://github.com/sambalshikhar/petrophys"
 Issues = "https://github.com/sambalshikhar/petrophys/issues"
 

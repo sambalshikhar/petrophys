@@ -7,6 +7,6 @@ title: "Petrophys: A Python Library for Petrophysical Analysis"
 authors:
   - name: Petrophys Contributors
 repository-code: https://github.com/sambalshikhar/petrophys
-url: https://petrophys.netlify.app
+url: https://welllogbench.com/petrophys/
 # This identifies the software licence; third-party data have separate terms.
 license: MIT

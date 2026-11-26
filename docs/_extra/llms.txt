@@ -29,32 +29,32 @@ Key facts for code generation:
 
 ## Docs
 
-- [Installation](https://petrophys.netlify.app/installation): pip install, optional extras
-- [Quickstart](https://petrophys.netlify.app/quickstart): read, interpret, inspect the trace, plot, export
-- [Own data](https://petrophys.netlify.app/own_data): CSV/Excel logs, formations, lithology, units and datums
-- [What Petrophys can do](https://petrophys.netlify.app/capabilities): map of every capability, the call that starts it and the page that covers it
-- [Workflows](https://petrophys.netlify.app/workflows): workflow steps, routing, zoned and batch runs; reviewing an interpretation (checklist, net-pay flags, sample-data limitations)
-- [Custom workflows](https://petrophys.netlify.app/custom_workflows): build, check, save and run your own workflows
-- [Visualization and reporting](https://petrophys.netlify.app/visualization_reporting): plots, exports, delivery packages
-- [Specialist data](https://petrophys.netlify.app/specialist_data): NMR, spectral gamma, core calibration, saturation-height, borehole images
-- [Analysis tools](https://petrophys.netlify.app/analysis_tools): gap filling, clay typing, heterogeneity, zonation, Monte Carlo, invasion, pore pressure
-- [Context export](https://petrophys.netlify.app/context): compact JSON summaries of interpreted wells for LLMs
-- [LLM agents (MCP)](https://petrophys.netlify.app/mcp): MCP server setup, tools, resources and prompts
-- [Input templates](https://petrophys.netlify.app/input_templates): formation and lithology file formats
-- [Terms and curves](https://petrophys.netlify.app/glossary): terms and every output curve; argument names per interface
-- [Reproducing the benchmark packages](https://petrophys.netlify.app/benchmark_context): dataset context profiles for the GeoLink, GeoLink training, COSTA and Danish packages
+- [Installation](https://welllogbench.com/petrophys/docs/installation): pip install, optional extras
+- [Quickstart](https://welllogbench.com/petrophys/docs/quickstart): read, interpret, inspect the trace, plot, export
+- [Own data](https://welllogbench.com/petrophys/docs/own_data): CSV/Excel logs, formations, lithology, units and datums
+- [What Petrophys can do](https://welllogbench.com/petrophys/docs/capabilities): map of every capability, the call that starts it and the page that covers it
+- [Workflows](https://welllogbench.com/petrophys/docs/workflows): workflow steps, routing, zoned and batch runs; reviewing an interpretation (checklist, net-pay flags, sample-data limitations)
+- [Custom workflows](https://welllogbench.com/petrophys/docs/custom_workflows): build, check, save and run your own workflows
+- [Visualization and reporting](https://welllogbench.com/petrophys/docs/visualization_reporting): plots, exports, delivery packages
+- [Specialist data](https://welllogbench.com/petrophys/docs/specialist_data): NMR, spectral gamma, core calibration, saturation-height, borehole images
+- [Analysis tools](https://welllogbench.com/petrophys/docs/analysis_tools): gap filling, clay typing, heterogeneity, zonation, Monte Carlo, invasion, pore pressure
+- [Context export](https://welllogbench.com/petrophys/docs/context): compact JSON summaries of interpreted wells for LLMs
+- [LLM agents (MCP)](https://welllogbench.com/petrophys/docs/mcp): MCP server setup, tools, resources and prompts
+- [Input templates](https://welllogbench.com/petrophys/docs/input_templates): formation and lithology file formats
+- [Terms and curves](https://welllogbench.com/petrophys/docs/glossary): terms and every output curve; argument names per interface
+- [Reproducing the benchmark packages](https://welllogbench.com/petrophys/docs/benchmark_context): dataset context profiles for the GeoLink, GeoLink training, COSTA and Danish packages
 
 ## API
 
-- [API reference](https://petrophys.netlify.app/api/): every public module, grouped by area
-- [pp namespace](https://petrophys.netlify.app/api/namespace): every name in `import petrophys as pp`
-- [Interpretation settings](https://petrophys.netlify.app/api/settings): every `pp.interpret` keyword with its default
-- [Front door](https://petrophys.netlify.app/api/reference/front-door): [pp.read](https://petrophys.netlify.app/api/reference/petrophys.api.read), [pp.interpret](https://petrophys.netlify.app/api/reference/petrophys.api.interpret), [pp.plot](https://petrophys.netlify.app/api/reference/petrophys.api.plot)
-- [DynamicWorkflowConfig](https://petrophys.netlify.app/api/reference/petrophys.workflow.DynamicWorkflowConfig) and [DynamicWorkflowResult](https://petrophys.netlify.app/api/reference/petrophys.workflow.DynamicWorkflowResult): settings and result of `pp.interpret`
-- [Custom workflows and built-in steps](https://petrophys.netlify.app/api/reference/petrophys.workflow.custom): `petrophys.workflow.Workflow`, `petrophys.workflow.workflow_step`, `petrophys.workflow.steps`
-- API areas: [data model and I/O](https://petrophys.netlify.app/api/reference/data-io), [preprocessing](https://petrophys.netlify.app/api/reference/preprocessing), [interpretation](https://petrophys.netlify.app/api/reference/interpretation), [evaluation](https://petrophys.netlify.app/api/reference/evaluation), [workflows](https://petrophys.netlify.app/api/reference/workflows), [visualization](https://petrophys.netlify.app/api/reference/visualization), [reporting and LLM agents](https://petrophys.netlify.app/api/reference/reporting)
+- [API reference](https://welllogbench.com/petrophys/docs/api/): every public module, grouped by area
+- [pp namespace](https://welllogbench.com/petrophys/docs/api/namespace): every name in `import petrophys as pp`
+- [Interpretation settings](https://welllogbench.com/petrophys/docs/api/settings): every `pp.interpret` keyword with its default
+- [Front door](https://welllogbench.com/petrophys/docs/api/reference/front-door): [pp.read](https://welllogbench.com/petrophys/docs/api/reference/petrophys.api.read), [pp.interpret](https://welllogbench.com/petrophys/docs/api/reference/petrophys.api.interpret), [pp.plot](https://welllogbench.com/petrophys/docs/api/reference/petrophys.api.plot)
+- [DynamicWorkflowConfig](https://welllogbench.com/petrophys/docs/api/reference/petrophys.workflow.DynamicWorkflowConfig) and [DynamicWorkflowResult](https://welllogbench.com/petrophys/docs/api/reference/petrophys.workflow.DynamicWorkflowResult): settings and result of `pp.interpret`
+- [Custom workflows and built-in steps](https://welllogbench.com/petrophys/docs/api/reference/petrophys.workflow.custom): `petrophys.workflow.Workflow`, `petrophys.workflow.workflow_step`, `petrophys.workflow.steps`
+- API areas: [data model and I/O](https://welllogbench.com/petrophys/docs/api/reference/data-io), [preprocessing](https://welllogbench.com/petrophys/docs/api/reference/preprocessing), [interpretation](https://welllogbench.com/petrophys/docs/api/reference/interpretation), [evaluation](https://welllogbench.com/petrophys/docs/api/reference/evaluation), [workflows](https://welllogbench.com/petrophys/docs/api/reference/workflows), [visualization](https://welllogbench.com/petrophys/docs/api/reference/visualization), [reporting and LLM agents](https://welllogbench.com/petrophys/docs/api/reference/reporting)
 
 ## Optional
 
-- [Tutorials](https://petrophys.netlify.app/tutorials/): executed notebooks from basics to field studies
-- [Release notes](https://petrophys.netlify.app/changelog)
+- [Tutorials](https://welllogbench.com/petrophys/docs/tutorials/): executed notebooks from basics to field studies
+- [Release notes](https://welllogbench.com/petrophys/docs/changelog)

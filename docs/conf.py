@@ -269,10 +269,11 @@ exclude_patterns = [
 ]
 
 # Silence noisy-but-harmless warnings so real problems stand out.
-suppress_warnings = ["myst.header"]
+suppress_warnings = ["myst.header", "design.card_legacy"]
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "furo"
+html_baseurl = "https://welllogbench.com/petrophys/docs/"
 html_title = "Petrophys documentation"
 html_logo = "_static/petrophys-logo.png"
 html_show_sphinx = False

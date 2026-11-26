@@ -231,7 +231,7 @@ def create_server(
         title="Petrophys well-log interpretation",
         instructions=SERVER_INSTRUCTIONS,
         version=__version__,
-        website_url="https://petrophys.netlify.app",
+        website_url="https://welllogbench.com/petrophys/",
         log_level="WARNING",
     )
 

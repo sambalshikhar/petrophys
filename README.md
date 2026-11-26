@@ -1,7 +1,7 @@
 # Petrophys
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Documentation](https://img.shields.io/badge/docs-petrophys.netlify.app-087f73.svg)](https://petrophys.netlify.app)
+[![Documentation](https://img.shields.io/badge/docs-welllogbench.com%2Fpetrophys-087f73.svg)](https://welllogbench.com/petrophys/docs/)
 [![CI](https://github.com/sambalshikhar/petrophys/actions/workflows/ci.yml/badge.svg)](https://github.com/sambalshikhar/petrophys/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -96,8 +96,8 @@ codebook as `lithology_codes`, and a warning names any curve other than
 `LITHOLOGY_GEOLINK`.
 Templates for every input ship with the package, e.g.
 `pp.sample("formation_tops_template")`; see the
-[input templates guide](https://petrophys.netlify.app/input_templates) and the
-[own-data guide](https://petrophys.netlify.app/own_data).
+[input templates guide](https://welllogbench.com/petrophys/docs/input_templates) and the
+[own-data guide](https://welllogbench.com/petrophys/docs/own_data).
 
 ### Configuring the interpretation
 
@@ -148,7 +148,7 @@ above its oil zones, which start at 2984 m. Attach formation tops and read
 `result.formation_summary()` (or pass `top` and `bottom` to `result.summary`),
 or give such a section its own Rw in a zoned run (header zones such as
 `TOP_Z1`, `BOT_Z1`, `RW_Z1`; see the
-[workflows guide](https://petrophys.netlify.app/workflows.html)). A
+[workflows guide](https://welllogbench.com/petrophys/docs/workflows.html)). A
 formation-water salinity that varies with depth is not available.
 
 ## Custom workflows
@@ -174,7 +174,7 @@ wf.save("brent_quick_look.json")      # Workflow.load(...) later
 
 `steps.interpret(...)` runs the whole prebuilt workflow as one step, so you
 can add your own steps around it. See the
-[custom workflows guide](https://petrophys.netlify.app/custom_workflows.html).
+[custom workflows guide](https://welllogbench.com/petrophys/docs/custom_workflows.html).
 
 ## Context JSON
 
@@ -192,7 +192,7 @@ By default, the context classifies each property with its table in
 category; reservoir quality needs PHIE, PERM and VCL (`NO_QUALITY_DATA`
 otherwise) and uses the limits of each sample's lithology family, clastic or
 carbonate.
-See the [context guide](https://petrophys.netlify.app/context.html) and [interpretation review guide](https://petrophys.netlify.app/workflows.html#review-interpretation).
+See the [context guide](https://welllogbench.com/petrophys/docs/context.html) and [interpretation review guide](https://welllogbench.com/petrophys/docs/workflows.html#review-interpretation).
 For GeoLink, COSTA and Danish benchmark reproduction, see
 [Reproducing the benchmark packages](docs/benchmark_context.md), with commands, required
 inputs, output layouts and common errors.
@@ -220,9 +220,9 @@ come back with the accepted values, and file access is limited to the `--root`
 folders. To interpret with the calculations of the GeoLink eval context
 benchmark, start the server with `--calculation-profile geolink` (see
 [Calculation profiles](#calculation-profiles)). See the
-[LLM agents guide](https://petrophys.netlify.app/mcp). For
+[LLM agents guide](https://welllogbench.com/petrophys/docs/mcp). For
 code-generating assistants, the docs also serve
-[llms.txt](https://petrophys.netlify.app/llms.txt), and
+[llms.txt](https://welllogbench.com/petrophys/docs/llms.txt), and
 `petrophys.workflow.config_schema()` describes every setting as data.
 
 ## Workflow steps
@@ -255,7 +255,7 @@ available; `result.specific_steps_skipped` explains every skip.
 Spectral-gamma and elemental-spectroscopy interpretation are separate
 functions in `petrophys.interpretation.geochemistry`; `pp.interpret` lists
 them, and `porosity_refinement`, as skipped. The
-[glossary](https://petrophys.netlify.app/glossary.html) lists every curve the
+[glossary](https://welllogbench.com/petrophys/docs/glossary.html) lists every curve the
 workflow adds.
 
 With `sw_model="auto"` (the default), water saturation is routed per sample.
@@ -361,16 +361,16 @@ quality = calculate_rock_quality(perm_k=100.0, phi_e=0.2)   # {"RQI", "phi_z", "
 | `petrophys.visualization` | Log plots, crossplots, specialist displays |
 | `petrophys.datasets` | Packaged sample wells and input templates |
 
-See the [architecture guide](https://petrophys.netlify.app/architecture) for
+See the [architecture guide](https://welllogbench.com/petrophys/docs/architecture) for
 dependency rules.
 
 ## Documentation
 
-- [Documentation home](https://petrophys.netlify.app)
-- [Installation](https://petrophys.netlify.app/installation)
-- [Quickstart](https://petrophys.netlify.app/quickstart)
-- [Tutorials](https://petrophys.netlify.app/tutorials/)
-- [API reference](https://petrophys.netlify.app/api/)
+- [Documentation home](https://welllogbench.com/petrophys/docs/)
+- [Installation](https://welllogbench.com/petrophys/docs/installation)
+- [Quickstart](https://welllogbench.com/petrophys/docs/quickstart)
+- [Tutorials](https://welllogbench.com/petrophys/docs/tutorials/)
+- [API reference](https://welllogbench.com/petrophys/docs/api/)
 - [Changelog](CHANGELOG.md)
 
 ## Contributing

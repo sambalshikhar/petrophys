@@ -38,6 +38,6 @@ require selection. Attached lithology is used by both plotting and subsequent
 `pp.interpret(well)`; passing it only to a viewer changes only that display.
 Interpretation works on a copy by default. Top-only formation analysis requires
 an explicit terminal depth; plotting tops does not require bottoms.
-Read the full [input guide](https://petrophys.netlify.app/input_templates.html)
+Read the full [input guide](https://welllogbench.com/petrophys/docs/input_templates.html)
 (`docs/input_templates.md` in the repository) for industry sources, vendor field
 mapping, validation, saturation unit handling and a complete bundled-well example.

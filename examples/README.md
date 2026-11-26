@@ -4,9 +4,9 @@ The notebooks in this directory form a progressive tutorial curriculum. They
 use the installable sample wells in `src/petrophys/datasets/`, available through
 `petrophys.sample()` and `petrophys.list_samples()`.
 
-New to Petrophys? Read the [Quickstart](https://petrophys.netlify.app/quickstart)
-and [Your own data](https://petrophys.netlify.app/own_data) pages of the
-documentation, https://petrophys.netlify.app, first: they read, plot, interpret
+New to Petrophys? Read the [Quickstart](https://welllogbench.com/petrophys/docs/quickstart)
+and [Your own data](https://welllogbench.com/petrophys/docs/own_data) pages of the
+documentation, https://welllogbench.com/petrophys/docs/, first: they read, plot, interpret
 and export one well, then do the same with your own LAS, CSV and geology tables.
 The curriculum starts at
 [`00_orientation_and_setup.ipynb`](part_a_foundations/00_orientation_and_setup.ipynb);
@@ -14,7 +14,7 @@ work through the numbered notebooks in order.
 
 Every notebook opens in Google Colab from the **Open in Colab** button under
 its title; its first code cell installs Petrophys there and does nothing
-anywhere else. [New to Python?](https://petrophys.netlify.app/new_to_python)
+anywhere else. [New to Python?](https://welllogbench.com/petrophys/docs/new_to_python)
 explains notebooks for readers who have not programmed.
 `quickstart.ipynb` is the Quickstart page as a notebook, for Colab: edit
 `docs/quickstart.md` and run `python scripts/colab_notebooks.py`, which also

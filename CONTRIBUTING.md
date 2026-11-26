@@ -52,7 +52,7 @@ sphinx-build -W -b html docs docs/_build/html
 - Shared data structures stay dependency-light and live in `petrophys.model`.
 - Supported user APIs are exported from the relevant package `__init__.py`.
 
-See the [architecture page](https://petrophys.netlify.app/architecture.html)
+See the [architecture page](https://welllogbench.com/petrophys/docs/architecture.html)
 for the package map and dependency direction.
 
 ## Scientific changes
@@ -105,17 +105,19 @@ that contain local paths.
 Repository pushes, documentation deployments and PyPI releases are separate
 steps.
 
-**Documentation.** Build with warnings as errors, then deploy the built
-`docs/_build/html` folder with the landing page copied over it (the steps are
-in `netlify.toml`):
+**Documentation.** A push to `main` publishes the site with GitHub Pages
+(`.github/workflows/pages.yml`): the landing page at the root and the
+documentation, built with warnings as errors, under `docs/`. welllogbench.com
+serves it at https://welllogbench.com/petrophys/ (the landing) and
+https://welllogbench.com/petrophys/docs/ (the documentation). To build it locally:
 
 ```bash
 python -m pip install -e ".[docs,mcp]"
-python -m sphinx -W --keep-going -b html docs docs/_build/html
-cp -r docs/landing/. docs/_build/html/
+python -m sphinx -W --keep-going -b html docs _site/docs
+cp -r docs/landing/. _site/
 ```
 
-After deploying, check that the site serves the intended commit and open the
+After a deployment, check that the site serves the intended commit and open the
 quickstart, context, input-template and tutorial pages.
 
 **PyPI.** `.github/workflows/publish.yml` builds and checks the
